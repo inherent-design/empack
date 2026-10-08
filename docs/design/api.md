@@ -934,6 +934,16 @@ The callback chooses metadata, loader declaration, file representation, placemen
 optional defaults without receiving project write authority. It cannot change declared
 participation or silently redirect source destinations.
 
+`ImportHostRequest.local_files` carries explicit `ImportLocalFile` associations.
+`ImportContentPlan::acquire_local_files` resolves the whole selector set before reading
+payloads, requires one download obligation per association, then uses bounded native
+file acquisition and the original source assertions. It rejects embedded-member
+replacement, repeated keys and ambiguous filenames. `ImportContentKey::selector`
+includes the provider namespace, project, exact selection and filename for provider
+files; declared records have an archive-local index. Destinations provide a readable
+alias only when they identify one obligation. The acquired result still passes through
+normal import verification and publication.
+
 The host displays the exact managed replacement plan before the common approval step.
 Preview and declined approval leave project and durable host state unchanged. Provider
 pages use the archive catalog and verify its assertions before inspection. Runtime

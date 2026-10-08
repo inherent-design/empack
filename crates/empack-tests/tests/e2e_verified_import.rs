@@ -1,41 +1,56 @@
+//! Executable native import contracts; explicit files preserve the archive's source evidence.
 use empack_lib::application::session::{ArchiveProvider, LiveArchiveProvider};
-use empack_lib::empack::archive::ArchiveFormat;
+use empack_lib::engine::documents::DocumentCodec;
 use empack_tests::e2e::{TestProject, assert_dist_artifact_suffix, empack_cmd};
-use std::path::Path;
+use std::{fs, io::Read, path::Path};
 
 fn run(project: &Path, args: &[&str]) {
     assert_cmd::Command::from_std(empack_cmd(project))
+        .arg("--yes")
         .args(args)
         .timeout(std::time::Duration::from_secs(90))
         .assert()
         .success();
 }
 
-fn fixture(
-    project: &TestProject,
-    url: &str,
-    algorithm: &str,
-    hash: &str,
-    optional: bool,
-) -> std::path::PathBuf {
-    let source = project.dir().join("source");
-    std::fs::create_dir(&source).unwrap();
+fn fixture(project: &TestProject, algorithm: &str, hash: &str) -> std::path::PathBuf {
     let manifest = serde_json::json!({
         "formatVersion":1,"game":"minecraft","name":"verified-url","versionId":"1.0.0",
-        "dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.11"},
-        "files":[{"path":"resourcepacks/declared.zip","downloads":[url,format!("{url}/fallback")],"fileSize":7,
-            "hashes":{(algorithm):hash},"env":{"client":if optional {"optional"} else {"required"},"server":"unsupported"}}]
+        "dependencies":{"minecraft":"1.21.1"},
+        "files":[{"path":"resourcepacks/declared.zip","downloads":["https://example.invalid/different-name.bin","https://example.invalid/fallback"],"fileSize":7,
+            "hashes":{(algorithm):hash},"env":{"client":"optional","server":"unsupported"}}]
     });
-    std::fs::write(
-        source.join("modrinth.index.json"),
-        serde_json::to_vec(&manifest).unwrap(),
+    let archive = project.dir().join("input.mrpack");
+    empack_tests::fixtures::write_zip(
+        &archive,
+        &[(
+            "modrinth.index.json",
+            &serde_json::to_vec(&manifest).unwrap(),
+        )],
     )
     .unwrap();
-    let archive = project.dir().join("input.mrpack");
-    LiveArchiveProvider
-        .create_archive(&source, &archive, ArchiveFormat::Zip)
-        .unwrap();
     archive
+}
+fn read(root: &Path) -> empack_core::model::ResolvedProject {
+    let intent = DocumentCodec
+        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "fixture")
+        .unwrap();
+    DocumentCodec
+        .decode_lock(
+            &fs::read(root.join("empack.lock")).unwrap(),
+            &intent,
+            "fixture",
+        )
+        .unwrap()
+}
+fn member(archive: &mut zip::ZipArchive<fs::File>, name: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    archive
+        .by_name(name)
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    bytes
 }
 
 #[test]
@@ -47,72 +62,79 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
 }
 
 #[test]
-fn e2e_md5_compatibility_preserves_source_evidence_through_export_and_cache_repair() {
+fn e2e_md5_import_preserves_weak_source_evidence_through_native_export() {
     verified_url_lifecycle("md5", "321c3cf486ed509164edec1e1981fec8");
 }
 
 fn verified_url_lifecycle(algorithm: &str, hash: &str) {
-    empack_tests::skip_if_no_packwiz!();
-    let mut server = mockito::Server::new();
-    let _download = server
-        .mock("GET", "/different-name.bin")
-        .with_body("payload")
-        .create();
     let project = TestProject::new();
-    let archive = fixture(
-        &project,
-        &format!("{}/different-name.bin", server.url()),
-        algorithm,
-        hash,
-        true,
-    );
-    run(
-        project.dir(),
-        &[
-            "init",
-            "--from",
-            archive.to_str().unwrap(),
-            "--yes",
-            "imported",
-        ],
-    );
+    let archive = fixture(&project, algorithm, hash);
+    fs::write(project.dir().join("renamed.bin"), b"payload").unwrap();
+    let args = [
+        "init",
+        "--from",
+        archive.to_str().unwrap(),
+        "--import-file",
+        "resourcepacks/declared.zip=renamed.bin",
+        "--import-optional-default",
+        "true",
+        "imported",
+    ];
+    assert_cmd::Command::from_std(project.cmd())
+        .arg("--yes")
+        .arg("--dry-run")
+        .args(args)
+        .assert()
+        .success();
+    assert!(!project.dir().join("imported").exists());
+    run(project.dir(), &args);
     let imported = project.dir().join("imported");
-    let metadata = imported.join("pack/resourcepacks/declared.zip.pw.toml");
-    let original = std::fs::read_to_string(&metadata).unwrap();
-    let parsed: toml::Value = toml::from_str(&original).unwrap();
-    assert_eq!(parsed["filename"].as_str(), Some("declared.zip"));
-    assert_eq!(parsed["side"].as_str(), Some("client"));
-    assert_eq!(parsed["option"]["optional"].as_bool(), Some(true));
-    let intent = std::fs::read_to_string(imported.join("empack.yml")).unwrap();
-    assert!(intent.contains("status: url"));
-    assert!(!intent.contains("project_id:"));
-    assert!(intent.contains(&format!("{algorithm}: {hash}")));
+    let resolved = read(&imported);
+    assert_eq!(resolved.intent().roots.len(), 1);
+    let (key, root) = resolved.intent().roots.iter().next().unwrap();
+    assert!(matches!(
+        root.source,
+        empack_core::model::SourceIntent::Url(_)
+    ));
+    let file = &resolved.lock().dependencies[key].files.as_slice()[0];
+    assert_eq!(
+        file.placements.as_slice()[0]
+            .destination
+            .relative()
+            .as_str(),
+        "resourcepacks/declared.zip"
+    );
+    assert!(matches!(
+        file.placements.as_slice()[0].requirements.client,
+        empack_core::requirements::Requirement::Optional(_)
+    ));
+    assert_eq!(
+        file.placements.as_slice()[0].requirements.server,
+        empack_core::requirements::Requirement::Unsupported
+    );
+    let original = fs::read(imported.join("empack.yml")).unwrap();
+    let locked = fs::read(imported.join("empack.lock")).unwrap();
+    assert!(String::from_utf8(original.clone()).unwrap().contains(hash));
     for _ in 0..2 {
         run(&imported, &["sync"]);
     }
-    assert_eq!(std::fs::read_to_string(&metadata).unwrap(), original);
-    std::fs::remove_file(&metadata).unwrap();
-    run(&imported, &["sync", "--dry-run"]);
-    assert!(!metadata.exists());
-    run(&imported, &["sync"]);
-    assert_eq!(std::fs::read_to_string(&metadata).unwrap(), original);
-    let _unavailable = server
-        .mock("GET", "/different-name.bin")
-        .with_status(503)
-        .create();
-    let _fallback = server
-        .mock("GET", "/different-name.bin/fallback")
-        .with_body("payload")
-        .create();
-    run(&imported, &["build", "mrpack"]);
-    let artifact = assert_dist_artifact_suffix(&imported, ".mrpack");
-    let inspect = imported.join("inspect");
-    LiveArchiveProvider
-        .extract_zip(&artifact, &inspect)
-        .unwrap();
+    assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), original);
+    assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
+    // The authored optional decision must be acknowledged for this lossy export format.
+    assert_cmd::Command::from_std(empack_cmd(&imported))
+        .args(["--yes", "build", "mrpack"])
+        .assert()
+        .failure();
+    run(
+        &imported,
+        &["build", "mrpack", "--allow-optional-metadata-loss"],
+    );
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(assert_dist_artifact_suffix(&imported, ".mrpack")).unwrap(),
+    )
+    .unwrap();
     let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(inspect.join("modrinth.index.json")).unwrap())
-            .unwrap();
+        serde_json::from_slice(&member(&mut archive, "modrinth.index.json")).unwrap();
     assert_eq!(manifest["files"][0]["path"], "resourcepacks/declared.zip");
     assert_eq!(manifest["files"][0]["env"]["client"], "optional");
     assert_eq!(manifest["files"][0]["env"]["server"], "unsupported");
@@ -125,66 +147,73 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
         manifest["files"][0]["downloads"].as_array().unwrap().len(),
         2
     );
-    assert!(
-        std::fs::read_to_string(&metadata)
-            .unwrap()
-            .contains("/different-name.bin/fallback")
-    );
-    let offline_primary = server
-        .mock("GET", "/different-name.bin")
-        .with_status(503)
-        .expect(0)
-        .create();
-    let offline_fallback = server
-        .mock("GET", "/different-name.bin/fallback")
-        .with_status(503)
-        .expect(0)
-        .create();
-    run(&imported, &["build", "mrpack"]);
-    std::fs::remove_file(&metadata).unwrap();
-    run(&imported, &["sync"]);
-    assert!(metadata.exists());
-    run(&imported, &["sync"]);
-    offline_primary.assert();
-    offline_fallback.assert();
-    // Export observations must not upgrade the persisted source evidence.
+    run(&imported, &["build", "client-full", "--optional-defaults"]);
+    let mut client = zip::ZipArchive::new(
+        fs::File::open(assert_dist_artifact_suffix(&imported, "client-full.zip")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(
-        std::fs::read_to_string(imported.join("empack.yml")).unwrap(),
-        intent
+        member(&mut client, ".minecraft/resourcepacks/declared.zip"),
+        b"payload"
     );
-    run(&imported, &["remove", "url:resourcepacks/declared.zip"]);
+    assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), original);
+    assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
+    run(&imported, &["remove", key.as_str()]);
     run(&imported, &["sync"]);
-    assert!(!metadata.exists());
+    assert!(read(&imported).intent().roots.is_empty());
 }
 
 #[test]
-fn e2e_url_import_rejects_changed_remote_bytes_before_initialization() {
-    let mut server = mockito::Server::new();
-    let _download = server
-        .mock("GET", "/changed.bin")
-        .with_body("changed")
-        .create();
+fn e2e_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates() {
     let project = TestProject::new();
     let archive = fixture(
         &project,
-        &format!("{}/changed.bin", server.url()),
         "sha256",
         "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
-        false,
     );
-    assert_cmd::Command::from_std(empack_cmd(project.dir()))
-        .args([
+    fs::write(project.dir().join("selected.bin"), b"changed").unwrap();
+    for associations in [
+        vec!["declared:0=selected.bin"],
+        vec!["missing=selected.bin"],
+        vec![
+            "declared:0=selected.bin",
+            "resourcepacks/declared.zip=selected.bin",
+        ],
+    ] {
+        let mut command = assert_cmd::Command::from_std(project.cmd());
+        command.args([
+            "--yes",
             "init",
             "--from",
             archive.to_str().unwrap(),
-            "--yes",
+            "--import-optional-default",
+            "true",
             "imported",
-        ])
-        .timeout(std::time::Duration::from_secs(30))
-        .assert()
-        .failure();
-    assert!(!project.dir().join("imported/empack.yml").exists());
-    assert!(!project.dir().join("imported/pack").exists());
+        ]);
+        for association in associations {
+            command.args(["--import-file", association]);
+        }
+        command.assert().failure();
+        assert!(!project.dir().join("imported").exists());
+    }
+    fs::write(project.dir().join("selected.bin"), b"payload").unwrap();
+    run(
+        project.dir(),
+        &[
+            "init",
+            "--from",
+            archive.to_str().unwrap(),
+            "--import-file",
+            "declared:0=selected.bin",
+            "--import-optional-default",
+            "false",
+            "imported",
+        ],
+    );
+    assert_eq!(
+        read(&project.dir().join("imported")).intent().roots.len(),
+        1
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

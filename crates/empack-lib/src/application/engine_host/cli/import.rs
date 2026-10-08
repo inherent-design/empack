@@ -4,9 +4,9 @@ use crate::{
     application::InitArgs,
     engine::{
         import::{
-            ImportCandidateOptions, ImportContentKey, ImportFileDecision, ImportPersistence,
-            ImportedAcquisition, ImportedRequirement, ImportedRequirements, ImportedRuntime,
-            VerifiedImportContent,
+            ImportCandidateOptions, ImportContentKey, ImportFileDecision, ImportLocalFile,
+            ImportPersistence, ImportedAcquisition, ImportedRequirement, ImportedRequirements,
+            ImportedRuntime, VerifiedImportContent,
         },
         project_change::ProjectReplacementPolicy,
         providers::ModpackSelector,
@@ -27,6 +27,27 @@ pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
     let Some(source) = &args.from_source else {
         return super::super::initialize(session, args).await;
     };
+    ensure!(
+        args.import_files.len() <= 128,
+        "At most 128 import-file associations are allowed"
+    );
+    let local_files = args
+        .import_files
+        .iter()
+        .map(|value| {
+            let (selector, path) = value
+                .split_once('=')
+                .context("Import file association must be SELECTOR=PATH")?;
+            ensure!(
+                !selector.is_empty() && !path.is_empty(),
+                "Import file association needs a selector and source path"
+            );
+            Ok(ImportLocalFile {
+                selector: selector.into(),
+                source: path.into(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let expected = ExpectedContent {
         digests: None,
         size: None,
@@ -69,6 +90,7 @@ pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
             },
             evidence: SourceEvidencePolicy::Compatibility,
             supplied: BTreeMap::new(),
+            local_files,
         },
         |content| decisions(session, args, content),
     )

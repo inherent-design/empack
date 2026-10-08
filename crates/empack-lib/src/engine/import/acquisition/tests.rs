@@ -1007,3 +1007,120 @@ async fn default_import_limits_fit_small_archives_under_the_native_host_budget()
     drop(outcome);
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn local_provider_associations_require_exact_identity_and_original_digests() {
+    let mut server = Server::new_async().await;
+    for (project, file) in [(123, 456), (124, 457)] {
+        server.mock("GET", format!("/mods/{project}").as_str()).with_body(json!({"data":{"id":project,"gameId":432,"classId":6,"slug":format!("mod-{project}"),"name":"Mod"}}).to_string()).create_async().await;
+        server.mock("GET", format!("/mods/{project}/files/{file}").as_str())
+            .with_body(json!({"data":{"id":file,"gameId":432,"modId":project,"fileName":"shared.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1","Fabric"],"dependencies":[]}}).to_string())
+            .create_async().await;
+    }
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture".into()));
+    let archive = source("manifest.json", cf(), &[]);
+    let governed = governor();
+    let runtime = OperationRuntime::new(governed.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                let imported = inspect_source(&mut scope, archive).await?;
+                let plan =
+                    ImportContentPlan::resolve(&mut scope, imported, &catalog, limits()).await?;
+                let dir = tempfile::tempdir()?;
+                let path = dir.path().join("renamed.zip");
+                std::fs::write(&path, b"payload")?;
+                for selector in [
+                    "shared.jar",
+                    "provider:modrinth:123:456:shared.jar",
+                    "override:0",
+                ] {
+                    let result = plan
+                        .acquire_local_files(
+                            &mut scope,
+                            &[ImportLocalFile {
+                                selector: selector.into(),
+                                source: path.clone(),
+                            }],
+                            BTreeMap::new(),
+                            SourceEvidencePolicy::Compatibility,
+                        )
+                        .await;
+                    assert!(result.is_err(), "ambiguous or foreign selector accepted");
+                }
+                let files = [
+                    "provider:curseforge:123:456:shared.jar",
+                    "provider:curseforge:124:457:shared.jar",
+                ]
+                .map(|selector| ImportLocalFile {
+                    selector: selector.into(),
+                    source: path.clone(),
+                });
+                std::fs::write(&path, b"changed")?;
+                assert!(
+                    plan.acquire_local_files(
+                        &mut scope,
+                        &files,
+                        BTreeMap::new(),
+                        SourceEvidencePolicy::Compatibility
+                    )
+                    .await
+                    .is_err()
+                );
+                std::fs::write(&path, b"payload")?;
+                #[cfg(unix)]
+                {
+                    let link = dir.path().join("linked.jar");
+                    std::os::unix::fs::symlink(&path, &link)?;
+                    assert!(
+                        plan.acquire_local_files(
+                            &mut scope,
+                            &[ImportLocalFile {
+                                selector: files[0].selector.clone(),
+                                source: link
+                            }],
+                            BTreeMap::new(),
+                            SourceEvidencePolicy::Compatibility
+                        )
+                        .await
+                        .is_err()
+                    );
+                }
+                let provided = plan
+                    .acquire_local_files(
+                        &mut scope,
+                        &files,
+                        BTreeMap::new(),
+                        SourceEvidencePolicy::Compatibility,
+                    )
+                    .await?;
+                let outcome = plan
+                    .acquire(
+                        &mut scope,
+                        &HttpAcquisition::for_loopback_tests(),
+                        provided,
+                        SourceEvidencePolicy::Compatibility,
+                    )
+                    .await?;
+                let ImportContentOutcome::Ready(content) = outcome else {
+                    panic!("explicit verified files were not accepted")
+                };
+                assert_eq!(content.content().len(), 2);
+                for value in content.content().values() {
+                    assert_eq!(bytes(value), b"payload");
+                }
+                Ok::<_, anyhow::Error>(())
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    match &*outcome {
+        OperationOutcome::Completed(Ok(())) => {}
+        OperationOutcome::Completed(Err(error)) => panic!("{error:#}"),
+        _ => panic!("import association did not complete"),
+    }
+    assert_eq!(governed.status().reserved, ResourceRequest::default());
+}

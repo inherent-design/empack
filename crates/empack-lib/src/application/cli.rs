@@ -199,6 +199,14 @@ pub struct InitArgs {
     /// Retain imported downloads as local files instead of durable URL references.
     #[arg(long, requires = "from_source")]
     pub import_local_files: bool,
+
+    /// Associate a selected file with one exact imported download obligation.
+    #[arg(
+        long = "import-file",
+        requires = "from_source",
+        value_name = "SELECTOR=PATH"
+    )]
+    pub import_files: Vec<String>,
 }
 
 /// Arguments for the `build` subcommand.
@@ -487,6 +495,31 @@ mod tests {
     use super::*;
     use clap::CommandFactory;
     use std::str::FromStr;
+
+    #[test]
+    fn import_file_associations_require_an_archive_and_preserve_paths() {
+        assert!(
+            Cli::try_parse_from(["empack", "init", "--import-file", "declared:0=file"]).is_err()
+        );
+        let cli = Cli::try_parse_from([
+            "empack",
+            "init",
+            "--from",
+            "pack.mrpack",
+            "--import-file",
+            "declared:0=some=file.zip",
+            "--import-file",
+            "declared:1=second.zip",
+        ])
+        .unwrap();
+        let Some(Commands::Init(args)) = cli.command else {
+            panic!("not initialization")
+        };
+        assert_eq!(
+            args.import_files,
+            ["declared:0=some=file.zip", "declared:1=second.zip"]
+        );
+    }
 
     #[test]
     fn search_platform_from_str_supports_known_aliases() {

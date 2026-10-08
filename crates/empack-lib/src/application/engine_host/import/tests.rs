@@ -85,6 +85,7 @@ fn request(source: ImportSource, replace: bool) -> ImportHostRequest {
         },
         evidence: SourceEvidencePolicy::Compatibility,
         supplied: BTreeMap::new(),
+        local_files: Vec::new(),
     }
 }
 fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> {

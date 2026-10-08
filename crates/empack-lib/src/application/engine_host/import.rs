@@ -7,7 +7,8 @@ use crate::{
         content::{AcquiredContent, InitialObservation, SourceEvidencePolicy},
         import::{
             ImportCandidateOptions, ImportContentKey, ImportContentLimits, ImportContentOutcome,
-            ImportContentPlan, ImportLimits, VerifiedImportContent, inspect_import,
+            ImportContentPlan, ImportLimits, ImportLocalFile, VerifiedImportContent,
+            inspect_import,
         },
         project_change::ProjectReplacementPolicy,
         providers::{ModpackSelector, ProviderCatalog, ReleasePolicy, SelectionLimits},
@@ -42,6 +43,8 @@ pub struct ImportHostRequest {
     pub evidence: SourceEvidencePolicy,
     /// Explicit associations for restricted inputs; no filename guessing or provider bypass.
     pub supplied: BTreeMap<ImportContentKey, AcquiredContent>,
+    /// Explicit host file associations; paths resolve against the invocation directory.
+    pub local_files: Vec<ImportLocalFile>,
 }
 
 /// The decision callback receives verified source evidence, not a live project writer.
@@ -114,6 +117,14 @@ async fn import_with_services(
         },
         value => value,
     };
+    let local_files = request
+        .local_files
+        .into_iter()
+        .map(|file| ImportLocalFile {
+            selector: file.selector,
+            source: absolute(&invocation, &file.source),
+        })
+        .collect::<Vec<_>>();
     let evidence = request.evidence;
     let content = scoped(session, shared.clone(), move |mut scope| async move {
         let archive = match source {
@@ -211,7 +222,10 @@ async fn import_with_services(
         let inspected = inspect_import(&mut scope, archive, inspection).await?;
         let plan =
             ImportContentPlan::resolve(&mut scope, inspected, &catalog, content_limits).await?;
-        plan.acquire(&mut scope, &transport, request.supplied, evidence)
+        let supplied = plan
+            .acquire_local_files(&mut scope, &local_files, request.supplied, evidence)
+            .await?;
+        plan.acquire(&mut scope, &transport, supplied, evidence)
             .await
     })
     .await?;
@@ -219,10 +233,11 @@ async fn import_with_services(
         ImportContentOutcome::Ready(content) => content,
         ImportContentOutcome::NeedsInput { pending, .. } => {
             for input in &pending {
-                session
-                    .display()
-                    .status()
-                    .warning(&format!("Import input {:?}: {:?}", input.key, input.reason));
+                session.display().status().warning(&format!(
+                    "Import input {:?}: {:?}",
+                    input.key.selector(),
+                    input.reason
+                ));
             }
             anyhow::bail!(
                 "Import was not published: {} content obligations need explicit input",

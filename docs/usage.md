@@ -30,6 +30,30 @@ and normalized document examples are finalized with the implementation; proposed
 requests must not be advertised as working commands before their tests pass.
 There is no requirement to retain old flags or manifest formats.
 
+## Verified import file associations
+
+`init --from` accepts repeated `--import-file SELECTOR=PATH` arguments for files
+already downloaded by the user. A declared destination such as
+`resourcepacks/theme.zip` selects that exact download obligation. Provider filenames
+must identify one file; when ambiguous, use the exact selector printed in the missing
+input diagnostic. Relative source paths resolve from the invocation directory.
+
+```sh
+empack --yes init --from ./pack.mrpack \
+  --import-file resourcepacks/theme.zip=./Downloads/renamed.zip \
+  --import-optional-default true ./project
+```
+
+Each supplied file must match the archive or exact provider selection's original
+size and digests. Associations preserve provider or URL identity, destination and
+client/server participation. They cannot replace embedded archive members. Unknown,
+ambiguous, duplicate and symlinked sources fail before project publication. Preview
+verifies selected inputs without creating a project or durable host state.
+
+`--import-local-files` is a separate conversion choice: it retains verified downloads
+as authored local files. Supplying `--import-file` alone does not request that conversion.
+Durable restricted-import continuation remains an implementation gap.
+
 ## Implemented recovery command
 
 `empack recover` inspects interrupted engine publication without requiring valid

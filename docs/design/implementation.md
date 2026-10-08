@@ -108,6 +108,9 @@ The CLI import adapter now maps local archives, HTTPS downloads and provider pac
 pages into that pipeline. It preserves paths, environment layers and runtime pins;
 additional accepted game versions remain explicit intent. Optional defaults,
 auxiliary-member exclusion and download-to-local conversion have explicit flags.
+`--import-file SELECTOR=PATH` supplies an exact download obligation without changing
+its source identity or original integrity assertions. Native executable tests cover
+SHA-256 and MD5 imports through two syncs, export, materialized build and removal.
 Native tests cover preview, runtime mismatch, auxiliary refusal, layer bytes and
 re-export. Restricted-import continuation remains open.
 
@@ -239,6 +242,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Explicit import file associations | 58 affected import/CLI tests, three rewritten executable lifecycle cases and all-feature Clippy passed | Original SHA-256/MD5 evidence, optional export, full-client bytes, two syncs, duplicate/ambiguous/provider-qualified selectors and symlink refusal; two old provider-import fixtures remain to port |
 | `9ce7616` combined candidate | `mise run test`: 1,675 tests and eleven doctests passed; 105 opt-in cases excluded | No inherited-pipe warnings; 142.41 seconds; final strict live matrix and coverage remain open |
 | Legacy fixture retirement | 24 fixture/smoke tests and test-crate all-feature Clippy passed | Deleted unused fake packwiz and old continuation helpers; ZIP fixtures use explicit members independent of application archive code |
 | Accepted game-version policy, combined candidate | `mise run test`: 1,645 tests and eleven doctests passed; 101 opt-in cases skipped; all-feature Clippy passed | Reproduced incompatible-pin retention; explicit pins fail safely, still-compatible selections remain fixed; 177 affected tests passed; no inherited-pipe warnings |

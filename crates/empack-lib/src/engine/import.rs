@@ -26,7 +26,7 @@ use std::{
 pub(super) mod acquisition;
 pub use acquisition::{
     ImportContentInput, ImportContentKey, ImportContentLimits, ImportContentOutcome,
-    ImportContentPlan, ImportInputReason, VerifiedImportContent,
+    ImportContentPlan, ImportInputReason, ImportLocalFile, VerifiedImportContent,
 };
 mod candidate;
 pub use candidate::{
