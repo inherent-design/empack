@@ -91,6 +91,10 @@ impl ProjectLayout {
     }
 }
 
+pub(super) fn collision_key(path: &str) -> String {
+    path.chars().nfd().default_case_fold().nfd().collect()
+}
+
 /// Conservative portable collision policy: canonical Unicode caseless matching.
 /// Preserve original names; a collision is an error, never a rename or overwrite.
 #[derive(Default)]
@@ -113,7 +117,7 @@ impl CollisionIndex {
                 prefix.push('/');
             }
             prefix.push_str(part);
-            let key: String = prefix.chars().nfd().default_case_fold().nfd().collect();
+            let key = collision_key(&prefix);
             ensure!(
                 !self.files.contains(&key),
                 "File destination collides with another file or ancestor: {prefix}"

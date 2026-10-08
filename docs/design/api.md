@@ -1367,3 +1367,16 @@ publication. If job, memory, descriptor or scratch capacity is unavailable, it r
 prepared mutation and skips insertion. Worker input ownership transfers only after
 successful admission. Cancellation, closed operation ownership and failed source-byte
 verification remain errors; they are not classified as disposable capacity failures.
+
+### Dependency batch components
+
+`AdditionGroup::combine` merges resolved request groups before one document plan. Shared
+records must agree on intent, exact selection and dependency evidence; conflicting values
+are rejected instead of selecting a request by order. Mixed provider/direct additions use
+this merge. `addition::independent::independent_components` connects requests through
+shared identities, current required dependency chains, previous and proposed destinations,
+and tracked input reads. It uses the native layout's Unicode collision rules, including
+ancestor paths. Component discovery does not authorize execution or prove source evidence.
+
+The component algorithm is implemented and tested; independent execution, partial receipts
+and CLI policy selection are still being connected. AllRequested remains the live default.

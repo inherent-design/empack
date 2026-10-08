@@ -7,8 +7,7 @@ use crate::engine::{
     resources::ResourceRequest,
     runtime::{RetainedOutput, WorkScope},
 };
-use anyhow::{Context, ensure};
-use empack_core::model::ResolutionLock;
+use anyhow::ensure;
 use std::collections::BTreeMap;
 
 pub struct ResolvedAdditionBatch {
@@ -90,54 +89,7 @@ impl ResolvedAdditionBatch {
                     (Some(provider), None) => provider.group().clone(),
                     (None, Some(files)) => files.group().clone(),
                     (Some(provider), Some(files)) => {
-                        let mut intent = current.intent().clone();
-                        intent.roots.clear();
-                        let mut lock = ResolutionLock {
-                            acceptable_versions: current
-                                .intent()
-                                .runtime
-                                .acceptable_versions
-                                .clone(),
-                            intent_revision: current.lock().intent_revision,
-                            resolver: "empack-batch-addition-v0.5".into(),
-                            dependencies: BTreeMap::new(),
-                            required_edges: BTreeMap::new(),
-                            coverage: BTreeMap::new(),
-                            runtime: current.lock().runtime.clone(),
-                        };
-                        for project in [provider.project(), files.project()] {
-                            cancel.check()?;
-                            ensure!(
-                                project.lock().runtime == lock.runtime,
-                                "Addition groups resolved different runtimes"
-                            );
-                            for (key, root) in &project.intent().roots {
-                                ensure!(
-                                    intent.roots.insert(key.clone(), root.clone()).is_none(),
-                                    "Addition groups repeat a logical root"
-                                );
-                            }
-                            for (key, dependency) in &project.lock().dependencies {
-                                ensure!(
-                                    lock.dependencies
-                                        .insert(key.clone(), dependency.clone())
-                                        .is_none(),
-                                    "Addition groups repeat a logical installation"
-                                );
-                            }
-                            lock.required_edges
-                                .extend(project.lock().required_edges.clone());
-                            lock.coverage.extend(project.lock().coverage.clone());
-                        }
-                        let source = DocumentCodec.decode_intent(
-                            &DocumentCodec.encode_intent(&intent)?,
-                            "addition batch",
-                        )?;
-                        lock.intent_revision = source.semantic_revision();
-                        let resolved =
-                            ResolvedProject::validate(intent, lock, source.semantic_revision())
-                                .context("Incompatible addition groups")?;
-                        AdditionGroup::from_resolved(&resolved)?
+                        AdditionGroup::combine(&current, &[provider.group(), files.group()])?
                     }
                     (None, None) => unreachable!("validated nonempty batch"),
                 };

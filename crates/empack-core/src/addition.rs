@@ -1,4 +1,6 @@
 //! Merge a resolved dependency request without renaming existing identities or collecting content.
+mod batch;
+
 use crate::{
     model::*,
     removal::{RemovalError, RemovalEvidencePolicy, RemovalMode, RemovalPlan},
@@ -69,6 +71,8 @@ pub struct ReplacementSelection {
 /// A resolved addition cannot silently displace another logical record or retained requirement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdditionError {
+    /// Two requested groups disagree about a shared logical record.
+    BatchConflict(DependencyKey),
     /// No explicit root requested an installation.
     EmptyRequest,
     /// The old selection cannot safely leave the resulting project.
@@ -95,6 +99,7 @@ pub enum AdditionError {
 impl fmt::Display for AdditionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BatchConflict(key) => write!(f, "Batch requests disagree about {}", key.as_str()),
             Self::UpdateMissing(key) => write!(f, "Cannot update an uninstalled identity: {}", key.as_str()),
             Self::Replacement(error) => error.fmt(f),
             Self::MissingReplacementRoot(key) => write!(f, "Replacement requires an explicit root for {}", key.as_str()),
