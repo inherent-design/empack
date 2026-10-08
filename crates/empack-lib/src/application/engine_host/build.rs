@@ -3,7 +3,7 @@ use super::*;
 use crate::{
     application::{BuildArgs, cli::CliArchiveFormat},
     engine::{
-        api::{BuildOutput, BuildRequest},
+        api::{BuildOutput, BuildPreparationRequest, BuildRequest},
         build::BuildAcquisitions,
         content::SourceEvidencePolicy,
         mrpack::OptionalConversion,
@@ -83,13 +83,15 @@ pub async fn build(
                     SnapshotLimits::default(),
                     &cancel,
                 )?;
-                Ok::<_, anyhow::Error>(captured.require_resolved()?.intent().clone())
+                captured.require_resolved()
             },
         )?;
         scope.accept(work.wait().await?)?.transpose()
     })
     .await?;
-    let request = request(&intent, args, decisions)?;
+    let request = request(intent.intent(), args, decisions)?
+        .with_content(supplied)
+        .require_intent(intent.lock().intent_revision);
     drop(intent);
     let catalog = ProviderCatalog::new(
         config.curseforge_api_client_key.clone(),
@@ -102,7 +104,7 @@ pub async fn build(
             ..Default::default()
         },
     );
-    let result = build_with_engine(session, &engine, project, request, supplied).await;
+    let result = build_with_engine(session, &engine, project, request).await;
     engine.shutdown().await;
     result
 }
@@ -190,14 +192,9 @@ async fn build_with_engine(
     session: &dyn Session,
     engine: &Engine,
     project: PathBuf,
-    request: BuildRequest,
-    supplied: BuildAcquisitions,
+    request: BuildPreparationRequest,
 ) -> Result<()> {
-    let prepared = cancellable(
-        session,
-        engine.prepare(project, request.with_content(supplied)),
-    )
-    .await?;
+    let prepared = cancellable(session, engine.prepare(project, request)).await?;
     let view = match &prepared {
         Preparation::Ready(value) => value.view(),
         Preparation::NeedsInput(value) => value.view(),

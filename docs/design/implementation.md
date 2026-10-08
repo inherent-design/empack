@@ -1176,10 +1176,32 @@ All 138 affected host, CLI, build and engine API tests pass, together with all-f
 Clippy and Windows cross-compilation. The initial manual-content fixture incorrectly
 paired URL intent with manual provider acquisition; the corrected fixture carries its
 canonical provider identity and exact selection. No production validation was weakened.
-The last full-suite result remains the earlier initialization-host revision until a fresh
-combined run completes.
+At `486808c`, the combined revision passed all 1,903 default tests and eleven doctests,
+with 123 opt-in tests skipped. All 24 executable smoke tests also passed.
 
 This is a compiled host, not yet the CLI build dispatcher. Durable continuation,
 download scanning/association and the remaining command hosts are still required for
 coherent cutover. Unsupported continuation arguments fail explicitly at this boundary;
 the existing dispatcher retains those features while their replacement is completed.
+
+
+## Build-selection binding and concurrent catalogs
+
+Greptile 106 identified a gap between the host's preliminary document read and engine
+capture. Build requests derived from project defaults now carry the expected semantic
+intent revision. Preparation rejects changed intent before producing an approvable plan.
+Comment-only changes before capture remain valid and their exact bytes are retained.
+
+The review also demonstrated that dividing a network deadline into serial shares rejects
+a compatible catalog that responds within the full deadline. The family menu now starts
+four owned catalog operations concurrently, sharing one resource governor and absolute
+network deadline. Each provider receives the remaining full allowance. One stalled service
+neither blocks another request's start nor shortens its deadline. Shutdown drains every
+owned operation before results reach the menu. This replaces the earlier serial fair-share
+implementation recorded above.
+
+Both reported failures reproduced before correction. The corrected regressions cover a
+changed build intent, a valid catalog responding after its former time slice, a stalled
+early provider and retained earlier results. All 94 affected host, engine API and catalog
+tests pass, including comment-only intent edits, with all-feature Clippy and Windows
+cross-compilation. The full-suite result above remains pinned to `486808c`.

@@ -646,3 +646,54 @@ async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
     }
     assert!(snapshot(root.path()).is_empty());
 }
+
+#[tokio::test]
+async fn compatible_catalog_may_use_the_full_discovery_deadline() {
+    let mut server = mockito::Server::new_async().await;
+    let mut delayed = mockito::Server::new_async().await;
+    let neo = delayed
+        .mock("GET", "/neoforge")
+        .with_status(200)
+        .with_chunked_body(|writer| {
+            std::thread::sleep(Duration::from_millis(150));
+            writer.write_all(br#"{"versions":["21.1.1"]}"#)
+        })
+        .create_async()
+        .await;
+    let mut fast = Vec::new();
+    for (path, body) in [
+        ("/fabric/1.21.1", "[]"),
+        ("/forge", "{}"),
+        ("/quilt/1.21.1", "[]"),
+    ] {
+        fast.push(
+            server
+                .mock("GET", path)
+                .with_status(200)
+                .with_body(body)
+                .create_async()
+                .await,
+        );
+    }
+    let root = tempfile::tempdir().unwrap();
+    let host = session(root.path(), false, false)
+        .with_interactive(MockInteractiveProvider::new().queue_select(0));
+    let mut limits = RuntimeCatalogLimits::default();
+    limits.transfer.deadline = Duration::from_millis(400);
+    let (family, _) = compatible_loader(
+        &host,
+        RuntimeCatalog::for_loopback_tests(&server.url())
+            .with_loader_test_origin(LoaderKind::NeoForge, &delayed.url()),
+        GameVersion::parse("1.21.1").unwrap(),
+        Some(LoaderVersion::parse("21.1.1").unwrap()),
+        limits,
+    )
+    .await
+    .unwrap();
+    assert_eq!(family, LoaderKind::NeoForge);
+    neo.assert_async().await;
+    for response in fast {
+        response.assert_async().await;
+    }
+    assert!(snapshot(root.path()).is_empty());
+}

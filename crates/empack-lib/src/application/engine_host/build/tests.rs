@@ -408,3 +408,82 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         b"verified manual bytes"
     );
 }
+
+#[tokio::test]
+async fn derived_build_choices_reject_changed_intent_before_preparation() {
+    use crate::engine::documents::DocumentCodec;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let host = session(root.path(), true, false);
+    let original = DocumentCodec
+        .decode_intent(&fs::read(project.join("empack.yml")).unwrap(), "original")
+        .unwrap();
+    let current = DocumentCodec
+        .decode_lock(
+            &fs::read(project.join("empack.lock")).unwrap(),
+            &original,
+            "original",
+        )
+        .unwrap();
+    let old_request = request(current.intent(), &args(), BuildDecisions::default())
+        .unwrap()
+        .with_content(BuildAcquisitions::default())
+        .require_intent(original.semantic_revision());
+    let mut changed = current.intent().clone();
+    changed.metadata.name = "Changed Pack".into();
+    changed.distribution.archive = DistributionArchive::TarGz;
+    let raw = DocumentCodec.encode_intent(&changed).unwrap();
+    let revision = DocumentCodec
+        .decode_intent(&raw, "changed")
+        .unwrap()
+        .semantic_revision();
+    let mut lock = current.lock().clone();
+    lock.intent_revision = revision;
+    let updated = empack_core::model::ResolvedProject::validate(changed, lock, revision).unwrap();
+    fs::write(project.join("empack.yml"), raw).unwrap();
+    fs::write(
+        project.join("empack.lock"),
+        DocumentCodec.encode_lock(&updated).unwrap(),
+    )
+    .unwrap();
+    let before = snapshot(root.path());
+    let owner = engine(&host.config_provider.app_config, root.path()).unwrap();
+    let result = build_with_engine(&host, &owner, project, old_request).await;
+    owner.shutdown().await;
+    assert!(
+        result.is_err(),
+        "Old host choices must not build the new project"
+    );
+    assert_eq!(snapshot(root.path()), before);
+}
+
+#[tokio::test]
+async fn derived_build_choices_allow_comment_edits_without_changing_the_output_plan() {
+    use crate::engine::documents::DocumentCodec;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let host = session(root.path(), true, false);
+    let mut raw = fs::read(project.join("empack.yml")).unwrap();
+    let original = DocumentCodec.decode_intent(&raw, "original").unwrap();
+    let selected = request(original.intent(), &args(), BuildDecisions::default())
+        .unwrap()
+        .with_content(BuildAcquisitions::default())
+        .require_intent(original.semantic_revision());
+    raw.extend_from_slice(b"\n# A comment changes bytes but not build choices\n");
+    fs::write(project.join("empack.yml"), &raw).unwrap();
+    let owner = engine(&host.config_provider.app_config, root.path()).unwrap();
+    build_with_engine(&host, &owner, project.clone(), selected)
+        .await
+        .unwrap();
+    owner.shutdown().await;
+    assert_eq!(fs::read(project.join("empack.yml")).unwrap(), raw);
+    assert_eq!(
+        zip_bytes(
+            &project.join("dist/Native Pack-1.0.mrpack"),
+            "overrides/config/example.txt"
+        ),
+        b"first"
+    );
+}

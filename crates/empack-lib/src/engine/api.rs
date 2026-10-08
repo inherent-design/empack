@@ -29,7 +29,10 @@ use super::{
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     inventory::OptionalPolicy,
-    model::{DistributionArchive, ExpectedContent, LoaderKind, NonEmpty, RuntimeResolution},
+    model::{
+        DistributionArchive, ExpectedContent, LoaderKind, NonEmpty, RuntimeResolution,
+        SemanticRevision,
+    },
     path::{PathSyntax, PortableRelPath},
     projection::BuildTarget,
 };
@@ -100,6 +103,7 @@ pub struct BuildPreparationRequest {
     pub request: BuildRequest,
     pub supplied: BuildAcquisitions,
     prior: Option<Box<PreparationContinuation>>,
+    expected_intent: Option<SemanticRevision>,
 }
 impl BuildRequest {
     pub fn with_content(self, supplied: BuildAcquisitions) -> BuildPreparationRequest {
@@ -107,7 +111,16 @@ impl BuildRequest {
             request: self,
             supplied,
             prior: None,
+            expected_intent: None,
         }
+    }
+}
+impl BuildPreparationRequest {
+    /// Bind host-derived filenames, target defaults and format choices to the intent that
+    /// selected them. This is a precondition, not authority to publish that intent.
+    pub fn require_intent(mut self, revision: SemanticRevision) -> Self {
+        self.expected_intent = Some(revision);
+        self
     }
 }
 /// Host estimates used for admission, separate from actual stream and snapshot limits.
@@ -712,6 +725,7 @@ impl Engine {
             request: build.request.clone(),
             supplied,
             prior: Some(Box::new(pending)),
+            expected_intent: None,
         };
         self.prepare(project, request).await
     }
@@ -910,6 +924,7 @@ fn capture(
         request,
         mut supplied,
         prior: _,
+        expected_intent,
     } = input;
     let mut prior_root = None;
     if let Some(prior) = prior {
@@ -975,6 +990,10 @@ fn capture(
             },
             cancel,
         )?;
+    ensure!(
+        expected_intent.is_none_or(|revision| workspace.intent().semantic_revision() == revision),
+        "Build choices belong to changed project intent; prepare a fresh build plan"
+    );
     let cleanup = request
         .clean
         .then(|| build_cleanup(&workspace, &outputs))

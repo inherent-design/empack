@@ -706,7 +706,10 @@ selection; they are not installation destinations. Provider failures remain erro
 `application::engine_host::build` accepts parsed build arguments, `BuildDecisions`
 and verified `BuildAcquisitions`. It resolves the invocation-relative project without
 changing process cwd, reads coherent documents through the native reader, and prepares
-all requested outputs through the engine. Empty target selection uses project defaults;
+all requested outputs through the engine. `BuildPreparationRequest::require_intent` binds
+derived output choices to that semantic intent revision. Changed metadata or distribution
+preferences require fresh planning; comment-only edits before preparation preserve the
+choices and remain part of the new captured read set. Empty target selection uses project defaults;
 explicit targets are validated and deduplicated. An omitted archive override uses the
 project preference. Portable name/version components determine artifact filenames.
 

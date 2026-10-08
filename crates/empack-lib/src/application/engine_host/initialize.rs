@@ -234,36 +234,69 @@ async fn compatible_loader(
     pin: Option<LoaderVersion>,
     limits: RuntimeCatalogLimits,
 ) -> Result<LoaderChoice> {
-    let choices = discover(session, move |mut scope| async move {
-        let deadline = std::time::Instant::now()
-            .checked_add(limits.transfer.deadline)
-            .context("Loader discovery deadline overflow")?;
-        let mut choices = Vec::new();
-        let families = [
+    let deadline = std::time::Instant::now()
+        .checked_add(limits.transfer.deadline)
+        .context("Loader discovery deadline overflow")?;
+    // Each catalog owns its worker scope, while all four share host admission and one
+    // network deadline. Serial waits neither shorten a provider's time nor delay its start.
+    let runtime = OperationRuntime::new(
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 4,
+            memory_bytes: 512 << 20,
+            scratch_bytes: limits
+                .transfer
+                .file_bytes
+                .checked_mul(4)
+                .context("Catalog scratch allowance overflow")?,
+            open_files: 64,
+        }),
+        4,
+    );
+    let result = async {
+        let mut pending = Vec::new();
+        for family in [
             LoaderKind::NeoForge,
             LoaderKind::Fabric,
             LoaderKind::Forge,
             LoaderKind::Quilt,
-        ];
-        for (index, family) in families.into_iter().enumerate() {
-            scope.cancellation().check()?;
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            let versions = if remaining.is_zero() {
-                Err(crate::engine::acquisition::TransferError::Deadline.into())
-            } else {
-                let mut request_limits = limits;
-                // Reserve a fair share for every uninspected family. A stalled early
-                // service cannot spend the allowance intended for later providers.
-                request_limits.transfer.deadline = remaining / (families.len() - index) as u32;
-                catalog
-                    .loaders(&mut scope, game.clone(), family, request_limits)
-                    .await
-            };
-            choices.push((family, versions));
+        ] {
+            let catalog = catalog.clone();
+            let game = game.clone();
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            let handle = runtime.start(move |mut scope| async move {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                let versions = if remaining.is_zero() {
+                    Err(crate::engine::acquisition::TransferError::Deadline.into())
+                } else {
+                    let mut request_limits = limits;
+                    request_limits.transfer.deadline = remaining;
+                    catalog
+                        .loaders(&mut scope, game, family, request_limits)
+                        .await
+                };
+                let _ = sender.send(versions);
+                Ok(())
+            })?;
+            pending.push((family, handle, receiver));
         }
-        Ok(choices)
-    })
-    .await?;
+        cancellable(session, async {
+            let mut choices = Vec::new();
+            for (family, mut handle, receiver) in pending {
+                let result = match &*handle.wait().await {
+                    OperationOutcome::Completed(()) => {
+                        receiver.await.context("Loader discovery result was lost")?
+                    }
+                    OperationOutcome::Failed(error) => Err(error.clone().into()),
+                };
+                choices.push((family, result));
+            }
+            Ok(choices)
+        })
+        .await
+    }
+    .await;
+    runtime.shutdown().await;
+    let choices = result?;
     let mut supported = if pin.is_none() {
         vec![(LoaderKind::Vanilla, None)]
     } else {
