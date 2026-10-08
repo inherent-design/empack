@@ -321,7 +321,6 @@ macro_rules! skip_if_no_packwiz {
 #[macro_export]
 macro_rules! skip_if_no_java {
     () => {
-        $crate::skip_if_no_packwiz!();
         if !$crate::e2e::prerequisite_available($crate::e2e::has_java(), "java -version failed") {
             return;
         }

@@ -381,16 +381,6 @@ pub enum CliArchiveFormat {
     SevenZ,
 }
 
-impl CliArchiveFormat {
-    pub fn to_archive_format(&self) -> crate::empack::archive::ArchiveFormat {
-        match self {
-            CliArchiveFormat::Zip => crate::empack::archive::ArchiveFormat::Zip,
-            CliArchiveFormat::TarGz => crate::empack::archive::ArchiveFormat::TarGz,
-            CliArchiveFormat::SevenZ => crate::empack::archive::ArchiveFormat::SevenZ,
-        }
-    }
-}
-
 /// Project type filter for the add command.
 ///
 /// When specified, skips tiered type guessing and searches for the given
@@ -404,18 +394,6 @@ pub enum CliProjectType {
     ResourcePack,
     Shader,
     World,
-}
-
-impl CliProjectType {
-    pub fn to_project_type(&self) -> crate::primitives::ProjectType {
-        match self {
-            CliProjectType::Mod => crate::primitives::ProjectType::Mod,
-            CliProjectType::Datapack => crate::primitives::ProjectType::Datapack,
-            CliProjectType::ResourcePack => crate::primitives::ProjectType::ResourcePack,
-            CliProjectType::Shader => crate::primitives::ProjectType::Shader,
-            CliProjectType::World => crate::primitives::ProjectType::World,
-        }
-    }
 }
 
 impl std::str::FromStr for SearchPlatform {
@@ -466,43 +444,8 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::empack::archive::ArchiveFormat;
-    use crate::primitives::ProjectType;
     use clap::CommandFactory;
     use std::str::FromStr;
-
-    #[test]
-    fn cli_archive_format_to_archive_format_maps_variants() {
-        assert_eq!(
-            CliArchiveFormat::Zip.to_archive_format(),
-            ArchiveFormat::Zip
-        );
-        assert_eq!(
-            CliArchiveFormat::TarGz.to_archive_format(),
-            ArchiveFormat::TarGz
-        );
-        assert_eq!(
-            CliArchiveFormat::SevenZ.to_archive_format(),
-            ArchiveFormat::SevenZ
-        );
-    }
-
-    #[test]
-    fn cli_project_type_to_project_type_maps_variants() {
-        assert_eq!(CliProjectType::Mod.to_project_type(), ProjectType::Mod);
-        assert_eq!(
-            CliProjectType::Datapack.to_project_type(),
-            ProjectType::Datapack
-        );
-        assert_eq!(
-            CliProjectType::ResourcePack.to_project_type(),
-            ProjectType::ResourcePack
-        );
-        assert_eq!(
-            CliProjectType::Shader.to_project_type(),
-            ProjectType::Shader
-        );
-    }
 
     #[test]
     fn search_platform_from_str_supports_known_aliases() {

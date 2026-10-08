@@ -24,26 +24,19 @@ fn all_supported_containers_require_every_expected_file_and_exact_binary_bytes()
     fs::create_dir(&input).unwrap();
     fs::write(input.join("a.bin"), [0xff, 0, 1]).unwrap();
     let expected = BTreeMap::from([(path("a.bin"), content(&[0xff, 0, 1]))]);
-    for (format, old, extension) in [
-        (
-            DistributionArchive::Zip,
-            crate::empack::archive::ArchiveFormat::Zip,
-            "zip",
-        ),
-        (
-            DistributionArchive::TarGz,
-            crate::empack::archive::ArchiveFormat::TarGz,
-            "tar.gz",
-        ),
-        (
-            DistributionArchive::SevenZip,
-            crate::empack::archive::ArchiveFormat::SevenZ,
-            "7z",
-        ),
+    for (format, extension) in [
+        (DistributionArchive::Zip, "zip"),
+        (DistributionArchive::TarGz, "tar.gz"),
+        (DistributionArchive::SevenZip, "7z"),
     ] {
         let output = temp.path().join(format!("out.{extension}"));
-        crate::empack::archive::create_archive(&input, &output, old).unwrap();
-        let mut reader = fs::File::open(output).unwrap();
+        let mut reader = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(output)
+            .unwrap();
+        package_directory(&input, &mut reader, format, &Cancellation::default()).unwrap();
         let verified = verify_archive(
             &mut reader,
             format,

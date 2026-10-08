@@ -22,9 +22,12 @@ cargo nextest run -p empack-lib --lib --no-default-features
 PR lint checks this configuration separately. Workspace feature unification must
 not hide dependencies on helpers needed by ordinary unit tests.
 
-Strict E2E requires the managed or configured packwiz backend, Java, network
-access and provider credentials required by the selected fixtures. Missing
-prerequisites fail strict execution. Never store credentials in test reports.
+Strict E2E requires the prerequisites of the selected fixtures: native archive and
+restricted-continuation cases need the built executable; live bootstrap/runtime cases
+need network access and sometimes Java; provider cases need their declared credentials.
+Native Java checks no longer bootstrap packwiz. Legacy compatibility fixtures still
+request that backend explicitly until their replacement. Missing prerequisites fail
+strict execution. Never store credentials in test reports.
 
 Run the live normalized-runtime checks explicitly:
 
@@ -156,3 +159,9 @@ CI prints one coverage summary in its logs and uses that same report for the job
 The per-file table reports line counts, rather than mixing region counts with line percentages.
 Inline test code remains included in compiler coverage; a percentage is not proof of feature
 completion or a production-only coverage measurement.
+
+The native build E2E family constructs tracked files through the executable and checks
+packaged bytes with independent ZIP readers. Restricted-build fixtures use native intent,
+lock and saved recipes with an unavailable packwiz executable. They verify read-only
+preview, failed-byte preservation, exact slot association, resumed mrpack content and
+all-target artifact preservation before explicit saved-recipe cleanup.
