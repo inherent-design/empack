@@ -14,6 +14,21 @@ pub(super) async fn supply(
     file_limit: usize,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedBuild>> {
+    let mut total = prepared.acquisition.acquired.retained_bytes()?;
+    ensure!(
+        total <= limits.transfer_bytes,
+        "Retained build content exceeds byte limit"
+    );
+    ensure!(
+        prepared
+            .acquisition
+            .acquired
+            .locked
+            .values()
+            .chain(prepared.acquisition.acquired.observed.values())
+            .all(|file| file.content.lease().len() <= limits.file_bytes),
+        "Retained build file exceeds byte limit"
+    );
     if files.is_empty() {
         return Ok(prepared);
     }
@@ -44,9 +59,8 @@ pub(super) async fn supply(
             .context("Supplied build metadata size overflow")?,
         ..Default::default()
     })?;
-    let mut pool = ContentPool::owned(scope, limits.transfer_bytes).await?;
+    let mut pool = ContentPool::owned(scope, limits.transfer_bytes - total).await?;
     let mut selected = BTreeMap::new();
-    let mut total = 0u64;
     for need in &prepared.acquisition.pending {
         let Some(source) = files.get(&need.key) else {
             continue;

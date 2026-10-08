@@ -974,3 +974,101 @@ async fn refreshed_provider_origins_retain_verified_saved_download_fallbacks() {
     drop(outcome);
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn retained_build_inputs_reduce_the_http_batch_allowance() {
+    for allowance in [13, 14] {
+        let mut server = mockito::Server::new_async().await;
+        let download = server
+            .mock("GET", "/second")
+            .with_body("payload")
+            .expect(1)
+            .create_async()
+            .await;
+        let expected = ExpectedContent {
+            digests: Some(
+                DigestSet::new(vec![
+                    empack_core::digest::ExpectedDigest::parse(
+                        "md5",
+                        "321c3cf486ed509164edec1e1981fec8",
+                    )
+                    .unwrap(),
+                ])
+                .unwrap(),
+            ),
+            size: Some(7),
+            accepted_observation: None,
+        };
+        let content = crate::engine::content::verify_stream(
+            &mut &b"payload"[..],
+            &expected,
+            7,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::RequireEvidence,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        let result = BuildAcquisitionResult {
+            acquired: BuildAcquisitions {
+                observed: BTreeMap::from([(
+                    path("first"),
+                    AcquiredBuildFile {
+                        content,
+                        permissions: FilePermissions {
+                            readonly: false,
+                            executable: false,
+                        },
+                    },
+                )]),
+                locked: BTreeMap::new(),
+            },
+            pending: vec![AcquisitionNeed {
+                key: AcquisitionKey::Observed(path("second")),
+                reason: AcquisitionReason::MaterializedTarget,
+                expected,
+                source: BuildContentSource::Download(
+                    NonEmpty::new(vec![format!("{}/second", server.url())]).unwrap(),
+                ),
+            }],
+        };
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            scratch_bytes: 64,
+            open_files: 10,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                Ok(result
+                    .acquire_http(
+                        &HttpAcquisition::for_loopback_tests(),
+                        &mut scope,
+                        SourceEvidencePolicy::Compatibility,
+                        TransferLimits {
+                            file_bytes: 16,
+                            transfer_bytes: allowance,
+                            ..TransferLimits::default()
+                        },
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        match &*outcome {
+            OperationOutcome::Completed(result) => {
+                assert_eq!(result.is_ok(), allowance == 14);
+                if let Ok(result) = result {
+                    assert!(result.pending.is_empty());
+                    assert_eq!(result.acquired.retained_bytes().unwrap(), 14);
+                }
+            }
+            _ => panic!("HTTP batch did not complete"),
+        }
+        download.assert_async().await;
+        runtime.release_completed(handle.id());
+        runtime.shutdown().await;
+        drop((handle, outcome));
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}

@@ -313,6 +313,57 @@ fn local_selection(slot: &str, source: &Path) -> BTreeMap<AcquisitionKey, PathBu
     )])
 }
 #[tokio::test]
+async fn resumed_local_build_inputs_share_the_retained_byte_allowance() {
+    for first_is_local in [false, true] {
+        for second_is_local in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            fixture(root.path(), false);
+            let authored = fs::read(root.path().join("empack.yml")).unwrap();
+            let locked = fs::read(root.path().join("empack.lock")).unwrap();
+            let source = host.path().join("selected.bin");
+            fs::write(&source, b"payload").unwrap();
+            let (mut engine, governor) = tests::engine(host.path().join("state"));
+            engine.config.transfer.transfer_bytes = 10;
+            let request = if first_is_local {
+                tests::request()
+                    .with_content(BuildAcquisitions::default())
+                    .with_local_files(local_selection("first", &source))
+            } else {
+                tests::request().with_content(supplied("first", b"payload"))
+            };
+            let pending = match engine
+                .prepare(root.path().to_path_buf(), request)
+                .await
+                .unwrap()
+            {
+                Preparation::NeedsInput(pending) => pending,
+                _ => panic!("second slot must remain unresolved"),
+            };
+            let result = if second_is_local {
+                engine
+                    .resume_with_local_files(*pending, local_selection("second", &source))
+                    .await
+            } else {
+                engine
+                    .resume(*pending, supplied("second", b"payload"))
+                    .await
+            };
+            assert!(
+                result.is_err(),
+                "resume accepted fourteen bytes with a ten-byte allowance"
+            );
+            drop(result);
+            assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), authored);
+            assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), locked);
+            assert!(!root.path().join("dist").exists());
+            assert!(!host.path().join("state").exists());
+            assert_eq!(governor.status().reserved, ResourceRequest::default());
+            engine.shutdown().await;
+        }
+    }
+}
+#[tokio::test]
 async fn local_build_inputs_resume_with_verified_private_bytes_and_publish_offline() {
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();

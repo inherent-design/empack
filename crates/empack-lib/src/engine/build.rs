@@ -30,6 +30,20 @@ pub struct BuildAcquisitions {
     pub observed: BTreeMap<empack_core::path::PortableRelPath, AcquiredBuildFile>,
 }
 
+impl BuildAcquisitions {
+    /// Count logical slots, including content shared by distinct locked or observed records.
+    pub(crate) fn retained_bytes(&self) -> Result<u64> {
+        self.locked
+            .values()
+            .chain(self.observed.values())
+            .try_fold(0u64, |total, file| {
+                total
+                    .checked_add(file.content.lease().len())
+                    .context("Retained build content size overflow")
+            })
+    }
+}
+
 /// Prepare a reference export using captured local bytes and exact locked download evidence.
 /// Remote acquisition is a separate operation; missing reference evidence remains an error.
 /// Unlisted backend content remains an observed obligation; it never becomes invented intent.

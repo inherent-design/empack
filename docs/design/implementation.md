@@ -11,8 +11,11 @@ explicit build-content obligations feed these paths. The compiled `Engine` now o
 build/import preview, preparation, exact-plan authorization and publication.
 Build execution also owns acquisition and runtime assembly. The read-only provider catalog resolves canonical selectors and
 exact and compatible Modrinth/CurseForge selections, offers bounded search choices,
-and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. The remaining operation APIs,
-continuation/cleanup and CLI cutover remain unfinished. Existing
+and identifies acquired files by their content. Normalized mrpack and CurseForge
+inspection runs over retained bounded archive sources. Native hosts now compose
+initialization, import, builds, addition, update, adoption, removal, recorded/supplied
+synchronization, cleanup and recovery. Durable continuation, remaining frontend decisions
+and coordinated CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
 
@@ -1592,3 +1595,21 @@ Native preview tests verify old/new records, first-lock descriptions and repeate
 adoption. A formatter regression checks changed pins, hashes, requirements and edges,
 including omission of a secret-bearing manual locator. All 34 affected tests, all-feature
 Clippy and Windows cross-compilation pass without pipe warnings.
+
+
+## Cumulative retained build content
+
+Greptile 124 identified that local-file resume reset its byte counter. A native regression
+reproduced acceptance of fourteen bytes under a ten-byte allowance. Preparation now counts
+all retained locked and observed slots before accepting local paths or supplied content;
+HTTP acquisition receives only the remaining allowance. The count is conservative across
+logical slots even when their content IDs match. Tests exercise both input APIs across
+resume, unchanged documents on rejection, resource retirement, and the HTTP boundary at
+thirteen versus fourteen bytes.
+
+Before this correction, the frozen `6e993c9` revision passed 1,971 default tests,
+eleven doctests and 24 CLI smoke tests. The default run skipped 124 opt-in tests.
+Those results do not constitute a full rerun of this correction.
+
+The correction passes all 30 affected tests, all-feature Clippy and Windows
+cross-compilation. Windows retains seven existing test-only configuration warnings.

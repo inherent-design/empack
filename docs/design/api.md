@@ -856,7 +856,12 @@ The host displays runtime, destinations, optional-content policy, evidence polic
 network/tool requirements and obsolete-artifact removals before shared approval.
 `--yes` does not resolve optional choices or accept conversion loss. Those decisions
 remain explicit typed input. Supplied manual files retain exact logical slots and
-source assertions. Missing obligations appear in read-only preview and prevent execution.
+source assertions. Retained locked and observed slots count toward the preparation's
+cumulative content allowance across resumes; distinct slots count separately even when
+their bytes match. Later HTTP acquisition receives only the remaining allowance.
+Per-file limits apply to supplied leases as well as host file reads. Archive extraction
+and runtime/tool downloads also retain their own bounds. Missing obligations appear in
+read-only preview and prevent execution.
 Every completed artifact reports its verified byte length. Failed preparation leaves old
 artifacts intact, including when cleanup was requested.
 

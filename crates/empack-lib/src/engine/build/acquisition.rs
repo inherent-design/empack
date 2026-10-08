@@ -295,6 +295,13 @@ impl BuildAcquisitionResult {
             mut acquired,
             pending: needs,
         } = self.use_saved_provider_alternatives();
+        let limits = TransferLimits {
+            transfer_bytes: limits
+                .transfer_bytes
+                .checked_sub(acquired.retained_bytes()?)
+                .context("Retained build content exceeds byte limit")?,
+            ..limits
+        };
         let mut pending = Vec::new();
         let mut keys = Vec::new();
         let mut requests = Vec::new();
