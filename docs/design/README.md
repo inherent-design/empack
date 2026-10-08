@@ -1,9 +1,9 @@
 # empack v0.5 target
 
-empack is becoming a typed pack engine with verified, recoverable publication.
-This design replaces the earlier session-centric specifications as the target for
-v0.5.0-alpha.1. It is an implementation contract, not a claim that the current CLI
-already provides every guarantee.
+empack is a typed pack engine with verified, recoverable publication. This design
+defines the implementation contract for v0.5.0-alpha.1. The
+[delivery ledger](implementation.md) records implemented routes, revision-specific
+validation and the limits of that evidence.
 
 The source is the user-supplied `empack.md`, prepared 2026-10-04 against empack
 `50c121f` and Playground `dc6846a`. Its SHA-256 is `bfccf5976bdc6848a5516a6c125c9d56f6c15aba1fcf9c355b762c374e444ffe`.
@@ -32,6 +32,7 @@ and compatibility guides are removed; Git history retains their evidence.
 
 The engine now includes the semantic core, snapshots, resolution locks, staged
 execution, inventory verification and journaled publication. Ordinary CLI commands
-now use the engine. The legacy project library and executable bootstrap are removed. Consult the current
-routing table for remaining acceptance gates; dispatch wiring alone does not establish full parity. No implementation may claim a guarantee before
-it passes its acceptance gates.
+use the engine. The legacy project library and executable bootstrap are removed.
+The routing table connects preserved capabilities to their acceptance evidence;
+dispatch wiring alone does not establish parity. The ledger also records explicit
+runtime and publication limits.

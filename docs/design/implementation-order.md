@@ -21,8 +21,8 @@ preserves removed behavior.
 7. Implement continuation and scoped cleanup through the same contracts.
 
 The [feature requirements](parity.md) describe intended capabilities. The
-[implementation ledger](implementation.md) records unfinished work rather than
-promising backward compatibility. New projects use the normalized schema; legacy
+[implementation ledger](implementation.md) records delivered behavior, acceptance
+evidence and any remaining work. It does not promise backward compatibility. New projects use the normalized schema; legacy
 projects can be re-created or explicitly imported when an import adapter supports
 them. Do not silently accept malformed old documents as new intent.
 
