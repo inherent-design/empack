@@ -10,7 +10,7 @@
 //! - [`networking`] - Async HTTP client with concurrency management
 //! - [`platform`] - System resource detection and optimization
 //! - [`engine`] - Verified planning, provider resolution and recoverable publication
-//! - [`empack`] - Domain-specific modpack management types
+//! - [`display`] - Session-owned progress and terminal presentation
 //! - [`application`] - CLI interface and configuration management
 //!
 //! ## Quick Start
@@ -46,7 +46,6 @@ pub use terminal::TerminalCapabilities;
 pub type Result<T> = anyhow::Result<T>;
 
 use application::CliConfig;
-use std::future::Future;
 pub async fn main() -> Result<()> {
     let config = CliConfig::load()?;
     run_with_config(config).await
@@ -84,14 +83,6 @@ pub async fn run_with_config(mut config: CliConfig) -> Result<()> {
 
 fn process_error_message(error: &anyhow::Error) -> String {
     format!("Error: {error:#}")
-}
-
-/// Await a library command without installing process-wide signal handlers.
-pub async fn run_main_loop<F>(_workdir: Option<std::path::PathBuf>, command: F) -> Result<()>
-where
-    F: Future<Output = Result<()>>,
-{
-    command.await
 }
 
 #[cfg(test)]
@@ -188,30 +179,6 @@ mod tests {
             process_error_message(&second),
             "Error: second operation: second cause"
         );
-    }
-
-    #[tokio::test]
-    async fn run_main_loop_completes_with_ready_command() {
-        let temp_dir = tempfile::TempDir::new().expect("temp dir");
-        run_main_loop(
-            Some(temp_dir.path().to_path_buf()),
-            std::future::ready(Ok::<(), anyhow::Error>(())),
-        )
-        .await
-        .expect("run main loop");
-    }
-
-    #[tokio::test]
-    async fn run_main_loop_propagates_command_error() {
-        let temp_dir = tempfile::TempDir::new().expect("temp dir");
-        let error = run_main_loop(
-            Some(temp_dir.path().to_path_buf()),
-            std::future::ready(Err::<(), anyhow::Error>(anyhow::anyhow!("boom"))),
-        )
-        .await
-        .expect_err("run main loop should propagate command errors");
-
-        assert!(error.to_string().contains("boom"));
     }
 
     #[tokio::test]

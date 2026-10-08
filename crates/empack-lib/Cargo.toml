@@ -30,11 +30,8 @@ dialoguer = { workspace = true }
 directories = { workspace = true }
 dotenvy = { workspace = true }
 envy = { workspace = true }
-html-escape = { workspace = true }
 indicatif = { workspace = true }
 percent-encoding = { workspace = true }
-petgraph = { workspace = true }
-quick-xml = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

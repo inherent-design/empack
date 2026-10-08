@@ -1,86 +1,58 @@
-# Backend and process ports
+# Metadata and process contracts
 
-Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
-[implementation ledger](implementation.md) identifies a compiled API.
+The native engine reads and writes packwiz-compatible metadata. Ordinary project
+operations do not invoke a packwiz executable. The format is an observation and
+interchange boundary; it cannot authorize publication or replace source assertions.
 
-## 12. Backend and process contracts
+## Native metadata
 
-### 12.1 Backend receives a recipe, not a command string
+`engine::backend::BackendFile::parse` captures provider identity, exact selection,
+destination, environment, optionality and the declared download digest from one
+`.pw.toml` record. `provider_observation` is shared by command adapters and build
+observation. Ambiguous identities, invalid fields and unsafe destinations fail.
 
-```rust
-pub trait PackBackend: Send + Sync {
-    fn capabilities(&self) -> BackendCapabilities;
+`engine::packwiz` produces installer reference trees from expected game inventories.
+`engine::mrpack` emits Modrinth manifests and override layers. The artifact verifier
+checks their represented content independently of writer success. Add, sync and
+removal prepare exact managed metadata changes through the shared publisher.
 
-    fn materialize<'a>(
-        &'a self,
-        recipe: &'a BackendRecipe,
-        stage: &'a StageWriteRoot,
-        context: &'a ExecutionContext,
-    ) -> PortFuture<'a, BackendObservation, BackendError>;
+## Owned processes
 
-    fn export<'a>(
-        &'a self,
-        recipe: &'a ExportRecipe,
-        stage: &'a StageWriteRoot,
-        context: &'a ExecutionContext,
-    ) -> PortFuture<'a, ExportObservation, BackendError>;
-}
-```
+[`execute_async`](../../crates/empack-lib/src/application/process_runtime.rs)
+accepts a native `Command`, deadline, cancellation token and optional bounded progress
+sender. It runs on the host Tokio runtime and returns captured `ProcessOutput`.
 
-`BackendRecipe` is an allowlisted typed sequence such as ensure exact provider file, remove an observed metadata key, refresh index, and apply representable metadata requirements. No serialized shell command or arbitrary user-supplied executable is reconstructed from an import record.
+The owner retains Unix process-group or Windows job ownership. The deadline includes
+stdout/stderr lifetime: closing pipes does not authorize unbounded waiting, and an
+immediate-child exit does not establish descendant retirement. Cancellation or timeout
+terminates the owned tree. A disconnected or slow progress consumer cannot block
+supervision; capture has explicit per-stream bounds.
 
-`BackendCapabilities` states supported formats, environment combinations, structured-result version, and exact-selection behavior. Preflight rejects unsupported semantics. An explicit conversion decision can revise the desired model; a backend cannot quietly decide the conversion itself.
+Arguments remain separate native arguments. Shell interpretation occurs only for an
+explicit tool invocation. Generated shell templates require shell quoting, including
+safe handling of metadata in comments; HTML escaping is insufficient.
 
-`BackendObservation` includes exit status, observed installed records, generated files, dependency additions, omitted items, restricted acquisitions, diagnostics, and log references. It is evidence, not a successful domain outcome.
+## Installer assets
 
-The pin and identity model must be checked against fresh backend metadata. Platform additions and URL-backed metadata pass through the same final postcondition checks even if different adapters produced them.
+`engine::bootstrap_tools::InstallerArtifact` supplies exact reviewed Java installer
+and bootstrap assets with URL, size and SHA-256 assertions. Those maintainer pins
+identify expected bytes; they are not upstream signatures. Bounded acquisition
+verifies them before use.
 
-### 12.2 Process interface
-
-```rust
-pub struct ToolInvocation {
-    pub tool: ToolIdentity,
-    pub args: Vec<OsString>,
-    pub cwd: StageLocation,
-    pub environment: ProcessEnvironment,
-    pub deadline: Deadline,
-    pub output: OutputLimits,
-}
-
-pub trait ProcessRunner: Send + Sync {
-    fn run<'a>(
-        &'a self,
-        invocation: ToolInvocation,
-        context: &'a ExecutionContext,
-    ) -> PortFuture<'a, ProcessObservation, ProcessError>;
-}
-```
-
-The process owner retains Unix process-group or Windows job ownership and includes stdout/stderr lifetime in deadline handling. Closing pipes does not authorize unbounded `wait`; immediate-child exit does not mean descendants retired. Cancellation kills or drains the owned tree according to policy, then releases resources when retirement is confirmed.
-
-Arguments are separate native arguments. Shell execution is an explicit tool capability, not the default way to interpolate a command. Script templates require output-language escaping: shell quoting is not HTML escaping, and data inserted into comments still needs newline handling.
-
-Capture bounds and streaming display are independent. A slow progress observer cannot block process supervision. Excess captured output has a declared truncate/spool/fail policy rather than unbounded accumulation.
-
-### 12.3 Tool resolution
-
-`ToolResolver::resolve(ToolRequirement)` is lazy, scoped to operations that need the tool, and returns a `ToolIdentity` plus a retained executable handle/location. Managed downloads use bounded acquisition and expected release digests. Probes have deadlines and require an acceptable exit status and parsed capability output.
-
-External tooling remains supported through explicit configuration. Record the actual version/capability identity; report when exact provenance cannot be established. A version label alone is not equivalent to a digest of the executable used.
-
-Do not bootstrap tools for help, version, unrelated inspection, or pure preview. A preview that cannot fully resolve without executing a tool reports that limitation.
+`engine::server_runtime` prepares exact loader assets. Installer execution requires
+an explicit grant and uses private staging and owned processes. A successful exit
+alone cannot establish a complete server distribution; the candidate inventory and
+launcher checks must also pass. Help, version and preview do not install tools.
 
 ### Installed payload paths
 
-The pinned packwiz backend resolves `filename` relative to the metadata file's
+Packwiz-compatible metadata resolves `filename` relative to the metadata file's
 parent. A `.index` component has no implicit meaning. For example, metadata at
 `mods/.index/renderer.pw.toml` with `filename = "renderer.jar"` resolves to
 `mods/.index/renderer.jar`; `filename = "../renderer.jar"` resolves to
 `mods/renderer.jar`. The adapter normalizes relative components and rejects any
 escape from the pack root, absolute/prefixed paths or invalid portable components.
-It never silently strips `.index`. This follows
-[`GetDestFilePath`](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.1/core/mod.go),
-which the pinned mrpack exporter uses.
+It never silently strips `.index`. The [native parser](../../crates/empack-lib/src/engine/backend.rs) enforces these rules.
 
 ### Derivative digest observations
 

@@ -1,9 +1,7 @@
 use empack_lib::application::{AppConfig, Commands, cli::CliConfig};
 use empack_lib::platform::cache::cache_root;
 use empack_lib::platform::{browser_open_command, config_dir, data_dir, home_dir};
-use empack_lib::run_main_loop;
 use std::ffi::OsString;
-use std::future::ready;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -194,15 +192,4 @@ fn cache_root_uses_env_override() {
     let _env = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp.path()) };
 
     assert_eq!(cache_root().expect("cache root"), temp.path());
-}
-
-#[tokio::test]
-async fn run_main_loop_completes_with_ready_command() {
-    let temp_dir = tempfile::TempDir::new().expect("temp dir");
-    run_main_loop(
-        Some(temp_dir.path().to_path_buf()),
-        ready(Ok::<(), anyhow::Error>(())),
-    )
-    .await
-    .expect("run main loop");
 }

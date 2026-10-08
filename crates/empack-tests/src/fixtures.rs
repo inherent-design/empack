@@ -1,48 +1,9 @@
-//! Fixture infrastructure for E2E tests
-//!
-//! This module provides utilities for loading VCR cassettes containing
-//! real API response fixtures captured from Modrinth and CurseForge APIs.
+//! Native project and archive fixtures for executable tests.
 
 pub mod restricted;
 
 use anyhow::Result;
-use serde::{Deserialize, de::DeserializeOwned};
-use serde_json::Value;
 use std::path::{Path, PathBuf};
-
-/// VCR cassette structure matching our recorded HTTP interactions
-#[derive(Debug, Deserialize)]
-pub struct VcrCassette {
-    pub name: String,
-    pub request: VcrRequest,
-    pub response: VcrResponse,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VcrRequest {
-    pub method: String,
-    pub url: String,
-    #[serde(default)]
-    pub query: Value,
-    #[serde(default)]
-    pub headers: Value,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VcrResponse {
-    pub status: u16,
-    #[serde(default)]
-    pub headers: Value,
-    pub body: Value,
-}
-
-/// Resolve a cassette path relative to the empack-tests fixture root.
-pub fn cassette_path(relative: impl AsRef<Path>) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures")
-        .join("cassettes")
-        .join(relative.as_ref())
-}
 
 /// Small workflow project fixture for build/clean/lifecycle tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,43 +149,6 @@ impl WorkflowProjectFixture {
     }
 }
 
-/// Load a VCR cassette and extract the response body as a typed value
-pub fn load_vcr_response<T>(cassette_path: &str) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    let cassette_content = std::fs::read_to_string(cassette_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load VCR cassette '{}': {}", cassette_path, e))?;
-
-    let vcr: VcrCassette = serde_json::from_str(&cassette_content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse VCR cassette '{}': {}", cassette_path, e))?;
-
-    serde_json::from_value(vcr.response.body).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to deserialize response body from '{}': {}",
-            cassette_path,
-            e
-        )
-    })
-}
-
-/// Load a VCR cassette's response body as raw JSON string (for mockito)
-pub fn load_vcr_body_string(cassette_path: &str) -> Result<String> {
-    let cassette_content = std::fs::read_to_string(cassette_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load VCR cassette '{}': {}", cassette_path, e))?;
-
-    let vcr: VcrCassette = serde_json::from_str(&cassette_content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse VCR cassette '{}': {}", cassette_path, e))?;
-
-    serde_json::to_string(&vcr.response.body).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to serialize response body from '{}': {}",
-            cassette_path,
-            e
-        )
-    })
-}
-
 /// Write explicit fixture members without exercising the application's archive implementation.
 pub fn write_zip(path: &Path, members: &[(&str, &[u8])]) -> Result<()> {
     use std::io::Write;
@@ -240,37 +164,9 @@ pub fn write_zip(path: &Path, members: &[(&str, &[u8])]) -> Result<()> {
     Ok(())
 }
 
-/// Get the base URL for mockito server
-#[cfg(test)]
-pub fn mockito_url(server: &mockito::Server) -> String {
-    server.url()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_load_vcr_cassette() {
-        let cassette_path = cassette_path("modrinth/search_sodium.json");
-        let json: Value = load_vcr_response(cassette_path.to_str().unwrap()).unwrap();
-        assert!(json["hits"].is_array());
-        assert!(!json["hits"].as_array().unwrap().is_empty());
-
-        // Verify it contains sodium project data
-        let hits = json["hits"].as_array().unwrap();
-        let first_hit = &hits[0];
-        assert_eq!(first_hit["project_id"].as_str().unwrap(), "AANobbMI");
-        assert_eq!(first_hit["slug"].as_str().unwrap(), "sodium");
-    }
-
-    #[test]
-    fn test_load_vcr_body_string() {
-        let cassette_path = cassette_path("modrinth/search_sodium.json");
-        let body_str = load_vcr_body_string(cassette_path.to_str().unwrap()).unwrap();
-        assert!(body_str.contains("sodium"));
-        assert!(body_str.contains("AANobbMI"));
-    }
 
     #[test]
     fn test_workflow_project_fixture_writes_expected_layout() {

@@ -9,7 +9,7 @@ use empack_core::{
     removal::{RemovalEvidencePolicy, RemovalMode},
 };
 
-/// Execute CLI commands using the new session-based architecture
+/// Execute CLI commands through session-owned native engine hosts
 pub async fn execute_command(config: CliConfig) -> Result<()> {
     execute_command_with_cancellation(config, Default::default()).await
 }

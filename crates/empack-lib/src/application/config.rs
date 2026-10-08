@@ -66,7 +66,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub cache_dir: Option<PathBuf>,
 
-    /// Maximum admitted engine workers (legacy commands may not use this limit)
+    /// Maximum admitted engine workers
     #[arg(short = 'j', long, env = "EMPACK_CPU_JOBS", default_value = defaults::CPU_PARALLELS)]
     #[serde(default = "default_fns::cpu_parallels")]
     pub cpu_jobs: usize,

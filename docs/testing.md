@@ -83,18 +83,14 @@ cover portable syntax, typed values and pure decisions. Native filesystem,
 process, lock and recovery guarantees require real platform tests. A mock default
 that succeeds is not evidence for an unimplemented port.
 
-The [implementation ledger](design/implementation.md) links each landing to its
-checks. Public API examples become compiled examples when their APIs land.
-Unimplemented engine sketches are explicitly excluded from current API promises.
+Public API examples compile as doctests. Native engine and executable suites
+exercise the [feature contracts](design/features.md); static checks alone do not
+establish runtime behavior.
 
 Publication cannot ship on ordinary happy-path tests alone. Restart a fresh
 process after every durable boundary listed in the fault model; require unchanged,
 verified committed, or explicitly recovery-required state. Preserve prior usable
 artifacts on preparation and verification failure.
-
-Historical test evidence remains in Git history. It does not establish coverage
-for the new engine. New evidence identifies the tested revision and actual commands.
-
 
 The content-pool and large-local-build regressions run in isolated child processes.
 On Unix the child has a 256-descriptor limit; Windows runs the same content and
@@ -111,11 +107,6 @@ the host path-list separator (`:` on Unix, `;` on Windows), then run
 each source privately, uses the normalized engine adapter and verifies every
 referenced embedded member against its original declarations. It does not download
 manifest files, resolve provider references or publish a project.
-
-Local verification covered Fabulously Optimized 1.20.1 in both formats: 51 mrpack
-file declarations and 27 embedded members; 46 CurseForge exact references and 32
-embedded members. CurseForge fixture file `4800279` was acquired with the provider's
-size/hash assertions checked. This is adapter evidence, not end-to-end import parity.
 
 The three exact-provider smoke cases also identify the acquired bytes through the
 same provider and require the returned canonical owner and matching file role.
@@ -178,8 +169,7 @@ all-target artifact preservation before explicit saved-recipe cleanup.
 Forge and both provider formats. Each fixture owns an isolated native state/cache
 root. The harness supplies explicit optional and auxiliary-content choices, exercises
 restricted-file `init --continue` with a read-only preview, checks two unchanged syncs,
-and inspects a full-client archive. It does not read v0.4 continuation files or retry
-failed builds through an alternate implementation. Stage failures remain failures.
+and inspects a full-client archive. Stage failures remain failures.
 
 The offline driver contracts run with `python3 -m unittest discover -s scripts/tests`
 and are included in `mise run test`. The executable override is resolved before any

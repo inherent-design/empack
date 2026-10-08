@@ -1,7 +1,7 @@
 # Engine API and operation traces
 
-Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
-[implementation ledger](implementation.md) identifies a compiled API.
+Contract for v0.5.0-alpha.1. Linked Rust definitions and compiled examples
+specify callable interfaces; this page describes behavior and ownership.
 
 The compiled entry point is `empack_lib::engine::api::Engine`. Its `preview`
 and `prepare` accept an absolute `ProjectTarget` and a typed request for build,
@@ -34,10 +34,8 @@ execution. Preparation sees only provider availability and performs no API looku
 The refresh retains every locked byte assertion and placement; changed declarations
 fail, and a restricted file without a locator becomes explicit manual input. Missing
 provider credentials remain preparation input. The build API does not invent a
-provider result or download association. Normal cache selection, execution-time missing-input continuation
-and CLI composition remain completion work. Durable preparation save/resume and its
-native host are implemented; see the current delivery ledger. The broader interface below
-remains the target where the implementation ledger identifies an outstanding API.
+provider result or download association. Verified cache lookup and durable manual-input
+continuation compose with the same build engine and native CLI host.
 
 `engine::runtime_catalog::RuntimeCatalog` provides read-only official Minecraft and
 loader choices through owned, bounded HTTP acquisition. `games` returns retained
@@ -156,7 +154,7 @@ be omitted. Required dependencies reuse valid current exact selections and retai
 their original assertions, aliases and placements. A changed pin, incompatible
 runtime or insufficient participation needs an explicit change. Generated labels
 reserve explicit roots and current records before choosing a disambiguated label.
-CLI selection and local/URL hosts remain separate integration work.
+The CLI add host composes these selections with local and URL input normalization.
 
 `application::engine_host::add_providers` composes already selected provider requests,
 required-closure resolution, exact reference recording and approved native publication.
@@ -549,160 +547,30 @@ directories remain. `removed_bytes` reports logical bytes removed from `dist`, n
 physical space reclaimed from recovery storage. Cache maintenance has separate host
 authority and remains outside this project request.
 
-## 17. Public engine API and application wiring
+## Application composition
 
-### 17.1 Public entry points
+[`application::engine_host`](../../crates/empack-lib/src/application/engine_host.rs)
+constructs `EngineConfig`, `ResourceGovernor`, verified cache lookup and provider
+catalogs from invocation configuration. Typed per-operation hosts normalize
+choices, show previews, authorize exact plans and consume retained outcomes.
+The [Engine Rust API](../../crates/empack-lib/src/engine/api.rs) contains compiled
+usage examples and the authoritative method signatures.
 
-```rust
-pub struct Engine { /* narrow services composed internally */ }
+`ProjectTarget::Existing` and `ProjectTarget::New` select absolute native paths.
+New-project preparation binds the existing parent and expected child absence;
+it does not create the project. Project effects require a prepared operation,
+its matching `ExecutionGrant`, and the originating engine.
 
-pub struct PrepareOptions {
-    pub network: NetworkPermission,
-    pub cache: CacheAccess,
-    pub limits: PreparationLimits,
-}
+Cache cleanup uses `preview_cache_cleanup` and `prepare_cache_cleanup` without
+fabricating a project root. Combined project and cache maintenance reports each
+outcome; it does not promise a transaction across both stores.
 
-pub enum Preparation {
-    Ready(PreparedOperation),
-    NeedsInput(PreparationContinuation),
-    Blocked(PreparationReport),
-}
+Operation handles observe or cancel work. The engine owns retirement, resources
+and terminal results. Cancellation is not proof that publication did not happen.
+`ExecutionOutcome` distinguishes completion, partial completion, missing input,
+failure before publication, uncertain execution and required recovery.
 
-impl Engine {
-    pub async fn preview(
-        &self, target: ProjectTarget, request: Request, options: PreviewOptions,
-    ) -> Result<PreviewReport, EngineError>;
-
-    pub async fn prepare(
-        &self, target: ProjectTarget, request: Request, options: PrepareOptions,
-    ) -> Result<Preparation, EngineError>;
-
-    pub fn start(&self, operation: ApprovedOperation)
-        -> Result<OperationHandle, AdmissionError>;
-
-    pub async fn resume(
-        &self, target: ProjectTarget, input: ContinuationInput,
-        decisions: DecisionSet, options: PrepareOptions,
-    ) -> Result<ResumeAssessment, EngineError>;
-
-    pub async fn inspect_recovery(
-        &self, target: &ProjectTarget,
-    ) -> Result<Option<RecoveryReport>, EngineError>;
-
-    pub async fn recover(
-        &self, target: ProjectTarget, decision: ApprovedRecovery,
-    ) -> Result<RecoveryOutcome, EngineError>;
-
-    pub async fn shutdown(&self, policy: ShutdownPolicy)
-        -> Result<ShutdownReport, EngineError>;
-}
-```
-
-`ProjectTarget` selects an existing or new root; the compiled variants are `Existing(PathBuf)` and `New(PathBuf)`. Both must resolve into host-bound root capabilities; creation is also a publication effect. For a nonexistent destination, bind and lock the existing parent plus validated child name and its expected absence until creation. Do not create the destination or a persistent project registration during preview; use a proposed in-memory identity until execution is authorized. Source/destination path selection belongs at the public boundary, not inside imported content.
-
-`preview` uses the same resolver and pure planner as execution, but composes read-only cache/storage capabilities and no publisher or mutating backend capability. It returns plan confidence, required decisions, and unresolved blockers. Temporary downloads are bounded and removed. It does not serialize a durable operation as a side effect.
-
-`prepare` can use the explicitly granted cache policy. It never changes live project/artifact content. Required verification that can be done before tools is completed here; required backend verification occurs on staging before publication.
-
-`PreparationContinuation` is an in-memory continuation by default. Persisting it requires an explicit authorized operation or host action. A preview cannot obtain that writer by converting its report.
-
-Host-only cache maintenance does not require a configured pack or a fabricated project snapshot. Give it a narrow `preview_cache_cleanup(CacheCleanRequest) -> CacheCleanupPlan` and `prepare_cache_cleanup(CacheCleanRequest) -> PreparedCacheCleanup` entry point. The latter is authorized and started through a maintenance handle; the store validates ownership, leases, expected identities, and verified eviction before mutation. It reuses admission, cancellation, read-only preview, receipts, and recovery primitives, but has no project writer. Its `CacheCleanupReceipt` reports reclaimed, retained, and failed objects. A combined `clean all` aggregates project and host-maintenance outcomes explicitly; it does not claim an atomic transaction across them. This is a distinct domain plan, not a second permissive deletion implementation.
-
-### 17.2 Operation handles and outcomes
-
-```rust
-pub struct OperationHandle { /* observation + cancellation, not task resources */ }
-
-impl OperationHandle {
-    pub fn id(&self) -> OperationId;
-    pub fn status(&self) -> Arc<OperationStatus>;
-    pub fn subscribe(&self) -> ProgressSubscription;
-    pub fn cancel(&self, reason: CancelReason);
-    pub async fn wait(&mut self) -> Arc<OperationOutcome>;
-}
-
-pub enum OperationOutcome {
-    Completed(OperationReceipt),
-    PartiallyCompleted(PartialReceipt),
-    NeedsInput(ContinuationReceipt),
-    FailedBeforePublication(FailureReport),
-    InterruptedBeforePublication(InterruptionReport),
-    RecoveryRequired(RecoveryRequired),
-}
-
-pub struct OperationReceipt {
-    pub operation: OperationId,
-    pub plan: PlanId,
-    pub before: SourceRevision,
-    pub after: SourceRevision,
-    pub applied_groups: Vec<GroupId>,
-    pub artifacts: Vec<ArtifactReceipt>,
-    pub verification: VerificationSummary,
-    pub warnings: Vec<Diagnostic>,
-}
-```
-
-The handle does not own task reservations or the only journal reference. Dropping it requests cancellation according to its configured policy, but driver retirement is engine-owned. `wait` returns a retained terminal outcome even if a notification was missed.
-
-`PartiallyCompleted` includes a committed receipt for applied groups and separate blocked/failed groups. `NeedsInput` is not falsely labeled success or generic backend failure. When some groups were already published, use `PartiallyCompleted` with pending-input details rather than an outcome that implies no publication. `RecoveryRequired` distinguishes effects that may already be visible from failure before publication.
-
-Errors use stable diagnostic codes and structured causes. A CLI adapter may preserve existing numeric exit classes, including cancellation, without making library users parse text. Include file/record locations, provider identity, operation ID, and a next safe action. Redact credentials by construction.
-
-### 17.3 Composition root
-
-This is illustrative wiring, not a proposed public service-locator interface:
-
-```rust
-pub fn assemble(config: HostConfig) -> Result<Engine, SetupError> {
-    let limits = Arc::new(ResourceGovernor::new(config.resources)?);
-    let runtime = Arc::new(OperationRuntime::new(limits.clone()));
-    let roots = Arc::new(NativeRootFactory::new(config.filesystem_policy)?);
-    let host_state = Arc::new(HostStateStore::open(config.state_root)?);
-    let content = Arc::new(FileContentStore::open(config.cache_root, limits.clone())?);
-
-    let transport = Arc::new(PolicyTransport::new(
-        config.network, config.credentials, limits.clone(),
-    )?);
-    let acquisition = Arc::new(VerifiedAcquisition::new(
-        transport.clone(), roots.scratch_factory(),
-    ));
-    let catalog = Arc::new(ProviderRegistry::new(vec![
-        Arc::new(ModrinthCatalog::new(transport.clone())),
-        Arc::new(CurseForgeCatalog::new(transport.clone())),
-    ]));
-
-    let processes = Arc::new(OwnedProcessRunner::new(runtime.clone()));
-    let tools = Arc::new(LazyToolResolver::new(
-        acquisition.clone(), processes.clone(), config.tools,
-    ));
-    let backend = Arc::new(PackwizAdapter::new(tools.clone(), processes.clone()));
-    let codecs = Arc::new(ProjectCodecs::new());
-    let journals = Arc::new(JournalStore::new(host_state.clone()));
-    let reader = Arc::new(ProjectSnapshotter::new(
-        roots.project_reader(), codecs.clone(), journals.reader(),
-    ));
-
-    let preparation = PreparationService::new(
-        reader, catalog, acquisition.clone(), codecs.clone(),
-        ImportRegistry::standard(),
-    );
-    let staging = StagingService::new(
-        roots.stage_factory(), acquisition, backend, RuntimeAdapters::new(tools, processes),
-        codecs,
-    );
-    let verification = VerificationService::new(ArtifactReaders::standard());
-    let publisher = Publisher::new(roots.publisher_fs(), journals, host_state);
-    let access = AccessScopes::new(content); // Only Engine can derive per-call capabilities.
-
-    Ok(Engine::compose(runtime, access, preparation, staging, verification, publisher))
-}
-```
-
-Only `assemble` sees all dependencies. `PreparationService` does not receive `Publisher` or a capability factory that can grant itself cache writes. `Engine::preview` passes read-only per-call acquisition authority; `Engine::prepare` derives only the cache authority the caller allowed. Root factories are projected into scratch, staging, reader, and publisher interfaces, and snapshotting receives only the journal reader. A snapshotter therefore cannot delete stale recovery state. `PackwizAdapter` does not receive project-document publication. `VerificationService` does not trust a backend-provided expected inventory.
-
-The constructor names are proposed concrete adapters. In implementation, prefer grouped typed configuration objects when a constructor grows too large, but do not introduce `services: Arc<Everything>` to shorten the signature.
-
-### Implemented initialization host
+### Initialization host
 
 `application::engine_host::initialize` composes parsed `InitArgs`, session interaction,
 read-only runtime discovery and approved Engine initialization. It retains metadata,
@@ -725,7 +593,7 @@ classification. The initialization host currently accepts empty projects; source
 have a separate normalization path. The CLI adapter selects that path for `--from`;
 ordinary project commands now consume the native documents through engine hosts.
 
-### Implemented recovery host
+### Recovery host
 
 The CLI `recover [inspect|finish|restore]` composes the existing inspection and approved
 recovery APIs. Inspection is the default. `--operation` can bind the selected journal;
@@ -735,52 +603,22 @@ select durable host state independently of disposable caches. Existing and absen
 project selections support publication and creation recovery respectively. This host
 does not parse project intent or bootstrap packwiz.
 
-### 17.4 CLI usage
+### CLI composition
 
-```rust
-async fn run_change(
-    engine: &Engine,
-    args: ChangeArgs,
-    ui: &mut dyn UserInterface,
-) -> Result<ExitClass, CliError> {
-    let (target, request) = translate_args(args.clone())?;
+The [command dispatcher](../../crates/empack-lib/src/application/commands.rs)
+selects typed native hosts. Preview calls the read-only preparation path. Execution
+requires explicit decisions and approval; helpers do not receive a dry-run boolean
+that can be checked after mutation. The [CLI reference](../usage.md) defines
+configuration precedence, interaction policy and exit behavior.
 
-    if args.dry_run {
-        let report = engine.preview(target, request, args.preview_options()).await?;
-        ui.show_preview(&report)?;
-        return Ok(ExitClass::from_preview(&report));
-    }
-
-    let prepared = match engine.prepare(target, request, args.prepare_options()).await? {
-        Preparation::Ready(value) => value,
-        Preparation::NeedsInput(value) => {
-            return ui.handle_preparation_input(engine, value).await;
-        }
-        Preparation::Blocked(report) => {
-            ui.show_preparation_failure(&report)?;
-            return Ok(ExitClass::from_preparation(&report));
-        }
-    };
-
-    let grant = ui.authorize(prepared.view(), args.interaction_policy()).await?;
-    let approved = prepared.authorize(grant)?;
-    let mut operation = engine.start(approved)?;
-    ui.observe(operation.subscribe())?;
-    let outcome = operation.wait().await;
-    ui.show_outcome(&outcome)?;
-    Ok(ExitClass::from_outcome(&outcome))
-}
-```
-
-This `UserInterface` is an illustrative host interface; an object-safe implementation uses the same boxed-future convention for its async operations. It receives no live filesystem or backend capability.
-
-The only CLI-specific dry-run branch chooses the preview API. There are no dry-run booleans threaded through destructive helpers. Preview cannot accidentally call a downloader that also installs a JAR because acquisition and installation are different interfaces.
-
-### 17.5 Embedding usage and configuration
+### Embedding usage and configuration
 
 An embedding application creates one engine, prepares typed requests, answers structured decisions, starts operations, and consumes status/receipts. It may run preparation for several projects concurrently; publication is serialized per host-bound project instance.
 
-Configuration parsing produces `HostConfig` plus field provenance. Define CLI/environment/dotenv precedence through one adapter. Help/version can use a minimal parsing path that does not bootstrap tools or unnecessarily read malformed project configuration. Workdir resolution has one invocation-root rule. [E3](https://github.com/inherent-design/empack/blob/50c121f/docs/usage.md)
+Configuration parsing produces `AppConfig` through the application adapter. CLI,
+environment and dotenv precedence follow the CLI contract. Help and version do not
+bootstrap tools or require project configuration. Relative paths resolve from the
+invocation directory.
 
 No operation reads global CLI flags. Providers and planners receive explicit per-operation policy. Display/logging state is instance-owned or explicitly shared by the embedding host, not hidden mutable globals.
 
@@ -792,9 +630,9 @@ subscriber nor process-wide signal handlers. The executable owns its logger and
 terminal lifecycle.
 
 
-## 18. End-to-end usage traces
+## End-to-end usage traces
 
-### 18.1 Direct ZIP/JAR add, including preview
+### Direct ZIP/JAR add, including preview
 
 1. CLI creates `AddInput::DirectDownload` with optional content kind.
 2. Preparation acquires into bounded scratch, using read-only cache under preview. It computes content evidence and probes archive/JAR type.
@@ -805,7 +643,7 @@ terminal lifecycle.
 
 **Regression prevented:** a helper cannot download-and-install before a later dry-run check because its acquisition port has no installation authority.
 
-### 18.2 Forced import into an existing pack
+### Forced import into an existing pack
 
 1. Read and snapshot the current project without resetting it.
 2. Parse the archive into `ImportedProject`; preserve provenance, optionality, and layers.
@@ -816,7 +654,7 @@ terminal lifecycle.
 
 **Regression prevented:** the importer and its caller cannot disagree about whether preflight already happened; the publisher consumes only a verified candidate.
 
-### 18.3 Remove by alias, title, or installed stem
+### Remove by alias, title, or installed stem
 
 1. Resolve user selection against intent and observations. An ambiguous title/stem returns a choice.
 2. Produce `RemovalSelection` binding one logical key to its canonical identity, installed metadata key, and expected content.
@@ -826,7 +664,7 @@ terminal lifecycle.
 
 **Regression prevented:** strings from different identity namespaces never reach a raw backend remove operation interchangeably.
 
-### 18.4 Build all targets and reject silent omission
+### Build all targets and reject silent omission
 
 1. Capture satisfied exact build input and all preserved observed content.
 2. Project inventories for selected targets and expand shared prerequisites.
@@ -836,7 +674,7 @@ terminal lifecycle.
 
 **Regression prevented:** every source kind contributes to inventory verification; no URL-only verification exception exists.
 
-### 18.5 Restricted acquisition and resume
+### Restricted acquisition and resume
 
 1. Preparation or staged backend execution produces `PendingAcquisition` with expected identity/evidence.
 2. Host optionally opens the provider page and watches configured read-only download roots.
@@ -846,7 +684,7 @@ terminal lifecycle.
 
 **Regression prevented:** continuation is not a path-authoritative second build pipeline or a filename-guessing cache insertion path.
 
-### 18.6 Concurrent edit during a long acquisition
+### Concurrent edit during a long acquisition
 
 1. Prepare plan A against revision R and release the project lock while acquiring bytes.
 2. A user edits the manifest or changes relevant source content.
@@ -870,8 +708,7 @@ Unknown optional defaults and multiple loader declarations require resolution.
 Signed HTTPS and HTTP alternatives remain source declarations with diagnostics;
 preparation must resolve transport and durable-provenance decisions.
 Inspection can recognize an unsupported packwiz archive; recognition does not make
-packwiz-directory import available. See the implementation ledger for the remaining
-composition work.
+packwiz-directory import available.
 
 ## Compiled content identification API
 

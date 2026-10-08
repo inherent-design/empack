@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the initial semantic core free of runtime dependencies and ambient I/O."""
+"""Keep the semantic core free of runtime dependencies and ambient I/O."""
 import json
 from pathlib import Path
 import re

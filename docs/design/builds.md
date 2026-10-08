@@ -1,73 +1,19 @@
 # Build projections and verification
 
-Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
-[implementation ledger](implementation.md) identifies a compiled API.
+Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+[build input and assembly](../../crates/empack-lib/src/engine/build.rs), [projections](../../crates/empack-core/src/projection.rs), [artifact verification](../../crates/empack-lib/src/engine/artifacts.rs) and [runtime preparation](../../crates/empack-lib/src/engine/server_runtime.rs). This page specifies their behavior and ownership.
 
-## 13. Build inputs, projections, and artifact verification
+## Build inputs, projections, and artifact verification
 
-### 13.1 One exact build input
+### One exact build input
 
-```rust
-pub struct BuildInput {
-    pub project: ResolvedProject,
-    pub source: FrozenSourceTree,
-    pub templates: TemplateSet,
-    pub runtime: RuntimeResolution,
-    pub tools: ToolchainResolution,
-    pub options: BuildOptions,
-}
-
-pub enum BuildTarget { Mrpack, Client, Server, ClientFull, ServerFull }
-pub enum ArchiveFormat { Zip, TarGz, SevenZip }
-
-pub struct BuildRequest {
-    pub targets: NonEmpty<BuildTarget>,
-    pub archive: ArchiveFormat,
-    pub input_policy: BuildInputPolicy,
-    pub optional: OptionalSelectionPolicy,
-}
-
-pub enum BuildInputPolicy {
-    RequireSatisfiedIntent,
-    ObservedSnapshot { acknowledged: SnapshotBuildAcknowledgment },
-}
-```
-
-Default build preflight requires every explicit provider identity/pin, URL expectation, local file, and environment requirement to be satisfied. It rejects unresolved or inconsistent inputs before modifying distribution outputs. An explicit observed-snapshot mode can preserve workflows that intentionally package current installed state, but the receipt labels that mode and records divergence from intent.
+Default build preflight requires every explicit provider identity/pin, URL expectation, local file, and environment requirement to be satisfied. It rejects unresolved or inconsistent inputs before modifying distribution outputs. Unlisted installed metadata remains an observed inventory obligation; it does not
+permit divergence from explicit intent. Adoption is the explicit workflow for accepting
+selected observed drift.
 
 Do not silently call sync from build. A combined user command may submit sync then build as an explicit request sequence with defined failure behavior.
 
-### 13.2 Pure projection and target capability checks
-
-```rust
-pub fn project_build(
-    input: &BuildInput,
-    target: BuildTarget,
-    policy: &ProjectionPolicy,
-) -> Result<BuildProjection, ProjectionError>;
-
-pub struct BuildProjection {
-    pub recipe: RecipeId,
-    pub target: BuildTarget,
-    pub inventory: ExpectedInventory,
-    pub runtime_steps: Vec<RuntimePreparation>,
-    pub format_constraints: FormatConstraints,
-}
-
-pub struct InventoryEntry {
-    pub owner: ContentOwner,
-    pub destination: InstallDestination,
-    pub requirement: ProjectedRequirement,
-    pub representation: ExpectedRepresentation,
-    pub precedence: PrecedenceEvidence,
-}
-
-pub enum ExpectedRepresentation {
-    Embedded { content: ContentId },
-    DownloadReference { expected: ExpectedContent, allowed: DownloadOrigins },
-    RuntimeGenerated { producer: RuntimeStepId, verification: RuntimeContract },
-}
-```
+### Pure projection and target capability checks
 
 Selection may carry an `Unacquired` expectation while applying side, override and
 optional choices. `BuildSelection` is not a completed inventory: finishing it rejects
@@ -89,11 +35,16 @@ If exact hashes are unavailable for a required downloadable reference, acquire a
 
 A representation check is target-specific. Reference-based packs need correct destinations, hashes, requirement metadata, and valid allowed locators; they need not download every remote byte again when adequate verified metadata already exists. Full distributions require the materialized bytes. A known failed download cannot be ignored just because another representation verified successfully.
 
-### 13.3 Build prerequisites without a generic workflow framework
+### Build prerequisites without a generic workflow framework
 
-A small deterministic planner expands target prerequisites and deduplicates shared work. Lightweight client/server generation can share a newly produced intermediate mrpack within the same invocation. It cannot reuse an old file merely because name/version match.
+Native build planning projects all requested targets from captured inputs and
+deduplicates shared acquisition. Lightweight client/server distributions use generated
+reference trees; they do not extract a stale intermediate mrpack. An existing artifact
+with the same name/version is never evidence of freshness.
 
-`RecipeId` is a canonical digest over schema version, semantic resolution, relevant source/template content, selected runtime/tool identities, target, and meaningful options. Exclude machine-specific absolute paths and secret tokens. Include intentional output-affecting platform distinctions.
+Saved build recipes bind semantic resolution, captured source/template content,
+selected runtime, targets and output-affecting options. They do not serialize approval
+or let absolute source paths and secret tokens become portable content identity.
 
 Requested artifacts form one publication group by default. Prepare and verify all
 candidates before publishing their combined file plan. Duplicate or portable-alias
@@ -101,26 +52,9 @@ output paths fail before recipes run. If a later recipe fails, retain every prev
 artifact. Carry each target's source assurance, conversion choices and expected
 member inventory into the result; concatenating archives is not a completion proof.
 
-Initially, run every build from fresh staging. Add reuse only behind a verified recipe/content cache. Byte reproducibility additionally requires deterministic archive ordering, timestamps, permissions, and installer behavior; a correct recipe key alone does not guarantee it.
+Every build uses fresh staging; verified content caches can supply exact inputs. Byte reproducibility additionally requires deterministic archive ordering, timestamps, permissions, and installer behavior; a correct recipe key alone does not guarantee it.
 
-### 13.4 Templates and runtime preparation
-
-```rust
-pub trait TemplateRenderer: Send + Sync {
-    fn render(
-        &self, template: &TemplateSource, values: &TemplateValues,
-    ) -> Result<RenderedFile, TemplateError>;
-}
-
-pub trait RuntimePreparer: Send + Sync {
-    fn prepare<'a>(
-        &'a self,
-        step: &'a RuntimePreparation,
-        stage: &'a StageWriteRoot,
-        context: &'a ExecutionContext,
-    ) -> PortFuture<'a, RuntimeObservation, RuntimeError>;
-}
-```
+### Templates and runtime preparation
 
 Preserve common/client/server template precedence, user-owned templates, binary-file copying, build-time metadata interpolation, loader-specific bootstrap/full behavior, and accepted historical runtime variants. Renderer selection is based on intended output language, not filename guesses alone.
 
@@ -150,27 +84,7 @@ runtime without duplicate or disabled required entries. Captured custom launcher
 configuration remains user input, including its commands. Template/game path
 collisions require resolution before publication.
 
-### 13.5 Independent verification
-
-```rust
-// engine/verify.rs: fields and constructors remain private to this module.
-pub(crate) struct VerifiedChange {
-    stage: FrozenStage,
-    publication: PublicationPlan,
-    evidence: VerificationEvidence,
-}
-
-pub(crate) fn verify_change(
-    expected: &ExpectedProject,
-    stage: FrozenStage,
-    readers: &VerificationReaders,
-) -> Result<VerifiedChange, VerificationError>;
-
-pub trait ArtifactReader: Send + Sync {
-    fn inspect(&self, source: &mut dyn ContentRead)
-        -> Result<ArtifactObservation, ArtifactError>;
-}
-```
+### Independent verification
 
 Parse the actual candidate archive/index and compare it against the expected inventory. Do not trust the exporter to enumerate what it should have produced. Check missing and unexpected destinations, correct side/optional metadata, content identity, duplicate/collision rules, and referenced-content requirements.
 

@@ -158,23 +158,6 @@ jobs:
         env:
           GITHUB_REPO: ${{ github.repository }}
 
-      - name: Generate full changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --output CHANGELOG.md
-        env:
-          GITHUB_REPO: ${{ github.repository }}
-
-      - name: Commit changelog to main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout main
-          git add CHANGELOG.md
-          git diff --cached --quiet || git commit -m "chore: update changelog for ${{ steps.version.outputs.clean }}"
-          git push origin main
-
       - uses: softprops/action-gh-release@v3
         with:
           body_path: ${{ steps.changelog.outputs.changelog }}
@@ -185,9 +168,11 @@ jobs:
       - name: Summary
         shell: bash
         run: |
-          echo "## Release Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Version: ${{ steps.version.outputs.clean }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Channel: ${{ steps.channel.outputs.level }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Prerelease: ${{ steps.channel.outputs.prerelease }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Assets:" >> "$GITHUB_STEP_SUMMARY"
-          find dist -maxdepth 1 -type f -printf '  - %f\n' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Release Summary"
+            echo "- Version: ${{ steps.version.outputs.clean }}"
+            echo "- Channel: ${{ steps.channel.outputs.level }}"
+            echo "- Prerelease: ${{ steps.channel.outputs.prerelease }}"
+            echo "- Assets:"
+            find dist -maxdepth 1 -type f -printf '  - %f\n'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,78 +1,30 @@
 # Publication and recovery
 
-Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
-[implementation ledger](implementation.md) identifies a compiled API.
+Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+[publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
 
-## 14. Journaled publication and recovery
+## Journaled publication and recovery
 
-### 14.1 Location and trust boundary
+### Location and trust boundary
 
-Keep the **authoritative operation journal in host-private application state**, keyed by `ProjectInstanceId` and `OperationId`, rather than trusting a file supplied inside a downloaded project. The exact OS state directory is selected by the platform adapter. Project-local continuation files may be discoverable hints, but loading one does not establish approval or authorize deletion.
+Keep the **authoritative operation journal in host-private application state**, bound to native project identity and publication operation ID, rather than trusting a file supplied inside a downloaded project. The exact OS state directory is selected by the platform adapter. Project-local continuation files may be discoverable hints, but loading one does not establish approval or authorize deletion.
 
 Candidate/preimage storage needed for recovery has explicit retention and is not ordinary evictable cache. Protect host-state permissions, bound parsing, and bind records to the actual root identity. A same-user malicious native program is outside the security boundary, but a malicious imported project should not be able to manufacture a previously approved operation.
 
-### 14.2 Publication plan
-
-```rust
-pub struct PublicationPlan {
-    pub operation: OperationId,
-    pub base: SourceRevision,
-    pub changes: Vec<FileChange>,
-    pub expected_after: ExpectedProjectDigest,
-}
-
-pub enum FileChange {
-    Replace {
-        target: ManagedPath,
-        before: ExpectedOldFile,
-        after: CandidateFileRef,
-        permissions: PermissionPolicy,
-    },
-    Remove {
-        target: ManagedPath,
-        before: FileObservation,
-    },
-    EnsureDirectory {
-        target: ManagedDirectory,
-    },
-    RemoveEmptyOwnedDirectory {
-        target: ManagedDirectory,
-        expected_members: MembershipDigest,
-    },
-}
-
-pub enum ExpectedOldFile { Absent, Exact(FileObservation) }
-```
+### Publication plan
 
 There is no arbitrary `DeleteTree(PathBuf)` action. A forced import computes an explicit managed change set. Removing obsolete managed directories happens only after file-level changes, when owned emptiness is verified.
 
 A receipt-producing document update is subject to the same protocol. Success counters are derived from verified published changes, not incremented immediately after a backend invocation.
 
-### 14.3 Publisher interface
+### Publisher interface
 
-```rust
-pub struct Publisher { /* private filesystem and journal dependencies */ }
-
-impl Publisher {
-    pub async fn publish(
-        &self,
-        change: VerifiedChange,
-        lease: PublicationLease,
-        context: &PublicationContext,
-    ) -> Result<PublicationResult, PublicationError>;
-}
-
-pub enum PublicationResult {
-    Committed(PublicationReceipt),
-    Incomplete(RecoveryRequired),
-}
-```
-
-The engine reacquires the project lock, checks the root binding, hot-journal state, full relevant read set, and granted footprint, then obtains a `PublicationLease`. `publish` consumes the verified candidate. A persisted marker or caller boolean cannot substitute for `VerifiedChange`.
+The engine reacquires the project lock, checks the root binding, hot-journal state, full relevant read set, and granted footprint, then admits publication of the verified candidate. A persisted marker or caller
+boolean cannot substitute for `VerifiedFileChange`.
 
 If the base changed, return a conflict before live mutation. Never silently publish against a new base. A new preparation may reuse retained verified content, but must re-plan and re-authorize any changed effects.
 
-### 14.4 Durable protocol
+### Durable protocol
 
 Use an explicitly versioned state machine:
 
@@ -99,23 +51,7 @@ A same-filesystem single-file replacement is a useful primitive. Replacing an ar
 
 The journal gives recoverability, not all-at-once visibility across multiple files. All empack entry points check for an unfinished journal. Other tools may observe intermediate files unless they participate in coordination. Git's expected-old update discipline and SQLite's preimage-before-change ordering are references for these separate concerns, not evidence that empack inherits their transactions automatically. [R4](https://git-scm.com/docs/git-update-ref), [R8](https://sqlite.org/atomiccommit.html)
 
-### 14.5 Recovery policy
-
-```rust
-pub enum RecoveryDecision {
-    RollForward,
-    RestoreBeforeImages,
-    InspectConflict,
-}
-
-pub struct RecoveryReport {
-    pub operation: OperationId,
-    pub recognized_after: Vec<ManagedPath>,
-    pub recognized_before: Vec<ManagedPath>,
-    pub conflicted: Vec<PathConflict>,
-    pub available: Vec<RecoveryDecision>,
-}
-```
+### Recovery policy
 
 Prefer a deterministic roll-forward of a verified candidate when its source expectations and candidate data still hold. Restore before-images only where current files match the journal's own applied state; never overwrite a user's subsequent unrelated edit in the name of rollback.
 
@@ -123,7 +59,7 @@ Recovery reconciles file changes, not replay of arbitrary external installers. S
 
 Durability uncertainty is explicit. A file may have become visible even if directory synchronization or receipt persistence failed. Report `RecoveryRequired` with the operation ID; do not claim “nothing changed.” Filesystem/hardware assumptions and unsupported durability modes must be documented and exercised on supported platforms.
 
-### 14.6 Cancellation during publication
+### Cancellation during publication
 
 Before publication starts, cancellation can discard candidate work. During a bounded publication step, defer cancellation until the step reaches a recoverable durable boundary. If termination is forced, restart recovery remains authoritative.
 

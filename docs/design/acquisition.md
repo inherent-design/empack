@@ -1,59 +1,18 @@
 # Resolution and acquisition ports
 
-Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
-[implementation ledger](implementation.md) identifies a compiled API.
+Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+[provider catalog](../../crates/empack-lib/src/engine/providers.rs), [HTTP acquisition](../../crates/empack-lib/src/engine/acquisition.rs), [imports](../../crates/empack-lib/src/engine/import.rs) and [content storage](../../crates/empack-lib/src/engine/content.rs). This page specifies their behavior and ownership.
 
-## 9. Resolution and import ports
+## Resolution and import ports
 
-### 9.1 Object-safe async conventions
+### Object-safe async conventions
 
 Use static dispatch for pure helpers. Use object-safe traits only at infrastructure seams that benefit from replacement in tests or alternative implementations.
 
-```rust
-use std::{future::Future, pin::Pin};
+An infrastructure trait intended for `Arc<dyn Trait>` must use a dyn-compatible
+return type, such as a boxed `Send` future. Do not show native `async fn` methods in such a trait and assume they can be used as trait objects. This follows Rust's dyn-compatibility restrictions; concrete `Engine` methods can simply be `async fn`. [R12](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)
 
-pub type PortFuture<'a, T, E> =
-    Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
-```
-
-A trait intended for `Arc<dyn Trait>` returns this explicit future type. Do not show native `async fn` methods in such a trait and assume they can be used as trait objects. This follows Rust's dyn-compatibility restrictions; concrete `Engine` methods can simply be `async fn`. [R12](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)
-
-### 9.2 Provider catalog
-
-```rust
-pub trait ProviderCatalog: Send + Sync {
-    fn resolve_selector<'a>(
-        &'a self,
-        selector: &'a ProjectSelector,
-        query: &'a ResolveQuery,
-        context: &'a ResolveContext,
-    ) -> PortFuture<'a, SelectorResolution, ResolveError>;
-
-    fn resolve_selection<'a>(
-        &'a self,
-        selection: &'a ProviderSelection,
-        context: &'a ResolveContext,
-    ) -> PortFuture<'a, ProviderResolution, ResolveError>;
-
-    fn identify_file<'a>(
-        &'a self,
-        probe: &'a ContentProbe,
-        context: &'a ResolveContext,
-    ) -> PortFuture<'a, Identification, ResolveError>;
-}
-
-pub enum SelectorResolution {
-    Exact(CanonicalProject),
-    Choices(NonEmpty<ProjectCandidate>),
-    NotFound,
-}
-
-pub enum Identification {
-    Exact(ProviderResolution),
-    Ambiguous(NonEmpty<ProviderResolution>),
-    Unknown,
-}
-```
+### Provider catalog
 
 `ResolveQuery` includes game/loader compatibility, content kind, explicitly permitted alternative game versions, and provider preference. Search ranking is selection assistance, not canonical identity. Direct IDs bypass search ranking, not validation or ownership checks.
 
@@ -62,9 +21,9 @@ pub enum Identification {
 The compiled search adapter uses [Modrinth search facets](https://docs.modrinth.com/api/operations/searchprojects/)
 and [CurseForge's class/game search](https://docs.curseforge.com/rest-api/#search-mods).
 Its retained windows expose pagination and incomplete coverage; they are not resolved
-selections. See the [search implementation boundary](implementation.md#provider-search).
+selections. See the [provider search API](api.md).
 
-The current concrete catalog is listed in the [implementation ledger](implementation.md).
+The concrete catalog is `engine::providers::ProviderCatalog`; see its [API contracts](api.md).
 Its exact-selection adapters follow the [Modrinth version contract](https://docs.modrinth.com/api/operations/getversion/)
 and [CurseForge file contract](https://docs.curseforge.com/rest-api/).
 They retain all declared files and relations before any placement or optionality
@@ -75,10 +34,10 @@ The compiled catalog supports content identification through
 [Modrinth's hash endpoint](https://docs.modrinth.com/api/operations/versionfromhash/)
 and [CurseForge's game-specific fingerprint lookup](https://docs.curseforge.com/rest-api/#get-fingerprints-matches-by-game-id).
 A fingerprint result still requires declared digest and size checks. See the
-[implementation ledger](implementation.md#content-identification) for the concrete
+[content identification API](api.md#compiled-content-identification-api) for the concrete
 API and its current boundaries.
 
-### 9.3 Transport is not exposed to command handlers
+### Transport is not exposed to command handlers
 
 Provider implementations receive a transport policy object that owns credential scope, redirects, retry classification, timeouts, response limits, and rate reservations. Request builders supply endpoint-specific data; they do not each create an unconstrained HTTP client.
 
@@ -103,83 +62,27 @@ exact CDN hostname receives the header; alternate ports, subdomains and other
 origins do not. Replacing the catalog also replaces or clears that credential.
 Standalone import/acquisition hosts apply the same configuration explicitly.
 
-### 9.4 Import adapters produce data, not project changes
+### Import adapters produce data, not project changes
 
-The compiled inspection boundary is documented in [the implementation ledger](implementation.md#normalized-import-inspection).
+The compiled inspection boundary is documented in [the import inspection API](api.md#compiled-import-inspection-api).
 Wire semantics follow the [mrpack specification](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack)
 and the [CurseForge export structure](https://support.curseforge.com/support/solutions/articles/9000198500-exporting-a-modpack-for-curseforge-project-submission).
-The interface below describes the adapter contract. The compiled native import host
+The native import host
 connects explicitly selected archives and provider modpack pages to verified interpretation
-and approved publication. CLI import selection remains separate integration work.
-
-
-```rust
-pub trait ImportAdapter: Send + Sync {
-    fn format(&self) -> ImportFormat;
-
-    fn inspect(
-        &self,
-        source: &mut dyn ArchiveRead,
-        limits: &ImportLimits,
-    ) -> Result<ImportedProject, ImportError>;
-}
-
-pub struct ImportedProject {
-    pub intent: ImportedIntent,
-    pub content: Vec<ImportedContent>,
-    pub dependencies: DependencyEvidence,
-    pub diagnostics: Vec<Diagnostic>,
-    pub source: ImportProvenance,
-}
-```
+and approved publication. The CLI import host supplies those selections and decisions.
 
 Run synchronous archive parsing in a bounded blocking worker over a file-backed quarantined source. Parsing receives no live project root, backend runner, or publisher.
 
 Preserve format record locations in diagnostics: file path, manifest JSON pointer or line, and imported destination. Datapack-folder inference is a pure helper returning evidence and a proposed layout choice; it does not immediately modify backend options.
 
-Import format detection may recognize more formats than it supports. The baseline documents mrpack and CurseForge ZIP support, and separately notes that packwiz-directory import is detected but not implemented. Preserve that explicit distinction; do not advertise a recognized extension as completed import support. [E5](https://github.com/inherent-design/empack/blob/50c121f/docs/specs/import-pipeline.md)
+Import supports mrpack and CurseForge ZIP. It can recognize packwiz metadata
+without supporting packwiz-directory import; detection never authorizes execution.
 
 `prepare_import` resolves provider records, checks representability, validates all destinations/layers, verifies required external or embedded bytes, and builds candidate intent before replacement is authorized. Required unresolved/restricted content returns `NeedsInput` rather than deleting the previous project.
 
+## Acquisition, content storage, and archive handling
 
-## 10. Acquisition, content storage, and archive handling
-
-### 10.1 Acquisition API
-
-```rust
-pub trait Acquisition: Send + Sync {
-    fn acquire<'a>(
-        &'a self,
-        request: &'a AcquisitionRequest,
-        context: &'a AcquisitionContext,
-    ) -> PortFuture<'a, AcquisitionResult, AcquisitionError>;
-}
-
-pub struct AcquisitionRequest {
-    pub source: AcquisitionSpec,
-    pub expected: ExpectedContent,
-    pub limits: TransferLimits,
-    pub cache: CacheAccess,
-}
-
-pub enum AcquisitionResult {
-    Ready(AcquiredContent),
-    NeedsManualInput(PendingAcquisition),
-}
-
-pub struct AcquiredContent {
-    lease: ContentLease,
-    evidence: IntegrityEvidence,
-    observed_size: u64,
-    provenance: AcquisitionProvenance,
-}
-
-pub enum CacheAccess {
-    ReadOnly,             // No index/LRU mutation on a cache hit
-    ReadWrite,
-    Disabled,
-}
-```
+### Acquisition API
 
 The acquisition layer streams to an owned quarantine file, checks status and origin policy, applies `Content-Length` as an early rejection only, and counts actual received bytes. It hashes incrementally and verifies expected size/digests before returning `AcquiredContent`.
 
@@ -194,31 +97,7 @@ An HTML error page with a successful status is not accepted as a JAR solely beca
 
 Cache insertion is permitted only after verification and only with `ReadWrite` authority. A preview can use retained cache bytes through `ReadOnly` but cannot update access timestamps, write an index, evict objects, or create a durable continuation record.
 
-### 10.2 Content leases and cache ownership
-
-```rust
-pub trait ContentRead: std::io::Read + std::io::Seek {}
-impl<T: std::io::Read + std::io::Seek> ContentRead for T {}
-
-pub struct ContentLease { /* private retained read handle + optional store pin */ }
-
-impl ContentLease {
-    pub fn id(&self) -> ContentId;
-    pub fn len(&self) -> u64;
-    pub fn open(&self) -> Result<Box<dyn ContentRead + Send>, ContentError>;
-}
-
-pub trait ContentLookup: Send + Sync {
-    fn retain(&self, id: ContentId) -> Result<Option<ContentLease>, ContentError>;
-}
-
-pub trait ContentStore: ContentLookup {
-    fn publish_verified(&self, file: VerifiedQuarantine)
-        -> Result<ContentLease, ContentError>;
-    fn plan_eviction(&self, policy: EvictionPolicy)
-        -> Result<CacheEvictionSelection, ContentError>;
-}
-```
+### Content leases and cache ownership
 
 A retained lease keeps bytes readable for an active operation even if an index entry is evicted. Cache lookup and native-handle retention or pin acquisition are one coordinated operation; do not find a path and reopen it later after another process can delete it. Preview retention uses read handles or in-memory coordination, not persistent pin/LRU writes. Implementations may prevent eviction or retain an open object through unlink, but must satisfy the same readable-lease contract on each platform.
 
@@ -248,23 +127,7 @@ coordination files, indexes, pin records or application access timestamps. Nativ
 filesystem access-time behavior remains controlled by the host filesystem. This
 store is disposable and must never hold the only publication recovery preimage.
 
-### 10.3 Archive interface and limits
-
-```rust
-pub trait ArchiveRead {
-    fn entries(&mut self) -> Result<Vec<ArchiveEntry>, ArchiveError>;
-    fn open_entry(&mut self, id: ArchiveEntryId)
-        -> Result<Box<dyn std::io::Read + '_>, ArchiveError>;
-}
-
-pub struct ImportLimits {
-    pub compressed_bytes: u64,
-    pub entry_count: usize,
-    pub manifest_bytes: u64,
-    pub per_entry_expanded_bytes: u64,
-    pub total_expanded_bytes: u64,
-}
-```
+### Archive interface and limits
 
 The adapter first validates metadata, entry count, path syntax, duplicate/case collisions, entry kinds, and declared sizes. Extraction still enforces actual per-entry and total expanded-byte limits. Metadata can lie. Use checked arithmetic and count partial output even if an entry eventually fails CRC or digest validation.
 
@@ -282,7 +145,6 @@ available scratch capacity; admission then reserves it atomically, and the same 
 applies to the receive stream and quarantine writer. Verified leases retain only
 actual bytes and their open file. Retained content therefore cannot block a later
 small file solely because its configured maximum is larger than the remaining budget.
-
 
 ### Shared private content backing
 

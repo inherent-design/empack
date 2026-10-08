@@ -119,6 +119,43 @@ fn normalized_documents_round_trip_all_file_slots_and_weak_source_evidence() {
 }
 
 #[test]
+fn yaml_scalar_spellings_preserve_authored_strings_and_semantic_revision() {
+    for text in [
+        "null",
+        "yes",
+        "0xB",
+        "1e3",
+        "a#b",
+        "\n",
+        "\n\n",
+        "\u{fffe}\u{ffff}",
+    ] {
+        let mut value = source();
+        value["pack"]["description"] = json!(text);
+        value["extensions"]["authoring"]["note"] = json!(text);
+        // YAML permits these noncharacters only as escapes, even in JSON-shaped input.
+        let authored = serde_json::to_string(&value)
+            .unwrap()
+            .replace('\u{fffe}', "\\uFFFE")
+            .replace('\u{ffff}', "\\uFFFF");
+        let original = DocumentCodec
+            .decode_intent(authored.as_bytes(), "authored.json")
+            .unwrap();
+        let encoded = DocumentCodec.encode_intent(original.intent()).unwrap();
+        let reloaded = DocumentCodec.decode_intent(&encoded, "empack.yml").unwrap();
+        assert_eq!(original.intent(), reloaded.intent(), "{text:?}");
+        assert_eq!(original.semantic_revision(), reloaded.semantic_revision());
+        assert_eq!(
+            DocumentCodec
+                .replace_intent(&reloaded, original.intent())
+                .unwrap()
+                .edit,
+            DocumentEdit::Unchanged
+        );
+    }
+}
+
+#[test]
 fn manual_file_selection_must_match_its_owning_exact_provider_pin() {
     let source = decoded();
     for matching in [true, false] {

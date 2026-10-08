@@ -21,9 +21,8 @@ use empack_core::{
 };
 use std::collections::BTreeMap;
 
-/// Native v0.5 initialization host. Import has its own normalization path; this entry point
-/// accepts empty-project initialization only. The legacy dispatcher is replaced once the
-/// complete cross-command host is connected, so it cannot create an unusable mixed-schema pack.
+/// Initialize an empty project through native preparation and approved publication.
+/// Source imports enter the separate normalized import host.
 pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
     initialize_with_catalog(session, args, RuntimeCatalog::new(HttpAcquisition::new()?)).await
 }
