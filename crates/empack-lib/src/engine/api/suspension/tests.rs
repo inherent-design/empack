@@ -657,3 +657,59 @@ fn saved_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     visit(root, &mut files);
     files
 }
+
+#[tokio::test]
+async fn ordinary_cache_hits_do_not_invalidate_saved_content_slots() {
+    use crate::engine::content::cache::ContentCache;
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), false);
+    let (owner, governor) = engine(host.path().join("state"));
+    // Suspension stores the already verified first slot while the second remains pending.
+    suspend_first(&owner, root.path()).await;
+    let cache =
+        ContentCache::new(host.path().join("cache"), ContentStoreLimits::default()).unwrap();
+    let runtime = OperationRuntime::<()>::new(governor.clone(), 1);
+    let writer = cache.clone();
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let supplied = supplied("first", b"payload");
+            writer
+                .publish(
+                    &mut scope,
+                    supplied
+                        .locked
+                        .values()
+                        .map(|file| file.content.clone())
+                        .collect(),
+                )
+                .await
+                .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    assert!(matches!(
+        &*handle.wait().await,
+        OperationOutcome::Completed(())
+    ));
+    drop(handle);
+    runtime.shutdown().await;
+    let owner = owner.with_content_cache(cache);
+    let resumed = match owner
+        .resume_saved_build(root.path().to_owned())
+        .await
+        .unwrap()
+    {
+        SavedBuildResume::Prepared(resumed) => *resumed,
+        _ => panic!("saved request must remain usable after an ordinary cache hit"),
+    };
+    let view = match &resumed.preparation {
+        Preparation::Ready(value) => value.view(),
+        Preparation::NeedsInput(value) => value.view(),
+    };
+    // Both fixture slots have identical asserted bytes; cache reuse can satisfy both.
+    assert!(view.build().unwrap().content.is_empty());
+    drop(resumed);
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

@@ -259,11 +259,23 @@ impl Engine {
         let mut keys = BTreeSet::new();
         for file in &value.files {
             let key = file.key.parse()?;
+            let acquired = match &key {
+                AcquisitionKey::Locked(key) => build.acquisition.acquired.locked.get(key),
+                AcquisitionKey::Observed(path) => build.acquisition.acquired.observed.get(path),
+            };
             ensure!(
-                keys.insert(key.clone()) && expected.contains_key(&key),
+                keys.insert(key.clone()) && (expected.contains_key(&key) || acquired.is_some()),
                 "Saved content must match distinct current obligations"
             );
-            file.id()?;
+            let saved_id = file.id()?;
+            if let Some(acquired) = acquired {
+                ensure!(
+                    acquired.content.lease().id() == saved_id
+                        && acquired.permissions.readonly == file.readonly
+                        && acquired.permissions.executable == file.executable,
+                    "Saved content differs from the verified current input"
+                );
+            }
         }
         let config = self.config.clone();
         let (sender, receiver) = oneshot::channel();
@@ -412,15 +424,17 @@ async fn restore(
         .files
     {
         let key = file.key.parse()?;
+        // Preparation may already have verified this slot from ordinary cache storage.
+        // Its saved address and permissions were checked before entering restore.
+        let Some(expected) = expected.get(&key) else {
+            continue;
+        };
         let content_file = lookup
             .retain(
                 scope,
                 CachedFileRequest {
                     id: file.id()?,
-                    expected: expected
-                        .get(&key)
-                        .context("Saved build obligation changed")?
-                        .clone(),
+                    expected: expected.clone(),
                     maximum: config
                         .transfer
                         .file_bytes

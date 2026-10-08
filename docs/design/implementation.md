@@ -147,6 +147,14 @@ modules remains open.
 
 ## Verification evidence
 
+Combined `f22c46c`: `mise run test` passed 1,671 tests and eleven doctests;
+102 opt-in tests were excluded. The upgraded runner reported no inherited-pipe warning.
+A follow-up saved-build regression reproduced rejection of a slot already satisfied
+by ordinary cache lookup. Sixteen continuation/cache tests passed after checking its
+saved address and permissions against the verified current bytes and restoring only
+still-pending slots. Bounded download assistance is the next integration step.
+
+
 Ordinary verified build cache: 226 affected engine/host/configuration/native-command
 cases and all-feature Clippy passed. A stale missing-content fixture first failed
 because its preceding build now populated the cache; it now clears that disposable
