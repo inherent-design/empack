@@ -290,3 +290,108 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
     resolution.assert_async().await;
     assert_eq!(super::super::tests::snapshot(root.path()), before);
 }
+
+#[tokio::test]
+async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_batches() {
+    use std::io::Write;
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(br#"{"schemaVersion":1,"id":"renderer","version":"1"}"#)
+        .unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    for outcome in ["exact", "unknown", "mismatch", "changed-resolution"] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::write(root.path().join("renamed.jar"), &bytes).unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut version = json!({
+            "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":bytes.len(),"hashes":{
+                "sha1":empack_core::digest::ExpectedDigest::Sha1(sha1::Sha1::digest(&bytes).into()).hex(),
+                "sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(&bytes).into()).hex()},
+                "url":"https://example.invalid/must-not-download.jar"}],"dependencies":[],
+            "date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        });
+        if outcome == "mismatch" {
+            version["files"][0]["hashes"]["sha512"] = json!("00".repeat(64));
+        }
+        server
+            .mock("GET", mockito::Matcher::Regex("^/version_file/.*".into()))
+            .with_status(if outcome == "unknown" { 404 } else { 200 })
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+        if outcome == "changed-resolution" {
+            version["files"][0]["hashes"]["sha512"] = json!("00".repeat(64));
+        }
+        server
+            .mock("GET", "/version/RootVer1")
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+        server.mock("GET", "/project/Root0001")
+            .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+            .create_async().await;
+        let selected = || AddOptions {
+            inputs: vec!["renamed.jar".into()],
+            force: false,
+            platform: Some(SearchPlatform::Modrinth),
+            kind: None,
+            version_id: None,
+            file_id: None,
+        };
+        let before = super::super::tests::snapshot(root.path());
+        let result = add_with_catalog(
+            &session(root.path(), true),
+            selected(),
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+        )
+        .await;
+        assert_eq!(result.is_ok(), outcome == "exact", "{outcome}: {result:?}");
+        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        let result = add_with_catalog(
+            &session(root.path(), false),
+            selected(),
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+        )
+        .await;
+        if outcome != "exact" {
+            assert!(result.is_err());
+            assert_eq!(super::super::tests::snapshot(root.path()), before);
+            continue;
+        }
+        result.unwrap();
+        assert_eq!(
+            fs::read(root.path().join("project/pack/mods/renderer.jar")).unwrap(),
+            bytes
+        );
+        let resolved = project(root.path());
+        assert!(matches!(
+            resolved.intent().roots.values().next().unwrap().source,
+            empack_core::model::SourceIntent::Provider(_)
+        ));
+        assert!(matches!(
+            resolved.intent().roots.values().next().unwrap().version,
+            empack_core::model::VersionIntent::Exact(_)
+        ));
+        let before = super::super::tests::snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            synchronize(
+                &session(root.path(), false),
+                SyncRequest::Recorded {
+                    resolution: None,
+                    evidence: SourceEvidencePolicy::Compatibility,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            before
+        );
+    }
+}

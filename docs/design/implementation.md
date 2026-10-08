@@ -30,7 +30,7 @@ a passing review and line coverage do not change that state by themselves.
 | --- | --- | --- |
 | Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
-| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider identification of supplied files, world members, full companion-file choices |
+| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | World members and full companion-file choices; explicit provider identification is wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local files:** verified document-only acceptance of changed bytes | Provider/URL observation selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
@@ -85,7 +85,8 @@ The [CLI adapter tests](../../crates/empack-lib/src/application/engine_host/cli/
 exercise equivalent slug/ID/URL additions followed by two unchanged syncs, preview,
 conflicting pins/providers, deliberate search selection and all-requested direct-file
 failure against native temporary projects. Provider network fixtures exercise the adapter; offline lifecycle tests also
-exercise the executable. Provider identification and world interpretation remain open.
+exercise the executable. Explicit supplied-file provider identification now retains verified bytes through publication.
+World interpretation and companion-file decisions remain open.
 
 ### Content identification
 

@@ -993,3 +993,14 @@ record's size before reserving decode memory and bounds the subsequent read to t
 The persistent content store accounts for publication candidates under its exclusive
 capacity lock, independently of the retained source's private-scratch reservation. Known
 orphaned publication candidates consume store capacity as well as canonical content objects.
+
+### Supplied-file provider identification
+
+`add --platform PROVIDER FILE` acquires and inspects the supplied bytes, verifies their
+provider identity, then resolves that exact provider selection and its required closure.
+The supplied payload remains materialized in the publication batch; it is not replaced by
+a remote reference. Original provider digest and size assertions are checked again before
+publication. Unknown identities, ambiguous matches, multiple matching file roles and
+changed provider assertions fail the complete request. Omitting `--platform` explicitly
+retains the direct-file representation. Multi-role and companion-file choices remain
+separate placement decisions.

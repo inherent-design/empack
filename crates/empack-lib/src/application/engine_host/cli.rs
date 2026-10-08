@@ -172,17 +172,20 @@ async fn add_with_catalog(
                 pin.is_none(),
                 "Provider pins cannot be applied to a direct file"
             );
-            ensure!(
-                options.platform.is_none(),
-                "Direct file input cannot also select a provider; identify the content first"
-            );
-            inputs.push(AddHostInput::File(files::input(
-                session,
-                &current,
-                value,
-                source,
-                options.kind.as_ref(),
-            )?));
+            let file = files::input(session, &current, value, source, options.kind.as_ref())?;
+            inputs.push(match &options.platform {
+                None => AddHostInput::File(file),
+                Some(platform) => AddHostInput::IdentifiedFile {
+                    file,
+                    providers: NonEmpty::new(match platform {
+                        SearchPlatform::Modrinth => vec![ProviderKind::Modrinth],
+                        SearchPlatform::Curseforge => vec![ProviderKind::CurseForge],
+                        SearchPlatform::Both => {
+                            vec![ProviderKind::Modrinth, ProviderKind::CurseForge]
+                        }
+                    })?,
+                },
+            });
             continue;
         }
         let selected_kind = options.kind.as_ref().map(kind);

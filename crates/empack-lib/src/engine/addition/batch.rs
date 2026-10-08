@@ -30,6 +30,16 @@ impl ResolvedAdditionBatch {
         provider: Option<Box<ProviderAddition>>,
         files: Option<FileAddition>,
     ) -> Result<RetainedOutput<Self>> {
+        Self::combine_with_content(scope, current, provider, None, files).await
+    }
+    /// Retain verified provider payloads alongside direct files in the same publication batch.
+    pub async fn combine_with_content(
+        scope: &mut WorkScope,
+        current: ResolvedProject,
+        provider: Option<Box<ProviderAddition>>,
+        provider_content: Option<crate::engine::providers::ProviderContent>,
+        files: Option<FileAddition>,
+    ) -> Result<RetainedOutput<Self>> {
         let retained = ResourceRequest {
             memory_bytes: 64 << 20,
             ..Default::default()
@@ -59,6 +69,14 @@ impl ResolvedAdditionBatch {
                             );
                         }
                     }
+                }
+                if let Some(acquired) = &provider_content {
+                    ensure!(acquired.complete(), "Provider content still requires input");
+                    ensure!(
+                        content.keys().eq(acquired.content().keys()),
+                        "Provider content coverage differs from its resolved group"
+                    );
+                    content = acquired.content().clone();
                 }
                 if let Some(files) = &files {
                     for (key, file) in files.content() {

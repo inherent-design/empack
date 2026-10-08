@@ -283,7 +283,11 @@ pub enum Commands {
         force: bool,
 
         /// Search platform preference
-        #[arg(long, value_enum, help = "Preferred platform for project resolution")]
+        #[arg(
+            long,
+            value_enum,
+            help = "Provider for project resolution or supplied-file identification"
+        )]
         platform: Option<SearchPlatform>,
 
         /// Project type to search for (skips tiered search when specified)

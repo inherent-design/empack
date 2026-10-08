@@ -24,6 +24,7 @@ use crate::{
 use empack_core::model::NonEmpty;
 use std::sync::Arc;
 mod adoption;
+mod identification;
 
 /// Resolve every selected provider root and its required closure, then record exact references.
 /// Search/UI selection and local/direct-file acquisition are separate host inputs. This path
@@ -79,6 +80,11 @@ async fn add_with_catalog(
 pub enum AddHostInput {
     Provider(ProviderAddInput),
     File(DirectFileInput),
+    /// Provider identification is explicit; failed discovery cannot become a local fallback.
+    IdentifiedFile {
+        file: DirectFileInput,
+        providers: NonEmpty<empack_core::model::ProviderKind>,
+    },
 }
 pub(super) struct AdditionServices {
     pub catalog: ProviderCatalog,
@@ -196,9 +202,19 @@ async fn change_with_services(
     let state = state_root(config, &invocation)?;
     let mut providers = Vec::new();
     let mut files = Vec::new();
+    let mut identify = Vec::new();
     for input in inputs.into_vec() {
         match input {
             AddHostInput::Provider(input) => providers.push(input),
+            AddHostInput::IdentifiedFile {
+                mut file,
+                providers,
+            } => {
+                if let DirectFileSource::Local(path) = &mut file.source {
+                    *path = absolute(&invocation, path);
+                }
+                identify.push((file, providers));
+            }
             AddHostInput::File(mut input) => {
                 if let DirectFileSource::Local(path) = &mut input.source {
                     *path = absolute(&invocation, path);
@@ -236,6 +252,9 @@ async fn change_with_services(
             let snapshot = scope.accept(work.wait().await?)?.transpose()?;
             let revision = snapshot.revision();
             let current = snapshot.require_resolved()?;
+            let supplied = identification::resolve(
+                &mut scope, &current, identify, &mut providers, &services, evidence
+            ).await?;
             let provider = if providers.is_empty() {
                 None
             } else {
@@ -250,6 +269,12 @@ async fn change_with_services(
                     ),
                 }
             };
+            let provider_content = match &provider {
+                Some(provider) if !supplied.is_empty() => Some(identification::content(
+                    &mut scope, provider, supplied, &services, evidence
+                ).await?),
+                _ => None,
+            };
             let files = if files.is_empty() {
                 None
             } else {
@@ -258,8 +283,8 @@ async fn change_with_services(
                     evidence, services.files
                 ).await?)
             };
-            let addition = ResolvedAdditionBatch::combine(
-                &mut scope, current, provider, files
+            let addition = ResolvedAdditionBatch::combine_with_content(
+                &mut scope, current, provider, provider_content, files
             ).await?;
             Ok((addition, revision))
         })
