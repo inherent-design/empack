@@ -3,13 +3,12 @@ use empack_tests::e2e::{TestProject, assert_dist_artifact_suffix};
 #[test]
 fn e2e_build_relative_workdir_exports_valid_mrpack() {
     use empack_lib::application::session::{ArchiveProvider, LiveArchiveProvider};
-    empack_tests::skip_if_no_packwiz!();
     let project = TestProject::workflow_fixture("relative-pack", "fabric", "1.21.1");
     let mut cmd = project.cmd();
     cmd.current_dir(project.dir().parent().unwrap())
         .arg("--workdir")
         .arg(project.dir().file_name().unwrap())
-        .args(["build", "mrpack"]);
+        .args(["--yes", "build", "mrpack"]);
     assert_cmd::Command::from_std(cmd)
         .timeout(std::time::Duration::from_secs(60))
         .assert()
@@ -35,7 +34,7 @@ fn e2e_build_mrpack() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
-        .args(["build", "mrpack"])
+        .args(["--yes", "build", "mrpack"])
         .status()
         .expect("failed to spawn");
     assert!(status.success(), "empack build mrpack failed");
@@ -45,7 +44,7 @@ fn e2e_build_mrpack() {
         artifact
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("test-pack-v")),
+            .is_some_and(|name| name.starts_with("test-pack-")),
         "unexpected mrpack artifact path: {}",
         artifact.display()
     );
@@ -58,7 +57,7 @@ fn e2e_build_client_tar_gz() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
-        .args(["build", "--format", "tar.gz", "client"])
+        .args(["--yes", "build", "--format", "tar.gz", "client"])
         .status()
         .expect("failed to spawn");
     assert!(
@@ -76,7 +75,7 @@ fn e2e_build_server_sevenz() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
-        .args(["build", "--format", "7z", "server"])
+        .args(["--yes", "build", "--format", "7z", "server"])
         .status()
         .expect("failed to spawn");
     assert!(status.success(), "empack build server --format 7z failed");
@@ -91,7 +90,7 @@ fn e2e_clean_removes_artifacts() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
-        .args(["build", "mrpack"])
+        .args(["--yes", "build", "mrpack"])
         .status()
         .expect("failed to spawn");
     assert!(status.success(), "empack build mrpack failed");
@@ -101,7 +100,7 @@ fn e2e_clean_removes_artifacts() {
 
     let status = project
         .cmd()
-        .args(["clean"])
+        .args(["--yes", "clean"])
         .status()
         .expect("failed to spawn");
     assert!(status.success(), "empack clean failed");
@@ -122,7 +121,6 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     };
     use empack_lib::empack::config::{DependencyEntry, DependencyStatus, LocalDependencyRecord};
     use empack_lib::primitives::ProjectType;
-    empack_tests::skip_if_no_packwiz!();
     empack_tests::skip_if_no_java!();
     let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
     let bytes = b"tracked local resource bytes";
@@ -144,7 +142,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         .unwrap();
     for target in ["mrpack", "client", "server"] {
         assert_cmd::Command::from_std(project.cmd())
-            .args(["build", target])
+            .args(["--yes", "build", target])
             .timeout(std::time::Duration::from_secs(90))
             .assert()
             .success();

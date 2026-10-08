@@ -580,152 +580,101 @@ pub fn assert_file_exists(path: &Path) {
     assert!(path.exists(), "expected file at {}", path.display());
 }
 
-/// Assert the basic project files created by init/import exist.
+/// Initialization publishes coherent intent and an exact runtime lock.
 pub fn assert_project_initialized(project_root: &Path) {
-    assert_file_exists(&project_root.join("empack.yml"));
-    assert_file_exists(&project_root.join("pack").join("pack.toml"));
+    let _ = read_project(project_root);
 }
-
-/// Read and parse `empack.yml` into the typed config model.
-pub fn read_empack_config(project_root: &Path) -> empack_lib::empack::config::EmpackConfig {
-    let path = project_root.join("empack.yml");
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("failed to read {}", path.display()));
-    serde_saphyr::from_str(&content)
-        .unwrap_or_else(|e| panic!("failed to parse {}: {}", path.display(), e))
+pub fn read_project(project_root: &Path) -> empack_core::model::ResolvedProject {
+    let codec = empack_lib::engine::documents::DocumentCodec;
+    let intent = codec
+        .decode_intent(
+            &std::fs::read(project_root.join("empack.yml")).unwrap(),
+            "empack.yml",
+        )
+        .unwrap();
+    codec
+        .decode_lock(
+            &std::fs::read(project_root.join("empack.lock")).unwrap(),
+            &intent,
+            "empack.lock",
+        )
+        .unwrap()
 }
-
-/// Read and parse `pack/pack.toml` into a TOML value.
-pub fn read_pack_toml(project_root: &Path) -> toml::Value {
-    let path = project_root.join("pack").join("pack.toml");
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("failed to read {}", path.display()));
-    toml::from_str::<toml::Value>(&content)
-        .unwrap_or_else(|e| panic!("failed to parse {}: {}", path.display(), e))
+fn loader_name(loader: empack_core::model::LoaderKind) -> &'static str {
+    use empack_core::model::LoaderKind;
+    match loader {
+        LoaderKind::Vanilla => "none",
+        LoaderKind::Fabric => "fabric",
+        LoaderKind::Quilt => "quilt",
+        LoaderKind::Forge => "forge",
+        LoaderKind::NeoForge => "neoforge",
+    }
 }
-
-/// Assert the typed project config recorded the expected loader family.
 pub fn assert_project_loader(project_root: &Path, expected_loader: &str) {
-    let config = read_empack_config(project_root);
-    let actual = config.empack.loader.as_ref().map(|loader| loader.as_str());
     assert_eq!(
-        actual,
-        Some(expected_loader),
-        "empack.yml loader mismatch for {}",
-        project_root.display()
+        loader_name(read_project(project_root).intent().runtime.loader),
+        expected_loader
     );
 }
-
-/// Assert the typed project config recorded the expected Minecraft version.
 pub fn assert_project_minecraft_version(project_root: &Path, expected_version: &str) {
-    let config = read_empack_config(project_root);
     assert_eq!(
-        config.empack.minecraft_version.as_deref(),
-        Some(expected_version),
-        "empack.yml minecraft_version mismatch for {}",
-        project_root.display()
+        read_project(project_root)
+            .intent()
+            .runtime
+            .minecraft
+            .as_str(),
+        expected_version
     );
 }
-
-/// Assert the typed project config does not record a loader family.
 pub fn assert_project_loader_absent(project_root: &Path) {
-    let config = read_empack_config(project_root);
     assert_eq!(
-        config.empack.loader.as_ref().map(|loader| loader.as_str()),
-        Option::<&str>::None,
-        "empack.yml should not record a loader for {}",
-        project_root.display()
+        read_project(project_root).intent().runtime.loader,
+        empack_core::model::LoaderKind::Vanilla
     );
 }
-
-/// Assert the typed project config recorded the expected datapack folder.
 pub fn assert_project_datapack_folder(project_root: &Path, expected_folder: &str) {
-    let config = read_empack_config(project_root);
     assert_eq!(
-        config.empack.datapack_folder.as_deref(),
-        Some(expected_folder),
-        "empack.yml datapack_folder mismatch for {}",
-        project_root.display()
+        read_project(project_root)
+            .intent()
+            .layout
+            .get(&empack_core::model::ContentKind::DataPack)
+            .map(|p| p.as_str()),
+        Some(expected_folder)
     );
 }
-
-/// Assert `pack/pack.toml` contains the expected loader version entry.
-pub fn assert_pack_loader_version(project_root: &Path, loader: &str, expected_version: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let versions = pack_toml
-        .get("versions")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| {
-            panic!(
-                "pack.toml missing [versions] for {}",
-                project_root.display()
-            )
-        });
-
+pub fn assert_locked_loader_version(project_root: &Path, loader: &str, expected_version: &str) {
+    let project = read_project(project_root);
+    assert_eq!(loader_name(project.lock().runtime.loader), loader);
     assert_eq!(
-        versions.get(loader).and_then(|value| value.as_str()),
-        Some(expected_version),
-        "pack.toml {loader} version mismatch for {}",
-        project_root.display()
+        project
+            .lock()
+            .runtime
+            .loader_version
+            .as_ref()
+            .map(|v| v.as_str()),
+        Some(expected_version)
     );
 }
-
-/// Assert `pack/pack.toml` contains the expected Minecraft version entry.
-pub fn assert_pack_minecraft_version(project_root: &Path, expected_version: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let versions = pack_toml
-        .get("versions")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| {
-            panic!(
-                "pack.toml missing [versions] for {}",
-                project_root.display()
-            )
-        });
-
+pub fn assert_locked_minecraft_version(project_root: &Path, expected_version: &str) {
     assert_eq!(
-        versions.get("minecraft").and_then(|value| value.as_str()),
-        Some(expected_version),
-        "pack.toml minecraft version mismatch for {}",
-        project_root.display()
+        read_project(project_root).lock().runtime.minecraft.as_str(),
+        expected_version
     );
 }
-
-/// Assert `pack/pack.toml` contains a loader version entry with the expected prefix.
-pub fn assert_pack_loader_version_prefix(project_root: &Path, loader: &str, expected_prefix: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let versions = pack_toml
-        .get("versions")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| {
-            panic!(
-                "pack.toml missing [versions] for {}",
-                project_root.display()
-            )
-        });
-
-    let actual = versions.get(loader).and_then(|value| value.as_str());
+pub fn assert_locked_loader_version_prefix(
+    project_root: &Path,
+    loader: &str,
+    expected_prefix: &str,
+) {
+    let project = read_project(project_root);
+    assert_eq!(loader_name(project.lock().runtime.loader), loader);
     assert!(
-        actual.is_some_and(|value| value.starts_with(expected_prefix)),
-        "pack.toml {loader} version should start with {expected_prefix:?} for {} but was {:?}",
-        project_root.display(),
-        actual
-    );
-}
-
-/// Assert `pack/pack.toml [options]` contains the expected string value.
-pub fn assert_pack_option_string(project_root: &Path, key: &str, expected_value: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let options = pack_toml
-        .get("options")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| panic!("pack.toml missing [options] for {}", project_root.display()));
-
-    assert_eq!(
-        options.get(key).and_then(|value| value.as_str()),
-        Some(expected_value),
-        "pack.toml [options] {key} mismatch for {}",
-        project_root.display()
+        project
+            .lock()
+            .runtime
+            .loader_version
+            .as_ref()
+            .is_some_and(|v| v.as_str().starts_with(expected_prefix))
     );
 }
 

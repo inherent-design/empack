@@ -123,6 +123,7 @@ re-export. Restricted-import continuation remains open.
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
+| Cutover | Initialization scaffolding parity | Preserve ignore files and modern CI scaffolding through approved publication; retain user-owned files; current strict template case reproduces missing ignore files |
 | Cutover | Runtime/CLI composition | Remove migrated handler bypasses and synchronous process bridges where superseded; isolate global display/error state for embedding |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
@@ -141,13 +142,15 @@ CI, race tests, vet, module installation and executable offline smoke passed. Al
 published platform archives match their release checksums; the macOS ARM64 release
 binary passes the same offline batch smoke. Ordinary native CLI commands no longer
 require this executable. Native builds now own embedded-template rendering and pure Forge coordinate interpretation.
-The unused legacy removal planner is deleted. Retirement of the remaining compatibility
+The unused legacy removal planner, slug-based dependency graph and obsolete mock-command test builder are deleted. Retirement of the remaining compatibility
 modules remains open.
 
 ## Verification evidence
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| `f30e6e1` combined candidate | 1,677 default tests and eleven doctests passed; no inherited-pipe warnings | Strict E2E baseline: 25 passed, 50 failed; failures include stale v0.4 fixtures and known workflow gaps |
+| Native live fixture rewrite | 17 fixture/runtime/build/clean cases passed against current intent and lock documents | Includes live Fabric, Forge, Quilt and NeoForge discovery; remaining E2E families still need conversion |
 | Selected update/local adoption | 44 affected host/CLI/native tests plus three focused lifecycle cases passed; all-feature Clippy passed | One intermittent inherited-pipe warning in the affected run; no final combined rerun |
 | Native dispatcher cutover | 1,676 default tests and eleven doctests passed; workspace all-feature Clippy, formatting and Windows cross-compilation passed | 98 opt-in tests skipped; no inherited-pipe warnings; Windows retains seven existing test-only warnings; live parity and new coverage remain open |
 | `48bfc5d` | 94 affected host/import tests and all-feature Clippy passed | One inherited-pipe warning; isolated affected cleanup test passed clean |

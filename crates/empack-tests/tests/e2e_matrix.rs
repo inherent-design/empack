@@ -1,7 +1,7 @@
 use empack_tests::e2e::{
-    TestProject, assert_pack_minecraft_version, assert_project_initialized, assert_project_loader,
-    assert_project_loader_absent, assert_project_minecraft_version, configure_fake_packwiz,
-    empack_assert_cmd, seed_loader_version_cache,
+    TestProject, assert_locked_minecraft_version, assert_project_initialized,
+    assert_project_loader, assert_project_loader_absent, assert_project_minecraft_version,
+    empack_assert_cmd,
 };
 use predicates::prelude::*;
 
@@ -9,8 +9,6 @@ macro_rules! e2e_init_modloader {
     ($name:ident, $loader:expr) => {
         #[test]
         fn $name() {
-            empack_tests::skip_if_no_packwiz!();
-
             let project = TestProject::new();
             let output = project
                 .cmd()
@@ -40,23 +38,20 @@ macro_rules! e2e_init_modloader {
                 assert_project_loader(&pack_dir, $loader);
             }
             assert_project_minecraft_version(&pack_dir, "1.21.1");
-            assert_pack_minecraft_version(&pack_dir, "1.21.1");
+            assert_locked_minecraft_version(&pack_dir, "1.21.1");
         }
     };
 }
 
 e2e_init_modloader!(e2e_matrix_init_fabric, "fabric");
 e2e_init_modloader!(e2e_matrix_init_forge, "forge");
-// quilt loader not available for MC 1.21.1 in current packwiz
-// e2e_init_modloader!(e2e_matrix_init_quilt, "quilt");
+e2e_init_modloader!(e2e_matrix_init_quilt, "quilt");
 e2e_init_modloader!(e2e_matrix_init_vanilla, "none");
 
 #[test]
 fn e2e_matrix_init_neoforge() {
     let project = TestProject::new();
-    seed_loader_version_cache(project.dir(), "neoforge", "1.21.1", &["21.1.224"]);
     let mut cmd = project.cmd();
-    configure_fake_packwiz(&mut cmd, project.dir());
     let output = cmd
         .args([
             "init",
@@ -81,7 +76,7 @@ fn e2e_matrix_init_neoforge() {
     assert_project_initialized(&pack_dir);
     assert_project_loader(&pack_dir, "neoforge");
     assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_pack_minecraft_version(&pack_dir, "1.21.1");
+    assert_locked_minecraft_version(&pack_dir, "1.21.1");
 }
 
 macro_rules! e2e_bad_flag_value {

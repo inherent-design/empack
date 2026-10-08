@@ -1,5 +1,5 @@
 use empack_tests::e2e::{
-    TestProject, assert_dist_artifact_suffix, assert_pack_loader_version,
+    TestProject, assert_dist_artifact_suffix, assert_locked_loader_version,
     assert_pending_restricted_build, assert_project_initialized, assert_project_loader,
     assert_project_minecraft_version, configure_fake_packwiz, empack_cmd,
     load_pending_restricted_build, seed_loader_version_cache, seed_packwiz_installer_jars,
@@ -288,7 +288,7 @@ fn e2e_init_interactive_responds_to_prompts() {
     assert_project_initialized(&pack_dir);
     assert_project_loader(&pack_dir, "fabric");
     assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_pack_loader_version(&pack_dir, "fabric", "0.15.0");
+    assert_locked_loader_version(&pack_dir, "fabric", "0.15.0");
 }
 
 #[test]

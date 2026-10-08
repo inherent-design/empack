@@ -59,8 +59,7 @@ pub struct WorkflowProjectPaths {
     pub root: PathBuf,
     pub empack_yml: PathBuf,
     pub pack_dir: PathBuf,
-    pub pack_toml: PathBuf,
-    pub index_toml: PathBuf,
+    pub empack_lock: PathBuf,
     pub dist_dir: PathBuf,
 }
 
@@ -87,72 +86,75 @@ impl WorkflowProjectFixture {
     }
 
     pub fn write_to(&self, workdir: &Path) -> Result<WorkflowProjectPaths> {
+        use empack_core::{model::*, projection::BuildTarget};
+        use empack_lib::engine::{
+            documents::DocumentCodec,
+            initialize::{InitializeCandidate, default_templates},
+        };
+        use std::collections::BTreeMap;
+        let loader = match self.loader.as_str() {
+            "none" | "vanilla" => LoaderKind::Vanilla,
+            "fabric" => LoaderKind::Fabric,
+            "quilt" => LoaderKind::Quilt,
+            "forge" => LoaderKind::Forge,
+            "neoforge" => LoaderKind::NeoForge,
+            _ => anyhow::bail!("Unknown fixture loader"),
+        };
+        let runtime = RuntimeResolution {
+            minecraft: GameVersion::parse(&self.minecraft_version)?,
+            loader,
+            loader_version: (loader != LoaderKind::Vanilla)
+                .then(|| LoaderVersion::parse(&self.loader_version))
+                .transpose()?,
+        };
+        let candidate = InitializeCandidate::new(
+            ProjectIntent {
+                metadata: PackMetadata {
+                    name: self.pack_name.clone(),
+                    author: Some(self.author.clone()),
+                    version: self.version.clone(),
+                    description: None,
+                },
+                runtime: RuntimeIntent {
+                    minecraft: runtime.minecraft.clone(),
+                    acceptable_versions: vec![],
+                    loader,
+                    loader_version: runtime.loader_version.clone(),
+                },
+                roots: BTreeMap::new(),
+                layout: BTreeMap::new(),
+                extensions: BTreeMap::new(),
+                distribution: DistributionIntent {
+                    targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                    archive: DistributionArchive::Zip,
+                },
+            },
+            runtime,
+            default_templates(),
+        )?;
         let pack_dir = workdir.join("pack");
         std::fs::create_dir_all(&pack_dir)?;
-
         let empack_yml = workdir.join("empack.yml");
-        let pack_toml = pack_dir.join("pack.toml");
-        let index_toml = pack_dir.join("index.toml");
-        let dist_dir = workdir.join("dist");
-
+        let empack_lock = workdir.join("empack.lock");
         std::fs::write(
             &empack_yml,
-            format!(
-                r#"empack:
-  dependencies: {{}}
-  minecraft_version: "{}"
-  loader: {}
-  name: "{}"
-  author: "{}"
-  version: "{}"
-"#,
-                self.minecraft_version, self.loader, self.pack_name, self.author, self.version
-            ),
+            DocumentCodec.encode_intent(candidate.project().intent())?,
         )?;
-
         std::fs::write(
-            &pack_toml,
-            format!(
-                r#"name = "{}"
-author = "{}"
-version = "{}"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "{}"
-{} = "{}"
-"#,
-                self.pack_name,
-                self.author,
-                self.version,
-                self.minecraft_version,
-                self.loader,
-                self.loader_version
-            ),
+            &empack_lock,
+            DocumentCodec.encode_lock(candidate.project())?,
         )?;
-
-        std::fs::write(
-            &index_toml,
-            r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#,
-        )?;
-
+        for (name, bytes) in candidate.templates() {
+            let target = workdir.join("templates").join(name.as_str());
+            std::fs::create_dir_all(target.parent().unwrap())?;
+            std::fs::write(target, bytes)?;
+        }
         Ok(WorkflowProjectPaths {
-            root: workdir.to_path_buf(),
+            root: workdir.into(),
             empack_yml,
+            empack_lock,
             pack_dir,
-            pack_toml,
-            index_toml,
-            dist_dir,
+            dist_dir: workdir.join("dist"),
         })
     }
 
@@ -162,18 +164,18 @@ hash = ""
 
     pub fn artifact_file_name(&self, artifact: WorkflowArtifact) -> String {
         match artifact {
-            WorkflowArtifact::Mrpack => format!("{}-v{}.mrpack", self.pack_name, self.version),
+            WorkflowArtifact::Mrpack => format!("{}-{}.mrpack", self.pack_name, self.version),
             WorkflowArtifact::Client => {
-                format!("{}-v{}-client.zip", self.pack_name, self.version)
+                format!("{}-{}-client.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::Server => {
-                format!("{}-v{}-server.zip", self.pack_name, self.version)
+                format!("{}-{}-server.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::ClientFull => {
-                format!("{}-v{}-client-full.zip", self.pack_name, self.version)
+                format!("{}-{}-client-full.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::ServerFull => {
-                format!("{}-v{}-server-full.zip", self.pack_name, self.version)
+                format!("{}-{}-server-full.zip", self.pack_name, self.version)
             }
         }
     }
@@ -261,13 +263,19 @@ mod tests {
         let paths = fixture.write_to(temp_dir.path()).unwrap();
 
         assert!(paths.empack_yml.exists());
-        assert!(paths.pack_toml.exists());
-        assert!(paths.index_toml.exists());
-        assert!(
-            std::fs::read_to_string(&paths.pack_toml)
-                .unwrap()
-                .contains("name = \"workflow-fixture-pack\"")
-        );
+        assert!(paths.empack_lock.exists());
+        let intent = empack_lib::engine::documents::DocumentCodec
+            .decode_intent(&std::fs::read(paths.empack_yml).unwrap(), "fixture")
+            .unwrap();
+        let project = empack_lib::engine::documents::DocumentCodec
+            .decode_lock(
+                &std::fs::read(paths.empack_lock).unwrap(),
+                &intent,
+                "fixture",
+            )
+            .unwrap();
+        assert_eq!(project.intent().metadata.name, "workflow-fixture-pack");
+        assert_eq!(project.lock().runtime.minecraft.as_str(), "1.21.1");
     }
 
     #[test]
@@ -277,13 +285,12 @@ mod tests {
 
         assert_eq!(
             fixture.artifact_path(&root, WorkflowArtifact::Mrpack),
-            root.join("dist")
-                .join("workflow-fixture-pack-v1.0.0.mrpack")
+            root.join("dist").join("workflow-fixture-pack-1.0.0.mrpack")
         );
         assert_eq!(
             fixture.artifact_path(&root, WorkflowArtifact::ServerFull),
             root.join("dist")
-                .join("workflow-fixture-pack-v1.0.0-server-full.zip")
+                .join("workflow-fixture-pack-1.0.0-server-full.zip")
         );
     }
 }
