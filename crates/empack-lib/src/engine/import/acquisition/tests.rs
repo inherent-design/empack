@@ -1293,3 +1293,81 @@ async fn saved_import_accumulates_exact_verified_associations_across_restarts() 
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+#[tokio::test]
+async fn restricted_import_reuses_verified_cache_without_download_locators() {
+    use crate::engine::content::{
+        cache::ContentCache,
+        store::{ContentStoreLimits, FileContentStore},
+    };
+    let mut server = Server::new_async().await;
+    provider(&mut server, 123, 456, None).await;
+    provider(&mut server, 124, 457, None).await;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("content");
+    let store = FileContentStore::open(&path, ContentStoreLimits::default()).unwrap();
+    let cache = ContentCache::new(path.clone(), ContentStoreLimits::default()).unwrap();
+    let archive = source("manifest.json", cf(), &[]);
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into()));
+    let selected_governor = governor();
+    let runtime = OperationRuntime::new(selected_governor.clone(), 1);
+    let mut handle = runtime.start(move |mut scope| async move {
+        let result = async {
+            let imported = inspect_source(&mut scope, archive.clone()).await?;
+            let plan = ImportContentPlan::resolve(&mut scope, imported, &catalog, limits()).await?;
+            store.publish_expected(&mut scope, observed(b"payload"), plan.needs[0].expected.clone()).await?;
+            let snapshot = || std::fs::read_dir(&path).unwrap().map(|entry| {
+                let entry = entry.unwrap();
+                (entry.file_name(), (std::fs::read(entry.path()).unwrap(), entry.metadata().unwrap().modified().unwrap()))
+            }).collect::<BTreeMap<_, _>>();
+            let before = snapshot();
+            let outcome = plan.acquire(&mut scope, &HttpAcquisition::for_loopback_tests().with_cache_lookup(cache.clone()), BTreeMap::new(), SourceEvidencePolicy::Compatibility).await?;
+            let ImportContentOutcome::Ready(verified) = outcome else { anyhow::bail!("Restricted bytes already cached but import still needs input"); };
+            assert_eq!(verified.content().len(), 2);
+            for content in verified.content().values() {
+                assert!(matches!(content.evidence(), empack_core::digest::IntegrityEvidence::MatchedExpected { expected, .. } if expected.strongest() == empack_core::digest::DigestAlgorithm::Md5));
+            }
+            assert_eq!(snapshot(), before);
+            drop(verified);
+            for mode in ["strong", "budget", "corrupt"] {
+                if mode == "corrupt" {
+                    let blob = std::fs::read_dir(&path)?.map(|entry| entry.unwrap().path()).find(|path| path.extension().is_some_and(|ext| ext == "blob")).unwrap();
+                    std::fs::write(blob, b"changed")?;
+                }
+                let before = snapshot();
+                let imported = inspect_source(&mut scope, archive.clone()).await?;
+                let mut selected_limits = limits();
+                if mode == "budget" { selected_limits.transfer.transfer_bytes = 13; }
+                let mut plan = ImportContentPlan::resolve(&mut scope, imported, &catalog, selected_limits).await?;
+                if mode == "budget" {
+                    // The automatic phase must inherit bytes already consumed by a restricted hit.
+                    plan.needs[1].source = ImportedAcquisition::Downloads(vec!["http://127.0.0.1:9/payload".into()]);
+                }
+                let outcome = plan.acquire(&mut scope, &HttpAcquisition::for_loopback_tests().with_cache_lookup(cache.clone()), BTreeMap::new(),
+                    if mode == "strong" { SourceEvidencePolicy::StrongSourceRequired } else { SourceEvidencePolicy::Compatibility }).await;
+                if mode == "corrupt" {
+                    let ImportContentOutcome::NeedsInput { pending, provided, .. } = outcome? else { anyhow::bail!("corrupt cache satisfied import"); };
+                    assert_eq!(pending.len(), 2);
+                    assert!(provided.is_empty());
+                } else {
+                    assert!(outcome.is_err(), "{mode} allowance was bypassed");
+                }
+                assert_eq!(snapshot(), before);
+            }
+            Ok::<_, anyhow::Error>(())
+        }.await;
+        Ok(result)
+    }).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(result) = &*outcome else {
+        panic!("import worker failed");
+    };
+    assert!(result.is_ok(), "{result:?}");
+    runtime.release_completed(handle.id());
+    drop((outcome, handle));
+    runtime.shutdown().await;
+    assert_eq!(
+        selected_governor.status().reserved,
+        ResourceRequest::default()
+    );
+}

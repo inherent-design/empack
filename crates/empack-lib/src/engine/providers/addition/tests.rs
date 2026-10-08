@@ -1062,6 +1062,30 @@ async fn restricted_provider_content_requires_explicit_verified_association_or_r
                     DependencyContent::Reference
                 ));
                 drop(reference);
+                let cache_root = tempfile::tempdir()?;
+                let cache_path = cache_root.path().join("content");
+                let store = crate::engine::content::store::FileContentStore::open(&cache_path, Default::default())?;
+                let expected = addition.project().lock().dependencies.values().next().unwrap().files.as_slice()[0].expected.clone();
+                let verified = verify_stream(&mut b"payload".as_slice(), &expected, 7, SourceEvidencePolicy::Compatibility, InitialObservation::RequireEvidence, &scope.cancellation())?;
+                store.publish_expected(&mut scope, verified, expected).await?;
+                let cached_transport = transport.clone().with_cache_lookup(crate::engine::content::cache::ContentCache::new(cache_path.clone(), Default::default())?);
+                for mode in ["hit", "strong", "corrupt"] {
+                    if mode == "corrupt" {
+                        let blob = std::fs::read_dir(&cache_path)?.map(|entry| entry.unwrap().path()).find(|path| path.extension().is_some_and(|ext| ext == "blob")).unwrap();
+                        std::fs::write(blob, b"changed")?;
+                    }
+                    let cached = addition.acquire_content(&mut scope, &cached_transport,
+                        BTreeMap::from([(key.clone(), ProviderContentChoice::Acquire)]),
+                        if mode == "strong" { SourceEvidencePolicy::StrongSourceRequired } else { SourceEvidencePolicy::Compatibility }, limits).await;
+                    if mode == "strong" { assert!(cached.is_err()); continue; }
+                    let cached = cached?;
+                    assert_eq!(cached.complete(), mode == "hit");
+                    if mode == "hit" {
+                        let DependencyContent::Materialized(file) = &cached.content()[&key] else { anyhow::bail!("cached provider bytes not retained"); };
+                        assert!(matches!(file.content.evidence(), empack_core::digest::IntegrityEvidence::MatchedExpected { expected, .. } if expected.strongest() == DigestAlgorithm::Md5));
+                    } else { assert!(cached.content().is_empty()); }
+                }
+
                 for payload in [b"changed", b"payload"] {
                     let work = scope.spawn_blocking(
                         ResourceRequest {

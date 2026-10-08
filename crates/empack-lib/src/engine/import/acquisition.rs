@@ -1,7 +1,7 @@
 //! Resolve and verify the complete imported byte inventory without a live project capability.
 use super::*;
 use crate::engine::{
-    acquisition::{DownloadRequest, HttpAcquisition, TransferLimits},
+    acquisition::{DownloadRequest, HttpAcquisition, TransferBudget, TransferLimits},
     content::{ContentPool, verify_stream},
     providers::{CatalogLimits, ExactBatch, ProviderCatalog},
     resources::AdmissionPermit,
@@ -221,7 +221,7 @@ impl ImportContentPlan {
         self,
         scope: &mut WorkScope,
         transport: &HttpAcquisition,
-        provided: BTreeMap<ImportContentKey, AcquiredContent>,
+        mut provided: BTreeMap<ImportContentKey, AcquiredContent>,
         evidence: SourceEvidencePolicy,
     ) -> Result<ImportContentOutcome> {
         ensure!(
@@ -233,6 +233,8 @@ impl ImportContentPlan {
             "Supplied content has no import obligation"
         );
         let mut pending = Vec::new();
+        let mut budget = TransferBudget::new(self.limits.transfer)?;
+        let mut cached_pool = None;
         for need in &self.needs {
             scope.cancellation().check()?;
             if provided.contains_key(&need.key) {
@@ -250,6 +252,28 @@ impl ImportContentPlan {
                     None
                 };
                 if let Some(reason) = reason {
+                    if let Some(content) = transport
+                        .cached(
+                            scope,
+                            &need.expected,
+                            evidence,
+                            InitialObservation::RequireEvidence,
+                            self.limits.transfer,
+                            &mut budget,
+                        )
+                        .await?
+                    {
+                        if cached_pool.is_none() {
+                            cached_pool =
+                                Some(ContentPool::owned(scope, self.limits.total_bytes).await?);
+                        }
+                        let pool = cached_pool.as_mut().expect("cache pool initialized");
+                        provided.insert(
+                            need.key.clone(),
+                            pool.consolidate_owned(scope, content).await?,
+                        );
+                        continue;
+                    }
                     pending.push(ImportContentInput {
                         key: need.key.clone(),
                         expected: need.expected.clone(),
@@ -267,7 +291,10 @@ impl ImportContentPlan {
         }
         let mut content = BTreeMap::new();
         let mut permissions = BTreeMap::new();
-        let mut pool = ContentPool::owned(scope, self.limits.total_bytes).await?;
+        let mut pool = match cached_pool {
+            Some(pool) => pool,
+            None => ContentPool::owned(scope, self.limits.total_bytes).await?,
+        };
         // Open the retained archive once, with its metadata reservation traveling through workers.
         let mut archive = None;
         if self.needs.iter().any(|need| {
@@ -385,9 +412,17 @@ impl ImportContentPlan {
             }
         }
         drop(archive);
-        let downloaded = transport
-            .acquire_batch(scope, downloads, self.limits.transfer)
-            .await?;
+        let downloaded = if downloads.is_empty() {
+            Vec::new()
+        } else {
+            transport
+                .acquire_batch(
+                    scope,
+                    downloads,
+                    budget.remaining_limits(self.limits.transfer)?,
+                )
+                .await?
+        };
         for (key, acquired) in download_keys.into_iter().zip(downloaded) {
             content.insert(key, acquired);
         }

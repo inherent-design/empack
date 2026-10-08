@@ -1264,8 +1264,12 @@ retains verified content before artifact assembly; a failed build can therefore 
 disposable objects, but cannot publish an incomplete artifact batch. Unavailable or
 full caches do not authorize eviction and do not fail otherwise valid execution.
 Cancellation still stops the operation. Cache handles and copied bytes remain charged
-to the operation's resource allowance. This integration currently covers builds;
-other acquisition callers must not be described as cache-backed until wired and tested.
+to the operation's resource allowance. Builds, sync materialization, ordinary acquisitions,
+and approved mutation/runtime insertion use this store. Restricted import/provider inputs
+also try read-only exact-assertion lookup before returning a manual-input obligation.
+Missing or corrupted cache content remains pending; a hit preserves the original source
+and weak/strong evidence. Cache hits and subsequent HTTP work share one byte and deadline
+allowance, including when different logical files have identical bytes.
 
 
 ### Bound download waiting to its saved recipe

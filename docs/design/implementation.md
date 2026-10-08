@@ -134,7 +134,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Cutover | Provider-owned world interpretation and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions remain open; manual-input continuation retains exact selections and verified bytes; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
-| Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup; approved add/update/import operations insert verified staged content; remaining disposable cleanup and restricted-input lookup integration remain open |
+| Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup; approved add/update/import operations insert verified staged content; restricted-input lookup is wired; remaining disposable cleanup remains open |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
@@ -172,6 +172,11 @@ memory. Optional inventory/copy/writer capacity exhaustion now skips caching wit
 consuming the prepared mutation. Cancellation, closed admission and byte-verification
 failures still fail. The correction passed 49 affected runtime, mutation and store tests
 and all-target/all-feature Clippy; it has not received final combined acceptance.
+
+Restricted import/provider cache lookup reproduced the missing-hit refusal, then passed
+50 affected acquisition/import/provider tests and all-feature Clippy. Compatibility hits
+preserve MD5 evidence; strict-source policy, equal-length corruption and aggregate limits
+remain enforced. Final same-head executable/live acceptance remains open.
 
 ## Historical verification evidence
 

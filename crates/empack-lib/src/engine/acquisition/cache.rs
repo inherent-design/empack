@@ -18,7 +18,7 @@ impl HttpAcquisition {
         self.cache = Some(AcquisitionCache::Execution(cache));
         self
     }
-    pub(super) async fn cached(
+    pub(in crate::engine) async fn cached(
         &self,
         scope: &mut WorkScope,
         expected: &ExpectedContent,
@@ -27,6 +27,7 @@ impl HttpAcquisition {
         limits: TransferLimits,
         budget: &mut TransferBudget,
     ) -> Result<Option<AcquiredContent>> {
+        validate_expectation(expected, limits.file_bytes, evidence, initial)?;
         let Some(AcquisitionCache::Lookup(cache) | AcquisitionCache::Execution(cache)) =
             &self.cache
         else {

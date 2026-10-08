@@ -73,13 +73,13 @@ pub enum TransferError {
     #[error("Download redirect limit exceeded")]
     RedirectLimit,
 }
-struct TransferBudget {
+pub(in crate::engine) struct TransferBudget {
     maximum: u64,
     received: u64,
     deadline: Instant,
 }
 impl TransferBudget {
-    fn new(limits: TransferLimits) -> Result<Self> {
+    pub(in crate::engine) fn new(limits: TransferLimits) -> Result<Self> {
         ensure!(!limits.deadline.is_zero(), TransferError::Deadline);
         Ok(Self {
             maximum: limits.transfer_bytes,
@@ -87,6 +87,26 @@ impl TransferBudget {
             deadline: Instant::now()
                 .checked_add(limits.deadline)
                 .context("Download deadline overflow")?,
+        })
+    }
+    /// Carry cache acquisition's consumed bytes and elapsed time into later HTTP work.
+    pub(in crate::engine) fn remaining_limits(
+        &self,
+        limits: TransferLimits,
+    ) -> Result<TransferLimits> {
+        let remaining = self
+            .maximum
+            .checked_sub(self.received)
+            .context("Acquisition byte accounting overflow")?;
+        let deadline = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .ok_or(TransferError::Deadline)?;
+        ensure!(!deadline.is_zero(), TransferError::Deadline);
+        Ok(TransferLimits {
+            transfer_bytes: remaining.min(limits.transfer_bytes),
+            deadline: deadline.min(limits.deadline),
+            ..limits
         })
     }
 }

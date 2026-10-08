@@ -1,8 +1,8 @@
 //! Turn exact provider evidence into explicit reference, verified byte or pending obligations.
 use super::*;
 use crate::engine::{
-    acquisition::{DownloadRequest, HttpAcquisition, TransferLimits},
-    content::{InitialObservation, SourceEvidencePolicy, validate_expectation},
+    acquisition::{DownloadRequest, HttpAcquisition, TransferBudget, TransferLimits},
+    content::{ContentPool, InitialObservation, SourceEvidencePolicy, validate_expectation},
     dependency_content::{DependencyContent, DependencyContents, validate_reference},
     mrpack::{AcquiredBuildFile, LockedFileKey},
 };
@@ -65,6 +65,8 @@ impl ProviderAddition {
         let mut keys = Vec::new();
         let mut requests = Vec::new();
         let mut bytes = 0u64;
+        let mut budget = TransferBudget::new(limits)?;
+        let mut cached_pool = None;
         // Count borrowed evidence before allocating the execution-only locator copies.
         for selected in self.evidence.selections.values() {
             for file in selected.resolution.files.as_slice() {
@@ -163,6 +165,35 @@ impl ProviderAddition {
                             None
                         };
                         if let Some(reason) = reason {
+                            if let Some(acquired) = transport
+                                .cached(
+                                    scope,
+                                    &file.expected,
+                                    policy,
+                                    InitialObservation::RequireEvidence,
+                                    limits,
+                                    &mut budget,
+                                )
+                                .await?
+                            {
+                                if cached_pool.is_none() {
+                                    cached_pool = Some(
+                                        ContentPool::owned(scope, limits.transfer_bytes).await?,
+                                    );
+                                }
+                                let pool = cached_pool.as_mut().expect("cache pool initialized");
+                                content.insert(
+                                    key,
+                                    DependencyContent::Materialized(AcquiredBuildFile {
+                                        content: pool.consolidate_owned(scope, acquired).await?,
+                                        permissions: FilePermissions {
+                                            readonly: false,
+                                            executable: false,
+                                        },
+                                    }),
+                                );
+                                continue;
+                            }
                             pending.insert(
                                 key,
                                 ProviderContentInput {
@@ -194,7 +225,9 @@ impl ProviderAddition {
             });
         }
         if !requests.is_empty() {
-            let acquired = transport.acquire_batch(scope, requests, limits).await?;
+            let acquired = transport
+                .acquire_batch(scope, requests, budget.remaining_limits(limits)?)
+                .await?;
             for (key, acquired) in keys.into_iter().zip(acquired) {
                 content.insert(
                     key,
