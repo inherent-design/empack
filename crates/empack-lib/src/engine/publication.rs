@@ -1191,7 +1191,7 @@ pub(super) fn open_private_directory(host_state: &Path, create: bool) -> Result<
                 .create(host_state)?;
         }
         #[cfg(windows)]
-        super::windows_privacy::create(host_state)?;
+        super::windows_privacy::create_if_absent(host_state)?;
     }
     let metadata = std::fs::symlink_metadata(host_state)?;
     ensure!(

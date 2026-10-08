@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Candidate baseline: `77ec34c`, 2026-10-08. Review corrections and native validation are in progress. Target: **v0.5.0-alpha.1**.
+Candidate baseline: `5b3d6c7`, 2026-10-08. A Windows creation-race correction is awaiting native validation. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -130,8 +130,8 @@ re-export. Restricted imports retain exact source bytes and verified association
 
 | Priority | Item | Closure evidence |
 | --- | --- | --- |
-| Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
-| Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
+| Verified | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
+| Verified | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Verified | Intermittent inherited-pipe warning | Host Nextest upgraded to 0.9.148; both subsequent combined default runs passed without inherited-pipe warnings |
 | Implemented | Provider-world lifecycle | Native fixtures cover changed-version update, adoption, supplied archives and removal; Boosted FPS now imports its three real provider worlds, syncs twice and builds verified client world members |
 | Implemented | Synchronization resolution and manual acquisition | Authored per-file placements preserve companion roles and optional choices; missing required companions reject publication; exact manual-input continuation, layout and accepted-game-version revalidation are wired |
@@ -141,8 +141,8 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Implemented | Explicit `ContinueIndependent` batches | Add/update opt in with `--continue-independent`; resolved groups prepare independently and publish one combined candidate with partial receipts; unresolved identity/evidence still blocks the whole request |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
-| Fixed locally | Review 129: continuation memory admission | Small sync save/load and three-restart import regression pass under 8 MiB; escaped record sizing and changed-size refusal retain bounds |
-| Open | Windows executable acceptance | ConPTY 0.7 supplies the upstream Nextest handle fix; native execution remains required. Server fixture now shares the existing four-minute runtime allowance |
+| Verified | Review 129: continuation memory admission | Small sync save/load and three-restart import regression pass under 8 MiB; escaped record sizing and changed-size refusal retain bounds |
+| Fixed locally | Concurrent Windows storage creation | Native CI exposed error 183 when another process created the private root; creation now tolerates that outcome, then still checks native identity, kind, reparse points and DACL |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
 Both Review 128 findings reproduced before correction. The 38 affected tests and
@@ -152,8 +152,8 @@ identified fixed continuation-memory reservations. Both sync and import reproduc
 small-record failures under an 8 MiB allowance. Admission now scales with observed
 record bytes and model data, and reads reject growth beyond their admitted size.
 All 55 affected continuation/document/cleanup tests and all-feature Clippy pass
-after correction. Greptile review began after the known implementation and local
-acceptance completed.
+after correction. Review 130 is green at 5/5 on `5b3d6c7`. The later Windows race correction
+requires its own review and native run.
 
 ## Backend release
 
@@ -169,38 +169,48 @@ The fork remains a separately released tool. The native engine owns project meta
 acquisition, templates and distribution assembly; the executable bootstrap and the
 old library implementations are deleted.
 
-## Latest combined evidence
+## Candidate evidence
 
-Frozen `b076760` passed 928 default tests and eight doctests, 81 strict executable
-cases, seven live provider probes, the live catalog probe and all eleven actual Java
-runtime checks. Minimal-feature Clippy and Windows cross-compilation passed; Windows
-retains two existing test-only warnings. The instrumented run passed all 1,009 selected
-tests. Measured source-file line coverage was 92.77% after excluding standalone tests,
-`.test.rs` files, the test crate and mock sessions; inline tests remain included.
+Production/test candidate: `5b3d6c7`. Later ledger-only changes do not alter this source snapshot.
 
-Curated validation then exposed a historical CurseForge manifest without `required`
-and an obsolete smoke driver. The parser regression reproduced before correction;
-13 import tests and Clippy passed with omitted flags treated as required and explicit
-null/type errors rejected. The driver now uses native continuation, isolated state/cache
-roots, exact supplied inputs, two no-op syncs and verified full-client archives. Seven
-offline driver contracts pass. Six packs passed the initial diagnostic run; Boosted FPS
-then passed after explicitly selecting `--world-folder saves`, including archive checks
-for interpreted world members. A fresh seven-pack run uses one frozen executable.
+| Check | Observed result |
+| --- | --- |
+| Combined instrumented tests | 1,016/1,016 passed, including 81 strict executable cases; 22 opt-in cases excluded |
+| Documentation and smoke-driver contracts | Eight doctests and seven Python tests passed |
+| Static checks | All-feature and minimal-feature Clippy, core isolation and Windows cross-compilation passed |
+| Source-file coverage | 92.73% lines; standalone test files, test crate and mock sessions excluded; inline tests remain included |
+| Greptile | Review 130: 5/5 on `5b3d6c7`, no actionable new finding; all threads resolved |
+| Native CI | Linux/macOS passed at `5b3d6c7`; Windows passed both repaired prompt cases and the local-content build, but exposed the independent private-directory creation race |
+| Frozen real-pack acceptance | Seven of seven curated import → sync twice → full-client build workflows passed at `c9a8159`; Boosted FPS includes three provider worlds and Fabulously Optimized exercises manual import continuation |
+| Live provider/runtime probes | Seven provider and eleven actual Java runtime probes passed at `c9a8159`; loader catalog passed at `77ec34c` |
 
-The source-capture correction at `16ad95b` preserves Unicode alias checks while avoiding
-normalization of identical or ASCII components. It passed 23 affected tests and Clippy.
-On the same imported Crash Landing project, debug no-op sync took 87.8 seconds before
-and 25.5 seconds after; both preserved intent and lock bytes. These are observed timings,
-not a release-build benchmark.
+The curated/probe revisions precede the continuation admission correction; their
+production build/provider code is unchanged. The combined candidate run exercises
+the corrected continuation code. Earlier and targeted results are not summed into
+a fictitious same-head run.
 
-At `fbefbb3`, all 1,011 instrumented tests passed and source-file line coverage remained
-92.77% with the exclusions above. The separate default run passed 929/930 tests; one
-loader-menu fixture exhausted its 150 ms deadline under concurrent validation load.
-The fixture now holds slow responses until discovery returns and gives immediate responses
-one second of scheduling headroom. All eleven initialization tests pass; the final combined
-rerun remains required. The Windows LF-only template assertion is also corrected with
-explicit LF/CRLF coverage. Neither targeted correction substitutes for native CI.
+Review 129's continuation issue reproduced in both sync and import with an 8 MiB
+allowance. Size-based encoding/decoding admission replaces fixed memory floors.
+Fifty-five affected tests pass, including three import restarts, unchanged-project
+assertions, escaped-record sizing and refusal when a record grows after admission.
 
+Windows prompt failures at `77ec34c` traced to ConPTY 0.5's redirected-parent handles.
+The fixture uses ConPTY 0.7's upstream correction, preserving real prompt/decline
+assertions, inherited environment and quoted arguments. The server fixture now shares
+the existing four-minute allowance; another Fabric server build took 184 seconds on
+that runner. Both prompt cases and the local-content build passed in the next Windows run.
+No production interactivity policy changed to accommodate the fixture.
+
+That run also exposed a competing-creator race in private host storage. Windows
+creation now accepts an already-existing path, then callers perform their normal
+kind, reparse, owner and ACL checks. Existing shared directories remain rejected
+and unchanged. Native regressions exercise repeated creation, shared ACL refusal,
+file-kind refusal and concurrent openers of the same boundary. All 25 affected
+publication/store tests and all-feature Clippy pass locally; Windows cross-compilation
+passes. The Windows-only privacy cases still require the next native run.
+
+The macOS linker emits a nonfatal unwind-table warning. Cross-compilation is not
+native execution evidence. Coverage is measured, not a claim of exhaustive testing.
 
 ## Storage ownership inventory
 
@@ -255,18 +265,3 @@ acceptance result.
 
 Update this ledger in place when behavior changes. Keep a single current routing table,
 a small evidence table and unresolved gates; use Git history for the narrative.
-
-At `77ec34c`, all 1,011 instrumented tests, eight doctests, seven Python contracts,
-all-feature/minimal Clippy and Windows cross-compilation passed. Source-file line
-coverage was 92.77% with the exclusions above. The frozen `c9a8159` executable
-(the same production code) passed all seven curated packs, seven provider probes
-and eleven actual Java runtime probes. Linux and macOS native CI passed; Windows
-strict executable failures remain open. These results do not certify the later review fixes.
-
-Windows `77ec34c` CI traced prompt refusal to expectrl’s ConPTY 0.5 adapter,
-which does not set `STARTF_USESTDHANDLES`. The test adapter now uses ConPTY 0.7’s
-[upstream correction](https://github.com/zhiburt/conpty/commit/59749cdf5cc0), retaining
-real prompt and decline assertions. It explicitly preserves the child environment
-and quotes Windows arguments. The local-content server fixture now uses the existing
-four-minute allowance: another Fabric server test took 184 seconds on the same runner.
-Windows cross-compilation passes; the next native run must verify both changes.

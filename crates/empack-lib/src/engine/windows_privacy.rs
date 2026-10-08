@@ -1,6 +1,6 @@
 //! Windows storage privacy is checked on native handles, before project bytes enter it.
 use super::native;
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions, OpenOptionsExt};
 use std::{
@@ -202,8 +202,9 @@ pub(super) fn verify(directory: &Dir) -> Result<()> {
     Ok(())
 }
 
-/// Create the selected boundary with a protected, inheritable DACL from its first instant.
-pub(super) fn create(path: &Path) -> Result<()> {
+/// Create with a protected DACL, or tolerate another creator winning the same path.
+/// This does not authorize existing storage: callers must open and verify its native handle.
+pub(super) fn create_if_absent(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -215,7 +216,14 @@ pub(super) fn create(path: &Path) -> Result<()> {
     };
     let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     // SAFETY: both pointers remain alive for this call; directory creation copies the descriptor.
-    succeeded(unsafe { CreateDirectoryW(path.as_ptr(), &attributes) })
+    if unsafe { CreateDirectoryW(path.as_ptr(), &attributes) } != 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.kind() == io::ErrorKind::AlreadyExists {
+        return Ok(());
+    }
+    Err(error).context("Cannot create private Windows storage")
 }
 
 /// Only for a newly created empty temporary parent owned by this operation.
@@ -275,7 +283,7 @@ mod tests {
         // Refusal must not modify the caller's shared directory.
         assert!(verify(&parent_dir).is_err());
         let path = parent.path().join("private");
-        create(&path).unwrap();
+        create_if_absent(&path).unwrap();
         let dir = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
         verify(&dir).unwrap();
         dir.create_dir("retained").unwrap();
@@ -283,6 +291,24 @@ mod tests {
         crate::engine::publication::Publisher::open_existing(&path)
             .unwrap()
             .unwrap();
+    }
+    #[test]
+    fn competing_creation_keeps_existing_permissions_and_kind_checks() {
+        let parent = tempfile::tempdir().unwrap();
+        let path = parent.path().join("private");
+        create_if_absent(&path).unwrap();
+        create_if_absent(&path).unwrap();
+        let directory = Dir::open_ambient_dir(&path, cap_std::ambient_authority()).unwrap();
+        verify(&directory).unwrap();
+        share_for_test(&directory).unwrap();
+        create_if_absent(&path).unwrap();
+        assert!(verify(&directory).is_err());
+        assert!(crate::engine::publication::open_private_directory(&path, true).is_err());
+        let file = parent.path().join("file");
+        std::fs::write(&file, b"retain").unwrap();
+        create_if_absent(&file).unwrap();
+        assert!(crate::engine::publication::open_private_directory(&file, true).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), b"retain");
     }
     #[test]
     fn unrestricted_dacl_is_rejected() {

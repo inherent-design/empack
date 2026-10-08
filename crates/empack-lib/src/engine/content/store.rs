@@ -423,7 +423,7 @@ fn open(path: &Path, create: bool, limits: ContentStoreLimits) -> Result<Store> 
                 .create(path)?;
         }
         #[cfg(windows)]
-        crate::engine::windows_privacy::create(path)?;
+        crate::engine::windows_privacy::create_if_absent(path)?;
     }
     let metadata = std::fs::symlink_metadata(path)?;
     ensure!(

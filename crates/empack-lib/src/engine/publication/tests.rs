@@ -909,3 +909,26 @@ pub(crate) fn interrupt_publication(
         Ok(())
     })
 }
+
+#[test]
+fn concurrent_private_directory_openers_share_one_verified_boundary() {
+    let parent = tempfile::tempdir().unwrap();
+    let path = parent.path().join("state");
+    let start = std::sync::Barrier::new(8);
+    let identities = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    let directory = open_private_directory(&path, true).unwrap();
+                    native::directory_identity(&directory).unwrap()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert!(identities.iter().all(|identity| *identity == identities[0]));
+}
