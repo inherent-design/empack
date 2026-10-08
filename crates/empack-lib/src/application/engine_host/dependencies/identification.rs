@@ -244,7 +244,18 @@ pub(super) async fn content(
                 },
                 match supplied.remove(&(id.clone(), file.slot.as_str().to_owned())) {
                     Some(file) => ProviderContentChoice::Supplied(file),
-                    None => ProviderContentChoice::Reference,
+                    None => provider
+                        .materialized()
+                        .get(&LockedFileKey {
+                            dependency: key.clone(),
+                            slot: file.slot.clone(),
+                        })
+                        .and_then(
+                            crate::engine::dependency_content::DependencyContent::materialized,
+                        )
+                        .cloned()
+                        .map(ProviderContentChoice::Supplied)
+                        .unwrap_or(ProviderContentChoice::Reference),
                 },
             );
         }

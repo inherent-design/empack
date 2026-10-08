@@ -64,7 +64,14 @@ impl ResolvedAdditionBatch {
                                     dependency: key.clone(),
                                     slot: file.slot.clone(),
                                 },
-                                DependencyContent::Reference,
+                                provider
+                                    .materialized()
+                                    .get(&LockedFileKey {
+                                        dependency: key.clone(),
+                                        slot: file.slot.clone(),
+                                    })
+                                    .cloned()
+                                    .unwrap_or(DependencyContent::Reference),
                             );
                         }
                     }

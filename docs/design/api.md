@@ -229,13 +229,24 @@ paths resolve against the invocation directory. Raw project documents and native
 identity bind acquisition to publication, so a concurrent edit requires replanning.
 CLI provider identification and explicit file plans precede this boundary; catalog
 failures do not implicitly authorize unidentified content. Direct world ZIPs expand
-into one tracked local member group. Provider-owned world interpretation remains open.
+into one tracked local member group.
+
+A provider world returns `ProviderAdditionOutcome::Archives` after catalog resolution.
+The retained `ProviderArchiveAddition` has no publishable group until `acquire` verifies
+and interprets its selected archive. It uses the same bounded world reader as direct
+worlds. The resulting provider group retains its exact pin, archive role and original
+assertions; each member has an observed identity and exact archive path. `ArchiveRoot`
+placements retain destination roots independently of a version's member inventory.
+`ProviderAddition::materialized` carries those verified members into the ordinary
+addition publisher. Recorded synchronization verifies installed members, and updates
+resolve the archive role rather than treating member names as provider file names.
+Provider adoption verifies the retained exact archive selection against installed bytes.
 
 `application::engine_host::add` accepts a nonempty sequence of `AddHostInput::Provider`
 and `AddHostInput::File`. Both use one captured project revision and one resource governor.
 `ResolvedAdditionBatch::combine` consumes their resolved evidence into one inspected
-addition group and complete content inventory. Provider entries remain exact references;
-direct entries retain verified bytes. The evidence policy applies to direct acquisition;
+addition group and complete content inventory. Ordinary provider entries may remain exact
+references; interpreted worlds and direct entries retain verified bytes. The evidence policy applies to direct acquisition;
 provider references keep their original assertions for later acquisition policy checks.
 
 Logical collisions and incompatible placements fail before publication. Required provider

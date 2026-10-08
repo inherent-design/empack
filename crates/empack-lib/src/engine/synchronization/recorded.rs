@@ -106,6 +106,16 @@ impl RecordedInputs {
                         // Their captured bytes must still satisfy every original source assertion.
                         verified_placement(workspace, file, cancel)?
                     }
+                    AcquisitionSpec::ProviderArchiveMember { .. } => {
+                        content.insert(key.clone(), DependencyContent::Reference);
+                        match verified_placement(workspace, file, cancel) {
+                            Ok(path) => path,
+                            Err(_) => {
+                                cancel.check()?;
+                                continue;
+                            }
+                        }
+                    }
                     _ => {
                         validate_reference(file)?;
                         content.insert(key, DependencyContent::Reference);
@@ -198,12 +208,54 @@ impl RecordedInputs {
                 matches!(self.content.get(&key), Some(DependencyContent::Reference)),
                 "Acquired synchronization content does not select a recorded remote reference"
             );
+            let project = self
+                .resolution
+                .as_ref()
+                .map(ResolvedProject::lock)
+                .or_else(|| {
+                    self.snapshot
+                        .workspace()
+                        .prior_lock()
+                        .map(|lock| lock.lock())
+                })
+                .context("Synchronization has no exact selection")?;
+            let file = project
+                .dependencies
+                .get(&key.dependency)
+                .and_then(|dependency| {
+                    dependency
+                        .files
+                        .as_slice()
+                        .iter()
+                        .find(|file| file.slot == key.slot)
+                })
+                .context("Supplied synchronization slot is not selected")?;
+            let policy = match &file.acquisition {
+                AcquisitionSpec::ProviderArchiveMember { archive, member } => acquired
+                    .content
+                    .provider_member_policy(archive, member, evidence)?,
+                _ => evidence,
+            };
+            crate::engine::content::verify_observation(
+                &mut acquired.content.lease().open(),
+                &file.expected,
+                acquired.content.lease().len(),
+                policy,
+                InitialObservation::RequireEvidence,
+                cancel,
+            )?;
             self.content.insert(key, acquired.into());
         }
         let workspace = self.snapshot.workspace();
         let mut pool = ContentPool::new(self.retained_bytes)?;
         for input in self.local {
             cancel.check()?;
+            if matches!(
+                self.content.get(&input.key),
+                Some(DependencyContent::Materialized(_))
+            ) {
+                continue;
+            }
             let (content, permissions) =
                 workspace.acquire_file(&input.path, Some(&input.expected), evidence, cancel)?;
             let content = pool.insert(content, cancel)?;

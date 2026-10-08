@@ -584,6 +584,9 @@ impl ProjectIntent {
             let folder = self.content_folder(root.kind).ok_or_else(|| {
                 invalid("Automatic placement requires a configured content directory")
             })?;
+            if root.kind == ContentKind::World {
+                return archive::validate_automatic(folder, selected);
+            }
             if selected
                 .files
                 .as_slice()

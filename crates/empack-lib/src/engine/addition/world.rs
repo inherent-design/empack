@@ -14,6 +14,12 @@ use empack_core::{
     path::{InstallDestination, PathSyntax, PortableRelPath},
 };
 
+pub(in crate::engine) struct WorldMember {
+    pub member: PortableRelPath,
+    pub relative: PortableRelPath,
+    pub file: AcquiredBuildFile,
+}
+
 pub(super) async fn expand(
     scope: &mut WorkScope,
     input: DirectFileInput,
@@ -22,6 +28,56 @@ pub(super) async fn expand(
     policy: SourceEvidencePolicy,
 ) -> Result<RetainedOutput<Vec<AcquiredFileInput>>> {
     let address = archive.content.lease().id();
+    read(scope, archive, limits, policy)
+        .await?
+        .map(|members| {
+            members
+                .into_iter()
+                .map(|member| {
+                    let placements = input
+                        .placements
+                        .as_slice()
+                        .iter()
+                        .map(|base| {
+                            Ok(Placement {
+                                destination: InstallDestination::parse(&format!(
+                                    "{}/{}",
+                                    base.destination.relative().as_str(),
+                                    member.relative.as_str()
+                                ))?,
+                                layer: base.layer,
+                                requirements: base.requirements.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(AcquiredFileInput {
+                        role: super::FileInputRole::Member(FileSlot::parse(
+                            member.relative.as_str(),
+                        )?),
+                        key: input.key.clone(),
+                        title: input.title.clone(),
+                        kind: ContentKind::World,
+                        source: AcquiredFileSource::ArchiveMember {
+                            archive: address.clone(),
+                            member: member.member,
+                        },
+                        evidence: FileEvidence::AcceptObserved,
+                        requirements: input.requirements.clone(),
+                        placements: NonEmpty::new(placements)?,
+                        file: member.file,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()
+}
+
+pub(in crate::engine) async fn read(
+    scope: &mut WorkScope,
+    archive: AcquiredBuildFile,
+    limits: ArchiveLimits,
+    policy: SourceEvidencePolicy,
+) -> Result<RetainedOutput<Vec<WorldMember>>> {
     let metadata = (limits.entries as u64)
         .checked_mul(4096)
         .context("World metadata estimate overflow")?;
@@ -118,34 +174,9 @@ pub(super) async fn expand(
         let content = pool
             .consolidate_owned(scope, AcquiredContent::retain_resources(retained)?)
             .await?;
-        let placements = input
-            .placements
-            .as_slice()
-            .iter()
-            .map(|base| {
-                Ok(Placement {
-                    destination: InstallDestination::parse(&format!(
-                        "{}/{}",
-                        base.destination.relative().as_str(),
-                        relative.as_str()
-                    ))?,
-                    layer: base.layer,
-                    requirements: base.requirements.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        files.push(AcquiredFileInput {
-            role: super::FileInputRole::Member(FileSlot::parse(relative.as_str())?),
-            key: input.key.clone(),
-            title: input.title.clone(),
-            kind: ContentKind::World,
-            source: AcquiredFileSource::ArchiveMember {
-                archive: address.clone(),
-                member,
-            },
-            evidence: FileEvidence::AcceptObserved,
-            requirements: input.requirements.clone(),
-            placements: NonEmpty::new(placements)?,
+        files.push(WorldMember {
+            member,
+            relative,
             file: AcquiredBuildFile {
                 content,
                 permissions,

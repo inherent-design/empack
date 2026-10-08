@@ -80,6 +80,7 @@ pub(super) async fn resume_with_services(
             context,
             resumed: Some(resumed),
             files,
+            resolved: BTreeMap::new(),
         },
     )
     .await
@@ -291,12 +292,14 @@ pub(super) async fn synchronize_with_services(
         let provider = if providers.is_empty() { None } else {
             match services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, ReleasePolicy::PreferStable, limits).await? {
                 ProviderAdditionOutcome::Ready(value) => Some(value),
+                ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire(&mut scope, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?),
                 ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!("Synchronization was not published: dependency evidence requires a decision: {:?}", closure.issues),
             }
         };
         let direct = if files.is_empty() { None } else {
             Some(FileAddition::acquire(&mut scope, &baseline, NonEmpty::new(files)?, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?)
         };
+        let acquired = provider.as_ref().into_iter().flat_map(|provider|provider.materialized()).filter_map(|(key,content)|content.materialized().map(|file|(key.clone(),file.clone()))).collect();
         let worker = scope.spawn_blocking(ResourceRequest { jobs: 1, memory_bytes: 64 << 20, ..Default::default() }, ResourceRequest { memory_bytes: 64 << 20, ..Default::default() }, move |cancel| {
         cancel.check()?;
         let mut lock = previous.unwrap_or_else(|| ResolutionLock {
@@ -324,15 +327,18 @@ pub(super) async fn synchronize_with_services(
         else { SynchronizationCandidate::prepare_initial(&source, &proposed)?; }
         Ok::<_, anyhow::Error>(proposed)
         })?;
-        scope.accept(worker.wait().await?)?.transpose()
+        Ok((scope.accept(worker.wait().await?)?.transpose()?, acquired))
     }).await?;
+    let (resolved, acquired) = resolved;
+    let mut inputs = materialization::SyncInputs::initial(context.clone());
+    inputs.resolved = acquired;
     publish(
         session,
         (*resolved).clone(),
         Some((*resolved).clone()),
         materialize,
         acquisition_services,
-        materialization::SyncInputs::initial(context.clone()),
+        inputs,
     )
     .await
 }
@@ -375,6 +381,42 @@ fn preserve_provider_assertions(
                             .is_none_or(|b| a == b)),
                         "Provider file assertions changed for an unchanged selection"
                     );
+                }
+                if let (
+                    AcquisitionSpec::ProviderArchiveMember {
+                        archive: old_archive,
+                        member: old_member,
+                    },
+                    AcquisitionSpec::ProviderArchiveMember { archive, member },
+                ) = (&old.acquisition, &mut file.acquisition)
+                {
+                    ensure!(
+                        archive.pin == old_archive.pin
+                            && archive.slot == old_archive.slot
+                            && member == old_member,
+                        "World archive role or member changed for an unchanged selection"
+                    );
+                    ensure!(
+                        old_archive
+                            .expected
+                            .size
+                            .zip(archive.expected.size)
+                            .is_none_or(|(a, b)| a == b),
+                        "World archive size changed for an unchanged selection"
+                    );
+                    if let (Some(old), Some(new)) =
+                        (&old_archive.expected.digests, &archive.expected.digests)
+                    {
+                        ensure!(
+                            old.values().iter().all(|a| new
+                                .values()
+                                .iter()
+                                .find(|b| a.algorithm() == b.algorithm())
+                                .is_none_or(|b| a == b)),
+                            "World archive assertions changed for an unchanged selection"
+                        );
+                    }
+                    archive.expected = old_archive.expected.clone();
                 }
                 file.expected = old.expected.clone();
                 file.provenance = old.provenance.clone();

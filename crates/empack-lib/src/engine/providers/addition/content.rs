@@ -103,10 +103,16 @@ impl ProviderAddition {
                         content.insert(key, DependencyContent::Reference);
                     }
                     ProviderContentChoice::Supplied(supplied) => {
+                        let member_policy = match &file.acquisition {
+                            AcquisitionSpec::ProviderArchiveMember { archive, member } => supplied
+                                .content
+                                .provider_member_policy(archive, member, policy)?,
+                            _ => policy,
+                        };
                         validate_expectation(
                             &file.expected,
                             limits.file_bytes,
-                            policy,
+                            member_policy,
                             InitialObservation::RequireEvidence,
                         )?;
                         if let Some(digests) = &file.expected.digests {

@@ -14,7 +14,7 @@ use empack_core::{
 use mockito::{Matcher, Server};
 use serde_json::{Value, json};
 use std::fs;
-fn current() -> ResolvedProject {
+pub(super) fn current() -> ResolvedProject {
     let base = crate::engine::mrpack::tests::project(false, false);
     let mut intent = base.intent().clone();
     intent.roots.clear();
@@ -71,7 +71,7 @@ async fn records(server: &mut Server, project: &str, slug: &str, kind: &str, ver
         .create_async()
         .await;
 }
-fn limits() -> ClosureLimits {
+pub(super) fn limits() -> ClosureLimits {
     ClosureLimits {
         selection: SelectionLimits {
             catalog: CatalogLimits {

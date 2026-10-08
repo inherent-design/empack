@@ -2,7 +2,7 @@
 use super::*;
 use crate::engine::addition::{DirectFileInput, DirectFileSource, FileEvidence, FileKindPolicy};
 use empack_core::model::{
-    AcquisitionSpec, DependencyKey, ExpectedContent, PlacementIntent, ResolvedIdentity,
+    AcquisitionSpec, DependencyKey, ExpectedContent, Placement, PlacementIntent, ResolvedIdentity,
     SourceIntent, VersionIntent,
 };
 
@@ -131,6 +131,24 @@ pub(super) async fn adopt_with_services(
         let ResolvedIdentity::Provider(identity) = &dependency.identity else {
             unreachable!("provider input selected above")
         };
+        if dependency.kind == ContentKind::World
+            && dependency.files.as_slice().iter().all(|file| {
+                matches!(
+                    file.acquisition,
+                    AcquisitionSpec::ProviderArchiveMember { .. }
+                )
+            })
+        {
+            input.pin = Some(
+                dependency
+                    .selected
+                    .as_ref()
+                    .context("Provider world has no exact archive selection")?
+                    .selection
+                    .clone(),
+            );
+            continue;
+        }
         let mut pin = None;
         let mut identify = Vec::new();
         for file in dependency.files.as_slice() {
@@ -237,7 +255,35 @@ fn selections(
         });
         match &selected.identity {
             ResolvedIdentity::Provider(id) => {
-                let files = if root
+                let files = if let Some(root) = root
+                    && let PlacementIntent::ArchiveRoot(roots) = &root.placement
+                {
+                    ProviderFiles::PrimaryPlaced(roots.clone())
+                } else if matches!(
+                    primary.acquisition,
+                    AcquisitionSpec::ProviderArchiveMember { .. }
+                ) {
+                    let suffix = format!("/{}", primary.slot.as_str());
+                    let roots = primary
+                        .placements
+                        .as_slice()
+                        .iter()
+                        .map(|placement| {
+                            let base = placement
+                                .destination
+                                .relative()
+                                .as_str()
+                                .strip_suffix(&suffix)
+                                .context("World member has no consistent destination root")?;
+                            Ok(Placement {
+                                destination: empack_core::path::InstallDestination::parse(base)?,
+                                layer: placement.layer,
+                                requirements: placement.requirements.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    ProviderFiles::PrimaryPlaced(NonEmpty::new(roots)?)
+                } else if root
                     .is_some_and(|root| matches!(root.placement, PlacementIntent::Automatic))
                     && selected.files.as_slice().len() == 1
                 {

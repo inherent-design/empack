@@ -382,6 +382,7 @@ async fn change_with_services(
                 ).await?;
                 match resolved {
                     ProviderAdditionOutcome::Ready(addition) => Some(addition),
+                    ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire(&mut scope, &services.transport, evidence, services.files).await?),
                     ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!(
                         "Requested dependencies were not published: required dependency evidence needs a decision: {:?}",
                         closure.issues

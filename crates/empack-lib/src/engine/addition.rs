@@ -2,7 +2,7 @@
 mod batch;
 mod direct;
 pub mod independent;
-mod world;
+pub(in crate::engine) mod world;
 pub use batch::ResolvedAdditionBatch;
 mod file_input;
 pub use direct::{

@@ -133,3 +133,36 @@ pub(super) fn validate_placements(
     }
     Ok(())
 }
+
+pub(super) fn validate_automatic(
+    folder: &str,
+    selected: &LockedDependency,
+) -> Result<(), ModelError> {
+    let first = &selected.files.as_slice()[0];
+    let suffix = alloc::format!("/{}", first.slot.as_str());
+    let roots = first
+        .placements
+        .as_slice()
+        .iter()
+        .map(|placement| {
+            let base = placement
+                .destination
+                .relative()
+                .as_str()
+                .strip_suffix(&suffix)
+                .ok_or_else(|| invalid("World member has no destination root"))?;
+            if placement.layer != ContentLayer::Common
+                || base.rsplit_once('/').map(|(parent, _)| parent) != Some(folder)
+            {
+                return Err(invalid(
+                    "World root does not satisfy the automatic content directory",
+                ));
+            }
+            let mut root = placement.clone();
+            root.destination = InstallDestination::parse(base)
+                .map_err(|_| invalid("Invalid automatic world root"))?;
+            Ok(root)
+        })
+        .collect::<Result<Vec<_>, ModelError>>()?;
+    validate_placements(ContentKind::World, &NonEmpty::new(roots)?, selected)
+}

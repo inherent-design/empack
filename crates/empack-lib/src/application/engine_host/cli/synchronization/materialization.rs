@@ -20,6 +20,7 @@ pub(super) struct SyncInputs {
     pub context: SyncInputContext,
     pub resumed: Option<ResumedSync>,
     pub files: Vec<String>,
+    pub resolved: BTreeMap<LockedFileKey, crate::engine::mrpack::AcquiredBuildFile>,
 }
 impl SyncInputs {
     pub fn initial(context: SyncInputContext) -> Self {
@@ -27,6 +28,7 @@ impl SyncInputs {
             context,
             resumed: None,
             files: Vec::new(),
+            resolved: BTreeMap::new(),
         }
     }
 }
@@ -48,6 +50,12 @@ pub(super) async fn publish(
         .resumed
         .as_mut()
         .map(|resumed| std::mem::take(&mut resumed.acquired));
+    let mut resolved = std::mem::take(&mut inputs.resolved);
+    if let Some(retained) = &mut saved {
+        retained.append(&mut resolved);
+    } else if !resolved.is_empty() {
+        saved = Some(std::mem::take(&mut resolved));
+    }
     let mut resumed = inputs.resumed.take();
     let request = if materialize {
         let mut pending = Vec::new();
@@ -121,6 +129,10 @@ pub(super) async fn publish(
                         locked: retained,
                         observed: BTreeMap::new(),
                     };
+                    pending.retain(|need| match &need.key {
+                        AcquisitionKey::Locked(key) => !acquired.locked.contains_key(key),
+                        _ => true,
+                    });
                     let mut total = acquired.retained_bytes()?;
                     ensure!(
                         total <= transfer.transfer_bytes,
@@ -243,6 +255,13 @@ pub(super) async fn publish(
                 evidence,
                 content: acquired.acquired.locked,
             }
+        }
+    } else if let Some(content) = saved.take() {
+        SyncRequest::AcquiredReferences {
+            source_revision: Some(source_revision),
+            resolution,
+            evidence,
+            content,
         }
     } else {
         SyncRequest::Recorded {

@@ -1,6 +1,7 @@
 //! Canonical provider requests become one resolved dependency group before native mutation.
 use super::*;
 mod content;
+mod world;
 use crate::engine::{documents::DocumentCodec, resources::AdmissionPermit};
 use anyhow::Context;
 pub use content::{
@@ -13,6 +14,7 @@ use empack_core::{
     requirements::{Requirement, Requirements},
 };
 use std::collections::{BTreeMap, BTreeSet};
+pub use world::ProviderArchiveAddition;
 
 #[derive(Clone, Default)]
 pub enum ProviderFiles {
@@ -45,6 +47,8 @@ pub struct ProviderAddition {
     group: AdditionGroup,
     evidence: ProviderClosure,
     _documents: AdmissionPermit,
+    materialized: crate::engine::dependency_content::DependencyContents,
+    _members: Vec<AdmissionPermit>,
 }
 impl ProviderAddition {
     pub fn project(&self) -> &ResolvedProject {
@@ -53,12 +57,17 @@ impl ProviderAddition {
     pub fn group(&self) -> &AdditionGroup {
         &self.group
     }
+    pub fn materialized(&self) -> &crate::engine::dependency_content::DependencyContents {
+        &self.materialized
+    }
     pub fn evidence(&self) -> &ProviderClosure {
         &self.evidence
     }
 }
 pub enum ProviderAdditionOutcome {
     Ready(Box<ProviderAddition>),
+    /// Exact archive selections still need verified member interpretation before publication.
+    Archives(Box<ProviderArchiveAddition>),
     /// Unknown or conflicting required edges remain explicit; no successful subset is normalized.
     NeedsInput(ProviderClosure),
 }
@@ -104,10 +113,6 @@ impl ProviderCatalog {
             ensure!(
                 project.kinds.as_slice().contains(&kind),
                 CatalogError::ContentKindMismatch
-            );
-            ensure!(
-                kind != ContentKind::World,
-                "Provider world archives require member interpretation; supply the downloaded archive as a local world"
             );
             let pin = if let Some(pin) = &input.pin {
                 let selected = ResolvedPin {
@@ -172,13 +177,28 @@ impl ProviderCatalog {
                 .context("Provider document size overflow")?,
             ..Default::default()
         })?;
-        let project = normalize(current, &closure, &choices)?;
+        if closure.selections.iter().any(|(id, selected)| {
+            selected.kind == ContentKind::World
+                && (choices.contains_key(id)
+                    || !current
+                        .lock()
+                        .dependencies
+                        .values()
+                        .any(|dep| dep.identity == ResolvedIdentity::Provider(id.clone())))
+        }) {
+            return Ok(ProviderAdditionOutcome::Archives(Box::new(
+                ProviderArchiveAddition::new(current.clone(), closure, choices, reservation),
+            )));
+        }
+        let project = normalize(current, &closure, &choices, &BTreeMap::new())?;
         let group = AdditionGroup::from_resolved(&project)?;
         Ok(ProviderAdditionOutcome::Ready(Box::new(ProviderAddition {
             project,
             group,
             evidence: closure,
             _documents: reservation,
+            materialized: BTreeMap::new(),
+            _members: Vec::new(),
         })))
     }
 }
@@ -204,6 +224,7 @@ fn normalize(
     current: &ResolvedProject,
     closure: &ProviderClosure,
     roots: &BTreeMap<ProviderProjectId, ProviderAddInput>,
+    worlds: &BTreeMap<ProviderProjectId, world::WorldSelection>,
 ) -> Result<ResolvedProject> {
     let mut intent = current.intent().clone();
     intent.roots.clear();
@@ -335,11 +356,14 @@ fn normalize(
             for file in existing.files.as_slice() {
                 // Keep every original assertion; matching refreshed records only establishes
                 // file role and locator correspondence, not permission to change stored bytes.
-                let slot = match &file.acquisition {
-                    AcquisitionSpec::Provider { slot, .. } => slot,
-                    _ => &file.slot,
+                let (slot, expected) = match &file.acquisition {
+                    AcquisitionSpec::Provider { slot, .. } => (slot, &file.expected),
+                    AcquisitionSpec::ProviderArchiveMember { archive, .. } => {
+                        (&archive.slot, &archive.expected)
+                    }
+                    _ => (&file.slot, &file.expected),
                 };
-                let provider_file = selected.resolution.file_for_slot(slot, &file.expected)?;
+                let provider_file = selected.resolution.file_for_slot(slot, expected)?;
                 if !matches!(
                     provider_file.role.as_deref(),
                     Some("required-resource-pack" | "optional-resource-pack")
@@ -383,62 +407,70 @@ fn normalize(
             }
             continue;
         }
-        let folder = root
-            .and_then(|root| root.folder.as_ref())
-            .map(|path| path.as_str())
-            .or_else(|| intent.content_folder(selected.kind));
-        let declared = selected.resolution.files.as_slice();
-        let policy = root
-            .map(|root| &root.files)
-            .unwrap_or(&ProviderFiles::Primary);
-        ensure!(
-            declared.iter().all(|file| file.role.is_none())
-                || matches!(policy, ProviderFiles::Placed(_)),
-            "Companion provider files require explicit per-file placement and participation"
-        );
-        let files: Vec<_> = match policy {
-            ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => vec![
-                declared
-                    .iter()
-                    .find(|file| file.primary)
-                    .unwrap_or(&declared[0]),
-            ],
-            ProviderFiles::All => declared.iter().collect(),
-            ProviderFiles::Placed(placements) => {
-                ensure!(
-                    !placements.is_empty()
-                        && placements
-                            .keys()
-                            .all(|name| declared.iter().any(|file| &file.filename == name)),
-                    "Selected provider file is missing"
-                );
-                ensure!(
+        let files = if selected.kind == ContentKind::World {
+            worlds
+                .get(id)
+                .context("Provider world still requires archive interpretation")?
+                .files
+                .as_slice()
+                .to_vec()
+        } else {
+            let folder = root
+                .and_then(|root| root.folder.as_ref())
+                .map(|path| path.as_str())
+                .or_else(|| intent.content_folder(selected.kind));
+            let declared = selected.resolution.files.as_slice();
+            let policy = root
+                .map(|root| &root.files)
+                .unwrap_or(&ProviderFiles::Primary);
+            ensure!(
+                declared.iter().all(|file| file.role.is_none())
+                    || matches!(policy, ProviderFiles::Placed(_)),
+                "Companion provider files require explicit per-file placement and participation"
+            );
+            let files: Vec<_> = match policy {
+                ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => vec![
                     declared
                         .iter()
-                        .filter(|file| file.role.as_deref() == Some("required-resource-pack"))
-                        .all(|file| placements.contains_key(&file.filename)),
-                    "A required companion resource pack cannot be omitted"
-                );
-                declared
-                    .iter()
-                    .filter(|file| placements.contains_key(&file.filename))
-                    .collect()
-            }
-            ProviderFiles::Named(names) => {
-                ensure!(
-                    !names.is_empty()
-                        && names
+                        .find(|file| file.primary)
+                        .unwrap_or(&declared[0]),
+                ],
+                ProviderFiles::All => declared.iter().collect(),
+                ProviderFiles::Placed(placements) => {
+                    ensure!(
+                        !placements.is_empty()
+                            && placements
+                                .keys()
+                                .all(|name| declared.iter().any(|file| &file.filename == name)),
+                        "Selected provider file is missing"
+                    );
+                    ensure!(
+                        declared
                             .iter()
-                            .all(|name| declared.iter().any(|file| &file.filename == name)),
-                    "Selected provider file is missing"
-                );
-                declared
-                    .iter()
-                    .filter(|file| names.contains(&file.filename))
-                    .collect()
-            }
-        };
-        let files = files
+                            .filter(|file| file.role.as_deref() == Some("required-resource-pack"))
+                            .all(|file| placements.contains_key(&file.filename)),
+                        "A required companion resource pack cannot be omitted"
+                    );
+                    declared
+                        .iter()
+                        .filter(|file| placements.contains_key(&file.filename))
+                        .collect()
+                }
+                ProviderFiles::Named(names) => {
+                    ensure!(
+                        !names.is_empty()
+                            && names
+                                .iter()
+                                .all(|name| declared.iter().any(|file| &file.filename == name)),
+                        "Selected provider file is missing"
+                    );
+                    declared
+                        .iter()
+                        .filter(|file| names.contains(&file.filename))
+                        .collect()
+                }
+            };
+            files
             .into_iter()
             .map(|file| {
                 let slot = FileSlot::parse(&file.filename)?;
@@ -476,7 +508,8 @@ fn normalize(
                     placements,
                 })
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?
+        };
         let dependency = LockedDependency {
             title: selected.resolution.project.title.clone(),
             kind: selected.kind,
@@ -495,8 +528,9 @@ fn normalize(
                         .clone()
                         .map(VersionIntent::Exact)
                         .unwrap_or(VersionIntent::FollowCompatible),
-                    placement: if root.folder.is_some()
-                        || !matches!(root.files, ProviderFiles::Primary)
+                    placement: if selected.kind == ContentKind::World {
+                        PlacementIntent::ArchiveRoot(worlds[id].roots.clone())
+                    } else if root.folder.is_some() || !matches!(root.files, ProviderFiles::Primary)
                     {
                         PlacementIntent::ByFile(
                             dependency

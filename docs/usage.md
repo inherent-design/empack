@@ -275,7 +275,7 @@ retain their own requirements. Required companions cannot be omitted. Unknown fi
 unsafe paths, conflicting participation and publication collisions fail the batch.
 `--dry-run` resolves and previews the plan without publishing project changes.
 
-## Direct world archives
+## World archives
 
 Configure `layout.world` in `empack.yml` to choose the destination directory, then add
 a local ZIP with `empack add --type world ./adventure.zip`. The archive must contain
@@ -287,8 +287,15 @@ untracked neighboring files intact.
 
 For a direct HTTPS archive, add `--download-as-local` to choose tracked local ownership.
 The original archive is verified before extraction. This flag does not authorize a
-failed provider lookup to become unidentified content. Provider-owned world addition
-remains unavailable until its member semantics are implemented.
+failed provider lookup to become unidentified content.
+
+A CurseForge world retains provider ownership: use `--platform curseforge --type world`
+with its project selector. Configure `layout.world` or supply `--file-plan` with the
+selected archive role and destination roots. The default root uses the provider slug;
+an explicit root stays fixed when updating. Empack verifies the archive before reading
+its members and retains the original archive digests separately from member hashes.
+An explicit file pin remains pinned. Adoption verifies installed members against that
+selected archive; it cannot attribute edited local bytes to the original provider file.
 
 ## Named file placement
 

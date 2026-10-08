@@ -1030,7 +1030,7 @@ async fn world_archive_members_remain_one_identity_across_commands() {
 }
 
 #[tokio::test]
-async fn provider_world_cannot_be_mistaken_for_an_installed_zip() {
+async fn provider_world_requires_destination_before_publication() {
     let mut server = mockito::Server::new_async().await;
     server
         .mock("GET", "/mods/42")
@@ -1040,11 +1040,13 @@ async fn provider_world_cannot_be_mistaken_for_an_installed_zip() {
         )
         .create_async()
         .await;
+    server.mock("GET","/mods/42/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":42,"fileName":"world.zip","fileLength":7,"downloadUrl":null,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"gameVersions":["1.21.1"],"dependencies":[],"isAvailable":true,"releaseType":1,"fileDate":"2026-01-01T00:00:00Z"}}).to_string()).create_async().await;
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let mut selected = options("42");
     selected.platform = Some(SearchPlatform::Curseforge);
     selected.version_id = None;
+    selected.file_id = Some("456".into());
     let before = super::super::tests::snapshot(root.path());
     let error = add_with_catalog(
         &session(root.path(), false),
@@ -1053,7 +1055,7 @@ async fn provider_world_cannot_be_mistaken_for_an_installed_zip() {
     )
     .await
     .unwrap_err();
-    assert!(format!("{error:#}").contains("world archives require member interpretation"));
+    assert!(format!("{error:#}").contains("worlds require an explicit destination"));
     assert_eq!(super::super::tests::snapshot(root.path()), before);
 }
 
@@ -1698,3 +1700,5 @@ async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete
         latest.assert_async().await;
     }
 }
+
+mod provider_world;
