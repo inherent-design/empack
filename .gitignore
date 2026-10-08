@@ -107,4 +107,4 @@ $RECYCLE.BIN/
 .intent
 *.profraw
 lcov.info
-scripts/__pycache__/
+__pycache__/

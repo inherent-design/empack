@@ -7,11 +7,9 @@ Runs three top-level modes:
 
 1. Curated smoke mode (default bare invocation):
    - resolves 7 hardcoded real-world packs across CurseForge and Modrinth
-   - runs `empack init --from ... --yes`
-   - runs `empack build client-full`
-   - if a build blocks on restricted CurseForge files, downloads those files
-     into empack's managed restricted-build cache and resumes with
-     `empack build --continue`
+   - imports with explicit conversion choices and verifies native continuation
+   - supplies exact restricted files after checking a read-only continuation preview
+   - runs two no-op syncs, builds a full client and inspects the resulting ZIP
    - also supports:
      - `--profile pr` for one platform-selected CI smoke pack
      - `--pack <curated-pack-id>` for one explicit curated pack
@@ -766,9 +764,6 @@ def analyze_cfzip(path: Path) -> PackAnalysis:
 class ImportResult:
     success: bool = False
     exit_code: int = -1
-    platform_refs_added: int = 0
-    overrides_copied: int = 0
-    embedded_extracted: int = 0
     stdout: str = ""
     stderr: str = ""
     warnings: list = field(default_factory=list)
@@ -778,7 +773,7 @@ def extract_warning_lines(stdout: str, stderr: str) -> list[str]:
     warnings = []
     combined = stdout + ("\n" if stdout and stderr else "") + stderr
     for line in combined.splitlines():
-        clean = re.sub(r"\x1b\[[0-9;]*m", "", line.strip())
+        clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line.strip())
         if should_echo_live_line(clean):
             warnings.append(clean)
     return warnings
@@ -799,37 +794,8 @@ def should_echo_live_line(clean: str) -> bool:
 
 
 def parse_import_output(stdout: str, stderr: str) -> ImportResult:
-    r = ImportResult(
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    combined = stdout + stderr
-    for line in combined.splitlines():
-        clean = re.sub(r'\x1b\[[0-9;]*m', '', line.strip())
-        if not clean:
-            continue
-        if "Platform references added:" in clean:
-            try:
-                r.platform_refs_added = int(clean.split(":")[-1].strip())
-            except ValueError:
-                pass
-        elif "Override files copied:" in clean:
-            try:
-                r.overrides_copied = int(clean.split(":")[-1].strip())
-            except ValueError:
-                pass
-        elif "Embedded files extracted:" in clean:
-            try:
-                r.embedded_extracted = int(clean.split(":")[-1].strip().split()[0])
-            except (ValueError, IndexError):
-                pass
-        elif "failed for" in clean or "! " in clean:
-            r.warnings.append(clean)
-        elif clean.startswith("Error:") or clean.startswith("Caused by:"):
-            r.warnings.append(clean)
-
-    return r
+    return ImportResult(stdout=stdout, stderr=stderr,
+                        warnings=extract_warning_lines(stdout, stderr))
 
 
 def run_command_posix_live(
@@ -892,7 +858,7 @@ def run_command_posix_live(
 
             while "\n" in line_buffer:
                 raw_line, line_buffer = line_buffer.split("\n", 1)
-                clean = re.sub(r'\x1b\[[0-9;]*m', '', raw_line.strip())
+                clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', raw_line.strip())
                 if should_echo_live_line(clean) and clean not in echoed_lines:
                     echoed_lines.add(clean)
                     print(f"      {label}: {clean}")
@@ -903,7 +869,7 @@ def run_command_posix_live(
 
     if line_buffer:
         chunks.append(line_buffer)
-        clean = re.sub(r'\x1b\[[0-9;]*m', '', line_buffer.strip())
+        clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', line_buffer.strip())
         if should_echo_live_line(clean) and clean not in echoed_lines:
             print(f"      {label}: {clean}")
 
@@ -1413,6 +1379,9 @@ def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
             actual_continue.append(label)
         if failure_reason:
             failures.append((label, failure_reason))
+            print(f"      FAILED: {label}: {failure_reason}", flush=True)
+        else:
+            print(f"      PASSED: {label}; native import continuation={did_continue}", flush=True)
         results.append(entry)
 
     save_curated_report(results, layout)
@@ -1469,7 +1438,7 @@ def print_analysis_summary(analyses: list[tuple[PackCandidate, PackAnalysis, Imp
         if ir:
             if ir.success:
                 fail_count = len(ir.warnings)
-                status = f"OK refs={ir.platform_refs_added} ovr={ir.overrides_copied}"
+                status = "OK"
                 if fail_count:
                     status += f" warn={fail_count}"
             else:
@@ -1537,9 +1506,6 @@ def save_report(
             entry["import_result"] = {
                 "success": ir.success,
                 "exit_code": ir.exit_code,
-                "platform_refs_added": ir.platform_refs_added,
-                "overrides_copied": ir.overrides_copied,
-                "embedded_extracted": ir.embedded_extracted,
                 "warning_count": len(ir.warnings),
                 "warnings": ir.warnings[:20],  # cap for readability
             }
@@ -1870,7 +1836,7 @@ def run_survey_mode(empack_bin: Path, args, layout: RuntimeLayout) -> None:
             import_result = run_import_test(path, project_name, empack_bin, layout)
             if import_result.success:
                 parts = [
-                    f"OK refs={import_result.platform_refs_added} ovr={import_result.overrides_copied}"
+                    "OK"
                 ]
                 if import_result.warnings:
                     parts.append(f"warn={len(import_result.warnings)}")

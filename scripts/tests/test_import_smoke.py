@@ -14,6 +14,11 @@ SPEC.loader.exec_module(smoke)
 
 
 class NativeSmokeContracts(unittest.TestCase):
+    def test_native_errors_remain_visible_after_cursor_restoration(self):
+        result = smoke.parse_import_output("\x1b[?25hError: source changed\r\n", "")
+        self.assertEqual(result.warnings, ["Error: source changed"])
+        self.assertFalse(result.success)
+
     def test_only_exact_saved_restricted_obligations_allow_manual_downloads(self):
         diagnostic = ('Import input "provider:curseforge:42:456:mod.jar": RestrictedDownload\n'
                       'Import continuation was saved\n1 content obligations need explicit input')
