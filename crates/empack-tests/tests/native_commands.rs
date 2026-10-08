@@ -351,3 +351,74 @@ async fn build_continue_missing_state_and_unknown_clean_scope_preserve_files() -
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
+    let project = Project::new();
+    project.initialize("none", None).await?;
+    project.source(
+        "fixture.jar",
+        &[(
+            "fabric.mod.json",
+            br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#,
+        )],
+    );
+    project.run(add(&["fixture.jar"], None)).await?;
+    let intent = fs::read(project.path().join("empack.yml"))?;
+    let old_lock = fs::read(project.path().join("empack.lock"))?;
+    project.source(
+        "fixture.jar",
+        &[(
+            "fabric.mod.json",
+            br#"{"schemaVersion":1,"id":"fixture","version":"2"}"#,
+        )],
+    );
+    let bytes = fs::read(project.root.path().join("fixture.jar"))?;
+    fs::write(project.path().join("pack/mods/fixture.jar"), &bytes)?;
+    let changed = project.snapshot();
+    let update = || Commands::Update {
+        dependencies: vec!["fixture".into()],
+    };
+    // Updating cannot authorize overwriting externally changed source bytes.
+    assert!(
+        execute_command_with_session(update(), &project.session(true, true))
+            .await
+            .is_err()
+    );
+    assert_eq!(project.snapshot(), changed);
+    let adopt = || Commands::Adopt {
+        dependencies: vec!["fixture".into()],
+    };
+    execute_command_with_session(adopt(), &project.session(true, true)).await?;
+    assert_eq!(project.snapshot(), changed);
+    assert!(
+        project
+            .run(Commands::Update {
+                dependencies: vec!["fixture".into(), "missing".into()]
+            })
+            .await
+            .is_err()
+    );
+    assert_eq!(project.snapshot(), changed);
+    project.run(adopt()).await?;
+    assert_eq!(
+        fs::read(project.path().join("pack/mods/fixture.jar"))?,
+        bytes
+    );
+    assert_eq!(fs::read(project.path().join("empack.yml"))?, intent);
+    assert_ne!(fs::read(project.path().join("empack.lock"))?, old_lock);
+    let updated = project.snapshot();
+    for _ in 0..2 {
+        project.run(Commands::Sync {}).await?;
+    }
+    assert_eq!(project.snapshot(), updated);
+    project.run(remove(&["fixture"], true, false)).await?;
+    assert_eq!(project.roots(), 0);
+    project.run(update()).await?;
+    assert_eq!(project.roots(), 0);
+    assert_eq!(
+        fs::read(project.path().join("pack/mods/fixture.jar"))?,
+        bytes
+    );
+    Ok(())
+}

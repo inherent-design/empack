@@ -383,7 +383,13 @@ It resolves compatible provider selections and required closure, verifies reques
 bytes, and prepares one update under that captured revision. An explicit pin in current intent
 cannot be changed by an update input. The host preserves raw authoring bytes, keeps transitive
 records unpromoted, and shows selected identities plus native changes before approval.
-Search/selector composition and CLI routing remain pending.
+The CLI exposes `update KEY...` for exact installed logical keys. It derives canonical
+provider identity and authored pins from the captured project, retains explicit placements,
+and refreshes direct content from its declared source. Unknown or repeated keys fail before
+resolution. It does not authorize replacing externally changed installed bytes.
+`adopt KEY...` explicitly accepts changed tracked local bytes through the document-only
+adoption workflow. Provider/URL observation selection and untracked-file adoption still
+need their frontend evidence and placement choices.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
 present in a project. Preparation verifies their original digest, size and

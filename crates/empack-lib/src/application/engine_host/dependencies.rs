@@ -104,6 +104,15 @@ pub async fn update(
     evidence: SourceEvidencePolicy,
 ) -> Result<()> {
     let services = configured_services(session)?;
+    update_with_services(session, inputs, releases, evidence, services).await
+}
+pub(super) async fn update_with_services(
+    session: &dyn Session,
+    inputs: NonEmpty<AddHostInput>,
+    releases: ReleasePolicy,
+    evidence: SourceEvidencePolicy,
+    services: AdditionServices,
+) -> Result<()> {
     change_with_services(
         session,
         inputs,
@@ -114,7 +123,23 @@ pub async fn update(
     )
     .await
 }
-fn configured_services(session: &dyn Session) -> Result<AdditionServices> {
+
+pub(super) async fn adopt_with_services(
+    session: &dyn Session,
+    inputs: NonEmpty<AddHostInput>,
+    services: AdditionServices,
+) -> Result<()> {
+    change_with_services(
+        session,
+        inputs,
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Adopt,
+        services,
+    )
+    .await
+}
+pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServices> {
     let config = session.config().app_config();
     let catalog = ProviderCatalog::new(
         config.curseforge_api_client_key.clone(),
@@ -132,6 +157,7 @@ fn configured_services(session: &dyn Session) -> Result<AdditionServices> {
 enum Change {
     Add(ExistingDependencyPolicy),
     Update,
+    Adopt,
 }
 
 pub(super) async fn add_with_services(
@@ -161,6 +187,7 @@ async fn change_with_services(
     services: AdditionServices,
 ) -> Result<()> {
     let update = matches!(&change, Change::Update);
+    let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let config = session.config().app_config();
@@ -251,10 +278,12 @@ async fn change_with_services(
                 source_revision: Some(revision), group: addition.group().clone(),
                 content: addition.content().clone(),
             }.into(),
+            Change::Adopt => AdoptObservedRequest { group: addition.group().clone() }.into(),
         };
         let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
         drop(addition);
-        if update { publish_update(session, &engine, prepared).await }
+        if adopt { publish_adoption(session, &engine, prepared).await }
+        else if update { publish_update(session, &engine, prepared).await }
         else { publish_addition(session, &engine, prepared).await }
 
     }
@@ -371,36 +400,43 @@ pub async fn adopt_observed(session: &dyn Session, request: AdoptObservedRequest
             ));
         }
         let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
-        let view = prepared
-            .view()
-            .adoption()
-            .context("Missing adoption preview")?;
-        for (requested, canonical) in &view.bindings {
-            if requested != canonical {
-                session.display().status().info(&format!(
-                    "Retain logical key {} for {}",
-                    canonical.as_str(),
-                    requested.as_str()
-                ));
-            }
-        }
-        adoption::describe(view, |line| session.display().status().info(&line));
-        show_changes(session, &view.files)?;
-        apply(session, &engine, prepared, "Adoption", |receipt| {
-            let ExecutionReceipt::AdoptObserved(receipt) = receipt else {
-                anyhow::bail!("Unexpected adoption receipt");
-            };
-            Ok(format!(
-                "Adopted {} verified dependency bindings; {} managed document changes",
-                receipt.bindings.len(),
-                receipt.publication.changed_files
-            ))
-        })
-        .await
+        publish_adoption(session, &engine, prepared).await
     }
     .await;
     engine.shutdown().await;
     result
+}
+async fn publish_adoption(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+) -> Result<()> {
+    let view = prepared
+        .view()
+        .adoption()
+        .context("Missing adoption preview")?;
+    for (requested, canonical) in &view.bindings {
+        if requested != canonical {
+            session.display().status().info(&format!(
+                "Retain logical key {} for {}",
+                canonical.as_str(),
+                requested.as_str()
+            ));
+        }
+    }
+    adoption::describe(view, |line| session.display().status().info(&line));
+    show_changes(session, &view.files)?;
+    apply(session, engine, prepared, "Adoption", |receipt| {
+        let ExecutionReceipt::AdoptObserved(receipt) = receipt else {
+            anyhow::bail!("Unexpected adoption receipt");
+        };
+        Ok(format!(
+            "Adopted {} verified dependency bindings; {} managed document changes",
+            receipt.bindings.len(),
+            receipt.publication.changed_files
+        ))
+    })
+    .await
 }
 /// Apply explicit logical selections; unknown dependency evidence requires its own policy.
 pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()> {

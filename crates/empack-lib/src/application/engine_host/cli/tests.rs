@@ -157,6 +157,33 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             assert_eq!(current, expected);
         }
         prior = Some(current);
+        let keys = project(root.path())
+            .intent()
+            .roots
+            .keys()
+            .map(|key| key.as_str().to_owned())
+            .collect();
+        let intent_before = fs::read(root.path().join("project/empack.yml")).unwrap();
+        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+        update::update_with_services(
+            &session(root.path(), false),
+            keys,
+            dependencies::AdditionServices {
+                transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
+                catalog,
+                files: DirectFileLimits::default(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read(root.path().join("project/empack.yml")).unwrap(),
+            intent_before
+        );
+        assert_eq!(
+            DocumentCodec.encode_lock(&project(root.path())).unwrap(),
+            prior.clone().unwrap()
+        );
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(

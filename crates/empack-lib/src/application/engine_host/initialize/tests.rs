@@ -697,3 +697,25 @@ async fn compatible_catalog_may_use_the_full_discovery_deadline() {
     }
     assert!(snapshot(root.path()).is_empty());
 }
+
+#[tokio::test]
+async fn unattended_initialization_never_infers_a_loader_or_latest_without_yes() {
+    let root = tempfile::tempdir().unwrap();
+    let host = session(root.path(), false, false)
+        .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+    for missing in ["family", "game", "loader"] {
+        let mut options = args();
+        match missing {
+            "family" => options.modloader = None,
+            "game" => options.mc_version = None,
+            "loader" => options.modloader = Some("fabric".into()),
+            _ => unreachable!(),
+        }
+        let error = initialize(&host, &options).await.unwrap_err();
+        assert!(
+            error.to_string().contains("Noninteractive initialization"),
+            "{error:#}"
+        );
+        assert!(snapshot(root.path()).is_empty());
+    }
+}

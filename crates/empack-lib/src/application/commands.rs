@@ -79,6 +79,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             )
             .await
         }
+        Commands::Update { dependencies } => engine_host::cli::update(session, dependencies).await,
+        Commands::Adopt { dependencies } => engine_host::cli::adopt(session, dependencies).await,
         Commands::Remove {
             mods,
             deps,

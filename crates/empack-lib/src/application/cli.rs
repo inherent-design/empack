@@ -251,6 +251,20 @@ pub enum Commands {
     /// Reconcile installed content with recorded intent and exact selections
     Sync {},
 
+    /// Refresh selected installed dependencies while retaining intent and pins
+    Update {
+        /// Exact logical keys from empack.yml or empack.lock
+        #[arg(required = true)]
+        dependencies: Vec<String>,
+    },
+
+    /// Accept reviewed changes to tracked local bytes without rewriting payloads
+    Adopt {
+        /// Exact logical keys of tracked local files
+        #[arg(required = true)]
+        dependencies: Vec<String>,
+    },
+
     /// Build modpack targets
     Build(BuildArgs),
 
@@ -414,7 +428,7 @@ impl Commands {
             Commands::Init(..) => false,
             Commands::Sync { .. } => true,
             Commands::Build(..) => true,
-            Commands::Add { .. } => true,
+            Commands::Add { .. } | Commands::Update { .. } | Commands::Adopt { .. } => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
         }
@@ -429,7 +443,7 @@ impl Commands {
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. } => 5,
-            Commands::Add { .. } => 6,
+            Commands::Add { .. } | Commands::Update { .. } | Commands::Adopt { .. } => 6,
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,
         }

@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: identification, worlds, update/adoption
+new route, not full feature completion: identification, worlds, complete adoption
 frontends, fresh resolution, browser assistance and remaining library retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
@@ -28,11 +28,11 @@ a passing review and line coverage do not change that state by themselves.
 
 | Workflow | Executable route | Remaining acceptance work |
 | --- | --- | --- |
-| Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix and headless runtime selection audit |
+| Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
 | Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider identification of supplied files, world members, full companion-file choices |
-| Update | Host implemented; no command yet | Expose selected updates without changing pins, aliases or root/transitive roles |
-| Adopt observed content | Host implemented; no command yet | Construct reviewed groups from inspected content |
+| Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
+| Adopt observed content | **CLI wired for tracked local files:** verified document-only acceptance of changed bytes | Provider/URL observation selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded exact selections | Fresh resolution for changed intent; optional remote materialization |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance, execution-time missing-input retention, live target/runtime matrix |
@@ -116,7 +116,7 @@ re-export. Restricted-import continuation remains open.
 | --- | --- | --- |
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
-| Retested clean | Earlier inherited-pipe warning | The combined native cutover suite and subsequent template/runtime subset completed without the warning |
+| Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
 | Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Fresh sync and optional materialization | Changed intent resolves correctly; ordinary sync retains exact selections; repeated sync is a no-op |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
@@ -147,6 +147,7 @@ modules remains open.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Selected update/local adoption | 44 affected host/CLI/native tests plus three focused lifecycle cases passed; all-feature Clippy passed | One intermittent inherited-pipe warning in the affected run; no final combined rerun |
 | Native dispatcher cutover | 1,676 default tests and eleven doctests passed; workspace all-feature Clippy, formatting and Windows cross-compilation passed | 98 opt-in tests skipped; no inherited-pipe warnings; Windows retains seven existing test-only warnings; live parity and new coverage remain open |
 | `48bfc5d` | 94 affected host/import tests and all-feature Clippy passed | One inherited-pipe warning; isolated affected cleanup test passed clean |
 | `9893353` | Five CLI adapter regressions and all-feature Clippy passed | Canonical selectors, deliberate search, direct files and repeated sync |

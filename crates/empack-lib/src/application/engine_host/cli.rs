@@ -25,7 +25,9 @@ use std::{collections::BTreeSet, sync::Arc};
 
 mod files;
 mod import;
+mod update;
 pub use import::initialize;
+pub use update::{adopt, update};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.
 pub struct AddOptions {

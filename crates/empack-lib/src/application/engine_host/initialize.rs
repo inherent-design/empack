@@ -50,8 +50,8 @@ async fn initialize_with_catalog(
     };
     let requested_family = args.modloader.as_deref().map(parse_loader).transpose()?;
     ensure!(
-        !config.yes || requested_family.is_some(),
-        "--yes requires --modloader to be specified"
+        requested_family.is_some() || (!config.yes && session.interactive().can_choose()),
+        "Noninteractive initialization requires --modloader"
     );
     ensure!(
         requested_family != Some(LoaderKind::Vanilla) || args.loader_version.is_none(),
@@ -62,11 +62,22 @@ async fn initialize_with_catalog(
         .as_deref()
         .map(GameVersion::parse)
         .transpose()?;
+    ensure!(
+        config.yes || session.interactive().can_choose() || requested_game.is_some(),
+        "Noninteractive initialization requires --mc-version or --yes for the latest release"
+    );
     let requested_loader = args
         .loader_version
         .as_deref()
         .map(LoaderVersion::parse)
         .transpose()?;
+    ensure!(
+        config.yes
+            || session.interactive().can_choose()
+            || requested_family == Some(LoaderKind::Vanilla)
+            || requested_loader.is_some(),
+        "Noninteractive initialization requires --loader-version or --yes for the latest compatible loader"
+    );
     // Validate independent options before any discovery request or native preparation.
     let mut layout = BTreeMap::new();
     if let Some(folder) = &args.datapack_folder {
