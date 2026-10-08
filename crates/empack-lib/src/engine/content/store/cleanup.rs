@@ -5,8 +5,27 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheObject {
-    pub id: ContentId,
+    pub kind: CacheObjectKind,
     pub bytes: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheObjectKind {
+    Content(ContentId),
+    AbandonedCandidate(String),
+}
+impl CacheObject {
+    /// Display identity only; an executable cleanup still requires its opaque native plan.
+    pub fn name(&self) -> String {
+        match &self.kind {
+            CacheObjectKind::Content(id) => name(id),
+            CacheObjectKind::AbandonedCandidate(name) => name.clone(),
+        }
+    }
+}
+fn object_kind(name: &str) -> Option<CacheObjectKind> {
+    parse_name(name)
+        .map(CacheObjectKind::Content)
+        .or_else(|| candidate_name(name).then(|| CacheObjectKind::AbandonedCandidate(name.into())))
 }
 #[derive(PartialEq, Eq)]
 struct Binding {
@@ -43,7 +62,8 @@ pub struct CacheCleanupReceipt {
     _reservation: Option<AdmissionPermit>,
 }
 impl FileContentLookup {
-    /// Capture only canonical cache-object names. Unknown neighbors and scratch remain untouched.
+    /// Capture canonical blobs and abandoned publisher candidates under store coordination.
+    /// Unknown neighbors remain untouched; active writers hold exclusive coordination.
     /// Limits bound enumeration; the returned plan charges its actual retained selection size.
     pub async fn plan_cleanup(&self, scope: &mut WorkScope) -> Result<CacheCleanupPlan> {
         // Count under shared coordination without accumulating selection metadata. Retain that
@@ -141,7 +161,7 @@ impl Store {
         for (seen, entry) in self.root.entries()?.enumerate() {
             cancel.check()?;
             self.check_scan_limit(seen)?;
-            if entry?.file_name().to_str().and_then(parse_name).is_some() {
+            if entry?.file_name().to_str().and_then(object_kind).is_some() {
                 ensure!(
                     count < self.limits.entries,
                     "Content store exceeds object limit"
@@ -165,20 +185,21 @@ impl Store {
         for (seen, entry) in self.root.entries()?.enumerate() {
             cancel.check()?;
             self.check_scan_limit(seen)?;
-            let Some(id) = entry?.file_name().to_str().and_then(parse_name) else {
+            let name = entry?.file_name();
+            let Some(kind) = name.to_str().and_then(object_kind) else {
                 continue;
             };
             ensure!(
                 selected.len() < scan.count,
                 "Cache membership changed during inspection"
             );
-            let file = native::open_file(&self.root, &name(&id))?;
+            let file = native::open_native_file(&self.root, &name)?;
             let binding = binding(&file)?;
             // Cache contents may be corrupt or oversized; cleanup still owns their verified native
             // identities. It never reads or authenticates their payload as part of eviction.
             selected.push(SelectedObject {
                 object: CacheObject {
-                    id,
+                    kind,
                     bytes: binding.bytes,
                 },
                 binding,
@@ -188,7 +209,7 @@ impl Store {
             selected.len() == scan.count,
             "Cache membership changed during inspection"
         );
-        selected.sort_unstable_by(|a, b| a.object.id.cmp(&b.object.id));
+        selected.sort_unstable_by_key(|entry| entry.object.name());
         Ok(CacheCleanupPlan {
             root: native::directory_identity(&self.root)?,
             selected,
@@ -212,7 +233,7 @@ impl Store {
         let _guard = self.lock(true)?;
         for entry in &plan.selected {
             cancel.check()?;
-            let file = native::open_file(&self.root, &name(&entry.object.id))?;
+            let file = native::open_file(&self.root, &entry.object.name())?;
             ensure!(
                 binding(&file)? == entry.binding,
                 "Cache object changed after cleanup preparation"
@@ -228,7 +249,7 @@ impl Store {
         while let Some(entry) = selected.next() {
             let result = (|| {
                 cancel.check()?;
-                let target = name(&entry.object.id);
+                let target = entry.object.name();
                 let file = native::open_file(&self.root, &target)?;
                 ensure!(
                     binding(&file)? == entry.binding,

@@ -106,13 +106,13 @@ async fn clean_selected(
                     .context("Missing cache cleanup preview")?;
                 for object in &view.objects {
                     session.display().status().info(&format!(
-                        "Evict sha256:{} ({} bytes)",
-                        empack_core::digest::ExpectedDigest::Sha256(*object.id.bytes()).hex(),
+                        "Evict {} ({} bytes)",
+                        object.name(),
                         object.bytes
                     ));
                 }
                 session.display().status().info(&format!(
-                    "Evict up to {} bytes from {} verified-content objects",
+                    "Evict up to {} bytes from {} content-store entries",
                     view.bytes,
                     view.objects.len()
                 ));

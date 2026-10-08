@@ -14,7 +14,7 @@ use empack_core::{
 use std::{fs::File, path::Path, sync::Arc};
 
 mod cleanup;
-pub use cleanup::{CacheCleanupPlan, CacheCleanupReceipt, CacheObject};
+pub use cleanup::{CacheCleanupPlan, CacheCleanupReceipt, CacheObject, CacheObjectKind};
 
 #[derive(Clone, Copy)]
 pub struct ContentStoreLimits {
@@ -273,16 +273,7 @@ impl Store {
             self.check_scan_limit(seen)?;
             let name = entry?.file_name();
             let is_object = name.to_str().and_then(parse_name).is_some();
-            let is_candidate = name.to_str().is_some_and(|name| {
-                name.strip_prefix(".empack-candidate-")
-                    .and_then(|suffix| suffix.split_once('-'))
-                    .is_some_and(|(process, sequence)| {
-                        !process.is_empty()
-                            && !sequence.is_empty()
-                            && process.bytes().all(|byte| byte.is_ascii_digit())
-                            && sequence.bytes().all(|byte| byte.is_ascii_digit())
-                    })
-            });
+            let is_candidate = name.to_str().is_some_and(candidate_name);
             if !is_object && !is_candidate {
                 continue;
             }
@@ -457,3 +448,16 @@ fn open(path: &Path, create: bool, limits: ContentStoreLimits) -> Result<Store> 
 
 #[cfg(test)]
 mod tests;
+
+// Only the private publisher owns this namespace. Cooperating publications hold the
+// exclusive store lock for the entire candidate lifetime.
+fn candidate_name(name: &str) -> bool {
+    name.strip_prefix(".empack-candidate-")
+        .and_then(|suffix| suffix.split_once('-'))
+        .is_some_and(|(process, sequence)| {
+            !process.is_empty()
+                && !sequence.is_empty()
+                && process.bytes().all(|byte| byte.is_ascii_digit())
+                && sequence.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}

@@ -99,9 +99,11 @@ async fn prepare(
             cancel.check()?;
             let objects: Vec<_> = selection.objects().cloned().collect();
             let mut digest = Sha256::new();
-            digest.update(b"empack-cache-cleanup-v1\0");
+            digest.update(b"empack-cache-cleanup-v2\0");
             for object in &objects {
-                digest.update(object.id.bytes());
+                let name = object.name();
+                digest.update((name.len() as u64).to_le_bytes());
+                digest.update(name.as_bytes());
                 digest.update(object.bytes.to_le_bytes());
             }
             let view = CacheCleanPreview {

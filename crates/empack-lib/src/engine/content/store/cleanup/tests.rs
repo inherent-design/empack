@@ -133,8 +133,8 @@ fn eviction_reports_completed_effects_when_later_work_fails_or_is_cancelled() {
         assert!(receipt.failure.is_some());
         assert_eq!(receipt.removed.len(), 1);
         assert_eq!(receipt.retained.len(), 1);
-        assert!(!path.join(name(&receipt.removed[0].id)).exists());
-        assert!(path.join(name(&receipt.retained[0].id)).exists());
+        assert!(!path.join(receipt.removed[0].name()).exists());
+        assert!(path.join(receipt.retained[0].name()).exists());
     }
 }
 #[cfg(unix)]
@@ -295,4 +295,45 @@ async fn cleanup_counting_does_not_retain_its_retired_scan_buffer() {
     assert!(matches!(&*outcome, OperationOutcome::Completed(())));
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     runtime.shutdown().await;
+}
+
+#[test]
+fn cleanup_reclaims_only_observed_abandoned_candidates() {
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join("content");
+    let store = store(&path);
+    let abandoned = path.join(".empack-candidate-123-456");
+    let unknown = path.join(".empack-candidate-not-owned");
+    fs::write(&abandoned, b"orphan").unwrap();
+    fs::write(&unknown, b"retain").unwrap();
+    let plan = store.0.plan_cleanup(&Cancellation::default()).unwrap();
+    assert_eq!(plan.objects().count(), 1);
+    assert_eq!(plan.bytes().unwrap(), 6);
+    let newer = path.join(".empack-candidate-123-457");
+    fs::write(&newer, b"newer").unwrap();
+    let receipt = store.0.evict(plan, &Cancellation::default()).unwrap();
+    assert!(receipt.failure.is_none());
+    assert_eq!(receipt.removed.len(), 1);
+    assert!(!abandoned.exists());
+    assert_eq!(fs::read(unknown).unwrap(), b"retain");
+    assert_eq!(fs::read(newer).unwrap(), b"newer");
+}
+
+#[test]
+fn changed_abandoned_candidate_invalidates_the_complete_cleanup() {
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join("content");
+    let store = store(&path);
+    let content = fill(&store, b"payload");
+    let abandoned = path.join(".empack-candidate-123-456");
+    fs::write(&abandoned, b"orphan").unwrap();
+    let plan = store.0.plan_cleanup(&Cancellation::default()).unwrap();
+    assert_eq!(plan.objects().count(), 2);
+    fs::write(&abandoned, b"changed candidate").unwrap();
+    assert!(store.0.evict(plan, &Cancellation::default()).is_err());
+    assert_eq!(fs::read(abandoned).unwrap(), b"changed candidate");
+    assert_eq!(
+        fs::read(path.join(name(&content.lease().id()))).unwrap(),
+        b"payload"
+    );
 }

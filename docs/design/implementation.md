@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Source reviewed: `e0d5083`, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Source baseline: `e0d5083`, with the resource/cleanup corrections below, 2026-10-08. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -88,8 +88,8 @@ representations that cannot be preserved automatically.
 
 | Priority | Item | Closure evidence |
 | --- | --- | --- |
-| Next | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduce an eight-handle host; transfer retained accounting without double reservation; resume succeeds within the supported allowance |
-| Next | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Interrupted candidate counts toward quota and can be safely reclaimed under store coordination; preserve live/unrelated objects |
+| Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
+| Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Next | Full-suite inherited-pipe warning | Isolate `engine::templates::tests::template_failures_never_return_partial_outputs_or_modify_project`; determine cause or retain the unresolved warning in evidence |
 | Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Fresh sync and optional materialization | Changed intent resolves correctly; ordinary sync retains exact selections; repeated sync is a no-op |
@@ -99,13 +99,16 @@ representations that cannot be preserved automatically.
 | Cutover | Runtime/CLI composition | Remove migrated handler bypasses and synchronous process bridges where superseded; isolate global display/error state for embedding |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
-The first two findings are source-checked, not yet reproduced at this snapshot.
-They remain open despite the passing default suite. Review 128 is **not green**.
+Both Review 128 findings reproduced before correction. The 38 affected tests and
+all-target/all-feature Clippy pass after correction. These fixes have not been
+re-reviewed. Per the user's instruction, further Greptile trigger cycles wait until
+known implementation, CLI cutover, test rewrites and old-code removal are complete.
 
 ## Verification evidence
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| This resource/cleanup correction | 38 affected tests and all-target/all-feature Clippy passed | Includes both pre-fix reproductions and changed-candidate refusal; no combined full-suite rerun |
 | `e0d5083` | `mise run test`: 1,989 tests and eleven doctests passed | 124 opt-in tests skipped; one inherited-pipe warning in the template test named above; no final live/CLI parity claim |
 | `e0d5083` implementation snapshot | 43 affected tests; all-target/all-feature Clippy; Windows cross-compilation passed | Windows retains seven existing test-only configuration warnings; targeted run was clean |
 | `84f5583` | 1,978 default tests, eleven doctests and 24 offline CLI smoke tests passed | Earlier source revision; old CLI routing; cannot substitute for cutover tests |

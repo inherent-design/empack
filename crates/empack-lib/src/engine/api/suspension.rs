@@ -139,8 +139,9 @@ impl Engine {
                 let result = async {
                     let work = scope.spawn_blocking(
                         record_resources(0)?,
+                        // Selected retains the project root, state directory, lock and record.
                         ResourceRequest {
-                            open_files: 8,
+                            open_files: 4,
                             ..Default::default()
                         },
                         move |cancel| store::probe(&state, &selected, &cancel),
@@ -149,8 +150,13 @@ impl Engine {
                     let Some(bytes) = selected.as_ref().map(|selected| selected.bytes) else {
                         return Ok(selected.map(|_| None));
                     };
+                    // The selected handles remain charged by their retained permit. Reading
+                    // only needs the remainder for binding checks and document capture.
                     let work = scope.spawn_blocking(
-                        record_resources(bytes)?,
+                        ResourceRequest {
+                            open_files: 4,
+                            ..record_resources(bytes)?
+                        },
                         ResourceRequest {
                             memory_bytes: record_memory(bytes)?,
                             ..Default::default()

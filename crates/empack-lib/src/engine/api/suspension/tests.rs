@@ -503,3 +503,34 @@ async fn conditional_saved_record_cleanup_preserves_newer_requests() {
     owner.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn saved_record_inspection_fits_eight_handle_allowance() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let (owner, _) = engine(host.path().join("state"));
+    suspend_first(&owner, root.path()).await;
+    let config = owner.config.clone();
+    owner.shutdown().await;
+    fs::write(root.path().join("empack.yml"), b"changed input").unwrap();
+    let before = records(&config.state_root).pop().unwrap();
+    let bytes = fs::read(&before).unwrap();
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 64 << 20,
+        scratch_bytes: 64 << 20,
+        open_files: 8,
+    });
+    let reader = Engine::new(config, governor.clone()).unwrap();
+    assert!(matches!(
+        reader
+            .resume_saved_build(root.path().to_path_buf())
+            .await
+            .unwrap(),
+        SavedBuildResume::Stale
+    ));
+    assert_eq!(fs::read(before).unwrap(), bytes);
+    reader.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

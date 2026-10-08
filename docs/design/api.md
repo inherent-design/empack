@@ -12,7 +12,9 @@ Host-only cache maintenance uses `preview_cache_cleanup(CacheCleanRequest::All)`
 and `prepare_cache_cleanup` after explicit `with_content_store` wiring. Preparation
 receives only a read-only lookup. The returned operation uses the same exact grant,
 engine ownership and operation handle as project requests, without a fabricated
-project root or access to its recovery journal. Unknown cache neighbors remain.
+project root or access to its recovery journal. Cache previews distinguish addressed blobs from abandoned publisher candidates.
+Candidates are captured under store coordination and checked again before deletion;
+active writers hold exclusive coordination. Unknown cache neighbors remain.
 Changed native objects invalidate the selection before deletion. Newly inserted
 objects are outside its authority. Active verified leases retain private copies.
 Eviction reports removed and retained objects; a later failure returns
