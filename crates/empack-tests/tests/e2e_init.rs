@@ -96,6 +96,8 @@ fn e2e_init_existing_project() {
     ]);
     assert!(output.status.success(), "{:?}", output);
 
+    let document = project.dir().join("test-pack/empack.yml");
+    let before = std::fs::read(&document).unwrap();
     let output = project
         .cmd()
         .args([
@@ -115,9 +117,10 @@ fn e2e_init_existing_project() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}{stderr}");
     assert!(
-        combined.contains("already contains"),
-        "output did not mention 'already contains'\nstdout: {stdout}\nstderr: {stderr}"
+        combined.contains("replacement requires an explicit decision"),
+        "output did not explain the required replacement decision\nstdout: {stdout}\nstderr: {stderr}"
     );
+    assert_eq!(std::fs::read(document).unwrap(), before);
 }
 
 #[test]
@@ -170,6 +173,14 @@ fn e2e_init_scaffolds_templates() {
 
     let pack_dir = project.dir().join("test-pack");
     assert!(pack_dir.join(".gitignore").exists(), ".gitignore not found");
+    for name in ["validate", "release"] {
+        let bytes = std::fs::read_to_string(pack_dir.join(format!(".github/workflows/{name}.yml")))
+            .unwrap();
+        let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
+        assert_eq!(workflow["env"]["EMPACK_VERSION"], "v0.5.0-alpha.1");
+        assert!(bytes.contains("empack build --yes mrpack"));
+        assert!(!bytes.contains("packwiz"));
+    }
     assert!(
         pack_dir.join("pack").join(".packwizignore").exists(),
         "pack/.packwizignore not found"

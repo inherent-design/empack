@@ -162,7 +162,15 @@ pub fn prepare_project_replacement(
 ) -> Result<PreparedProjectReplacement> {
     cancel.check()?;
     let candidate = candidate.into();
-    let workspace = workspace.capture_seed_templates(&candidate.template_paths()?, cancel)?;
+    let mut workspace = workspace.capture_seed_templates(&candidate.template_paths()?, cancel)?;
+    if let ProjectCandidate::Initialize(value) = &candidate {
+        let paths = value
+            .scaffolds()
+            .keys()
+            .map(ProjectLayout::path)
+            .collect::<Result<Vec<_>>>()?;
+        workspace = workspace.capture_seed_files(&paths, cancel)?;
+    }
     let project = candidate.project();
     let default_permissions = FilePermissions {
         readonly: false,
@@ -179,6 +187,11 @@ pub fn prepare_project_replacement(
         ),
     ]);
     if let ProjectCandidate::Initialize(value) = &candidate {
+        for (target, bytes) in value.scaffolds() {
+            if workspace.seed_file_is_missing(&ProjectLayout::path(target)?) {
+                documents.insert(target.clone(), bytes.clone());
+            }
+        }
         for (path, bytes) in value.templates() {
             if workspace.template_seed_is_missing(path)? {
                 documents.insert(ManagedPath::UserTemplate(path.clone()), bytes.clone());
@@ -269,7 +282,10 @@ pub fn prepare_project_replacement(
         .filter_map(|(target, value)| {
             (matches!(value, ObservedPath::File(_))
                 && *target != policy_path
-                && !matches!(target, ManagedPath::UserTemplate(_)))
+                && !matches!(
+                    target,
+                    ManagedPath::UserTemplate(_) | ManagedPath::Scaffold(_)
+                ))
             .then_some(target.clone())
         })
         .collect();

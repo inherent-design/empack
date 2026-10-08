@@ -1014,3 +1014,18 @@ Malformed intent and lock documents also retain usage status 2 through contextua
 Provider network failure remains status 3, and interruption retires the native request
 before returning status 130. The executable tests exercise these boundaries with native
 projects, a blocked HTTP proxy and no external packwiz process.
+
+### Initialization authoring files
+
+Initialization seeds `.gitignore`, `pack/.packwizignore` and editable validation/release
+workflows alongside the data templates. These files participate in the same approved,
+verified publication as the intent and lock. Existing regular files remain user-owned,
+even during forced replacement. Captured edits invalidate the prepared operation;
+symlinked ancestors and directory-valued seed destinations fail before publication.
+Only the three named root scaffolds are addressable through the scaffold role.
+
+The generated workflows install the tagged `v0.5.0-alpha.1` source and run
+`empack build --yes mrpack`, preserving recorded selections. Validation has read-only
+repository permissions; tagged releases publish the verified archive. These defaults
+require that empack release tag to exist and remain editable project files. They do not
+run packwiz, infer a version update or repair a stale project implicitly.

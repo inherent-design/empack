@@ -46,6 +46,39 @@ impl ReplacementSnapshot {
     pub(super) fn preserved_policy(&self) -> Option<&(Vec<u8>, FilePermissions)> {
         self.policy.as_ref()
     }
+    /// Observe only explicit seed destinations. Existing regular files are user-owned;
+    /// directories and links cannot authorize a seed or broaden the replacement footprint.
+    pub(super) fn capture_seed_files(
+        mut self,
+        paths: &[PortableRelPath],
+        cancel: &Cancellation,
+    ) -> Result<Self> {
+        let _guard = self.recovery.enter(&self.root)?;
+        let missing: Vec<_> = paths
+            .iter()
+            .filter(|path| !self.native.entries().contains_key(*path))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            let captured = self.root.capture(&missing, self.limits, cancel)?;
+            self.native = self.native.merge(captured)?;
+        }
+        for path in paths {
+            ensure!(
+                matches!(
+                    self.native.entries().get(path),
+                    Some(Observation::File(_) | Observation::Absent)
+                ),
+                "Scaffold destination is not a regular file or absent: {}",
+                path.as_str()
+            );
+        }
+        self.root.revalidate(&self.native, cancel)?;
+        Ok(self)
+    }
+    pub(super) fn seed_file_is_missing(&self, path: &PortableRelPath) -> bool {
+        matches!(self.native.entries().get(path), Some(Observation::Absent))
+    }
     /// Bind entries that can collide with seed outputs, including common-layer alternatives.
     /// Unrelated templates are filtered before opening their contents or validating their names.
     pub(super) fn capture_seed_templates(

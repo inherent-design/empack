@@ -1,0 +1,27 @@
+name: Validate pack
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  EMPACK_VERSION: v0.5.0-alpha.1
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install empack
+        run: cargo install --git https://github.com/inherent-design/empack.git --tag "$EMPACK_VERSION" --locked empack
+      - name: Verify recorded project and build
+        run: empack build --yes mrpack
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verified-pack
+          path: dist/*.mrpack
+          if-no-files-found: error

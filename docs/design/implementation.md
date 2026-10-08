@@ -123,7 +123,7 @@ re-export. Restricted-import continuation remains open.
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
-| Cutover | Initialization scaffolding parity | Preserve ignore files and modern CI scaffolding through approved publication; retain user-owned files; current strict template case reproduces missing ignore files |
+| Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Cutover | Runtime/CLI composition | Remove migrated handler bypasses and synchronous process bridges where superseded; isolate global display/error state for embedding |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
@@ -150,6 +150,7 @@ modules remains open.
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
 | `f30e6e1` combined candidate | 1,677 default tests and eleven doctests passed; no inherited-pipe warnings | Strict E2E baseline: 25 passed, 50 failed; failures include stale v0.4 fixtures and known workflow gaps |
+| Native initialization scaffolding | 40 affected initialization/layout/replacement/publication cases and nine executable initialization cases passed | Includes user-file preservation, changed-source rejection, symlink confinement and live runtime discovery; all-feature Clippy passed |
 | Native exit/cancellation rewrite | 36 affected document/host/exit cases passed, including ten executable contracts | Native proxy cancellation returns 130; malformed documents and missing unattended approval return 2 |
 | Native live fixture rewrite | 17 fixture/runtime/build/clean cases passed against current intent and lock documents | Includes live Fabric, Forge, Quilt and NeoForge discovery; remaining E2E families still need conversion |
 | Selected update/local adoption | 44 affected host/CLI/native tests plus three focused lifecycle cases passed; all-feature Clippy passed | One intermittent inherited-pipe warning in the affected run; no final combined rerun |

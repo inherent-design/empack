@@ -151,7 +151,10 @@ pub(super) fn observed_project_replacement_for(
     let targets: BTreeSet<_> = targets.into_iter().collect();
     let mut observed = observed_files_for(snapshot, targets.iter().cloned())?;
     observed.retain(|target, _| {
-        !matches!(target, ManagedPath::UserTemplate(_)) || targets.contains(target)
+        !matches!(
+            target,
+            ManagedPath::UserTemplate(_) | ManagedPath::Scaffold(_)
+        ) || targets.contains(target)
     });
     Ok(observed)
 }
@@ -286,7 +289,10 @@ impl VerifiedFileChange {
         stage: FrozenStage,
     ) -> Result<Self> {
         for change in plan.changes() {
-            if matches!(change.target(), ManagedPath::UserTemplate(_)) {
+            if matches!(
+                change.target(),
+                ManagedPath::UserTemplate(_) | ManagedPath::Scaffold(_)
+            ) {
                 ensure!(
                     matches!(
                         change,
@@ -295,7 +301,7 @@ impl VerifiedFileChange {
                             ..
                         }
                     ),
-                    "Project replacement cannot overwrite or delete user templates"
+                    "Project replacement cannot overwrite or delete user templates or scaffolds"
                 );
             }
         }

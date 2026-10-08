@@ -2,6 +2,7 @@
 use super::documents::DocumentCodec;
 use anyhow::{Result, ensure};
 use empack_core::{
+    files::{ManagedPath, ProjectScaffold},
     model::{ProjectIntent, ResolutionLock, ResolvedProject, RuntimeResolution},
     path::{PathSyntax, PortableRelPath},
 };
@@ -13,6 +14,7 @@ use std::collections::BTreeMap;
 pub struct InitializeCandidate {
     project: ResolvedProject,
     templates: BTreeMap<PortableRelPath, Vec<u8>>,
+    scaffolds: BTreeMap<ManagedPath, Vec<u8>>,
     publication_bytes: u64,
 }
 impl InitializeCandidate {
@@ -69,9 +71,16 @@ impl InitializeCandidate {
                 .checked_add(bytes.len() as u64)
                 .ok_or_else(|| anyhow::anyhow!("Initialization staging size overflow"))?;
         }
+        let scaffolds = default_scaffolds();
+        for bytes in scaffolds.values() {
+            publication_bytes = publication_bytes
+                .checked_add(bytes.len() as u64)
+                .ok_or_else(|| anyhow::anyhow!("Initialization staging size overflow"))?;
+        }
         Ok(Self {
             project,
             templates,
+            scaffolds,
             publication_bytes,
         })
     }
@@ -84,6 +93,37 @@ impl InitializeCandidate {
     pub fn templates(&self) -> &BTreeMap<PortableRelPath, Vec<u8>> {
         &self.templates
     }
+    pub fn scaffolds(&self) -> &BTreeMap<ManagedPath, Vec<u8>> {
+        &self.scaffolds
+    }
+}
+
+fn default_scaffolds() -> BTreeMap<ManagedPath, Vec<u8>> {
+    [
+        (
+            ManagedPath::Scaffold(ProjectScaffold::GitIgnore),
+            include_bytes!("initialize/gitignore").as_slice(),
+        ),
+        (
+            ManagedPath::Scaffold(ProjectScaffold::ValidationWorkflow),
+            include_bytes!("initialize/validate.yml").as_slice(),
+        ),
+        (
+            ManagedPath::Scaffold(ProjectScaffold::ReleaseWorkflow),
+            include_bytes!("initialize/release.yml").as_slice(),
+        ),
+        (
+            ManagedPath::Content {
+                layer: empack_core::model::ContentLayer::Common,
+                path: PortableRelPath::parse(".packwizignore", PathSyntax::ProjectContent)
+                    .expect("embedded ignore path"),
+            },
+            include_bytes!("initialize/packwizignore").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(path, bytes)| (path, bytes.to_vec()))
+    .collect()
 }
 /// Editable data templates retain expressions until build-time metadata is known.
 /// Build recipes already supply the current installer and launch scripts.

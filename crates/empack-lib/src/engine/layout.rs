@@ -2,7 +2,7 @@
 use anyhow::{Result, bail, ensure};
 use caseless::Caseless;
 use empack_core::{
-    files::ManagedPath,
+    files::{ManagedPath, ProjectScaffold},
     model::ContentLayer,
     path::{PathSyntax, PortableRelPath},
 };
@@ -27,6 +27,12 @@ impl ProjectLayout {
                 path.as_str()
             ),
             ManagedPath::UserTemplate(path) => format!("templates/{}", path.as_str()),
+            ManagedPath::Scaffold(scaffold) => match scaffold {
+                ProjectScaffold::GitIgnore => ".gitignore",
+                ProjectScaffold::ValidationWorkflow => ".github/workflows/validate.yml",
+                ProjectScaffold::ReleaseWorkflow => ".github/workflows/release.yml",
+            }
+            .to_owned(),
             ManagedPath::Artifact(path) => format!("dist/{}", path.as_str()),
         };
         Ok(PortableRelPath::parse(&value, PathSyntax::ProjectContent)?)
@@ -38,6 +44,13 @@ impl ProjectLayout {
         match value {
             "empack.yml" => return Ok(ManagedPath::IntentDocument),
             "empack.lock" => return Ok(ManagedPath::LockDocument),
+            ".gitignore" => return Ok(ManagedPath::Scaffold(ProjectScaffold::GitIgnore)),
+            ".github/workflows/validate.yml" => {
+                return Ok(ManagedPath::Scaffold(ProjectScaffold::ValidationWorkflow));
+            }
+            ".github/workflows/release.yml" => {
+                return Ok(ManagedPath::Scaffold(ProjectScaffold::ReleaseWorkflow));
+            }
             _ => {}
         }
         let relative = |value: &str| {
@@ -156,6 +169,9 @@ mod tests {
         for input in [
             "empack.yml",
             "empack.lock",
+            ".gitignore",
+            ".github/workflows/validate.yml",
+            ".github/workflows/release.yml",
             "pack/pack.toml",
             "pack/mods/a.pw.toml",
             "pack/mods/a.jar",

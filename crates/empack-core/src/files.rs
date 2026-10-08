@@ -24,8 +24,20 @@ pub enum ManagedPath {
     },
     /// User-owned template selected for an explicit operation.
     UserTemplate(PortableRelPath),
+    /// Editable authoring scaffold; initialization may only seed an absent file.
+    Scaffold(ProjectScaffold),
     /// Generated distribution output.
     Artifact(PortableRelPath),
+}
+/// The bounded set of authoring helpers outside the content and template roots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProjectScaffold {
+    /// Repository ignore policy.
+    GitIgnore,
+    /// Pull-request and branch validation.
+    ValidationWorkflow,
+    /// Tagged distribution publication.
+    ReleaseWorkflow,
 }
 /// Portable permission intent. Native adapters additionally preserve appropriate source modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -105,9 +105,17 @@ async fn initialize_all_loader_intents_without_preview_writes() {
             )) => {
                 assert_eq!(receipt.project.intent(), expected.intent());
                 assert_eq!(receipt.project.lock(), expected.lock());
-                assert_eq!(receipt.publication.changed_files, 4);
+                assert_eq!(receipt.publication.changed_files, 8);
             }
             _ => panic!("initialization failed"),
+        }
+        for name in [
+            ".gitignore",
+            "pack/.packwizignore",
+            ".github/workflows/validate.yml",
+            ".github/workflows/release.yml",
+        ] {
+            assert!(selected.join(name).is_file(), "missing scaffold {name}");
         }
         let workspace = ProjectReader::new(RecoveryReader::new(host))
             .capture_build(
@@ -254,6 +262,112 @@ fn initialization_rejects_incoherent_runtime_and_unresolved_roots() {
         )
         .is_err()
     );
+}
+
+#[tokio::test]
+async fn initialization_preserves_scaffolds_and_binds_their_prior_state() {
+    for edited_after_planning in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (engine, _) = engine(state.path().join("state"));
+        for (name, bytes) in [
+            (".gitignore", b"custom-ignore\n".as_slice()),
+            (".github/workflows/validate.yml", b"user validation"),
+            (".github/workflows/release.yml", b"user release"),
+            ("pack/.packwizignore", b"ignored/**\n"),
+            ("pack/ignored/keep", b"unowned"),
+            ("empack.yml", b"old: ["),
+        ] {
+            put(root.path(), name, bytes);
+        }
+        let prepared = prepare(
+            &engine,
+            ProjectTarget::Existing(root.path().to_path_buf()),
+            request(LoaderKind::Vanilla, true),
+        )
+        .await;
+        assert!(
+            !prepared
+                .view()
+                .initialize()
+                .unwrap()
+                .files
+                .changes()
+                .iter()
+                .any(|change| matches!(change.target(), ManagedPath::Scaffold(_)))
+        );
+        if edited_after_planning {
+            put(
+                root.path(),
+                ".github/workflows/validate.yml",
+                b"new user validation",
+            );
+        }
+        let permission = grant(&prepared);
+        let mut operation = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        let outcome = operation.wait().await;
+        if edited_after_planning {
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+            ));
+            assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), b"old: [");
+            assert!(!root.path().join("empack.lock").exists());
+        } else {
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(
+                    ExecutionReceipt::Initialize(_)
+                ))
+            ));
+        }
+        assert_eq!(
+            fs::read(root.path().join(".gitignore")).unwrap(),
+            b"custom-ignore\n"
+        );
+        assert_eq!(
+            fs::read(root.path().join(".github/workflows/release.yml")).unwrap(),
+            b"user release"
+        );
+        assert_eq!(
+            fs::read(root.path().join("pack/.packwizignore")).unwrap(),
+            b"ignored/**\n"
+        );
+        assert_eq!(
+            fs::read(root.path().join("pack/ignored/keep")).unwrap(),
+            b"unowned"
+        );
+        engine.shutdown().await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn initialization_rejects_symlinked_scaffold_ancestors_without_publication() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("sentinel"), b"outside").unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join(".github")).unwrap();
+    let (engine, _) = engine(state.path().join("state"));
+    assert!(
+        engine
+            .prepare(
+                ProjectTarget::Existing(root.path().to_path_buf()),
+                request(LoaderKind::Vanilla, true)
+            )
+            .await
+            .is_err()
+    );
+    assert!(!root.path().join("empack.yml").exists());
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 1);
+    assert_eq!(
+        fs::read(outside.path().join("sentinel")).unwrap(),
+        b"outside"
+    );
+    engine.shutdown().await;
 }
 
 #[tokio::test]

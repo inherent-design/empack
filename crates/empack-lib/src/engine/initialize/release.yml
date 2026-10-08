@@ -1,0 +1,24 @@
+name: Release pack
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+env:
+  EMPACK_VERSION: v0.5.0-alpha.1
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install empack
+        run: cargo install --git https://github.com/inherent-design/empack.git --tag "$EMPACK_VERSION" --locked empack
+      - name: Build verified distribution
+        run: empack build --yes mrpack
+      - name: Publish tagged distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.mrpack --verify-tag --generate-notes
