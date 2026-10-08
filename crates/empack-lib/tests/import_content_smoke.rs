@@ -85,7 +85,7 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
                 match result {
                     ImportContentOutcome::Ready(content) => {
                         let options = fixture_decisions(&content)?;
-                        let candidate = content.into_candidate(&mut scope, options)?;
+                        let candidate = content.into_candidate(&mut scope, options).await?;
                         Ok((candidate, supplied))
                     },
                     ImportContentOutcome::NeedsInput { pending, .. } => anyhow::bail!("{} import obligations remain", pending.len()),

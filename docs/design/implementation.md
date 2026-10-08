@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds and remaining resolution decisions still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
+new route, not full release validation: remaining resolution conformance and combined live/platform acceptance still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
 ## Delivery states
@@ -245,6 +245,19 @@ sync previews. A seeded archive-cache fixture reproduced a missing cache adapter
 selector preparation; that path now attaches verified cache lookup. This slice passed
 60 affected tests and all-target/all-feature Clippy. These are deterministic fixtures,
 not live-provider acceptance.
+
+Provider-world pack imports now use the shared bounded member reader before returning
+an import candidate. `init --world-folder` chooses the parent destination explicitly.
+Native fixtures verify preview preservation, restricted supplied bytes, source MD5
+retention, two unchanged syncs and actual mrpack member bytes; ambiguous world roots,
+wrong supplied bytes and missing destinations leave the whole project untouched.
+The affected import, initialization and publication suites passed 93 tests and
+all-target/all-feature Clippy.
+
+At `3987ba6`, default test binaries passed 927 tests (103 opt-in excluded). The strict
+live run passed 75 of 81; six acquisition-deadline failures remain under investigation.
+Doctest compilation overlapped later source changes, so those results are not presented
+as one frozen combined revision.
 
 Combined `d8b790e` validation passed 919 tests and eight doctests, with 103 opt-in cases
 excluded. Live/platform acceptance and fresh coverage remain open.

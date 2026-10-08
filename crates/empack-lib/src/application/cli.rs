@@ -181,6 +181,10 @@ pub struct InitArgs {
     #[arg(long, env = "EMPACK_DATAPACK_FOLDER")]
     pub datapack_folder: Option<String>,
 
+    /// Parent folder for interpreted world directories, relative to the pack root
+    #[arg(long, env = "EMPACK_WORLD_FOLDER")]
+    pub world_folder: Option<String>,
+
     /// Additional accepted MC versions (comma-separated)
     #[arg(long, env = "EMPACK_GAME_VERSIONS", value_delimiter = ',')]
     pub game_versions: Option<Vec<String>>,

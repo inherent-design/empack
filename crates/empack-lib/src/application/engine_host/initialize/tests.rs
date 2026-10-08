@@ -125,6 +125,7 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
     options.loader_version = Some("10.13.4.1614-1.7.10".into());
     options.game_versions = Some(vec!["1.7.10".into(), "1.7.2".into(), "1.7.2".into()]);
     options.datapack_folder = Some("saves/world/datapacks".into());
+    options.world_folder = Some("saves".into());
     initialize(&host, &options).await.unwrap();
     let project = read(&root.path().join("parent/pack"));
     assert_eq!(
@@ -148,6 +149,10 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
     assert_eq!(
         project.intent().layout[&ContentKind::DataPack].as_str(),
         "saves/world/datapacks"
+    );
+    assert_eq!(
+        project.intent().layout[&ContentKind::World].as_str(),
+        "saves"
     );
     assert_eq!(project.intent().metadata.author.as_deref(), Some("Tester"));
     assert_eq!(project.intent().distribution.targets.as_slice().len(), 5);

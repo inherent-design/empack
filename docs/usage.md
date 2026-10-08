@@ -277,7 +277,8 @@ unsafe paths, conflicting participation and publication collisions fail the batc
 
 ## World archives
 
-Configure `layout.world` in `empack.yml` to choose the destination directory, then add
+Use `init --world-folder saves` or configure `layout.world` in `empack.yml` to choose
+the destination directory, then add
 a local ZIP with `empack add --type world ./adventure.zip`. The archive must contain
 one world, identified by a nonempty `level.dat`, with no files outside that world's
 root. Members are installed beneath the configured directory and archive stem.
@@ -301,6 +302,13 @@ and `--type world`; identification verifies the exact provider file before extra
 Existing cache entries can satisfy the same original archive assertions. The source
 archive's filename may change on update without moving the configured destination root;
 only the previous tracked member inventory can be retired.
+
+Pack import uses the same interpretation for provider-owned worlds. Supply
+`init --from pack.zip --world-folder saves`; each imported world uses the provider
+slug beneath that folder. Restricted archives use the existing `--import-file`
+association. An ambiguous archive, changed digest or unsafe member blocks the whole
+import before publication. The resulting lock records members and their original
+provider archive, so sync, builds, updates and removal share the same identity.
 
 ## Named file placement
 

@@ -233,6 +233,12 @@ fn decisions(
     acceptable_versions
         .retain(|version| version != &source.runtime.minecraft && seen.insert(version.clone()));
     let mut layout = BTreeMap::new();
+    if let Some(folder) = &args.world_folder {
+        layout.insert(
+            ContentKind::World,
+            PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
+        );
+    }
     if let Some(folder) = &args.datapack_folder {
         layout.insert(
             ContentKind::DataPack,
@@ -386,7 +392,12 @@ fn decisions(
                     requirements: requirements(&reference.requirements, &label, default)?,
                     persistence: ImportPersistence::Provider,
                     provider_destination: Some(InstallDestination::parse(&format!(
-                        "{folder}/{filename}"
+                        "{folder}/{}",
+                        if kind == ContentKind::World {
+                            record.project.slug.as_str()
+                        } else {
+                            filename.as_str()
+                        }
                     ))?),
                 }
             }
@@ -749,6 +760,166 @@ mod tests {
         }
         for (index, name) in ["empack.yml", "empack.lock"].into_iter().enumerate() {
             assert_eq!(fs::read(target.join(name)).unwrap(), original[index]);
+        }
+    }
+    #[tokio::test]
+    async fn provider_world_import_interprets_verified_members_before_publication() {
+        use crate::application::engine_host::{BuildDecisions, build, tests::snapshot};
+        use crate::engine::{
+            acquisition::HttpAcquisition, build::BuildAcquisitions, import::ImportLimits,
+            providers::ProviderCatalog,
+        };
+        use empack_core::model::{AcquisitionSpec, PlacementIntent};
+        use serde_json::json;
+        use sha2::Digest;
+        use std::{
+            fs,
+            io::{Cursor, Read, Write},
+        };
+        for mode in [
+            "preview",
+            "publish",
+            "ambiguous",
+            "digest",
+            "missing-folder",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let session = super::super::tests::session(root.path(), mode == "preview");
+            let mut server = mockito::Server::new_async().await;
+            let mut world = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            let mut members = vec![
+                ("Original/level.dat", b"world".as_slice()),
+                ("Original/region/r.0.0.mca", b"region".as_slice()),
+            ];
+            if mode == "ambiguous" {
+                members.push(("Another/level.dat", b"second"));
+            }
+            for (path, bytes) in members {
+                world
+                    .start_file(path, zip::write::SimpleFileOptions::default())
+                    .unwrap();
+                world.write_all(bytes).unwrap();
+            }
+            let world = world.finish().unwrap().into_inner();
+            let digest = md5::Md5::digest(&world)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>();
+            fs::write(
+                root.path().join("supplied.zip"),
+                if mode == "digest" {
+                    b"wrong".as_slice()
+                } else {
+                    world.as_slice()
+                },
+            )
+            .unwrap();
+            server.mock("GET", "/mods/42").with_body(json!({"data":{"id":42,"gameId":432,"classId":17,"slug":"adventure","name":"Adventure"}}).to_string()).create_async().await;
+            server.mock("GET", "/mods/42/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":42,"fileName":"original.zip","fileLength":world.len(),"hashes":[{"algo":2,"value":digest}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).create_async().await;
+            let manifest = json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"World Pack","version":"1","files":[{"projectID":42,"fileID":456,"required":true}],"minecraft":{"version":"1.21.1","modLoaders":[]},"overrides":"overrides"});
+            let path = root.path().join("pack.zip");
+            let mut source = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+            source
+                .start_file("manifest.json", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            source
+                .write_all(&serde_json::to_vec(&manifest).unwrap())
+                .unwrap();
+            source.finish().unwrap();
+            let args = InitArgs {
+                world_folder: (mode != "missing-folder").then(|| "saves".into()),
+                ..Default::default()
+            };
+            let before = snapshot(root.path());
+            let result = super::super::super::import::import_with_services(
+                &session,
+                ImportHostRequest {
+                    source: ImportSource::Local {
+                        path,
+                        expected: ExpectedContent {
+                            digests: None,
+                            size: None,
+                            accepted_observation: None,
+                        },
+                    },
+                    destination: None,
+                    replacement: ProjectReplacementPolicy::RejectExisting,
+                    evidence: SourceEvidencePolicy::Compatibility,
+                    supplied: BTreeMap::new(),
+                    local_files: vec![ImportLocalFile {
+                        selector: "provider:curseforge:42:456:original.zip".into(),
+                        source: "supplied.zip".into(),
+                    }],
+                },
+                |content| decisions(&session, &args, content),
+                ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture".into())),
+                HttpAcquisition::for_loopback_tests(),
+                ImportLimits::default(),
+            )
+            .await;
+            if mode == "preview" {
+                result.unwrap();
+                assert_eq!(snapshot(root.path()), before);
+                continue;
+            }
+            if mode != "publish" {
+                assert!(result.is_err(), "{mode}");
+                assert_eq!(snapshot(root.path()), before);
+                continue;
+            }
+            result.unwrap();
+            let project = super::super::tests::project(root.path());
+            let key = DependencyKey::parse("curseforge:42").unwrap();
+            let dependency = &project.lock().dependencies[&key];
+            assert_eq!(dependency.files.as_slice().len(), 2);
+            assert!(matches!(
+                project.intent().roots[&key].placement,
+                PlacementIntent::ArchiveRoot(_)
+            ));
+            for file in dependency.files.as_slice() {
+                let AcquisitionSpec::ProviderArchiveMember { archive, .. } = &file.acquisition
+                else {
+                    panic!("lost archive ownership")
+                };
+                assert_eq!(archive.slot.as_str(), "original.zip");
+                assert_eq!(
+                    archive.expected.digests.as_ref().unwrap().values()[0].algorithm(),
+                    empack_core::digest::DigestAlgorithm::Md5
+                );
+                assert!(file.expected.digests.is_none());
+            }
+            let target = root.path().join("project");
+            assert_eq!(
+                fs::read(target.join("pack/saves/adventure/level.dat")).unwrap(),
+                b"world"
+            );
+            let published = snapshot(&target);
+            for _ in 0..2 {
+                super::super::synchronize(&session, false).await.unwrap();
+            }
+            assert_eq!(snapshot(&target), published);
+            build(
+                &session,
+                &crate::application::BuildArgs {
+                    targets: vec!["mrpack".into()],
+                    ..Default::default()
+                },
+                BuildDecisions::default(),
+                BuildAcquisitions::default(),
+            )
+            .await
+            .unwrap();
+            let mut archive = zip::ZipArchive::new(
+                fs::File::open(target.join("dist/World Pack-1.mrpack")).unwrap(),
+            )
+            .unwrap();
+            let mut bytes = Vec::new();
+            archive
+                .by_name("overrides/saves/adventure/region/r.0.0.mca")
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+            assert_eq!(bytes, b"region");
         }
     }
 }

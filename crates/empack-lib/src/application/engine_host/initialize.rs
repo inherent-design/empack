@@ -80,6 +80,12 @@ async fn initialize_with_catalog(
     );
     // Validate independent options before any discovery request or native preparation.
     let mut layout = BTreeMap::new();
+    if let Some(folder) = &args.world_folder {
+        layout.insert(
+            ContentKind::World,
+            PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
+        );
+    }
     if let Some(folder) = &args.datapack_folder {
         layout.insert(
             ContentKind::DataPack,

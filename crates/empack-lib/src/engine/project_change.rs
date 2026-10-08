@@ -231,13 +231,7 @@ pub fn prepare_project_replacement(
                 .iter()
                 .find(|file| &file.slot == slot)
                 .context("Import candidate binding has no locked file")?;
-            let acquired = &candidate.source().content()[content_key];
-            let permissions = candidate
-                .source()
-                .permissions()
-                .get(content_key)
-                .copied()
-                .unwrap_or(default_permissions);
+            let (acquired, permissions) = candidate.bound_content(key, slot, content_key);
             for placement in file.placements.as_slice() {
                 let target = ManagedPath::Content {
                     layer: placement.layer,

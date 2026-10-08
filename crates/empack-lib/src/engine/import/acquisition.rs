@@ -81,6 +81,7 @@ pub enum ImportContentOutcome {
     Ready(VerifiedImportContent),
 }
 pub struct VerifiedImportContent {
+    pub(super) evidence: SourceEvidencePolicy,
     plan: ImportContentPlan,
     content: BTreeMap<ImportContentKey, AcquiredContent>,
     permissions: BTreeMap<ImportContentKey, FilePermissions>,
@@ -97,6 +98,9 @@ impl VerifiedImportContent {
     }
 }
 impl ImportContentPlan {
+    pub(super) fn limits(&self) -> ImportContentLimits {
+        self.limits
+    }
     pub fn imported(&self) -> &ImportedProject {
         &self.imported
     }
@@ -432,6 +436,7 @@ impl ImportContentPlan {
             "Import acquisition omitted a requested record"
         );
         Ok(ImportContentOutcome::Ready(VerifiedImportContent {
+            evidence,
             plan: self,
             content,
             permissions,

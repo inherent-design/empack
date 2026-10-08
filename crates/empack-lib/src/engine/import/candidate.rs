@@ -1,4 +1,5 @@
 //! Interpret verified source evidence without acquiring publication authority.
+mod worlds;
 use super::*;
 use crate::engine::{
     documents::DocumentCodec, layout::ProjectLayout, providers::DependencyRelation,
@@ -48,6 +49,8 @@ pub struct ImportCandidate {
     bindings: BTreeMap<(DependencyKey, FileSlot), ImportContentKey>,
     _index: AdmissionPermit,
     publication_bytes: u64,
+    members: BTreeMap<(DependencyKey, FileSlot), crate::engine::mrpack::AcquiredBuildFile>,
+    _members: Vec<AdmissionPermit>,
 }
 impl ImportCandidate {
     /// Exact document and placed-payload bytes needed by native preparation.
@@ -67,7 +70,17 @@ impl ImportCandidate {
 
 impl VerifiedImportContent {
     /// No network, backend or project writer is available. Failure returns no candidate subset.
-    pub fn into_candidate(
+    pub async fn into_candidate(
+        self,
+        scope: &mut WorkScope,
+        options: ImportCandidateOptions,
+    ) -> Result<ImportCandidate> {
+        self.candidate(scope, options)?
+            .interpret_worlds(scope)
+            .await
+    }
+
+    fn candidate(
         self,
         scope: &mut WorkScope,
         options: ImportCandidateOptions,
@@ -445,6 +458,8 @@ impl VerifiedImportContent {
             bindings,
             _index: index,
             publication_bytes,
+            members: BTreeMap::new(),
+            _members: Vec::new(),
         })
     }
 }

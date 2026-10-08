@@ -658,7 +658,9 @@ pub(in crate::engine) async fn interpret(
     change(&mut options);
     let runtime = OperationRuntime::new(governor, 1);
     let mut handle = runtime
-        .start(move |mut scope| async move { Ok(content.into_candidate(&mut scope, options)) })
+        .start(
+            move |mut scope| async move { Ok(content.into_candidate(&mut scope, options).await) },
+        )
         .unwrap();
     let outcome = handle.wait().await;
     runtime.shutdown().await;
@@ -884,7 +886,7 @@ async fn import_candidate_keeps_url_files_as_url_roots_with_original_hashes() {
                 let mut options = candidate_options(&content);
                 options.files.values_mut().next().unwrap().persistence =
                     super::super::ImportPersistence::Url;
-                content.into_candidate(&mut scope, options)
+                content.into_candidate(&mut scope, options).await
             }
             .await;
             Ok(result)

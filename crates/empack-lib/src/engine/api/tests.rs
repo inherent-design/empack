@@ -378,7 +378,10 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
     engine.shutdown().await;
 }
 
-pub(super) fn provider_fixture(root: &Path, curseforge: bool) -> empack_core::model::ExpectedContent {
+pub(super) fn provider_fixture(
+    root: &Path,
+    curseforge: bool,
+) -> empack_core::model::ExpectedContent {
     use empack_core::{identity::ModrinthProjectId, model::*};
     fixture(root);
     let original = project(false, false);
@@ -1021,38 +1024,40 @@ async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCa
                 let ImportContentOutcome::Ready(content) = outcome else {
                     anyhow::bail!("fixture needs input");
                 };
-                content.into_candidate(
-                    &mut scope,
-                    ImportCandidateOptions {
-                        metadata: PackMetadata {
-                            name: "Imported".into(),
-                            version: "1".into(),
-                            author: None,
-                            description: None,
-                        },
-                        loader: None,
-                        acceptable_versions: vec![],
-                        layout: BTreeMap::new(),
-                        exclude_auxiliary_members: false,
-                        distribution: DistributionIntent {
-                            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
-                            archive: DistributionArchive::Zip,
-                        },
-                        files: BTreeMap::from([(
-                            ImportContentKey::Override(0),
-                            ImportFileDecision {
-                                key: DependencyKey::parse("config")?,
-                                kind: ContentKind::Config,
-                                requirements: Requirements {
-                                    client: Requirement::Required,
-                                    server: Requirement::Required,
-                                },
-                                persistence: ImportPersistence::Local,
-                                provider_destination: None,
+                content
+                    .into_candidate(
+                        &mut scope,
+                        ImportCandidateOptions {
+                            metadata: PackMetadata {
+                                name: "Imported".into(),
+                                version: "1".into(),
+                                author: None,
+                                description: None,
                             },
-                        )]),
-                    },
-                )
+                            loader: None,
+                            acceptable_versions: vec![],
+                            layout: BTreeMap::new(),
+                            exclude_auxiliary_members: false,
+                            distribution: DistributionIntent {
+                                targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                                archive: DistributionArchive::Zip,
+                            },
+                            files: BTreeMap::from([(
+                                ImportContentKey::Override(0),
+                                ImportFileDecision {
+                                    key: DependencyKey::parse("config")?,
+                                    kind: ContentKind::Config,
+                                    requirements: Requirements {
+                                        client: Requirement::Required,
+                                        server: Requirement::Required,
+                                    },
+                                    persistence: ImportPersistence::Local,
+                                    provider_destination: None,
+                                },
+                            )]),
+                        },
+                    )
+                    .await
             }
             .await;
             Ok(result)

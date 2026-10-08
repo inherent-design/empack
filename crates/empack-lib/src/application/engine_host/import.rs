@@ -303,7 +303,7 @@ pub(super) async fn import_with_services(
     }
     let options = decide(&content)?;
     let candidate = scoped(session, shared.clone(), move |mut scope| async move {
-        content.into_candidate(&mut scope, options)
+        content.into_candidate(&mut scope, options).await
     })
     .await?;
     let engine = engine_with_governor(config, &invocation, shared.clone())?;
