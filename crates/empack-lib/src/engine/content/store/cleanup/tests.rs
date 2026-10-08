@@ -267,3 +267,32 @@ fn unknown_neighbors_do_not_consume_object_insertion_capacity() {
         2
     );
 }
+
+#[tokio::test]
+async fn cleanup_counting_does_not_retain_its_retired_scan_buffer() {
+    let host = tempfile::tempdir().unwrap();
+    let store = store(&host.path().join("content"));
+    fill(&store, b"one");
+    fill(&store, b"two");
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 96 << 10,
+        open_files: 8,
+        ..Default::default()
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let plan = store.lookup().plan_cleanup(&mut scope).await.unwrap();
+            assert_eq!(plan.objects().count(), 2);
+            let receipt = store.evict(&mut scope, plan).await.unwrap();
+            assert_eq!(receipt.removed.len(), 2);
+            assert!(receipt.failure.is_none());
+            Ok(())
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(&*outcome, OperationOutcome::Completed(())));
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    runtime.shutdown().await;
+}

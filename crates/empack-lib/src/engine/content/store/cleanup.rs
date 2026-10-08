@@ -56,8 +56,9 @@ impl FileContentLookup {
                 open_files: 3,
                 ..Default::default()
             },
+            // Enumeration storage retires with this worker. Only the scalar count and
+            // coordination descriptor survive; the second pass owns selection memory.
             ResourceRequest {
-                memory_bytes: 64 << 10,
                 open_files: 1,
                 ..Default::default()
             },
