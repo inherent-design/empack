@@ -1,9 +1,9 @@
 //! Provider worlds become exact member inventories before an addition group is available.
 use super::*;
 use crate::engine::{
-    acquisition::{DownloadRequest, HttpAcquisition},
+    acquisition::{DownloadRequest, HttpAcquisition, TransferBudget},
     addition::{DirectFileLimits, world},
-    content::{InitialObservation, SourceEvidencePolicy},
+    content::{AcquiredContent, InitialObservation, SourceEvidencePolicy, verify_stream},
     dependency_content::{DependencyContent, DependencyContents},
     mrpack::{AcquiredBuildFile, LockedFileKey},
 };
@@ -48,6 +48,23 @@ impl ProviderArchiveAddition {
         evidence: SourceEvidencePolicy,
         limits: DirectFileLimits,
     ) -> Result<Box<ProviderAddition>> {
+        self.acquire_with_supplied(scope, transport, evidence, limits, &mut BTreeMap::new())
+            .await
+    }
+
+    /// Consume only supplied archive roles belonging to these exact verified selections.
+    /// Other identified provider files remain available to the ordinary content planner.
+    pub async fn acquire_with_supplied(
+        self,
+        scope: &mut WorkScope,
+        transport: &HttpAcquisition,
+        evidence: SourceEvidencePolicy,
+        limits: DirectFileLimits,
+        supplied: &mut BTreeMap<(ProviderProjectId, String), AcquiredBuildFile>,
+    ) -> Result<Box<ProviderAddition>> {
+        let mut budget = TransferBudget::new(limits.transfer)?;
+        let mut acquired = BTreeMap::new();
+        let mut request_indices = Vec::new();
         let mut selections = Vec::new();
         let mut requests = Vec::new();
         for (id, selected) in &self.closure.selections {
@@ -118,23 +135,72 @@ impl ProviderArchiveAddition {
             let alternatives = selected
                 .resolution
                 .download_alternatives(&archive.slot, &archive.expected)?;
-            ensure!(
-                !alternatives.is_empty(),
-                "Provider world archive requires verified supplied content before member interpretation"
-            );
-            requests.push(DownloadRequest {
-                alternatives: NonEmpty::new(alternatives)?,
-                expected: archive.expected.clone(),
-                evidence,
-                initial: InitialObservation::RequireEvidence,
-                limits: crate::engine::acquisition::TransferLimits {
-                    file_bytes: limits
-                        .transfer
-                        .file_bytes
-                        .min(limits.archive.compressed_bytes),
-                    ..limits.transfer
-                },
-            });
+            let index = selections.len();
+            let transfer = crate::engine::acquisition::TransferLimits {
+                file_bytes: limits
+                    .transfer
+                    .file_bytes
+                    .min(limits.archive.compressed_bytes),
+                ..budget.remaining_limits(limits.transfer)?
+            };
+            if let Some(file) = supplied.remove(&(id.clone(), archive.slot.as_str().to_owned())) {
+                ensure!(
+                    file.content.lease().len() <= transfer.file_bytes.min(transfer.transfer_bytes),
+                    "Supplied world archive exceeds byte allowance"
+                );
+                let expected = archive.expected.clone();
+                let bytes = file.content.lease().len();
+                let work = scope.spawn_blocking(
+                    ResourceRequest {
+                        jobs: 1,
+                        memory_bytes: 256 << 10,
+                        open_files: 5,
+                        scratch_bytes: bytes,
+                    },
+                    ResourceRequest {
+                        open_files: 1,
+                        scratch_bytes: bytes,
+                        ..Default::default()
+                    },
+                    move |cancel| {
+                        verify_stream(
+                            &mut file.content.lease().open(),
+                            &expected,
+                            transfer.file_bytes,
+                            evidence,
+                            InitialObservation::RequireEvidence,
+                            &cancel,
+                        )
+                    },
+                )?;
+                let content = AcquiredContent::retain_resources(
+                    scope.accept(work.wait().await?)?.transpose()?,
+                )?;
+                budget.charge_verified(content.lease().len())?;
+                acquired.insert(index, content);
+            } else if alternatives.is_empty() {
+                let content = transport
+                    .cached(
+                        scope,
+                        &archive.expected,
+                        evidence,
+                        InitialObservation::RequireEvidence,
+                        transfer,
+                        &mut budget,
+                    )
+                    .await?
+                    .context("Provider world archive requires verified supplied content before member interpretation")?;
+                acquired.insert(index, content);
+            } else {
+                request_indices.push(index);
+                requests.push(DownloadRequest {
+                    alternatives: NonEmpty::new(alternatives)?,
+                    expected: archive.expected.clone(),
+                    evidence,
+                    initial: InitialObservation::RequireEvidence,
+                    limits: transfer,
+                });
+            }
             selections.push(Selection {
                 id: id.clone(),
                 archive,
@@ -145,13 +211,19 @@ impl ProviderArchiveAddition {
             selections.len() <= limits.files,
             "Provider world count exceeds limit"
         );
-        let acquired = transport
-            .acquire_batch(scope, requests, limits.transfer)
-            .await?;
+        if !requests.is_empty() {
+            let downloaded = transport
+                .acquire_batch(scope, requests, budget.remaining_limits(limits.transfer)?)
+                .await?;
+            acquired.extend(request_indices.into_iter().zip(downloaded));
+        }
         let mut worlds = BTreeMap::new();
         let mut permits = Vec::new();
         let mut expanded = 0u64;
-        for (selection, content) in selections.into_iter().zip(acquired) {
+        for (index, selection) in selections.into_iter().enumerate() {
+            let content = acquired
+                .remove(&index)
+                .context("World archive content is missing")?;
             let members = world::read(
                 scope,
                 AcquiredBuildFile {

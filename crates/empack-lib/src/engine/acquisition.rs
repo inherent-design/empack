@@ -89,6 +89,17 @@ impl TransferBudget {
                 .context("Download deadline overflow")?,
         })
     }
+    /// Charge verified supplied bytes to the same allowance as cache hits and HTTP transfers.
+    pub(in crate::engine) fn charge_verified(&mut self, bytes: u64) -> Result<()> {
+        ensure!(Instant::now() < self.deadline, TransferError::Deadline);
+        let received = self
+            .received
+            .checked_add(bytes)
+            .context("Acquisition byte accounting overflow")?;
+        ensure!(received <= self.maximum, TransferError::ByteLimit);
+        self.received = received;
+        Ok(())
+    }
     /// Carry cache acquisition's consumed bytes and elapsed time into later HTTP work.
     pub(in crate::engine) fn remaining_limits(
         &self,

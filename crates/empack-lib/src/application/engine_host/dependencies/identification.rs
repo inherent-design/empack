@@ -176,18 +176,16 @@ pub(super) async fn resolve(
                 kinds[0]
             }
         };
-        ensure!(
-            kind != ContentKind::World,
-            "World additions require explicit member interpretation"
-        );
-        crate::engine::addition::validate_file_kind(
-            scope,
-            &content,
-            kind,
-            crate::engine::addition::FileKindPolicy::RequireRecognized,
-            services.files.archive,
-        )
-        .await?;
+        if kind != ContentKind::World {
+            crate::engine::addition::validate_file_kind(
+                scope,
+                &content,
+                kind,
+                crate::engine::addition::FileKindPolicy::RequireRecognized,
+                services.files.archive,
+            )
+            .await?;
+        }
         let requirements = Requirements {
             client: Requirement::Required,
             server: if matches!(kind, ContentKind::ResourcePack | ContentKind::ShaderPack) {

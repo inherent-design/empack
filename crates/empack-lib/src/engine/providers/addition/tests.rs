@@ -28,7 +28,7 @@ pub(super) fn current() -> ResolvedProject {
     lock.coverage.clear();
     ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap()
 }
-fn input(selector: &str, pinned: bool) -> ProviderAddInput {
+pub(super) fn input(selector: &str, pinned: bool) -> ProviderAddInput {
     ProviderAddInput {
         selector: ProjectSelector::parse(ProviderKind::Modrinth, selector).unwrap(),
         key: Some(DependencyKey::parse("chosen-alias").unwrap()),

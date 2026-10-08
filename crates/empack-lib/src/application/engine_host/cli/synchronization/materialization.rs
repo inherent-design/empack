@@ -100,16 +100,22 @@ pub(super) async fn publish(
                 });
             }
         }
-        if session.config().app_config().dry_run {
-            session.display().status().info("Materialization preview does not download remote bytes; execution verifies every reference before publication");
-            SyncRequest::Recorded {
-                resolution,
-                evidence,
+        if session.config().app_config().dry_run || pending.is_empty() {
+            if session.config().app_config().dry_run {
+                session.display().status().info("Materialization preview verifies resolved inputs without publishing project changes");
             }
-        } else if pending.is_empty() {
-            SyncRequest::Recorded {
-                resolution,
-                evidence,
+            if let Some(content) = saved.take() {
+                SyncRequest::AcquiredReferences {
+                    source_revision: Some(source_revision),
+                    resolution,
+                    evidence,
+                    content,
+                }
+            } else {
+                SyncRequest::Recorded {
+                    resolution,
+                    evidence,
+                }
             }
         } else {
             if !approve(session, "Remote content acquisition")? {

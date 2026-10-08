@@ -28,7 +28,7 @@ a passing review and line coverage do not change that state by themselves.
 | --- | --- | --- |
 | Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Native `init --continue` and `clean import` are wired; broaden live provider/archive matrix |
-| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Changed-version world updates, supplied/restricted world archives and broader live provider parity |
+| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Broader live provider/world parity; exact and supplied world archives are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Broaden live provider/member parity |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
@@ -94,8 +94,8 @@ conflicting pins/providers, deliberate search selection and all-requested direct
 failure against native temporary projects. Provider network fixtures exercise the adapter; offline lifecycle tests also
 exercise the executable. Explicit supplied-file provider identification now retains verified bytes through publication.
 Direct and provider world interpretation and explicit companion-file plans are wired.
-Provider-world supplied inputs, changed-version/fresh-resolution matrices and broader live
-companion-file parity remain open.
+Provider-world supplied inputs, changed-version updates and fresh-resolution sync now have
+host tests; broader live companion-file/world parity remains open.
 
 ### Content identification
 
@@ -131,7 +131,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Host Nextest upgraded from 0.9.124 to 0.9.148 after identifying its documented macOS capture-pipe fix; 226 affected tests pass without warnings; final combined acceptance remains required |
-| Cutover | Provider-world input/update completion and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
+| Cutover | Broader live world/update/adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions remain open; manual-input continuation retains exact selections and verified bytes; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
 | Implemented | Acquisition cache integration | Build/sync/runtime and add/import consumers use verified lookup; approved mutations populate the cache; restricted inputs reuse exact asserted bytes |
@@ -233,7 +233,18 @@ update and adoption select the archive rather than looking up individual member 
 The host lifecycle test covers unchanged preview, add, two no-op syncs, unchanged update,
 adoption, actual client archive bytes, removal and subsequent sync. Removal preserves an
 untracked neighbor. The slice passed 122 affected core/host/addition/sync tests and
-all-target/all-feature Clippy. Changed-version and supplied/restricted archive cases remain open.
+all-target/all-feature Clippy. The subsequent slice below covers changed versions and
+supplied/restricted inputs.
+
+Provider-world input completion adds identified local archives and restricted-source cache
+lookup, retaining original archive assertions. Tests reject mismatched input, missing
+input, exhausted byte budgets and MD5-only strong verification. Host tests exercise
+unpin → no-upgrade sync → changed-version update, renamed source archives, changed member
+inventories, stable destination roots, supplied-file identification and fresh-resolution
+sync previews. A seeded archive-cache fixture reproduced a missing cache adapter in CLI
+selector preparation; that path now attaches verified cache lookup. This slice passed
+60 affected tests and all-target/all-feature Clippy. These are deterministic fixtures,
+not live-provider acceptance.
 
 Combined `d8b790e` validation passed 919 tests and eight doctests, with 103 opt-in cases
 excluded. Live/platform acceptance and fresh coverage remain open.

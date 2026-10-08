@@ -241,6 +241,11 @@ placements retain destination roots independently of a version's member inventor
 addition publisher. Recorded synchronization verifies installed members, and updates
 resolve the archive role rather than treating member names as provider file names.
 Provider adoption verifies the retained exact archive selection against installed bytes.
+`acquire_with_supplied` verifies identified archive bytes against the selected provider
+assertions before interpretation, consuming only matching archive roles. Other supplied
+provider files remain in the ordinary content path. Restricted archives can use read-only
+cache lookup. Supplied bytes, cache hits and HTTP work share the acquisition allowance;
+MD5 assertions remain weaker evidence, and strong-source policy rejects them.
 
 `application::engine_host::add` accepts a nonempty sequence of `AddHostInput::Provider`
 and `AddHostInput::File`. Both use one captured project revision and one resource governor.

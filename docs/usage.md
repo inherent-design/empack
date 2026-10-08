@@ -295,7 +295,12 @@ selected archive role and destination roots. The default root uses the provider 
 an explicit root stays fixed when updating. Empack verifies the archive before reading
 its members and retains the original archive digests separately from member hashes.
 An explicit file pin remains pinned. Adoption verifies installed members against that
-selected archive; it cannot attribute edited local bytes to the original provider file.
+selected archive; it cannot attribute edited local bytes to the original provider file. When
+no download URL is available, supply the downloaded ZIP with `--platform curseforge`
+and `--type world`; identification verifies the exact provider file before extraction.
+Existing cache entries can satisfy the same original archive assertions. The source
+archive's filename may change on update without moving the configured destination root;
+only the previous tracked member inventory can be retired.
 
 ## Named file placement
 

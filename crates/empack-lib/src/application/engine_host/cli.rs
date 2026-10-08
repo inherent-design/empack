@@ -326,7 +326,10 @@ async fn selected_with_catalog(
             }
         }
     }
-    let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
+    let transport = acquisition_with_cache_lookup(
+        session,
+        catalog.configure_acquisition(HttpAcquisition::new()?),
+    )?;
     let mut limits = DirectFileLimits::default();
     limits.transfer.deadline = Duration::from_secs(session.config().app_config().net_timeout);
     let services = dependencies::AdditionServices {

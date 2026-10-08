@@ -371,7 +371,7 @@ async fn change_with_services(
             } else {
                 snapshot.require_resolved()?
             };
-            let supplied = identification::resolve(
+            let mut supplied = identification::resolve(
                 &mut scope, identify, &mut providers, &services, evidence
             ).await?;
             let provider = if providers.is_empty() {
@@ -382,7 +382,7 @@ async fn change_with_services(
                 ).await?;
                 match resolved {
                     ProviderAdditionOutcome::Ready(addition) => Some(addition),
-                    ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire(&mut scope, &services.transport, evidence, services.files).await?),
+                    ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire_with_supplied(&mut scope, &services.transport, evidence, services.files, &mut supplied).await?),
                     ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!(
                         "Requested dependencies were not published: required dependency evidence needs a decision: {:?}",
                         closure.issues
