@@ -80,22 +80,8 @@ pub(super) fn selection(
     pin: &ResolvedPin,
     bytes: &[u8],
 ) -> Result<ProviderResolution> {
-    let file: File = json::<Envelope<File>>(bytes)?.data;
-    ensure!(
-        file.game_id == 432
-            && ProviderProjectId::CurseForge(CurseForgeProjectId::parse(&file.mod_id.to_string())?)
-                == pin.project
-            && PinSelector::CurseForgeFile(CurseForgeFileId::parse(&file.id.to_string())?)
-                == pin.selection,
-        CatalogError::Identity
-    );
-    filename(&file.file_name)?;
-    let expected = expected_content(&file.hashes, file.file_length)?;
-    let mut alternatives = Vec::new();
-    if let Some(url) = file.download_url {
-        download_locator(&url)?;
-        alternatives.push(url);
-    }
+    let file = checked_file(pin, bytes)?;
+    let selected = provider_file(&file)?;
     let coverage = if file.dependencies.is_some() {
         Coverage::CompleteForSelection
     } else {
@@ -139,13 +125,7 @@ pub(super) fn selection(
         kinds: project.kinds.clone(),
         project,
         pin: pin.clone(),
-        files: NonEmpty::new(vec![ProviderFile {
-            filename: file.file_name,
-            primary: true,
-            role: None,
-            expected,
-            alternatives,
-        }])?,
+        files: NonEmpty::new(vec![selected])?,
         game_versions: file.game_versions,
         loaders,
         environment,
@@ -187,4 +167,36 @@ pub(super) fn matches_content(bytes: &[u8], size: u64, observed: &DigestSet) -> 
             .digests
             .as_ref()
             .is_some_and(|hashes| hashes.check(observed.values()).is_ok()))
+}
+
+fn checked_file(pin: &ResolvedPin, bytes: &[u8]) -> Result<File> {
+    let file: File = json::<Envelope<File>>(bytes)?.data;
+    ensure!(
+        file.game_id == 432
+            && ProviderProjectId::CurseForge(CurseForgeProjectId::parse(&file.mod_id.to_string())?)
+                == pin.project
+            && PinSelector::CurseForgeFile(CurseForgeFileId::parse(&file.id.to_string())?)
+                == pin.selection,
+        CatalogError::Identity
+    );
+    Ok(file)
+}
+fn provider_file(file: &File) -> Result<ProviderFile> {
+    filename(&file.file_name)?;
+    let expected = expected_content(&file.hashes, file.file_length)?;
+    let mut alternatives = Vec::new();
+    if let Some(url) = &file.download_url {
+        download_locator(url)?;
+        alternatives.push(url.clone());
+    }
+    Ok(ProviderFile {
+        filename: file.file_name.clone(),
+        primary: true,
+        role: None,
+        expected,
+        alternatives,
+    })
+}
+pub(super) fn archive_file(pin: &ResolvedPin, bytes: &[u8]) -> Result<ProviderFile> {
+    provider_file(&checked_file(pin, bytes)?)
 }

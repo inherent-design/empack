@@ -704,3 +704,78 @@ async fn local_archive_can_use_declared_strong_source_evidence() {
         }
     }
 }
+
+#[tokio::test]
+async fn provider_modpack_pages_reach_verified_import_and_reject_changed_archive_bytes() {
+    use empack_core::{digest::ExpectedDigest, model::ProviderKind};
+    for provider in [ProviderKind::Modrinth, ProviderKind::CurseForge] {
+        for changed in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            fs::create_dir_all(root.path().join("project/pack")).unwrap();
+            fs::write(root.path().join("project/pack/old"), b"keep on failure").unwrap();
+            let original = super::super::tests::snapshot(root.path());
+            let mut server = mockito::Server::new_async().await;
+            let bytes = archive(&[("overrides/config/new", b"imported")], false);
+            let url = format!("{}/archive", server.url());
+            let selector = match provider {
+                ProviderKind::Modrinth => {
+                    server.mock("GET", "/project/a-pack").with_body(json!({"id":"Pack0001","slug":"a-pack","title":"A pack","project_type":"modpack"}).to_string()).create_async().await;
+                    server.mock("GET", "/project/Pack0001/version/1.0").with_body(json!({"id":"File0001","project_id":"Pack0001","version_number":"1.0","version_type":"release","status":"listed","date_published":"2025-01-01T00:00:00Z","files":[{"filename":"pack.mrpack","primary":true,"size":bytes.len(),"hashes":{"sha512":ExpectedDigest::Sha512(sha2::Sha512::digest(&bytes).into()).hex()},"url":url}],"game_versions":["1.21.1"],"loaders":[],"dependencies":[]}).to_string()).create_async().await;
+                    ModpackSelector::parse(
+                        provider,
+                        "https://modrinth.com/modpack/a-pack/version/1.0",
+                    )
+                    .unwrap()
+                }
+                ProviderKind::CurseForge => {
+                    server.mock("GET", "/mods/1001").with_body(json!({"data":{"id":1001,"slug":"a-pack","name":"A pack","classId":4471,"gameId":432}}).to_string()).create_async().await;
+                    server.mock("GET", "/mods/1001/files/2001").with_body(json!({"data":{"id":2001,"modId":1001,"gameId":432,"fileName":"pack.zip","fileLength":bytes.len(),"hashes":[{"algo":2,"value":ExpectedDigest::Md5(md5::Md5::digest(&bytes).into()).hex()}],"downloadUrl":url,"gameVersions":["1.21.1"],"dependencies":[],"releaseType":1,"fileDate":"2025-01-01T00:00:00Z","isAvailable":true}}).to_string()).create_async().await;
+                    ModpackSelector::parse(provider, "1001")
+                        .unwrap()
+                        .with_version("2001")
+                        .unwrap()
+                }
+            };
+            let mut body = bytes;
+            if changed {
+                body[0] ^= 1;
+            }
+            let payload = server
+                .mock("GET", "/archive")
+                .with_body(body)
+                .expect(1)
+                .create_async()
+                .await;
+            let result = import_with_services(
+                &session(root.path(), true, false),
+                request(
+                    ImportSource::Provider {
+                        selector,
+                        releases: ReleasePolicy::PreferStable,
+                    },
+                    true,
+                ),
+                decisions,
+                ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+                HttpAcquisition::for_loopback_tests(),
+                ImportLimits::default(),
+            )
+            .await;
+            if changed {
+                assert!(
+                    result.is_err(),
+                    "Changed provider archive must not be accepted"
+                );
+                assert_eq!(super::super::tests::snapshot(root.path()), original);
+            } else {
+                result.unwrap();
+                assert_eq!(
+                    fs::read(root.path().join("project/overrides/common/config/new")).unwrap(),
+                    b"imported"
+                );
+                assert!(!root.path().join("project/pack/old").exists());
+            }
+            payload.assert_async().await;
+        }
+    }
+}

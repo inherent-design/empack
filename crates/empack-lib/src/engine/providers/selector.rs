@@ -70,7 +70,7 @@ impl ProjectSelector {
         }
         Self::slug(provider, input)
     }
-    fn slug(provider: ProviderKind, input: &str) -> Result<Self> {
+    pub(super) fn slug(provider: ProviderKind, input: &str) -> Result<Self> {
         ensure!(
             !input.is_empty()
                 && input.len() <= 256
@@ -102,13 +102,16 @@ impl ProjectSelector {
         }
     }
     pub(super) fn matches(&self, project: &CanonicalProject) -> bool {
+        self.matches_identity(&project.id, &project.slug)
+    }
+    pub(super) fn matches_identity(&self, project: &ProviderProjectId, slug: &str) -> bool {
         match &self.value {
-            Selector::Canonical(id) => id == &project.id,
+            Selector::Canonical(id) => id == project,
             // The Modrinth lookup route accepts both IDs and slugs. The response disambiguates.
             Selector::Slug(ProviderKind::Modrinth, value) => {
-                project.slug == *value || project.id.to_string() == *value
+                slug == value || project.to_string() == *value
             }
-            Selector::Slug(ProviderKind::CurseForge, value) => project.slug == *value,
+            Selector::Slug(ProviderKind::CurseForge, value) => slug == value,
         }
     }
 }

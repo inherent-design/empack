@@ -10,7 +10,7 @@ use crate::{
             ImportContentPlan, ImportLimits, VerifiedImportContent, inspect_import,
         },
         project_change::ProjectReplacementPolicy,
-        providers::ProviderCatalog,
+        providers::{ModpackSelector, ProviderCatalog, ReleasePolicy, SelectionLimits},
     },
     networking::rate_budget::HostBudgetRegistry,
 };
@@ -19,6 +19,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 /// Explicit archive selection. Transient download URLs are never formatted or serialized here.
 pub enum ImportSource {
+    Provider {
+        selector: ModpackSelector,
+        releases: ReleasePolicy,
+    },
     Local {
         path: PathBuf,
         expected: ExpectedContent,
@@ -40,7 +44,8 @@ pub struct ImportHostRequest {
 
 /// The decision callback receives verified source evidence, not a live project writer.
 /// It must preserve participation and supply explicit representation/optional choices.
-/// Provider-page source selection and durable pending-input storage are separate host services.
+/// Provider pages resolve through the archive catalog. Durable pending-input storage and
+/// CLI selection remain separate host services.
 pub async fn import(
     session: &dyn Session,
     request: ImportHostRequest,
@@ -101,6 +106,41 @@ async fn import_with_services(
     let evidence = request.evidence;
     let content = scoped(session, shared.clone(), move |mut scope| async move {
         let archive = match source {
+            ImportSource::Provider { selector, releases } => {
+                let selected = catalog
+                    .resolve_modpack_archive(
+                        &mut scope,
+                        selector,
+                        releases,
+                        SelectionLimits {
+                            catalog: content_limits.catalog,
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                ensure!(
+                    !selected.file().alternatives.is_empty(),
+                    "Modpack archive {:?} requires explicit manual acquisition",
+                    selected.pin()
+                );
+                transport
+                    .acquire(
+                        &mut scope,
+                        DownloadRequest {
+                            alternatives: NonEmpty::new(selected.file().alternatives.clone())?,
+                            expected: selected.file().expected.clone(),
+                            limits: TransferLimits {
+                                file_bytes: inspection.archive.compressed_bytes,
+                                transfer_bytes: inspection.archive.compressed_bytes,
+                                deadline,
+                                ..Default::default()
+                            },
+                            evidence,
+                            initial: InitialObservation::RequireEvidence,
+                        },
+                    )
+                    .await?
+            }
             ImportSource::Local { path, expected } => {
                 acquire_local_file(
                     &mut scope,

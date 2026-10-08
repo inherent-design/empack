@@ -84,44 +84,8 @@ pub(super) fn selection(
     pin: &ResolvedPin,
     bytes: &[u8],
 ) -> Result<ProviderResolution> {
-    let version: Version = json(bytes)?;
-    ensure!(
-        ProviderProjectId::Modrinth(ModrinthProjectId::parse(&version.project_id)?) == pin.project
-            && PinSelector::ModrinthVersion(ModrinthVersionId::parse(&version.id)?)
-                == pin.selection,
-        CatalogError::Identity
-    );
-    ensure!(
-        version.files.iter().filter(|file| file.primary).count() <= 1,
-        CatalogError::InvalidRecord
-    );
-    let mut names = std::collections::BTreeSet::new();
-    let mut files = Vec::new();
-    for file in version.files {
-        filename(&file.filename)?;
-        ensure!(
-            names.insert(file.filename.clone()),
-            CatalogError::InvalidRecord
-        );
-        download_locator(&file.url)?;
-        let expected = DigestSet::parse(
-            file.hashes
-                .iter()
-                .map(|(algorithm, value)| (algorithm.as_str(), value.as_str())),
-        )
-        .map_err(|_| CatalogError::InvalidRecord)?;
-        files.push(ProviderFile {
-            filename: file.filename,
-            primary: file.primary,
-            role: file.file_type,
-            expected: ExpectedContent {
-                digests: Some(expected),
-                size: Some(file.size),
-                accepted_observation: None,
-            },
-            alternatives: vec![file.url],
-        });
-    }
+    let version = checked_version(pin, bytes)?;
+    let files = version_files(version.files)?;
     let mut coverage = if version.dependencies.is_some() {
         Coverage::CompleteForSelection
     } else {
@@ -175,11 +139,59 @@ pub(super) fn selection(
         project,
         kinds,
         pin: pin.clone(),
-        files: NonEmpty::new(files)?,
+        files,
         game_versions: version.game_versions,
         loaders: version.loaders,
         environment,
         dependencies,
         coverage,
     })
+}
+
+fn checked_version(pin: &ResolvedPin, bytes: &[u8]) -> Result<Version> {
+    let version: Version = json(bytes)?;
+    ensure!(
+        ProviderProjectId::Modrinth(ModrinthProjectId::parse(&version.project_id)?) == pin.project
+            && PinSelector::ModrinthVersion(ModrinthVersionId::parse(&version.id)?)
+                == pin.selection,
+        CatalogError::Identity
+    );
+    Ok(version)
+}
+fn version_files(input: Vec<File>) -> Result<NonEmpty<ProviderFile>> {
+    ensure!(
+        input.iter().filter(|file| file.primary).count() <= 1,
+        CatalogError::InvalidRecord
+    );
+    let mut names = std::collections::BTreeSet::new();
+    let mut files = Vec::new();
+    for file in input {
+        filename(&file.filename)?;
+        ensure!(
+            names.insert(file.filename.clone()),
+            CatalogError::InvalidRecord
+        );
+        download_locator(&file.url)?;
+        let expected = DigestSet::parse(
+            file.hashes
+                .iter()
+                .map(|(algorithm, value)| (algorithm.as_str(), value.as_str())),
+        )
+        .map_err(|_| CatalogError::InvalidRecord)?;
+        files.push(ProviderFile {
+            filename: file.filename,
+            primary: file.primary,
+            role: file.file_type,
+            expected: ExpectedContent {
+                digests: Some(expected),
+                size: Some(file.size),
+                accepted_observation: None,
+            },
+            alternatives: vec![file.url],
+        });
+    }
+    Ok(NonEmpty::new(files)?)
+}
+pub(super) fn archive_files(pin: &ResolvedPin, bytes: &[u8]) -> Result<NonEmpty<ProviderFile>> {
+    version_files(checked_version(pin, bytes)?.files)
 }

@@ -729,6 +729,28 @@ NonEmpty<ProviderKind>, IdentificationLimits)` returns `Identification::Unknown`
 resolution and all matching filenames. Names identify roles within that exact
 selection; they are not installation destinations. Provider failures remain errors.
 
+### Provider modpack archive selection
+
+`ProviderCatalog::resolve_modpack_archive` accepts a `ModpackSelector`, release policy
+and bounded `SelectionLimits`. Its retained `ModpackArchive` exposes the canonical
+project, exact pin and original file evidence. Modpack projects are archive sources;
+they do not acquire a fictitious dependency content kind.
+
+Selectors accept project IDs, slugs and exact provider modpack pages. A numeric
+CurseForge URL slug remains a slug. Modrinth pages may select a project-scoped version
+number or ID; CurseForge pages may select a file ID. Conflicting selections fail.
+Without an explicit version, release policy and publication timestamps determine the
+choice across complete bounded pages. Truncated, overlapping or inconsistent pages
+cannot return an earlier partial result. Server-pack files are excluded from client
+modpack import sources.
+
+File identity, digest and download-origin validation are shared with dependency
+resolution. Modrinth's primary-file/first-file rule follows its
+[version API](https://docs.modrinth.com/api/operations/getprojectversions/).
+CurseForge file assertions and pagination follow its
+[REST contract](https://docs.curseforge.com/rest-api/). Restricted files retain their
+exact identity and expected bytes with no invented download origin.
+
 ### Native build host
 
 `application::engine_host::build` accepts parsed build arguments, `BuildDecisions`
@@ -757,8 +779,8 @@ workflows remain available through the current dispatcher in the meantime.
 ### Native import host
 
 `application::engine_host::import` accepts an `ImportHostRequest` and a decision
-callback over `VerifiedImportContent`. Sources are explicit native paths or download
-alternatives. Both source variants carry original digest and size assertions; selecting a
+callback over `VerifiedImportContent`. Sources are provider modpack selections, explicit
+native paths or download alternatives. File source variants carry original digest and size assertions; selecting a
 local file does not downgrade a strong-source policy to an accepted observation.
 Native paths resolve from the invocation;
 destination paths resolve from the selected workdir. Remote acquisition enforces the
@@ -773,7 +795,8 @@ participation or silently redirect source destinations.
 
 The host displays the exact managed replacement plan before the common approval step.
 Preview and declined approval leave project and durable host state unchanged. Provider
-modpack-page discovery, runtime conversion choices, durable pending-input storage and
+pages use the archive catalog and verify its assertions before inspection. Runtime
+conversion choices, durable pending-input storage and
 the CLI import dispatcher remain integration work. This entry point does not complete
 those features or remove the current CLI implementation.
 

@@ -29,6 +29,8 @@ pub use compatible::{
     CompatibleRequest, CompatibleSelection, ReleaseChannel, ReleasePolicy, SelectionLimits,
 };
 mod identify;
+mod modpack;
+pub use modpack::{ModpackArchive, ModpackProject, ModpackSelector};
 pub use identify::{Identification, IdentificationLimits, IdentifiedSelection};
 mod curseforge;
 mod modrinth;

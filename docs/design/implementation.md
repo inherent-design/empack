@@ -1330,8 +1330,8 @@ participation. The composed import → full-client → mrpack case inspects orig
 bytes, effective client/server layers and optional URL references without rewriting intent.
 Fully shadowed common bytes remain in the project; exports contain the effective side views.
 
-This host accepts explicit archive and representation choices. Provider-page discovery,
-runtime conversion, durable pending-input storage and CLI selection/cutover remain open.
+This host accepts explicit archive and representation choices. Runtime conversion,
+durable pending-input storage and CLI selection/cutover remain open.
 The existing CLI is unchanged; this does not claim complete product parity.
 
 At `43a8a3c`, the frozen combined revision passed all 1,929 default tests and eleven
@@ -1350,3 +1350,24 @@ accepting the correct SHA-512 declaration.
 
 All 39 affected import/local-acquisition tests, all-feature Clippy and Windows
 cross-compilation pass. The complete-suite result remains pinned to `43a8a3c`.
+
+## Provider modpack archive selection
+
+Provider modpack pages now resolve through a bounded archive catalog before native import.
+Selectors are distinct from dependency content kinds. Modrinth project/version selectors
+and CurseForge project/file selectors resolve to canonical ownership, original digest and
+size assertions, and transient download alternatives. Latest selection applies the selected
+release policy; an explicit version remains exact. CurseForge server packs are excluded.
+Missing restricted archive URLs require explicit acquisition instead of a guessed endpoint.
+
+One request budget covers project lookup and all pages. Malformed records, duplicate or
+changing pages, exhausted limits and mismatched owners fail without accepting an earlier
+partial result. Native imports verify the selected archive before replacement. The tests
+exercise both providers, same-size changed archive bytes, numeric URL slugs, file selection,
+restricted URLs and resource retirement.
+
+All 114 affected provider/import tests pass. After final selector and record-validation
+refinements, all 15 catalog/host tests pass. The live Fabulously Optimized Modrinth catalog
+probe passes using default limits; it resolves metadata and does not download the archive.
+Final all-feature Clippy and Windows cross-compilation pass. The latest complete suite
+remains the 1,929 tests and eleven doctests at `43a8a3c`.
