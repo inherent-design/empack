@@ -7,7 +7,10 @@ use crate::{
             DirectFileInput, DirectFileLimits, DirectFileSource, FileAddition,
             ResolvedAdditionBatch,
         },
-        api::{AddRequest, ExistingDependencyPolicy, RemoveRequest, SyncRequest},
+        api::{
+            AddRequest, ExistingDependencyPolicy, RemoveRequest, Request, SyncRequest,
+            UpdateRequest,
+        },
         content::SourceEvidencePolicy,
         project::ProjectReader,
         providers::{
@@ -88,6 +91,29 @@ pub async fn add(
     evidence: SourceEvidencePolicy,
     existing: ExistingDependencyPolicy,
 ) -> Result<()> {
+    let services = configured_services(session)?;
+    add_with_services(session, inputs, releases, evidence, existing, services).await
+}
+/// Deliberately refresh selected installed identities while preserving authored intent and pins.
+/// Inputs describe the requested selections; an unknown identity cannot become an implicit add.
+pub async fn update(
+    session: &dyn Session,
+    inputs: NonEmpty<AddHostInput>,
+    releases: ReleasePolicy,
+    evidence: SourceEvidencePolicy,
+) -> Result<()> {
+    let services = configured_services(session)?;
+    change_with_services(
+        session,
+        inputs,
+        releases,
+        evidence,
+        Change::Update,
+        services,
+    )
+    .await
+}
+fn configured_services(session: &dyn Session) -> Result<AdditionServices> {
     let config = session.config().app_config();
     let catalog = ProviderCatalog::new(
         config.curseforge_api_client_key.clone(),
@@ -96,20 +122,17 @@ pub async fn add(
     let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
     let mut files = DirectFileLimits::default();
     files.transfer.deadline = Duration::from_secs(config.net_timeout);
-    add_with_services(
-        session,
-        inputs,
-        releases,
-        evidence,
-        existing,
-        AdditionServices {
-            catalog,
-            transport,
-            files,
-        },
-    )
-    .await
+    Ok(AdditionServices {
+        catalog,
+        transport,
+        files,
+    })
 }
+enum Change {
+    Add(ExistingDependencyPolicy),
+    Update,
+}
+
 pub(super) async fn add_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
@@ -118,6 +141,25 @@ pub(super) async fn add_with_services(
     existing: ExistingDependencyPolicy,
     services: AdditionServices,
 ) -> Result<()> {
+    change_with_services(
+        session,
+        inputs,
+        releases,
+        evidence,
+        Change::Add(existing),
+        services,
+    )
+    .await
+}
+async fn change_with_services(
+    session: &dyn Session,
+    inputs: NonEmpty<AddHostInput>,
+    releases: ReleasePolicy,
+    evidence: SourceEvidencePolicy,
+    change: Change,
+    services: AdditionServices,
+) -> Result<()> {
+    let update = matches!(&change, Change::Update);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let config = session.config().app_config();
@@ -175,7 +217,7 @@ pub(super) async fn add_with_services(
                 match resolved {
                     ProviderAdditionOutcome::Ready(addition) => Some(addition),
                     ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!(
-                        "Addition was not published: required dependency evidence needs a decision: {:?}",
+                        "Requested dependencies were not published: required dependency evidence needs a decision: {:?}",
                         closure.issues
                     ),
                 }
@@ -199,27 +241,59 @@ pub(super) async fn add_with_services(
                 "Record {}: {} ({:?})", key.as_str(), dependency.title, dependency.identity
             ));
         }
-        let prepared = ready(
-            cancellable(
-                session,
-                engine.prepare(
-                    project,
-                    AddRequest {
-                        source_revision: Some(revision),
-                        group: addition.group().clone(),
-                        content: addition.content().clone(),
-                        existing,
-                    },
-                ),
-            )
-            .await?,
-        )?;
+        let request: Request = match change {
+            Change::Add(existing) => AddRequest {
+                source_revision: Some(revision), group: addition.group().clone(),
+                content: addition.content().clone(), existing,
+            }.into(),
+            Change::Update => UpdateRequest {
+                source_revision: Some(revision), group: addition.group().clone(),
+                content: addition.content().clone(),
+            }.into(),
+        };
+        let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
         drop(addition);
-        publish_addition(session, &engine, prepared).await
+        if update { publish_update(session, &engine, prepared).await }
+        else { publish_addition(session, &engine, prepared).await }
+
     }
     .await;
     engine.shutdown().await;
     result
+}
+async fn publish_update(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+) -> Result<()> {
+    let view = prepared.view().update().context("Missing update preview")?;
+    for (requested, canonical) in &view.bindings {
+        if !view.selected.contains(canonical) {
+            continue;
+        }
+        session.display().status().info(&format!(
+            "Update {} as {}",
+            requested.as_str(),
+            canonical.as_str(),
+        ));
+    }
+    if !view.references.is_empty() {
+        session.display().status().info(&format!(
+            "Record {} exact references; payloads verify when acquired",
+            view.references.len(),
+        ));
+    }
+    show_changes(session, &view.files)?;
+    apply(session, engine, prepared, "Update", |receipt| {
+        let ExecutionReceipt::Update(receipt) = receipt else {
+            anyhow::bail!("Unexpected update receipt");
+        };
+        Ok(format!(
+            "Updated {} selected dependencies; preserved authored intent",
+            receipt.selected.len()
+        ))
+    })
+    .await
 }
 pub(super) async fn publish_addition(
     session: &dyn Session,

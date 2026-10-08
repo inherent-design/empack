@@ -607,6 +607,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     fs::write(root.path().join("pack/unrelated.pw.toml"), b"invalid = [").unwrap();
     let (engine, governor) = engine(state.path().join("state"));
     let make_request = || UpdateRequest {
+        source_revision: None,
         group: AdditionGroup::from_resolved(&requested).unwrap(),
         content: crate::engine::dependency_content::materialized(acquired_project(&requested)),
     };
@@ -636,6 +637,10 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
             receipt,
         ))) => {
             assert_eq!(receipt.project.intent(), current.intent());
+            assert_eq!(
+                receipt.selected,
+                std::collections::BTreeSet::from([DependencyKey::parse("existing").unwrap()])
+            );
             assert_eq!(
                 receipt.project.lock().dependencies[&DependencyKey::parse("existing").unwrap()]
                     .selected,

@@ -1499,3 +1499,27 @@ The twelve focused regressions pass, including two large archives under a small 
 budget, stale native archive inputs and a local-only request under a small memory budget.
 All 58 affected archive/import/build/dependency tests, final all-feature Clippy and Windows
 cross-compilation pass. One parallel test reported inherited pipes; its isolated serial rerun passes cleanly. The full-suite result remains pinned to `05ac71f`.
+
+
+## Native explicit update host
+
+`engine_host::update` shares provider/direct resolution, captured revision binding and
+AllRequested preparation with addition. It uses the existing update planner and publisher,
+retains authored intent byte-for-byte, and reports explicitly selected keys separately from
+retained required records. Compatible selection advances only the requested provider roots;
+exact pins and known retained dependents remain binding. Selecting a transitive record does
+not promote it to an authored root.
+
+Four native regressions cover mixed provider/local updates, preview/decline, exact repeated
+update, two no-op syncs and exported current bytes; pin violations, unknown requested
+identities and failed sources; concurrent raw-lock edits; and jointly updating known
+dependents without promotion. The public direct-only update entry is exercised too.
+An initial test fixture supplied competing version-list responses; it now publishes one
+consistent catalog response per selector. All 32 affected tests, all-feature Clippy and
+Windows cross-compilation pass. One parallel test reports inherited pipes; its isolated
+serial rerun passes cleanly. No source assertion or test requirement was weakened.
+
+Greptile 120 cleared `f63c98f`. At `85802fe`, the corrected CI coverage task passed
+2,051 tests and reported 93.66% workspace line coverage, including inline tests. That
+measurement is not a production-only percentage or evidence of CLI feature completion.
+The latest full local suite remains pinned to `05ac71f` (1,955 tests and eleven doctests).

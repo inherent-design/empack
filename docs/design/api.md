@@ -355,8 +355,16 @@ known retained dependents must be included when their required selection changes
 Uninstalled requested identities fail rather than becoming additions. New required
 closure entries remain justified by the resolved group. `UpdatePreview` exposes
 canonical bindings, selected records and the exact replacement footprint; the retained
-`UpdateReceipt` contains the published project. Compatible selection by the host and
-CLI wiring remain separate work.
+`UpdateReceipt` contains the published project and the explicitly selected canonical keys.
+`UpdateRequest.source_revision` can bind resolution to captured raw documents and native
+root identity, using the same precondition as addition.
+
+`engine_host::update` accepts the same typed provider/direct-file inputs as native addition.
+It resolves compatible provider selections and required closure, verifies requested direct
+bytes, and prepares one update under that captured revision. An explicit pin in current intent
+cannot be changed by an update input. The host preserves raw authoring bytes, keeps transitive
+records unpromoted, and shows selected identities plus native changes before approval.
+Search/selector composition and CLI routing remain pending.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
 present in a project. Preparation verifies their original digest, size and

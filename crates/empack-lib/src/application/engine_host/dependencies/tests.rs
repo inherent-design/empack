@@ -99,16 +99,27 @@ async fn records(server: &mut Server) {
     .await;
 }
 async fn records_with_dependencies(server: &mut Server, dependencies: Value) {
+    records_for_version(server, "RootVer1", dependencies).await;
+}
+async fn records_for_version(server: &mut Server, root_version: &str, dependencies: Value) {
+    records_for_selections(server, root_version, "NeedVer1", dependencies).await;
+}
+async fn records_for_selections(
+    server: &mut Server,
+    root_version: &str,
+    needed_version: &str,
+    dependencies: Value,
+) {
     for (id, slug, version) in [
         (
             "Root0001",
             "renderer",
-            version("Root0001", "RootVer1", dependencies),
+            version("Root0001", root_version, dependencies),
         ),
         (
             "Need0001",
             "required-library",
-            version("Need0001", "NeedVer1", json!([])),
+            version("Need0001", needed_version, json!([])),
         ),
     ] {
         for selector in [id, slug] {
@@ -625,4 +636,344 @@ async fn mixed_addition_failures_never_publish_either_successful_subset() {
         );
         assert_eq!(snapshot(root.path()), before, "{mode}");
     }
+}
+
+async fn update_mixed(
+    root: &Path,
+    server: &Server,
+    inputs: Vec<AddHostInput>,
+    yes: bool,
+    dry: bool,
+) -> Result<()> {
+    change_with_services(
+        &session(root, yes, dry),
+        NonEmpty::new(inputs)?,
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update,
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+    )
+    .await
+}
+async fn next_records(server: &mut Server) {
+    records_for_version(
+        server,
+        "RootVer2",
+        json!([{"project_id":"Need0001","version_id":"NeedVer1","dependency_type":"required"}]),
+    )
+    .await;
+}
+
+fn update_inputs(source: &str, pinned: bool) -> Vec<AddHostInput> {
+    let mut provider = input("renderer", Some("alias"));
+    if !pinned {
+        provider.pin = None;
+    }
+    vec![
+        AddHostInput::Provider(provider),
+        local_batch_input(source, "settings", "config/settings.cfg"),
+    ]
+}
+#[tokio::test]
+async fn native_update_preserves_authored_intent_and_converges_across_mixed_content() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    fs::write(root.path().join("settings.cfg"), b"enabled=false").unwrap();
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    mixed(
+        root.path(),
+        &old,
+        update_inputs("settings.cfg", false),
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let previous = read(&project);
+    let key = DependencyKey::parse("alias").unwrap();
+    let required = DependencyKey::parse("required-library").unwrap();
+    let mut authored = b"# keep my release notes\n".to_vec();
+    authored.extend(fs::read(project.join("empack.yml")).unwrap());
+    fs::write(project.join("empack.yml"), &authored).unwrap();
+    fs::write(root.path().join("settings.cfg"), b"enabled=true").unwrap();
+    let mut next = Server::new_async().await;
+    next_records(&mut next).await;
+    let before = snapshot(&project);
+    for (yes, dry) in [(true, true), (false, false)] {
+        update_mixed(
+            root.path(),
+            &next,
+            update_inputs("settings.cfg", false),
+            yes,
+            dry,
+        )
+        .await
+        .unwrap();
+        assert_eq!(snapshot(&project), before);
+    }
+    update_mixed(
+        root.path(),
+        &next,
+        update_inputs("settings.cfg", false),
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let updated = read(&project);
+    assert_eq!(updated.intent(), previous.intent());
+    assert_eq!(
+        updated.lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap())
+    );
+    assert_eq!(
+        updated.lock().dependencies[&required],
+        previous.lock().dependencies[&required]
+    );
+    assert_eq!(
+        updated.lock().required_edges,
+        previous.lock().required_edges
+    );
+    assert_eq!(fs::read(project.join("empack.yml")).unwrap(), authored);
+    assert_eq!(
+        fs::read(project.join("overrides/client/config/settings.cfg")).unwrap(),
+        b"enabled=true"
+    );
+    let before = snapshot(&project);
+    update_mixed(
+        root.path(),
+        &next,
+        update_inputs("settings.cfg", false),
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&project), before);
+    // The public direct-only entry shares the same exact update lifecycle.
+    super::update(
+        &session(root.path(), true, false),
+        NonEmpty::new(vec![local_batch_input(
+            "settings.cfg",
+            "settings",
+            "config/settings.cfg",
+        )])
+        .unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&project), before);
+    for _ in 0..2 {
+        synchronize(
+            &session(root.path(), true, false),
+            SyncRequest::Recorded {
+                resolution: None,
+                evidence: SourceEvidencePolicy::Compatibility,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(snapshot(&project), before);
+    }
+    build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["mrpack".into()],
+            ..Default::default()
+        },
+        BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(project.join("dist/Dependency Pack-1.0.mrpack")).unwrap(),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    archive
+        .by_name("client-overrides/config/settings.cfg")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"enabled=true");
+}
+#[tokio::test]
+async fn native_update_rejects_pin_changes_new_identities_and_failed_sources_as_one_batch() {
+    for case in ["pin", "new-identity", "missing-file"] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::write(root.path().join("settings.cfg"), b"enabled=false").unwrap();
+        let mut old = Server::new_async().await;
+        records(&mut old).await;
+        mixed(
+            root.path(),
+            &old,
+            update_inputs("settings.cfg", case == "pin"),
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+        fs::write(root.path().join("settings.cfg"), b"enabled=true").unwrap();
+        let mut next = Server::new_async().await;
+        next_records(&mut next).await;
+        let mut inputs = update_inputs(
+            if case == "missing-file" {
+                "missing.cfg"
+            } else {
+                "settings.cfg"
+            },
+            false,
+        );
+        if case == "new-identity" {
+            inputs.push(local_batch_input("settings.cfg", "new", "config/new.cfg"));
+        }
+        let before = snapshot(&root.path().join("project"));
+        assert!(
+            update_mixed(root.path(), &next, inputs, true, false)
+                .await
+                .is_err(),
+            "{case}"
+        );
+        assert_eq!(snapshot(&root.path().join("project")), before, "{case}");
+    }
+}
+#[tokio::test]
+async fn native_update_binds_resolution_to_the_captured_raw_lock() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    fs::write(root.path().join("settings.cfg"), b"enabled=false").unwrap();
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    mixed(
+        root.path(),
+        &old,
+        update_inputs("settings.cfg", false),
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let project = root.path().join("project");
+    let path = project.join("empack.lock");
+    let mut changed = fs::read(&path).unwrap();
+    changed.extend_from_slice(b"\n# independent edit during resolution\n");
+    let bytes = changed.clone();
+    let mut next = Server::new_async().await;
+    next.mock("GET", "/project/renderer").with_body_from_request(move |_| {
+        fs::write(&path, &bytes).unwrap();
+        json!({"id":"Root0001","slug":"renderer","title":"renderer","project_type":"mod","loaders":["fabric"]}).to_string().into_bytes()
+    }).create_async().await;
+    next_records(&mut next).await;
+    let mut expected = snapshot(&project);
+    expected.insert(PathBuf::from("empack.lock"), changed);
+    let error = update_mixed(
+        root.path(),
+        &next,
+        update_inputs("settings.cfg", false),
+        true,
+        false,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("changed project documents"),
+        "{error:#}"
+    );
+    assert_eq!(snapshot(&project), expected);
+}
+
+#[tokio::test]
+async fn native_update_checks_retained_dependents_without_promoting_selected_transitives() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut root_input = input("renderer", Some("alias"));
+    root_input.pin = None;
+    add(root.path(), &old, vec![root_input.clone()], true, false)
+        .await
+        .unwrap();
+    let project = root.path().join("project");
+    let authored = fs::read(project.join("empack.yml")).unwrap();
+    let mut next = Server::new_async().await;
+    records_for_selections(
+        &mut next,
+        "RootVer2",
+        "NeedVer2",
+        json!([{"project_id":"Need0001","version_id":"NeedVer2","dependency_type":"required"}]),
+    )
+    .await;
+    let mut required = input("required-library", Some("required-library"));
+    required.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("NeedVer2").unwrap(),
+    ));
+    let before = snapshot(&project);
+    let error = update_mixed(
+        root.path(),
+        &next,
+        vec![AddHostInput::Provider(required.clone())],
+        true,
+        false,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("retained required dependents"),
+        "{error:#}"
+    );
+    assert_eq!(snapshot(&project), before);
+    update_mixed(
+        root.path(),
+        &next,
+        vec![
+            AddHostInput::Provider(root_input),
+            AddHostInput::Provider(required),
+        ],
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let updated = read(&project);
+    assert_eq!(fs::read(project.join("empack.yml")).unwrap(), authored);
+    assert_eq!(updated.intent().roots.len(), 1);
+    assert!(
+        !updated
+            .intent()
+            .roots
+            .contains_key(&DependencyKey::parse("required-library").unwrap())
+    );
+    assert_eq!(
+        updated.lock().dependencies[&DependencyKey::parse("required-library").unwrap()]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("NeedVer2").unwrap())
+    );
+    let before = snapshot(&project);
+    synchronize(
+        &session(root.path(), true, false),
+        SyncRequest::Recorded {
+            resolution: None,
+            evidence: SourceEvidencePolicy::Compatibility,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&project), before);
 }

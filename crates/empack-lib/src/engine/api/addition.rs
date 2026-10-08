@@ -57,6 +57,7 @@ pub struct AddReceipt {
 /// Exact replacement selections for explicitly requested installed identities. Resolution hosts
 /// supply the group; the engine preserves current authoring intent, including explicit pins.
 pub struct UpdateRequest {
+    pub source_revision: Option<crate::engine::project::ProjectRevision>,
     pub group: AdditionGroup,
     pub content: DependencyContents,
 }
@@ -84,6 +85,7 @@ impl From<&AddPreview> for UpdatePreview {
 }
 pub struct UpdateReceipt {
     pub plan: PlanId,
+    pub selected: BTreeSet<DependencyKey>,
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
@@ -145,7 +147,7 @@ pub(super) async fn prepare_update(
     prepare_change(
         project,
         AddRequest {
-            source_revision: None,
+            source_revision: request.source_revision,
             group: request.group,
             content: request.content,
             existing: ExistingDependencyPolicy::UpdateSameIdentity,
@@ -268,11 +270,13 @@ pub(super) async fn run_update(
     config: EngineConfig,
     scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
+    let selected = prepared.view.existing_roots.clone();
     Ok(match run(prepared, config, scope).await? {
         ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt)) => {
             ExecutionOutcome::Completed(ExecutionReceipt::Update(Box::new(receipt.map(|value| {
                 UpdateReceipt {
                     plan: value.plan,
+                    selected,
                     publication: value.publication,
                     project: value.project,
                     bindings: value.bindings,
