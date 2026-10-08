@@ -52,6 +52,18 @@ fn content_cache_root(config: &AppConfig, invocation: &Path) -> Result<PathBuf> 
     };
     Ok(absolute(invocation, &base).join("content-v1"))
 }
+fn acquisition_with_cache_lookup(
+    session: &dyn Session,
+    transport: crate::engine::acquisition::HttpAcquisition,
+) -> Result<crate::engine::acquisition::HttpAcquisition> {
+    let (invocation, _) = project_path(session)?;
+    Ok(
+        transport.with_cache_lookup(crate::engine::content::cache::ContentCache::new(
+            content_cache_root(session.config().app_config(), &invocation)?,
+            crate::engine::content::store::ContentStoreLimits::default(),
+        )?),
+    )
+}
 fn governor(config: &AppConfig) -> ResourceGovernor {
     ResourceGovernor::new(ResourceRequest {
         jobs: config.cpu_jobs.max(1) as u64,

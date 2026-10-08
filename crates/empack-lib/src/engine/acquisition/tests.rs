@@ -480,3 +480,99 @@ async fn configured_provider_downloads_do_not_leak_keys_to_redirects_or_alternat
     redirect.assert_async().await;
     file.assert_async().await;
 }
+
+#[tokio::test]
+async fn acquisition_cache_authority_preserves_evidence_limits_and_fresh_catalogs() {
+    use crate::engine::content::{cache::ContentCache, store::ContentStoreLimits};
+    let directory = tempfile::tempdir().unwrap();
+    let cache_path = directory.path().join("content");
+    let cache = ContentCache::new(cache_path.clone(), ContentStoreLimits::default()).unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let response = server
+        .mock("GET", "/file")
+        .with_body("payload")
+        .expect(3)
+        .create_async()
+        .await;
+    let catalog = server
+        .mock("GET", "/catalog")
+        .with_body("payload")
+        .expect(2)
+        .create_async()
+        .await;
+    let url = format!("{}/file", server.url());
+    let wrong_url = format!("{}/wrong", server.url());
+    let wrong = server
+        .mock("GET", "/wrong")
+        .with_body("changed")
+        .expect(1)
+        .create_async()
+        .await;
+    let catalog_url = format!("{}/catalog", server.url());
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        scratch_bytes: 4096,
+        memory_bytes: 2 << 20,
+        open_files: 16,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime.start(move |mut scope| async move {
+        let result: Result<()> = async {
+            let failed_path = cache_path.with_file_name("failed-batch");
+            let failed = transport().with_execution_cache(ContentCache::new(failed_path.clone(), ContentStoreLimits::default())?);
+            assert!(failed.acquire_batch(&mut scope, vec![request(vec![url.clone()],16), request(vec![wrong_url],16)], request(vec![url.clone()],16).limits).await.is_err());
+            assert!(!failed_path.exists(), "failed acquisition batch cannot publish cached subsets");
+            let read_only = transport().with_cache_lookup(cache.clone());
+            drop(read_only.acquire(&mut scope, request(vec![url.clone()], 16)).await?);
+            assert!(!cache_path.exists(), "preparation cannot populate a cold cache");
+            let execution = transport().with_execution_cache(cache.clone());
+            drop(execution.acquire(&mut scope, request(vec![url], 16)).await?);
+            assert!(cache_path.join("md5-321c3cf486ed509164edec1e1981fec8.hint").is_file());
+            let offline = "http://127.0.0.1:9/unavailable".to_owned();
+            let content = read_only.acquire(&mut scope, request(vec![offline.clone()], 16)).await?;
+            assert!(matches!(content.evidence(), empack_core::digest::IntegrityEvidence::MatchedExpected { expected, .. }
+                if expected.strongest() == empack_core::digest::DigestAlgorithm::Md5));
+            drop(content);
+            let mut strong = request(vec![offline.clone()], 16);
+            strong.evidence = SourceEvidencePolicy::StrongSourceRequired;
+            assert!(read_only.acquire(&mut scope, strong).await.is_err());
+            let mut wrong_size = request(vec![offline.clone()], 16);
+            wrong_size.expected.size = Some(6);
+            assert!(read_only.acquire(&mut scope, wrong_size).await.is_err());
+            let requests = vec![request(vec![offline.clone()], 16), request(vec![offline.clone()], 16)];
+            let limits = TransferLimits { transfer_bytes: 13, ..request(vec![offline.clone()],16).limits };
+            let error = read_only.acquire_batch(&mut scope, requests, limits).await.err().expect("cached batch must obey the shared byte limit");
+            assert!(matches!(error.downcast_ref(), Some(TransferError::ByteLimit)));
+            let mut smaller = request(vec![offline.clone()],16);
+            smaller.limits.transfer_bytes = 6;
+            let error = read_only.acquire_batch(&mut scope, vec![request(vec![offline.clone()],16), smaller], request(vec![offline.clone()],16).limits).await.err().expect("individual cached requests keep their byte cap");
+            assert!(matches!(error.downcast_ref(), Some(TransferError::ByteLimit)));
+            // A catalog without a source assertion cannot be reused by URL or observed address.
+            for _ in 0..2 {
+                let mut selected = request(vec![catalog_url.clone()], 16);
+                selected.expected.digests = None;
+                selected.initial = InitialObservation::Accepted;
+                drop(execution.acquire(&mut scope, selected).await?);
+            }
+            let blob = std::fs::read_dir(&cache_path)?.map(|entry| entry.unwrap().path())
+                .find(|path| path.extension().is_some_and(|value| value == "blob")).unwrap();
+            std::fs::write(blob, b"changed")?;
+            assert!(read_only.acquire(&mut scope, request(vec![offline], 16)).await.is_err());
+            Ok(())
+        }.await;
+        Ok(result)
+    }).unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(Ok(())) => {}
+        OperationOutcome::Completed(Err(error)) => panic!("{error:#}"),
+        _ => panic!("cache operation did not complete"),
+    }
+    runtime.release_completed(handle.id());
+    drop((outcome, handle));
+    runtime.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    response.assert_async().await;
+    catalog.assert_async().await;
+    wrong.assert_async().await;
+}

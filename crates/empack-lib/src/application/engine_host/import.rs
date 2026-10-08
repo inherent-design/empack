@@ -64,7 +64,10 @@ pub async fn import(
             .clone(),
         Arc::new(HostBudgetRegistry::new()),
     )?;
-    let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
+    let transport = acquisition_with_cache_lookup(
+        session,
+        catalog.configure_acquisition(HttpAcquisition::new()?),
+    )?;
     import_with_services(
         session,
         request,

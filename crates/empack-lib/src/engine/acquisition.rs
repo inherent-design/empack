@@ -1,4 +1,4 @@
-//! Bounded HTTP acquisition into verified private leases; no project or cache writer.
+//! Bounded acquisition into verified private leases; cache authority is selected by the host.
 use super::{
     content::{
         AcquiredContent, InitialObservation, SourceEvidencePolicy, validate_expectation,
@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::{sync::mpsc, time::Instant};
 
+mod cache;
 pub mod discovery;
 mod local;
 pub use local::{LocalFileRequest, acquire_local_file};
@@ -95,6 +96,7 @@ impl TransferBudget {
 pub struct HttpAcquisition {
     client: Client,
     curseforge_key: Option<HeaderValue>,
+    cache: Option<cache::AcquisitionCache>,
     #[cfg(test)]
     allow_loopback_http: bool,
 }
@@ -103,6 +105,7 @@ impl HttpAcquisition {
         Ok(Self {
             client: Self::client_builder().build()?,
             curseforge_key: None,
+            cache: None,
             #[cfg(test)]
             allow_loopback_http: false,
         })
@@ -116,6 +119,7 @@ impl HttpAcquisition {
                 .build()
                 .unwrap(),
             curseforge_key: None,
+            cache: None,
             allow_loopback_http: true,
         }
     }
@@ -179,7 +183,10 @@ impl HttpAcquisition {
         request: DownloadRequest,
     ) -> Result<AcquiredContent> {
         let mut budget = TransferBudget::new(request.limits)?;
-        self.acquire_budget(scope, request, &mut budget).await
+        let content = self.acquire_budget(scope, request, &mut budget).await?;
+        self.publish_cache(scope, std::slice::from_ref(&content))
+            .await?;
+        Ok(content)
     }
     /// All downloads share bytes and time; no successful subset escapes a later failure.
     pub async fn acquire_batch(
@@ -209,6 +216,7 @@ impl HttpAcquisition {
         }
         scope.cancellation().check()?;
         ensure!(Instant::now() < budget.deadline, TransferError::Deadline);
+        self.publish_cache(scope, &content).await?;
         Ok(content)
     }
     async fn acquire_budget(
@@ -236,6 +244,13 @@ impl HttpAcquisition {
             .context("Download deadline overflow")?;
         let deadline = deadline.min(budget.deadline);
         ensure!(Instant::now() < deadline, TransferError::Deadline);
+        if let Some(content) = self
+            .cached(scope, &expected, evidence, initial, limits, budget)
+            .await?
+        {
+            ensure!(Instant::now() < deadline, TransferError::Deadline);
+            return Ok(content);
+        }
         let limits = TransferLimits {
             transfer_bytes: budget
                 .maximum

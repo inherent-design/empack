@@ -182,7 +182,7 @@ async fn execute(
             prepared_permit,
         ));
     }
-    if let Some(cache) = cache {
+    if let Some(cache) = &cache {
         let files = acquired
             .acquired
             .locked
@@ -192,6 +192,10 @@ async fn execute(
             .collect();
         cache.publish(scope, files).await?;
     }
+    let transport = match cache {
+        Some(cache) => transport.with_execution_cache(cache),
+        None => transport,
+    };
     let has = |target| {
         request
             .outputs

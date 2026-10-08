@@ -133,10 +133,10 @@ re-export. Restricted-import continuation remains open.
 | Cutover | Provider-owned world interpretation and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and manual-input continuation remain open; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
-| Cutover | Remaining acquisition cache integration and cleanup | Ordinary builds reuse verified content; add/import/sync/runtime assets and remaining disposable stores still require wiring |
+| Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup, with publication-time insertion and remaining disposable cleanup still open |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
-| Cutover | Runtime/CLI composition | Remove migrated handler bypasses and synchronous process bridges where superseded; isolate global display/error state for embedding |
+| Cutover | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; isolate remaining global display/error state for embedding |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
 Both Review 128 findings reproduced before correction. The 38 affected tests and
@@ -252,6 +252,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Acquisition cache capabilities | 69 affected acquisition/runtime/build/sync tests, expanded negative regression and all-feature Clippy passed | Read-only preparation does not create storage; approved runtime assets retain original assertions; unknown catalogs remain fresh; corrupt bytes, strict MD5 refusal, failed batches and aggregate/per-request limits covered |
 | Synchronization content reuse | 48 affected sync/build-cache/continuation/store tests and all-feature Clippy passed | Reproduced offline restoration failure before wiring shared cache verification; exact pins, two no-op syncs, corrupt equal-length bytes and whole-tree previews covered |
 | Async host and bootstrap retirement | `mise run test`: 897 tests and eight doctests passed; 103 opt-in cases excluded; 30 affected tests, all-feature Clippy and Windows cross-compilation passed | Git lookup uses the host runtime; process cancellation/deadlines remain covered; two Windows test-only warnings remain; strict live matrix and coverage are still open |
 | Legacy library retirement candidate | `mise run test`: 921 tests and eight doctests passed; 103 opt-in cases excluded; 15 selected executable cases, all-feature Clippy and Windows cross-compilation passed | Windows retains test-only warnings; removed old implementations and their exclusive suites; native filesystem, identity, publication, cancellation and smoke checks remain; live browser and Modrinth import/build pass; two restricted CurseForge cases remain open |

@@ -320,3 +320,11 @@ provider request. Corrupt or unavailable cache entries remain misses; they canno
 change pins or authorize different bytes. A complete verified acquisition batch may
 populate disposable storage before the separate project publication decision. Preview
 performs neither acquisition nor cache publication.
+
+The host also gives add/import acquisition a read-only cache capability. Approved
+build execution grants its runtime/bootstrap transport cache insertion. Exact runtime
+assets and digest-bound metadata can be reused; unasserted catalog snapshots are
+fetched afresh and are not inserted as reusable source evidence. Cached bytes count
+against per-file and batch allowances. A failed HTTP batch inserts no successful
+subset. MD5 matches remain compatibility evidence even when addressed internally
+by SHA-256. These transports hold operation-local capabilities, not global writers.

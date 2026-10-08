@@ -52,7 +52,10 @@ async fn add_with_catalog(
     existing: ExistingDependencyPolicy,
     catalog: ProviderCatalog,
 ) -> Result<()> {
-    let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
+    let transport = acquisition_with_cache_lookup(
+        session,
+        catalog.configure_acquisition(HttpAcquisition::new()?),
+    )?;
     let mut limits = DirectFileLimits::default();
     limits.transfer.deadline = Duration::from_secs(session.config().app_config().net_timeout);
     add_with_services(
@@ -185,7 +188,10 @@ pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServi
         config.curseforge_api_client_key.clone(),
         Arc::new(HostBudgetRegistry::new()),
     )?;
-    let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
+    let transport = acquisition_with_cache_lookup(
+        session,
+        catalog.configure_acquisition(HttpAcquisition::new()?),
+    )?;
     let mut files = DirectFileLimits::default();
     files.transfer.deadline = Duration::from_secs(config.net_timeout);
     Ok(AdditionServices {
