@@ -221,6 +221,11 @@ The cache is not user intent and not the operation journal. A lost disposable ca
 A content store can begin as verified files plus a small index. It does not require a database. Metadata index transactions, if introduced, still do not make file operations outside that index transactional.
 
 The native implementation uses SHA-256-addressed files in a host-private directory.
+Its configured entry limit counts canonical objects. Traversal permits up to 100,000
+additional unknown/control neighbors plus the coordination file, and checks
+cancellation during enumeration. Cleanup counts without collecting metadata while
+holding shared coordination, then admits the observed selection size before capture.
+An empty store therefore does not reserve memory for its configured maximum size.
 `FileContentStore` can insert verified leases; its separate `FileContentLookup` view
 cannot write. `CachedFileRequest` carries the current source assertions and policy.
 Lookup verifies those assertions and the content address while copying into owned

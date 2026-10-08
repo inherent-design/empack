@@ -155,3 +155,76 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
         );
     }
 }
+
+#[test]
+fn recovery_preview_output_child() {
+    let Some(project) = std::env::var_os("EMPACK_TEST_RECOVERY_PROJECT") else {
+        return;
+    };
+    let state = std::env::var_os("EMPACK_TEST_RECOVERY_STATE").unwrap();
+    let action = std::env::var("EMPACK_TEST_RECOVERY_ACTION").unwrap();
+    let cli = Cli::try_parse_from([
+        std::ffi::OsString::from("empack"),
+        "--workdir".into(),
+        project,
+        "--state-dir".into(),
+        state,
+        "--dry-run".into(),
+        "recover".into(),
+        action.into(),
+    ])
+    .unwrap();
+    let session = MockCommandSession::new().with_config(MockConfigProvider::new(cli.config));
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(execute_command_with_session(cli.command.unwrap(), &session))
+        .unwrap();
+}
+#[test]
+fn recovery_preview_displays_each_managed_path_and_change() {
+    for (action, point, expected) in [
+        (
+            "finish",
+            PublicationPoint::IntentDurable,
+            vec!["replace empack.yml", "create pack/config/new.txt"],
+        ),
+        (
+            "restore",
+            PublicationPoint::Verified,
+            vec!["replace empack.yml", "remove pack/config/new.txt"],
+        ),
+    ] {
+        let project = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        fs::write(project.path().join("empack.yml"), b"old intent").unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        let publisher = Publisher::open(&state).unwrap();
+        assert!(interrupt_publication(&publisher, &root, prepare(&root), point).is_err());
+        let project_before = snapshot(project.path());
+        let host_before = snapshot(host.path());
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "application::engine_host::tests::recovery_preview_output_child",
+                "--nocapture",
+            ])
+            .env("EMPACK_TEST_RECOVERY_PROJECT", project.path())
+            .env("EMPACK_TEST_RECOVERY_STATE", &state)
+            .env("EMPACK_TEST_RECOVERY_ACTION", action)
+            .env("NO_COLOR", "1")
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.status.success(), "{text}");
+        for change in expected {
+            assert!(text.contains(change), "Missing {change}: {text}");
+        }
+        assert_eq!(snapshot(project.path()), project_before);
+        assert_eq!(snapshot(host.path()), host_before);
+    }
+}

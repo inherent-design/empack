@@ -161,3 +161,109 @@ fn eviction_never_follows_owned_name_links_and_can_remove_corrupt_regular_object
     assert!(receipt.failure.is_none());
     assert!(!object.exists());
 }
+
+#[test]
+fn full_cache_preserves_unknown_neighbors_during_cleanup() {
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join("content");
+    let store = FileContentStore::open(
+        &path,
+        ContentStoreLimits {
+            entries: 2,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    fill(&store, b"one");
+    fill(&store, b"two");
+    fs::write(path.join("unowned"), b"preserve").unwrap();
+    let plan = store.0.plan_cleanup(&Cancellation::default()).unwrap();
+    assert_eq!(plan.objects().count(), 2);
+    let result = store.0.evict(plan, &Cancellation::default()).unwrap();
+    assert!(result.failure.is_none());
+    assert_eq!(result.removed.len(), 2);
+    assert_eq!(fs::read(path.join("unowned")).unwrap(), b"preserve");
+}
+#[tokio::test]
+async fn empty_cache_inspection_fits_a_small_host_memory_allowance() {
+    let host = tempfile::tempdir().unwrap();
+    let store = FileContentStore::open(&host.path().join("content"), ContentStoreLimits::default())
+        .unwrap();
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 16 << 20,
+        open_files: 8,
+        ..Default::default()
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let plan = store.lookup().plan_cleanup(&mut scope).await.unwrap();
+            assert_eq!(plan.objects().count(), 0);
+            Ok(())
+        })
+        .unwrap();
+    let result = handle.wait().await;
+    assert!(matches!(&*result, OperationOutcome::Completed(())));
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    runtime.shutdown().await;
+}
+
+#[test]
+fn cleanup_capture_rejects_uncoordinated_membership_changes_after_counting() {
+    for grow in [false, true] {
+        let host = tempfile::tempdir().unwrap();
+        let store = store(&host.path().join("content"));
+        let original = fill(&store, b"original");
+        let scan = store.0.scan_cleanup(&Cancellation::default()).unwrap();
+        if grow {
+            fs::write(
+                host.path()
+                    .join("content")
+                    .join(format!("{}.blob", "ff".repeat(32))),
+                b"new",
+            )
+            .unwrap();
+        } else {
+            fs::remove_file(
+                host.path()
+                    .join("content")
+                    .join(name(&original.lease().id())),
+            )
+            .unwrap();
+        }
+        assert!(
+            store
+                .0
+                .capture_cleanup(scan, &Cancellation::default())
+                .is_err()
+        );
+    }
+}
+#[test]
+fn unknown_neighbors_do_not_consume_object_insertion_capacity() {
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join("content");
+    let store = FileContentStore::open(
+        &path,
+        ContentStoreLimits {
+            entries: 2,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    fill(&store, b"one");
+    for name in ["unknown-one", "unknown-two", "unknown-three"] {
+        fs::write(path.join(name), b"keep").unwrap();
+    }
+    fill(&store, b"two");
+    assert_eq!(
+        store
+            .0
+            .plan_cleanup(&Cancellation::default())
+            .unwrap()
+            .objects()
+            .count(),
+        2
+    );
+}

@@ -20,6 +20,7 @@ pub use cleanup::{CacheCleanupPlan, CacheCleanupReceipt, CacheObject};
 pub struct ContentStoreLimits {
     pub file_bytes: u64,
     pub total_bytes: u64,
+    /// Maximum canonical content objects; traversal has a separate unknown-neighbor allowance.
     pub entries: usize,
 }
 impl Default for ContentStoreLimits {
@@ -241,15 +242,25 @@ impl Store {
             _lock: lock,
         }))
     }
+    fn check_scan_limit(&self, seen: usize) -> Result<()> {
+        // Stream unknown names without granting them object ownership or unbounded scan time.
+        const UNOWNED_SCAN_ALLOWANCE: usize = 100_000;
+        ensure!(
+            seen < self
+                .limits
+                .entries
+                .saturating_add(UNOWNED_SCAN_ALLOWANCE)
+                .saturating_add(1),
+            "Content store exceeds directory scan limit"
+        );
+        Ok(())
+    }
     fn usage(&self, cancel: &Cancellation) -> Result<(usize, u64)> {
         let mut count = 0usize;
         let mut bytes = 0u64;
         for (seen, entry) in self.root.entries()?.enumerate() {
             cancel.check()?;
-            ensure!(
-                seen < self.limits.entries.saturating_add(1),
-                "Content store exceeds entry limit"
-            );
+            self.check_scan_limit(seen)?;
             let name = entry?.file_name();
             let Some(value) = name.to_str().and_then(parse_name) else {
                 continue;
@@ -261,6 +272,10 @@ impl Store {
                 "Cached object exceeds byte limit"
             );
             count = count.checked_add(1).context("Content count overflow")?;
+            ensure!(
+                count <= self.limits.entries,
+                "Content store exceeds object limit"
+            );
             bytes = bytes.checked_add(length).context("Content size overflow")?;
         }
         Ok((count, bytes))

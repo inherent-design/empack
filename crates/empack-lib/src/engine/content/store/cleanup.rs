@@ -46,26 +46,44 @@ impl FileContentLookup {
     /// Capture only canonical cache-object names. Unknown neighbors and scratch remain untouched.
     /// Limits bound enumeration; the returned plan charges its actual retained selection size.
     pub async fn plan_cleanup(&self, scope: &mut WorkScope) -> Result<CacheCleanupPlan> {
+        // Count under shared coordination without accumulating selection metadata. Retain that
+        // lock across admission so cooperating writers cannot grow the second pass.
         let lookup = self.clone();
-        let maximum = metadata_reservation(self.0.limits.entries)?;
+        let work = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 64 << 10,
+                open_files: 3,
+                ..Default::default()
+            },
+            ResourceRequest {
+                memory_bytes: 64 << 10,
+                open_files: 1,
+                ..Default::default()
+            },
+            move |cancel| lookup.0.scan_cleanup(&cancel),
+        )?;
+        let scan = scope.accept(work.wait().await?)?.transpose()?;
+        let maximum = metadata_reservation(scan.count)?;
+        let lookup = self.clone();
         let work = scope.spawn_blocking(
             ResourceRequest {
                 jobs: 1,
                 memory_bytes: maximum,
-                open_files: 4,
+                open_files: 3,
                 ..Default::default()
             },
             ResourceRequest {
                 memory_bytes: maximum,
                 ..Default::default()
             },
-            move |cancel| lookup.0.plan_cleanup(&cancel),
+            move |cancel| {
+                let (scan, _reservation) = scan.into_parts();
+                lookup.0.capture_cleanup(scan, &cancel)
+            },
         )?;
-        let (mut plan, mut permit) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
-        plan._reservation = Some(permit.split(ResourceRequest {
-            memory_bytes: metadata_reservation(plan.selected.len())?,
-            ..Default::default()
-        })?);
+        let (mut plan, permit) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
+        plan._reservation = Some(permit);
         Ok(plan)
     }
 }
@@ -110,20 +128,49 @@ fn binding(file: &File) -> Result<Binding> {
         modified: metadata.modified()?,
     })
 }
+struct CleanupScan {
+    count: usize,
+    _lock: File,
+}
 impl Store {
-    fn plan_cleanup(&self, cancel: &Cancellation) -> Result<CacheCleanupPlan> {
+    fn scan_cleanup(&self, cancel: &Cancellation) -> Result<CleanupScan> {
         cancel.check()?;
-        let _guard = self.lock(false)?;
-        let mut selected = Vec::new();
+        let lock = self.lock(false)?;
+        let mut count = 0usize;
         for (seen, entry) in self.root.entries()?.enumerate() {
             cancel.check()?;
-            ensure!(
-                seen < self.limits.entries.saturating_add(1),
-                "Content store exceeds entry limit"
-            );
+            self.check_scan_limit(seen)?;
+            if entry?.file_name().to_str().and_then(parse_name).is_some() {
+                ensure!(
+                    count < self.limits.entries,
+                    "Content store exceeds object limit"
+                );
+                count += 1;
+            }
+        }
+        Ok(CleanupScan { count, _lock: lock })
+    }
+    #[cfg(test)]
+    fn plan_cleanup(&self, cancel: &Cancellation) -> Result<CacheCleanupPlan> {
+        self.capture_cleanup(self.scan_cleanup(cancel)?, cancel)
+    }
+    fn capture_cleanup(
+        &self,
+        scan: CleanupScan,
+        cancel: &Cancellation,
+    ) -> Result<CacheCleanupPlan> {
+        cancel.check()?;
+        let mut selected = Vec::with_capacity(scan.count);
+        for (seen, entry) in self.root.entries()?.enumerate() {
+            cancel.check()?;
+            self.check_scan_limit(seen)?;
             let Some(id) = entry?.file_name().to_str().and_then(parse_name) else {
                 continue;
             };
+            ensure!(
+                selected.len() < scan.count,
+                "Cache membership changed during inspection"
+            );
             let file = native::open_file(&self.root, &name(&id))?;
             let binding = binding(&file)?;
             // Cache contents may be corrupt or oversized; cleanup still owns their verified native
@@ -136,6 +183,10 @@ impl Store {
                 binding,
             });
         }
+        ensure!(
+            selected.len() == scan.count,
+            "Cache membership changed during inspection"
+        );
         selected.sort_unstable_by(|a, b| a.object.id.cmp(&b.object.id));
         Ok(CacheCleanupPlan {
             root: native::directory_identity(&self.root)?,

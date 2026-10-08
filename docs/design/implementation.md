@@ -935,7 +935,12 @@ removed without reading it as authenticated data. Symlinks and changed objects f
 `Engine::prepare_cache_cleanup` and `preview_cache_cleanup` require explicit store
 wiring, not a project. Exact approval, engine ownership, resource admission,
 cancellation and owned operation handles reuse the shared lifecycle. The opaque plan
-and receipt retain their metadata reservation. If deletion fails or is cancelled
+and receipt retain their metadata reservation. Inspection first counts objects under
+a retained shared lock, then admits memory for that observed selection. Unknown
+neighbors have a separate bounded traversal allowance and do not consume content
+object capacity. Uncoordinated membership changes invalidate the second pass. Review 99's full-store
+neighbor and empty-store admission failures reproduced before this correction.
+Both are now covered, along with uncoordinated growth/shrink and insertion capacity. If deletion fails or is cancelled
 partway through, the receipt records removed and retained objects with the failure;
 only complete eviction returns `Completed`. Independent verified leases remain
 readable after their cache object is removed.
@@ -956,7 +961,10 @@ the old project-mutation lock. The host drains engine workers before returning.
 
 Durable state uses platform application data, with explicit `--state-dir` /
 `EMPACK_STATE_DIR` selection. Relative paths use the invocation root. Construction and
-inspection do not create it. Native dispatcher tests inject interrupted publication,
+inspection do not create it. The host prints each affected path, action and byte-size change before either preview
+returns or confirmation is requested. Review 100 reproduced the earlier count-only
+output; captured subprocess output now verifies create, replace and remove entries.
+Native dispatcher tests inject interrupted publication,
 compare project and journal bytes through inspect/preview/decline, and verify both
 finish and restore. Configuration parsing and merging preserve state-directory
 selection. All 27 focused CLI/configuration/host tests and 24 offline executable smoke
@@ -1041,3 +1049,12 @@ Filtered directory membership proves absence only for destinations included in i
 captured scopes and traversal policy. An excluded file is neither absent nor an
 implicit overwrite target. A regression reproduced that incorrect inference; 78
 affected capture, verification and public Engine tests pass after correction.
+
+## Review 99–100 validation
+
+All 21 affected cache and recovery-host tests pass, including the three reproduced
+review findings. The earlier cache-only run reported one Nextest pipe-leak warning
+in an existing reader test; that test passed cleanly in isolation and both subsequent
+combined runs are clean. All-feature Clippy and Windows cross-compilation pass.
+The latest full-suite evidence remains the 1,868 tests and eleven doctests at
+`9ccb32b`; final combined validation remains a release gate.

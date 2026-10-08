@@ -118,6 +118,37 @@ pub(super) async fn recover(
     engine.shutdown().await;
     result
 }
+fn show_changes(session: &dyn Session, files: &empack_core::files::FilePlan) -> Result<()> {
+    use empack_core::files::{FileChange, ObservedPath};
+    for change in files.changes() {
+        let path = crate::engine::layout::ProjectLayout::path(change.target())?;
+        let (action, detail) = match change {
+            FileChange::Replace {
+                before: ObservedPath::Absent,
+                after,
+                ..
+            } => ("create", format!("{} bytes", after.bytes)),
+            FileChange::Replace {
+                before: ObservedPath::File(before),
+                after,
+                ..
+            } => (
+                "replace",
+                format!("{} -> {} bytes", before.bytes, after.bytes),
+            ),
+            FileChange::Remove { before, .. } => ("remove", format!("{} bytes", before.bytes)),
+            FileChange::Replace {
+                before: ObservedPath::Directory,
+                ..
+            } => anyhow::bail!("Recovery cannot replace a directory"),
+        };
+        session
+            .display()
+            .status()
+            .info(&format!("{action} {} ({detail})", path.as_str()));
+    }
+    Ok(())
+}
 async fn recover_with_engine(
     session: &dyn Session,
     engine: &Engine,
@@ -183,6 +214,7 @@ async fn recover_with_engine(
         view.action,
         view.files.changes().len()
     ));
+    show_changes(session, &view.files)?;
     if session.config().app_config().dry_run {
         session
             .display()
