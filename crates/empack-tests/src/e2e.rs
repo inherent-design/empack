@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::fixtures::WorkflowProjectFixture;
 
@@ -120,188 +119,6 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
 
     #[cfg(not(windows))]
     let _ = workdir;
-}
-
-pub fn configure_fake_packwiz(cmd: &mut Command, workdir: &Path) {
-    let path = write_fake_packwiz_binary(workdir);
-    cmd.env("EMPACK_PACKWIZ_BIN", path);
-}
-
-fn write_fake_packwiz_binary(workdir: &Path) -> PathBuf {
-    #[cfg(windows)]
-    let path = workdir.join("fake-packwiz.cmd");
-    #[cfg(not(windows))]
-    let path = workdir.join("fake-packwiz");
-
-    #[cfg(windows)]
-    let script = r#"@echo off
-setlocal EnableExtensions EnableDelayedExpansion
-set "NAME="
-set "AUTHOR="
-set "VERSION="
-set "MC="
-set "LOADER="
-set "LOADER_VERSION="
-
-:loop
-if "%~1"=="" goto done
-if "%~1"=="--name" (
-  set "NAME=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--author" (
-  set "AUTHOR=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--version" (
-  set "VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--mc-version" (
-  set "MC=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--modloader" (
-  set "LOADER=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--fabric-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--forge-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--neoforge-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--quilt-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-shift
-goto loop
-
-:done
-> pack.toml (
-  echo name = "!NAME!"
-  echo author = "!AUTHOR!"
-  echo version = "!VERSION!"
-  echo pack-format = "packwiz:1.1.0"
-  echo.
-  echo [index]
-  echo file = "index.toml"
-  echo hash-format = "sha256"
-  echo hash = ""
-  echo.
-  echo [versions]
-  echo minecraft = "!MC!"
-)
-if not "!LOADER!"=="" if not "!LOADER!"=="none" if not "!LOADER_VERSION!"=="" (
-  >> pack.toml echo !LOADER! = "!LOADER_VERSION!"
-)
-type nul > index.toml
-exit /b 0
-"#;
-
-    #[cfg(not(windows))]
-    let script = r#"#!/bin/sh
-set -eu
-NAME=""
-AUTHOR=""
-VERSION=""
-MC=""
-LOADER=""
-LOADER_VERSION=""
-
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --name)
-      NAME="$2"
-      shift 2
-      ;;
-    --author)
-      AUTHOR="$2"
-      shift 2
-      ;;
-    --version)
-      VERSION="$2"
-      shift 2
-      ;;
-    --mc-version)
-      MC="$2"
-      shift 2
-      ;;
-    --modloader)
-      LOADER="$2"
-      shift 2
-      ;;
-    --fabric-version|--forge-version|--neoforge-version|--quilt-version)
-      LOADER_VERSION="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-
-cat > pack.toml <<EOF
-name = "$NAME"
-author = "$AUTHOR"
-version = "$VERSION"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "$MC"
-EOF
-
-if [ -n "$LOADER" ] && [ "$LOADER" != "none" ] && [ -n "$LOADER_VERSION" ]; then
-  printf '%s = "%s"\n' "$LOADER" "$LOADER_VERSION" >> pack.toml
-fi
-
-: > index.toml
-"#;
-
-    std::fs::write(&path, script)
-        .unwrap_or_else(|e| panic!("failed to write fake packwiz at {}: {}", path.display(), e));
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)
-            .expect("fake packwiz metadata")
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).expect("set fake packwiz executable");
-    }
-
-    path
 }
 
 /// Return early from a test when packwiz is not in PATH.
@@ -701,117 +518,6 @@ pub fn assert_dist_artifact_suffix(project_root: &Path, suffix: &str) -> PathBuf
     );
 }
 
-/// Load pending restricted-build state through the library helper.
-pub fn load_pending_restricted_build(
-    project_root: &Path,
-) -> anyhow::Result<Option<empack_lib::empack::restricted_build::PendingRestrictedBuild>> {
-    let filesystem = empack_lib::application::session::LiveFileSystemProvider;
-    empack_lib::empack::restricted_build::load_pending_build(&filesystem, project_root)
-}
-
-/// Assert pending restricted-build state exists and matches the expected targets and filenames.
-pub fn assert_pending_restricted_build(
-    project_root: &Path,
-    expected_targets: &[&str],
-    expected_filenames: &[&str],
-) -> empack_lib::empack::restricted_build::PendingRestrictedBuild {
-    let pending = load_pending_restricted_build(project_root)
-        .unwrap_or_else(|e| panic!("failed to load pending restricted build: {e}"))
-        .unwrap_or_else(|| {
-            panic!(
-                "expected pending restricted build under {}",
-                project_root.display()
-            )
-        });
-
-    let expected_targets: Vec<String> = expected_targets
-        .iter()
-        .map(|value| (*value).to_string())
-        .collect();
-    assert_eq!(
-        pending.targets,
-        expected_targets,
-        "pending restricted targets mismatch for {}",
-        project_root.display()
-    );
-
-    let mut actual_filenames: Vec<String> = pending
-        .entries
-        .iter()
-        .map(|entry| entry.filename.clone())
-        .collect();
-    actual_filenames.sort();
-
-    let mut expected_filenames: Vec<String> = expected_filenames
-        .iter()
-        .map(|value| (*value).to_string())
-        .collect();
-    expected_filenames.sort();
-
-    assert_eq!(
-        actual_filenames,
-        expected_filenames,
-        "pending restricted filenames mismatch for {}",
-        project_root.display()
-    );
-
-    pending
-}
-
-/// Seed the packwiz installer bootstrap/runtime jars expected by full-build E2E.
-pub fn seed_packwiz_installer_jars(project_root: &Path) {
-    let jars_dir = project_root.join(".empack-cache").join("jars");
-    std::fs::create_dir_all(&jars_dir)
-        .unwrap_or_else(|e| panic!("failed to create {}: {}", jars_dir.display(), e));
-
-    std::fs::write(
-        jars_dir.join("packwiz-installer-bootstrap.jar"),
-        b"bootstrap",
-    )
-    .unwrap_or_else(|e| {
-        panic!(
-            "failed to seed bootstrap jar in {}: {}",
-            jars_dir.display(),
-            e
-        )
-    });
-    std::fs::write(jars_dir.join("packwiz-installer.jar"), b"installer").unwrap_or_else(|e| {
-        panic!(
-            "failed to seed installer jar in {}: {}",
-            jars_dir.display(),
-            e
-        )
-    });
-}
-
-/// Seed the loader-version cache used by version fetcher in subprocess E2E tests.
-pub fn seed_loader_version_cache(
-    project_root: &Path,
-    loader: &str,
-    mc_version: &str,
-    versions: &[&str],
-) {
-    let cache_dir = project_root.join(".empack-cache");
-    std::fs::create_dir_all(&cache_dir)
-        .unwrap_or_else(|e| panic!("failed to create {}: {}", cache_dir.display(), e));
-
-    let cached_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let path = cache_dir.join(format!("{loader}_loader_{mc_version}.json"));
-    let content = serde_json::json!({
-        "versions": versions,
-        "cached_at": cached_at,
-    });
-
-    std::fs::write(
-        &path,
-        serde_json::to_vec_pretty(&content).expect("cache json"),
-    )
-    .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
-}
-
 /// Count `.pw.toml` files recursively under `pack_root/mods`.
 ///
 /// Returns 0 if the directory does not exist.
@@ -835,9 +541,6 @@ pub fn write_local_mrpack(
     loader_id: &str,
     loader_version: &str,
 ) -> anyhow::Result<()> {
-    use empack_lib::empack::archive::{ArchiveFormat, create_archive};
-
-    let source_dir = tempfile::TempDir::new()?;
     let mut dependencies = serde_json::Map::new();
     dependencies.insert(
         "minecraft".to_string(),
@@ -858,18 +561,13 @@ pub fn write_local_mrpack(
         "dependencies": dependencies,
     });
 
-    std::fs::write(
-        source_dir.path().join("modrinth.index.json"),
-        serde_json::to_vec_pretty(&manifest)?,
-    )?;
-
-    if let Some(parent) = archive_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    create_archive(source_dir.path(), archive_path, ArchiveFormat::Zip)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    Ok(())
+    crate::fixtures::write_zip(
+        archive_path,
+        &[(
+            "modrinth.index.json",
+            &serde_json::to_vec_pretty(&manifest)?,
+        )],
+    )
 }
 
 #[cfg(test)]

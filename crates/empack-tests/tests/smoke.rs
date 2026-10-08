@@ -433,8 +433,6 @@ fn smoke_forced_import_bad_crc_preserves_existing_project() {
 }
 
 fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
-    use empack_lib::application::session::{ArchiveProvider, LiveArchiveProvider};
-    use empack_lib::empack::archive::ArchiveFormat;
     let project = initialized();
     for (path, bytes) in [
         ("pack/config/existing.toml", "original config"),
@@ -446,27 +444,21 @@ fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, bytes).unwrap();
     }
-    let source = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(source.path().join("overrides/config")).unwrap();
-    std::fs::write(
-        source.path().join("overrides/config/MOD.txt"),
-        b"replacement",
-    )
-    .unwrap();
-    std::fs::write(
-        source.path().join("modrinth.index.json"),
-        serde_json::json!({
-            "formatVersion":1,"game":"minecraft","name":"replacement","versionId":"1",
-            "dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.11"},"files":[]
-        })
-        .to_string(),
-    )
-    .unwrap();
+    let manifest = serde_json::json!({
+        "formatVersion":1,"game":"minecraft","name":"replacement","versionId":"1",
+        "dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.11"},"files":[]
+    })
+    .to_string();
     let output = tempfile::tempdir().unwrap();
     let archive = output.path().join("invalid-replacement.mrpack");
-    LiveArchiveProvider
-        .create_archive(source.path(), &archive, ArchiveFormat::Zip)
-        .unwrap();
+    empack_tests::fixtures::write_zip(
+        &archive,
+        &[
+            ("modrinth.index.json", manifest.as_bytes()),
+            ("overrides/config/MOD.txt", b"replacement"),
+        ],
+    )
+    .unwrap();
     let mut bytes = std::fs::read(&archive).unwrap();
     if corrupt_crc {
         let central = bytes

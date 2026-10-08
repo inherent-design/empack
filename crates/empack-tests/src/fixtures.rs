@@ -225,6 +225,21 @@ pub fn load_vcr_body_string(cassette_path: &str) -> Result<String> {
     })
 }
 
+/// Write explicit fixture members without exercising the application's archive implementation.
+pub fn write_zip(path: &Path, members: &[(&str, &[u8])]) -> Result<()> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut archive = zip::ZipWriter::new(std::fs::File::create(path)?);
+    for (name, bytes) in members {
+        archive.start_file(*name, zip::write::SimpleFileOptions::default())?;
+        archive.write_all(bytes)?;
+    }
+    archive.finish()?;
+    Ok(())
+}
+
 /// Get the base URL for mockito server
 #[cfg(test)]
 pub fn mockito_url(server: &mockito::Server) -> String {

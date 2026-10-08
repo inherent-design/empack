@@ -20,9 +20,9 @@ serde-saphyr.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
-zip.workspace = true
 expectrl.workspace = true
 mockito.workspace = true
 predicates.workspace = true

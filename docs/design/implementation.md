@@ -239,6 +239,8 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| `9ce7616` combined candidate | `mise run test`: 1,675 tests and eleven doctests passed; 105 opt-in cases excluded | No inherited-pipe warnings; 142.41 seconds; final strict live matrix and coverage remain open |
+| Legacy fixture retirement | 24 fixture/smoke tests and test-crate all-feature Clippy passed | Deleted unused fake packwiz and old continuation helpers; ZIP fixtures use explicit members independent of application archive code |
 | Accepted game-version policy, combined candidate | `mise run test`: 1,645 tests and eleven doctests passed; 101 opt-in cases skipped; all-feature Clippy passed | Reproduced incompatible-pin retention; explicit pins fail safely, still-compatible selections remain fixed; 177 affected tests passed; no inherited-pipe warnings |
 | Automatic layout reconciliation, combined candidate | `mise run test`: 1,644 tests and eleven doctests passed; 101 opt-in cases skipped; all-feature Clippy passed | No inherited-pipe warnings; custom-directory and side-layer fixtures now declare explicit placements; strict live matrix and fresh coverage remain open |
 | Native exit classification | 15 affected host/classifier tests, 12 executable exit tests and all-feature Clippy passed | Reproduced incorrect transfer status; removed v0.4 classifiers and substring heuristics; native download and invalid-target diagnostics retain typed status |
