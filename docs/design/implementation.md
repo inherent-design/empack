@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Combined baseline: `d8b790e`, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Combined baseline: `b076760`, 2026-10-08. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -163,6 +163,22 @@ acquisition, templates and distribution assembly; the executable bootstrap and t
 old library implementations are deleted.
 
 ## Latest combined evidence
+
+Frozen `b076760` passed 928 default tests and eight doctests, 81 strict executable
+cases, seven live provider probes, the live catalog probe and all eleven actual Java
+runtime checks. Minimal-feature Clippy and Windows cross-compilation passed; Windows
+retains two existing test-only warnings. The instrumented run passed all 1,009 selected
+tests. Measured source-file line coverage was 92.77% after excluding standalone tests,
+`.test.rs` files, the test crate and mock sessions; inline tests remain included.
+
+Curated validation then exposed a historical CurseForge manifest without `required`
+and an obsolete smoke driver. The parser regression reproduced before correction;
+13 import tests and Clippy pass with omitted flags treated as required and explicit
+null/type errors rejected. The driver now uses native import continuation, isolated
+state/cache roots, exact supplied inputs, two no-op syncs and verified full-client
+archives. Its five offline contracts pass. The new live curated run and final combined
+acceptance remain open; the earlier frozen results do not cover these corrections.
+
 
 At `a96d2bc`, the default combined run passed **912 tests and eight doctests**
 in 171.45 seconds; 103 opt-in cases were excluded. This does not establish live/platform

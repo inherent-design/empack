@@ -56,6 +56,10 @@ builds or automatic orphan removal.
 
 ## Verified import file associations
 
+Historical CurseForge v1 archives may omit a file's `required` flag; those files
+remain required. Explicit `false` remains optional, while null and non-boolean values
+are rejected.
+
 `init --from` accepts repeated `--import-file SELECTOR=PATH` arguments for files
 already downloaded by the user. A declared destination such as
 `resourcepacks/theme.zip` selects that exact download obligation. Provider filenames

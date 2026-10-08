@@ -65,9 +65,9 @@ mise run smoke:providers
 ```
 
 Set `EMPACK_KEY_CURSEFORGE` for this explicit suite. Missing credentials fail the
-CurseForge case. The three probes resolve Modrinth mod/resource-pack and CurseForge
-mod selectors, verify exact file ownership, download the selected file and check
-its original digest and size assertions. The resource-pack case additionally builds
+CurseForge case. The seven probes cover Modrinth and CurseForge selectors, compatible selections,
+required closure and mixed datapack projects. They verify exact file ownership,
+download selected files and check original digest and size assertions. The resource-pack case additionally builds
 and publishes a full-client ZIP through the Engine from a lock with no stored URL,
 then checks its member against the original source digest and verifies that the
 intent and lock did not change. Three further probes resolve compatible Modrinth and
@@ -170,3 +170,16 @@ packaged bytes with independent ZIP readers. Restricted-build fixtures use nativ
 lock and saved recipes with an unavailable packwiz executable. They verify read-only
 preview, failed-byte preservation, exact slot association, resumed mrpack content and
 all-target artifact preservation before explicit saved-recipe cleanup.
+
+## Curated executable workflows
+
+`mise run smoke:import:curated` imports seven maintained packs, including historical
+Forge and both provider formats. Each fixture owns an isolated native state/cache
+root. The harness supplies explicit optional and auxiliary-content choices, exercises
+restricted-file `init --continue` with a read-only preview, checks two unchanged syncs,
+and inspects a full-client archive. It does not read v0.4 continuation files or retry
+failed builds through an alternate implementation. Stage failures remain failures.
+
+The offline driver contracts run with `python3 -m unittest discover -s scripts/tests`
+and are included in `mise run test`. The executable override is resolved before any
+child working-directory change.

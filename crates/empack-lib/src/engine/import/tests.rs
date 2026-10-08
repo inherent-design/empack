@@ -498,3 +498,34 @@ fn curseforge_blank_optional_metadata_is_missing_without_weakening_runtime_valid
     invalid["versionId"] = json!("");
     assert!(inspect_json("modrinth.index.json", &invalid, &[]).is_err());
 }
+
+#[test]
+fn historical_curseforge_omitted_requirement_is_required_but_explicit_values_stay_strict() {
+    let mut value = cf();
+    value["files"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("required");
+    let parsed = inspect_json("manifest.json", &value, &[]).unwrap();
+    assert_eq!(
+        parsed.providers[0].requirements.client,
+        ImportedRequirement::Required
+    );
+    assert_eq!(
+        parsed.providers[0].requirements.server,
+        ImportedRequirement::Required
+    );
+    value["files"][0]["required"] = json!(false);
+    assert_eq!(
+        inspect_json("manifest.json", &value, &[])
+            .unwrap()
+            .providers[0]
+            .requirements
+            .client,
+        ImportedRequirement::Optional
+    );
+    for invalid in [json!(null), json!("false"), json!(0)] {
+        value["files"][0]["required"] = invalid;
+        assert!(inspect_json("manifest.json", &value, &[]).is_err());
+    }
+}

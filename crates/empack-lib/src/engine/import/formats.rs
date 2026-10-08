@@ -75,7 +75,12 @@ struct CfFile {
     project: u64,
     #[serde(rename = "fileID")]
     file: u64,
+    // Historical v1 exports omit this flag. Absence must not invent optional participation.
+    #[serde(default = "required_by_default")]
     required: bool,
+}
+fn required_by_default() -> bool {
+    true
 }
 fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
     serde_json::from_slice(bytes).map_err(|e| {
