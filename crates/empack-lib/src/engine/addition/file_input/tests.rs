@@ -43,6 +43,7 @@ fn input(file: AcquiredBuildFile, local: bool) -> AcquiredFileInput {
         server: Requirement::Unsupported,
     };
     AcquiredFileInput {
+        member: None,
         key: DependencyKey::parse("assets-alias").unwrap(),
         title: "Assets".into(),
         kind: ContentKind::ResourcePack,

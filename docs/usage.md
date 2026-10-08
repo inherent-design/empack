@@ -137,3 +137,18 @@ The top-level environment declares the dependency's participation; individual fi
 retain their own requirements. Required companions cannot be omitted. Unknown filenames,
 unsafe paths, conflicting participation and publication collisions fail the batch.
 `--dry-run` resolves and previews the plan without publishing project changes.
+
+## Direct world archives
+
+Configure `layout.world` in `empack.yml` to choose the destination directory, then add
+a local ZIP with `empack add --type world ./adventure.zip`. The archive must contain
+one world, identified by a nonempty `level.dat`, with no files outside that world's
+root. Members are installed beneath the configured directory and archive stem.
+They remain one dependency with individual byte assertions. Sync preserves those
+assertions; explicit update or adoption accepts selected local changes. Removal leaves
+untracked neighboring files intact.
+
+For a direct HTTPS archive, add `--download-as-local` to choose tracked local ownership.
+The original archive is verified before extraction. This flag does not authorize a
+failed provider lookup to become unidentified content. Provider-owned world addition
+remains unavailable until its member semantics are implemented.

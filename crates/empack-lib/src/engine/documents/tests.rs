@@ -459,3 +459,50 @@ fn provider_file_plan_uses_strict_placement_and_requirement_contracts() {
             .is_err()
     );
 }
+
+#[test]
+fn local_member_sources_have_explicit_nonempty_coverage_and_individual_evidence() {
+    let mut value = source();
+    let dependency = value["dependencies"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+        .next()
+        .unwrap();
+    dependency["source"] = json!({"kind":"local-files","members":{"level.dat":"pack/saves/world/level.dat","region":"pack/saves/world/region/r.0.0.mca"}});
+    dependency["version"] = json!({"mode":"follow-compatible"});
+    dependency["placement"] = json!([{"destination":"saves/world/level.dat","layer":"common","environment":{"client":"required","server":"unsupported"}}]);
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let decoded = DocumentCodec.decode_intent(&bytes, "members").unwrap();
+    let roundtrip = DocumentCodec
+        .decode_intent(
+            &DocumentCodec.encode_intent(decoded.intent()).unwrap(),
+            "members",
+        )
+        .unwrap();
+    assert_eq!(decoded.intent(), roundtrip.intent());
+    for mode in ["empty", "escape", "automatic", "pin"] {
+        let mut invalid = value.clone();
+        let dependency = invalid["dependencies"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        match mode {
+            "empty" => dependency["source"]["members"] = json!({}),
+            "escape" => dependency["source"]["members"]["level.dat"] = json!("../outside"),
+            "automatic" => dependency["placement"] = json!("automatic"),
+            "pin" => {
+                dependency["version"] = json!({"mode":"content-pinned","digests":{"md5":"321c3cf486ed509164edec1e1981fec8"}})
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            DocumentCodec
+                .decode_intent(&serde_json::to_vec(&invalid).unwrap(), mode)
+                .is_err(),
+            "{mode}"
+        );
+    }
+}

@@ -48,6 +48,7 @@ fn options(value: &str) -> AddOptions {
         version_id: Some("RootVer1".into()),
         file_id: None,
         file_plan: None,
+        download_as_local: false,
     }
 }
 pub(super) fn project(root: &Path) -> ResolvedProject {
@@ -338,6 +339,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             version_id: None,
             file_id: None,
             file_plan: None,
+            download_as_local: false,
         };
         let before = super::super::tests::snapshot(root.path());
         let result = add_with_catalog(
@@ -578,6 +580,7 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         version_id: None,
         file_id: None,
         file_plan: None,
+        download_as_local: false,
     };
     let before = super::super::tests::snapshot(root.path());
     add_with_catalog(
@@ -767,4 +770,296 @@ async fn file_plans_reject_unbounded_unsafe_and_unrecognized_selections() {
     selected.file_plan = Some("files.yml".into());
     selected.inputs.push("other".into());
     assert!(selected.pin().is_err());
+}
+
+#[tokio::test]
+async fn world_archive_members_remain_one_identity_across_commands() {
+    use empack_core::{
+        model::{ContentKind, SourceIntent},
+        path::{PathSyntax, PortableRelPath},
+    };
+    use std::io::{Read, Write};
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    intent.layout.insert(
+        ContentKind::World,
+        PortableRelPath::parse("saves", PathSyntax::ProjectContent).unwrap(),
+    );
+    fs::write(
+        root.path().join("project/empack.yml"),
+        DocumentCodec.encode_intent(&intent).unwrap(),
+    )
+    .unwrap();
+    synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    let write_archive = |members: &[(&str, &[u8])]| {
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, bytes) in members {
+            archive
+                .start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            archive.write_all(bytes).unwrap();
+        }
+        fs::write(
+            root.path().join("adventure.zip"),
+            archive.finish().unwrap().into_inner(),
+        )
+        .unwrap();
+    };
+    let selected = || AddOptions {
+        inputs: vec!["adventure.zip".into()],
+        force: false,
+        platform: None,
+        kind: Some(CliProjectType::World),
+        version_id: None,
+        file_id: None,
+        file_plan: None,
+        download_as_local: false,
+    };
+    for bad in [
+        vec![
+            ("Wrapped/level.dat", b"world".as_slice()),
+            ("outside.txt", b"outside".as_slice()),
+        ],
+        vec![
+            ("first/level.dat", b"a".as_slice()),
+            ("second/level.dat", b"b".as_slice()),
+        ],
+        vec![("level.dat", b"".as_slice())],
+    ] {
+        write_archive(&bad);
+        let before = super::super::tests::snapshot(root.path());
+        assert!(add(&session(root.path(), false), selected()).await.is_err());
+        assert_eq!(super::super::tests::snapshot(root.path()), before);
+    }
+    write_archive(&[
+        ("Wrapped/level.dat", b"world"),
+        ("Wrapped/region/r.0.0.mca", b"region"),
+    ]);
+    let before = super::super::tests::snapshot(root.path());
+    add(&session(root.path(), true), selected()).await.unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    add(&session(root.path(), false), selected()).await.unwrap();
+    let resolved = project(root.path());
+    assert_eq!(resolved.intent().roots.len(), 1);
+    assert!(
+        matches!(&resolved.intent().roots.values().next().unwrap().source,SourceIntent::LocalFiles(members) if members.len()==2)
+    );
+    let world = root.path().join("project/pack/saves/adventure");
+    assert_eq!(fs::read(world.join("region/r.0.0.mca")).unwrap(), b"region");
+    assert_eq!(
+        resolved
+            .lock()
+            .dependencies
+            .values()
+            .next()
+            .unwrap()
+            .files
+            .as_slice()
+            .len(),
+        2
+    );
+    for _ in 0..2 {
+        let before = super::super::tests::snapshot(&root.path().join("project"));
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            before
+        );
+    }
+    build(
+        &session(root.path(), false),
+        &crate::application::BuildArgs {
+            targets: vec!["client-full".into()],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let artifact = fs::read_dir(root.path().join("project/dist"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "zip"))
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(fs::File::open(artifact).unwrap()).unwrap();
+    let mut bytes = vec![];
+    archive
+        .by_name(".minecraft/saves/adventure/region/r.0.0.mca")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"region");
+    fs::write(world.join("region/r.0.0.mca"), b"changed-region").unwrap();
+    let before = super::super::tests::snapshot(root.path());
+    assert!(
+        synchronize(&session(root.path(), false), false)
+            .await
+            .is_err()
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    adopt(&session(root.path(), false), vec!["adventure".into()])
+        .await
+        .unwrap();
+    synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    // Losing the lock does not authorize claiming existing files as new installations.
+    let saved_lock = fs::read(root.path().join("project/empack.lock")).unwrap();
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    let missing_lock = super::super::tests::snapshot(root.path());
+    assert!(
+        synchronize(&session(root.path(), false), false)
+            .await
+            .is_err()
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), missing_lock);
+    fs::write(root.path().join("project/empack.lock"), saved_lock).unwrap();
+    let rebuilt = project(root.path());
+    let mut invalid = rebuilt.lock().clone();
+    let dependency = invalid.dependencies.values_mut().next().unwrap();
+    dependency.files =
+        empack_core::model::NonEmpty::new(vec![dependency.files.as_slice()[0].clone()]).unwrap();
+    assert!(
+        empack_core::model::ResolvedProject::validate(
+            rebuilt.intent().clone(),
+            invalid,
+            rebuilt.lock().intent_revision
+        )
+        .is_err()
+    );
+    let mut invalid = rebuilt.lock().clone();
+    let dependency = invalid.dependencies.values_mut().next().unwrap();
+    let mut members = dependency.files.clone().into_vec();
+    members[0].acquisition = empack_core::model::AcquisitionSpec::Local(
+        PortableRelPath::parse("pack/unrelated", PathSyntax::ProjectContent).unwrap(),
+    );
+    dependency.files = empack_core::model::NonEmpty::new(members).unwrap();
+    assert!(
+        empack_core::model::ResolvedProject::validate(
+            rebuilt.intent().clone(),
+            invalid,
+            rebuilt.lock().intent_revision
+        )
+        .is_err()
+    );
+    fs::write(world.join("untracked.txt"), b"keep me").unwrap();
+    crate::application::execute_command_with_session(
+        crate::application::Commands::Remove {
+            mods: vec!["adventure".into()],
+            deps: false,
+            forget: false,
+            acknowledge_unknown: true,
+        },
+        &session(root.path(), false),
+    )
+    .await
+    .unwrap();
+    assert!(!world.join("level.dat").exists());
+    assert!(!world.join("region/r.0.0.mca").exists());
+    assert_eq!(fs::read(world.join("untracked.txt")).unwrap(), b"keep me");
+}
+
+#[tokio::test]
+async fn provider_world_cannot_be_mistaken_for_an_installed_zip() {
+    let mut server = mockito::Server::new_async().await;
+    server
+        .mock("GET", "/mods/42")
+        .with_body(
+            json!({"data":{"id":42,"gameId":432,"name":"World","slug":"world","classId":17}})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut selected = options("42");
+    selected.platform = Some(SearchPlatform::Curseforge);
+    selected.version_id = None;
+    let before = super::super::tests::snapshot(root.path());
+    let error = add_with_catalog(
+        &session(root.path(), false),
+        selected,
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("test-key".into())),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("world archives require member interpretation"));
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+}
+
+#[tokio::test]
+async fn multiple_worlds_and_large_member_updates_share_admission_without_splitting_identity() {
+    use empack_core::path::{PathSyntax, PortableRelPath};
+    use std::io::Write;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    intent.layout.insert(
+        ContentKind::World,
+        PortableRelPath::parse("saves", PathSyntax::ProjectContent).unwrap(),
+    );
+    fs::write(
+        root.path().join("project/empack.yml"),
+        DocumentCodec.encode_intent(&intent).unwrap(),
+    )
+    .unwrap();
+    synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("level.dat", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive.write_all(b"world").unwrap();
+    for i in 0..130 {
+        archive
+            .start_file(
+                format!("region/r.{i}.0.mca"),
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        archive.write_all(b"region").unwrap();
+    }
+    let bytes = archive.finish().unwrap().into_inner();
+    for name in ["first.zip", "second.zip"] {
+        fs::write(root.path().join(name), &bytes).unwrap();
+    }
+    add(
+        &session(root.path(), false),
+        AddOptions {
+            inputs: vec!["first.zip".into(), "second.zip".into()],
+            force: false,
+            platform: None,
+            kind: Some(CliProjectType::World),
+            version_id: None,
+            file_id: None,
+            file_plan: None,
+            download_as_local: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(project(root.path()).lock().dependencies.len(), 2);
+    let before = super::super::tests::snapshot(&root.path().join("project"));
+    update(&session(root.path(), false), vec!["first".into()])
+        .await
+        .unwrap();
+    synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        before
+    );
+    assert!(
+        project(root.path())
+            .lock()
+            .dependencies
+            .values()
+            .all(|dependency| dependency.files.as_slice().len() == 131)
+    );
 }

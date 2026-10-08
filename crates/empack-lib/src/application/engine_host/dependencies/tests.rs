@@ -459,6 +459,7 @@ fn local_batch_input(source: &str, key: &str, destination: &str) -> AddHostInput
         server: Requirement::Unsupported,
     };
     AddHostInput::File(DirectFileInput {
+        member: None,
         key: DependencyKey::parse(key).unwrap(),
         title: "Local settings".into(),
         source: DirectFileSource::Local(source.into()),

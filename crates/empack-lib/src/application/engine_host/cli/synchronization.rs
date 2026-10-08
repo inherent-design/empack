@@ -60,9 +60,10 @@ pub(super) async fn synchronize_with_services(
                     .intent()
                     .roots
                     .values()
-                    .filter_map(|root| match &root.source {
-                        SourceIntent::Local(path) => Some(path.clone()),
-                        _ => None,
+                    .flat_map(|root| match &root.source {
+                        SourceIntent::Local(path) => vec![path.clone()],
+                        SourceIntent::LocalFiles(members) => members.values().cloned().collect(),
+                        _ => vec![],
                     })
                     .collect();
                 // Authored sources must remain beneath their selected project root.
@@ -207,6 +208,9 @@ pub(super) async fn synchronize_with_services(
                 .await?;
                 providers.push(provider_input(key, root, selector, None, false)?);
             }
+            SourceIntent::LocalFiles(_) => {
+                files.extend(member_inputs(key, root, old, &project, false)?)
+            }
             SourceIntent::Local(_) | SourceIntent::Url(_) => {
                 files.push(direct_input(key, root, old, &project, source.intent())?)
             }
@@ -251,6 +255,9 @@ pub(super) async fn synchronize_with_services(
                 // instead retains the explicitly declared project-relative acquisition source.
                 if let Some(DependencyIntent { source: SourceIntent::Local(path), .. }) = source.intent().roots.get(key) {
                     dependency.files = NonEmpty::new(dependency.files.into_vec().into_iter().map(|mut file| { file.acquisition = AcquisitionSpec::Local(path.clone()); file }).collect())?;
+                }
+                if let Some(DependencyIntent { source: SourceIntent::LocalFiles(members), .. }) = source.intent().roots.get(key) {
+                    dependency.files = NonEmpty::new(dependency.files.into_vec().into_iter().map(|mut file| { file.acquisition = AcquisitionSpec::Local(members[&file.slot].clone()); file }).collect())?;
                 }
                 preserve_provider_assertions(lock.dependencies.get(key), &mut dependency)?;
                 lock.dependencies.insert(key.clone(), dependency);
@@ -357,7 +364,10 @@ fn resolver_context(
                 .get(*key)
                 .is_some_and(|old| match (&root.source, &old.identity) {
                     (SourceIntent::Provider(a), ResolvedIdentity::Provider(b)) => a != b,
-                    (SourceIntent::Local(_), ResolvedIdentity::Local(_))
+                    (
+                        SourceIntent::Local(_) | SourceIntent::LocalFiles(_),
+                        ResolvedIdentity::Local(_),
+                    )
                     | (SourceIntent::Url(_), ResolvedIdentity::Url(_)) => false,
                     (SourceIntent::Search { .. }, _) => true,
                     _ => true,
@@ -504,6 +514,7 @@ fn direct_input(
         VersionIntent::Exact(_) => anyhow::bail!("Direct content cannot use a provider pin"),
     };
     Ok(DirectFileInput {
+        member: None,
         key: key.clone(),
         title: old.map_or_else(|| key.as_str().to_owned(), |old| old.title.clone()),
         source,
@@ -513,6 +524,41 @@ fn direct_input(
         requirements: root.requirements.clone(),
         placements,
     })
+}
+
+/// Member slots retain one dependency identity while each source keeps its own assertions.
+pub(super) fn member_inputs(
+    key: &DependencyKey,
+    root: &DependencyIntent,
+    old: Option<&LockedDependency>,
+    project: &Path,
+    accept_changes: bool,
+) -> Result<Vec<DirectFileInput>> {
+    let SourceIntent::LocalFiles(members) = &root.source else {
+        anyhow::bail!("Expected tracked local members")
+    };
+    let PlacementIntent::Explicit(placements) = &root.placement else {
+        anyhow::bail!("Members require explicit placements")
+    };
+    members.iter().map(|(slot,path)| {
+        let prior = old.and_then(|old| old.files.as_slice().iter().find(|file| &file.slot==slot));
+        let selected: Vec<_> = placements.as_slice().iter().filter(|placement| {
+            crate::engine::layout::ProjectLayout::path(&empack_core::files::ManagedPath::Content {
+                layer:placement.layer, path:placement.destination.relative().clone()
+            }).is_ok_and(|candidate| &candidate==path)
+            || prior.is_some_and(|file| file.placements.as_slice().contains(placement))
+        }).cloned().collect();
+        ensure!(!selected.is_empty(), "Member source needs a corresponding explicit placement");
+        let evidence=if accept_changes { FileEvidence::AcceptObserved } else {
+            prior.filter(|file| matches!(&file.acquisition, AcquisitionSpec::Local(source) if source==path))
+                .map_or(FileEvidence::AcceptObserved, |file|FileEvidence::Declared(file.expected.clone()))
+        };
+        Ok(DirectFileInput {
+            member:Some(slot.clone()),key:key.clone(),title:old.map_or_else(||key.as_str().to_owned(),|old|old.title.clone()),
+            source:DirectFileSource::Local(project.join(path.as_str())),evidence,kind:root.kind,
+            kind_policy:FileKindPolicy::AcceptUnrecognized,requirements:root.requirements.clone(),placements:NonEmpty::new(selected)?,
+        })
+    }).collect()
 }
 
 #[cfg(test)]

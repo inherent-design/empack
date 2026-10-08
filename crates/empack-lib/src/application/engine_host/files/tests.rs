@@ -84,6 +84,7 @@ fn input(
         server: Requirement::Unsupported,
     };
     DirectFileInput {
+        member: None,
         key: DependencyKey::parse(key).unwrap(),
         title: key.into(),
         source,
@@ -785,4 +786,80 @@ async fn typed_archives_reject_bad_member_crc_even_when_the_archive_hash_matches
         );
         assert_eq!(snapshot(root.path()), before);
     }
+}
+
+#[tokio::test]
+async fn downloaded_world_requires_conversion_and_preserves_all_members() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let bytes = archive(&[("level.dat", b"world"), ("region/r.0.0.mca", b"region")]);
+    let mut server = mockito::Server::new_async().await;
+    let download = server
+        .mock("GET", "/world.zip")
+        .with_body(&bytes)
+        .expect(1)
+        .create_async()
+        .await;
+    let urls = NonEmpty::new(vec![format!("{}/world.zip", server.url())]).unwrap();
+    // A remote ZIP is not silently converted from its URL identity into local members.
+    let selected = input(
+        "adventure",
+        DirectFileSource::Download {
+            origins: NonEmpty::new(vec!["https://example.com/world.zip".into()]).unwrap(),
+            alternatives: urls.clone(),
+        },
+        &bytes,
+        ContentKind::World,
+        "saves/adventure",
+    );
+    let before = snapshot(root.path());
+    assert!(
+        add(
+            root.path(),
+            vec![selected],
+            true,
+            false,
+            DirectFileLimits::default()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(snapshot(root.path()), before);
+    let selected = input(
+        "adventure",
+        DirectFileSource::DownloadAsLocal { alternatives: urls },
+        &bytes,
+        ContentKind::World,
+        "saves/adventure",
+    );
+    add(
+        root.path(),
+        vec![selected],
+        true,
+        false,
+        DirectFileLimits::default(),
+    )
+    .await
+    .unwrap();
+    download.assert_async().await;
+    let source = DocumentCodec
+        .decode_intent(
+            &fs::read(root.path().join("project/empack.yml")).unwrap(),
+            "test",
+        )
+        .unwrap();
+    assert!(
+        matches!(&source.intent().roots.values().next().unwrap().source,SourceIntent::LocalFiles(members) if members.len()==2)
+    );
+    assert_eq!(
+        fs::read(
+            root.path()
+                .join("project/overrides/client/saves/adventure/level.dat")
+        )
+        .unwrap(),
+        b"world"
+    );
+    let raw = fs::read_to_string(root.path().join("project/empack.lock")).unwrap();
+    assert!(raw.contains("world-archive-member"));
+    assert!(!raw.contains(&server.url()));
 }

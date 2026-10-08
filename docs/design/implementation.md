@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: worlds, complete adoption
+new route, not full feature completion: provider-owned worlds, complete adoption
 frontends, browser assistance and remaining library retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
@@ -30,7 +30,7 @@ a passing review and line coverage do not change that state by themselves.
 | --- | --- | --- |
 | Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
-| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | World members and broader live provider parity; explicit file plans and provider identification are wired |
+| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider-owned world members and broader live provider parity; direct world groups, explicit file plans and provider identification are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local files and common-layer providers:** verified document-only acceptance of observed bytes and exact pins | URL/side-layer evidence, missing-lock selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
@@ -118,7 +118,7 @@ re-export. Restricted-import continuation remains open.
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
-| Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
+| Cutover | Complete adoption frontends and provider-owned world interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and manual-input continuation remain open; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
@@ -146,6 +146,12 @@ The unused legacy removal planner, slug-based dependency graph and obsolete mock
 modules remains open.
 
 ## Verification evidence
+
+Direct world groups: nine focused tests and all-feature Clippy pass after reproducing
+and correcting retained metadata over-reservation across two archives. Coverage includes
+131-member refresh, add/sync/build/adopt/remove, read-only preview, malformed archives,
+explicit remote conversion and missing-lock ownership refusal. The final affected run passed 86 tests across host, addition, document and native command
+contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |

@@ -63,6 +63,7 @@ pub(super) async fn adopt_with_services(
         !inputs.iter().any(|input| matches!(
             input,
             AddHostInput::File(DirectFileInput {
+                member: None,
                 source: DirectFileSource::Download { .. },
                 ..
             })
@@ -189,6 +190,22 @@ fn selections(
                 }));
             }
             ResolvedIdentity::Local(_) | ResolvedIdentity::Url(_) => {
+                if let Some(root) =
+                    root.filter(|root| matches!(root.source, SourceIntent::LocalFiles(_)))
+                {
+                    inputs.extend(
+                        super::synchronization::member_inputs(
+                            &key,
+                            root,
+                            Some(selected),
+                            project,
+                            true,
+                        )?
+                        .into_iter()
+                        .map(AddHostInput::File),
+                    );
+                    continue;
+                }
                 ensure!(
                     selected.files.as_slice().len() == 1,
                     "Multi-file content requires an explicit member update: {value}"
@@ -225,6 +242,7 @@ fn selections(
                     _ => FileEvidence::AcceptObserved,
                 };
                 inputs.push(AddHostInput::File(DirectFileInput {
+                    member: None,
                     key,
                     title: selected.title.clone(),
                     source,

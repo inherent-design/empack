@@ -133,6 +133,15 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
             fields(source, &["kind", "path"])?;
             SourceIntent::Local(path(required(source, "path")?)?)
         }
+        "local-files" => {
+            fields(source, &["kind", "members"])?;
+            SourceIntent::LocalFiles(
+                object(required(source, "members")?)?
+                    .iter()
+                    .map(|(slot, value)| Ok((FileSlot::parse(slot)?, path(value)?)))
+                    .collect::<Result<BTreeMap<_, _>>>()?,
+            )
+        }
         _ => bail!("Unknown dependency source kind"),
     };
     let version = required(value, "version")?;
@@ -177,6 +186,7 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
             SourceIntent::Search { query, providers } => json!({"kind":"search","query":query,"providers":providers.as_slice().iter().map(|v| match v { ProviderKind::Modrinth => "modrinth", ProviderKind::CurseForge => "curseforge" }).collect::<Vec<_>>()}),
             SourceIntent::Url(values) => json!({"kind":"url","downloads":values.as_slice()}),
             SourceIntent::Local(path) => json!({"kind":"local","path":path.as_str()}),
+            SourceIntent::LocalFiles(members) => json!({"kind":"local-files","members":members.iter().map(|(slot,path)|(slot.as_str(),path.as_str())).collect::<BTreeMap<_,_>>() }),
         };
         let version = match &dep.version { VersionIntent::FollowCompatible => json!({"mode":"follow-compatible"}), VersionIntent::Exact(pin) => json!({"mode":"exact","pin":pin_value(pin)}), VersionIntent::ContentPinned(expected) => json!({"mode":"content-pinned","digests":digests(expected)}) };
         let placement = match &dep.placement { PlacementIntent::Automatic => json!("automatic"), PlacementIntent::Explicit(values) => json!(values.as_slice().iter().map(placement_value).collect::<Vec<_>>()) };

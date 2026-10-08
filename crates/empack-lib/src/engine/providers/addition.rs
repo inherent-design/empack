@@ -105,6 +105,10 @@ impl ProviderCatalog {
                 project.kinds.as_slice().contains(&kind),
                 CatalogError::ContentKindMismatch
             );
+            ensure!(
+                kind != ContentKind::World,
+                "Provider world archives require member interpretation; supply the downloaded archive as a local world"
+            );
             let pin = if let Some(pin) = &input.pin {
                 let selected = ResolvedPin {
                     project: project.id.clone(),

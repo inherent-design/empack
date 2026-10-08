@@ -113,6 +113,7 @@ fn add(names: &[&str], kind: Option<CliProjectType>) -> Commands {
         version_id: None,
         file_id: None,
         file_plan: None,
+        download_as_local: false,
     }
 }
 fn remove(names: &[&str], forget: bool, acknowledge_unknown: bool) -> Commands {

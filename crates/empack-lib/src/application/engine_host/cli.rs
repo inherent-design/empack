@@ -4,7 +4,7 @@ use crate::{
     application::cli::{CliProjectType, SearchPlatform},
     engine::{
         acquisition::HttpAcquisition,
-        addition::DirectFileLimits,
+        addition::{DirectFileLimits, DirectFileSource},
         api::ExistingDependencyPolicy,
         content::SourceEvidencePolicy,
         project::ProjectReader,
@@ -41,6 +41,7 @@ pub struct AddOptions {
     pub version_id: Option<String>,
     pub file_id: Option<String>,
     pub file_plan: Option<PathBuf>,
+    pub download_as_local: bool,
 }
 impl AddOptions {
     fn pin(&self) -> Result<Option<PinSelector>> {
@@ -179,6 +180,20 @@ async fn add_with_catalog(
             );
         }
         let source = files::classify(&invocation, value, from_url.is_some())?;
+        let source = if options.download_as_local {
+            ensure!(
+                options.platform.is_none(),
+                "--download-as-local cannot retain provider ownership"
+            );
+            match source {
+                Some(DirectFileSource::Download { alternatives, .. }) => {
+                    Some(DirectFileSource::DownloadAsLocal { alternatives })
+                }
+                _ => anyhow::bail!("--download-as-local requires a direct HTTPS file URL"),
+            }
+        } else {
+            source
+        };
         if let Some(source) = source {
             ensure!(
                 pin.is_none(),

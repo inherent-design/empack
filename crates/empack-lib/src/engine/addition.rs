@@ -1,6 +1,7 @@
 //! Bind canonical dependency additions to captured document revisions before native preparation.
 mod batch;
 mod direct;
+mod world;
 pub use batch::ResolvedAdditionBatch;
 mod file_input;
 pub use direct::{

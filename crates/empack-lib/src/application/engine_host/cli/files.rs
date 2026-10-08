@@ -112,6 +112,7 @@ pub(super) fn input(
         .and_then(|stem| stem.to_str())
         .context("Dependency needs a file stem")?;
     Ok(DirectFileInput {
+        member: None,
         key: DependencyKey::parse(key)?,
         title: filename.clone(),
         source,
@@ -120,7 +121,14 @@ pub(super) fn input(
         kind_policy: FileKindPolicy::RequireRecognized,
         requirements: requirements.clone(),
         placements: NonEmpty::new(vec![Placement {
-            destination: InstallDestination::parse(&format!("{folder}/{filename}"))?,
+            destination: InstallDestination::parse(&format!(
+                "{folder}/{}",
+                if kind == ContentKind::World {
+                    key
+                } else {
+                    &filename
+                }
+            ))?,
             layer: ContentLayer::Common,
             requirements,
         }])?,

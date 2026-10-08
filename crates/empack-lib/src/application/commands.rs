@@ -88,6 +88,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             version_id,
             file_id,
             file_plan,
+            download_as_local,
         } => {
             engine_host::cli::add(
                 session,
@@ -99,6 +100,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                     version_id,
                     file_id,
                     file_plan,
+                    download_as_local,
                 },
             )
             .await

@@ -181,6 +181,8 @@ pub enum SourceIntent {
     Url(NonEmpty<String>),
     /// A tracked project-relative source file.
     Local(PortableRelPath),
+    /// One logical dependency with an explicit source file for each stable member slot.
+    LocalFiles(BTreeMap<FileSlot, PortableRelPath>),
 }
 /// Provider namespace for selection policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -241,7 +243,7 @@ impl DependencyIntent {
                     ProviderProjectId::CurseForge(_) => ProviderKind::CurseForge,
                 }) => {}
             (SourceIntent::Url(_), ResolvedIdentity::Url(b))
-            | (SourceIntent::Local(_), ResolvedIdentity::Local(b))
+            | (SourceIntent::Local(_) | SourceIntent::LocalFiles(_), ResolvedIdentity::Local(b))
                 if key == b => {}
             _ => return Err(invalid("Locked identity differs from source intent")),
         }
@@ -250,13 +252,23 @@ impl DependencyIntent {
         {
             return Err(invalid("Lock does not satisfy requested pin"));
         }
+        if let SourceIntent::LocalFiles(members) = &self.source
+            && members.len() != selected.files.as_slice().len()
+        {
+            return Err(invalid("Lock changed tracked member coverage"));
+        }
         for file in selected.files.as_slice() {
             match (&self.source, &file.acquisition) {
                 (SourceIntent::Url(expected), AcquisitionSpec::Url(actual))
                     if expected == actual => {}
                 (SourceIntent::Local(expected), AcquisitionSpec::Local(actual))
                     if expected == actual => {}
-                (SourceIntent::Url(_) | SourceIntent::Local(_), _) => {
+                (SourceIntent::LocalFiles(members), AcquisitionSpec::Local(actual))
+                    if members.get(&file.slot) == Some(actual) => {}
+                (
+                    SourceIntent::Url(_) | SourceIntent::Local(_) | SourceIntent::LocalFiles(_),
+                    _,
+                ) => {
                     return Err(invalid("Lock changed declared acquisition source"));
                 }
                 _ => {}
@@ -573,7 +585,10 @@ impl ProjectIntent {
                     selection: selection.clone(),
                 }
                 .validate()?,
-                (SourceIntent::Url(_) | SourceIntent::Local(_), VersionIntent::Exact(_)) => {
+                (
+                    SourceIntent::Url(_) | SourceIntent::Local(_) | SourceIntent::LocalFiles(_),
+                    VersionIntent::Exact(_),
+                ) => {
                     return Err(invalid("A file source cannot carry a provider pin"));
                 }
                 (SourceIntent::Search { query, providers }, _) => {
@@ -586,6 +601,19 @@ impl ProjectIntent {
                     }
                 }
                 _ => {}
+            }
+            if let SourceIntent::LocalFiles(members) = &dep.source {
+                if members.is_empty() {
+                    return Err(invalid("Tracked member inventory is empty"));
+                }
+                if !matches!(dep.version, VersionIntent::FollowCompatible) {
+                    return Err(invalid(
+                        "Tracked members retain individual content assertions",
+                    ));
+                }
+                if !matches!(dep.placement, PlacementIntent::Explicit(_)) {
+                    return Err(invalid("Tracked members require explicit placements"));
+                }
             }
             if let PlacementIntent::Explicit(placements) = &dep.placement {
                 for placement in placements.as_slice() {

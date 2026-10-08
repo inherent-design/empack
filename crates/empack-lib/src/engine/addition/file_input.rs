@@ -19,6 +19,11 @@ pub enum AcquiredFileSource {
     Local,
     /// Explicit download-as-local conversion. No transient locator enters durable state.
     DownloadedLocal,
+    /// Expanded archive members retain their observed archive identity as provenance.
+    ArchiveMember {
+        archive: empack_core::digest::ContentId,
+        member: empack_core::path::PortableRelPath,
+    },
     Url(NonEmpty<String>),
 }
 #[derive(Clone)]
@@ -29,6 +34,8 @@ pub enum FileEvidence {
 }
 #[derive(Clone)]
 pub struct AcquiredFileInput {
+    /// Stable member slot when this file belongs to a tracked local group.
+    pub member: Option<empack_core::model::FileSlot>,
     pub key: DependencyKey,
     pub title: String,
     pub kind: ContentKind,
@@ -100,13 +107,13 @@ impl FileAddition {
         })?;
         let mut intent = current.intent().clone();
         intent.roots.clear();
-        let mut dependencies = BTreeMap::new();
+        let mut dependencies = BTreeMap::<DependencyKey, LockedDependency>::new();
         let mut coverage = BTreeMap::new();
         let mut content = BTreeMap::new();
         for input in inputs.into_vec() {
             scope.cancellation().check()?;
             ensure!(
-                !intent.roots.contains_key(&input.key),
+                input.member.is_some() || !intent.roots.contains_key(&input.key),
                 "Repeated direct-file logical key"
             );
             let expected = match input.evidence {
@@ -136,10 +143,23 @@ impl FileAddition {
                         .is_none_or(|id| *id == input.file.content.lease().id()),
                 "Acquired file differs from declared content"
             );
+            let refresh_member =
+                input.member.is_some() && matches!(input.source, AcquiredFileSource::Local);
+            let location = match &input.source {
+                AcquiredFileSource::ArchiveMember { archive, member } => Some(format!(
+                    "sha256:{}!/{}",
+                    empack_core::digest::ExpectedDigest::Sha256(*archive.bytes()).hex(),
+                    member.as_str()
+                )),
+                _ => None,
+            };
             let (source, identity, acquisition, provenance) = match input.source {
-                source @ (AcquiredFileSource::Local | AcquiredFileSource::DownloadedLocal) => {
+                source @ (AcquiredFileSource::Local
+                | AcquiredFileSource::DownloadedLocal
+                | AcquiredFileSource::ArchiveMember { .. }) => {
                     let provenance = match source {
                         AcquiredFileSource::DownloadedLocal => "downloaded-local-file",
+                        AcquiredFileSource::ArchiveMember { .. } => "world-archive-member",
                         _ => "local-file",
                     };
                     let first = &input.placements.as_slice()[0];
@@ -148,55 +168,139 @@ impl FileAddition {
                         path: first.destination.relative().clone(),
                     })?;
                     (
-                        SourceIntent::Local(source.clone()),
+                        match &input.member {
+                            Some(slot) => SourceIntent::LocalFiles(BTreeMap::from([(
+                                slot.clone(),
+                                source.clone(),
+                            )])),
+                            None => SourceIntent::Local(source.clone()),
+                        },
                         ResolvedIdentity::Local(input.key.clone()),
                         AcquisitionSpec::Local(source),
                         provenance,
                     )
                 }
-                AcquiredFileSource::Url(urls) => (
-                    SourceIntent::Url(urls.clone()),
-                    ResolvedIdentity::Url(input.key.clone()),
-                    AcquisitionSpec::Url(urls),
-                    "url-file",
-                ),
+                AcquiredFileSource::Url(urls) => {
+                    ensure!(
+                        input.member.is_none(),
+                        "Member groups require tracked local sources"
+                    );
+                    (
+                        SourceIntent::Url(urls.clone()),
+                        ResolvedIdentity::Url(input.key.clone()),
+                        AcquisitionSpec::Url(urls),
+                        "url-file",
+                    )
+                }
             };
-            intent.roots.insert(
-                input.key.clone(),
-                DependencyIntent {
-                    source,
-                    kind: input.kind,
-                    version: expected
+            let next_root = DependencyIntent {
+                source,
+                kind: input.kind,
+                version: if input.member.is_some() {
+                    VersionIntent::FollowCompatible
+                } else {
+                    expected
                         .digests
                         .clone()
                         .map(VersionIntent::ContentPinned)
-                        .unwrap_or(VersionIntent::FollowCompatible),
-                    placement: PlacementIntent::Explicit(input.placements.clone()),
-                    requirements: input.requirements,
+                        .unwrap_or(VersionIntent::FollowCompatible)
                 },
-            );
-            let slot = FileSlot::parse("primary")?;
-            dependencies.insert(
-                input.key.clone(),
-                LockedDependency {
-                    title: input.title,
-                    kind: input.kind,
-                    identity,
-                    selected: None,
-                    files: NonEmpty::new(vec![ResolvedFile {
-                        slot: slot.clone(),
-                        acquisition,
-                        provenance: Provenance {
-                            source: provenance.into(),
-                            location: None,
-                            declared_digests: expected.digests.clone(),
-                            conversions: vec![],
-                        },
-                        expected,
-                        placements: input.placements,
-                    }])?,
-                },
-            );
+                placement: PlacementIntent::Explicit(input.placements.clone()),
+                requirements: input.requirements,
+            };
+            if let Some(existing) = intent.roots.get_mut(&input.key) {
+                ensure!(
+                    existing.kind == next_root.kind
+                        && existing.requirements == next_root.requirements
+                        && existing.version == next_root.version,
+                    "Member group declarations disagree"
+                );
+                let (SourceIntent::LocalFiles(prior), SourceIntent::LocalFiles(next)) =
+                    (&mut existing.source, &next_root.source)
+                else {
+                    anyhow::bail!("Member groups cannot overlap single-file identities")
+                };
+                for (slot, path) in next {
+                    ensure!(
+                        prior.insert(slot.clone(), path.clone()).is_none(),
+                        "Repeated member slot"
+                    );
+                }
+                let (PlacementIntent::Explicit(prior), PlacementIntent::Explicit(next)) =
+                    (&existing.placement, &next_root.placement)
+                else {
+                    unreachable!()
+                };
+                existing.placement = PlacementIntent::Explicit(NonEmpty::new(
+                    prior
+                        .as_slice()
+                        .iter()
+                        .chain(next.as_slice())
+                        .cloned()
+                        .collect(),
+                )?);
+            } else {
+                intent.roots.insert(input.key.clone(), next_root);
+            }
+            let slot = input.member.clone().unwrap_or(FileSlot::parse("primary")?);
+            let mut file_provenance = Provenance {
+                source: provenance.into(),
+                location,
+                declared_digests: expected.digests.clone(),
+                conversions: vec![],
+            };
+            if refresh_member
+                && let Some(prior) =
+                    current
+                        .lock()
+                        .dependencies
+                        .get(&input.key)
+                        .and_then(|dependency| {
+                            dependency
+                                .files
+                                .as_slice()
+                                .iter()
+                                .find(|file| file.slot == slot)
+                        })
+            {
+                file_provenance = prior.provenance.clone();
+                if prior.expected != expected {
+                    file_provenance.declared_digests = expected.digests.clone();
+                    file_provenance
+                        .conversions
+                        .push("Explicit acceptance of changed tracked member bytes".into());
+                }
+            }
+            let next = LockedDependency {
+                title: input.title,
+                kind: input.kind,
+                identity,
+                selected: None,
+                files: NonEmpty::new(vec![ResolvedFile {
+                    slot: slot.clone(),
+                    acquisition,
+                    provenance: file_provenance,
+                    expected,
+                    placements: input.placements,
+                }])?,
+            };
+            if let Some(existing) = dependencies.get_mut(&input.key) {
+                ensure!(
+                    existing.title == next.title && existing.identity == next.identity,
+                    "Member group identity differs"
+                );
+                existing.files = NonEmpty::new(
+                    existing
+                        .files
+                        .as_slice()
+                        .iter()
+                        .chain(next.files.as_slice())
+                        .cloned()
+                        .collect(),
+                )?;
+            } else {
+                dependencies.insert(input.key.clone(), next);
+            }
             // A direct file does not prove that its game-level dependency set is empty.
             coverage.insert(input.key.clone(), Coverage::Unknown);
             content.insert(

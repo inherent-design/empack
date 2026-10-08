@@ -20,6 +20,7 @@ use std::{
 };
 
 /// Download locations can expire; only the separately declared durable origins enter intent.
+#[derive(Clone)]
 pub enum DirectFileSource {
     Local(PathBuf),
     Download {
@@ -40,6 +41,8 @@ pub enum FileKindPolicy {
     AcceptUnrecognized,
 }
 pub struct DirectFileInput {
+    /// Stable member slot when this file belongs to a tracked local group.
+    pub member: Option<empack_core::model::FileSlot>,
     pub key: DependencyKey,
     pub title: String,
     pub source: DirectFileSource,
@@ -77,7 +80,14 @@ impl FileAddition {
         limits: DirectFileLimits,
     ) -> Result<Self> {
         ensure!(
-            inputs.as_slice().len() <= limits.files,
+            inputs
+                .as_slice()
+                .iter()
+                .map(|input| &input.key)
+                .collect::<BTreeSet<_>>()
+                .len()
+                <= limits.files
+                && inputs.as_slice().len() <= limits.archive.entries,
             "Direct-file count limit exceeded"
         );
         let mut keys = BTreeSet::new();
@@ -86,13 +96,21 @@ impl FileAddition {
         for input in inputs.as_slice() {
             scope.cancellation().check()?;
             ensure!(
-                keys.insert(input.key.clone()),
+                keys.insert((input.key.clone(), input.member.clone())),
                 "Repeated direct-file logical key"
             );
-            // A world ZIP needs member interpretation, not installation of a ZIP as a world.
             ensure!(
-                input.kind != ContentKind::World,
-                "World additions require explicit member interpretation"
+                input.kind != ContentKind::World
+                    || input.member.is_some()
+                    || matches!(
+                        input.source,
+                        DirectFileSource::Local(_) | DirectFileSource::DownloadAsLocal { .. }
+                    ),
+                "A remote world needs explicit download-as-local interpretation"
+            );
+            ensure!(
+                input.member.is_none() || matches!(input.source, DirectFileSource::Local(_)),
+                "Tracked members require local sources"
             );
             let (expected, initial) = expectation(&input.evidence);
             validate_expectation(&expected, limits.transfer.file_bytes, policy, initial)?;
@@ -126,6 +144,7 @@ impl FileAddition {
             downloaded.extend(download_keys.into_iter().zip(files));
         }
         let mut acquired = Vec::new();
+        let mut worlds = Vec::new();
         let mut total = downloaded.values().try_fold(0u64, |total, file| {
             total
                 .checked_add(file.lease().len())
@@ -138,7 +157,7 @@ impl FileAddition {
         for input in inputs.into_vec() {
             let (expected, initial) = expectation(&input.evidence);
             let local = matches!(input.source, DirectFileSource::Local(_));
-            let (source, file) = match input.source {
+            let (source, file) = match input.source.clone() {
                 DirectFileSource::Local(source) => (
                     AcquiredFileSource::Local,
                     acquire_local_file(
@@ -184,8 +203,17 @@ impl FileAddition {
                 total <= limits.transfer.transfer_bytes,
                 "Direct-file batch exceeds byte limit"
             );
-            validate_file_kind(scope, &file, input.kind, input.kind_policy, limits.archive).await?;
+            if input.kind == ContentKind::World && input.member.is_none() {
+                worlds
+                    .push(super::world::expand(scope, input, file, limits.archive, policy).await?);
+                continue;
+            }
+            if input.member.is_none() {
+                validate_file_kind(scope, &file, input.kind, input.kind_policy, limits.archive)
+                    .await?;
+            }
             acquired.push(AcquiredFileInput {
+                member: input.member,
                 key: input.key,
                 title: input.title,
                 kind: input.kind,
@@ -195,6 +223,9 @@ impl FileAddition {
                 placements: input.placements,
                 file,
             });
+        }
+        for world in &worlds {
+            acquired.extend(world.iter().cloned());
         }
         Self::from_acquired(scope, current, NonEmpty::new(acquired)?, policy)
     }

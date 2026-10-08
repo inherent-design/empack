@@ -224,9 +224,9 @@ archives require member interpretation rather than being installed as an opaque 
 native addition preview, approval and publication used by provider additions. Host
 paths resolve against the invocation directory. Raw project documents and native root
 identity bind acquisition to publication, so a concurrent edit requires replanning.
-Provider identification/representation selection, world member interpretation and
-CLI input selection remain frontend integration work; catalog failures do not implicitly
-authorize unidentified content.
+CLI provider identification and explicit file plans precede this boundary; catalog
+failures do not implicitly authorize unidentified content. Direct world ZIPs expand
+into one tracked local member group. Provider-owned world interpretation remains open.
 
 `application::engine_host::add` accepts a nonempty sequence of `AddHostInput::Provider`
 and `AddHostInput::File`. Both use one captured project revision and one resource governor.
@@ -1075,9 +1075,10 @@ pin or source edit can request new content. Unrequested local-byte drift still n
 adoption or an authored content pin. Local authoring sources retain their declared
 project-relative paths, independently of installation destinations.
 
-The CLI currently records remote references and materializes local/member sources.
-It does not yet expose optional remote materialization. World/member choices and
-ambiguous companion placements remain explicit implementation gates.
+The CLI records remote references and materializes local/member sources. Explicit
+`sync --materialize` also verifies remote payloads before publication. Provider file
+plans carry companion placement choices. Provider-owned world interpretation and
+manual-input continuation remain implementation gates.
 
 ### Explicit provider file plans
 
@@ -1102,3 +1103,30 @@ and a `success`/`failure` outcome. It skips arguments, configuration, selectors,
 paths and error formatting. Chrome traces and OTLP exports cover the same dispatcher;
 exporter failure does not change a completed command's exit status. This command-level
 span does not imply detailed timing coverage of every worker or provider request.
+
+### Tracked local member groups
+
+`SourceIntent::LocalFiles` maps stable file slots to nonempty, validated project-relative
+source paths. Its lock must cover exactly those slots and local acquisitions. Each
+member retains its own content assertions; a group cannot substitute one digest or
+provider pin for all members. Explicit placements preserve environment and layer.
+
+Direct world ZIPs require exactly one nonempty `level.dat`. All files must lie under
+its enclosing root; unrelated outer content, multiple worlds, unsafe paths and invalid
+archive members fail the batch. The interpreter strips that enclosing directory and
+places each member beneath the selected world destination. These checks establish
+archive structure, not Minecraft gameplay compatibility. The resulting dependency
+retains one local identity and archive-address/member provenance.
+
+Acquisition shares archive, scratch, descriptor and memory bounds. Parsing releases
+unused metadata allowance before the next archive; member refresh limits count logical
+groups separately from bounded archive entries. Sync verifies every retained assertion.
+Explicit update/adoption can accept changed member bytes while preserving provenance.
+Removing the group authorizes only its recorded members, never recursive directory
+deletion. Missing-lock synchronization cannot claim existing untracked files.
+
+`add --download-as-local` explicitly chooses local ownership for a direct HTTPS input.
+It is required for remote world interpretation and rejected for local or provider-owned
+inputs. Verified archive bytes are interpreted before publication; transient download
+locators do not enter durable documents. Provider-owned worlds require a separate
+member representation and are currently refused before an opaque ZIP can be published.

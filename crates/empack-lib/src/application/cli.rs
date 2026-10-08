@@ -314,6 +314,10 @@ pub enum Commands {
         /// YAML file-role destinations and environment choices for one provider project
         #[arg(long, value_name = "PATH")]
         file_plan: Option<PathBuf>,
+
+        /// Track an HTTPS download as local content instead of retaining its URL
+        #[arg(long)]
+        download_as_local: bool,
     },
 
     /// Remove projects from the modpack
@@ -488,6 +492,7 @@ mod tests {
                 version_id: None,
                 file_id: None,
                 file_plan: None,
+                download_as_local: false,
             }
             .execution_order(),
             6

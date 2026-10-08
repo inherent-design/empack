@@ -200,6 +200,7 @@ pub enum SourceIntent {
     Search(SearchIntent),                  // Explicitly unresolved authoring form
     Url(UrlFileIntent),
     Local(TrackedFileIntent),
+    LocalFiles(BTreeMap<FileSlot, PortableRelPath>), // one identity, explicit members
 }
 
 pub enum VersionIntent {

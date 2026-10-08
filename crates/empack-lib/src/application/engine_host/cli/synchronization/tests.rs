@@ -337,6 +337,7 @@ async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source(
                 dependencies::add(
                     &session(root.path(), false),
                     NonEmpty::new(vec![AddHostInput::File(DirectFileInput {
+                        member: None,
                         key: key.clone(),
                         title: "settings".into(),
                         source: DirectFileSource::Local(root.path().join("replacement.toml")),
