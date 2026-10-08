@@ -32,7 +32,7 @@ a passing review and line coverage do not change that state by themselves.
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
 | Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider-owned world members and broader live provider parity; direct world groups, explicit file plans and provider identification are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
-| Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers:** verified document-only acceptance of observed bytes and exact pins | Missing-lock selection and new untracked groups |
+| Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption of declared roots:** verified document-only acceptance of observed bytes and exact pins | New untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance and live target/runtime matrix; execution-time missing inputs retain resumable state |
@@ -148,6 +148,13 @@ modules remains open.
 
 ## Verification evidence
 
+First-lock adoption: the CLI refusal reproduced before correction. Then 44 affected
+adoption, observation and synchronization tests passed; the extended invalid-lock and
+symlink regression passed separately, and all-feature Clippy passed. Local members,
+URL content and provider metadata/side-layer identification preserve intent and bytes,
+reject partial selections, and converge through two subsequent syncs. No latest-version
+query is permitted by those provider fixtures. New untracked groups remain open.
+
 Named file roles and tracked sources: 669 affected tests and all-feature Clippy
 passed. A subsequent normalization optimization passed 16 affected tests and
 all-feature Clippy. Regression coverage rejects swapped role destinations, preserves
@@ -156,7 +163,7 @@ sources. Both targeted runs reported one intermittent inherited-output-pipe warn
 the download-budget case passed clean on rerun, while a provider-world case reported
 it. This remains an open verification gate, not a clean combined-head claim.
 
-Combined `6895f84`: `mise run test` passed 1,659 tests and eleven doctests;
+Combined `ae3276d`: `mise run test` passed 1,661 tests and eleven doctests;
 102 opt-in tests were excluded. No inherited-pipe warning occurred. This includes
 direct world interpretation and tracked URL/provider-side adoption, not final live parity.
 

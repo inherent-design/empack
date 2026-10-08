@@ -93,7 +93,12 @@ untouched. Available provider metadata must name the same project and an exact v
 metadata, provider identification must verify the observed bytes and file role; adoption
 does not choose the newest release or override an authored pin. Use `--dry-run` to inspect
 the proposed document changes. URL adoption keeps its declared origins and side placements without downloading remote
-bytes; authored content pins remain binding. Missing-lock and untracked adoption need further frontend support.
+bytes; authored content pins remain binding. When the lock is absent, select every
+root declared in `empack.yml`. Each placement must already contain the verified bytes;
+adoption creates the first lock without installing payloads. Non-vanilla runtimes need
+an exact authored loader version. Provider roots need an authored pin, exact observed
+metadata, or explicit placements that provider byte identification can verify. A malformed
+or stale existing lock remains an error. Newly selected untracked groups still need frontend support.
 
 Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
 `empack clean continuation --yes` to discard that project's recipe. This works for

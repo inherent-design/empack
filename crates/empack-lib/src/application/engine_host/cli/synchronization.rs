@@ -381,7 +381,7 @@ fn resolver_context(
     Ok(ResolvedProject::validate(intent, lock, revision)?)
 }
 
-fn provider_input(
+pub(super) fn provider_input(
     key: &DependencyKey,
     root: &DependencyIntent,
     selector: ProjectSelector,
@@ -417,7 +417,7 @@ fn provider_input(
     })
 }
 
-fn direct_input(
+pub(super) fn direct_input(
     key: &DependencyKey,
     root: &DependencyIntent,
     old: Option<&LockedDependency>,

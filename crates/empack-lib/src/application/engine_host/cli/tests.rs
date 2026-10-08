@@ -538,6 +538,39 @@ async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgradin
         super::super::tests::snapshot(&root.path().join("project")),
         before
     );
+    // The same observed selection establishes a missing first lock; no latest query is allowed.
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    let missing = super::super::tests::snapshot(root.path());
+    update::adopt_with_services(
+        &session(root.path(), true),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), missing);
+    update::adopt_with_services(
+        &session(root.path(), false),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(project(root.path()).intent(), &intent);
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key].selected,
+        adopted.lock().dependencies[&key].selected
+    );
+    let restored = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        restored
+    );
     latest.assert_async().await;
 }
 
@@ -1422,5 +1455,38 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
             .unwrap();
     }
     assert!(super::super::tests::snapshot(&root.path().join("project")) == after);
+    // The same observed selection establishes a missing first lock; no latest query is allowed.
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    let missing = super::super::tests::snapshot(root.path());
+    update::adopt_with_services(
+        &session(root.path(), true),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), missing);
+    update::adopt_with_services(
+        &session(root.path(), false),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(project(root.path()).intent(), adopted.intent());
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key].selected,
+        adopted.lock().dependencies[&key].selected
+    );
+    let restored = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        restored
+    );
     latest.assert_async().await;
 }

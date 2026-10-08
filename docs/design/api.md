@@ -403,8 +403,13 @@ selection comes from exact observed metadata or verified provider byte identific
 never a latest-version query. Each selected destination must agree
 about provider identity and pin; the catalog supplies the original byte assertions and
 required closure. Native preparation verifies installed bytes and backend metadata before
-approval. Existing authored pins, placements and root roles remain binding. Missing-lock
-and untracked-file adoption still need frontend choices.
+approval. Existing authored pins, placements and root roles remain binding. With no
+lock, the CLI requires every authored root in the selection and an exact non-vanilla
+loader version. Direct files retain declared sources and named roles. URL files are
+observed at their declared placements without remote acquisition. Provider selection
+uses authored pins, discovered backend metadata, or explicit placement byte identification.
+Search roots require a canonical identity before adoption. Newly selected untracked
+file groups still need frontend choices.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
 present in a project. Preparation verifies their original digest, size and
@@ -419,8 +424,7 @@ authoring roots and runtime requirements. Missing-lock adoption verifies every
 selected placement; an unresolved retained root or a newly occupied lock destination
 blocks publication. Existing authored roots and transitive roles remain unchanged: their source identity,
 pin and placement constrain the proposed resolution. Only newly adopted root keys
-are inserted. A present stale/invalid lock is not treated as absence. CLI
-selection remains integration work.
+are inserted. A present stale/invalid lock is not treated as absence.
 Adoption intentionally accepts selected drift after review: existing bytes must
 match the proposed complete assertions, not the superseded lock's byte assertions.
 The old documents remain captured publication preconditions and recovery preimages;

@@ -147,6 +147,38 @@ pub(super) async fn adopt_with_services(
     )
     .await
 }
+/// Empty resolution context for a first-lock adoption, never a publication candidate.
+pub(super) fn adoption_context(
+    source: &crate::engine::documents::DecodedIntent,
+) -> Result<empack_core::model::ResolvedProject> {
+    use empack_core::model::*;
+    let mut intent = source.intent().clone();
+    ensure!(
+        intent.runtime.loader == LoaderKind::Vanilla || intent.runtime.loader_version.is_some(),
+        "First-lock adoption requires an exact authored loader version"
+    );
+    intent.roots.clear();
+    let source = crate::engine::documents::DocumentCodec.decode_intent(
+        &crate::engine::documents::DocumentCodec.encode_intent(&intent)?,
+        "adoption resolution context",
+    )?;
+    let revision = source.semantic_revision();
+    let lock = ResolutionLock {
+        acceptable_versions: intent.runtime.acceptable_versions.clone(),
+        intent_revision: revision,
+        resolver: "empack-adoption-v0.5".into(),
+        dependencies: Default::default(),
+        required_edges: Default::default(),
+        coverage: Default::default(),
+        runtime: RuntimeResolution {
+            minecraft: intent.runtime.minecraft.clone(),
+            loader: intent.runtime.loader,
+            loader_version: intent.runtime.loader_version.clone(),
+        },
+    };
+    Ok(ResolvedProject::validate(intent, lock, revision)?)
+}
+
 pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServices> {
     let config = session.config().app_config();
     let catalog = ProviderCatalog::new(
@@ -284,7 +316,11 @@ async fn change_with_services(
             )?;
             let snapshot = scope.accept(work.wait().await?)?.transpose()?;
             let revision = snapshot.revision();
-            let current = snapshot.require_resolved()?;
+            let current = if adopt && snapshot.prior_lock().is_none() {
+                adoption_context(snapshot.intent())?
+            } else {
+                snapshot.require_resolved()?
+            };
             let supplied = identification::resolve(
                 &mut scope, identify, &mut providers, &services, evidence
             ).await?;

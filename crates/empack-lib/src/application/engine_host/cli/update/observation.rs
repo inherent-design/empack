@@ -11,7 +11,7 @@ pub(super) async fn identify(
     session: &dyn Session,
     project: PathBuf,
     identity: ProviderProjectId,
-    members: Vec<(PortableRelPath, FileSlot)>,
+    members: Vec<(PortableRelPath, Option<FileSlot>)>,
     services: &dependencies::AdditionServices,
 ) -> Result<PinSelector> {
     ensure!(
@@ -28,6 +28,26 @@ pub(super) async fn identify(
             ProviderProjectId::Modrinth(_) => ProviderKind::Modrinth,
             ProviderProjectId::CurseForge(_) => ProviderKind::CurseForge,
         };
+        let selected = project.clone();
+        let paths: Vec<_> = members.iter().map(|(path, _)| path.clone()).collect();
+        let capture = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 64 << 20,
+                open_files: 16,
+                ..Default::default()
+            },
+            ResourceRequest::default(),
+            move |cancel| {
+                crate::engine::snapshot::ProjectReadRoot::open(&selected)?.capture(
+                    &paths,
+                    SnapshotLimits::default(),
+                    &cancel,
+                )?;
+                Ok::<_, anyhow::Error>(())
+            },
+        )?;
+        scope.accept(capture.wait().await?)?.transpose()?;
         let mut pin = None;
         let mut bytes = 0u64;
         for (path, slot) in members {
@@ -79,11 +99,11 @@ pub(super) async fn identify(
                 "Observed content belongs to another provider project"
             );
             ensure!(
-                identified
+                slot.as_ref().is_none_or(|slot| identified
                     .matching_files
                     .as_slice()
                     .iter()
-                    .any(|role| role == slot.as_str()),
+                    .any(|role| role == slot.as_str())),
                 "Observed content belongs to another provider file role"
             );
             let selected = &identified.resolution.pin.selection;

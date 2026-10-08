@@ -6,6 +6,7 @@ use empack_core::model::{
     SourceIntent, VersionIntent,
 };
 
+mod initial;
 mod observation;
 
 pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
@@ -42,16 +43,35 @@ pub(super) async fn adopt_with_services(
                 ..Default::default()
             },
             move |cancel| {
-                let snapshot = ProjectReader::new(RecoveryReader::new(state))
-                    .capture_observed_dependencies(
+                let reader = ProjectReader::new(RecoveryReader::new(state));
+                let documents =
+                    reader.capture(&selected, &[], SnapshotLimits::default(), &cancel)?;
+                if documents.prior_lock().is_none() {
+                    let documents = reader.capture_backend_metadata(
                         &selected,
-                        &parsed,
                         SnapshotLimits::default(),
                         &cancel,
                     )?;
+                    ensure!(
+                        documents.prior_lock().is_none(),
+                        "Project lock appeared during adoption discovery"
+                    );
+                    return Ok::<_, anyhow::Error>((
+                        None,
+                        documents.intent().clone(),
+                        documents.backend_files(&cancel)?,
+                    ));
+                }
+                let snapshot = reader.capture_observed_dependencies(
+                    &selected,
+                    &parsed,
+                    SnapshotLimits::default(),
+                    &cancel,
+                )?;
                 let workspace = snapshot;
                 Ok::<_, anyhow::Error>((
-                    workspace.require_resolved()?,
+                    Some(workspace.require_resolved()?),
+                    workspace.intent().clone(),
                     workspace.backend_files(&cancel)?,
                 ))
             },
@@ -59,7 +79,10 @@ pub(super) async fn adopt_with_services(
         scope.accept(worker.wait().await?)?.transpose()
     })
     .await?;
-    let (current, records) = &*captured;
+    let (current, source, records) = &*captured;
+    let Some(current) = current else {
+        return initial::adopt(session, &project, source, records, keys, services).await;
+    };
     let mut inputs = selections(current, &project, keys)?.into_vec();
     for input in &mut inputs {
         if let AddHostInput::File(input) = input {
@@ -130,7 +153,7 @@ pub(super) async fn adopt_with_services(
                         path: placement.destination.relative().clone(),
                     },
                 )?;
-                identify.push((path, file.slot.clone()));
+                identify.push((path, Some(file.slot.clone())));
             }
         }
         if !identify.is_empty() {

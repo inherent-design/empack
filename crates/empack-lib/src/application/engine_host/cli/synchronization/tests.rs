@@ -798,3 +798,132 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
         }
     }
 }
+
+#[tokio::test]
+async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_payloads() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    let key = DependencyKey::parse("settings").unwrap();
+    let url_key = DependencyKey::parse("remote-settings").unwrap();
+    let role = FileSlot::parse("authored-settings").unwrap();
+    let PlacementIntent::Explicit(local_places) = placed("config/settings.toml") else {
+        unreachable!()
+    };
+    let PlacementIntent::Explicit(url_places) = placed("config/remote.toml") else {
+        unreachable!()
+    };
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::LocalFiles(BTreeMap::from([(
+                role.clone(),
+                PortableRelPath::parse("seed/settings.toml", PathSyntax::ProjectContent).unwrap(),
+            )])),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::ByFile(BTreeMap::from([(role.clone(), local_places)])),
+            requirements: required(),
+        },
+    );
+    intent.roots.insert(
+        url_key.clone(),
+        DependencyIntent {
+            source: SourceIntent::Url(
+                NonEmpty::new(vec!["https://example.invalid/settings.toml".into()]).unwrap(),
+            ),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::ByFile(BTreeMap::from([(role.clone(), url_places)])),
+            requirements: required(),
+        },
+    );
+    fs::create_dir_all(root.path().join("project/seed")).unwrap();
+    fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
+    fs::write(root.path().join("project/seed/settings.toml"), b"settings").unwrap();
+    fs::write(
+        root.path().join("project/pack/config/settings.toml"),
+        b"settings",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("project/pack/config/remote.toml"),
+        b"remote",
+    )
+    .unwrap();
+    write_intent(root.path(), &intent);
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    let before = snapshot(root.path());
+    let host = root.path();
+    let adopt = |dry, keys| async move {
+        super::super::update::adopt_with_services(
+            &session(host, dry),
+            keys,
+            services("http://127.0.0.1:9"),
+        )
+        .await
+    };
+    // Selecting a subset cannot establish a coherent first lock.
+    assert!(adopt(false, vec![key.as_str().into()]).await.is_err());
+    assert_eq!(snapshot(root.path()), before);
+    let keys = vec![key.as_str().to_owned(), url_key.as_str().to_owned()];
+    fs::write(root.path().join("project/empack.lock"), b"invalid lock").unwrap();
+    let invalid = snapshot(root.path());
+    assert!(adopt(false, keys.clone()).await.is_err());
+    assert_eq!(snapshot(root.path()), invalid);
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    #[cfg(unix)]
+    {
+        let selected_source = root.path().join("project/seed/settings.toml");
+        let outside = root.path().join("outside.toml");
+        fs::write(&outside, b"settings").unwrap();
+        fs::remove_file(&selected_source).unwrap();
+        std::os::unix::fs::symlink(&outside, &selected_source).unwrap();
+        let linked = snapshot(root.path());
+        assert!(adopt(false, keys.clone()).await.is_err());
+        assert_eq!(snapshot(root.path()), linked);
+        assert_eq!(fs::read(&outside).unwrap(), b"settings");
+        fs::remove_file(&selected_source).unwrap();
+        fs::write(&selected_source, b"settings").unwrap();
+        fs::remove_file(&outside).unwrap();
+    }
+    adopt(true, keys.clone()).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    fs::write(
+        root.path().join("project/pack/config/settings.toml"),
+        b"changed",
+    )
+    .unwrap();
+    let changed = snapshot(root.path());
+    assert!(adopt(false, keys.clone()).await.is_err());
+    assert_eq!(snapshot(root.path()), changed);
+    fs::write(
+        root.path().join("project/pack/config/settings.toml"),
+        b"settings",
+    )
+    .unwrap();
+    adopt(false, keys).await.unwrap();
+    let adopted = project(root.path());
+    assert_eq!(adopted.intent(), &intent);
+    for selected in [&key, &url_key] {
+        assert_eq!(
+            adopted.lock().dependencies[selected].files.as_slice()[0].slot,
+            role
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+        b"settings"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/remote.toml")).unwrap(),
+        b"remote"
+    );
+    let committed = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), committed);
+}
