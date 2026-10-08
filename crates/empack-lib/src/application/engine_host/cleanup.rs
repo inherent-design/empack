@@ -12,6 +12,7 @@ struct Selection {
     continuation: bool,
     import: bool,
     sync: bool,
+    retained: bool,
 }
 impl Selection {
     fn parse(targets: &[String]) -> Result<Self> {
@@ -21,6 +22,7 @@ impl Selection {
             continuation: false,
             import: false,
             sync: false,
+            retained: false,
         };
         for target in targets {
             match target.as_str() {
@@ -29,13 +31,14 @@ impl Selection {
                 "continuation" => value.continuation = true,
                 "import" => value.import = true,
                 "sync" => value.sync = true,
+                "retained" => value.retained = true,
                 "all" => {
                     value.artifacts = true;
                     value.cache = true;
                 }
                 _ => {
                     anyhow::bail!(
-                        "Unknown cleanup target {target:?}; choose builds, cache, continuation, import, sync or all"
+                        "Unknown cleanup target {target:?}; choose builds, cache, continuation, import, sync, retained or all"
                     )
                 }
             }
@@ -168,7 +171,18 @@ async fn clean_selected(
             session.display().status().info(if observed.is_some() { "Discard this project's saved synchronization; retained content remains" } else { "No saved synchronization to discard" });
             observed
         } else { None };
-        apply_cleanup(session, &engine, plans, saved, pending_import, pending_sync).await
+        let retained = if selected.retained {
+            let state = state_root(config, &invocation)?;
+            let plan = scoped(session, governor(config), move |mut scope| async move {
+                crate::engine::retained_cleanup::prepare(&mut scope, state).await
+            }).await?;
+            if let Some(plan) = &plan {
+                for category in plan.preserved() { session.display().status().info(&format!("Preserve {category}: saved records still exist")); }
+                for (category, objects, bytes) in plan.selected()? { session.display().status().info(&format!("Reclaim {category}: {objects} objects, up to {bytes} bytes")); }
+            }
+            plan.filter(|plan| !plan.is_empty())
+        } else { None };
+        apply_cleanup(session, &engine, plans, saved, pending_import, pending_sync, retained).await
     }
     .await;
     engine.shutdown().await;
@@ -181,8 +195,14 @@ async fn apply_cleanup(
     saved: Option<SavedBuildRecord>,
     pending_import: Option<crate::engine::import::PendingImportCleanup>,
     pending_sync: Option<crate::engine::synchronization::suspension::PendingSyncCleanup>,
+    retained: Option<crate::engine::retained_cleanup::RetainedCleanupPlan>,
 ) -> Result<()> {
-    if plans.is_empty() && saved.is_none() && pending_import.is_none() && pending_sync.is_none() {
+    if plans.is_empty()
+        && saved.is_none()
+        && pending_import.is_none()
+        && pending_sync.is_none()
+        && retained.is_none()
+    {
         session
             .display()
             .status()
@@ -193,6 +213,7 @@ async fn apply_cleanup(
         + usize::from(saved.is_some())
         + usize::from(pending_import.is_some())
         + usize::from(pending_sync.is_some())
+        + usize::from(retained.is_some())
         > 1
     {
         session.display().status().info("Selected cleanup scopes are separate operations; completed work is retained if a later operation fails");
@@ -287,7 +308,31 @@ async fn apply_cleanup(
             .display()
             .status()
             .complete("Discarded saved synchronization");
+        completed.push("Saved synchronization cleanup");
     }
+    if let Some(plan) = retained {
+        let reclaimed = scoped(
+            session,
+            governor(session.config().app_config()),
+            move |mut scope| async move {
+                crate::engine::retained_cleanup::execute(&mut scope, plan).await
+            },
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Retained-input cleanup failed; earlier completed scopes: {}",
+                completed.join(", ")
+            )
+        })?;
+        for (category, bytes) in reclaimed {
+            session
+                .display()
+                .status()
+                .complete(&format!("Reclaimed {bytes} bytes from {category}"));
+        }
+    }
+
     Ok(())
 }
 fn describe_receipt(receipt: &ExecutionReceipt) -> Result<String> {

@@ -413,7 +413,7 @@ pub enum Commands {
     Clean {
         /// What to clean
         #[arg(
-            help = "What to clean: builds, cache, continuation, import, sync, all (builds and cache)"
+            help = "What to clean: builds, cache, continuation, import, sync, retained, all (builds and cache)"
         )]
         targets: Vec<String>,
     },

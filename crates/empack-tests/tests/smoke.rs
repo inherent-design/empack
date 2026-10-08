@@ -724,6 +724,16 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
+    let retained = snapshot(&project);
+    command(&project)
+        .args(["clean", "retained", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(
+        snapshot(&project),
+        retained,
+        "pending inputs must survive cleanup"
+    );
     fs::remove_file(project.dir().join("first.jar")).unwrap();
     fs::write(project.dir().join("second.jar"), b"second").unwrap();
     command(&project)
@@ -749,6 +759,26 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
         command(&project).args(["sync", "--yes"]).assert().success();
     }
     assert_eq!(project_snapshot(&project), complete);
+    let before_cleanup = snapshot(&project);
+    command(&project)
+        .args(["clean", "retained", "--dry-run", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), before_cleanup);
+    command(&project)
+        .args(["clean", "retained", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(project_snapshot(&project), complete);
+    assert!(
+        !fs::read_dir(project.dir().join(".host-state/pending-sync-content"))
+            .unwrap()
+            .any(|entry| entry
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|ext| ext == "blob"))
+    );
 
     // A stale record is inspected without mutation and removed only by explicit cleanup.
     let pending_dir = project.dir().join(".host-state/pending-sync");

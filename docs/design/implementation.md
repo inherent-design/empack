@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds, independent batches and remaining acquisition/cleanup integration
+new route, not full feature completion: provider-owned worlds, independent batches and remaining resolution decisions
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -35,7 +35,7 @@ a passing review and line coverage do not change that state by themselves.
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Native `sync --continue` and `clean sync` are wired; broaden runtime, search and multi-file placement matrices |
 | Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Broaden live target/runtime and platform desktop matrix; execution-time missing inputs retain resumable state |
-| Clean | **CLI wired:** scoped artifact/cache cleanup | Reclaim orphaned continuation payloads; explicit stale/invalid build, import and sync record cleanup is wired |
+| Clean | **CLI wired:** scoped artifact/cache/retained-input cleanup | Explicit stale/invalid build, import and sync record cleanup; empty record categories permit bounded retained-payload reclamation |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
 | Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
 
@@ -135,7 +135,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions remain open; manual-input continuation retains exact selections and verified bytes; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
 | Implemented | Acquisition cache integration | Build/sync/runtime and add/import consumers use verified lookup; approved mutations populate the cache; restricted inputs reuse exact asserted bytes |
-| Cutover | Orphaned continuation payload reclamation | Reclaim unused blobs in `pending-content`, `pending-import-content` and `pending-sync-content` without invalidating saved records, active leases or recovery journals |
+| Implemented | Retained-input reclamation | `clean retained` reclaims empty record categories under save/cleanup coordination; saved and unknown records, active private leases and recovery journals remain protected |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
@@ -185,7 +185,7 @@ remain enforced. Final same-head executable/live acceptance remains open.
 | --- | --- |
 | Selected cache root / `content-v1` | The only active disposable cache; `clean cache` plans verified blobs, digest hints and abandoned candidates under store coordination |
 | Host state / `pending-builds`, `pending-imports`, `pending-sync` | Durable operation records; explicit `clean continuation`, `clean import`, `clean sync`; `clean all` preserves them |
-| Host state / `pending-content`, `pending-import-content`, `pending-sync-content` | Retained verified inputs; record cleanup preserves their bytes; orphan reclamation is the remaining storage task |
+| Host state / `pending-content`, `pending-import-content`, `pending-sync-content` | Retained verified inputs; `clean retained` reclaims a category only when it has no saved records; unknown records preserve the category |
 | Publication journal and preimages | Recovery authority; excluded from disposable-cache cleanup |
 | Operation scratch and staging | Owned temporary lifetimes; no persistent path is selected for recursive cleanup |
 
@@ -193,6 +193,12 @@ Unused v0.4 bin/JAR/version/HTTP/packwiz cache-path APIs and their exclusive tes
 removed. They had no runtime callers. Installer JARs remain supported through verified
 native acquisition and the shared content cache; distribution packwiz metadata remains
 part of the build formats.
+
+Retained-input cleanup: 48 affected cleanup/suspension tests, the rebuilt executable
+manual-sync lifecycle test and all-target/all-feature Clippy passed. Tests exercise
+preview preservation, pending and unknown records, active save exclusion, record and
+blob changes after preparation, active private leases and unrelated recovery data.
+This is targeted evidence after `e24dfc4`, not a new combined release-validation run.
 
 ## Historical verification evidence
 

@@ -113,6 +113,14 @@ impl FileContentLookup {
     }
 }
 impl FileContentStore {
+    /// Enclosing admitted workers may retain a broader host-state guard through native eviction.
+    pub(in crate::engine) fn evict_captured(
+        &self,
+        plan: CacheCleanupPlan,
+        cancel: &Cancellation,
+    ) -> Result<CacheCleanupReceipt> {
+        self.0.evict(plan, cancel)
+    }
     /// The writer must own the inspected store. Active content leases are independent verified
     /// copies; eviction cannot invalidate them. New objects outside the plan remain untouched.
     pub async fn evict(
@@ -128,7 +136,7 @@ impl FileContentStore {
                 ..Default::default()
             },
             ResourceRequest::default(),
-            move |cancel| store.0.evict(plan, &cancel),
+            move |cancel| store.evict_captured(plan, &cancel),
         )?;
         // Once deletion starts, cancellation must not discard a receipt of completed effects.
         Ok(scope

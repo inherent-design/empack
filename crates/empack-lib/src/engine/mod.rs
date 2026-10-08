@@ -25,6 +25,7 @@ pub mod providers;
 pub mod publication;
 pub mod removal;
 pub mod resources;
+pub mod retained_cleanup;
 pub mod runtime;
 pub mod runtime_catalog;
 pub mod server_runtime;

@@ -314,6 +314,7 @@ pub async fn save_pending_import(
         strong: policy == SourceEvidencePolicy::StrongSourceRequired,
         files,
     };
+    let save_guard = crate::engine::retained_cleanup::begin_save(scope, state.clone()).await?;
     let selected = state.clone();
     let work = scope.spawn_blocking(
         ResourceRequest {
@@ -339,6 +340,7 @@ pub async fn save_pending_import(
         content_store.publish_verified(scope, content).await?;
     }
     let work = scope.spawn_blocking(resources(), ResourceRequest::default(), move |cancel| {
+        let _save_guard = save_guard;
         store::save(&state, &target, &record, prior.as_ref(), &cancel)
     })?;
     Ok(scope

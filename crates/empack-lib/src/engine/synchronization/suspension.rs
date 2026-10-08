@@ -354,6 +354,7 @@ pub async fn save_pending_sync(
         },
     )?;
     let record = scope.accept(record.wait().await?)?.transpose()?;
+    let save_guard = crate::engine::retained_cleanup::begin_save(scope, state.clone()).await?;
     let selected_state = state.clone();
     let work = scope.spawn_blocking(
         resources(1 << 20),
@@ -381,6 +382,7 @@ pub async fn save_pending_sync(
         resources(memory),
         ResourceRequest::default(),
         move |cancel| {
+            let _save_guard = save_guard;
             store::save(
                 &state,
                 Kind::Synchronization,

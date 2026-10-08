@@ -984,7 +984,7 @@ archive/file content lives outside the disposable cache and survives record clea
 
 ### Native cleanup host
 
-`application::engine_host::clean` accepts `builds`, `cache`, `continuation`, `import`, `sync` and `all`; omission selects
+`application::engine_host::clean` accepts `builds`, `cache`, `continuation`, `import`, `sync`, `retained` and `all`; omission selects
 artifacts. It validates every target and prepares all selected scopes before one approval.
 Artifacts use native publication without needing valid intent/lock documents. The content
 cache lives under the selected cache root's `content-v1` directory. Opening an absent cache
@@ -996,6 +996,17 @@ if cache eviction fails after artifact publication, the error identifies the com
 artifact scope and retains the cache receipt's partial result. The scopes cannot overlap.
 Unknown neighbors and unselected storage remain untouched. The ordinary CLI dispatches
 to this host for artifact, content-store and saved-recipe cleanup.
+
+`clean retained` prepares native store cleanup plans for build, import and sync inputs.
+A category with any saved or unknown record is preserved in full. This is conservative
+category reclamation, not per-record reachability collection. Execution takes exclusive
+continuation-storage coordination and rechecks every selected category before deletion.
+Saves hold shared coordination from payload insertion through durable record publication;
+the publisher worker retains the guard if its caller stops observing. Changed captured
+objects fail cleanup, unrelated neighbors and recovery journals are excluded, and active
+private content leases remain readable. Preview creates no state directories or locks.
+`all` does not select this scope. After discarding a record, prepare a new `clean retained`
+request to reclaim its now-unreferenced category.
 
 
 `clean continuation` explicitly discards only the selected project's saved build recipe.

@@ -374,6 +374,8 @@ async fn suspend(
         recipe: record::Recipe::from(&build.request),
         files: vec![],
     };
+    let save_guard =
+        crate::engine::retained_cleanup::begin_save(scope, config.state_root.clone()).await?;
     let state = config.state_root.clone();
     let work = scope.spawn_blocking(
         record_resources(0)?,
@@ -417,6 +419,7 @@ async fn suspend(
         record_resources(0)?,
         ResourceRequest::default(),
         move |cancel| {
+            let _save_guard = save_guard;
             store::save(
                 &config.state_root,
                 &build.workspace,

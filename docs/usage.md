@@ -159,12 +159,18 @@ replaced project directory. `sync --continue --dry-run` leaves the saved record 
 Use `clean sync --dry-run` to inspect abandonment, then `clean sync --yes` to discard the
 selected record, including stale or invalid records. Ordinary `clean all` retains it.
 
+After completing or discarding saved operations, `clean retained --dry-run` previews
+reclaiming their stored inputs; repeat with `--yes` to apply. A category with any remaining
+build, import or sync record is preserved in full. Cleanup leaves active private content
+leases, unrelated files and publication recovery data intact. Discard records first,
+then make a separate retained-input cleanup request.
+
 The materialization preview performs no remote payload downloads. It reports
 acquisition obligations alongside the recorded synchronization plan; it does not
 claim those bytes have verified. Ordinary `sync` after materialization retains the
 installed bytes and does not refresh their versions. Explicit materialization
-currently reacquires remote references; persistent content-store reuse is a
-separate implementation step.
+checks verified cached content against the original assertions before acquiring missing
+remote bytes.
 
 ## Exit status
 
