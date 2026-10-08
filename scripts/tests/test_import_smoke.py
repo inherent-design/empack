@@ -56,6 +56,17 @@ class NativeSmokeContracts(unittest.TestCase):
                 command.assert_called_once()
                 download.assert_not_called()
 
+    def test_fixture_world_choice_is_passed_explicitly_to_import(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            layout = smoke.RuntimeLayout(base, base / "packs", base / "projects", base / "cache", base / "report.json")
+            with patch.object(smoke, "run_empack_command", return_value=smoke.CommandResult(success=True)) as command:
+                result, continued = smoke.run_curated_import(base / "empack", base / "source.zip", base / "project", layout, "worlds", False, "saves")
+                self.assertTrue(result["success"])
+                self.assertFalse(continued)
+                args = command.call_args.args[1]
+                self.assertEqual(args[args.index("--world-folder") + 1], "saves")
+
     def test_native_build_failure_is_reported_without_retry_or_legacy_fallback(self):
         with tempfile.TemporaryDirectory() as root:
             base = Path(root)

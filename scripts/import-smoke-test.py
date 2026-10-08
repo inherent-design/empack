@@ -253,6 +253,7 @@ class CuratedPack:
     project_id: str
     slug: str
     expect_restricted_continue: bool = False
+    world_folder: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -334,6 +335,7 @@ CURATED_GOLDEN_PACKS = [
         loader="quilt",
         project_id="982068",
         slug="boosted-fps-quilt",
+        world_folder="saves",
     ),
     CuratedPack(
         name="Wither Storm Enhanced",
@@ -1164,9 +1166,13 @@ def pending_import_associations(output: str) -> list[tuple[str, int, int]]:
 
 
 def run_curated_import(empack_bin: Path, archive: Path, project: Path,
-                       layout: RuntimeLayout, label: str, announce: bool) -> tuple[dict, bool]:
+                       layout: RuntimeLayout, label: str, announce: bool,
+                       world_folder: Optional[str] = None) -> tuple[dict, bool]:
+    choices = [*IMPORT_CHOICES]
+    if world_folder is not None:
+        choices.extend(["--world-folder", world_folder])
     initial = run_empack_command(
-        empack_bin, ["init", "--from", str(archive), "--yes", *IMPORT_CHOICES, str(project)],
+        empack_bin, ["init", "--from", str(archive), "--yes", *choices, str(project)],
         layout, timeout=600, label=f"{label}:init", prefer_pty=announce,
     )
     result = {"success": initial.success, "exit_code": initial.exit_code,
@@ -1202,7 +1208,7 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
     before = {p.name: p.read_bytes() for p in records.glob("*.json")}
     if len(before) != 1:
         raise RuntimeError("expected one isolated native import record")
-    args = ["init", "--continue", "--yes", *IMPORT_CHOICES, *associations, str(project)]
+    args = ["init", "--continue", "--yes", *choices, *associations, str(project)]
     preview = run_empack_command(empack_bin, [*args, "--dry-run"], layout, timeout=600,
                                  label=f"{label}:preview", prefer_pty=announce)
     after = {p.name: p.read_bytes() for p in records.glob("*.json")}
@@ -1243,6 +1249,8 @@ def run_curated_build(pack: CuratedPack, project_dir: Path, empack_bin: Path,
         with zipfile.ZipFile(artifact) as archive:
             if archive.testzip() is not None or not any(name.startswith(".minecraft/mods/") and name.endswith(".jar") for name in archive.namelist()):
                 raise RuntimeError("client archive is corrupt or lacks mod payloads")
+            if pack.world_folder and not any(name.startswith(f".minecraft/{pack.world_folder}/") and name.endswith("/level.dat") for name in archive.namelist()):
+                raise RuntimeError("client archive lacks interpreted provider world members")
         if any((project_dir / name).read_bytes() != value for name, value in documents.items()):
             raise RuntimeError("build changed imported intent or exact selections")
         result.artifact_path = str(artifact)
@@ -1299,7 +1307,7 @@ def run_single_curated_pack(
         verify_curated_download(pack, Path(candidate.local_path))
 
         import_result, did_continue = run_curated_import(
-            empack_bin, Path(candidate.local_path), project_dir, layout, label, announce,
+            empack_bin, Path(candidate.local_path), project_dir, layout, label, announce, pack.world_folder,
         )
         entry["import_result"] = import_result
         if not import_result["success"]:

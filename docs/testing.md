@@ -126,7 +126,7 @@ file assertion with the project-qualified lookup. The three compatible-version p
 remain separate checks within the `smoke:providers` suite. A seventh case expands
 Reese's Sodium Options, requires the Sodium edge to remain present and verifies every
 selected file against its original size/digests. This covers live closure evidence and
-acquisition, not yet add/sync command composition.
+acquisition. Native command-composition tests separately cover add and repeated sync.
 
 
 Run normalized import acquisition, candidate assembly and temporary-project publication with
@@ -147,7 +147,8 @@ against its original assertions. It explicitly excludes only the known generated
 CurseForge `modlist.html` report and records that decision. Unknown auxiliary members
 still fail. Deterministic tests cover forced replacement from a malformed manifest,
 unrelated-file preservation, publication conflicts, cancellation and layered re-export.
-These checks do not yet establish Engine import approval or CLI parity.
+These adapter checks are supplemented by engine approval tests and native executable
+import/continuation/sync/build tests; adapter success alone does not establish CLI parity.
 
 
 ### Coverage profile collection

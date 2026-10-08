@@ -1222,8 +1222,11 @@ deletion. Missing-lock synchronization cannot claim existing untracked files.
 `add --download-as-local` explicitly chooses local ownership for a direct HTTPS input.
 It is required for remote world interpretation and rejected for local or provider-owned
 inputs. Verified archive bytes are interpreted before publication; transient download
-locators do not enter durable documents. Provider-owned worlds require a separate
-member representation and are currently refused before an opaque ZIP can be published.
+locators do not enter durable documents. Provider-owned worlds instead retain the
+exact provider archive and its original assertions alongside interpreted member
+observations. Add, import, update, adoption and sync use that representation; builds
+verify archive membership before using those members. An opaque ZIP is never installed
+as a world.
 
 ### Adoption of tracked URL content
 

@@ -380,7 +380,17 @@ fn decisions(
                         ContentKind::ShaderPack => Some("shaderpacks"),
                         _ => None,
                     })
-                    .context("Imported provider content needs an explicit destination folder")?;
+                    .with_context(|| {
+                        let choice = match kind {
+                            ContentKind::World => "use --world-folder PATH",
+                            ContentKind::DataPack => "use --datapack-folder PATH",
+                            _ => "this content kind has no supported import folder",
+                        };
+                        format!(
+                            "Imported {kind:?} project {} needs a destination: {choice}",
+                            record.project.slug.as_str()
+                        )
+                    })?;
                 let namespace = match pin.project {
                     empack_core::identity::ProviderProjectId::Modrinth(_) => "modrinth",
                     empack_core::identity::ProviderProjectId::CurseForge(_) => "curseforge",
@@ -864,6 +874,9 @@ mod tests {
             }
             if mode != "publish" {
                 assert!(result.is_err(), "{mode}");
+                if mode == "missing-folder" {
+                    assert!(format!("{:#}", result.unwrap_err()).contains("--world-folder"));
+                }
                 assert_eq!(snapshot(root.path()), before);
                 continue;
             }
