@@ -34,7 +34,7 @@ a passing review and line coverage do not change that state by themselves.
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local files:** verified document-only acceptance of changed bytes | Provider/URL observation selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
-| Sync | **CLI wired:** recorded exact selections | Fresh resolution for changed intent; optional remote materialization |
+| Sync | **CLI wired:** recorded selections and fresh resolution for missing/unsatisfied roots | Optional remote materialization; broaden runtime, search and multi-file placement matrices |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance, execution-time missing-input retention, live target/runtime matrix |
 | Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores and explicit stale/invalid-record cleanup |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
@@ -119,7 +119,7 @@ re-export. Restricted-import continuation remains open.
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
 | Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
-| Cutover | Fresh sync and optional materialization | Changed intent resolves correctly; ordinary sync retains exact selections; repeated sync is a no-op |
+| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution is wired; optional materialization, multi-file decisions and changed layout/compatibility-policy semantics need further coverage |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
@@ -150,6 +150,7 @@ modules remains open.
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
 | `f30e6e1` combined candidate | 1,677 default tests and eleven doctests passed; no inherited-pipe warnings | Strict E2E baseline: 25 passed, 50 failed; failures include stale v0.4 fixtures and known workflow gaps |
+| Fresh synchronization frontend | 64 affected resolver/sync/CLI/smoke cases passed, including 16 offline executable smoke tests | Missing locks, exact pin changes, retained assertions, source confinement, preview and failed-batch preservation; remote materialization remains open |
 | Native initialization scaffolding | 40 affected initialization/layout/replacement/publication cases and nine executable initialization cases passed | Includes user-file preservation, changed-source rejection, symlink confinement and live runtime discovery; all-feature Clippy passed |
 | Native exit/cancellation rewrite | 36 affected document/host/exit cases passed, including ten executable contracts | Native proxy cancellation returns 130; malformed documents and missing unattended approval return 2 |
 | Native live fixture rewrite | 17 fixture/runtime/build/clean cases passed against current intent and lock documents | Includes live Fabric, Forge, Quilt and NeoForge discovery; remaining E2E families still need conversion |

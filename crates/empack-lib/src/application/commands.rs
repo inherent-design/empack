@@ -3,10 +3,7 @@ use super::engine_host;
 use crate::Result;
 use crate::application::session::{CommandSession, Session};
 use crate::application::{CliConfig, Commands};
-use crate::engine::{
-    api::{RemovalSelector, RemoveRequest, SyncRequest},
-    content::SourceEvidencePolicy,
-};
+use crate::engine::api::{RemovalSelector, RemoveRequest};
 use empack_core::{
     model::NonEmpty,
     removal::{RemovalEvidencePolicy, RemovalMode},
@@ -113,16 +110,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
         }
         Commands::Build(args) => engine_host::cli::build(session, &args).await,
         Commands::Clean { targets } => engine_host::clean(session, &targets).await,
-        Commands::Sync {} => {
-            engine_host::synchronize(
-                session,
-                SyncRequest::Recorded {
-                    resolution: None,
-                    evidence: SourceEvidencePolicy::Compatibility,
-                },
-            )
-            .await
-        }
+        Commands::Sync {} => engine_host::cli::synchronize(session).await,
     }
 }
 async fn handle_requirements(session: &dyn Session) -> Result<()> {

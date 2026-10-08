@@ -19,6 +19,8 @@ pub enum ProviderFiles {
     /// Use the provider's primary role, including its documented first-file fallback.
     #[default]
     Primary,
+    /// Keep the primary file identity while assigning explicit destinations, including renames.
+    PrimaryPlaced(NonEmpty<Placement>),
     /// Include every declared file only when the caller explicitly requests that representation.
     All,
     Named(BTreeSet<String>),
@@ -397,7 +399,7 @@ fn normalize(
             "Companion provider files require explicit per-file placement and participation"
         );
         let files: Vec<_> = match policy {
-            ProviderFiles::Primary => vec![
+            ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => vec![
                 declared
                     .iter()
                     .find(|file| file.primary)
@@ -444,6 +446,8 @@ fn normalize(
                 let slot = FileSlot::parse(&file.filename)?;
                 let placements = if let ProviderFiles::Placed(placements) = policy {
                     placements[&file.filename].clone()
+                } else if let ProviderFiles::PrimaryPlaced(placements) = policy {
+                    placements.clone()
                 } else {
                     NonEmpty::new(vec![Placement {
                         destination: InstallDestination::parse(&format!(

@@ -5,6 +5,41 @@ use alloc::{
     vec::Vec,
 };
 
+/// A still-compatible exact runtime is retained even when intent omits its loader pin.
+pub fn runtime_satisfies(intent: &RuntimeIntent, selected: &RuntimeResolution) -> bool {
+    selected.minecraft == intent.minecraft
+        && selected.loader == intent.loader
+        && intent
+            .loader_version
+            .as_ref()
+            .is_none_or(|version| selected.loader_version.as_ref() == Some(version))
+}
+
+/// Find the authoring roots that need resolution, without acquiring or changing anything.
+/// Callers normalize prior aliases before using this set to construct resolver requests.
+pub fn affected_roots(
+    intent: &ProjectIntent,
+    prior: &ResolutionLock,
+    revision: SemanticRevision,
+) -> BTreeSet<DependencyKey> {
+    let runtime_changed = !runtime_satisfies(&intent.runtime, &prior.runtime);
+    intent
+        .roots
+        .iter()
+        .filter_map(|(key, root)| {
+            let search_changed = matches!(root.source, SourceIntent::Search { .. })
+                && prior.intent_revision != revision;
+            (runtime_changed
+                || search_changed
+                || prior
+                    .dependencies
+                    .get(key)
+                    .is_none_or(|selected| root.validate_selection(key, selected).is_err()))
+            .then_some(key.clone())
+        })
+        .collect()
+}
+
 /// Rebind an explicit provider label to its unique existing identity without changing its
 /// selection or losing graph edges. A still-explicit old label or occupied new key is not renamed.
 pub fn rebind_prior_aliases(
@@ -68,32 +103,13 @@ impl SynchronizationResolution {
                 "Synchronization resolution changes authoring intent".into(),
             ));
         }
-        let runtime_changed = prior.runtime.minecraft != intent.runtime.minecraft
-            || prior.runtime.loader != intent.runtime.loader
-            || (intent.runtime.loader_version.is_some()
-                && prior.runtime.loader_version != intent.runtime.loader_version);
+        let runtime_changed = !runtime_satisfies(&intent.runtime, &prior.runtime);
         if !runtime_changed && proposed.lock().runtime != prior.runtime {
             return Err(ModelError(
                 "Synchronization cannot upgrade a valid locked runtime".into(),
             ));
         }
-        let affected_roots: BTreeSet<_> = intent
-            .roots
-            .iter()
-            .filter_map(|(key, root)| {
-                // Search is unresolved authoring intent. Without a per-query lock declaration, a
-                // changed document cannot establish that its previous search selection still fits.
-                let search_changed = matches!(root.source, SourceIntent::Search { .. })
-                    && prior.intent_revision != proposed.lock().intent_revision;
-                (runtime_changed
-                    || search_changed
-                    || prior
-                        .dependencies
-                        .get(key)
-                        .is_none_or(|selected| root.validate_selection(key, selected).is_err()))
-                .then_some(key.clone())
-            })
-            .collect();
+        let affected_roots = affected_roots(intent, prior, proposed.lock().intent_revision);
         let mut allowed = BTreeSet::new();
         let mut pending: Vec<_> = affected_roots.iter().cloned().collect();
         while let Some(key) = pending.pop() {
@@ -123,6 +139,34 @@ impl SynchronizationResolution {
                     return Err(ModelError("Synchronization changes a valid retained selection; request an explicit update".into()));
                 }
             } else if previous != next {
+                if previous.selected.is_some() && previous.selected == next.selected {
+                    for old in previous.files.as_slice() {
+                        if let Some(new) = next
+                            .files
+                            .as_slice()
+                            .iter()
+                            .find(|file| file.slot == old.slot)
+                        {
+                            let retained = old.expected.digests.as_ref().is_none_or(|digests| {
+                                new.expected.digests.as_ref().is_some_and(|next| {
+                                    digests
+                                        .values()
+                                        .iter()
+                                        .all(|digest| next.values().contains(digest))
+                                })
+                            }) && old
+                                .expected
+                                .size
+                                .is_none_or(|size| new.expected.size == Some(size))
+                                && old.expected.accepted_observation.as_ref().is_none_or(|id| {
+                                    new.expected.accepted_observation.as_ref() == Some(id)
+                                });
+                            if !retained {
+                                return Err(ModelError("Synchronization cannot replace original assertions for an unchanged provider file".into()));
+                            }
+                        }
+                    }
+                }
                 changed.insert(key.clone());
                 if previous.selected != next.selected
                     && prior.required_edges.iter().any(|(dependent, edges)| {

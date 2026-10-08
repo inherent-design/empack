@@ -25,8 +25,10 @@ use std::{collections::BTreeSet, sync::Arc};
 
 mod files;
 mod import;
+mod synchronization;
 mod update;
 pub use import::initialize;
+pub use synchronization::synchronize;
 pub use update::{adopt, update};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.
@@ -244,10 +246,6 @@ async fn search(
     selected_kind: Option<ContentKind>,
     preferred: Option<ProviderKind>,
 ) -> Result<(ProjectSelector, ContentKind)> {
-    ensure!(
-        !session.config().app_config().yes && session.interactive().can_choose(),
-        "Search requires a deliberate choice; supply a project URL or --platform with a slug/ID in headless mode"
-    );
     let mut providers = vec![ProviderKind::Modrinth];
     if catalog.availability().curseforge {
         providers.push(ProviderKind::CurseForge);
@@ -255,6 +253,24 @@ async fn search(
     if let Some(provider) = preferred {
         providers = vec![provider];
     }
+    search_providers(session, catalog, current, text, selected_kind, providers).await
+}
+async fn search_providers(
+    session: &dyn Session,
+    catalog: &ProviderCatalog,
+    current: &ResolvedProject,
+    text: &str,
+    selected_kind: Option<ContentKind>,
+    providers: Vec<ProviderKind>,
+) -> Result<(ProjectSelector, ContentKind)> {
+    ensure!(
+        !session.config().app_config().yes && session.interactive().can_choose(),
+        "Search requires a deliberate choice; supply a project URL or --platform with a slug/ID in headless mode"
+    );
+    ensure!(
+        !providers.contains(&ProviderKind::CurseForge) || catalog.availability().curseforge,
+        "Requested CurseForge search requires credentials"
+    );
     let kinds = selected_kind.map_or_else(
         || {
             vec![

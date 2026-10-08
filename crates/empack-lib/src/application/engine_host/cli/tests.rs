@@ -4,7 +4,7 @@ use crate::{
         InitArgs,
         session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
     },
-    engine::{api::SyncRequest, documents::DocumentCodec},
+    engine::documents::DocumentCodec,
 };
 use serde_json::json;
 use sha2::{Digest, Sha512};
@@ -22,7 +22,7 @@ pub(super) fn session(root: &Path, dry: bool) -> MockCommandSession {
             ..Default::default()
         }))
 }
-async fn fixture(root: &Path) {
+pub(super) async fn fixture(root: &Path) {
     fs::create_dir(root.join("project")).unwrap();
     initialize(
         &session(root, false),
@@ -186,15 +186,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         );
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
-            synchronize(
-                &session(root.path(), false),
-                SyncRequest::Recorded {
-                    resolution: None,
-                    evidence: SourceEvidencePolicy::Compatibility,
-                },
-            )
-            .await
-            .unwrap();
+            synchronize(&session(root.path(), false)).await.unwrap();
         }
         assert_eq!(
             super::super::tests::snapshot(&root.path().join("project")),
@@ -379,15 +371,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
         ));
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
-            synchronize(
-                &session(root.path(), false),
-                SyncRequest::Recorded {
-                    resolution: None,
-                    evidence: SourceEvidencePolicy::Compatibility,
-                },
-            )
-            .await
-            .unwrap();
+            synchronize(&session(root.path(), false)).await.unwrap();
         }
         assert_eq!(
             super::super::tests::snapshot(&root.path().join("project")),

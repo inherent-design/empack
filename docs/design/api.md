@@ -1029,3 +1029,22 @@ The generated workflows install the tagged `v0.5.0-alpha.1` source and run
 repository permissions; tagged releases publish the verified archive. These defaults
 require that empack release tag to exist and remain editable project files. They do not
 run packwiz, infer a version update or repair a stale project implicitly.
+
+### CLI resolution for synchronization
+
+`sync` first checks whether current intent can bind to recorded selections. A valid
+lock takes the recorded restoration path without provider discovery. Missing locks
+and unsatisfied roots use bounded provider/direct-file resolution before the same
+native synchronization planner. Search intent still requires an explicit selection.
+No project file changes during discovery or preview.
+
+Fresh resolution preserves authored YAML and validates the complete proposed lock
+against retained installations. Placement-only provider edits retain the exact pin
+and original content assertions; conflicting refreshed assertions fail. An explicit
+pin or source edit can request new content. Unrequested local-byte drift still needs
+adoption or an authored content pin. Local authoring sources retain their declared
+project-relative paths, independently of installation destinations.
+
+The CLI currently records remote references and materializes local/member sources.
+It does not yet expose optional remote materialization. World/member choices and
+ambiguous companion placements remain explicit implementation gates.

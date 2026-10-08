@@ -46,6 +46,87 @@ fn initialized() -> TestProject {
         .success();
     project
 }
+
+#[test]
+fn smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches() {
+    use empack_core::{model::*, path::*, requirements::*};
+    use empack_lib::engine::documents::DocumentCodec;
+    for missing_lock in [false, true] {
+        let project = initialized();
+        let intent_path = project.dir().join("empack.yml");
+        let mut intent = DocumentCodec
+            .decode_intent(&fs::read(&intent_path).unwrap(), "fixture")
+            .unwrap()
+            .intent()
+            .clone();
+        let dependency = DependencyIntent {
+            source: SourceIntent::Local(
+                PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
+            ),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::Explicit(
+                NonEmpty::new(vec![Placement {
+                    destination: InstallDestination::parse("config/settings.toml").unwrap(),
+                    layer: ContentLayer::Common,
+                    requirements: Requirements {
+                        client: Requirement::Required,
+                        server: Requirement::Required,
+                    },
+                }])
+                .unwrap(),
+            ),
+            requirements: Requirements {
+                client: Requirement::Required,
+                server: Requirement::Required,
+            },
+        };
+        intent.roots.insert(
+            DependencyKey::parse("settings").unwrap(),
+            dependency.clone(),
+        );
+        fs::write(project.dir().join("settings.toml"), b"enabled = true").unwrap();
+        fs::write(&intent_path, DocumentCodec.encode_intent(&intent).unwrap()).unwrap();
+        if missing_lock {
+            fs::remove_file(project.dir().join("empack.lock")).unwrap();
+        }
+        let before = snapshot(&project);
+        command(&project)
+            .args(["sync", "--yes", "--dry-run"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(&project), before);
+        command(&project).args(["sync", "--yes"]).assert().success();
+        assert_eq!(
+            fs::read(project.dir().join("pack/config/settings.toml")).unwrap(),
+            b"enabled = true"
+        );
+        let before = project_snapshot(&project);
+        for _ in 0..2 {
+            command(&project).args(["sync", "--yes"]).assert().success();
+        }
+        assert_eq!(project_snapshot(&project), before);
+        let mut missing = dependency;
+        missing.source = SourceIntent::Local(
+            PortableRelPath::parse("missing.toml", PathSyntax::ProjectContent).unwrap(),
+        );
+        missing.placement = PlacementIntent::Explicit(
+            NonEmpty::new(vec![Placement {
+                destination: InstallDestination::parse("config/missing.toml").unwrap(),
+                layer: ContentLayer::Common,
+                requirements: missing.requirements.clone(),
+            }])
+            .unwrap(),
+        );
+        intent
+            .roots
+            .insert(DependencyKey::parse("missing").unwrap(), missing);
+        fs::write(intent_path, DocumentCodec.encode_intent(&intent).unwrap()).unwrap();
+        let before = snapshot(&project);
+        command(&project).args(["sync", "--yes"]).assert().failure();
+        assert_eq!(snapshot(&project), before);
+    }
+}
 fn snapshot(project: &TestProject) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(root: &Path, at: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(at).unwrap() {

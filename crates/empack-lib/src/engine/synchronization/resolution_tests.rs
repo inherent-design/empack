@@ -4,6 +4,47 @@ use empack_core::{identity::*, model::*, synchronization::SynchronizationResolut
 fn key(value: &str) -> DependencyKey {
     DependencyKey::parse(value).unwrap()
 }
+
+#[test]
+fn a_placement_change_cannot_replace_original_assertions_for_the_same_provider_file() {
+    use empack_core::digest::{DigestSet, ExpectedDigest};
+    let current = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
+    let mut intent = current.intent().clone();
+    let mut placements = current.lock().dependencies[&key("root")].files.as_slice()[0]
+        .placements
+        .clone()
+        .into_vec();
+    placements[0].destination =
+        empack_core::path::InstallDestination::parse("mods/renamed.jar").unwrap();
+    let placements = NonEmpty::new(placements).unwrap();
+    let mut lock = current.lock().clone();
+    let mut files = lock.dependencies[&key("root")].files.clone().into_vec();
+    files[0].placements = placements;
+    intent.roots.get_mut(&key("root")).unwrap().placement = PlacementIntent::Explicit(
+        NonEmpty::new(
+            files
+                .iter()
+                .flat_map(|file| file.placements.as_slice().iter().cloned())
+                .collect(),
+        )
+        .unwrap(),
+    );
+    lock.dependencies.get_mut(&key("root")).unwrap().files = NonEmpty::new(files.clone()).unwrap();
+    assert!(
+        SynchronizationResolution::prepare(&intent, current.lock(), &resolve(&intent, &lock))
+            .is_ok()
+    );
+    files[0].expected.digests =
+        Some(DigestSet::new(vec![ExpectedDigest::Sha256([99; 32])]).unwrap());
+    files[0].provenance.declared_digests = files[0].expected.digests.clone();
+    lock.dependencies.get_mut(&key("root")).unwrap().files = NonEmpty::new(files).unwrap();
+    assert!(
+        SynchronizationResolution::prepare(&intent, current.lock(), &resolve(&intent, &lock))
+            .unwrap_err()
+            .to_string()
+            .contains("original assertions")
+    );
+}
 fn decoded(intent: &ProjectIntent) -> DecodedIntent {
     DocumentCodec
         .decode_intent(&DocumentCodec.encode_intent(intent).unwrap(), "intent")
