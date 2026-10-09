@@ -349,6 +349,7 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
         let second = server
             .mock("GET", "/second")
             .with_status(if fail_second { 503 } else { 200 })
+            .expect(if fail_second { 3 } else { 1 })
             .with_body("payload")
             .create_async()
             .await;
