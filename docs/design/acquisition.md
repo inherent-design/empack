@@ -46,8 +46,10 @@ cooldowns use monotonic deadlines with their fractional-second precision preserv
 wall-clock rounding must not let a request resume before the declared interval. Retrying acquisition must not reset the cumulative byte or deadline budget indefinitely.
 
 An idempotent GET that fails before receiving a response may make at most three
-attempts, with short backoff inside the existing cumulative deadline. HTTP status
-failures do not enter that retry path. Once body transfer starts, a failure cannot
+attempts, with short backoff inside the existing cumulative deadline. Transient
+502/503/504 responses share that attempt limit unless they declare `Retry-After`;
+those cooldown responses and other HTTP failures return without automatic retry.
+Once body transfer starts, a failure cannot
 reuse partial bytes as verified content; any mirror attempt shares the byte budget.
 Transport diagnostics retain the hostname, request/body phase, failure category and
 attempt count. They omit paths, queries, headers and raw client errors that could

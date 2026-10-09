@@ -106,12 +106,14 @@ async fn headers_digests_status_and_policy_cannot_be_mistaken_for_verified_conte
         ("auth", 403, "secret error"),
         ("quota", 429, "quota"),
         ("broken", 503, "unavailable"),
+        ("unsupported", 501, "unsupported"),
         ("partial", 206, "payload"),
     ] {
         let response = server
             .mock("GET", format!("/{path}").as_str())
             .with_status(status)
             .with_body(body)
+            .expect(if status == 503 { 3 } else { 1 })
             .create_async()
             .await;
         let (outcome, governor) = run(request(vec![format!("{}/{path}", server.url())], 16)).await;
@@ -577,8 +579,8 @@ async fn acquisition_cache_authority_preserves_evidence_limits_and_fresh_catalog
     wrong.assert_async().await;
 }
 
-fn disconnecting_server(
-    response: &'static [u8],
+fn scripted_server(
+    responses: [Option<&'static [u8]>; 3],
 ) -> (std::net::SocketAddr, std::thread::JoinHandle<usize>) {
     use std::net::TcpListener;
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -606,10 +608,10 @@ fn disconnecting_server(
                 stream.read_exact(&mut byte).unwrap();
                 bytes.push(byte[0]);
             }
-            accepted += 1;
-            if accepted == 3 {
+            if let Some(response) = responses[accepted] {
                 stream.write_all(response).unwrap();
             }
+            accepted += 1;
         }
         accepted
     });
@@ -618,9 +620,11 @@ fn disconnecting_server(
 
 #[tokio::test]
 async fn request_disconnects_retry_before_body_under_one_deadline() {
-    let (address, server) = disconnecting_server(
-        b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload",
-    );
+    let (address, server) = scripted_server([
+        None,
+        None,
+        Some(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload"),
+    ]);
     let (outcome, governor) = run(request(vec![format!("http://{address}/file")], 16)).await;
     assert_eq!(server.join().unwrap(), 3);
     assert!(
@@ -656,9 +660,11 @@ async fn transport_failure_names_host_and_phase_without_exposing_locator() {
 
 #[tokio::test]
 async fn truncated_body_reports_the_successful_request_attempt() {
-    let (address, server) = disconnecting_server(
-        b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nbad",
-    );
+    let (address, server) = scripted_server([
+        None,
+        None,
+        Some(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nbad"),
+    ]);
     let (outcome, _) = run(request(vec![format!("http://{address}/file")], 16)).await;
     assert_eq!(server.join().unwrap(), 3);
     let detail = failure(&outcome)
@@ -666,4 +672,34 @@ async fn truncated_body_reports_the_successful_request_attempt() {
         .unwrap();
     assert_eq!(detail.phase, "body");
     assert_eq!(detail.attempt, 3);
+}
+
+#[tokio::test]
+async fn transient_server_responses_share_the_bounded_request_retry() {
+    let (address, server) = scripted_server([
+        Some(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+        Some(b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+        Some(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload"),
+    ]);
+    let (outcome, _) = run(request(vec![format!("http://{address}/file")], 16)).await;
+    assert_eq!(server.join().unwrap(), 3);
+    assert!(matches!(&*outcome, OperationOutcome::Completed(Ok(_))));
+}
+
+#[tokio::test]
+async fn server_cooldown_does_not_enter_immediate_retries() {
+    let mut server = mockito::Server::new_async().await;
+    let response = server
+        .mock("GET", "/file")
+        .with_status(503)
+        .with_header("Retry-After", "60")
+        .expect(1)
+        .create_async()
+        .await;
+    let (outcome, _) = run(request(vec![format!("{}/file", server.url())], 16)).await;
+    assert!(matches!(
+        failure(&outcome).downcast_ref(),
+        Some(TransferError::Server(503))
+    ));
+    response.assert_async().await;
 }

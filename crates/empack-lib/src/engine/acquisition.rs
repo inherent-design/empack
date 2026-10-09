@@ -429,6 +429,18 @@ impl HttpAcquisition {
                 let response = loop {
                     attempt += 1;
                     match self.request(&url).send().await {
+                        Ok(response)
+                            if attempt < 3
+                                && matches!(response.status().as_u16(), 502..=504)
+                                && !response
+                                    .headers()
+                                    .contains_key(reqwest::header::RETRY_AFTER) =>
+                        {
+                            // Do not consume an error body or retry ahead of a server cooldown.
+                            drop(response);
+                            tokio::time::sleep(Duration::from_millis(100 * u64::from(attempt)))
+                                .await;
+                        }
                         Ok(response) => break response,
                         Err(error) if attempt < 3 => {
                             // Only an idempotent GET before a response is retried. The outer
