@@ -72,14 +72,14 @@ jobs:
         env:
           GIT_HASH: ${{ github.sha }}
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release -p empack --target ${{ matrix.target }}
 
       - name: Build with cross
         if: ${{ matrix.use_cross }}
         env:
           GIT_HASH: ${{ github.sha }}
           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release -p empack --target ${{ matrix.target }}
 
       - name: Package archive (Unix)
         if: ${{ matrix.archive_ext == 'tar.gz' }}
