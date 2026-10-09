@@ -424,7 +424,7 @@ impl HttpAcquisition {
     ) -> Result<()> {
         let transfer = async {
             let mut redirects = 0;
-            let mut response = loop {
+            let (mut response, request_attempt) = loop {
                 let mut attempt = 0;
                 let response = loop {
                     attempt += 1;
@@ -469,7 +469,7 @@ impl HttpAcquisition {
                     }
                     .into());
                 }
-                break response;
+                break (response, attempt);
             };
             ensure!(
                 response
@@ -482,7 +482,7 @@ impl HttpAcquisition {
             while let Some(chunk) = response
                 .chunk()
                 .await
-                .map_err(|error| transport_failure(&url, &error, "body", 1))?
+                .map_err(|error| transport_failure(&url, &error, "body", request_attempt))?
             {
                 *received = received
                     .checked_add(chunk.len() as u64)

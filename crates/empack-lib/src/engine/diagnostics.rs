@@ -85,6 +85,15 @@ impl Diagnostic {
         } else {
             OperationFailed
         };
+        let phase = if error.is::<super::acquisition::TransferError>() {
+            DiagnosticPhase::Acquisition
+        } else if error.is::<empack_core::digest::DigestError>() {
+            DiagnosticPhase::Verification
+        } else if error.is::<super::publication::RecoveryRequired>() {
+            DiagnosticPhase::Publication
+        } else {
+            phase
+        };
         Self::new(code, phase)
     }
 }
@@ -152,6 +161,17 @@ mod tests {
                 .unwrap()
                 .contains("hidden")
         );
+    }
+    #[test]
+    fn typed_transfer_phase_survives_execution_wrapping() {
+        let cause = anyhow::Error::new(crate::engine::acquisition::TransferError::Server(503))
+            .context("catalog acquisition");
+        let diagnostic = ExecutionOutcome::FailedBeforePublication(cause)
+            .diagnostic()
+            .unwrap();
+        assert_eq!(diagnostic.code, DiagnosticCode::AcquisitionFailed);
+        assert_eq!(diagnostic.phase, DiagnosticPhase::Acquisition);
+        assert_eq!(diagnostic.recovery, RecoveryClassification::NotPublished);
     }
     #[test]
     fn recovery_state_survives_a_specific_failure_code() {

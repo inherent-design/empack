@@ -577,8 +577,9 @@ async fn acquisition_cache_authority_preserves_evidence_limits_and_fresh_catalog
     wrong.assert_async().await;
 }
 
-#[tokio::test]
-async fn request_disconnects_retry_before_body_under_one_deadline() {
+fn disconnecting_server(
+    response: &'static [u8],
+) -> (std::net::SocketAddr, std::thread::JoinHandle<usize>) {
     use std::net::TcpListener;
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -595,6 +596,7 @@ async fn request_disconnects_retry_before_body_under_one_deadline() {
                 }
                 Err(error) => panic!("{error}"),
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(1)))
                 .unwrap();
@@ -606,15 +608,19 @@ async fn request_disconnects_retry_before_body_under_one_deadline() {
             }
             accepted += 1;
             if accepted == 3 {
-                stream
-                    .write_all(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload",
-                    )
-                    .unwrap();
+                stream.write_all(response).unwrap();
             }
         }
         accepted
     });
+    (address, server)
+}
+
+#[tokio::test]
+async fn request_disconnects_retry_before_body_under_one_deadline() {
+    let (address, server) = disconnecting_server(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload",
+    );
     let (outcome, governor) = run(request(vec![format!("http://{address}/file")], 16)).await;
     assert_eq!(server.join().unwrap(), 3);
     assert!(
@@ -646,4 +652,18 @@ async fn transport_failure_names_host_and_phase_without_exposing_locator() {
     let display = format!("{error:#} {error:?}");
     assert!(!display.contains("private-path"));
     assert!(!display.contains("private-token"));
+}
+
+#[tokio::test]
+async fn truncated_body_reports_the_successful_request_attempt() {
+    let (address, server) = disconnecting_server(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nbad",
+    );
+    let (outcome, _) = run(request(vec![format!("http://{address}/file")], 16)).await;
+    assert_eq!(server.join().unwrap(), 3);
+    let detail = failure(&outcome)
+        .downcast_ref::<TransportFailure>()
+        .unwrap();
+    assert_eq!(detail.phase, "body");
+    assert_eq!(detail.attempt, 3);
 }
