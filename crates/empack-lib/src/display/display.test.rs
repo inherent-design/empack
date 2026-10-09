@@ -16,9 +16,12 @@ fn test_style_manager_truecolor_palette() {
         is_tty: false,
         cols: 80,
     };
-    Display::init_or_get(caps);
-    let prims = Display::styling().primitives();
-    assert!(!prims.red.is_empty(), "TrueColor should have red escape code");
+    let display = Display::new(caps);
+    let prims = display.styling().primitives();
+    assert!(
+        !prims.red.is_empty(),
+        "TrueColor should have red escape code"
+    );
     assert!(!prims.reset.is_empty(), "TrueColor should have reset code");
 }
 
@@ -30,8 +33,8 @@ fn test_style_manager_no_color_palette() {
         is_tty: false,
         cols: 80,
     };
-    Display::init_or_get(caps);
-    let prims = Display::styling().primitives();
+    let display = Display::new(caps);
+    let prims = display.styling().primitives();
     assert!(prims.red.is_empty(), "No color should have empty red");
     assert!(prims.bold.is_empty(), "No color should have empty bold");
     assert!(prims.reset.is_empty(), "No color should have empty reset");
@@ -45,8 +48,8 @@ fn test_style_manager_ansi256_palette() {
         is_tty: false,
         cols: 80,
     };
-    Display::init_or_get(caps);
-    let prims = Display::styling().primitives();
+    let display = Display::new(caps);
+    let prims = display.styling().primitives();
     assert!(!prims.red.is_empty(), "Ansi256 should have red escape code");
     assert!(
         prims.red.contains("38;5;"),
@@ -55,9 +58,9 @@ fn test_style_manager_ansi256_palette() {
 }
 
 #[test]
-fn test_display_global_auto_init() {
-    let display = Display::global();
-    let caps = Display::capabilities();
+fn test_display_default_is_minimal() {
+    let display = Display::default();
+    let caps = display.capabilities();
     assert_eq!(caps.color, TerminalColorCaps::None);
     assert!(!caps.is_tty);
     let prims = display.styling.primitives();
@@ -67,14 +70,20 @@ fn test_display_global_auto_init() {
 #[test]
 fn test_style_manager_format_methods() {
     let caps = create_test_capabilities();
-    Display::init_or_get(caps);
-    let styling = Display::styling();
+    let display = Display::new(caps);
+    let styling = display.styling();
 
     let success = styling.format_success("done");
-    assert!(success.contains("done"), "Success message should contain text");
+    assert!(
+        success.contains("done"),
+        "Success message should contain text"
+    );
 
     let error = styling.format_error("failed");
-    assert!(error.contains("failed"), "Error message should contain text");
+    assert!(
+        error.contains("failed"),
+        "Error message should contain text"
+    );
 
     let warning = styling.format_warning("caution");
     assert!(
@@ -89,19 +98,19 @@ fn test_style_manager_format_methods() {
 #[test]
 fn test_display_status_progress_table_accessors() {
     let caps = create_test_capabilities();
-    Display::init_or_get(caps);
+    let display = Display::new(caps);
 
-    let _status = Display::status();
-    let _progress = Display::progress();
-    let _table = Display::table();
+    let _status = display.status();
+    let _progress = display.progress();
+    let _table = display.table();
 }
 
 #[test]
 fn test_status_display_variants() {
     let caps = create_test_capabilities();
-    Display::init_or_get(caps);
+    let display = Display::new(caps);
 
-    let status = Display::status();
+    let status = display.status();
     status.checking("tool dependencies");
     status.success("packwiz", "v0.16.1");
     status.success("packwiz", "");
@@ -128,9 +137,9 @@ fn test_progress_display_trackers_and_multi_progress() {
         is_tty: false,
         cols: 80,
     };
-    Display::init_or_get(caps);
+    let display = Display::new(caps);
 
-    let progress = Display::progress();
+    let progress = display.progress();
 
     let bar = progress.bar(3);
     assert_eq!(bar.bar().length(), Some(3));
@@ -163,9 +172,9 @@ fn test_progress_display_unicode_branch() {
         is_tty: false,
         cols: 80,
     };
-    Display::init_or_get(caps);
+    let display = Display::new(caps);
 
-    let progress = Display::progress();
+    let progress = display.progress();
     let bar = progress.bar(2);
     assert_eq!(bar.bar().length(), Some(2));
     bar.finish("done");
@@ -181,9 +190,9 @@ fn test_progress_display_unicode_branch() {
 #[test]
 fn test_structured_display_rendering_paths() {
     let caps = create_test_capabilities();
-    Display::init_or_get(caps);
+    let display = Display::new(caps);
 
-    let structured = Display::table();
+    let structured = display.table();
     structured.pairs(&[("Project", "my-modpack"), ("Minecraft", "1.21.6")]);
     structured.list(&["first", "second"]);
     structured.numbered_list(&["alpha", "beta"]);
@@ -202,9 +211,9 @@ fn test_structured_display_rendering_paths() {
 #[test]
 fn test_live_display_provider_delegation() {
     let caps = create_test_capabilities();
-    Display::init_or_get(caps);
+    let display = Display::new(caps);
 
-    let provider = LiveDisplayProvider::new();
+    let provider = LiveDisplayProvider::new().with_capabilities(display.capabilities().clone());
     let default_provider = LiveDisplayProvider::default();
     let shared = Arc::new(MultiProgress::new());
     let arc_provider = LiveDisplayProvider::new_with_arc(shared);
@@ -256,4 +265,29 @@ fn test_style_manager_symbols_and_formats() {
     assert!(styling.info_symbol().contains("ℹ"));
     assert_eq!(styling.bullet(), "●");
     assert_eq!(styling.arrow(), "→");
+}
+
+#[test]
+fn independent_displays_keep_their_selected_capabilities() {
+    let plain = Display::new(TerminalCapabilities::minimal());
+    let mut capabilities = TerminalCapabilities::minimal();
+    capabilities.color = TerminalColorCaps::TrueColor;
+    capabilities.unicode = TerminalUnicodeCaps::ExtendedUnicode;
+    capabilities.cols = 132;
+    let colored = Display::new(capabilities);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            assert!(!colored.styling.style_success("colored").is_empty());
+            assert!(colored.styling.has_unicode());
+        });
+        scope.spawn(|| {
+            assert_eq!(plain.styling.style_success("plain"), "plain");
+            assert!(!plain.styling.has_unicode());
+        });
+    });
+    assert_eq!(plain.capabilities.color, TerminalColorCaps::None);
+    assert_eq!(colored.capabilities.color, TerminalColorCaps::TrueColor);
+    assert!(plain.styling.primitives().red.is_empty());
+    assert!(!colored.styling.primitives().red.is_empty());
+    assert_eq!(colored.capabilities.cols, 132);
 }

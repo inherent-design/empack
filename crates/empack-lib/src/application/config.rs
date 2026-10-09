@@ -8,7 +8,7 @@ use std::path::PathBuf;
 pub mod defaults {
     pub const LOG_LEVEL: &str = "0"; // Error-only logging by default
     pub const LOG_FORMAT: &str = "text";
-    pub const NET_TIMEOUT: &str = "30";
+    pub const NET_TIMEOUT: &str = "300";
     pub const CPU_PARALLELS: &str = "2";
     pub const LOG_OUTPUT: &str = "stderr";
     pub const TTY_CAPS_DETECT_INTENT: &str = "auto";
@@ -56,12 +56,22 @@ pub struct AppConfig {
     #[serde(default)]
     pub workdir: Option<PathBuf>,
 
-    /// Reserved parallelism setting (currently unused)
+    /// Durable operation and recovery storage, separate from disposable caches
+    #[arg(long, env = "EMPACK_STATE_DIR", global = true)]
+    #[serde(default)]
+    pub state_dir: Option<PathBuf>,
+
+    /// Disposable cache root; previews only inspect existing objects
+    #[arg(long, env = "EMPACK_CACHE_DIR", global = true)]
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+
+    /// Maximum admitted engine workers
     #[arg(short = 'j', long, env = "EMPACK_CPU_JOBS", default_value = defaults::CPU_PARALLELS)]
     #[serde(default = "default_fns::cpu_parallels")]
     pub cpu_jobs: usize,
 
-    /// API timeout in seconds
+    /// Cumulative deadline in seconds for each catalog or payload acquisition phase
     #[arg(short, long, env = "EMPACK_NET_TIMEOUT", default_value = defaults::NET_TIMEOUT)]
     #[serde(default = "default_fns::net_timeout")]
     pub net_timeout: u64,
@@ -77,7 +87,9 @@ pub struct AppConfig {
     pub modrinth_api_client_key: Option<String>,
 
     /// CurseForge API Client Key
-    #[arg(long, env = "EMPACK_KEY_CURSEFORGE", default_value = defaults::CURSEFORGE_API_CLIENT_KEY, hide_env_values = true)]
+    #[arg(long, env = "EMPACK_KEY_CURSEFORGE",
+        hide_default_value = true,
+        hide_env_values = true, default_value = defaults::CURSEFORGE_API_CLIENT_KEY, hide_env_values = true)]
     #[serde(default = "default_fns::curseforge_api_client_key")]
     pub curseforge_api_client_key: Option<String>,
 
@@ -127,6 +139,8 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             workdir: None,
+            state_dir: None,
+            cache_dir: None,
             cpu_jobs: default_fns::cpu_parallels(),
             net_timeout: default_fns::net_timeout(),
             modrinth_api_client_id: None,
@@ -158,6 +172,12 @@ impl AppConfig {
 
     /// Merge this config with another, taking non-default values from other
     pub fn merge_with(mut self, other: Self) -> Self {
+        if other.state_dir.is_some() {
+            self.state_dir = other.state_dir;
+        }
+        if other.cache_dir.is_some() {
+            self.cache_dir = other.cache_dir;
+        }
         if other.workdir.is_some() {
             self.workdir = other.workdir;
         }
@@ -203,7 +223,7 @@ impl AppConfig {
 
     /// Validate the final configuration
     pub fn validate(&mut self) -> Result<(), ConfigError> {
-        // Pre-session fallback: FileSystemProvider does not exist yet at config
+        // Resolve configuration inputs before constructing the command session at config
         // validation time, so std::env::current_dir() is the only option here.
         // Errors are properly typed as ConfigError::CurrentDirError.
         if self.workdir.is_none() {

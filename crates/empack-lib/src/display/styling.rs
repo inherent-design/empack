@@ -1,23 +1,27 @@
 //! Terminal-aware styling using empack's terminal primitive system.
 
 use crate::primitives::terminal::{
-    TerminalPrimitives, from_terminal_capabilities, init_primitives, primitives,
+    TerminalPrimitives, TerminalUnicodeCaps, from_terminal_capabilities,
 };
 use crate::terminal::TerminalCapabilities;
 
 pub struct StyleManager {
-    primitives: &'static TerminalPrimitives,
+    primitives: TerminalPrimitives,
+    unicode: bool,
 }
 
 impl StyleManager {
     pub fn new(capabilities: &TerminalCapabilities) -> Self {
-        // Convert detailed capabilities to basic capabilities and initialize primitives
         let basic_caps = from_terminal_capabilities(capabilities);
-        init_primitives(&basic_caps);
 
         Self {
-            primitives: primitives(),
+            primitives: TerminalPrimitives::new(&basic_caps),
+            unicode: capabilities.unicode != TerminalUnicodeCaps::Ascii,
         }
+    }
+
+    pub(crate) fn has_unicode(&self) -> bool {
+        self.unicode
     }
 
     /// Style text with semantic success intent
@@ -57,8 +61,8 @@ impl StyleManager {
     }
 
     /// Get access to all terminal primitives
-    pub fn primitives(&self) -> &'static TerminalPrimitives {
-        self.primitives
+    pub fn primitives(&self) -> &TerminalPrimitives {
+        &self.primitives
     }
 
     /// Format success message with symbol and styling

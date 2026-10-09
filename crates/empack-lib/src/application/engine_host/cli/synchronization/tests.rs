@@ -1,0 +1,1180 @@
+use super::super::tests::{fixture, project, session};
+use super::*;
+use crate::application::engine_host::tests::snapshot;
+use empack_core::{
+    digest::{DigestSet, ExpectedDigest},
+    identity::*,
+    path::{PathSyntax, PortableRelPath},
+};
+use serde_json::json;
+use sha2::{Digest, Sha256, Sha512};
+use std::fs;
+
+fn write_intent(root: &Path, intent: &ProjectIntent) {
+    let mut bytes = b"# retain authored formatting\n".to_vec();
+    bytes.extend(DocumentCodec.encode_intent(intent).unwrap());
+    fs::write(root.join("project/empack.yml"), bytes).unwrap();
+}
+fn placed(name: &str) -> PlacementIntent {
+    PlacementIntent::Explicit(
+        NonEmpty::new(vec![Placement {
+            destination: InstallDestination::parse(name).unwrap(),
+            layer: ContentLayer::Common,
+            requirements: required(),
+        }])
+        .unwrap(),
+    )
+}
+fn services(base: &str) -> dependencies::AdditionServices {
+    dependencies::AdditionServices {
+        catalog: ProviderCatalog::for_loopback_tests(base, None),
+        transport: HttpAcquisition::for_loopback_tests(),
+        files: DirectFileLimits::default(),
+    }
+}
+async fn sync(root: &Path, base: &str, dry: bool) -> Result<()> {
+    synchronize_with_services(
+        &session(root, dry),
+        false,
+        services(base),
+        RuntimeCatalog::for_loopback_tests(base),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn missing_and_changed_intent_resolve_local_bytes_without_losing_authored_source() {
+    for missing_lock in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        let mut intent = project(root.path()).intent().clone();
+        let key = DependencyKey::parse("settings").unwrap();
+        intent.roots.insert(
+            key.clone(),
+            DependencyIntent {
+                source: SourceIntent::Local(
+                    PortableRelPath::parse("seed/settings.toml", PathSyntax::ProjectContent)
+                        .unwrap(),
+                ),
+                kind: ContentKind::Config,
+                version: VersionIntent::FollowCompatible,
+                placement: placed("config/settings.toml"),
+                requirements: required(),
+            },
+        );
+        fs::create_dir(root.path().join("project/seed")).unwrap();
+        fs::write(
+            root.path().join("project/seed/settings.toml"),
+            b"enabled = true",
+        )
+        .unwrap();
+        write_intent(root.path(), &intent);
+        if missing_lock {
+            fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+        }
+        let before = snapshot(root.path());
+        sync(root.path(), "http://127.0.0.1:9", true).await.unwrap();
+        assert_eq!(snapshot(root.path()), before);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        assert_eq!(project(root.path()).intent(), &intent);
+        assert_eq!(
+            fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+            b"enabled = true"
+        );
+        let committed = snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            sync(root.path(), "http://127.0.0.1:9", false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(snapshot(&root.path().join("project")), committed);
+
+        // Sync never accepts an unrequested byte change, even though the file can be read.
+        fs::write(
+            root.path().join("project/seed/settings.toml"),
+            b"enabled = false",
+        )
+        .unwrap();
+        let drifted = snapshot(root.path());
+        assert!(
+            sync(root.path(), "http://127.0.0.1:9", false)
+                .await
+                .is_err()
+        );
+        assert_eq!(snapshot(root.path()), drifted);
+        intent.roots.get_mut(&key).unwrap().version = VersionIntent::ContentPinned(
+            DigestSet::new(vec![ExpectedDigest::Sha256(
+                Sha256::digest(b"enabled = false").into(),
+            )])
+            .unwrap(),
+        );
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        assert_eq!(
+            fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+            b"enabled = false"
+        );
+        assert_eq!(project(root.path()).intent(), &intent);
+    }
+}
+
+#[tokio::test]
+async fn fresh_provider_sync_keeps_followed_pin_for_placement_edits_then_applies_an_explicit_pin() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    let project_mock = server.mock("GET", "/project/Root0001")
+        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+        .expect(8).create_async().await;
+    let mut versions = Vec::new();
+    for (version, expected) in [("RootVer1", 2), ("RootVer2", 1)] {
+        versions.push(server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+            "id":version,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).expect(expected).create_async().await);
+    }
+    let compatible = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .expect(0)
+        .create_async()
+        .await;
+    let mut intent = project(root.path()).intent().clone();
+    let key = DependencyKey::parse("my-alias").unwrap();
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::Provider(ProviderProjectId::Modrinth(
+                ModrinthProjectId::parse("Root0001").unwrap(),
+            )),
+            kind: ContentKind::Mod,
+            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                ModrinthVersionId::parse("RootVer1").unwrap(),
+            )),
+            placement: PlacementIntent::Automatic,
+            requirements: required(),
+        },
+    );
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    let first = project(root.path()).lock().dependencies[&key]
+        .selected
+        .clone();
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().placement = placed("mods/custom-name.jar");
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key].selected,
+        first
+    );
+    assert_eq!(project(root.path()).intent(), &intent);
+    let original = versions.remove(0);
+    original.assert_async().await;
+    original.remove_async().await;
+    let changed_assertions = server.mock("GET", "/version/RootVer1").with_body(json!({
+        "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+        "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"changed").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+        "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+    }).to_string()).expect(1).create_async().await;
+    intent.roots.get_mut(&key).unwrap().placement = placed("mods/another-name.jar");
+    write_intent(root.path(), &intent);
+    let before_failure = snapshot(root.path());
+    let error = sync(root.path(), &server.url(), false).await.unwrap_err();
+    assert!(format!("{error:#}").contains("assertions changed"));
+    assert_eq!(snapshot(root.path()), before_failure);
+    changed_assertions.assert_async().await;
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::Exact(
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap()),
+    );
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap())
+    );
+    let committed = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), &server.url(), false).await.unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), committed);
+    project_mock.assert_async().await;
+    for version in versions {
+        version.assert_async().await;
+    }
+    compatible.assert_async().await;
+}
+
+#[tokio::test]
+async fn failed_fresh_batch_retains_documents_and_payloads() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    for name in ["first", "missing"] {
+        intent.roots.insert(
+            DependencyKey::parse(name).unwrap(),
+            DependencyIntent {
+                source: SourceIntent::Local(
+                    PortableRelPath::parse(&format!("{name}.toml"), PathSyntax::ProjectContent)
+                        .unwrap(),
+                ),
+                kind: ContentKind::Config,
+                version: VersionIntent::FollowCompatible,
+                placement: placed(&format!("config/{name}.toml")),
+                requirements: required(),
+            },
+        );
+    }
+    fs::write(root.path().join("project/first.toml"), b"valid").unwrap();
+    write_intent(root.path(), &intent);
+    let before = snapshot(root.path());
+    assert!(
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .is_err()
+    );
+    assert_eq!(snapshot(root.path()), before);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn authored_local_sources_cannot_traverse_symlinked_ancestors() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    fs::write(outside.path().join("settings.toml"), b"outside").unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join("project/linked")).unwrap();
+    let mut intent = project(root.path()).intent().clone();
+    intent.roots.insert(
+        DependencyKey::parse("settings").unwrap(),
+        DependencyIntent {
+            source: SourceIntent::Local(
+                PortableRelPath::parse("linked/settings.toml", PathSyntax::ProjectContent).unwrap(),
+            ),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: placed("config/settings.toml"),
+            requirements: required(),
+        },
+    );
+    write_intent(root.path(), &intent);
+    let before = fs::read(root.path().join("project/empack.lock")).unwrap();
+    assert!(
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/empack.lock")).unwrap(),
+        before
+    );
+    assert!(
+        !root
+            .path()
+            .join("project/pack/config/settings.toml")
+            .exists()
+    );
+    assert_eq!(
+        fs::read(outside.path().join("settings.toml")).unwrap(),
+        b"outside"
+    );
+}
+
+#[tokio::test]
+async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source() {
+    use crate::engine::api::{RemovalSelector, RemoveRequest};
+    use empack_core::removal::{RemovalEvidencePolicy, RemovalMode};
+    for remove in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        let mut intent = project(root.path()).intent().clone();
+        let key = DependencyKey::parse("settings").unwrap();
+        let selected = DependencyIntent {
+            source: SourceIntent::Local(
+                PortableRelPath::parse("seed.toml", PathSyntax::ProjectContent).unwrap(),
+            ),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: placed("config/settings.toml"),
+            requirements: required(),
+        };
+        intent.roots.insert(key.clone(), selected.clone());
+        fs::write(root.path().join("project/seed.toml"), b"keep source").unwrap();
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        let mut moved = selected;
+        moved.source = SourceIntent::Local(
+            PortableRelPath::parse("pack/config/settings.toml", PathSyntax::ProjectContent)
+                .unwrap(),
+        );
+        moved.placement = placed("config/moved.toml");
+        if remove {
+            intent
+                .roots
+                .insert(DependencyKey::parse("other").unwrap(), moved);
+        } else {
+            intent.roots.insert(key.clone(), moved);
+        }
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        if remove {
+            fs::write(root.path().join("replacement.toml"), b"different source").unwrap();
+            let before = snapshot(root.path());
+            assert!(
+                dependencies::add(
+                    &session(root.path(), false),
+                    NonEmpty::new(vec![AddHostInput::File(DirectFileInput {
+                        role: crate::engine::addition::FileInputRole::Primary,
+                        key: key.clone(),
+                        title: "settings".into(),
+                        source: DirectFileSource::Local(root.path().join("replacement.toml")),
+                        evidence: FileEvidence::AcceptObserved,
+                        kind: ContentKind::Config,
+                        kind_policy: FileKindPolicy::AcceptUnrecognized,
+                        requirements: required(),
+                        placements: NonEmpty::new(vec![Placement {
+                            destination: InstallDestination::parse("config/settings.toml").unwrap(),
+                            layer: ContentLayer::Common,
+                            requirements: required()
+                        }])
+                        .unwrap(),
+                    })])
+                    .unwrap(),
+                    ReleasePolicy::PreferStable,
+                    SourceEvidencePolicy::Compatibility,
+                    ExistingDependencyPolicy::UpdateSameIdentity,
+                )
+                .await
+                .is_err(),
+                "Replacing one owner must not invalidate another source reference"
+            );
+            assert_eq!(snapshot(root.path()), before);
+            dependencies::remove(
+                &session(root.path(), false),
+                RemoveRequest {
+                    selections: NonEmpty::new(vec![RemovalSelector::Key(key)]).unwrap(),
+                    mode: RemovalMode::RemoveContent,
+                    evidence: RemovalEvidencePolicy::AcknowledgeUnknown,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        assert!(
+            root.path()
+                .join("project/pack/config/settings.toml")
+                .exists(),
+            "A source still used by the published lock was deleted"
+        );
+        assert_eq!(
+            fs::read(root.path().join("project/pack/config/moved.toml")).unwrap(),
+            b"keep source"
+        );
+        let before = snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            sync(root.path(), "http://127.0.0.1:9", false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(snapshot(&root.path().join("project")), before);
+    }
+}
+
+#[tokio::test]
+async fn materialization_verifies_the_whole_batch_without_updating_pins_or_preview_downloads() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    let mut intent = project(root.path()).intent().clone();
+    let mut original_versions = Vec::new();
+    for (id, version, key, filename) in [
+        ("Root0001", "RootVer1", "first", "first.jar"),
+        ("Root0002", "RootVer2", "second", "second.jar"),
+    ] {
+        server
+            .mock("GET", format!("/project/{id}").as_str())
+            .with_body(
+                json!({"id":id,"slug":key,"title":key,"project_type":"mod","loaders":["fabric"]})
+                    .to_string(),
+            )
+            .create_async()
+            .await;
+        original_versions.push(server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+            "id":version,"project_id":id,"game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":filename,"primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":format!("https://example.invalid/{filename}")}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).create_async().await);
+        intent.roots.insert(
+            DependencyKey::parse(key).unwrap(),
+            DependencyIntent {
+                source: SourceIntent::Provider(ProviderProjectId::Modrinth(
+                    ModrinthProjectId::parse(id).unwrap(),
+                )),
+                kind: ContentKind::Mod,
+                version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                    ModrinthVersionId::parse(version).unwrap(),
+                )),
+                placement: PlacementIntent::Automatic,
+                requirements: required(),
+            },
+        );
+    }
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    let lock = fs::read(root.path().join("project/empack.lock")).unwrap();
+    for original in original_versions {
+        original.remove_async().await;
+    }
+    for (id, version, filename) in [
+        ("Root0001", "RootVer1", "first.jar"),
+        ("Root0002", "RootVer2", "second.jar"),
+    ] {
+        server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+            "id":version,"project_id":id,"game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":filename,"primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":format!("{}/{filename}",server.url())}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).expect(2).create_async().await;
+    }
+    let before = snapshot(root.path());
+    synchronize_with_services(
+        &session(root.path(), true),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    let first = server
+        .mock("GET", "/first.jar")
+        .with_body("payload")
+        .expect(2)
+        .create_async()
+        .await;
+    let bad = server
+        .mock("GET", "/second.jar")
+        .with_body("changed")
+        .expect(1)
+        .create_async()
+        .await;
+    let error = synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("digest"), "{error:#}");
+    assert_eq!(
+        snapshot(root.path()),
+        before,
+        "failed acquisition must publish nothing"
+    );
+    bad.assert_async().await;
+    bad.remove_async().await;
+    let second = server
+        .mock("GET", "/second.jar")
+        .with_body("payload")
+        .expect(1)
+        .create_async()
+        .await;
+    synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap();
+    for name in ["first.jar", "second.jar"] {
+        assert_eq!(
+            fs::read(root.path().join(format!("project/pack/mods/{name}"))).unwrap(),
+            b"payload"
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join("project/empack.lock")).unwrap(),
+        lock
+    );
+    // Materialization can restore exact content without consulting its old provider URL.
+    fs::remove_file(root.path().join("project/pack/mods/first.jar")).unwrap();
+    synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services("http://127.0.0.1:9"),
+        RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+    )
+    .await
+    .expect("verified cache must restore missing materialized content offline");
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/first.jar")).unwrap(),
+        b"payload"
+    );
+    let published = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), published);
+    // A byte cache is never identity authority, including for equal-length corruption.
+    let cache = root.path().join("cache/content-v1");
+    let blob = fs::read_dir(&cache)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|value| value == "blob"))
+        .unwrap();
+    fs::write(&blob, b"changed").unwrap();
+    fs::remove_file(root.path().join("project/pack/mods/first.jar")).unwrap();
+    let corrupted = snapshot(root.path());
+    synchronize_with_services(
+        &session(root.path(), true),
+        true,
+        services("http://127.0.0.1:9"),
+        RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(root.path()), corrupted);
+    assert!(
+        synchronize_with_services(
+            &session(root.path(), false),
+            true,
+            services("http://127.0.0.1:9"),
+            RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(snapshot(root.path()), corrupted);
+    fs::write(&blob, b"payload").unwrap();
+    synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services("http://127.0.0.1:9"),
+        RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&root.path().join("project")), published);
+    first.assert_async().await;
+    second.assert_async().await;
+}
+
+#[tokio::test]
+async fn automatic_layout_changes_move_content_while_explicit_placements_remain_stable() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    intent.layout.insert(
+        ContentKind::Config,
+        PortableRelPath::parse("config", PathSyntax::ProjectContent).unwrap(),
+    );
+    fs::write(root.path().join("project/settings.toml"), b"settings").unwrap();
+    for (key, placement) in [
+        ("automatic", PlacementIntent::Automatic),
+        ("explicit", placed("config/explicit.toml")),
+    ] {
+        intent.roots.insert(
+            DependencyKey::parse(key).unwrap(),
+            DependencyIntent {
+                source: SourceIntent::Local(
+                    PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
+                ),
+                kind: ContentKind::Config,
+                version: VersionIntent::FollowCompatible,
+                placement,
+                requirements: required(),
+            },
+        );
+    }
+    write_intent(root.path(), &intent);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    let old = root.path().join("project/pack/config/settings.toml");
+    assert!(old.exists());
+    intent.layout.insert(
+        ContentKind::Config,
+        PortableRelPath::parse("config/nested", PathSyntax::ProjectContent).unwrap(),
+    );
+    write_intent(root.path(), &intent);
+    let before = snapshot(root.path());
+    sync(root.path(), "http://127.0.0.1:9", true).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    assert!(
+        !old.exists(),
+        "old automatic layout survived changed directory intent"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/nested/settings.toml")).unwrap(),
+        b"settings"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/explicit.toml")).unwrap(),
+        b"settings"
+    );
+    let expected = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), expected);
+    intent.layout.remove(&ContentKind::Config);
+    write_intent(root.path(), &intent);
+    let before = snapshot(root.path());
+    assert!(
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .is_err(),
+        "a kind without a default directory needs an explicit placement"
+    );
+    assert_eq!(snapshot(root.path()), before);
+}
+
+#[tokio::test]
+async fn removing_an_accepted_game_version_requires_fresh_provider_resolution() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    server.mock("GET", "/project/Root0001")
+        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+        .create_async().await;
+    let record = |version: &str, game: &str| {
+        json!({
+            "id":version,"project_id":"Root0001","game_versions":[game],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        })
+    };
+    server
+        .mock("GET", "/version/RootVer1")
+        .with_body(record("RootVer1", "1.20.1").to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/version/RootVer2")
+        .with_body(record("RootVer2", "1.21.1").to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let compatible = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([record("RootVer2", "1.21.1")]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let mut intent = project(root.path()).intent().clone();
+    intent
+        .runtime
+        .acceptable_versions
+        .push(GameVersion::parse("1.20.1").unwrap());
+    let key = DependencyKey::parse("renderer").unwrap();
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::Provider(ProviderProjectId::Modrinth(
+                ModrinthProjectId::parse("Root0001").unwrap(),
+            )),
+            kind: ContentKind::Mod,
+            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                ModrinthVersionId::parse("RootVer1").unwrap(),
+            )),
+            placement: PlacementIntent::Automatic,
+            requirements: required(),
+        },
+    );
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    intent.runtime.acceptable_versions.clear();
+    write_intent(root.path(), &intent);
+    let pinned = snapshot(root.path());
+    assert!(
+        sync(root.path(), &server.url(), false).await.is_err(),
+        "a now-incompatible explicit pin cannot be silently replaced"
+    );
+    assert_eq!(snapshot(root.path()), pinned);
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap()),
+        "sync retained a pin only compatible with the removed game-version policy"
+    );
+    let retained = project(root.path()).lock().dependencies.clone();
+    intent
+        .runtime
+        .acceptable_versions
+        .push(GameVersion::parse("1.19.2").unwrap());
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    assert_eq!(
+        project(root.path()).lock().dependencies,
+        retained,
+        "a policy expansion must revalidate and retain a still-compatible selection"
+    );
+    let before = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), before);
+    compatible.assert_async().await;
+}
+
+#[tokio::test]
+async fn selected_local_updates_retain_authored_sources_distinct_from_destinations() {
+    for grouped in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::create_dir(root.path().join("project/seeds")).unwrap();
+        fs::write(root.path().join("project/seeds/settings.toml"), b"initial").unwrap();
+        let path =
+            PortableRelPath::parse("seeds/settings.toml", PathSyntax::ProjectContent).unwrap();
+        let key = DependencyKey::parse("settings").unwrap();
+        let mut intent = project(root.path()).intent().clone();
+        intent.roots.insert(
+            key.clone(),
+            DependencyIntent {
+                source: if grouped {
+                    SourceIntent::LocalFiles(BTreeMap::from([(
+                        FileSlot::parse("settings").unwrap(),
+                        path.clone(),
+                    )]))
+                } else {
+                    SourceIntent::Local(path.clone())
+                },
+                kind: ContentKind::Config,
+                version: VersionIntent::FollowCompatible,
+                placement: if grouped {
+                    let PlacementIntent::Explicit(places) = placed("config/settings.toml") else {
+                        unreachable!()
+                    };
+                    PlacementIntent::ByFile(BTreeMap::from([(
+                        FileSlot::parse("settings").unwrap(),
+                        places,
+                    )]))
+                } else {
+                    placed("config/settings.toml")
+                },
+                requirements: required(),
+            },
+        );
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        let original_intent = fs::read(root.path().join("project/empack.yml")).unwrap();
+        fs::write(
+            root.path().join("project/seeds/settings.toml"),
+            b"selected update",
+        )
+        .unwrap();
+        super::super::update::update_with_services(
+            &session(root.path(), false),
+            vec![key.as_str().into()],
+            services("http://127.0.0.1:9"),
+        )
+        .await
+        .unwrap();
+        let after = project(root.path());
+        assert_eq!(after.intent(), &intent);
+        assert_eq!(
+            after.lock().dependencies[&key].files.as_slice()[0].acquisition,
+            AcquisitionSpec::Local(path)
+        );
+        assert_eq!(
+            fs::read(root.path().join("project/empack.yml")).unwrap(),
+            original_intent
+        );
+        assert_eq!(
+            fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+            b"selected update"
+        );
+        let stable = snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            sync(root.path(), "http://127.0.0.1:9", false)
+                .await
+                .unwrap();
+        }
+        assert!(snapshot(&root.path().join("project")) == stable);
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            fs::write(outside.path().join("settings.toml"), b"outside").unwrap();
+            fs::remove_file(root.path().join("project/seeds/settings.toml")).unwrap();
+            fs::remove_dir(root.path().join("project/seeds")).unwrap();
+            std::os::unix::fs::symlink(outside.path(), root.path().join("project/seeds")).unwrap();
+            let documents = fs::read(root.path().join("project/empack.lock")).unwrap();
+            assert!(
+                super::super::update::update_with_services(
+                    &session(root.path(), false),
+                    vec![key.as_str().into()],
+                    services("http://127.0.0.1:9")
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(
+                fs::read(root.path().join("project/empack.lock")).unwrap(),
+                documents
+            );
+            assert_eq!(
+                fs::read(outside.path().join("settings.toml")).unwrap(),
+                b"outside"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_payloads() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    let key = DependencyKey::parse("settings").unwrap();
+    let url_key = DependencyKey::parse("remote-settings").unwrap();
+    let role = FileSlot::parse("authored-settings").unwrap();
+    let PlacementIntent::Explicit(local_places) = placed("config/settings.toml") else {
+        unreachable!()
+    };
+    let PlacementIntent::Explicit(url_places) = placed("config/remote.toml") else {
+        unreachable!()
+    };
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::LocalFiles(BTreeMap::from([(
+                role.clone(),
+                PortableRelPath::parse("seed/settings.toml", PathSyntax::ProjectContent).unwrap(),
+            )])),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::ByFile(BTreeMap::from([(role.clone(), local_places)])),
+            requirements: required(),
+        },
+    );
+    intent.roots.insert(
+        url_key.clone(),
+        DependencyIntent {
+            source: SourceIntent::Url(
+                NonEmpty::new(vec!["https://example.invalid/settings.toml".into()]).unwrap(),
+            ),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::ByFile(BTreeMap::from([(role.clone(), url_places)])),
+            requirements: required(),
+        },
+    );
+    fs::create_dir_all(root.path().join("project/seed")).unwrap();
+    fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
+    fs::write(root.path().join("project/seed/settings.toml"), b"settings").unwrap();
+    fs::write(
+        root.path().join("project/pack/config/settings.toml"),
+        b"settings",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("project/pack/config/remote.toml"),
+        b"remote",
+    )
+    .unwrap();
+    write_intent(root.path(), &intent);
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    let before = snapshot(root.path());
+    let host = root.path();
+    let adopt = |dry, keys| async move {
+        super::super::update::adopt_with_services(
+            &session(host, dry),
+            keys,
+            services("http://127.0.0.1:9"),
+        )
+        .await
+    };
+    // Selecting a subset cannot establish a coherent first lock.
+    assert!(adopt(false, vec![key.as_str().into()]).await.is_err());
+    assert_eq!(snapshot(root.path()), before);
+    let keys = vec![key.as_str().to_owned(), url_key.as_str().to_owned()];
+    fs::write(root.path().join("project/empack.lock"), b"invalid lock").unwrap();
+    let invalid = snapshot(root.path());
+    assert!(adopt(false, keys.clone()).await.is_err());
+    assert_eq!(snapshot(root.path()), invalid);
+    fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+    #[cfg(unix)]
+    {
+        let selected_source = root.path().join("project/seed/settings.toml");
+        let outside = root.path().join("outside.toml");
+        fs::write(&outside, b"settings").unwrap();
+        fs::remove_file(&selected_source).unwrap();
+        std::os::unix::fs::symlink(&outside, &selected_source).unwrap();
+        let linked = snapshot(root.path());
+        assert!(adopt(false, keys.clone()).await.is_err());
+        assert_eq!(snapshot(root.path()), linked);
+        assert_eq!(fs::read(&outside).unwrap(), b"settings");
+        fs::remove_file(&selected_source).unwrap();
+        fs::write(&selected_source, b"settings").unwrap();
+        fs::remove_file(&outside).unwrap();
+    }
+    adopt(true, keys.clone()).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    fs::write(
+        root.path().join("project/pack/config/settings.toml"),
+        b"changed",
+    )
+    .unwrap();
+    let changed = snapshot(root.path());
+    assert!(adopt(false, keys.clone()).await.is_err());
+    assert_eq!(snapshot(root.path()), changed);
+    fs::write(
+        root.path().join("project/pack/config/settings.toml"),
+        b"settings",
+    )
+    .unwrap();
+    adopt(false, keys).await.unwrap();
+    let adopted = project(root.path());
+    assert_eq!(adopted.intent(), &intent);
+    for selected in [&key, &url_key] {
+        assert_eq!(
+            adopted.lock().dependencies[selected].files.as_slice()[0].slot,
+            role
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+        b"settings"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/remote.toml")).unwrap(),
+        b"remote"
+    );
+    let committed = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), committed);
+}
+
+#[tokio::test]
+async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let current = project(root.path());
+    let mut intent = current.intent().clone();
+    let mut lock = current.lock().clone();
+    for (key, id, version, bytes) in [
+        ("one", "123", "456", b"first".as_slice()),
+        ("two", "124", "457", b"second".as_slice()),
+    ] {
+        let key = DependencyKey::parse(key).unwrap();
+        let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse(id).unwrap());
+        let pin = ResolvedPin {
+            selection: identity.parse_pin(version).unwrap(),
+            project: identity.clone(),
+        };
+        let place = Placement {
+            layer: ContentLayer::Common,
+            destination: InstallDestination::parse(&format!("mods/{}.jar", key.as_str())).unwrap(),
+            requirements: required(),
+        };
+        intent.roots.insert(
+            key.clone(),
+            DependencyIntent {
+                source: SourceIntent::Provider(identity.clone()),
+                kind: ContentKind::Mod,
+                version: VersionIntent::Exact(pin.selection.clone()),
+                placement: PlacementIntent::Explicit(NonEmpty::new(vec![place.clone()]).unwrap()),
+                requirements: required(),
+            },
+        );
+        let digests =
+            DigestSet::new(vec![ExpectedDigest::Sha512(Sha512::digest(bytes).into())]).unwrap();
+        lock.dependencies.insert(
+            key.clone(),
+            LockedDependency {
+                title: key.as_str().into(),
+                kind: ContentKind::Mod,
+                identity: ResolvedIdentity::Provider(identity),
+                selected: Some(pin.clone()),
+                files: NonEmpty::new(vec![ResolvedFile {
+                    slot: FileSlot::parse("primary").unwrap(),
+                    acquisition: AcquisitionSpec::Manual {
+                        pin: Some(pin),
+                        instructions: "Use the provider page".into(),
+                    },
+                    expected: ExpectedContent {
+                        digests: Some(digests.clone()),
+                        size: Some(bytes.len() as u64),
+                        accepted_observation: None,
+                    },
+                    provenance: Provenance {
+                        source: "fixture".into(),
+                        location: None,
+                        declared_digests: Some(digests),
+                        conversions: vec![],
+                    },
+                    placements: NonEmpty::new(vec![place]).unwrap(),
+                }])
+                .unwrap(),
+            },
+        );
+        lock.coverage
+            .insert(key.clone(), Coverage::CompleteForSelection);
+        lock.required_edges.insert(key, BTreeSet::new());
+    }
+    write_intent(root.path(), &intent);
+    let source = DocumentCodec
+        .decode_intent(
+            &fs::read(root.path().join("project/empack.yml")).unwrap(),
+            "fixture",
+        )
+        .unwrap();
+    lock.intent_revision = source.semantic_revision();
+    let resolved = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+    fs::write(
+        root.path().join("project/empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+    let original = snapshot(&root.path().join("project"));
+    let mut server = mockito::Server::new_async().await;
+    let no_network = server
+        .mock("GET", mockito::Matcher::Any)
+        .expect(0)
+        .create_async()
+        .await;
+    let result = synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await;
+    assert!(format!("{:#}", result.unwrap_err()).contains("continuation was saved"));
+    assert_eq!(snapshot(&root.path().join("project")), original);
+    let records = || {
+        fs::read_dir(root.path().join("state/pending-sync"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(records().len(), 1);
+    let before = snapshot(root.path());
+    resume_with_services(&session(root.path(), true), vec![], services(&server.url()))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    for selected in ["unknown/primary=one.jar", "one/primary=one.jar"] {
+        let before = snapshot(root.path());
+        let files = if selected.starts_with("unknown") {
+            vec![selected.into()]
+        } else {
+            vec![selected.into(), selected.into()]
+        };
+        assert!(
+            resume_with_services(&session(root.path(), false), files, services(&server.url()))
+                .await
+                .is_err()
+        );
+        assert_eq!(snapshot(root.path()), before);
+    }
+    #[cfg(unix)]
+    {
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        fs::write(outside.path(), b"first").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("linked.jar")).unwrap();
+        let before = snapshot(root.path());
+        assert!(
+            resume_with_services(
+                &session(root.path(), false),
+                vec!["one/primary=linked.jar".into()],
+                services(&server.url())
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(snapshot(root.path()), before);
+        assert_eq!(fs::read(outside.path()).unwrap(), b"first");
+        fs::remove_file(root.path().join("linked.jar")).unwrap();
+    }
+    fs::write(root.path().join("one.jar"), b"first").unwrap();
+    let partial = resume_with_services(
+        &session(root.path(), false),
+        vec!["one/primary=one.jar".into()],
+        services(&server.url()),
+    )
+    .await;
+    assert!(format!("{:#}", partial.unwrap_err()).contains("continuation was saved"));
+    assert_eq!(snapshot(&root.path().join("project")), original);
+    fs::remove_file(root.path().join("one.jar")).unwrap();
+    if root.path().join("cache").exists() {
+        fs::remove_dir_all(root.path().join("cache")).unwrap();
+    }
+    fs::write(root.path().join("two.jar"), b"wrong!").unwrap();
+    let before = snapshot(root.path());
+    assert!(
+        resume_with_services(
+            &session(root.path(), false),
+            vec!["two/primary=two.jar".into()],
+            services(&server.url())
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(snapshot(root.path()), before);
+    fs::write(root.path().join("two.jar"), b"second").unwrap();
+    resume_with_services(
+        &session(root.path(), false),
+        vec!["two/primary=two.jar".into()],
+        services(&server.url()),
+    )
+    .await
+    .unwrap();
+    assert!(records().is_empty());
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/one.jar")).unwrap(),
+        b"first"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/two.jar")).unwrap(),
+        b"second"
+    );
+    assert_eq!(
+        project(root.path()).lock().dependencies,
+        resolved.lock().dependencies
+    );
+    let after = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), &server.url(), false).await.unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), after);
+    no_network.assert_async().await;
+}

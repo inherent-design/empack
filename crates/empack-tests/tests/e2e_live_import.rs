@@ -1,12 +1,12 @@
 use std::time::Instant;
 
-use empack_tests::e2e::{TestProject, count_pw_toml_files, empack_cmd};
+use empack_tests::e2e::{TestProject, assert_dist_artifact_suffix, empack_cmd, read_project};
 
 const LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS: &str = "600";
 
 /// Live CurseForge URL import: Cobblemon Updated (~30 mods).
 ///
-/// Requires packwiz in PATH and network access. Self-skips otherwise.
+/// Requires live provider access; strict mode enforces external prerequisites.
 /// Runtime: 30-120s depending on network conditions.
 #[test]
 fn e2e_init_from_cobblemon_updated() {
@@ -14,7 +14,9 @@ fn e2e_init_from_cobblemon_updated() {
 
     let project = TestProject::new();
     let start = Instant::now();
+    let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
         .args([
             "init",
             "--from",
@@ -26,36 +28,30 @@ fn e2e_init_from_cobblemon_updated() {
         .expect("spawn failed");
     let elapsed = start.elapsed();
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "cobblemon import failed:\nstdout: {stdout}\nstderr: {stderr}",
-    );
-
-    project.assert_exists("cobblemon/empack.yml");
-    project.assert_exists("cobblemon/pack/pack.toml");
-
-    let pw_count = count_pw_toml_files(&project.dir().join("cobblemon/pack"));
-    assert!(
-        pw_count >= 5,
-        "expected at least 5 mod .pw.toml files, found {pw_count}"
-    );
-
+    if !output.status.success() {
+        empack_tests::e2e::assert_pending_import_lifecycle(
+            project.dir(),
+            "cobblemon",
+            &state,
+            &output,
+        );
+        return;
+    }
+    let resolved = read_project(&project.dir().join("cobblemon"));
+    let count = resolved.lock().dependencies.len();
+    assert!(count >= 5, "expected at least five imported declarations");
     eprintln!(
-        "cobblemon import: {:.1}s ({pw_count} mods)",
+        "cobblemon import: {:.1}s ({count} dependencies)",
         elapsed.as_secs_f64()
     );
 }
 
 /// Live Modrinth URL import: Fabulously Optimized (~30 mods).
 ///
-/// Requires packwiz in PATH and network access. Self-skips otherwise.
+/// Requires live provider access; strict mode enforces external prerequisites.
 /// Runtime: 30-120s depending on network conditions.
 #[test]
 fn e2e_init_from_fabulously_optimized() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let start = Instant::now();
     let output = empack_cmd(project.dir())
@@ -77,17 +73,30 @@ fn e2e_init_from_fabulously_optimized() {
         "fabopt import failed:\nstdout: {stdout}\nstderr: {stderr}",
     );
 
-    project.assert_exists("fabopt/empack.yml");
-    project.assert_exists("fabopt/pack/pack.toml");
-
-    let pw_count = count_pw_toml_files(&project.dir().join("fabopt/pack"));
+    let pack_dir = project.dir().join("fabopt");
+    let resolved = read_project(&pack_dir);
+    let count = resolved.lock().dependencies.len();
     assert!(
-        pw_count >= 5,
-        "expected at least 5 mod .pw.toml files, found {pw_count}"
+        count >= 5,
+        "expected imported content declarations, found {count}"
     );
-
+    let intent = std::fs::read(pack_dir.join("empack.yml")).unwrap();
+    let lock = std::fs::read(pack_dir.join("empack.lock")).unwrap();
+    for _ in 0..2 {
+        let sync = empack_cmd(&pack_dir)
+            .args(["--yes", "sync"])
+            .output()
+            .unwrap();
+        assert!(
+            sync.status.success(),
+            "{}",
+            String::from_utf8_lossy(&sync.stderr)
+        );
+        assert_eq!(std::fs::read(pack_dir.join("empack.yml")).unwrap(), intent);
+        assert_eq!(std::fs::read(pack_dir.join("empack.lock")).unwrap(), lock);
+    }
     eprintln!(
-        "fabopt import: {:.1}s ({pw_count} mods)",
+        "fabopt import: {:.1}s ({count} dependencies)",
         elapsed.as_secs_f64()
     );
 }
@@ -95,12 +104,10 @@ fn e2e_init_from_fabulously_optimized() {
 /// Live Modrinth URL import followed by mrpack build.
 ///
 /// Validates the full init-from-URL then build-mrpack workflow end to end.
-/// Requires packwiz in PATH and network access. Self-skips otherwise.
+/// Requires live provider access; strict mode enforces external prerequisites.
 /// Runtime: 60-180s depending on network conditions.
 #[test]
 fn e2e_import_and_build_fabulously_optimized() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
 
     let import = empack_cmd(project.dir())
@@ -124,7 +131,7 @@ fn e2e_import_and_build_fabulously_optimized() {
             "EMPACK_PROCESS_TIMEOUT_SECS",
             LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
         )
-        .args(["build", "mrpack"])
+        .args(["--yes", "build", "mrpack", "--allow-optional-metadata-loss"])
         .output()
         .expect("spawn failed");
     assert!(
@@ -133,12 +140,18 @@ fn e2e_import_and_build_fabulously_optimized() {
         String::from_utf8_lossy(&build.stderr)
     );
 
-    let dist = project.dir().join("fabopt/dist");
-    let has_mrpack = std::fs::read_dir(&dist)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .any(|e| e.path().extension().is_some_and(|ext| ext == "mrpack"))
-        })
-        .unwrap_or(false);
-    assert!(has_mrpack, "no .mrpack file in dist/");
+    let artifact = assert_dist_artifact_suffix(&project.dir().join("fabopt"), ".mrpack");
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact).unwrap()).unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(manifest["name"], "Fabulously Optimized");
+    assert!(manifest["files"].as_array().unwrap().len() >= 5);
+    for file in manifest["files"].as_array().unwrap() {
+        assert!(
+            file["hashes"]["sha512"]
+                .as_str()
+                .is_some_and(|hash| hash.len() == 128)
+        );
+        assert!(file["fileSize"].as_u64().is_some_and(|bytes| bytes > 0));
+    }
 }

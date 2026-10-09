@@ -1,140 +1,393 @@
-use empack_tests::e2e::{
-    TestProject, assert_pending_restricted_build, load_pending_restricted_build,
-    seed_packwiz_installer_jars,
+//! Restricted content exercises native saved recipes, not simulated packwiz output.
+use empack_tests::{
+    e2e::{TestProject, assert_dist_artifact_suffix},
+    fixtures::restricted::fixture,
 };
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
-fn write_executable(path: &Path, script: &str) {
-    std::fs::write(path, script)
-        .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
+fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
+    let mut command = assert_cmd::Command::from_std(project.cmd());
+    command.arg("--state-dir").arg(state).arg("--yes");
+    // No external backend can manufacture the missing-content decision.
+    command.env(
+        "EMPACK_PACKWIZ_BIN",
+        project.dir().join("unavailable-packwiz"),
+    );
+    command.timeout(std::time::Duration::from_secs(90));
+    command
+}
+fn saved(state: &Path) -> PathBuf {
+    let records: Vec<_> = fs::read_dir(state.join("pending-builds"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .collect();
+    assert_eq!(records.len(), 1);
+    records[0].clone()
+}
+fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(root: &Path, at: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(at).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                visit(root, &entry.path(), files);
+            } else {
+                files.insert(
+                    entry.path().strip_prefix(root).unwrap().into(),
+                    fs::read(entry.path()).unwrap(),
+                );
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    visit(root, root, &mut files);
+    files
+}
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(path)
-            .expect("script metadata")
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(path, perms).expect("set executable bit");
+#[test]
+fn e2e_restricted_mrpack_preserves_preview_and_resumes_only_verified_content() {
+    let project = fixture("restricted-mrpack");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let before = snapshot(project.dir());
+    command(&project, &state)
+        .args(["--dry-run", "build", "mrpack"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(project.dir()), before);
+    assert!(!state.exists());
+    command(&project, &state)
+        .args(["build", "mrpack"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    assert_eq!(snapshot(project.dir()), before);
+    let record = saved(&state);
+    let recorded = fs::read(&record).unwrap();
+    let supplied = host.path().join("download.zip");
+    fs::write(&supplied, b"invalid").unwrap();
+    let association = format!("locked:manual%2Dassets:primary={}", supplied.display());
+    command(&project, &state)
+        .args(["build", "--continue", "--associate-download", &association])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(fs::read(&record).unwrap(), recorded);
+    fs::write(&supplied, b"payload").unwrap();
+    command(&project, &state)
+        .args(["build", "--continue", "--associate-download", &association])
+        .assert()
+        .success();
+    assert!(!record.exists());
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(assert_dist_artifact_suffix(project.dir(), ".mrpack")).unwrap(),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut archive
+            .by_name("overrides/resourcepacks/manual.zip")
+            .unwrap(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert_eq!(bytes, b"payload");
+    for name in ["empack.yml", "empack.lock"] {
+        assert_eq!(
+            fs::read(project.dir().join(name)).unwrap(),
+            before[Path::new(name)]
+        );
     }
 }
 
-#[cfg(windows)]
-fn write_fake_restricted_mrpack_packwiz_binary(workdir: &Path, import_dir: &Path) -> PathBuf {
-    let path = workdir.join("fake-restricted-packwiz.cmd");
-    let script = format!(
-        "@echo off\r\nsetlocal EnableExtensions\r\nif /I \"%~3\"==\"mr\" if /I \"%~4\"==\"export\" goto restricted\r\nif /I \"%~3\"==\"refresh\" exit /b 0\r\nexit /b 0\r\n:restricted\r\necho Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\r\necho Bee Fix ^(BeeFix-1.20-1.0.7.jar^) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\r\n1>&2 echo Once you have done so, place these files in {} and re-run this command.\r\nexit /b 1\r\n",
-        import_dir.display()
+#[test]
+fn e2e_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_cleanup() {
+    let project = fixture("restricted-all");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    fs::create_dir_all(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
+    let before = snapshot(project.dir());
+    command(&project, &state)
+        .args(["build", "all", "--clean"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    assert_eq!(snapshot(project.dir()), before);
+    let record = saved(&state);
+    let recorded = fs::read(&record).unwrap();
+    command(&project, &state)
+        .args(["--dry-run", "clean", "continuation"])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&record).unwrap(), recorded);
+    assert_eq!(snapshot(project.dir()), before);
+    command(&project, &state)
+        .args(["clean", "continuation"])
+        .assert()
+        .success();
+    assert!(!record.exists());
+    assert_eq!(snapshot(project.dir()), before);
+}
+
+#[test]
+fn e2e_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
+    let project = fixture("restricted-wait");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let downloads = host.path().join("downloads");
+    fs::create_dir(&downloads).unwrap();
+    let before = snapshot(project.dir());
+    for args in [
+        vec!["build", "mrpack", "--wait-downloads", "0"],
+        vec!["build", "mrpack", "--wait-downloads", "3601"],
+        vec!["build", "mrpack", "--wait-downloads", "5"],
+    ] {
+        command(&project, &state).args(args).assert().failure();
+        assert_eq!(snapshot(project.dir()), before);
+        assert!(!state.exists());
+    }
+    command(&project, &state)
+        .args([
+            "--dry-run",
+            "build",
+            "mrpack",
+            "--wait-downloads",
+            "60",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .success();
+    assert_eq!(snapshot(project.dir()), before);
+    assert!(!state.exists());
+    let watched_state = state.clone();
+    let destination = downloads.join("renamed-download.bin");
+    let producer = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            let recorded = fs::read_dir(watched_state.join("pending-builds"))
+                .ok()
+                .is_some_and(|entries| {
+                    entries.flatten().any(|entry| {
+                        entry
+                            .path()
+                            .extension()
+                            .is_some_and(|extension| extension == "json")
+                    })
+                });
+            if recorded {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "waiting must save a recipe before polling"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        fs::write(destination, b"payload").unwrap();
+    });
+    command(&project, &state)
+        .args([
+            "build",
+            "mrpack",
+            "--wait-downloads",
+            "10",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .assert()
+        .success();
+    producer.join().unwrap();
+    assert!(
+        !fs::read_dir(state.join("pending-builds"))
+            .unwrap()
+            .flatten()
+            .any(|entry| entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "json"))
     );
-    write_executable(&path, &script);
-    path
-}
-
-#[cfg(not(windows))]
-fn write_fake_restricted_mrpack_packwiz_binary(workdir: &Path, import_dir: &Path) -> PathBuf {
-    let path = workdir.join("fake-restricted-packwiz");
-    let script = format!(
-        "#!/bin/sh\nset -eu\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  printf 'Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\\n'\n  printf 'Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\\n'\n  printf 'Once you have done so, place these files in {} and re-run this command.\\n' >&2\n  exit 1\nfi\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nexit 0\n",
-        import_dir.display()
-    );
-    write_executable(&path, &script);
-    path
-}
-
-fn project_assert_cmd(project: &TestProject) -> assert_cmd::Command {
-    assert_cmd::Command::from_std(project.cmd())
-}
-
-fn combined_output(output: &std::process::Output) -> String {
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(assert_dist_artifact_suffix(project.dir(), ".mrpack")).unwrap(),
     )
+    .unwrap();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut archive
+            .by_name("overrides/resourcepacks/manual.zip")
+            .unwrap(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert_eq!(bytes, b"payload");
 }
 
 #[test]
-fn e2e_build_mrpack_restricted_records_pending_state() {
-    let project = TestProject::workflow_fixture("restricted-mrpack", "fabric", "1.21.1");
-    let import_dir = project.dir().join("fake-packwiz-cache").join("import");
-    let fake_packwiz = write_fake_restricted_mrpack_packwiz_binary(project.dir(), &import_dir);
-
-    let mut cmd = project_assert_cmd(&project);
-    cmd.args(["build", "mrpack", "--yes"]);
-    cmd.env("EMPACK_PACKWIZ_BIN", fake_packwiz);
-
-    let assert = cmd.assert().failure();
-    let output = assert.get_output();
-    let combined = combined_output(output);
-    assert!(
-        combined.contains("empack build --continue"),
-        "restricted mrpack build should point to continuation flow:\n{combined}"
-    );
-
-    let pending =
-        assert_pending_restricted_build(project.dir(), &["mrpack"], &["BeeFix-1.20-1.0.7.jar"]);
-    assert_eq!(
-        pending.entries[0].url,
-        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
-    );
-    assert_eq!(
-        pending.entries[0].dest_path,
-        import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
-    );
+fn e2e_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
+    let project = fixture("restricted-wait-timeout");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let downloads = host.path().join("downloads");
+    fs::create_dir(&downloads).unwrap();
+    fs::write(downloads.join("manual.zip"), b"impostor").unwrap();
+    let before = snapshot(project.dir());
+    command(&project, &state)
+        .args([
+            "build",
+            "mrpack",
+            "--wait-downloads",
+            "1",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .timeout(std::time::Duration::from_secs(10))
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("Download wait expired"));
+    assert_eq!(snapshot(project.dir()), before);
+    assert!(saved(&state).is_file());
+    fs::write(downloads.join("renamed.bin"), b"payload").unwrap();
+    command(&project, &state)
+        .args([
+            "build",
+            "--continue",
+            "--wait-downloads",
+            "5",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .assert()
+        .success();
+    assert_dist_artifact_suffix(project.dir(), ".mrpack");
 }
 
 #[test]
-fn e2e_build_all_restricted_at_mrpack_stops_before_later_targets() {
-    let project = TestProject::workflow_fixture("restricted-all", "fabric", "1.21.1");
-    seed_packwiz_installer_jars(project.dir());
-    let import_dir = project.dir().join("fake-packwiz-cache").join("import");
-    let fake_packwiz = write_fake_restricted_mrpack_packwiz_binary(project.dir(), &import_dir);
+fn e2e_restricted_wait_refuses_a_replaced_recipe() {
+    let project = fixture("restricted-wait-replacement");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let downloads = host.path().join("downloads");
+    fs::create_dir(&downloads).unwrap();
+    let before = snapshot(project.dir());
+    let watched_state = state.clone();
+    let destination = downloads.join("payload.bin");
+    let replace = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let record = loop {
+            let record = fs::read_dir(watched_state.join("pending-builds"))
+                .ok()
+                .and_then(|entries| {
+                    entries.flatten().map(|entry| entry.path()).find(|path| {
+                        path.extension()
+                            .is_some_and(|extension| extension == "json")
+                    })
+                });
+            if let Some(record) = record {
+                break record;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&record).unwrap()).unwrap();
+        value["recipe"]["archive"] = "tar-gz".into();
+        let replacement = serde_json::to_vec(&value).unwrap();
+        fs::write(&record, &replacement).unwrap();
+        fs::write(destination, b"payload").unwrap();
+        (record, replacement)
+    });
+    command(&project, &state)
+        .args([
+            "build",
+            "mrpack",
+            "--wait-downloads",
+            "10",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("replaced while waiting"));
+    let (record, replacement) = replace.join().unwrap();
+    assert_eq!(fs::read(record).unwrap(), replacement);
+    assert_eq!(snapshot(project.dir()), before);
+}
 
-    let mut cmd = project_assert_cmd(&project);
-    cmd.args(["build", "all", "--yes"]);
-    cmd.env("EMPACK_PACKWIZ_BIN", fake_packwiz);
-
-    let assert = cmd.assert().failure();
-    let output = assert.get_output();
-    let combined = combined_output(output);
+#[cfg(unix)]
+#[test]
+fn e2e_restricted_wait_interrupt_retains_recovery_state() {
+    let project = fixture("restricted-wait-interrupt");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let downloads = host.path().join("downloads");
+    fs::create_dir(&downloads).unwrap();
+    let before = snapshot(project.dir());
+    let mut cmd = project.cmd();
+    cmd.arg("--state-dir")
+        .arg(&state)
+        .args([
+            "--yes",
+            "build",
+            "mrpack",
+            "--wait-downloads",
+            "60",
+            "--downloads-dir",
+        ])
+        .arg(&downloads)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd.spawn().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if fs::read_dir(state.join("pending-builds"))
+            .ok()
+            .is_some_and(|entries| {
+                entries.flatten().any(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|extension| extension == "json")
+                })
+            })
+        {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("waiting did not save its recipe");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert!(
-        combined.contains("empack build --continue"),
-        "restricted all build should point to continuation flow:\n{combined}"
+        std::process::Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
     );
-
-    let pending = assert_pending_restricted_build(
-        project.dir(),
-        &["mrpack", "client", "server", "client-full", "server-full"],
-        &["BeeFix-1.20-1.0.7.jar"],
-    );
-    assert_eq!(
-        pending.entries[0].url,
-        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
-    );
-    assert_eq!(
-        pending.entries[0].dest_path,
-        import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
-    );
-    assert!(
-        !project.dir().join("dist").join("client").exists(),
-        "client output should not be created after mrpack is blocked"
-    );
-    assert!(
-        !project.dir().join("dist").join("server").exists(),
-        "server output should not be created after mrpack is blocked"
-    );
-    assert!(
-        !project.dir().join("dist").join("client-full").exists(),
-        "client-full output should not be created after mrpack is blocked"
-    );
-    assert!(
-        !project.dir().join("dist").join("server-full").exists(),
-        "server-full output should not be created after mrpack is blocked"
-    );
-    assert!(
-        load_pending_restricted_build(project.dir())
-            .expect("load pending restricted build")
-            .is_some(),
-        "pending restricted build should persist after the failed all build"
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("interrupted waiting did not stop promptly");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(130));
+    assert!(saved(&state).is_file());
+    assert_eq!(snapshot(project.dir()), before);
 }

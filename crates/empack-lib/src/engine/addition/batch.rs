@@ -1,0 +1,108 @@
+//! One resolved group for explicitly selected provider and direct-file requests.
+use super::*;
+use crate::engine::{
+    dependency_content::{DependencyContent, DependencyContents},
+    mrpack::LockedFileKey,
+    providers::ProviderAddition,
+    resources::ResourceRequest,
+    runtime::{RetainedOutput, WorkScope},
+};
+use anyhow::ensure;
+use std::collections::BTreeMap;
+
+pub struct ResolvedAdditionBatch {
+    group: AdditionGroup,
+    content: DependencyContents,
+}
+impl ResolvedAdditionBatch {
+    pub fn group(&self) -> &AdditionGroup {
+        &self.group
+    }
+    pub fn content(&self) -> &DependencyContents {
+        &self.content
+    }
+    /// Every source has already resolved under one captured project revision. Combining groups
+    /// grants no writer and cannot silently choose between colliding logical records.
+    pub async fn combine(
+        scope: &mut WorkScope,
+        current: ResolvedProject,
+        provider: Option<Box<ProviderAddition>>,
+        files: Option<FileAddition>,
+    ) -> Result<RetainedOutput<Self>> {
+        Self::combine_with_content(scope, current, provider, None, files).await
+    }
+    /// Retain verified provider payloads alongside direct files in the same publication batch.
+    pub async fn combine_with_content(
+        scope: &mut WorkScope,
+        current: ResolvedProject,
+        provider: Option<Box<ProviderAddition>>,
+        provider_content: Option<crate::engine::providers::ProviderContent>,
+        files: Option<FileAddition>,
+    ) -> Result<RetainedOutput<Self>> {
+        let retained = ResourceRequest {
+            memory_bytes: 64 << 20,
+            ..Default::default()
+        };
+        let worker = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                ..retained
+            },
+            retained,
+            move |cancel| {
+                ensure!(
+                    provider.is_some() || files.is_some(),
+                    "Addition batch is empty"
+                );
+                let mut content = BTreeMap::new();
+                if let Some(provider) = &provider {
+                    for (key, dependency) in &provider.project().lock().dependencies {
+                        cancel.check()?;
+                        for file in dependency.files.as_slice() {
+                            content.insert(
+                                LockedFileKey {
+                                    dependency: key.clone(),
+                                    slot: file.slot.clone(),
+                                },
+                                provider
+                                    .materialized()
+                                    .get(&LockedFileKey {
+                                        dependency: key.clone(),
+                                        slot: file.slot.clone(),
+                                    })
+                                    .cloned()
+                                    .unwrap_or(DependencyContent::Reference),
+                            );
+                        }
+                    }
+                }
+                if let Some(acquired) = &provider_content {
+                    ensure!(acquired.complete(), "Provider content still requires input");
+                    ensure!(
+                        content.keys().eq(acquired.content().keys()),
+                        "Provider content coverage differs from its resolved group"
+                    );
+                    content = acquired.content().clone();
+                }
+                if let Some(files) = &files {
+                    for (key, file) in files.content() {
+                        ensure!(
+                            content.insert(key.clone(), file.clone()).is_none(),
+                            "Addition groups share a logical content slot"
+                        );
+                    }
+                }
+                let group = match (&provider, &files) {
+                    (Some(provider), None) => provider.group().clone(),
+                    (None, Some(files)) => files.group().clone(),
+                    (Some(provider), Some(files)) => {
+                        AdditionGroup::combine(&current, &[provider.group(), files.group()])?
+                    }
+                    (None, None) => unreachable!("validated nonempty batch"),
+                };
+                Ok::<_, anyhow::Error>(Self { group, content })
+            },
+        )?;
+        scope.accept(worker.wait().await?)?.transpose()
+    }
+}

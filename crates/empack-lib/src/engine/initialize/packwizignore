@@ -1,0 +1,11 @@
+# Source inclusion rules, relative to pack/
+# empack retains this filename for packwiz-compatible ignore syntax
+.env
+.env.*
+*.log
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.git/
+.github/

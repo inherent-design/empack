@@ -1,13 +1,11 @@
 use empack_tests::e2e::{
-    TestProject, assert_pack_loader_version_prefix, assert_pack_minecraft_version,
-    assert_pack_option_string, assert_project_datapack_folder, assert_project_initialized,
-    assert_project_loader, assert_project_minecraft_version,
+    TestProject, assert_locked_loader_version_prefix, assert_locked_minecraft_version,
+    assert_project_datapack_folder, assert_project_initialized, assert_project_loader,
+    assert_project_minecraft_version,
 };
 
 #[test]
 fn e2e_init_yes_fabric() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",
@@ -24,13 +22,11 @@ fn e2e_init_yes_fabric() {
     assert_project_initialized(&pack_dir);
     assert_project_loader(&pack_dir, "fabric");
     assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_pack_minecraft_version(&pack_dir, "1.21.1");
+    assert_locked_minecraft_version(&pack_dir, "1.21.1");
 }
 
 #[test]
 fn e2e_init_yes_neoforge() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",
@@ -46,13 +42,11 @@ fn e2e_init_yes_neoforge() {
     let pack_dir = project.dir().join("test-pack");
     assert_project_loader(&pack_dir, "neoforge");
     assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_pack_loader_version_prefix(&pack_dir, "neoforge", "21.1.");
+    assert_locked_loader_version_prefix(&pack_dir, "neoforge", "21.1.");
 }
 
 #[test]
 fn e2e_init_yes_neoforge_legacy_1_20_1() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",
@@ -68,7 +62,7 @@ fn e2e_init_yes_neoforge_legacy_1_20_1() {
     let pack_dir = project.dir().join("test-pack");
     assert_project_loader(&pack_dir, "neoforge");
     assert_project_minecraft_version(&pack_dir, "1.20.1");
-    assert_pack_loader_version_prefix(&pack_dir, "neoforge", "47.1.");
+    assert_locked_loader_version_prefix(&pack_dir, "neoforge", "47.1.");
 }
 
 #[test]
@@ -90,8 +84,6 @@ fn e2e_init_yes_missing_modloader() {
 
 #[test]
 fn e2e_init_existing_project() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",
@@ -104,6 +96,8 @@ fn e2e_init_existing_project() {
     ]);
     assert!(output.status.success(), "{:?}", output);
 
+    let document = project.dir().join("test-pack/empack.yml");
+    let before = std::fs::read(&document).unwrap();
     let output = project
         .cmd()
         .args([
@@ -123,15 +117,14 @@ fn e2e_init_existing_project() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}{stderr}");
     assert!(
-        combined.contains("already contains"),
-        "output did not mention 'already contains'\nstdout: {stdout}\nstderr: {stderr}"
+        combined.contains("replacement requires an explicit decision"),
+        "output did not explain the required replacement decision\nstdout: {stdout}\nstderr: {stderr}"
     );
+    assert_eq!(std::fs::read(document).unwrap(), before);
 }
 
 #[test]
 fn e2e_init_force_overwrites() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let status = project
         .cmd()
@@ -166,8 +159,6 @@ fn e2e_init_force_overwrites() {
 
 #[test]
 fn e2e_init_scaffolds_templates() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",
@@ -182,6 +173,14 @@ fn e2e_init_scaffolds_templates() {
 
     let pack_dir = project.dir().join("test-pack");
     assert!(pack_dir.join(".gitignore").exists(), ".gitignore not found");
+    for name in ["validate", "release"] {
+        let bytes = std::fs::read_to_string(pack_dir.join(format!(".github/workflows/{name}.yml")))
+            .unwrap();
+        let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
+        assert_eq!(workflow["env"]["EMPACK_VERSION"], "v0.5.0-alpha.1");
+        assert!(bytes.contains("empack build --yes mrpack"));
+        assert!(!bytes.contains("packwiz"));
+    }
     assert!(
         pack_dir.join("pack").join(".packwizignore").exists(),
         "pack/.packwizignore not found"
@@ -198,8 +197,6 @@ fn e2e_init_scaffolds_templates() {
 
 #[test]
 fn e2e_init_datapack_folder() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",
@@ -219,14 +216,11 @@ fn e2e_init_datapack_folder() {
     assert_project_loader(&pack_dir, "fabric");
     assert_project_minecraft_version(&pack_dir, "1.20.1");
     assert_project_datapack_folder(&pack_dir, "datapacks");
-    assert_pack_minecraft_version(&pack_dir, "1.20.1");
-    assert_pack_option_string(&pack_dir, "datapack-folder", "datapacks");
+    assert_locked_minecraft_version(&pack_dir, "1.20.1");
 }
 
 #[test]
 fn e2e_init_dry_run_exits_zero() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let output = project.run_output_with_retry(&[
         "init",

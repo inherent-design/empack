@@ -32,7 +32,7 @@ fn assert_same_existing_path(actual: Option<PathBuf>, expected: &Path) {
 fn test_config_loading_defaults() {
     let config = AppConfig::default();
     assert_eq!(config.log_level, 0);
-    assert_eq!(config.net_timeout, 30);
+    assert_eq!(config.net_timeout, 300);
     assert_eq!(config.color, TerminalCapsDetectIntent::Auto);
     assert_eq!(
         config.curseforge_api_client_key,
@@ -45,6 +45,8 @@ fn test_config_merging() {
     let base = AppConfig::default();
     let override_config = AppConfig {
         workdir: Some(PathBuf::from("/tmp/override-workdir")),
+        state_dir: Some(PathBuf::from("/tmp/override-state")),
+        cache_dir: Some(PathBuf::from("/tmp/override-cache")),
         modrinth_api_client_id: Some("modrinth-id".to_string()),
         modrinth_api_client_key: Some("modrinth-key".to_string()),
         curseforge_api_client_key: Some("curseforge-key".to_string()),
@@ -59,6 +61,8 @@ fn test_config_merging() {
     };
 
     let merged = base.merge_with(override_config);
+    assert_eq!(merged.state_dir, Some(PathBuf::from("/tmp/override-state")));
+    assert_eq!(merged.cache_dir, Some(PathBuf::from("/tmp/override-cache")));
     assert_eq!(
         merged.workdir,
         Some(PathBuf::from("/tmp/override-workdir"))

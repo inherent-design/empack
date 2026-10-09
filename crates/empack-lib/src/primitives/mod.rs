@@ -11,17 +11,9 @@ use thiserror::Error;
 mod shared;
 use shared::impl_fromstr_for_value_enum;
 
-/// empack domain types and project resolution
-pub mod empack;
-pub use empack::*;
-
 /// Terminal detection and graphics protocols
 pub mod terminal;
 pub use terminal::*;
-
-/// Project hosting platform types
-pub mod project_platform;
-pub use project_platform::*;
 
 /// Available log output streams
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, clap::ValueEnum)]
@@ -225,11 +217,6 @@ impl ValueEnum for LogFormat {
 impl_fromstr_for_value_enum!(LogLevel, "invalid log level");
 impl_fromstr_for_value_enum!(LogFormat, "invalid log format");
 impl_fromstr_for_value_enum!(LogOutput, "invalid log output stream");
-
-#[cfg(test)]
-mod empack_tests {
-    include!("empack.test.rs");
-}
 
 #[cfg(test)]
 mod tests {

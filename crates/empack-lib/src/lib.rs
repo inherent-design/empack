@@ -9,8 +9,8 @@
 //! - [`logger`] - Structured logging with progress tracking
 //! - [`networking`] - Async HTTP client with concurrency management
 //! - [`platform`] - System resource detection and optimization
-//! - [`api`] - Platform API abstraction and dependency resolution
-//! - [`empack`] - Domain-specific modpack management types
+//! - [`engine`] - Verified planning, provider resolution and recoverable publication
+//! - [`display`] - Session-owned progress and terminal presentation
 //! - [`application`] - CLI interface and configuration management
 //!
 //! ## Quick Start
@@ -23,10 +23,9 @@
 //! }
 //! ```
 
-pub mod api;
 pub mod application;
 pub mod display;
-pub mod empack;
+pub mod engine;
 pub mod logger;
 pub mod networking;
 pub mod platform;
@@ -35,10 +34,8 @@ pub mod terminal;
 
 pub mod testing;
 
-pub use api::{DependencyGraph, DependencyGraphError, DependencyNode};
 pub use application::{AppConfig, Cli, CliLoad, Commands, EmpackExitCode, execute_command};
 pub use logger::Logger;
-pub use networking::{NetworkingConfig, NetworkingManager};
 pub use platform::SystemResources;
 pub use primitives::{
     ConfigError, LogFormat, LogLevel, LogOutput, LoggerError, TerminalCapsDetectIntent,
@@ -49,38 +46,18 @@ pub use terminal::TerminalCapabilities;
 pub type Result<T> = anyhow::Result<T>;
 
 use application::CliConfig;
-use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn clear_interrupt_requested() {
-    INTERRUPT_REQUESTED.store(false, Ordering::SeqCst);
-}
-
-pub(crate) fn request_interrupt() {
-    INTERRUPT_REQUESTED.store(true, Ordering::SeqCst);
-}
-
-pub(crate) fn interrupt_requested() -> bool {
-    INTERRUPT_REQUESTED.load(Ordering::SeqCst)
-}
-
 pub async fn main() -> Result<()> {
     let config = CliConfig::load()?;
     run_with_config(config).await
 }
 
 pub async fn process_main() -> std::process::ExitCode {
-    display::clear_error_rendered();
     match CliConfig::load_for_process() {
         Ok(CliLoad::Ready(config)) => match run_with_config(*config).await {
             Ok(()) => EmpackExitCode::Success.as_process_exit_code(),
             Err(error) => {
                 let exit_code = application::classify_error(&error);
-                if let Some(message) = fallback_process_error_message(&error) {
-                    eprintln!("{message}");
-                }
+                eprintln!("{}", process_error_message(&error));
                 exit_code.as_process_exit_code()
             }
         },
@@ -101,56 +78,11 @@ pub async fn process_main() -> std::process::ExitCode {
 
 pub async fn run_with_config(mut config: CliConfig) -> Result<()> {
     config.app_config.validate()?;
-    let workdir = config.app_config.workdir.clone();
-    run_main_loop(workdir, execute_command(config)).await
+    execute_command(config).await
 }
 
-fn fallback_process_error_message(error: &anyhow::Error) -> Option<String> {
-    if display::take_error_rendered() {
-        None
-    } else {
-        Some(format!("Error: {error:#}"))
-    }
-}
-
-pub async fn run_main_loop<F>(workdir: Option<std::path::PathBuf>, command: F) -> Result<()>
-where
-    F: Future<Output = Result<()>>,
-{
-    // Recover cursor from prior crashed runs
-    terminal::cursor::force_show_cursor();
-    terminal::cursor::install_panic_hook();
-    clear_interrupt_requested();
-    let mut interrupt_listener = tokio::spawn(async {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            request_interrupt();
-        }
-    });
-
-    // Run command with signal handling
-    tokio::select! {
-        biased;
-        result = command => {
-            interrupt_listener.abort();
-            clear_interrupt_requested();
-            terminal::cursor::force_show_cursor();
-            logger::global_shutdown();
-            result
-        }
-        _ = &mut interrupt_listener => {
-            terminal::cursor::force_show_cursor();
-            logger::global_shutdown();
-
-            // Best-effort state marker cleanup using configured workdir
-            let marker_dir = workdir.or_else(|| std::env::current_dir().ok());
-            if let Some(dir) = &marker_dir {
-                let marker = dir.join(empack::state::STATE_MARKER_FILE);
-                let _ = std::fs::remove_file(marker);
-            }
-
-            std::process::exit(130)
-        }
-    }
+fn process_error_message(error: &anyhow::Error) -> String {
+    format!("Error: {error:#}")
 }
 
 #[cfg(test)]
@@ -193,12 +125,11 @@ pub(crate) mod test_support {
     }
 
     impl EnvLock {
-        pub fn lock(&'static self) -> Result<EnvLockGuard<'static>, Infallible> {
-            Ok(self.inner.blocking_lock())
-        }
-
         pub async fn lock_async(&'static self) -> EnvLockGuard<'static> {
             self.inner.lock().await
+        }
+        pub fn lock(&'static self) -> Result<EnvLockGuard<'static>, Infallible> {
+            Ok(self.inner.blocking_lock())
         }
     }
 
@@ -236,54 +167,18 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn error_render_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
     #[test]
-    fn fallback_process_error_message_is_suppressed_after_rendered_error() {
-        let _guard = error_render_lock().lock().expect("error render lock");
-        crate::display::clear_error_rendered();
-        crate::display::mark_error_rendered();
-
-        assert!(fallback_process_error_message(&anyhow::anyhow!("boom")).is_none());
-    }
-
-    #[test]
-    fn fallback_process_error_message_formats_when_no_error_was_rendered() {
-        let _guard = error_render_lock().lock().expect("error render lock");
-        crate::display::clear_error_rendered();
-
-        let message =
-            fallback_process_error_message(&anyhow::anyhow!("boom")).expect("fallback message");
-        assert_eq!(message, "Error: boom");
-    }
-
-    #[tokio::test]
-    async fn run_main_loop_completes_with_ready_command() {
-        let temp_dir = tempfile::TempDir::new().expect("temp dir");
-        run_main_loop(
-            Some(temp_dir.path().to_path_buf()),
-            std::future::ready(Ok::<(), anyhow::Error>(())),
-        )
-        .await
-        .expect("run main loop");
-    }
-
-    #[tokio::test]
-    async fn run_main_loop_propagates_command_error() {
-        let temp_dir = tempfile::TempDir::new().expect("temp dir");
-        let error = run_main_loop(
-            Some(temp_dir.path().to_path_buf()),
-            std::future::ready(Err::<(), anyhow::Error>(anyhow::anyhow!("boom"))),
-        )
-        .await
-        .expect_err("run main loop should propagate command errors");
-
-        assert!(error.to_string().contains("boom"));
+    fn process_error_messages_preserve_each_failure() {
+        let first = anyhow::anyhow!("first cause").context("first operation");
+        let second = anyhow::anyhow!("second cause").context("second operation");
+        assert_eq!(
+            process_error_message(&first),
+            "Error: first operation: first cause"
+        );
+        assert_eq!(
+            process_error_message(&second),
+            "Error: second operation: second cause"
+        );
     }
 
     #[tokio::test]

@@ -44,13 +44,15 @@ run_windows = "cargo run -p empack --release --"
 [tasks.test]
 alias = "t"
 depends = ["build:bin"]
-description = "Run unit + integration tests (excludes E2E)"
+description = "Run script, unit and integration tests (excludes E2E)"
 run = """
-cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
+python3 -m unittest discover -s scripts/tests
+cargo nextest run -p empack-core -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
 cargo test --workspace --doc
 """
 run_windows = [
-    'cargo nextest run -p empack-lib --features test-utils -p empack-tests -E "not test(~e2e_)"',
+    'python -m unittest discover -s scripts/tests',
+    'cargo nextest run -p empack-core -p empack-lib --features test-utils -p empack-tests -E "not test(~e2e_)"',
     'cargo test --workspace --doc',
 ]
 
@@ -95,6 +97,31 @@ description = "Run deterministic CLI smoke contracts without live providers"
 run = "cargo nextest run -p empack-tests --test smoke"
 run_windows = "cargo nextest run -p empack-tests --test smoke"
 
+[tasks."smoke:runtime"]
+description = "Verify official runtime bytes and actual Java server launchers"
+run = "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2"
+run_windows = "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2"
+
+[tasks."smoke:catalog"]
+description = "Verify official game and loader discovery catalogs"
+run = "cargo nextest run -p empack-lib --test runtime_catalog_smoke --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test runtime_catalog_smoke --run-ignored ignored-only"
+
+[tasks."smoke:providers"]
+description = "Verify official provider identities and exact downloaded bytes"
+run = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
+run_windows = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
+
+[tasks."smoke:import:adapters"]
+description = "Inspect explicit archives with normalized engine adapters"
+run = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
+
+[tasks."smoke:import:content"]
+description = "Verify and publish explicit imports in temporary projects"
+run = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
+
 [tasks."smoke:import:curated"]
 depends = ["build:bin"]
 description = "Run the full curated import smoke suite"
@@ -109,12 +136,12 @@ description = "Run coverage (unit + E2E with instrumented binary + telemetry)"
 run = """
 cargo llvm-cov clean --workspace
 cargo llvm-cov --no-report run -p empack --features telemetry -- version
-cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info
+cargo llvm-cov --no-clean --failure-mode all nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info
 """
 run_windows = [
     'cargo llvm-cov clean --workspace',
     'cargo llvm-cov --no-report run -p empack --features telemetry -- version',
-    'cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info',
+    'cargo llvm-cov --no-clean --failure-mode all nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info',
 ]
 
 # Lint

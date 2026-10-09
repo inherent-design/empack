@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::fixtures::WorkflowProjectFixture;
 
@@ -42,10 +41,6 @@ fn find_empack_bin(target_root: &Path, exe: &str, coverage_active: bool) -> Opti
         .iter()
         .map(|profile| target_root.join(format!("{profile}/empack{exe}")))
         .find(|candidate| candidate.is_file())
-}
-
-pub fn has_packwiz() -> bool {
-    empack_lib::platform::packwiz_bin::resolve_packwiz_binary().is_ok()
 }
 
 pub fn has_java() -> bool {
@@ -122,206 +117,10 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
     let _ = workdir;
 }
 
-pub fn configure_fake_packwiz(cmd: &mut Command, workdir: &Path) {
-    let path = write_fake_packwiz_binary(workdir);
-    cmd.env("EMPACK_PACKWIZ_BIN", path);
-}
-
-fn write_fake_packwiz_binary(workdir: &Path) -> PathBuf {
-    #[cfg(windows)]
-    let path = workdir.join("fake-packwiz.cmd");
-    #[cfg(not(windows))]
-    let path = workdir.join("fake-packwiz");
-
-    #[cfg(windows)]
-    let script = r#"@echo off
-setlocal EnableExtensions EnableDelayedExpansion
-set "NAME="
-set "AUTHOR="
-set "VERSION="
-set "MC="
-set "LOADER="
-set "LOADER_VERSION="
-
-:loop
-if "%~1"=="" goto done
-if "%~1"=="--name" (
-  set "NAME=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--author" (
-  set "AUTHOR=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--version" (
-  set "VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--mc-version" (
-  set "MC=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--modloader" (
-  set "LOADER=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--fabric-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--forge-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--neoforge-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-if "%~1"=="--quilt-version" (
-  set "LOADER_VERSION=%~2"
-  shift
-  shift
-  goto loop
-)
-shift
-goto loop
-
-:done
-> pack.toml (
-  echo name = "!NAME!"
-  echo author = "!AUTHOR!"
-  echo version = "!VERSION!"
-  echo pack-format = "packwiz:1.1.0"
-  echo.
-  echo [index]
-  echo file = "index.toml"
-  echo hash-format = "sha256"
-  echo hash = ""
-  echo.
-  echo [versions]
-  echo minecraft = "!MC!"
-)
-if not "!LOADER!"=="" if not "!LOADER!"=="none" if not "!LOADER_VERSION!"=="" (
-  >> pack.toml echo !LOADER! = "!LOADER_VERSION!"
-)
-type nul > index.toml
-exit /b 0
-"#;
-
-    #[cfg(not(windows))]
-    let script = r#"#!/bin/sh
-set -eu
-NAME=""
-AUTHOR=""
-VERSION=""
-MC=""
-LOADER=""
-LOADER_VERSION=""
-
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --name)
-      NAME="$2"
-      shift 2
-      ;;
-    --author)
-      AUTHOR="$2"
-      shift 2
-      ;;
-    --version)
-      VERSION="$2"
-      shift 2
-      ;;
-    --mc-version)
-      MC="$2"
-      shift 2
-      ;;
-    --modloader)
-      LOADER="$2"
-      shift 2
-      ;;
-    --fabric-version|--forge-version|--neoforge-version|--quilt-version)
-      LOADER_VERSION="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-
-cat > pack.toml <<EOF
-name = "$NAME"
-author = "$AUTHOR"
-version = "$VERSION"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "$MC"
-EOF
-
-if [ -n "$LOADER" ] && [ "$LOADER" != "none" ] && [ -n "$LOADER_VERSION" ]; then
-  printf '%s = "%s"\n' "$LOADER" "$LOADER_VERSION" >> pack.toml
-fi
-
-: > index.toml
-"#;
-
-    std::fs::write(&path, script)
-        .unwrap_or_else(|e| panic!("failed to write fake packwiz at {}: {}", path.display(), e));
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)
-            .expect("fake packwiz metadata")
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).expect("set fake packwiz executable");
-    }
-
-    path
-}
-
-/// Return early from a test when packwiz is not in PATH.
-#[macro_export]
-macro_rules! skip_if_no_packwiz {
-    () => {
-        if !$crate::e2e::prerequisite_available(
-            $crate::e2e::has_packwiz(),
-            "packwiz-tx unavailable",
-        ) {
-            return;
-        }
-    };
-}
-
 /// Return early from a test when Java is not in PATH.
 #[macro_export]
 macro_rules! skip_if_no_java {
     () => {
-        $crate::skip_if_no_packwiz!();
         if !$crate::e2e::prerequisite_available($crate::e2e::has_java(), "java -version failed") {
             return;
         }
@@ -332,7 +131,6 @@ macro_rules! skip_if_no_java {
 #[macro_export]
 macro_rules! skip_if_no_cf_key {
     () => {
-        $crate::skip_if_no_packwiz!();
         if !$crate::e2e::prerequisite_available(
             $crate::e2e::has_cf_key(),
             "CurseForge API key unavailable",
@@ -580,152 +378,101 @@ pub fn assert_file_exists(path: &Path) {
     assert!(path.exists(), "expected file at {}", path.display());
 }
 
-/// Assert the basic project files created by init/import exist.
+/// Initialization publishes coherent intent and an exact runtime lock.
 pub fn assert_project_initialized(project_root: &Path) {
-    assert_file_exists(&project_root.join("empack.yml"));
-    assert_file_exists(&project_root.join("pack").join("pack.toml"));
+    let _ = read_project(project_root);
 }
-
-/// Read and parse `empack.yml` into the typed config model.
-pub fn read_empack_config(project_root: &Path) -> empack_lib::empack::config::EmpackConfig {
-    let path = project_root.join("empack.yml");
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("failed to read {}", path.display()));
-    serde_saphyr::from_str(&content)
-        .unwrap_or_else(|e| panic!("failed to parse {}: {}", path.display(), e))
+pub fn read_project(project_root: &Path) -> empack_core::model::ResolvedProject {
+    let codec = empack_lib::engine::documents::DocumentCodec;
+    let intent = codec
+        .decode_intent(
+            &std::fs::read(project_root.join("empack.yml")).unwrap(),
+            "empack.yml",
+        )
+        .unwrap();
+    codec
+        .decode_lock(
+            &std::fs::read(project_root.join("empack.lock")).unwrap(),
+            &intent,
+            "empack.lock",
+        )
+        .unwrap()
 }
-
-/// Read and parse `pack/pack.toml` into a TOML value.
-pub fn read_pack_toml(project_root: &Path) -> toml::Value {
-    let path = project_root.join("pack").join("pack.toml");
-    let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("failed to read {}", path.display()));
-    toml::from_str::<toml::Value>(&content)
-        .unwrap_or_else(|e| panic!("failed to parse {}: {}", path.display(), e))
+fn loader_name(loader: empack_core::model::LoaderKind) -> &'static str {
+    use empack_core::model::LoaderKind;
+    match loader {
+        LoaderKind::Vanilla => "none",
+        LoaderKind::Fabric => "fabric",
+        LoaderKind::Quilt => "quilt",
+        LoaderKind::Forge => "forge",
+        LoaderKind::NeoForge => "neoforge",
+    }
 }
-
-/// Assert the typed project config recorded the expected loader family.
 pub fn assert_project_loader(project_root: &Path, expected_loader: &str) {
-    let config = read_empack_config(project_root);
-    let actual = config.empack.loader.as_ref().map(|loader| loader.as_str());
     assert_eq!(
-        actual,
-        Some(expected_loader),
-        "empack.yml loader mismatch for {}",
-        project_root.display()
+        loader_name(read_project(project_root).intent().runtime.loader),
+        expected_loader
     );
 }
-
-/// Assert the typed project config recorded the expected Minecraft version.
 pub fn assert_project_minecraft_version(project_root: &Path, expected_version: &str) {
-    let config = read_empack_config(project_root);
     assert_eq!(
-        config.empack.minecraft_version.as_deref(),
-        Some(expected_version),
-        "empack.yml minecraft_version mismatch for {}",
-        project_root.display()
+        read_project(project_root)
+            .intent()
+            .runtime
+            .minecraft
+            .as_str(),
+        expected_version
     );
 }
-
-/// Assert the typed project config does not record a loader family.
 pub fn assert_project_loader_absent(project_root: &Path) {
-    let config = read_empack_config(project_root);
     assert_eq!(
-        config.empack.loader.as_ref().map(|loader| loader.as_str()),
-        Option::<&str>::None,
-        "empack.yml should not record a loader for {}",
-        project_root.display()
+        read_project(project_root).intent().runtime.loader,
+        empack_core::model::LoaderKind::Vanilla
     );
 }
-
-/// Assert the typed project config recorded the expected datapack folder.
 pub fn assert_project_datapack_folder(project_root: &Path, expected_folder: &str) {
-    let config = read_empack_config(project_root);
     assert_eq!(
-        config.empack.datapack_folder.as_deref(),
-        Some(expected_folder),
-        "empack.yml datapack_folder mismatch for {}",
-        project_root.display()
+        read_project(project_root)
+            .intent()
+            .layout
+            .get(&empack_core::model::ContentKind::DataPack)
+            .map(|p| p.as_str()),
+        Some(expected_folder)
     );
 }
-
-/// Assert `pack/pack.toml` contains the expected loader version entry.
-pub fn assert_pack_loader_version(project_root: &Path, loader: &str, expected_version: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let versions = pack_toml
-        .get("versions")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| {
-            panic!(
-                "pack.toml missing [versions] for {}",
-                project_root.display()
-            )
-        });
-
+pub fn assert_locked_loader_version(project_root: &Path, loader: &str, expected_version: &str) {
+    let project = read_project(project_root);
+    assert_eq!(loader_name(project.lock().runtime.loader), loader);
     assert_eq!(
-        versions.get(loader).and_then(|value| value.as_str()),
-        Some(expected_version),
-        "pack.toml {loader} version mismatch for {}",
-        project_root.display()
+        project
+            .lock()
+            .runtime
+            .loader_version
+            .as_ref()
+            .map(|v| v.as_str()),
+        Some(expected_version)
     );
 }
-
-/// Assert `pack/pack.toml` contains the expected Minecraft version entry.
-pub fn assert_pack_minecraft_version(project_root: &Path, expected_version: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let versions = pack_toml
-        .get("versions")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| {
-            panic!(
-                "pack.toml missing [versions] for {}",
-                project_root.display()
-            )
-        });
-
+pub fn assert_locked_minecraft_version(project_root: &Path, expected_version: &str) {
     assert_eq!(
-        versions.get("minecraft").and_then(|value| value.as_str()),
-        Some(expected_version),
-        "pack.toml minecraft version mismatch for {}",
-        project_root.display()
+        read_project(project_root).lock().runtime.minecraft.as_str(),
+        expected_version
     );
 }
-
-/// Assert `pack/pack.toml` contains a loader version entry with the expected prefix.
-pub fn assert_pack_loader_version_prefix(project_root: &Path, loader: &str, expected_prefix: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let versions = pack_toml
-        .get("versions")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| {
-            panic!(
-                "pack.toml missing [versions] for {}",
-                project_root.display()
-            )
-        });
-
-    let actual = versions.get(loader).and_then(|value| value.as_str());
+pub fn assert_locked_loader_version_prefix(
+    project_root: &Path,
+    loader: &str,
+    expected_prefix: &str,
+) {
+    let project = read_project(project_root);
+    assert_eq!(loader_name(project.lock().runtime.loader), loader);
     assert!(
-        actual.is_some_and(|value| value.starts_with(expected_prefix)),
-        "pack.toml {loader} version should start with {expected_prefix:?} for {} but was {:?}",
-        project_root.display(),
-        actual
-    );
-}
-
-/// Assert `pack/pack.toml [options]` contains the expected string value.
-pub fn assert_pack_option_string(project_root: &Path, key: &str, expected_value: &str) {
-    let pack_toml = read_pack_toml(project_root);
-    let options = pack_toml
-        .get("options")
-        .and_then(|value| value.as_table())
-        .unwrap_or_else(|| panic!("pack.toml missing [options] for {}", project_root.display()));
-
-    assert_eq!(
-        options.get(key).and_then(|value| value.as_str()),
-        Some(expected_value),
-        "pack.toml [options] {key} mismatch for {}",
-        project_root.display()
+        project
+            .lock()
+            .runtime
+            .loader_version
+            .as_ref()
+            .is_some_and(|v| v.as_str().starts_with(expected_prefix))
     );
 }
 
@@ -753,117 +500,6 @@ pub fn assert_dist_artifact_suffix(project_root: &Path, suffix: &str) -> PathBuf
     );
 }
 
-/// Load pending restricted-build state through the library helper.
-pub fn load_pending_restricted_build(
-    project_root: &Path,
-) -> anyhow::Result<Option<empack_lib::empack::restricted_build::PendingRestrictedBuild>> {
-    let filesystem = empack_lib::application::session::LiveFileSystemProvider;
-    empack_lib::empack::restricted_build::load_pending_build(&filesystem, project_root)
-}
-
-/// Assert pending restricted-build state exists and matches the expected targets and filenames.
-pub fn assert_pending_restricted_build(
-    project_root: &Path,
-    expected_targets: &[&str],
-    expected_filenames: &[&str],
-) -> empack_lib::empack::restricted_build::PendingRestrictedBuild {
-    let pending = load_pending_restricted_build(project_root)
-        .unwrap_or_else(|e| panic!("failed to load pending restricted build: {e}"))
-        .unwrap_or_else(|| {
-            panic!(
-                "expected pending restricted build under {}",
-                project_root.display()
-            )
-        });
-
-    let expected_targets: Vec<String> = expected_targets
-        .iter()
-        .map(|value| (*value).to_string())
-        .collect();
-    assert_eq!(
-        pending.targets,
-        expected_targets,
-        "pending restricted targets mismatch for {}",
-        project_root.display()
-    );
-
-    let mut actual_filenames: Vec<String> = pending
-        .entries
-        .iter()
-        .map(|entry| entry.filename.clone())
-        .collect();
-    actual_filenames.sort();
-
-    let mut expected_filenames: Vec<String> = expected_filenames
-        .iter()
-        .map(|value| (*value).to_string())
-        .collect();
-    expected_filenames.sort();
-
-    assert_eq!(
-        actual_filenames,
-        expected_filenames,
-        "pending restricted filenames mismatch for {}",
-        project_root.display()
-    );
-
-    pending
-}
-
-/// Seed the packwiz installer bootstrap/runtime jars expected by full-build E2E.
-pub fn seed_packwiz_installer_jars(project_root: &Path) {
-    let jars_dir = project_root.join(".empack-cache").join("jars");
-    std::fs::create_dir_all(&jars_dir)
-        .unwrap_or_else(|e| panic!("failed to create {}: {}", jars_dir.display(), e));
-
-    std::fs::write(
-        jars_dir.join("packwiz-installer-bootstrap.jar"),
-        b"bootstrap",
-    )
-    .unwrap_or_else(|e| {
-        panic!(
-            "failed to seed bootstrap jar in {}: {}",
-            jars_dir.display(),
-            e
-        )
-    });
-    std::fs::write(jars_dir.join("packwiz-installer.jar"), b"installer").unwrap_or_else(|e| {
-        panic!(
-            "failed to seed installer jar in {}: {}",
-            jars_dir.display(),
-            e
-        )
-    });
-}
-
-/// Seed the loader-version cache used by version fetcher in subprocess E2E tests.
-pub fn seed_loader_version_cache(
-    project_root: &Path,
-    loader: &str,
-    mc_version: &str,
-    versions: &[&str],
-) {
-    let cache_dir = project_root.join(".empack-cache");
-    std::fs::create_dir_all(&cache_dir)
-        .unwrap_or_else(|e| panic!("failed to create {}: {}", cache_dir.display(), e));
-
-    let cached_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let path = cache_dir.join(format!("{loader}_loader_{mc_version}.json"));
-    let content = serde_json::json!({
-        "versions": versions,
-        "cached_at": cached_at,
-    });
-
-    std::fs::write(
-        &path,
-        serde_json::to_vec_pretty(&content).expect("cache json"),
-    )
-    .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
-}
-
 /// Count `.pw.toml` files recursively under `pack_root/mods`.
 ///
 /// Returns 0 if the directory does not exist.
@@ -887,9 +523,6 @@ pub fn write_local_mrpack(
     loader_id: &str,
     loader_version: &str,
 ) -> anyhow::Result<()> {
-    use empack_lib::empack::archive::{ArchiveFormat, create_archive};
-
-    let source_dir = tempfile::TempDir::new()?;
     let mut dependencies = serde_json::Map::new();
     dependencies.insert(
         "minecraft".to_string(),
@@ -910,18 +543,108 @@ pub fn write_local_mrpack(
         "dependencies": dependencies,
     });
 
-    std::fs::write(
-        source_dir.path().join("modrinth.index.json"),
-        serde_json::to_vec_pretty(&manifest)?,
-    )?;
+    crate::fixtures::write_zip(
+        archive_path,
+        &[(
+            "modrinth.index.json",
+            &serde_json::to_vec_pretty(&manifest)?,
+        )],
+    )
+}
 
-    if let Some(parent) = archive_path.parent() {
-        std::fs::create_dir_all(parent)?;
+/// Live restricted imports must retain exact restart state and expose read-only inspection
+/// and explicit cleanup. A generic provider/network failure cannot satisfy this contract.
+pub fn assert_pending_import_lifecycle(
+    workdir: &Path,
+    target: &str,
+    state: &Path,
+    output: &Output,
+) {
+    assert!(!output.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        diagnostic.contains("content obligations need explicit input"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("Import continuation was saved"),
+        "{diagnostic}"
+    );
+    let target_path = workdir.join(target);
+    assert!(
+        !target_path.exists(),
+        "incomplete import must not create its destination"
+    );
+    let records = std::fs::read_dir(state.join("pending-imports"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|value| value == "json"))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 1);
+    let original = std::fs::read(&records[0]).unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    assert_eq!(record["schema"], 1);
+    let id = record["archive"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|byte| format!("{:02x}", byte.as_u64().unwrap()))
+        .collect::<String>();
+    let archive = state
+        .join("pending-import-content")
+        .join(format!("{id}.blob"));
+    assert_eq!(
+        std::fs::metadata(&archive).unwrap().len(),
+        record["archive_bytes"].as_u64().unwrap()
+    );
+    let preview = empack_cmd(workdir)
+        .env("EMPACK_STATE_DIR", state)
+        .args(["init", "--continue", "--dry-run", target])
+        .output()
+        .unwrap();
+    assert!(!preview.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&preview.stdout),
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert!(
+        diagnostic.contains("content obligations need explicit input"),
+        "{diagnostic}"
+    );
+    assert_eq!(std::fs::read(&records[0]).unwrap(), original);
+    assert!(!target_path.exists());
+    for dry in [true, false] {
+        let mut command = empack_cmd(workdir);
+        command
+            .env("EMPACK_STATE_DIR", state)
+            .arg("--workdir")
+            .arg(&target_path)
+            .args(["--yes", "clean", "import"]);
+        if dry {
+            command.arg("--dry-run");
+        }
+        let cleanup = command.output().unwrap();
+        assert!(
+            cleanup.status.success(),
+            "{}",
+            format_output_for_debug(&cleanup)
+        );
+        if dry {
+            assert_eq!(std::fs::read(&records[0]).unwrap(), original);
+        } else {
+            assert!(!records[0].exists());
+        }
+        assert!(!target_path.exists());
+        assert!(
+            archive.exists(),
+            "explicit record cleanup retains verified source content"
+        );
     }
-
-    create_archive(source_dir.path(), archive_path, ArchiveFormat::Zip)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    Ok(())
 }
 
 #[cfg(test)]

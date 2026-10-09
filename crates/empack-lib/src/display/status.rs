@@ -18,7 +18,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a working/checking status
     ///
-    /// Example: `Display::status().checking("tool dependencies")`
+    /// Example: `display.status().checking("tool dependencies")`
     /// Output: `⠋ Checking tool dependencies...`
     pub fn checking(&self, task: &str) {
         let message = format!("Checking {}...", task);
@@ -28,7 +28,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a success status with optional details
     ///
-    /// Example: `Display::status().success("packwiz", "v0.16.1")`
+    /// Example: `display.status().success("packwiz", "v0.16.1")`
     /// Output: `✓ packwiz: v0.16.1`
     pub fn success(&self, item: &str, details: &str) {
         let message = if details.is_empty() {
@@ -41,10 +41,9 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display an error status with details
     ///
-    /// Example: `Display::status().error("packwiz", "not found")`
+    /// Example: `display.status().error("packwiz", "not found")`
     /// Output: `✗ packwiz: not found`
     pub fn error(&self, item: &str, details: &str) {
-        super::mark_error_rendered();
         let message = if details.is_empty() {
             item.to_string()
         } else {
@@ -55,7 +54,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a warning status with details
     ///
-    /// Example: `Display::status().warning("experimental feature enabled")`
+    /// Example: `display.status().warning("experimental feature enabled")`
     /// Output: `! experimental feature enabled`
     pub fn warning(&self, message: &str) {
         println!("{}", self.styling.format_warning(message));
@@ -63,7 +62,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display an info status
     ///
-    /// Example: `Display::status().info("using default configuration")`
+    /// Example: `display.status().info("using default configuration")`
     /// Output: `· using default configuration`
     pub fn info(&self, message: &str) {
         println!("{}", self.styling.format_info(message));
@@ -71,7 +70,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a simple message without status symbols
     ///
-    /// Example: `Display::status().message("Empack modpack manager")`
+    /// Example: `display.status().message("Empack modpack manager")`
     /// Output: `Empack modpack manager`
     pub fn message(&self, text: &str) {
         println!("{}", text);
@@ -79,7 +78,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display an emphasized message
     ///
-    /// Example: `Display::status().emphasis("Configuration complete")`
+    /// Example: `display.status().emphasis("Configuration complete")`
     /// Output: `**Configuration complete**` (styled)
     pub fn emphasis(&self, text: &str) {
         println!("{}", self.styling.style_emphasis(text));
@@ -87,7 +86,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a subtle/secondary message
     ///
-    /// Example: `Display::status().subtle("Run 'empack --help' for usage")`
+    /// Example: `display.status().subtle("Run 'empack --help' for usage")`
     /// Output: subtle gray styled text
     pub fn subtle(&self, text: &str) {
         println!("{}", self.styling.style_subtle(text));
@@ -98,7 +97,8 @@ impl<'a> StatusDisplay<'a> {
     /// Example:
     /// ```
     /// # use empack_lib::display::Display;
-    /// Display::status().list(&[
+    /// let display = Display::default();
+    /// display.status().list(&[
     ///     "packwiz installed",
     ///     "archive tools available",
     ///     "configuration loaded"
@@ -112,7 +112,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a completion message
     ///
-    /// Example: `Display::status().complete("Dependencies checked")`
+    /// Example: `display.status().complete("Dependencies checked")`
     /// Output: `✓ Dependencies checked`
     pub fn complete(&self, task: &str) {
         println!("{}", self.styling.format_success(task));
@@ -123,7 +123,7 @@ impl<'a> StatusDisplay<'a> {
 impl<'a> StatusDisplay<'a> {
     /// Check and report tool availability
     ///
-    /// Example: `Display::status().tool_check("packwiz", true, "v0.16.1")`
+    /// Example: `display.status().tool_check("packwiz", true, "v0.16.1")`
     pub fn tool_check(&self, tool: &str, available: bool, version: &str) {
         if available {
             self.success(tool, version);
@@ -134,7 +134,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a header for a section of work
     ///
-    /// Example: `Display::status().section("Checking Dependencies")`
+    /// Example: `display.status().section("Checking Dependencies")`
     pub fn section(&self, title: &str) {
         println!();
         println!("{}", self.styling.style_emphasis(title));
@@ -142,7 +142,7 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a step in a multi-step process
     ///
-    /// Example: `Display::status().step(1, 3, "Loading configuration")`
+    /// Example: `display.status().step(1, 3, "Loading configuration")`
     /// Output: `[1/3] Loading configuration`
     pub fn step(&self, current: usize, total: usize, description: &str) {
         let prefix = format!("[{}/{}]", current, total);

@@ -9,18 +9,21 @@ version.workspace = true
 [dependencies]
 anyhow.workspace = true
 assert_cmd.workspace = true
-directories.workspace = true
+empack-core.workspace = true
 empack-lib = { workspace = true, features = ["test-utils"] }
-indicatif.workspace = true
 reqwest.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 serde-saphyr.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 expectrl.workspace = true
 mockito.workspace = true
 predicates.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+# expectrl 0.9 pins ConPTY 0.5, which mishandles redirected Nextest handles
+conpty = "0.7.0"

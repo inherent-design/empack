@@ -1,315 +1,349 @@
-# empack usage guide
+# v0.5 command contract
 
-This file is the user-facing command reference for the empack CLI. For development setup, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+The CLI translates user input into typed engine requests. It does not install
+content, mutate project documents or publish artifacts directly.
 
-## Quick start
-
-A typical workflow from project creation through build:
-
-```bash
-empack requirements
-empack init my-pack --pack-name "My Pack" --modloader fabric --mc-version 1.21.1 --author "Your Name" -y
-empack add sodium
-empack sync
-empack build all
-```
-
-## Root options
-
-These options are defined on the root CLI and shape all command execution.
-
-| Flag | Env var | Default | Meaning |
-| --- | --- | --- | --- |
-| `-w`, `--workdir <PATH>` | `EMPACK_WORKDIR` | current directory | Working directory for project operations |
-| `-j`, `--cpu-jobs <N>` | `EMPACK_CPU_JOBS` | `2` | Reserved; currently unused |
-| `-t`, `--net-timeout <SECS>` | `EMPACK_NET_TIMEOUT` | `30` | HTTP timeout in seconds |
-| `--modrinth-api-client-id <VALUE>` | `EMPACK_ID_MODRINTH` | *none* | Reserved; currently unused |
-| `--modrinth-api-client-key <VALUE>` | `EMPACK_KEY_MODRINTH` | *none* | Reserved; currently unused |
-| `--curseforge-api-client-key <VALUE>` | `EMPACK_KEY_CURSEFORGE` | built-in default key | CurseForge API key |
-| `--log-level <N>` | `EMPACK_LOG_LEVEL` | `0` | Verbosity from error to trace |
-| `--log-format <FMT>` | `EMPACK_LOG_FORMAT` | `text` | `text`, `json`, or `yaml` (currently pretty text, not YAML serialization) |
-| `--log-output <DEST>` | `EMPACK_LOG_OUTPUT` | `stderr` | `stderr` or `stdout` |
-| `-c`, `--color <MODE>` | `EMPACK_COLOR` | `auto` | `auto`, `always`, or `never` |
-| `-y`, `--yes` | `EMPACK_YES` | `false` | Non-interactive defaults |
-| `--dry-run` | `EMPACK_DRY_RUN` | `false` | Preview supported operations without changing files |
-
-CLI flags override existing environment variables, then `.env.local`, then `.env`.
-Dotenv files are read from the invocation directory before parsing execution
-options. Clap help and version flags work even when a dotenv file is malformed.
-Relative `--workdir` paths are resolved against that directory before project
-operations or subprocesses start.
-
-## Commands
-
-### empack requirements
-
-Check the required external tools and runtime support.
-
-```bash
-empack requirements
-```
-
-### empack version
-
-Print version and build metadata.
-
-```bash
-empack version
-```
-
-### empack init
-
-Create a new modpack project. The positional argument specifies the target directory; `--pack-name` sets the display name independently.
-
-```bash
-empack init my-pack \
-  --pack-name "My Pack" \
-  --modloader fabric \
-  --mc-version 1.21.1 \
-  --author "Your Name" \
-  -y
-```
-
-Without arguments, empack initializes in the current directory and prompts for each field.
-
-| Flag | Short | Env var | Description |
-| --- | --- | --- | --- |
-| `--pack-name` | `-n` | `EMPACK_NAME` | Modpack display name |
-| `--modloader` | `-m` | `EMPACK_MODLOADER` | Mod loader: `neoforge`, `fabric`, `forge`, `quilt`, `none` |
-| `--mc-version` | | `EMPACK_MC_VERSION` | Minecraft version |
-| `--author` | `-A` | `EMPACK_AUTHOR` | Author name |
-| `--loader-version` | | `EMPACK_LOADER_VERSION` | Loader version |
-| `--pack-version` | | `EMPACK_PACK_VERSION` | Pack version string |
-| `--from` | | | Import from a local file or URL (`.mrpack`, `.zip`) |
-| `--datapack-folder` | | `EMPACK_DATAPACK_FOLDER` | Folder for datapacks relative to pack root |
-| `--game-versions` | | `EMPACK_GAME_VERSIONS` | Additional accepted MC versions (comma-separated) |
-| `--force` | `-f` | | Overwrite existing project files |
-
-Use `--modloader none` for vanilla projects.
-
-#### Importing modpacks
-
-Import an existing modpack from a local archive or remote modpack URL:
-
-```bash
-empack init --from fabulously-optimized.mrpack my-pack
-empack init --from https://cdn.modrinth.com/data/.../pack.mrpack my-pack --yes
-empack init --from https://www.curseforge.com/minecraft/modpacks/... imported-pack
-```
-
-Current import sources:
-
-- local `.mrpack`
-- local `.zip`
-- Modrinth modpack URLs
-- CurseForge modpack URLs
-
-`--dry-run` works for `init --from` and prints a resolve summary without writing files.
-
-The `--force` flag overwrites existing project files:
-
-```bash
-empack init my-pack --force
-```
-
-### empack add
-
-Add dependencies by name, URL, or direct download.
-
-```bash
-empack add sodium
-empack add jei --platform curseforge
-empack add complementary-reimagined --type shader
-empack add polished-widgets --type datapack
-empack add sodium --version-id 5QpJwx2J
-empack add jei --platform curseforge --file-id 5101366
-```
-
-| Flag | Description |
+| Operation | Meaning |
 | --- | --- |
-| `--platform` | Preferred platform: `modrinth`, `curseforge`, or `both` |
-| `--type` | Project type: `mod`, `datapack`, `resourcepack`, or `shader` |
-| `--version-id` | Pin a Modrinth version ID |
-| `--file-id` | Pin a CurseForge file ID |
-| `--force` | Add projects even when version conflicts or duplicates exist |
+| initialize/import | Prepare a complete project before replacing managed files |
+| add/remove | Resolve logical identity and plan exact managed changes |
+| sync | Restore the exact locked selection without implicit upgrades |
+| update | Refresh eligible selections deliberately |
+| adopt | Incorporate selected observed drift into intent and resolution |
+| build | Package satisfied intent, or an explicitly chosen observed snapshot |
+| clean | Remove owned outputs or eligible cache objects through scoped plans |
+| inspect/recover | Classify interrupted publication and apply an approved recovery |
 
-Current add behavior:
+Preview uses the same resolver and planner with read-only durable storage
+capabilities. Normal execution prepares, answers typed decisions, stages, verifies
+and publishes. Batches default to all requested items verifying before publication.
+Project batches report partial completion only under an explicit independent-batch policy.
+Disposable cache eviction reports any completed removals if later maintenance fails;
+it does not claim an atomic transaction across cache objects.
 
-- `--platform both` keeps the default Modrinth-first order.
-- Modrinth and CurseForge project URLs are resolved through platform-specific paths.
-- Direct `.jar` URLs stay supported for mods.
-- Unidentified direct `.jar` downloads are now tracked as local mod dependencies in `empack.yml` instead of being left unmanaged.
-- Direct `.zip` URLs are supported for `resourcepack`, `shader`, and `datapack`, but they require `--type`.
-- Arbitrary non-`.zip` non-`.jar` direct downloads are rejected.
+Provider MD5 compatibility retains weaker-integrity evidence. It never labels an
+internally computed SHA-256 as authentication of the source. Optional requirements,
+side layers and declared destinations must survive supported imports and builds.
 
-Tracked local dependencies are written into `empack.yml` with `status: local`:
+The [API contract](design/api.md) defines requests and outcomes. Exact CLI spelling
+and normalized document examples are finalized with the implementation; proposed
+requests must not be advertised as working commands before their tests pass.
+There is no requirement to retain old flags or manifest formats.
+
+## Explicit partial dependency batches
+
+`add --continue-independent` and `update --continue-independent` allow independently
+verified groups to publish together when another resolved group fails preparation.
+The preview names ready and blocked logical roots. Shared identities, required dependency
+chains, overlapping destinations and source reads keep connected requests in one group.
+A blocked group retains its previous intent, exact selections and files.
+
+```sh
+empack --yes add first.jar second.jar --continue-independent
+empack --yes update first second --continue-independent
+```
+
+Partial publication returns a nonzero exit status even though the ready groups were
+published. Inspect the named blocked groups before retrying; do not assume failure means
+nothing changed when this policy was explicitly selected. Without the flag, every requested
+item must verify before anything publishes. Preview and declined approval publish nothing.
+
+The policy applies after source identity and dependency resolution. Missing or ambiguous
+sources and unresolved dependency evidence still stop the whole request: they do not
+establish a safe independent footprint. Network and local acquisition needed for resolution
+must also complete before candidate grouping. The option does not enable partial imports,
+builds or automatic orphan removal.
+
+## Verified import file associations
+
+Historical CurseForge v1 archives may omit a file's `required` flag; those files
+remain required. Explicit `false` remains optional, while null and non-boolean values
+are rejected.
+
+`init --from` accepts repeated `--import-file SELECTOR=PATH` arguments for files
+already downloaded by the user. A declared destination such as
+`resourcepacks/theme.zip` selects that exact download obligation. Provider filenames
+must identify one file; when ambiguous, use the exact selector printed in the missing
+input diagnostic. Relative source paths resolve from the invocation directory.
+
+```sh
+empack --yes init --from ./pack.mrpack \
+  --import-file resourcepacks/theme.zip=./Downloads/renamed.zip \
+  --import-optional-default true ./project
+```
+
+Each supplied file must match the archive or exact provider selection's original
+size and digests. Associations preserve provider or URL identity, destination and
+client/server participation. They cannot replace embedded archive members. Unknown,
+ambiguous, duplicate and symlinked sources fail before project publication. Preview
+verifies selected inputs without creating a project or durable host state.
+
+`--import-local-files` is a separate conversion choice: it retains verified downloads
+as authored local files. Supplying `--import-file` alone does not request that conversion.
+When files need manual acquisition, an approved invocation saves the source archive
+and verified associations in the selected state directory. It leaves the destination
+unchanged and exits unsuccessfully because the import is incomplete. Resume with the
+same destination and any additional exact file associations:
+
+```sh
+empack --yes init --continue ./project \
+  --import-file 'EXACT_SELECTOR=./Downloads/fixture.jar' \
+  --import-optional-default true
+```
+
+Use the exact selector printed by your import. Continuation reads the retained archive,
+resolves provider facts again, verifies supplied and retained bytes, and prepares a new
+publication for approval. It works after the original archive is removed. Changed source
+assertions or destination documents make the saved import stale; refreshed download URLs
+alone do not. Conversion choices and replacement approval must be supplied again.
+
+`init --continue --dry-run ./project` does not update saved state. To abandon an import,
+use `empack --workdir ./project clean import --dry-run`, then repeat with `--yes` to
+discard its record. The destination need not exist. Cleanup also accepts stale or malformed
+records, checks that their bytes have not changed since inspection, and retains source
+content. `clean all` does not discard pending imports.
+
+## Implemented recovery command
+
+`empack recover` inspects interrupted engine publication without requiring valid
+project documents. `empack recover finish` completes its approved changes;
+`empack recover restore` restores retained preimages. A new-project creation can be
+finished, but restore cannot authorize deleting that project root.
+
+Use `--dry-run` to inspect the exact recovery footprint before execution. Recovery
+requires confirmation or `--yes`. `--operation <id>` binds automation to the operation
+reported by inspection; a different or no-longer-pending operation fails.
+
+```sh
+empack --workdir ./pack recover
+empack --workdir ./pack --dry-run recover finish --operation <id>
+empack --workdir ./pack --yes recover finish --operation <id>
+```
+
+`--state-dir` / `EMPACK_STATE_DIR` selects durable engine operation storage. Its
+default is the platform application-data directory's `operations` child, separate
+from disposable caches. Relative selections resolve from the invocation directory.
+Inspecting missing state creates neither host state nor a project directory. This
+command handles engine journals; it does not reinterpret older interruption markers.
+
+`--cache-dir` / `EMPACK_CACHE_DIR` selects disposable storage; native verified
+content lives in its `content-v1` child. Relative paths resolve from the invocation
+directory. Build preparation can read and verify existing objects without creating
+or changing the cache. Approved builds retain verified bytes for subsequent offline
+builds. Missing, busy or corrupt cache objects leave the original content obligation
+in place. Cache hits preserve the source's original integrity evidence, including
+MD5 compatibility evidence. `clean cache` uses this same selected root.
+
+For a build waiting on manual content, `--downloads-dir PATH --wait-downloads SECONDS`
+scans the selected directory for at most 1–3600 seconds. The wait starts after approving
+saved continuation state. It accepts renamed files only when their original assertions
+verify, retains new verified inputs, then presents the resulting build plan for approval.
+`--yes` answers both approvals. Timeout or interruption leaves the saved recipe intact;
+`build --continue` resumes it. Replacing the recipe or changing captured project inputs
+stops the wait. Dry runs and declined prompts do not wait or save state. Scans share a
+cumulative byte allowance; unrelated files cannot reset it on each poll.
+
+`build --open-downloads` opens public provider pages for unresolved exact selections,
+after continuation is approved and saved. It can be combined with `--wait-downloads`.
+`--yes` alone never opens a browser. Preview and declined plans have no desktop effect.
+Pages are resolved through the provider's canonical project and exact-file ownership;
+installer messages, manifest instructions and signed download locators are not browser
+commands. Each selection opens once per invocation, with a limit of 16 pages. If a
+provider cannot supply a verified page, the saved build remains available for explicit
+file association. The desktop application has its own lifetime; only its launcher is
+subject to empack's timeout and cancellation.
+
+## Synchronization and remote content
+
+`empack sync` reconciles authored intent and exact recorded selections. It restores
+local and archive-member content, resolves unsatisfied roots, and retains remote
+references without downloading their payloads. It does not remove installations
+merely because they are absent from the explicit-root manifest.
+
+`empack sync --materialize` also acquires every remote reference. The host displays
+these obligations and requires confirmation or `--yes` before acquisition. Provider
+lookup uses the exact recorded pin and file role; refreshed locators cannot replace
+original digest or size assertions. After verification, the native engine previews
+and publishes the complete file change. Failed downloads or unresolved manual
+references publish nothing. Missing manual inputs retain the exact candidate selections
+and any verified supplied bytes outside the disposable cache. Local sources still use
+captured filesystem evidence.
+
+```sh
+empack --dry-run sync --materialize
+empack --yes sync --materialize
+```
+
+To supply restricted files, use the exact dependency and file role printed by sync:
+
+```sh
+empack --yes sync --continue --file example/primary=~/Downloads/example.jar
+```
+
+Each supplied file must match the original digest and size assertions. You can supply
+files over several invocations; the project changes only when every obligation verifies
+and publication is approved. Continuation refuses changed intent/lock documents or a
+replaced project directory. `sync --continue --dry-run` leaves the saved record unchanged.
+Use `clean sync --dry-run` to inspect abandonment, then `clean sync --yes` to discard the
+selected record, including stale or invalid records. Ordinary `clean all` retains it.
+
+After completing or discarding saved operations, `clean retained --dry-run` previews
+reclaiming their stored inputs; repeat with `--yes` to apply. A category with any remaining
+build, import or sync record is preserved in full. Cleanup leaves active private content
+leases, unrelated files and publication recovery data intact. Discard records first,
+then make a separate retained-input cleanup request.
+
+The materialization preview performs no remote payload downloads. It reports
+acquisition obligations alongside the recorded synchronization plan; it does not
+claim those bytes have verified. Ordinary `sync` after materialization retains the
+installed bytes and does not refresh their versions. Explicit materialization
+checks verified cached content against the original assertions before acquiring missing
+remote bytes.
+
+## Exit status
+
+The executable maps typed failures to status codes: success `0`, general failure
+`1`, invalid input or missing authorization `2`, network failure `3`, missing provider
+content `4`, and interruption `130`. Wrapping an error with operation context does
+not change its status. Incidental words in a diagnostic or imported metadata do not
+select an exit code.
+
+`empack adopt KEY...` accepts installed changes for tracked local/member files, URL files
+and provider files in any supported side layer. It verifies bytes before changing the lock and leaves payloads
+untouched. Available provider metadata must name the same project and an exact version. Without
+metadata, provider identification must verify the observed bytes and file role; adoption
+does not choose the newest release or override an authored pin. Use `--dry-run` to inspect
+the proposed document changes. URL adoption keeps its declared origins and side placements without downloading remote
+bytes; authored content pins remain binding. When the lock is absent, select every
+root declared in `empack.yml`. Each placement must already contain the verified bytes;
+adoption creates the first lock without installing payloads. Non-vanilla runtimes need
+an exact authored loader version. Provider roots need an authored pin, exact observed
+metadata, or explicit placements that provider byte identification can verify. A malformed
+or stale existing lock remains an error.
+
+Use `empack adopt --from INPUT...` to describe content that is already installed but
+not tracked. Local files use the same content-type and folder rules as add. A direct
+HTTPS URL records that origin while verifying bytes at the expected installed destination;
+it does not download a replacement. Provider selectors require `--version-id` or
+`--file-id`. A supplied local file with `--platform` can instead establish the provider
+selection through byte identification. `--file-plan` preserves explicit provider roles,
+renamed destinations, side layers and optional requirements. Missing or differing copies
+fail the whole operation. Source options cannot be combined with tracked-key selection.
+
+```sh
+empack adopt --from pack/mods/example.jar --dry-run
+empack adopt --from renderer --platform modrinth --version-id VERSION --file-plan files.yml --yes
+```
+
+Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
+`empack clean continuation --yes` to discard that project's recipe. This works for
+stale or malformed saved recipes and leaves content-cache objects and recovery journals
+in place. `clean all` keeps pending recipes; request `continuation` explicitly.
+
+## Identify a supplied file
+
+`empack add --platform modrinth ./renamed.zip` identifies the supplied bytes before
+choosing their content type and destination. A unique provider kind supplies the type;
+`--type` is needed for an ambiguous selection and must agree with provider evidence.
+The published file keeps the supplied bytes and exact provider pin. Unknown or ambiguous
+identities fail without changing the project. Omit `--platform` to choose direct-file
+tracking deliberately; direct ZIP inputs still require a type.
+
+## Select companion files
+
+Use `empack add --platform modrinth PROJECT --file-plan ./files.yml` when a provider
+selection contains companion files or needs explicit destinations. A plan applies to
+one project and uses provider filenames as exact role names. It can also accompany
+supplied-file identification. Paths resolve from the invocation directory.
 
 ```yaml
-dependencies:
-  example-pack:
-    status: local
-    title: Example Pack
-    type: resourcepack
-    path: pack/resourcepacks/example-pack.zip
-    source_url: https://example.com/example-pack.zip
-    sha256: <hex>
+schema: 1
+environment: {client: required, server: unsupported}
+files:
+  renderer.jar:
+    - destination: mods/renderer.jar
+      layer: common
+      environment: {client: required, server: unsupported}
+  resources.zip:
+    - destination: resourcepacks/renderer-assets.zip
+      layer: common
+      environment: {client: required, server: unsupported}
 ```
 
-### empack sync
+Each file can have several placements. Layers are `common`, `common-override`,
+`client`, or `server`; destinations are relative to that layer. A side requirement
+is `required`, `unsupported`, or an optional choice such as
+`{optional: extra-art, default-enabled: false, description: Extra artwork}`.
+The top-level environment declares the dependency's participation; individual files
+retain their own requirements. Required companions cannot be omitted. Unknown filenames,
+unsafe paths, conflicting participation and publication collisions fail the batch.
+`--dry-run` resolves and previews the plan without publishing project changes.
 
-Reconcile declared dependencies in `empack.yml` with the installed pack state.
+## World archives
 
-```bash
-empack sync
-empack sync --dry-run
+Use `init --world-folder saves` or configure `layout.world` in `empack.yml` to choose
+the destination directory, then add
+a local ZIP with `empack add --type world ./adventure.zip`. The archive must contain
+one world, identified by a nonempty `level.dat`, with no files outside that world's
+root. Members are installed beneath the configured directory and archive stem.
+They remain one dependency with individual byte assertions. Sync preserves those
+assertions; explicit update or adoption accepts selected local changes. Removal leaves
+untracked neighboring files intact.
+
+For a direct HTTPS archive, add `--download-as-local` to choose tracked local ownership.
+The original archive is verified before extraction. This flag does not authorize a
+failed provider lookup to become unidentified content.
+
+A CurseForge world retains provider ownership: use `--platform curseforge --type world`
+with its project selector. Configure `layout.world` or supply `--file-plan` with the
+selected archive role and destination roots. The default root uses the provider slug;
+an explicit root stays fixed when updating. Empack verifies the archive before reading
+its members and retains the original archive digests separately from member hashes.
+An explicit file pin remains pinned. Adoption verifies installed members against that
+selected archive; it cannot attribute edited local bytes to the original provider file. When
+no download URL is available, supply the downloaded ZIP with `--platform curseforge`
+and `--type world`; identification verifies the exact provider file before extraction.
+Existing cache entries can satisfy the same original archive assertions. The source
+archive's filename may change on update without moving the configured destination root;
+only the previous tracked member inventory can be retired.
+
+Pack import uses the same interpretation for provider-owned worlds. Supply
+`init --from pack.zip --world-folder saves`; each imported world uses the provider
+slug beneath that folder. Restricted archives use the existing `--import-file`
+association. An ambiguous archive, changed digest or unsafe member blocks the whole
+import before publication. The resulting lock records members and their original
+provider archive, so sync, builds, updates and removal share the same identity.
+
+## Named file placement
+
+Sync reads those same per-file decisions when intent changes. A required provider
+companion must remain included; correcting the named roles or placements in
+`empack.yml` and rerunning sync is the explicit resolution path. Conflicting exact
+pins or incomplete provider dependency evidence still block publication; confirmation
+does not manufacture missing evidence.
+
+Multi-file dependencies record each file's placements in `empack.yml`, independently
+of the source path or provider filename used to acquire it:
+
+```yaml
+placement:
+  files:
+    settings:
+      - destination: config/settings.toml
+        layer: common
+        environment: {client: required, server: required}
 ```
 
-Current sync behavior:
+For a local member group, `settings` must also appear in `source.members`. A source
+may be `seeds/settings.toml` while its installation remains `config/settings.toml`.
+Update preserves that distinction. A flat placement list describes copies of one file;
+use named roles for multiple files. Provider `--file-plan` and world/import workflows
+record these associations automatically.
 
-- resolved platform dependencies still reconcile through packwiz
-- tracked local dependencies are validated in place and are not passed to packwiz
-- missing local files or hash drift fail normal sync
-- `--dry-run` reports local dependency drift without mutating the project
-- installed state is scanned before search resolutions are persisted; an unreadable folder aborts without changing the manifest
-- search entries resolve in memory during `--dry-run`; the manifest, pack metadata, and index remain unchanged
-- unresolved search entries and failed action planning return a nonzero result, including during dry runs
-- normal sync can apply valid actions despite resolution failures, but reports the overall sync as incomplete; installed entries whose searches fail remain protected from removal
+## Network deadlines
 
-### empack build
-
-Produce build artifacts under `dist/`.
-
-```bash
-empack build mrpack
-empack build all --clean
-empack build client-full --downloads-dir ~/Downloads
-empack build --continue
-empack build server --format tar.gz
-```
-
-Available targets:
-
-- `mrpack`
-- `client`
-- `server`
-- `client-full`
-- `server-full`
-- `all`
-
-Build options:
-
-| Flag | Description |
-| --- | --- |
-| `--continue` | Resume a previously blocked restricted-mod build from persisted state |
-| `--clean` | Remove previous build outputs before building |
-| `--format` | Output archive format: `zip`, `tar.gz`, `7z` |
-| `--downloads-dir` | Directory scanned for manually downloaded restricted CurseForge files |
-
-`--continue` resumes the original full-build targets and archive format from persisted state. It must be used without positional targets, without `--clean`, and without `--format`.
-
-If restricted CurseForge files are missing during a build:
-
-- empack records pending continuation state internally
-- empack scans the managed restricted-build cache first
-- empack then scans `--downloads-dir` if provided
-- empack finally scans `~/Downloads`
-- empack also scans the recorded destination parent directories for matching files, including the packwiz import cache path used by `mrpack` export failures
-- any matching files found outside the cache are imported into the managed cache
-- if all required files are cached, empack reuses the same continuation path as `empack build --continue`
-- if files are still missing, empack prints download URLs, the managed cache location, and the `empack build --continue` instruction
-
-When the terminal is interactive and `--yes` is not set, empack can optionally:
-
-- open direct CurseForge `/download/{file-id}` URLs in the default browser
-- wait up to 5 minutes for the files to appear in the watched download locations
-- continue automatically once every required file is cached
-
-empack does not fetch restricted CurseForge files directly. The browser-open step is an aid, not a separate download client inside empack.
-
-Tracked local dependency behavior:
-
-- every build validates tracked local dependency paths and SHA-256 hashes before build work starts
-- missing or mismatched local files are treated as project-state/config failures
-- `mrpack` exports currently reject tracked local dependencies instead of omitting them silently
-
-### empack remove
-
-Remove mods from the current project. Alias: `rm`.
-
-```bash
-empack remove sodium
-empack remove sodium --deps
-empack rm sodium
-```
-
-The `--deps` flag offers to clean up orphaned dependencies.
-
-When a dependency is tracked as `status: local`, `empack remove` deletes the recorded file if it still exists and then removes the entry from `empack.yml`.
-
-- If the tracked file is already missing, empack warns and still attempts to remove the config entry.
-- If the file is removed but `empack.yml` cannot be updated, the command fails and tells you to fix the write error and rerun `empack remove <name>`.
-
-### empack clean
-
-Clean build outputs or cache data.
-
-```bash
-empack clean
-empack clean builds
-empack clean cache
-empack clean all
-```
-
-Clean targets:
-
-- `builds`
-- `cache`
-- `all`
-
-If no target is provided, empack cleans `builds`.
-
-## Exit Codes
-
-empack uses a stable process exit contract:
-
-- `0`: success
-- `1`: general runtime or subprocess failure
-- `2`: usage, config, or project-state failure
-- `3`: network, provider, or API failure
-- `4`: not found or no results
-- `130`: interrupted by Ctrl+C
-
-`clean` never removes project metadata such as `empack.yml` or `pack/`.
-
-## Environment variables
-
-### Configuration precedence
-
-CLI flags > environment variables > `.env.local` > `.env` > defaults.
-
-### Color control
-
-Standard color environment variables are respected:
-
-| Variable | Effect |
-| --- | --- |
-| `NO_COLOR` | Any non-empty value disables color output |
-| `FORCE_COLOR` | `0`/`false` disables, `1`/`2`/`3`/`true` enables color |
-| `CLICOLOR` | `0` disables color (BSD/macOS convention) |
-| `CI` | Any value disables color and interactive features |
-
-### API keys
-
-| Variable | Purpose |
-| --- | --- |
-| `EMPACK_KEY_CURSEFORGE` | CurseForge API key (has a built-in default) |
-| `EMPACK_KEY_MODRINTH` | Modrinth API key (optional) |
-| `EMPACK_ID_MODRINTH` | Modrinth API client ID (optional) |
-| `EMPACK_PACKWIZ_BIN` | Override the `packwiz-tx` binary path |
-| `EMPACK_DOWNLOADS_DIR` | Default downloads directory for restricted file scanning |
-
-## Project model
-
-- `empack.yml`: project configuration (declared dependencies, metadata, build settings)
-- `pack/`: managed packwiz workspace
-- `dist/`: build artifact output
+`--net-timeout` (or `EMPACK_NET_TIMEOUT`) defaults to 300 seconds. It bounds each
+catalog or payload acquisition phase cumulatively, including retries and alternate
+locators. It is not a new allowance for each downloaded file. Large packs can require
+a higher explicit value. Cancellation and byte limits still apply throughout the
+phase; the timeout does not allow publication of incomplete content.

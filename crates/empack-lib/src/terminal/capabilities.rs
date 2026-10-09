@@ -15,7 +15,7 @@ pub struct TerminalCapabilities {
 
 impl TerminalCapabilities {
     /// Create minimal capabilities for non-interactive/fallback contexts.
-    /// Used by Display::global() auto-init when no explicit init has occurred.
+    /// Used for display instances when the host supplies no terminal policy.
     pub fn minimal() -> Self {
         Self {
             color: TerminalColorCaps::None,

@@ -1,8 +1,28 @@
 use crate::primitives::ConfigError;
 use clap::{Args, Parser, Subcommand};
-use std::ffi::OsString;
+use std::{ffi::OsString, path::PathBuf};
 
 use super::config::AppConfig;
+
+/// Explicit source decisions for adopting previously untracked installed content.
+#[derive(Debug, Clone, Args, Default)]
+pub struct AdoptionSourceArgs {
+    /// Provider for a project selector or supplied-file identification
+    #[arg(long, requires = "from", conflicts_with = "dependencies")]
+    pub platform: Option<SearchPlatform>,
+    /// Kind of the selected installed content
+    #[arg(long = "type", requires = "from", conflicts_with = "dependencies")]
+    pub project_type: Option<CliProjectType>,
+    /// Exact Modrinth selection; adoption never requests latest
+    #[arg(long, requires = "from", conflicts_with_all = ["dependencies", "file_id"])]
+    pub version_id: Option<String>,
+    /// Exact CurseForge selection; adoption never requests latest
+    #[arg(long, requires = "from", conflicts_with_all = ["dependencies", "version_id"])]
+    pub file_id: Option<String>,
+    /// Explicit provider file roles, placements and environment requirements
+    #[arg(long, requires = "from", conflicts_with = "dependencies")]
+    pub file_plan: Option<PathBuf>,
+}
 
 /// empack CLI - Minecraft modpack management
 #[derive(Debug, Clone, Parser, Default)]
@@ -96,6 +116,7 @@ impl CliConfig {
 
 /// Arguments for the `init` subcommand.
 #[derive(Args, Debug, Default, Clone)]
+#[command(group(clap::ArgGroup::new("import_origin").args(["from_source", "continue_import"]).multiple(false)))]
 pub struct InitArgs {
     /// Target directory for the modpack project
     #[arg(help = "Directory for the modpack project (created if needed)")]
@@ -160,6 +181,10 @@ pub struct InitArgs {
     #[arg(long, env = "EMPACK_DATAPACK_FOLDER")]
     pub datapack_folder: Option<String>,
 
+    /// Parent folder for interpreted world directories, relative to the pack root
+    #[arg(long, env = "EMPACK_WORLD_FOLDER")]
+    pub world_folder: Option<String>,
+
     /// Additional accepted MC versions (comma-separated)
     #[arg(long, env = "EMPACK_GAME_VERSIONS", value_delimiter = ',')]
     pub game_versions: Option<Vec<String>>,
@@ -167,10 +192,34 @@ pub struct InitArgs {
     /// Import modpack from a source (file path or URL)
     #[arg(long = "from", value_name = "SOURCE")]
     pub from_source: Option<String>,
+
+    /// Resume the saved source archive and verified associations for this destination.
+    #[arg(long = "continue", conflicts_with = "from_source")]
+    pub continue_import: bool,
+
+    /// Default for optional imported files; participation remains optional.
+    #[arg(long, requires = "import_origin", value_name = "BOOL")]
+    pub import_optional_default: Option<bool>,
+
+    /// Explicitly exclude archive members outside recognized content namespaces.
+    #[arg(long, requires = "import_origin")]
+    pub exclude_auxiliary: bool,
+
+    /// Retain imported downloads as local files instead of durable URL references.
+    #[arg(long, requires = "import_origin")]
+    pub import_local_files: bool,
+
+    /// Associate a selected file with one exact imported download obligation.
+    #[arg(
+        long = "import-file",
+        requires = "import_origin",
+        value_name = "SELECTOR=PATH"
+    )]
+    pub import_files: Vec<String>,
 }
 
 /// Arguments for the `build` subcommand.
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct BuildArgs {
     /// Build targets to execute
     #[arg(
@@ -191,31 +240,51 @@ pub struct BuildArgs {
     #[arg(short, long, help = "Clean build directories before building")]
     pub clean: bool,
 
-    /// Archive format for distribution packages
-    #[arg(
-        long,
-        value_enum,
-        default_value = "zip",
-        conflicts_with = "continue_build"
-    )]
-    pub format: CliArchiveFormat,
+    /// Archive format override (otherwise use the project preference)
+    #[arg(long, value_enum, conflicts_with = "continue_build")]
+    pub format: Option<CliArchiveFormat>,
 
     /// Directory to scan for manually downloaded restricted mods
     #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
     pub downloads_dir: Option<String>,
+
+    /// Open verified provider pages for missing files after saving continuation
+    #[arg(long)]
+    pub open_downloads: bool,
+
+    /// Wait for verified downloads, then present a fresh build plan
+    #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
+    pub wait_downloads: Option<u64>,
+
+    /// Explicitly associate a local download with a pending filename
+    #[arg(
+        long = "associate-download",
+        value_name = "FILENAME=PATH",
+        requires = "continue_build"
+    )]
+    pub associate_downloads: Vec<String>,
+
+    /// Use authored defaults for optional files in materialized distributions.
+    #[arg(long, conflicts_with = "continue_build")]
+    pub optional_defaults: bool,
+
+    /// Decide one optional choice explicitly.
+    #[arg(
+        long = "optional",
+        value_name = "CHOICE=true|false",
+        conflicts_with = "continue_build"
+    )]
+    pub optional_choices: Vec<String>,
+
+    /// Allow mrpack to omit optional choice keys, defaults and descriptions.
+    #[arg(long, conflicts_with = "continue_build")]
+    pub allow_optional_metadata_loss: bool,
 }
 
-impl Default for BuildArgs {
-    fn default() -> Self {
-        Self {
-            targets: Vec::new(),
-            continue_build: false,
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        }
-    }
-}
+/// An explicit user choice is needed before the command can execute.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct CommandInputRequired(pub &'static str);
 
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
@@ -229,32 +298,75 @@ pub enum Commands {
     /// Initialize modpack development environment
     Init(InitArgs),
 
-    /// Synchronize empack.yml dependencies with pack.toml reality
-    Sync {},
+    /// Reconcile installed content with recorded intent and exact selections
+    Sync {
+        /// Acquire and verify all remote references before publishing the complete batch
+        #[arg(long)]
+        materialize: bool,
+        /// Resume exact saved selections and verified manual downloads
+        #[arg(long = "continue", conflicts_with = "materialize")]
+        continue_sync: bool,
+        /// Associate a local file with the exact dependency/slot printed by sync
+        #[arg(
+            long = "file",
+            value_name = "DEPENDENCY/SLOT=PATH",
+            requires = "continue_sync"
+        )]
+        files: Vec<String>,
+    },
+
+    /// Refresh selected installed dependencies while retaining intent and pins
+    Update {
+        /// Publish verified independent groups and report failures without discarding prior content
+        #[arg(long)]
+        continue_independent: bool,
+        /// Exact logical keys from empack.yml or empack.lock
+        #[arg(required = true)]
+        dependencies: Vec<String>,
+    },
+
+    /// Accept verified installed changes without rewriting payloads
+    Adopt {
+        /// Exact logical keys already declared or tracked by the project
+        #[arg(required_unless_present = "from", conflicts_with = "from")]
+        dependencies: Vec<String>,
+        /// Describe new installed content using local files, URLs, or provider selectors
+        #[arg(long, num_args = 1.., conflicts_with = "dependencies")]
+        from: Vec<String>,
+        #[command(flatten)]
+        selection: AdoptionSourceArgs,
+    },
 
     /// Build modpack targets
     Build(BuildArgs),
 
     /// Add projects to the modpack
     Add {
+        /// Publish verified independent groups after resolution; report blocked groups as failure
+        #[arg(long)]
+        continue_independent: bool,
         /// Mod names, URLs, or project IDs to add
         #[arg(help = "Mod names, URLs, or project IDs")]
         mods: Vec<String>,
 
-        /// Force add even if conflicts exist
+        /// Update an existing selection of the same identity
         #[arg(
             short,
             long,
-            help = "Force add projects even if version conflicts exist"
+            help = "Update an existing selection of the same identity"
         )]
         force: bool,
 
         /// Search platform preference
-        #[arg(long, value_enum, help = "Preferred platform for project resolution")]
+        #[arg(
+            long,
+            value_enum,
+            help = "Provider for project resolution or supplied-file identification"
+        )]
         platform: Option<SearchPlatform>,
 
         /// Project type to search for (skips tiered search when specified)
-        #[arg(long = "type", value_enum)]
+        #[arg(long = "type", visible_alias = "project-type", value_enum)]
         project_type: Option<CliProjectType>,
 
         /// Pin a specific Modrinth version ID (skips version selection)
@@ -264,6 +376,14 @@ pub enum Commands {
         /// Pin a specific CurseForge file ID (skips version selection)
         #[arg(long, value_name = "ID")]
         file_id: Option<String>,
+
+        /// YAML file-role destinations and environment choices for one provider project
+        #[arg(long, value_name = "PATH")]
+        file_plan: Option<PathBuf>,
+
+        /// Track an HTTPS download as local content instead of retaining its URL
+        #[arg(long)]
+        download_as_local: bool,
     },
 
     /// Remove projects from the modpack
@@ -277,17 +397,43 @@ pub enum Commands {
         #[arg(
             short,
             long,
-            help = "Also remove dependencies that are no longer needed"
+            help = "Reserved: automatic orphan cleanup requires complete dependency metadata"
         )]
         deps: bool,
+
+        /// Remove authoring roots while retaining their exact installed selections.
+        #[arg(long)]
+        forget: bool,
+
+        /// Accept unknown dependents; known requirements still prevent deletion.
+        #[arg(long, conflicts_with = "forget")]
+        acknowledge_unknown: bool,
+    },
+
+    /// Inspect or recover an interrupted engine operation
+    Recover {
+        #[arg(value_enum, default_value = "inspect")]
+        action: CliRecoveryAction,
+        /// Require the exact operation reported by inspection
+        #[arg(long)]
+        operation: Option<String>,
     },
 
     /// Clean build directories
     Clean {
         /// What to clean
-        #[arg(help = "What to clean: builds, cache, all")]
+        #[arg(
+            help = "What to clean: builds, cache, continuation, import, sync, retained, all (builds and cache)"
+        )]
         targets: Vec<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CliRecoveryAction {
+    Inspect,
+    Finish,
+    Restore,
 }
 
 /// Search platform preference for project resolution
@@ -311,16 +457,6 @@ pub enum CliArchiveFormat {
     SevenZ,
 }
 
-impl CliArchiveFormat {
-    pub fn to_archive_format(&self) -> crate::empack::archive::ArchiveFormat {
-        match self {
-            CliArchiveFormat::Zip => crate::empack::archive::ArchiveFormat::Zip,
-            CliArchiveFormat::TarGz => crate::empack::archive::ArchiveFormat::TarGz,
-            CliArchiveFormat::SevenZ => crate::empack::archive::ArchiveFormat::SevenZ,
-        }
-    }
-}
-
 /// Project type filter for the add command.
 ///
 /// When specified, skips tiered type guessing and searches for the given
@@ -333,17 +469,7 @@ pub enum CliProjectType {
     #[value(name = "resourcepack")]
     ResourcePack,
     Shader,
-}
-
-impl CliProjectType {
-    pub fn to_project_type(&self) -> crate::primitives::ProjectType {
-        match self {
-            CliProjectType::Mod => crate::primitives::ProjectType::Mod,
-            CliProjectType::Datapack => crate::primitives::ProjectType::Datapack,
-            CliProjectType::ResourcePack => crate::primitives::ProjectType::ResourcePack,
-            CliProjectType::Shader => crate::primitives::ProjectType::Shader,
-        }
-    }
+    World,
 }
 
 impl std::str::FromStr for SearchPlatform {
@@ -363,12 +489,13 @@ impl Commands {
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
+            Commands::Recover { .. } => false,
             Commands::Requirements => false,
             Commands::Version => false,
             Commands::Init(..) => false,
             Commands::Sync { .. } => true,
             Commands::Build(..) => true,
-            Commands::Add { .. } => true,
+            Commands::Add { .. } | Commands::Update { .. } | Commands::Adopt { .. } => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
         }
@@ -377,12 +504,13 @@ impl Commands {
     /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
+            Commands::Recover { .. } => 0,
             Commands::Requirements => 0,
             Commands::Version => 0,
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. } => 5,
-            Commands::Add { .. } => 6,
+            Commands::Add { .. } | Commands::Update { .. } | Commands::Adopt { .. } => 6,
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,
         }
@@ -392,42 +520,101 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::empack::archive::ArchiveFormat;
-    use crate::primitives::ProjectType;
     use clap::CommandFactory;
     use std::str::FromStr;
 
     #[test]
-    fn cli_archive_format_to_archive_format_maps_variants() {
-        assert_eq!(
-            CliArchiveFormat::Zip.to_archive_format(),
-            ArchiveFormat::Zip
+    fn help_never_displays_provider_credential_values() {
+        let help = Cli::command().render_long_help().to_string();
+        if let Some(key) = AppConfig::default().curseforge_api_client_key {
+            assert!(!help.contains(&key));
+        }
+        let command = Cli::command();
+        let argument = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "curseforge_api_client_key")
+            .unwrap();
+        assert!(argument.is_hide_default_value_set());
+        assert!(argument.is_hide_env_values_set());
+    }
+
+    #[test]
+    fn sync_continuation_requires_exact_file_association_mode() {
+        assert!(Cli::try_parse_from(["empack", "sync", "--file", "one/primary=file"]).is_err());
+        assert!(Cli::try_parse_from(["empack", "sync", "--continue", "--materialize"]).is_err());
+        let cli = Cli::try_parse_from([
+            "empack",
+            "sync",
+            "--continue",
+            "--file",
+            "one/primary=some=file",
+        ])
+        .unwrap();
+        let Some(Commands::Sync {
+            materialize,
+            continue_sync,
+            files,
+        }) = cli.command
+        else {
+            panic!("not synchronization");
+        };
+        assert!(continue_sync);
+        assert!(!materialize);
+        assert_eq!(files, ["one/primary=some=file"]);
+    }
+
+    #[test]
+    fn import_file_associations_require_an_archive_and_preserve_paths() {
+        assert!(
+            Cli::try_parse_from(["empack", "init", "--import-file", "declared:0=file"]).is_err()
         );
+        let cli = Cli::try_parse_from([
+            "empack",
+            "init",
+            "--from",
+            "pack.mrpack",
+            "--import-file",
+            "declared:0=some=file.zip",
+            "--import-file",
+            "declared:1=second.zip",
+        ])
+        .unwrap();
+        let Some(Commands::Init(args)) = cli.command else {
+            panic!("not initialization")
+        };
         assert_eq!(
-            CliArchiveFormat::TarGz.to_archive_format(),
-            ArchiveFormat::TarGz
-        );
-        assert_eq!(
-            CliArchiveFormat::SevenZ.to_archive_format(),
-            ArchiveFormat::SevenZ
+            args.import_files,
+            ["declared:0=some=file.zip", "declared:1=second.zip"]
         );
     }
 
     #[test]
-    fn cli_project_type_to_project_type_maps_variants() {
-        assert_eq!(CliProjectType::Mod.to_project_type(), ProjectType::Mod);
-        assert_eq!(
-            CliProjectType::Datapack.to_project_type(),
-            ProjectType::Datapack
+    fn import_continuation_accepts_decisions_and_excludes_a_new_source() {
+        let cli = Cli::try_parse_from([
+            "empack",
+            "init",
+            "--continue",
+            "--import-file",
+            "exact=file.jar",
+            "--import-optional-default",
+            "false",
+            "--import-local-files",
+            "--exclude-auxiliary",
+            "destination",
+        ])
+        .unwrap();
+        let Some(Commands::Init(args)) = cli.command else {
+            panic!("not initialization")
+        };
+        assert!(args.continue_import);
+        assert_eq!(args.dir.as_deref(), Some("destination"));
+        assert_eq!(args.import_files, ["exact=file.jar"]);
+        assert!(
+            Cli::try_parse_from(["empack", "init", "--continue", "--from", "archive.zip"]).is_err()
         );
-        assert_eq!(
-            CliProjectType::ResourcePack.to_project_type(),
-            ProjectType::ResourcePack
-        );
-        assert_eq!(
-            CliProjectType::Shader.to_project_type(),
-            ProjectType::Shader
-        );
+        for flag in ["--import-local-files", "--exclude-auxiliary"] {
+            assert!(Cli::try_parse_from(["empack", "init", flag]).is_err());
+        }
     }
 
     #[test]
@@ -451,13 +638,28 @@ mod tests {
     fn commands_surface_metadata_matches_expected_values() {
         assert!(!Commands::Requirements.requires_modpack());
         assert!(!Commands::Version.requires_modpack());
-        assert!(Commands::Sync {}.requires_modpack());
+        assert!(
+            Commands::Sync {
+                materialize: false,
+                continue_sync: false,
+                files: vec![]
+            }
+            .requires_modpack()
+        );
         assert!(Commands::Build(BuildArgs::default()).requires_modpack());
         assert_eq!(Commands::Requirements.execution_order(), 0);
         assert_eq!(Commands::Version.execution_order(), 0);
         assert_eq!(Commands::Init(InitArgs::default()).execution_order(), 1);
         assert_eq!(Commands::Clean { targets: vec![] }.execution_order(), 2);
-        assert_eq!(Commands::Sync {}.execution_order(), 5);
+        assert_eq!(
+            Commands::Sync {
+                materialize: false,
+                continue_sync: false,
+                files: vec![]
+            }
+            .execution_order(),
+            5
+        );
         assert_eq!(
             Commands::Add {
                 mods: vec![],
@@ -466,6 +668,9 @@ mod tests {
                 project_type: None,
                 version_id: None,
                 file_id: None,
+                file_plan: None,
+                download_as_local: false,
+                continue_independent: false,
             }
             .execution_order(),
             6
@@ -473,7 +678,9 @@ mod tests {
         assert_eq!(
             Commands::Remove {
                 mods: vec![],
-                deps: false
+                deps: false,
+                forget: false,
+                acknowledge_unknown: false,
             }
             .execution_order(),
             7
@@ -487,8 +694,34 @@ mod tests {
         assert!(args.targets.is_empty());
         assert!(!args.continue_build);
         assert!(!args.clean);
-        assert_eq!(args.format, CliArchiveFormat::Zip);
+        assert_eq!(args.format, None);
         assert_eq!(args.downloads_dir, None);
+    }
+
+    #[test]
+    fn build_archive_override_distinguishes_absence_from_explicit_zip() {
+        for (arguments, expected) in [
+            (vec!["empack", "build", "client-full"], None),
+            (
+                vec!["empack", "build", "client-full", "--format", "zip"],
+                Some(CliArchiveFormat::Zip),
+            ),
+            (
+                vec!["empack", "build", "client-full", "--format", "tar.gz"],
+                Some(CliArchiveFormat::TarGz),
+            ),
+            (
+                vec!["empack", "build", "client-full", "--format", "7z"],
+                Some(CliArchiveFormat::SevenZ),
+            ),
+        ] {
+            let cli = Cli::try_parse_from(arguments).unwrap();
+            let Some(Commands::Build(args)) = cli.command else {
+                panic!("Expected build command")
+            };
+            assert_eq!(args.format, expected);
+        }
+        assert!(Cli::try_parse_from(["empack", "build", "--continue", "--format", "zip"]).is_err());
     }
 
     #[test]
@@ -661,10 +894,35 @@ mod tests {
     }
 
     #[test]
+    fn explicit_download_association_requires_continuation() {
+        assert!(
+            CliConfig::load_from([
+                "empack",
+                "build",
+                "--associate-download",
+                "mod.jar=chosen.jar"
+            ])
+            .is_err()
+        );
+        let parsed = CliConfig::load_from([
+            "empack",
+            "build",
+            "--continue",
+            "--associate-download",
+            "mod.jar=chosen.jar",
+        ])
+        .unwrap();
+        let Some(Commands::Build(args)) = parsed.command else {
+            panic!("expected build");
+        };
+        assert_eq!(args.associate_downloads, ["mod.jar=chosen.jar"]);
+    }
+
+    #[test]
     fn cli_config_load_from_supports_remove_alias() {
         let config = CliConfig::load_from(["empack", "rm", "sodium"]).expect("parse remove alias");
 
-        let Some(Commands::Remove { mods, deps }) = config.command else {
+        let Some(Commands::Remove { mods, deps, .. }) = config.command else {
             panic!("expected remove command");
         };
 
@@ -689,5 +947,62 @@ mod tests {
 
         assert_eq!(args.targets, vec!["client-full"]);
         assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/from-env"));
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn provider_file_plan_flag_selects_an_explicit_document() {
+    let cli = Cli::try_parse_from([
+        "empack",
+        "add",
+        "--platform",
+        "modrinth",
+        "renderer",
+        "--file-plan",
+        "choices.yml",
+    ])
+    .unwrap();
+    assert!(
+        matches!(cli.command, Some(Commands::Add { file_plan: Some(path), .. }) if path == std::path::Path::new("choices.yml"))
+    );
+}
+
+#[test]
+fn adoption_source_choices_are_explicit_and_cannot_mix_with_tracked_keys() {
+    for args in [
+        vec!["empack", "adopt", "--from", "project/pack/mods/example.jar"],
+        vec![
+            "empack",
+            "adopt",
+            "--from",
+            "renderer",
+            "--platform",
+            "modrinth",
+            "--version-id",
+            "RootVer1",
+            "--file-plan",
+            "files.yml",
+        ],
+        vec!["empack", "adopt", "tracked-key"],
+    ] {
+        Cli::try_parse_from(args).unwrap();
+    }
+    for args in [
+        vec!["empack", "adopt"],
+        vec!["empack", "adopt", "tracked-key", "--from", "other.jar"],
+        vec!["empack", "adopt", "tracked-key", "--platform", "modrinth"],
+        vec![
+            "empack",
+            "adopt",
+            "--from",
+            "renderer",
+            "--version-id",
+            "RootVer1",
+            "--file-id",
+            "123",
+        ],
+    ] {
+        assert!(Cli::try_parse_from(&args).is_err(), "accepted {args:?}");
     }
 }

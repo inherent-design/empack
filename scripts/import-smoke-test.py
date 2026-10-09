@@ -7,11 +7,9 @@ Runs three top-level modes:
 
 1. Curated smoke mode (default bare invocation):
    - resolves 7 hardcoded real-world packs across CurseForge and Modrinth
-   - runs `empack init --from ... --yes`
-   - runs `empack build client-full`
-   - if a build blocks on restricted CurseForge files, downloads those files
-     into empack's managed restricted-build cache and resumes with
-     `empack build --continue`
+   - imports with explicit conversion choices and verifies native continuation
+   - supplies exact restricted files after checking a read-only continuation preview
+   - runs two no-op syncs, builds a full client and inspects the resulting ZIP
    - also supports:
      - `--profile pr` for one platform-selected CI smoke pack
      - `--pack <curated-pack-id>` for one explicit curated pack
@@ -60,10 +58,9 @@ Usage:
 Curated mode phases:
     1. Resolve the latest compatible artifact for each curated pack
     2. Download archives to /tmp/empack-curated-smoke/packs/ (cached)
-    3. Run `empack init --from ... --yes`
-    4. Run `empack build client-full`
-    5. If needed, download restricted CurseForge files into the managed cache
-       and resume with `empack build --continue`
+    3. Import with explicit auxiliary and optional-file conversion choices
+    4. If needed, verify a read-only preview and resume native import with exact supplied files
+    5. Synchronize twice without document changes and verify the full-client archive
     6. Record build results and output artifact paths
 
 Survey mode phases:
@@ -94,7 +91,7 @@ import subprocess
 import sys
 import time
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlparse
@@ -256,6 +253,7 @@ class CuratedPack:
     project_id: str
     slug: str
     expect_restricted_continue: bool = False
+    world_folder: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -285,15 +283,11 @@ class CommandResult:
 
 @dataclass
 class CuratedBuildResult:
-    initial_success: bool = False
-    continue_required: bool = False
-    restricted_mod_count: int = 0
-    restricted_cache_dir: str = ""
-    continue_success: bool = False
+    success: bool = False
     artifact_path: str = ""
     elapsed_secs: float = 0.0
     warnings: list = field(default_factory=list)
-    failed_download_file_ids: list = field(default_factory=list)
+    output_tail: str = ""
 
 
 # Discovery snapshot: 2026-04-08.
@@ -341,6 +335,7 @@ CURATED_GOLDEN_PACKS = [
         loader="quilt",
         project_id="982068",
         slug="boosted-fps-quilt",
+        world_folder="saves",
     ),
     CuratedPack(
         name="Wither Storm Enhanced",
@@ -771,9 +766,6 @@ def analyze_cfzip(path: Path) -> PackAnalysis:
 class ImportResult:
     success: bool = False
     exit_code: int = -1
-    platform_refs_added: int = 0
-    overrides_copied: int = 0
-    embedded_extracted: int = 0
     stdout: str = ""
     stderr: str = ""
     warnings: list = field(default_factory=list)
@@ -783,7 +775,7 @@ def extract_warning_lines(stdout: str, stderr: str) -> list[str]:
     warnings = []
     combined = stdout + ("\n" if stdout and stderr else "") + stderr
     for line in combined.splitlines():
-        clean = re.sub(r"\x1b\[[0-9;]*m", "", line.strip())
+        clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line.strip())
         if should_echo_live_line(clean):
             warnings.append(clean)
     return warnings
@@ -804,37 +796,8 @@ def should_echo_live_line(clean: str) -> bool:
 
 
 def parse_import_output(stdout: str, stderr: str) -> ImportResult:
-    r = ImportResult(
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    combined = stdout + stderr
-    for line in combined.splitlines():
-        clean = re.sub(r'\x1b\[[0-9;]*m', '', line.strip())
-        if not clean:
-            continue
-        if "Platform references added:" in clean:
-            try:
-                r.platform_refs_added = int(clean.split(":")[-1].strip())
-            except ValueError:
-                pass
-        elif "Override files copied:" in clean:
-            try:
-                r.overrides_copied = int(clean.split(":")[-1].strip())
-            except ValueError:
-                pass
-        elif "Embedded files extracted:" in clean:
-            try:
-                r.embedded_extracted = int(clean.split(":")[-1].strip().split()[0])
-            except (ValueError, IndexError):
-                pass
-        elif "failed for" in clean or "! " in clean:
-            r.warnings.append(clean)
-        elif clean.startswith("Error:") or clean.startswith("Caused by:"):
-            r.warnings.append(clean)
-
-    return r
+    return ImportResult(stdout=stdout, stderr=stderr,
+                        warnings=extract_warning_lines(stdout, stderr))
 
 
 def run_command_posix_live(
@@ -897,7 +860,7 @@ def run_command_posix_live(
 
             while "\n" in line_buffer:
                 raw_line, line_buffer = line_buffer.split("\n", 1)
-                clean = re.sub(r'\x1b\[[0-9;]*m', '', raw_line.strip())
+                clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', raw_line.strip())
                 if should_echo_live_line(clean) and clean not in echoed_lines:
                     echoed_lines.add(clean)
                     print(f"      {label}: {clean}")
@@ -908,7 +871,7 @@ def run_command_posix_live(
 
     if line_buffer:
         chunks.append(line_buffer)
-        clean = re.sub(r'\x1b\[[0-9;]*m', '', line_buffer.strip())
+        clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', line_buffer.strip())
         if should_echo_live_line(clean) and clean not in echoed_lines:
             print(f"      {label}: {clean}")
 
@@ -970,6 +933,7 @@ def ensure_empack_env(
     configured = env.copy()
     configured["EMPACK_KEY_CURSEFORGE"] = CURSEFORGE_API_KEY
     configured["EMPACK_CACHE_DIR"] = str(layout.cache_dir)
+    configured["EMPACK_STATE_DIR"] = str(layout.cache_dir / "host-state")
     configured["EMPACK_PROCESS_TIMEOUT_SECS"] = str(timeout_secs)
     configured["NO_COLOR"] = "1"
 
@@ -1185,244 +1149,110 @@ def find_client_full_artifact(project_dir: Path) -> Optional[Path]:
     return candidates[0] if candidates else None
 
 
-def load_pending_restricted_state(project_dir: Path) -> Optional[dict]:
-    state_path = project_dir / ".empack-build-continue.json"
-    if not state_path.exists():
-        return None
-    return json.loads(state_path.read_text())
+IMPORT_CHOICES = ["--exclude-auxiliary", "--import-optional-default", "true"]
 
 
-def wait_for_pending_restricted_state(
-    project_dir: Path,
-    timeout_secs: float = 2.0,
-    poll_interval_secs: float = 0.1,
-) -> Optional[dict]:
-    deadline = time.time() + timeout_secs
-    seen_paths = []
-    while time.time() <= deadline:
-        for candidate_dir in [project_dir, project_dir.resolve()]:
-            if candidate_dir in seen_paths:
-                continue
-            seen_paths.append(candidate_dir)
-        for candidate_dir in seen_paths:
-            pending = load_pending_restricted_state(candidate_dir)
-            if pending is not None:
-                return pending
-        time.sleep(poll_interval_secs)
-    return None
+def pending_import_associations(output: str) -> list[tuple[str, int, int]]:
+    """Only the CLI's exact restricted provider obligations authorize fixture downloads."""
+    if "Import continuation was saved" not in output:
+        raise RuntimeError("import failed without native continuation")
+    count = re.search(r"(\d+) content obligations need explicit input", output)
+    found = re.findall(r'Import input "(provider:curseforge:(\d+):(\d+):[^"\\]+)": RestrictedDownload', output)
+    if not count or len(found) != int(count.group(1)) or not found:
+        raise RuntimeError("import has unresolved inputs outside the supported fixture associations")
+    if len({item[0] for item in found}) != len(found):
+        raise RuntimeError("duplicate pending import selector")
+    return [(selector, int(project), int(file_id)) for selector, project, file_id in found]
 
 
-def parse_curseforge_file_id(url: str) -> Optional[int]:
-    match = re.search(r"/(?:files|download)/(\d+)(?:/|$)", url)
-    return int(match.group(1)) if match else None
+def run_curated_import(empack_bin: Path, archive: Path, project: Path,
+                       layout: RuntimeLayout, label: str, announce: bool,
+                       world_folder: Optional[str] = None) -> tuple[dict, bool]:
+    choices = [*IMPORT_CHOICES]
+    if world_folder is not None:
+        choices.extend(["--world-folder", world_folder])
+    initial = run_empack_command(
+        empack_bin, ["init", "--from", str(archive), "--yes", *choices, str(project)],
+        layout, timeout=600, label=f"{label}:init", prefer_pty=announce,
+    )
+    result = {"success": initial.success, "exit_code": initial.exit_code,
+              "elapsed_secs": initial.elapsed_secs, "warnings": initial.warnings[:20],
+              "continued": False}
+    if initial.success:
+        return result, False
+    output = initial.stdout + "\n" + initial.stderr
+    result["output_tail"] = output[-4000:]
+    if "Import continuation was saved" not in output:
+        return result, False
+    if project.exists():
+        raise RuntimeError("incomplete import published its destination")
+    pending = pending_import_associations(output)
+    associations = []
+    supplied = layout.cache_dir / "manual-imports"
+    supplied.mkdir(parents=True, exist_ok=True)
+    for selector, mod_id, file_id in pending:
+        destination = supplied / f"{mod_id}-{file_id}.bin"
+        request = Request(
+            f"https://www.curseforge.com/api/v1/mods/{mod_id}/files/{file_id}/download",
+            headers={"User-Agent": "empack-smoke/0.5"},
+        )
+        received = 0
+        with urlopen(request, timeout=60) as response, destination.open("wb") as target:
+            while chunk := response.read(1 << 20):
+                received += len(chunk)
+                if received > 1 << 30:
+                    raise RuntimeError("manual fixture download exceeds 1 GiB")
+                target.write(chunk)
+        associations.extend(["--import-file", f"{selector}={destination}"])
+    records = layout.cache_dir / "host-state" / "pending-imports"
+    before = {p.name: p.read_bytes() for p in records.glob("*.json")}
+    if len(before) != 1:
+        raise RuntimeError("expected one isolated native import record")
+    args = ["init", "--continue", "--yes", *choices, *associations, str(project)]
+    preview = run_empack_command(empack_bin, [*args, "--dry-run"], layout, timeout=600,
+                                 label=f"{label}:preview", prefer_pty=announce)
+    after = {p.name: p.read_bytes() for p in records.glob("*.json")}
+    if not preview.success or before != after or project.exists():
+        raise RuntimeError("native import continuation preview failed or changed state: " +
+                           (preview.stdout + preview.stderr)[-2000:])
+    resumed = run_empack_command(empack_bin, args, layout, timeout=600,
+                                 label=f"{label}:continue", prefer_pty=announce)
+    result.update(success=resumed.success, exit_code=resumed.exit_code,
+                  continued=True, supplied_files=len(pending),
+                  elapsed_secs=initial.elapsed_secs + preview.elapsed_secs + resumed.elapsed_secs,
+                  output_tail=(resumed.stdout + resumed.stderr)[-4000:])
+    if resumed.success and list(records.glob("*.json")):
+        raise RuntimeError("completed import retained its pending record")
+    return result, True
 
 
-def restricted_cache_dir_for_project(cache_dir: Path, project_dir: Path) -> Path:
-    project_hash = hashlib.sha256(str(project_dir.resolve()).encode("utf-8")).hexdigest()
-    return cache_dir / "restricted-builds" / project_hash
-
-
-def clear_restricted_cache_for_project(cache_dir: Path, project_dir: Path):
-    restricted_dir = restricted_cache_dir_for_project(cache_dir, project_dir)
-    if restricted_dir.exists():
-        shutil.rmtree(restricted_dir)
-
-
-def download_restricted_files(pending_state: dict, timeout: int) -> list[int]:
-    entries = pending_state.get("entries", [])
-    file_ids = sorted({
-        parse_curseforge_file_id(entry.get("url", ""))
-        for entry in entries
-        if parse_curseforge_file_id(entry.get("url", "")) is not None
-    })
-    if not file_ids:
-        return []
-
-    response = curseforge_post("/mods/files", {"fileIds": file_ids}, timeout=timeout)
-    file_map = {item["id"]: item["modId"] for item in response.get("data", [])}
-    cache_dir = Path(pending_state["restricted_cache_dir"])
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    failed = []
-    for entry in entries:
-        file_id = parse_curseforge_file_id(entry.get("url", ""))
-        if file_id is None:
-            failed.append(-1)
-            continue
-        mod_id = file_map.get(file_id)
-        if mod_id is None:
-            failed.append(file_id)
-            continue
-
-        dest = cache_dir / entry["filename"]
-        try:
-            req = Request(
-                f"https://www.curseforge.com/api/v1/mods/{mod_id}/files/{file_id}/download",
-                headers={"User-Agent": "empack-survey/1.0"},
-            )
-            with urlopen(req, timeout=timeout) as resp:
-                dest.write_bytes(resp.read())
-        except (HTTPError, URLError, socket.timeout):
-            failed.append(file_id)
-
-    return sorted(set(failed))
-
-
-def run_curated_build(
-    pack: CuratedPack,
-    project_dir: Path,
-    empack_bin: Path,
-    layout: RuntimeLayout,
-    timeout: int,
-    announce: bool,
-) -> CuratedBuildResult:
+def run_curated_build(pack: CuratedPack, project_dir: Path, empack_bin: Path,
+                      layout: RuntimeLayout, timeout: int, announce: bool) -> CuratedBuildResult:
     label = curated_project_name(pack)
-    result = CuratedBuildResult()
-    initial_attempts = 4
-    pending_state = None
-
-    for attempt in range(initial_attempts):
-        initial = run_empack_command(
-            empack_bin,
-            ["build", "client-full"],
-            layout,
-            timeout=timeout,
-            label=f"{label}:build",
-            cwd=project_dir,
-            prefer_pty=announce,
-        )
-        result.initial_success = initial.success
-        result.elapsed_secs += initial.elapsed_secs
-        result.warnings.extend(initial.warnings)
-
-        if initial.success:
-            artifact = find_client_full_artifact(project_dir)
-            if artifact:
-                result.artifact_path = str(artifact)
-            return result
-
-        pending_state = wait_for_pending_restricted_state(project_dir)
-        if pending_state:
-            break
-
-        if attempt + 1 < initial_attempts:
-            result.warnings.append(
-                "initial client-full build failed before pending restricted state was written; retrying"
-            )
-            time.sleep(1)
-
-    if not pending_state:
-        return result
-
-    result.continue_required = True
-    result.restricted_mod_count = len(pending_state.get("entries", []))
-    result.restricted_cache_dir = pending_state.get("restricted_cache_dir", "")
-
-    failed_ids = download_restricted_files(pending_state, timeout)
-    result.failed_download_file_ids = failed_ids
-    if failed_ids:
-        result.warnings.append(f"failed restricted downloads: {failed_ids}")
-        return result
-
-    continued = run_empack_command(
-        empack_bin,
-        ["build", "--continue"],
-        layout,
-        timeout=timeout,
-        label=f"{label}:continue",
-        cwd=project_dir,
-        prefer_pty=announce,
-    )
-    result.continue_success = continued.success
-    result.elapsed_secs += continued.elapsed_secs
-    result.warnings.extend(continued.warnings)
-    artifact = find_client_full_artifact(project_dir)
-    if artifact:
-        result.artifact_path = str(artifact)
-    if (
-        pack.expect_restricted_continue
-        and result.continue_required
-        and not (result.initial_success or result.continue_success)
-    ):
-        fallback_result = _run_curated_build_raw_fallback(
-            project_dir,
-            empack_bin,
-            layout,
-            timeout,
-        )
-        fallback_result.elapsed_secs += result.elapsed_secs
-        fallback_result.warnings = result.warnings + fallback_result.warnings
-        return fallback_result
-    return result
-
-
-def _run_curated_build_raw_fallback(
-    project_dir: Path,
-    empack_bin: Path,
-    layout: RuntimeLayout,
-    timeout: int,
-) -> CuratedBuildResult:
-    env = ensure_empack_env(os.environ.copy(), layout, timeout)
-    start = time.time()
-    try:
-        proc = subprocess.run(
-            [str(empack_bin), "build", "client-full"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-            cwd=str(project_dir),
-        )
-    except subprocess.TimeoutExpired:
-        return CuratedBuildResult(
-            initial_success=False,
-            elapsed_secs=time.time() - start,
-            warnings=[f"TIMEOUT after {timeout}s"],
-        )
-    result = CuratedBuildResult(
-        initial_success=proc.returncode == 0,
-        elapsed_secs=time.time() - start,
-        warnings=extract_warning_lines(proc.stdout, proc.stderr),
-    )
-    if result.initial_success:
+    documents = {name: (project_dir / name).read_bytes() for name in ("empack.yml", "empack.lock")}
+    for _ in range(2):
+        sync = run_empack_command(empack_bin, ["--yes", "sync"], layout, timeout=timeout,
+                                 label=f"{label}:sync", cwd=project_dir, prefer_pty=announce)
+        if not sync.success:
+            return CuratedBuildResult(output_tail=(sync.stdout + sync.stderr)[-4000:])
+        if any((project_dir / name).read_bytes() != value for name, value in documents.items()):
+            raise RuntimeError("sync changed imported intent or exact selections")
+    built = run_empack_command(empack_bin, ["--yes", "build", "client-full"], layout,
+                              timeout=timeout, label=f"{label}:build", cwd=project_dir,
+                              prefer_pty=announce)
+    result = CuratedBuildResult(success=built.success, elapsed_secs=built.elapsed_secs,
+                               warnings=built.warnings, output_tail=(built.stdout + built.stderr)[-4000:])
+    if built.success:
         artifact = find_client_full_artifact(project_dir)
-        if artifact:
-            result.artifact_path = str(artifact)
-        return result
-
-    pending_state = wait_for_pending_restricted_state(project_dir)
-    if not pending_state:
-        return result
-
-    result.continue_required = True
-    result.restricted_mod_count = len(pending_state.get("entries", []))
-    result.restricted_cache_dir = pending_state.get("restricted_cache_dir", "")
-
-    failed_ids = download_restricted_files(pending_state, timeout)
-    result.failed_download_file_ids = failed_ids
-    if failed_ids:
-        result.warnings.append(f"failed restricted downloads: {failed_ids}")
-        return result
-
-    continue_start = time.time()
-    try:
-        continue_proc = subprocess.run(
-            [str(empack_bin), "build", "--continue"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-            cwd=str(project_dir),
-        )
-    except subprocess.TimeoutExpired:
-        result.warnings.append(f"TIMEOUT after {timeout}s")
-        result.elapsed_secs += time.time() - continue_start
-        return result
-    result.continue_success = continue_proc.returncode == 0
-    result.elapsed_secs += time.time() - continue_start
-    result.warnings.extend(extract_warning_lines(continue_proc.stdout, continue_proc.stderr))
-    artifact = find_client_full_artifact(project_dir)
-    if artifact:
+        if artifact is None:
+            raise RuntimeError("native client build did not publish its archive")
+        with zipfile.ZipFile(artifact) as archive:
+            if archive.testzip() is not None or not any(name.startswith(".minecraft/mods/") and name.endswith(".jar") for name in archive.namelist()):
+                raise RuntimeError("client archive is corrupt or lacks mod payloads")
+            if pack.world_folder and not any(name.startswith(f".minecraft/{pack.world_folder}/") and name.endswith("/level.dat") for name in archive.namelist()):
+                raise RuntimeError("client archive lacks interpreted provider world members")
+        if any((project_dir / name).read_bytes() != value for name, value in documents.items()):
+            raise RuntimeError("build changed imported intent or exact selections")
         result.artifact_path = str(artifact)
     return result
 
@@ -1447,8 +1277,11 @@ def run_single_curated_pack(
     project_dir = layout.projects_dir / label
     if project_dir.exists():
         shutil.rmtree(project_dir)
-    if pack.expect_restricted_continue:
-        clear_restricted_cache_for_project(layout.cache_dir, project_dir)
+    # Each fixture starts cold and owns its native continuation state; no user cache is touched.
+    layout = replace(layout, cache_dir=layout.cache_dir / "native-v05" / label)
+    if layout.cache_dir.exists():
+        shutil.rmtree(layout.cache_dir)
+    layout.ensure_dirs()
 
     entry = {
         "pack": asdict(pack),
@@ -1473,22 +1306,12 @@ def run_single_curated_pack(
             raise RuntimeError("download failed")
         verify_curated_download(pack, Path(candidate.local_path))
 
-        init_result = run_empack_command(
-            empack_bin,
-            ["init", "--from", candidate.local_path, "--yes", str(project_dir)],
-            layout,
-            timeout=600,
-            label=f"{label}:init",
-            prefer_pty=announce,
+        import_result, did_continue = run_curated_import(
+            empack_bin, Path(candidate.local_path), project_dir, layout, label, announce, pack.world_folder,
         )
-        entry["import_result"] = {
-            "success": init_result.success,
-            "exit_code": init_result.exit_code,
-            "elapsed_secs": init_result.elapsed_secs,
-            "warnings": init_result.warnings[:20],
-        }
-        if not init_result.success:
-            return entry, "init failed", False
+        entry["import_result"] = import_result
+        if not import_result["success"]:
+            return entry, "init failed", did_continue
 
         build_result = run_curated_build(
             pack,
@@ -1500,20 +1323,17 @@ def run_single_curated_pack(
         )
         entry["build_result"] = asdict(build_result)
 
-        did_continue = build_result.continue_required
-        if not (build_result.initial_success or build_result.continue_success):
+        if not build_result.success:
             return entry, "build failed", did_continue
         if not build_result.artifact_path:
             return entry, "artifact missing", did_continue
         return entry, None, did_continue
     except Exception as exc:
-        entry["import_result"] = {
-            "success": False,
-            "exit_code": -1,
-            "elapsed_secs": 0.0,
-            "warnings": [str(exc)],
-        }
-        return entry, str(exc), False
+        entry["failure_reason"] = str(exc)
+        if not entry["import_result"]:
+            entry["import_result"] = {"success": False, "exit_code": -1,
+                                      "elapsed_secs": 0.0, "warnings": [str(exc)]}
+        return entry, str(exc), entry["import_result"].get("continued", False)
 
 
 def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
@@ -1567,12 +1387,15 @@ def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
             actual_continue.append(label)
         if failure_reason:
             failures.append((label, failure_reason))
+            print(f"      FAILED: {label}: {failure_reason}", flush=True)
+        else:
+            print(f"      PASSED: {label}; native import continuation={did_continue}", flush=True)
         results.append(entry)
 
     save_curated_report(results, layout)
 
     actual_continue = set(actual_continue)
-    if actual_continue != expected_continue:
+    if not expected_continue.issubset(actual_continue):
         print(
             "\nCurated continuation mismatch:",
             f"expected {sorted(expected_continue)} but observed {sorted(actual_continue)}",
@@ -1623,7 +1446,7 @@ def print_analysis_summary(analyses: list[tuple[PackCandidate, PackAnalysis, Imp
         if ir:
             if ir.success:
                 fail_count = len(ir.warnings)
-                status = f"OK refs={ir.platform_refs_added} ovr={ir.overrides_copied}"
+                status = "OK"
                 if fail_count:
                     status += f" warn={fail_count}"
             else:
@@ -1691,9 +1514,6 @@ def save_report(
             entry["import_result"] = {
                 "success": ir.success,
                 "exit_code": ir.exit_code,
-                "platform_refs_added": ir.platform_refs_added,
-                "overrides_copied": ir.overrides_copied,
-                "embedded_extracted": ir.embedded_extracted,
                 "warning_count": len(ir.warnings),
                 "warnings": ir.warnings[:20],  # cap for readability
             }
@@ -2024,7 +1844,7 @@ def run_survey_mode(empack_bin: Path, args, layout: RuntimeLayout) -> None:
             import_result = run_import_test(path, project_name, empack_bin, layout)
             if import_result.success:
                 parts = [
-                    f"OK refs={import_result.platform_refs_added} ovr={import_result.overrides_copied}"
+                    "OK"
                 ]
                 if import_result.warnings:
                     parts.append(f"warn={len(import_result.warnings)}")
@@ -2098,7 +1918,7 @@ def main():
     if args.internal_curated_pack and (args.profile or args.pack):
         parser.error("--internal-curated-pack cannot be combined with --profile or --pack")
 
-    empack_bin = Path(args.empack_bin) if args.empack_bin else find_empack_bin()
+    empack_bin = (Path(args.empack_bin).expanduser() if args.empack_bin else find_empack_bin()).resolve(strict=True)
 
     if args.internal_curated_pack:
         run_internal_curated_pack(empack_bin, args)

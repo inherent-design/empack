@@ -1,0 +1,13 @@
+# Generated distributions and machine-local files
+/dist/
+/.empack-cache/
+/.host-state/
+.env
+.env.*
+!.env.example
+*.log
+*.swp
+*~
+.DS_Store
+Thumbs.db
+# Keep empack.yml, empack.lock, pack/, overrides/ and templates/ in version control

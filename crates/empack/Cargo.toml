@@ -12,4 +12,3 @@ telemetry = ["empack-lib/telemetry"]
 [dependencies]
 empack-lib = { workspace = true }
 tokio = { workspace = true }
-anyhow = { workspace = true }

@@ -5,8 +5,6 @@
 //! and user interaction (status, prompts, progress).
 
 use crate::terminal::TerminalCapabilities;
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod live;
 pub mod progress;
@@ -24,21 +22,6 @@ pub use providers::{
     StructuredProvider,
 };
 
-static GLOBAL_DISPLAY: OnceLock<Display> = OnceLock::new();
-static ERROR_RENDERED: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn mark_error_rendered() {
-    ERROR_RENDERED.store(true, Ordering::SeqCst);
-}
-
-pub(crate) fn clear_error_rendered() {
-    ERROR_RENDERED.store(false, Ordering::SeqCst);
-}
-
-pub(crate) fn take_error_rendered() -> bool {
-    ERROR_RENDERED.swap(false, Ordering::SeqCst)
-}
-
 /// Main display manager that coordinates all user-facing communication
 pub struct Display {
     capabilities: TerminalCapabilities,
@@ -46,60 +29,33 @@ pub struct Display {
 }
 
 impl Display {
-    /// Initialize global display system with terminal capabilities.
-    /// Idempotent: if already initialized, returns the existing instance.
-    pub fn init_or_get(capabilities: TerminalCapabilities) -> &'static Self {
-        GLOBAL_DISPLAY.get_or_init(|| {
-            let styling = styling::StyleManager::new(&capabilities);
-            Display {
-                capabilities,
-                styling,
-            }
-        })
+    /// Own terminal policy for this session; creating another display cannot change it.
+    pub fn new(capabilities: TerminalCapabilities) -> Self {
+        let styling = styling::StyleManager::new(&capabilities);
+        Self {
+            capabilities,
+            styling,
+        }
     }
-
-    /// Get global display reference.
-    /// Auto-initializes with minimal capabilities if not yet initialized.
-    pub fn global() -> &'static Self {
-        GLOBAL_DISPLAY.get_or_init(|| {
-            tracing::warn!(
-                "Display initialized with minimal capabilities; session may not have started yet"
-            );
-            let capabilities = TerminalCapabilities::minimal();
-            let styling = styling::StyleManager::new(&capabilities);
-            Display {
-                capabilities,
-                styling,
-            }
-        })
+    pub fn status(&self) -> status::StatusDisplay<'_> {
+        status::StatusDisplay::new(&self.styling)
     }
-
-    /// Status updates with semantic intent
-    pub fn status() -> status::StatusDisplay<'static> {
-        let display = Self::global();
-        status::StatusDisplay::new(&display.styling)
+    pub fn progress(&self) -> progress::ProgressDisplay<'_> {
+        progress::ProgressDisplay::new(&self.styling)
     }
-
-    /// Progress tracking for long operations
-    pub fn progress() -> progress::ProgressDisplay<'static> {
-        let display = Self::global();
-        progress::ProgressDisplay::new(&display.styling)
+    pub fn table(&self) -> structured::StructuredDisplay<'_> {
+        structured::StructuredDisplay::new(&self.styling, &self.capabilities)
     }
-
-    /// Structured output (tables, lists)
-    pub fn table() -> structured::StructuredDisplay<'static> {
-        let display = Self::global();
-        structured::StructuredDisplay::new(&display.styling, &display.capabilities)
+    pub fn capabilities(&self) -> &TerminalCapabilities {
+        &self.capabilities
     }
-
-    /// Get terminal capabilities for advanced usage
-    pub fn capabilities() -> &'static TerminalCapabilities {
-        &Self::global().capabilities
+    pub fn styling(&self) -> &styling::StyleManager {
+        &self.styling
     }
-
-    /// Get style manager for advanced styling
-    pub fn styling() -> &'static styling::StyleManager {
-        &Self::global().styling
+}
+impl Default for Display {
+    fn default() -> Self {
+        Self::new(TerminalCapabilities::minimal())
     }
 }
 

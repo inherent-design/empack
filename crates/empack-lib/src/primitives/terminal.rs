@@ -371,27 +371,6 @@ impl TerminalPrimitives {
     }
 }
 
-/// Global terminal primitives instance (initialized on first use)
-use std::sync::OnceLock;
-static TERMINAL_PRIMITIVES: OnceLock<TerminalPrimitives> = OnceLock::new();
-
-/// Initialize global terminal primitives with detected capabilities
-pub fn init_primitives(caps: &BasicTerminalCapabilities) {
-    TERMINAL_PRIMITIVES.set(TerminalPrimitives::new(caps)).ok();
-}
-
-/// Get reference to global terminal primitives (auto-initializes with basic fallback)
-pub fn primitives() -> &'static TerminalPrimitives {
-    TERMINAL_PRIMITIVES.get_or_init(|| {
-        let basic_caps = BasicTerminalCapabilities {
-            color: TerminalColorCaps::None,
-            unicode: TerminalUnicodeCaps::Ascii,
-            graphics: TerminalGraphicsCaps::None,
-        };
-        TerminalPrimitives::new(&basic_caps)
-    })
-}
-
 // ============================================================================
 // ADAPTER/BRIDGE FUNCTIONS FOR TERMINAL MODULE
 // ============================================================================

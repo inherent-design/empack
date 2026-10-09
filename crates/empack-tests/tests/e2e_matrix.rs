@@ -1,7 +1,7 @@
 use empack_tests::e2e::{
-    TestProject, assert_pack_minecraft_version, assert_project_initialized, assert_project_loader,
-    assert_project_loader_absent, assert_project_minecraft_version, configure_fake_packwiz,
-    empack_assert_cmd, seed_loader_version_cache,
+    TestProject, assert_dist_artifact_suffix, assert_locked_minecraft_version,
+    assert_project_initialized, assert_project_loader, assert_project_loader_absent,
+    assert_project_minecraft_version, empack_assert_cmd,
 };
 use predicates::prelude::*;
 
@@ -9,8 +9,6 @@ macro_rules! e2e_init_modloader {
     ($name:ident, $loader:expr) => {
         #[test]
         fn $name() {
-            empack_tests::skip_if_no_packwiz!();
-
             let project = TestProject::new();
             let output = project
                 .cmd()
@@ -40,23 +38,20 @@ macro_rules! e2e_init_modloader {
                 assert_project_loader(&pack_dir, $loader);
             }
             assert_project_minecraft_version(&pack_dir, "1.21.1");
-            assert_pack_minecraft_version(&pack_dir, "1.21.1");
+            assert_locked_minecraft_version(&pack_dir, "1.21.1");
         }
     };
 }
 
 e2e_init_modloader!(e2e_matrix_init_fabric, "fabric");
 e2e_init_modloader!(e2e_matrix_init_forge, "forge");
-// quilt loader not available for MC 1.21.1 in current packwiz
-// e2e_init_modloader!(e2e_matrix_init_quilt, "quilt");
+e2e_init_modloader!(e2e_matrix_init_quilt, "quilt");
 e2e_init_modloader!(e2e_matrix_init_vanilla, "none");
 
 #[test]
 fn e2e_matrix_init_neoforge() {
     let project = TestProject::new();
-    seed_loader_version_cache(project.dir(), "neoforge", "1.21.1", &["21.1.224"]);
     let mut cmd = project.cmd();
-    configure_fake_packwiz(&mut cmd, project.dir());
     let output = cmd
         .args([
             "init",
@@ -81,7 +76,7 @@ fn e2e_matrix_init_neoforge() {
     assert_project_initialized(&pack_dir);
     assert_project_loader(&pack_dir, "neoforge");
     assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_pack_minecraft_version(&pack_dir, "1.21.1");
+    assert_locked_minecraft_version(&pack_dir, "1.21.1");
 }
 
 macro_rules! e2e_bad_flag_value {
@@ -111,8 +106,8 @@ e2e_bad_flag_value!(
 
 e2e_bad_flag_value!(
     e2e_matrix_bad_project_type,
-    args: ["add", "--type", "world", "sodium"],
-    stderr_contains: "invalid value 'world'"
+    args: ["add", "--type", "invalid-content", "sodium"],
+    stderr_contains: "invalid value 'invalid-content'"
 );
 
 macro_rules! e2e_requires_modpack {
@@ -148,7 +143,7 @@ macro_rules! e2e_build_target {
             let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
             let output = project
                 .cmd()
-                .args(["build", $target])
+                .args(["--yes", "build", $target])
                 .output()
                 .expect("failed to spawn");
             assert!(
@@ -160,6 +155,37 @@ macro_rules! e2e_build_target {
 
             let dist = project.dir().join("dist");
             assert!(dist.exists(), "dist/ should exist after build {}", $target);
+            let suffix = if $target == "mrpack" {
+                ".mrpack".to_owned()
+            } else {
+                format!("-{}.zip", $target)
+            };
+            let artifact = assert_dist_artifact_suffix(project.dir(), &suffix);
+            let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact).unwrap()).unwrap();
+            if $target == "mrpack" {
+                let manifest: serde_json::Value =
+                    serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap())
+                        .unwrap();
+                assert_eq!(manifest["dependencies"]["minecraft"], "1.21.1");
+                assert_eq!(manifest["name"], "test-pack");
+            } else {
+                for member in [
+                    "pack/pack.toml",
+                    "packwiz-installer.jar",
+                    "packwiz-installer-bootstrap.jar",
+                ] {
+                    let destination = if $target == "client" {
+                        format!(".minecraft/{member}")
+                    } else {
+                        member.to_owned()
+                    };
+                    assert!(
+                        archive.by_name(&destination).unwrap().size() > 0,
+                        "missing output bytes for {}",
+                        member
+                    );
+                }
+            }
         }
     };
 }

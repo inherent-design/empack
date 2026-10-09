@@ -81,8 +81,6 @@ fn download_featured_modrinth_mrpack(project_id: &str, dest: &std::path::Path) {
 
 #[test]
 fn e2e_import_modrinth_and_build_mrpack() {
-    empack_tests::skip_if_no_java!();
-
     let project = TestProject::new();
     let mrpack_path = project.dir().join("fabulously-optimized.mrpack");
 
@@ -94,6 +92,9 @@ fn e2e_import_modrinth_and_build_mrpack() {
             "--from",
             mrpack_path.to_str().unwrap(),
             "--yes",
+            "--import-optional-default",
+            "true",
+            "--exclude-auxiliary",
             "imported-pack",
         ])
         .output()
@@ -115,8 +116,8 @@ fn e2e_import_modrinth_and_build_mrpack() {
     );
 
     assert!(
-        pack_dir.join("pack").join("pack.toml").exists(),
-        "pack/pack.toml not found after import"
+        pack_dir.join("empack.lock").is_file(),
+        "native lock not found after import"
     );
 
     let build_output = empack_cmd(&pack_dir)
@@ -124,7 +125,7 @@ fn e2e_import_modrinth_and_build_mrpack() {
             "EMPACK_PROCESS_TIMEOUT_SECS",
             LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
         )
-        .args(["build", "mrpack"])
+        .args(["--yes", "build", "mrpack", "--allow-optional-metadata-loss"])
         .output()
         .expect("failed to spawn empack build mrpack");
 
@@ -147,8 +148,6 @@ fn e2e_import_modrinth_and_build_mrpack() {
 
 #[test]
 fn e2e_import_local_mrpack_and_build_mrpack() {
-    empack_tests::skip_if_no_java!();
-
     let project = TestProject::new();
     let mrpack_path = project.dir().join("local-fixture.mrpack");
 
@@ -168,6 +167,9 @@ fn e2e_import_local_mrpack_and_build_mrpack() {
             "--from",
             mrpack_path.to_str().unwrap(),
             "--yes",
+            "--import-optional-default",
+            "true",
+            "--exclude-auxiliary",
             "imported-pack",
         ])
         .output()
@@ -187,17 +189,30 @@ fn e2e_import_local_mrpack_and_build_mrpack() {
         config.contains("name: local-fixture-pack"),
         "empack.yml should import the mrpack pack name\n{config}"
     );
-    assert!(
-        config.contains("loader: fabric"),
-        "empack.yml should import the mrpack loader\n{config}"
+    let decoded = empack_lib::engine::documents::DocumentCodec
+        .decode_intent(config.as_bytes(), "fixture")
+        .unwrap();
+    assert_eq!(
+        decoded.intent().runtime.loader,
+        empack_core::model::LoaderKind::Fabric
+    );
+    assert_eq!(
+        decoded
+            .intent()
+            .runtime
+            .loader_version
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "0.15.11"
     );
     assert!(
-        pack_dir.join("pack").join("pack.toml").exists(),
-        "pack/pack.toml not found after local import"
+        pack_dir.join("empack.lock").is_file(),
+        "native lock not found after local import"
     );
 
     let build_output = empack_cmd(&pack_dir)
-        .args(["build", "mrpack"])
+        .args(["--yes", "build", "mrpack", "--allow-optional-metadata-loss"])
         .output()
         .expect("failed to spawn empack build mrpack");
 
@@ -211,7 +226,7 @@ fn e2e_import_local_mrpack_and_build_mrpack() {
     let dist = pack_dir.join("dist");
     assert!(dist.is_dir(), "dist/ directory not found after build");
 
-    let imported_mrpack = dist.join("local-fixture-pack-v2.1.0.mrpack");
+    let imported_mrpack = dist.join("local-fixture-pack-2.1.0.mrpack");
     assert!(
         imported_mrpack.exists(),
         "no imported .mrpack file found in dist/"
@@ -220,8 +235,6 @@ fn e2e_import_local_mrpack_and_build_mrpack() {
 
 #[test]
 fn e2e_import_curseforge_and_check_restricted() {
-    empack_tests::skip_if_no_packwiz!();
-    empack_tests::skip_if_no_java!();
     empack_tests::skip_if_no_cf_key!();
 
     let cf_key = empack_tests::e2e::curseforge_key();
@@ -278,23 +291,31 @@ fn e2e_import_curseforge_and_check_restricted() {
     let zip_path = project.dir().join("cobblemon-updated.zip");
     download_file(download_url, &zip_path);
 
+    let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
         .args([
             "init",
             "--from",
             zip_path.to_str().unwrap(),
             "--yes",
+            "--import-optional-default",
+            "true",
+            "--exclude-auxiliary",
             "cf-imported",
         ])
         .output()
         .expect("failed to spawn empack init --from (CF)");
 
-    assert!(
-        output.status.success(),
-        "empack init --from (CF) failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
+    if !output.status.success() {
+        empack_tests::e2e::assert_pending_import_lifecycle(
+            project.dir(),
+            "cf-imported",
+            &state,
+            &output,
+        );
+        return;
+    }
 
     let pack_dir = project.dir().join("cf-imported");
     assert!(
@@ -303,7 +324,8 @@ fn e2e_import_curseforge_and_check_restricted() {
     );
 
     let build_output = empack_cmd(&pack_dir)
-        .args(["build", "client-full"])
+        .env("EMPACK_STATE_DIR", &state)
+        .args(["--yes", "build", "client-full", "--optional-defaults"])
         .output()
         .expect("failed to spawn empack build client-full");
 
@@ -322,39 +344,54 @@ fn e2e_import_curseforge_and_check_restricted() {
     if build_output.status.success() {
         empack_tests::e2e::assert_dist_artifact_suffix(&pack_dir, "-client-full.zip");
     } else {
-        let pending = empack_lib::empack::restricted_build::load_pending_build(
-            &empack_lib::application::session::LiveFileSystemProvider,
-            &pack_dir,
-        )
-        .unwrap()
-        .expect("restricted failure must persist continuation state");
-        assert!(!pending.entries.is_empty());
+        assert!(combined.contains("continuation was saved"));
+        let records = std::fs::read_dir(state.join("pending-builds"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            records.len(),
+            1,
+            "restricted build must retain one native recipe"
+        );
+        let recipe: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&records[0]).unwrap()).unwrap();
+        assert!(recipe.is_object());
     }
 }
 
 #[test]
 fn e2e_init_from_curseforge_url() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
+    let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
         .args([
             "init",
             "--from",
             "https://www.curseforge.com/minecraft/modpacks/cobblemon-updated",
             "--yes",
+            "--import-optional-default",
+            "true",
+            "--exclude-auxiliary",
             "cf-url-imported",
         ])
         .output()
         .expect("failed to spawn empack init --from (CF URL)");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(
-        output.status.success(),
-        "empack init --from CF URL failed:\nstdout: {stdout}\nstderr: {stderr}",
-    );
+    if !output.status.success() {
+        empack_tests::e2e::assert_pending_import_lifecycle(
+            project.dir(),
+            "cf-url-imported",
+            &state,
+            &output,
+        );
+        return;
+    }
 
     let pack_dir = project.dir().join("cf-url-imported");
     assert!(
@@ -362,7 +399,7 @@ fn e2e_init_from_curseforge_url() {
         "empack.yml not found after CF URL import"
     );
     assert!(
-        pack_dir.join("pack").join("pack.toml").exists(),
-        "pack/pack.toml not found after CF URL import"
+        pack_dir.join("empack.lock").is_file(),
+        "native lock not found after CF URL import"
     );
 }
