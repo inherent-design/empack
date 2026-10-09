@@ -25,7 +25,10 @@ pub(in crate::engine) fn rename_new_directory(
         // There is no fallback to rename(), which could replace a racing empty directory.
         #[cfg(target_os = "linux")]
         let result = unsafe {
-            libc::renameat2(
+            // The kernel API predates glibc's renameat2 wrapper (2.28). Use the
+            // syscall so older cross-build sysroots retain the same no-replace contract.
+            libc::syscall(
+                libc::SYS_renameat2,
                 parent.as_raw_fd(),
                 source.as_ptr(),
                 parent.as_raw_fd(),
