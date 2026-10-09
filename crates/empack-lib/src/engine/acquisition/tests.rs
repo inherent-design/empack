@@ -636,14 +636,14 @@ async fn request_disconnects_retry_before_body_under_one_deadline() {
 
 #[tokio::test]
 async fn transport_failure_names_host_and_phase_without_exposing_locator() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
+    // Closed-port refusal timing differs across OSes; force three prompt disconnects.
+    let (address, server) = scripted_server([None, None, None]);
     let (outcome, _) = run(request(
         vec![format!("http://{address}/private-path?token=private-token")],
         16,
     ))
     .await;
+    assert_eq!(server.join().unwrap(), 3);
     let error = failure(&outcome);
     let detail = error.downcast_ref::<TransportFailure>().unwrap();
     assert_eq!(detail.host, "127.0.0.1");
