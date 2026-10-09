@@ -87,7 +87,9 @@ pub struct AppConfig {
     pub modrinth_api_client_key: Option<String>,
 
     /// CurseForge API Client Key
-    #[arg(long, env = "EMPACK_KEY_CURSEFORGE", default_value = defaults::CURSEFORGE_API_CLIENT_KEY, hide_env_values = true)]
+    #[arg(long, env = "EMPACK_KEY_CURSEFORGE",
+        hide_default_value = true,
+        hide_env_values = true, default_value = defaults::CURSEFORGE_API_CLIENT_KEY, hide_env_values = true)]
     #[serde(default = "default_fns::curseforge_api_client_key")]
     pub curseforge_api_client_key: Option<String>,
 

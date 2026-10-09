@@ -45,6 +45,14 @@ Retries apply only to operations classified as safe to retry. A rate-limit coold
 cooldowns use monotonic deadlines with their fractional-second precision preserved;
 wall-clock rounding must not let a request resume before the declared interval. Retrying acquisition must not reset the cumulative byte or deadline budget indefinitely.
 
+An idempotent GET that fails before receiving a response may make at most three
+attempts, with short backoff inside the existing cumulative deadline. HTTP status
+failures do not enter that retry path. Once body transfer starts, a failure cannot
+reuse partial bytes as verified content; any mirror attempt shares the byte budget.
+Transport diagnostics retain the hostname, request/body phase, failure category and
+attempt count. They omit paths, queries, headers and raw client errors that could
+contain credentials.
+
 Only send a credential to its intended provider origin. Strip sensitive headers on cross-origin redirects unless an explicit credential rule allows them. Log redacted locators and stable provider/file IDs, not bearer tokens or signed query strings.
 
 CurseForge CDN acquisition needs a separate, fixed credential rule for HTTPS

@@ -576,3 +576,74 @@ async fn acquisition_cache_authority_preserves_evidence_limits_and_fresh_catalog
     catalog.assert_async().await;
     wrong.assert_async().await;
 }
+
+#[tokio::test]
+async fn request_disconnects_retry_before_body_under_one_deadline() {
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(4);
+        let mut accepted = 0;
+        while accepted < 3 && std::time::Instant::now() < deadline {
+            let (mut stream, _) = match listener.accept() {
+                Ok(value) => value,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+                Err(error) => panic!("{error}"),
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            while !bytes.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                bytes.push(byte[0]);
+            }
+            accepted += 1;
+            if accepted == 3 {
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload",
+                    )
+                    .unwrap();
+            }
+        }
+        accepted
+    });
+    let (outcome, governor) = run(request(vec![format!("http://{address}/file")], 16)).await;
+    assert_eq!(server.join().unwrap(), 3);
+    assert!(
+        matches!(&*outcome, OperationOutcome::Completed(Ok(content)) if content.lease().len() == 7)
+    );
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn transport_failure_names_host_and_phase_without_exposing_locator() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let (outcome, _) = run(request(
+        vec![format!("http://{address}/private-path?token=private-token")],
+        16,
+    ))
+    .await;
+    let error = failure(&outcome);
+    let detail = error.downcast_ref::<TransportFailure>().unwrap();
+    assert_eq!(detail.host, "127.0.0.1");
+    assert_eq!(detail.phase, "request");
+    assert_eq!(detail.attempt, 3);
+    assert!(matches!(
+        error.downcast_ref::<TransferError>(),
+        Some(TransferError::Network)
+    ));
+    let display = format!("{error:#} {error:?}");
+    assert!(!display.contains("private-path"));
+    assert!(!display.contains("private-token"));
+}

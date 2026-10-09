@@ -73,6 +73,42 @@ pub enum TransferError {
     #[error("Download redirect limit exceeded")]
     RedirectLimit,
 }
+/// Safe transport evidence: never retains a signed URL, path, query, headers or raw
+/// reqwest error. The underlying transfer category remains available for exit status.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("Download {phase} failed for {host}: {kind} (attempt {attempt})")]
+pub struct TransportFailure {
+    pub host: String,
+    pub phase: &'static str,
+    pub kind: &'static str,
+    pub attempt: u8,
+}
+fn transport_failure(
+    url: &Url,
+    error: &reqwest::Error,
+    phase: &'static str,
+    attempt: u8,
+) -> anyhow::Error {
+    let kind = if error.is_timeout() {
+        if error.is_connect() {
+            "connection timeout"
+        } else {
+            "timeout"
+        }
+    } else if error.is_connect() {
+        "connection failure"
+    } else if error.is_body() || error.is_decode() {
+        "body transfer failure"
+    } else {
+        "request transport failure"
+    };
+    anyhow::Error::new(TransferError::Network).context(TransportFailure {
+        host: url.host_str().unwrap_or("unknown host").into(),
+        phase,
+        kind,
+        attempt,
+    })
+}
 pub(in crate::engine) struct TransferBudget {
     maximum: u64,
     received: u64,
@@ -389,11 +425,23 @@ impl HttpAcquisition {
         let transfer = async {
             let mut redirects = 0;
             let mut response = loop {
-                let response = self
-                    .request(&url)
-                    .send()
-                    .await
-                    .map_err(|_| TransferError::Network)?;
+                let mut attempt = 0;
+                let response = loop {
+                    attempt += 1;
+                    match self.request(&url).send().await {
+                        Ok(response) => break response,
+                        Err(error) if attempt < 3 => {
+                            // Only an idempotent GET before a response is retried. The outer
+                            // deadline/cancellation select includes connection time and backoff.
+                            drop(error);
+                            tokio::time::sleep(Duration::from_millis(100 * u64::from(attempt)))
+                                .await;
+                        }
+                        Err(error) => {
+                            return Err(transport_failure(&url, &error, "request", attempt));
+                        }
+                    }
+                };
                 if response.status().is_redirection() {
                     ensure!(redirects < limits.redirects, TransferError::RedirectLimit);
                     let location = response
@@ -431,7 +479,11 @@ impl HttpAcquisition {
                 TransferError::ByteLimit
             );
             let mut file_bytes = 0u64;
-            while let Some(chunk) = response.chunk().await.map_err(|_| TransferError::Network)? {
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|error| transport_failure(&url, &error, "body", 1))?
+            {
                 *received = received
                     .checked_add(chunk.len() as u64)
                     .ok_or(TransferError::ByteLimit)?;

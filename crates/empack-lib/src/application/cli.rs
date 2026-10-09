@@ -524,6 +524,21 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
+    fn help_never_displays_provider_credential_values() {
+        let help = Cli::command().render_long_help().to_string();
+        if let Some(key) = AppConfig::default().curseforge_api_client_key {
+            assert!(!help.contains(&key));
+        }
+        let command = Cli::command();
+        let argument = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "curseforge_api_client_key")
+            .unwrap();
+        assert!(argument.is_hide_default_value_set());
+        assert!(argument.is_hide_env_values_set());
+    }
+
+    #[test]
     fn sync_continuation_requires_exact_file_association_mode() {
         assert!(Cli::try_parse_from(["empack", "sync", "--file", "one/primary=file"]).is_err());
         assert!(Cli::try_parse_from(["empack", "sync", "--continue", "--materialize"]).is_err());
