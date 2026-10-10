@@ -35,6 +35,7 @@ mod io;
 pub mod layout;
 pub mod mrpack;
 mod native;
+mod prism;
 pub mod project;
 pub mod project_change;
 pub mod providers;

@@ -6,7 +6,8 @@ use crate::engine::{
     project::ProjectReader,
     publication::{Publisher, RecoveryReader},
 };
-use empack_core::model::{GameVersion, LoaderVersion};
+use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
+use serde_json::{Value, json};
 use std::{fs, path::Path};
 fn put(root: &Path, name: &str, bytes: &[u8]) {
     let path = root.join(name);

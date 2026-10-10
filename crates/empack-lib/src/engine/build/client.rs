@@ -3,6 +3,7 @@ use super::{
     BuildAcquisitions, PreparedArtifact,
     materialized::{PreparedGameContent, prepare_game_content, prepare_native_game_content},
 };
+use crate::engine::prism::{profile, verify_profile};
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
@@ -23,10 +24,9 @@ use empack_core::{
     distribution::{Consumer, UpdateAuthority},
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
-    model::{DistributionArchive, ExpectedContent, LoaderKind, RuntimeResolution},
+    model::{DistributionArchive, ExpectedContent},
     path::{PathSyntax, PortableRelPath},
 };
-use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Read,
@@ -92,96 +92,6 @@ fn generated(bytes: &[u8], cancel: &Cancellation) -> Result<AcquiredBuildFile> {
         },
     })
 }
-fn loader(runtime: &RuntimeResolution) -> Result<Option<(&'static str, String)>> {
-    let uid = match runtime.loader {
-        LoaderKind::Vanilla => return Ok(None),
-        LoaderKind::Fabric => "net.fabricmc.fabric-loader",
-        LoaderKind::Quilt => "org.quiltmc.quilt-loader",
-        LoaderKind::Forge => "net.minecraftforge",
-        LoaderKind::NeoForge => "net.neoforged",
-    };
-    let version = runtime
-        .loader_version
-        .as_ref()
-        .context("Client loader lacks exact version")?
-        .as_str();
-    let version = if runtime.loader == LoaderKind::Forge {
-        crate::engine::runtime_versions::canonicalize_forge_loader_version(
-            runtime.minecraft.as_str(),
-            version,
-        )
-    } else {
-        version.into()
-    };
-    Ok(Some((uid, version)))
-}
-fn profile(runtime: &RuntimeResolution) -> Result<Vec<u8>> {
-    let mut components =
-        vec![json!({"uid":"net.minecraft","version":runtime.minecraft.as_str(),"important":true})];
-    if let Some((uid, version)) = loader(runtime)? {
-        components.push(json!({"uid":uid,"version":version}));
-    }
-    Ok(serde_json::to_vec_pretty(
-        &json!({"formatVersion":1,"components":components}),
-    )?)
-}
-/// Inspect actual component bytes, including a user-owned replacement. User extra components
-/// may extend the profile; they cannot disable, duplicate or change the locked game/loader.
-fn verify_profile(bytes: &[u8], runtime: &RuntimeResolution) -> Result<()> {
-    let value: Value = serde_json::from_slice(bytes)?;
-    ensure!(
-        value["formatVersion"] == 1,
-        "Unsupported client component format"
-    );
-    let components = value["components"]
-        .as_array()
-        .context("Client components are not an array")?;
-    let expected_loader = loader(runtime)?;
-    let mut seen = BTreeSet::new();
-    let mut game = false;
-    let mut selected_loader = false;
-    for component in components {
-        let uid = component["uid"]
-            .as_str()
-            .context("Client component has no UID")?;
-        let version = component["version"]
-            .as_str()
-            .filter(|value| !value.is_empty())
-            .context("Client component lacks an exact version")?;
-        ensure!(seen.insert(uid), "Duplicate client component");
-        if uid == "net.minecraft" {
-            ensure!(
-                version == runtime.minecraft.as_str()
-                    && component["important"] == true
-                    && component["disabled"] != true,
-                "Client game differs from locked runtime"
-            );
-            game = true;
-        } else if matches!(
-            uid,
-            "net.fabricmc.fabric-loader"
-                | "org.quiltmc.quilt-loader"
-                | "net.minecraftforge"
-                | "net.neoforged"
-        ) {
-            ensure!(
-                expected_loader
-                    .as_ref()
-                    .is_some_and(|(expected_uid, expected_version)| uid == *expected_uid
-                        && version == expected_version)
-                    && component["disabled"] != true,
-                "Client loader differs from locked runtime"
-            );
-            selected_loader = true;
-        }
-    }
-    ensure!(
-        game && (selected_loader == expected_loader.is_some()),
-        "Client profile omits the locked runtime"
-    );
-    Ok(())
-}
-
 pub fn prepare_client_full_build(
     workspace: WorkspaceSnapshot,
     artifact: PortableRelPath,

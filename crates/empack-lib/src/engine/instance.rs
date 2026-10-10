@@ -504,7 +504,8 @@ pub(super) fn plan(
                 "Consumer release belongs to another pack"
             );
             ensure!(
-                active.release().document().runtime == selected.release().document().runtime,
+                layout == InstanceLayout::Prism
+                    || active.release().document().runtime == selected.release().document().runtime,
                 "Active runtime differs from this consumer; update its launcher/runtime integration before launch"
             );
             Some(active)
@@ -561,6 +562,7 @@ pub(super) fn plan(
     }
     let root_identity = super::publication::root_key(&root)?;
     let mut old_files = BTreeMap::new();
+    let mut old_runtime = release.document().runtime.clone();
     if let Some(previous) = &previous {
         ensure!(
             previous.root == root_identity,
@@ -585,6 +587,7 @@ pub(super) fn plan(
             old.id() == previous.release && old.document().pack == previous.pack,
             "Installed release descriptor changed"
         );
+        old_runtime = old.document().runtime.clone();
         old_files = project_files(&old, side, layout, &previous.choices)?;
     }
     let mut choices: BTreeMap<_, _> = requested_choices
@@ -641,13 +644,29 @@ pub(super) fn plan(
             cancel,
         )?)?;
     }
+    let prism_profile = if layout == InstanceLayout::Prism {
+        snapshot = snapshot.merge(root.capture(
+            &[ProjectLayout::path(&ManagedPath::PrismProfile)?],
+            document_limits(limits),
+            cancel,
+        )?)?;
+        let bytes = read_optional(&root, &snapshot, &ManagedPath::PrismProfile, cancel)?;
+        Some(super::prism::transition(
+            bytes.as_deref(),
+            &old_runtime,
+            &release.document().runtime,
+        )?)
+    } else {
+        None
+    };
     let observed = verification::observed_files_for(
         &snapshot,
         targets
             .iter()
             .cloned()
             .chain([release_target.clone(), ManagedPath::InstanceRecord])
-            .chain([layout_marker.clone()]),
+            .chain([layout_marker.clone()])
+            .chain(prism_profile.as_ref().map(|_| ManagedPath::PrismProfile)),
     )?;
     let mut resolutions = conflicts::resolutions(requested_conflicts, layout)?;
     let old_overrides: BTreeMap<_, _> = previous
@@ -843,6 +862,9 @@ pub(super) fn plan(
     let record_bytes = serde_json::to_vec(&record)?;
     InstanceRecord::decode(&record_bytes)?;
     let mut documents = BTreeMap::from([(ManagedPath::InstanceRecord, record_bytes)]);
+    if let Some(profile) = prism_profile {
+        documents.insert(ManagedPath::PrismProfile, profile);
+    }
     let marker: &[u8] = match layout {
         InstanceLayout::Prism => b"empack-prism-layout-v1\n",
         InstanceLayout::Game => b"empack-game-layout-v1\n",

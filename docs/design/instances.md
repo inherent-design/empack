@@ -14,13 +14,15 @@ Prism prefers `minecraft/` if that directory exists. The Prism layout therefore
 requires its absence and binds that absence through publication. An owned
 `.empack-layout` marker keeps the selected game directory present even for an empty
 release. A release cannot overwrite this marker or the `.empack-consumer` input
-directory. Launcher components and
-icons remain outside the content installer's ownership. [Prism directory selection](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/MinecraftInstance.cpp)
+directory. Prism game/loader components follow the exact release runtime; unrelated
+components and icons remain user-owned. [Prism directory selection](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/MinecraftInstance.cpp)
 
 `instance prepare RELEASE --sha256 ID` is the consumer entry point. It installs the
 initial snapshot when no completed record exists. Otherwise it verifies and repairs
 the active release with saved choices; it cannot replay the original package over a
-later update. The initial descriptor must name the same pack and runtime. A runtime
+later update. The initial descriptor must name the same pack. Prism preparation verifies the
+current component profile against the active release; other consumers also require
+the initial runtime to match. A runtime
 change requires updating the consumer integration before launch. Preparation failure
 returns an error and grants no permission to start the game.
 
@@ -279,3 +281,19 @@ After stopping all remaining runtime processes, the operator can use
 retirement, not process detection or a command to kill a recorded PID. Preparation
 captures the exact recovery record. Execution requires both exclusive locks and
 refuses a changed record or a live managed runtime. Preview never clears evidence.
+
+## Prism runtime transitions
+
+Prism installations publish `mmc-pack.json` with the selected release and game
+content. The existing game and loader components must match the previously
+completed release. Preparation updates those known components, preserves unrelated
+user components and attributes, and refuses duplicates, disabled required components
+or unexpected runtime drift. The profile belongs to the same captured read set and
+recoverable publication as installation. Managed rollback restores the selected
+runtime requirements while retaining unrelated components and played worlds.
+
+A runtime-changing channel update stops the current prelaunch sequence. Apply
+`instance update` while the launcher is stopped, then launch again so Prism reloads
+its component metadata and prepares the required game, loader and Java. Changing
+`mmc-pack.json` after Prism has loaded metadata does not update its in-memory launch
+plan. Empack does not download client game binaries or silently replace Java.

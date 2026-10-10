@@ -159,7 +159,11 @@ Update checks current trust, expiry and exact release identity before applying
 content. Local assets, verified cache entries and exact download sources supply its
 files. Remote immutable assets resolve relative to the authenticated release URL.
 `--file KEY=PATH` supplies restricted content.
-Content application does not install Java or establish runtime launch readiness.
+For Prism layouts, content application also updates the exact game/loader component
+profile in the same publication. Runtime-changing updates require stopping and
+relaunching Prism so it reloads that profile. Empack does not install Java or client
+game binaries; Prism performs its normal runtime preparation. Server runtime
+preparation remains a separate obligation.
 Key replacement and revocation retain the highest observed sequence, including
 across restart and managed rollback.
 

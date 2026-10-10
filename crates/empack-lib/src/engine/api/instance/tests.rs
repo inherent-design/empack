@@ -1870,3 +1870,97 @@ async fn required_subscription_is_captured_and_late_revocation_prevents_installa
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn prism_runtime_and_content_publish_together_and_keep_extra_components() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let initial = || {
+        let mut input = request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+        input.layout = Some(InstanceLayout::Prism);
+        input
+    };
+    let before = apply(&engine, root.path(), initial()).await;
+    let profile_path = root.path().join("mmc-pack.json");
+    let mut profile: serde_json::Value =
+        serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
+    profile["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"uid":"user.component","version":"1","cachedName":"keep"}));
+    fs::write(&profile_path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
+    fs::create_dir_all(root.path().join(".minecraft/saves/world")).unwrap();
+    fs::write(
+        root.path().join(".minecraft/saves/world/level.dat"),
+        b"played",
+    )
+    .unwrap();
+    let updated = || {
+        let input = request(&[("mod", "mods/b.jar", b"B", FilePolicy::Managed)]);
+        let mut document = input.release.release().document().clone();
+        document.runtime.minecraft = "1.21.2".into();
+        document.runtime.loader = ReleaseLoader::Fabric {
+            version: "0.16.0".into(),
+        };
+        replace_document(input, document)
+    };
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), updated())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+    };
+    // A profile edit after planning invalidates the whole installation, including new game bytes.
+    fs::write(&profile_path, b"late edit").unwrap();
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    assert!(!root.path().join(".minecraft/mods/b.jar").exists());
+    fs::write(&profile_path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
+    let after = apply(&engine, root.path(), updated()).await;
+    assert_ne!(before.release, after.release);
+    let changed: serde_json::Value =
+        serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
+    assert_eq!(changed["components"][0]["version"], "1.21.2");
+    assert!(
+        changed["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["uid"] == "user.component" && item["cachedName"] == "keep")
+    );
+    let mut original_launcher = initial();
+    original_launcher.action = InstanceAction::Prepare;
+    original_launcher.supplied.clear();
+    assert_eq!(
+        apply(&engine, root.path(), original_launcher).await.release,
+        after.release
+    );
+    let mut rollback = initial();
+    rollback.action = InstanceAction::Rollback;
+    apply(&engine, root.path(), rollback).await;
+    let restored: serde_json::Value =
+        serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
+    assert_eq!(restored["components"][0]["version"], "1.21.1");
+    assert_eq!(restored["components"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/saves/world/level.dat")).unwrap(),
+        b"played"
+    );
+    engine.shutdown().await;
+}

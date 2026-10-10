@@ -96,7 +96,11 @@ async fn update_with_transport(
             ).await
         }).await?;
         ensure!(proof.release().document().runtime == release.document().runtime,
-            "Channel release changes the runtime; prepare its launcher/runtime integration before launch");
+            if record.layout == InstanceLayout::Prism {
+                "Channel release changes the runtime; stop Prism, run instance update, then relaunch so Prism reloads its components"
+            } else {
+                "Channel release changes the runtime; prepare its launcher/runtime integration before launch"
+            });
         let expected = proof.release().id().to_owned();
         let proof = proof.map(std::sync::Arc::new);
         let request = InstallInstanceRequest {
