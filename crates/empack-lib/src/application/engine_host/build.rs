@@ -355,7 +355,14 @@ fn request(
         .into_iter()
         .map(|target| {
             let (suffix, extension) = match target {
-                Recipe::MODRINTH => ("", "mrpack"),
+                recipe if crate::engine::mrpack::supports(recipe) => (
+                    match recipe.environments() {
+                        Environments::Both => "",
+                        Environments::Client => "-client",
+                        Environments::Server => "-server",
+                    },
+                    "mrpack",
+                ),
                 Recipe::CURSEFORGE => ("-curseforge", "zip"),
                 recipe if crate::engine::build::native::supports(recipe) => {
                     let suffix = match (recipe.delivery(), recipe.environments()) {

@@ -207,3 +207,10 @@ Independently inspect archive member names, duplicates, case/Unicode collisions,
 permissions, sizes, digests, unexpected entries and actual decoded-byte limits.
 Check exact provider identities and consumer semantics, not merely archive readability.
 Receipts record recipe, resolution, content evidence, conversions and runtime assets.
+
+Modrinth recipes support client, server or both environments. Selection precedes
+acquisition, so an excluded role does not require download evidence. Selected
+references retain exact hashes and sizes; side-specific exports mark the other
+side unsupported. Common and side overlays resolve to the effective bytes for
+the selected environment before archive paths are assigned. The receipt retains
+the complete recipe used to produce the archive.

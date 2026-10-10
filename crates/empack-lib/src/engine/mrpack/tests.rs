@@ -656,3 +656,65 @@ fn common_override_and_side_replacements_reexport_the_effective_bytes() {
     }
     assert!(archive.by_name("overrides/config/value.bin").is_err());
 }
+
+#[test]
+fn environment_export_preserves_selected_layers_without_excluded_evidence() {
+    // Both restricted roles belong to the client; a server projection needs neither.
+    let project = project(true, false);
+    let recipe = Recipe::new(
+        Consumer::Modrinth,
+        empack_core::distribution::Delivery::References,
+        Environments::Server,
+    )
+    .unwrap();
+    let plan = MrpackPlan::prepare_recipe(
+        &project,
+        &BTreeMap::new(),
+        vec![
+            source(ContentLayer::Common, b"common"),
+            source(ContentLayer::Client, b"client"),
+            source(ContentLayer::Server, b"server"),
+        ],
+        OptionalConversion::RejectMetadataLoss,
+        recipe,
+    )
+    .unwrap();
+    assert_eq!(plan.inventory().target(), recipe);
+    let mut output = tempfile::tempfile().unwrap();
+    plan.write(&mut output, &Cancellation::default()).unwrap();
+    let mut archive = zip::ZipArchive::new(output).unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert!(index["files"].as_array().unwrap().is_empty());
+    let files: Vec<_> = (0..archive.len())
+        .filter_map(|index| {
+            let file = archive.by_index(index).unwrap();
+            (!file.is_dir()).then(|| file.name().to_owned())
+        })
+        .collect();
+    assert_eq!(files.len(), 2);
+    assert!(files.contains(&"server-overrides/config/value.bin".into()));
+    let mut bytes = Vec::new();
+    archive
+        .by_name("server-overrides/config/value.bin")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"server");
+    // Selecting the client still demands the missing strong mrpack evidence.
+    assert!(
+        MrpackPlan::prepare_recipe(
+            &project,
+            &BTreeMap::new(),
+            Vec::new(),
+            OptionalConversion::RejectMetadataLoss,
+            Recipe::new(
+                Consumer::Modrinth,
+                empack_core::distribution::Delivery::References,
+                Environments::Client
+            )
+            .unwrap()
+        )
+        .is_err()
+    );
+}

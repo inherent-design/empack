@@ -2,7 +2,7 @@
 use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
     client::{ClientOptions, prepare_client_archive, prepare_client_full_archive},
-    prepare_archives_publication, prepare_mrpack,
+    prepare_archives_publication, prepare_mrpack_recipe,
     server::{ServerOptions, prepare_server_archive},
 };
 use crate::{
@@ -33,6 +33,7 @@ pub enum DistributionRequest {
         options: super::curseforge::CurseForgeOptions,
     },
     Mrpack {
+        recipe: Recipe,
         artifact: PortableRelPath,
         optional: OptionalConversion,
         evidence: SourceEvidencePolicy,
@@ -72,7 +73,7 @@ impl DistributionRequest {
         match self {
             Self::Native { recipe, .. } => *recipe,
             Self::CurseForge { .. } => Recipe::CURSEFORGE,
-            Self::Mrpack { .. } => Recipe::MODRINTH,
+            Self::Mrpack { recipe, .. } => *recipe,
             Self::Client { .. } => Recipe::PRISM_REFERENCES,
             Self::ClientFull { .. } => Recipe::PRISM_BUNDLED,
             Self::Server { .. } => Recipe::SERVER_REFERENCES,
@@ -190,6 +191,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 )?
             }
             DistributionRequest::Mrpack {
+                recipe,
                 artifact,
                 optional,
                 evidence,
@@ -198,7 +200,9 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     artifact.as_str().ends_with(".mrpack"),
                     "Mrpack output requires a .mrpack filename"
                 );
-                let plan = prepare_mrpack(&workspace, external, *evidence, *optional, cancel)?;
+                let plan = prepare_mrpack_recipe(
+                    &workspace, external, *evidence, *optional, *recipe, cancel,
+                )?;
                 let mut archive = PrivateFile::new()?;
                 let verified = plan.write(archive.file(), cancel)?;
                 let evidence = BuiltDistribution {

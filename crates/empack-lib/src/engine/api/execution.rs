@@ -241,7 +241,8 @@ async fn execute(
                         limits: config.archive,
                     }
                 }
-                Recipe::MODRINTH => DistributionRequest::Mrpack {
+                recipe if crate::engine::mrpack::supports(recipe) => DistributionRequest::Mrpack {
+                    recipe,
                     artifact,
                     optional: request.mrpack_optional,
                     evidence,

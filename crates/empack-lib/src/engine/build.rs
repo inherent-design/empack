@@ -9,6 +9,7 @@ use super::{
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     files::ManagedPath,
     inventory::ContentOwner,
     model::{AcquisitionSpec, ContentLayer, ResolvedProject},
@@ -51,12 +52,48 @@ pub fn prepare_mrpack(
     optional: OptionalConversion,
     cancel: &Cancellation,
 ) -> Result<MrpackPlan> {
-    let content = capture_build_content(workspace, external, evidence, None, cancel)?;
-    MrpackPlan::prepare(
+    prepare_mrpack_recipe(
+        workspace,
+        external,
+        evidence,
+        optional,
+        Recipe::MODRINTH,
+        cancel,
+    )
+}
+
+pub fn prepare_mrpack_recipe(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    evidence: SourceEvidencePolicy,
+    optional: OptionalConversion,
+    recipe: Recipe,
+    cancel: &Cancellation,
+) -> Result<MrpackPlan> {
+    let (selection, _) = acquisition::select_game_inputs(
+        workspace,
+        recipe,
+        &empack_core::inventory::OptionalPolicy::Preserve,
+        cancel,
+    )?;
+    let owners = selection
+        .entries()
+        .iter()
+        .map(|entry| entry.owner.clone())
+        .collect();
+    let mut content = capture_build_content(workspace, external, evidence, Some(&owners), cancel)?;
+    content.acquired.retain(|key, _| {
+        owners.contains(&ContentOwner::Dependency {
+            key: key.dependency.clone(),
+            slot: key.slot.clone(),
+        })
+    });
+    MrpackPlan::prepare_recipe(
         &content.project,
         &content.acquired,
         content.sources,
         optional,
+        recipe,
     )
 }
 

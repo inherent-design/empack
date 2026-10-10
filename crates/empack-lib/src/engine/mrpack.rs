@@ -11,7 +11,7 @@ use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::{ContentId, DigestAlgorithm},
-    distribution::Recipe,
+    distribution::{Consumer, Recipe, UpdateAuthority},
     files::{FileContent, FilePermissions},
     inventory::{
         BuildInventory, ContentOwner, DownloadOrigins, InventoryInput, OptionalPolicy,
@@ -30,6 +30,12 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
 };
+
+/// Snapshot archives support both environments or an explicit side projection.
+pub(crate) fn supports(recipe: Recipe) -> bool {
+    recipe.consumer() == Consumer::Modrinth
+        && recipe.update_authority() == UpdateAuthority::Snapshot
+}
 
 /// Acquisition is associated with an exact logical file, never a guessed filename.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,6 +82,17 @@ impl MrpackPlan {
         sources: Vec<SourceFile>,
         optional: OptionalConversion,
     ) -> Result<Self> {
+        Self::prepare_recipe(project, acquired, sources, optional, Recipe::MODRINTH)
+    }
+
+    pub fn prepare_recipe(
+        project: &ResolvedProject,
+        acquired: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
+        sources: Vec<SourceFile>,
+        optional: OptionalConversion,
+        recipe: Recipe,
+    ) -> Result<Self> {
+        ensure!(supports(recipe), "Unsupported Modrinth recipe");
         // Apply the wire boundary's stable-locator rules even for programmatically built values.
         DocumentCodec.encode_lock(project)?;
         let mut inputs = Vec::new();
@@ -83,6 +100,14 @@ impl MrpackPlan {
         let mut used = BTreeSet::new();
         for (key, dependency) in &project.lock().dependencies {
             for file in dependency.files.as_slice() {
+                if !file.placements.as_slice().iter().any(|place| {
+                    place
+                        .requirements
+                        .for_environments(recipe.environments())
+                        .is_some()
+                }) {
+                    continue;
+                }
                 let file_key = LockedFileKey {
                     dependency: key.clone(),
                     slot: file.slot.clone(),
@@ -210,6 +235,22 @@ impl MrpackPlan {
                 },
             });
         }
+        let selection = empack_core::inventory::BuildSelection::select(
+            &inputs,
+            recipe,
+            &OptionalPolicy::Preserve,
+        )?;
+        let mut inputs: Vec<_> = selection
+            .entries()
+            .iter()
+            .map(|entry| InventoryInput {
+                owner: entry.owner.clone(),
+                destination: entry.destination.clone(),
+                layer: entry.layer,
+                requirements: entry.requirements.clone(),
+                representation: entry.representation.clone(),
+            })
+            .collect();
         // The index has one path namespace and no overlay precedence. Materialize downloads
         // that share a destination across layers, then project the effective bytes for each side.
         // A duplicate reference must never be delegated to installer-specific overwrite ordering.
@@ -224,13 +265,14 @@ impl MrpackPlan {
             .iter()
             .filter_map(|(path, indices)| {
                 (indices.len() > 1
-                    && indices.iter().any(|index| {
-                        inputs[*index].layer == ContentLayer::CommonOverride
-                            || matches!(
-                                inputs[*index].representation,
-                                Representation::Download { .. }
-                            )
-                    }))
+                    && (recipe.environments() != empack_core::requirements::Environments::Both
+                        || indices.iter().any(|index| {
+                            inputs[*index].layer == ContentLayer::CommonOverride
+                                || matches!(
+                                    inputs[*index].representation,
+                                    Representation::Download { .. }
+                                )
+                        })))
                 .then_some(path.clone())
             })
             .collect();
@@ -256,8 +298,7 @@ impl MrpackPlan {
                 };
             }
         }
-        let inventory =
-            BuildInventory::project(&inputs, Recipe::MODRINTH, &OptionalPolicy::Preserve)?;
+        let inventory = BuildInventory::project(&inputs, recipe, &OptionalPolicy::Preserve)?;
         let mut archive_entries: Vec<_> = inventory
             .entries()
             .iter()

@@ -61,6 +61,7 @@ For example:
 empack build modrinth prism
 empack build prism server --delivery references
 empack build server --delivery bundled --format tar.gz
+empack build modrinth --environment client
 empack build empack --environment server --delivery references
 ```
 

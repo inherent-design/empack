@@ -87,6 +87,7 @@ fn capture(root: &Path, host: &Path) -> WorkspaceSnapshot {
 fn requests() -> NonEmpty<DistributionRequest> {
     NonEmpty::new(vec![
         DistributionRequest::Mrpack {
+            recipe: Recipe::MODRINTH,
             artifact: path("pack.mrpack"),
             optional: OptionalConversion::RejectMetadataLoss,
             evidence: SourceEvidencePolicy::Compatibility,
@@ -206,6 +207,7 @@ fn duplicate_output_ownership_is_rejected_before_preparation() {
     let host = tempfile::tempdir().unwrap();
     let external = fixture(root.path());
     let request = || DistributionRequest::Mrpack {
+        recipe: Recipe::MODRINTH,
         artifact: path("pack.mrpack"),
         optional: OptionalConversion::RejectMetadataLoss,
         evidence: SourceEvidencePolicy::Compatibility,
@@ -234,6 +236,7 @@ fn native_client_joins_requested_publication_without_installer_tools() {
     let cancel = Cancellation::default();
     let requests = NonEmpty::new(vec![
         DistributionRequest::Mrpack {
+            recipe: Recipe::MODRINTH,
             artifact: path("pack.mrpack"),
             optional: OptionalConversion::RejectMetadataLoss,
             evidence: SourceEvidencePolicy::Compatibility,
@@ -440,6 +443,7 @@ fn native_and_platform_exports_share_publication_and_preserve_prior_outputs_on_f
     let requests = || {
         NonEmpty::new(vec![
             DistributionRequest::Mrpack {
+                recipe: Recipe::MODRINTH,
                 artifact: path("pack.mrpack"),
                 optional: OptionalConversion::RejectMetadataLoss,
                 evidence: SourceEvidencePolicy::Compatibility,

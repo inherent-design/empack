@@ -472,6 +472,7 @@ mod tests {
             capture(root.path(), host.path()),
             NonEmpty::new(vec![
                 DistributionRequest::Mrpack {
+                    recipe: Recipe::MODRINTH,
                     artifact: path("first.mrpack"),
                     optional: OptionalConversion::RejectMetadataLoss,
                     evidence: SourceEvidencePolicy::Compatibility,

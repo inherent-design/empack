@@ -15,16 +15,22 @@ pub fn plan_target_build_acquisitions(
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
-    if target == Recipe::MODRINTH {
+    if crate::engine::mrpack::supports(target) {
         ensure!(
             matches!(optional, OptionalPolicy::Preserve),
             "Mrpack preserves optional choices"
         );
+        let (selection, keys) = select_game_inputs(workspace, target, optional, cancel)?;
+        let selected = selection
+            .entries()
+            .iter()
+            .filter_map(|entry| keys.get(&entry.owner).cloned())
+            .collect();
         return plan_acquisitions(
             workspace,
             external,
             BuildMaterialization::ReferenceArchive,
-            None,
+            Some(&selected),
             evidence,
             cancel,
         );

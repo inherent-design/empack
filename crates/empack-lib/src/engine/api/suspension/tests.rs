@@ -911,6 +911,15 @@ async fn native_release_batches_resume_exact_downloads_and_publish_with_other_co
 
 #[tokio::test]
 async fn native_server_projection_does_not_require_client_downloads() {
+    server_projection_without_client_downloads(empack_core::distribution::Consumer::Empack).await;
+}
+
+#[tokio::test]
+async fn modrinth_server_projection_does_not_require_client_downloads() {
+    server_projection_without_client_downloads(empack_core::distribution::Consumer::Modrinth).await;
+}
+
+async fn server_projection_without_client_downloads(consumer: empack_core::distribution::Consumer) {
     use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
     use empack_core::{
         distribution::{Consumer, Delivery},
@@ -930,11 +939,13 @@ async fn native_server_projection_does_not_require_client_downloads() {
         )
         .unwrap();
     let mut intent = project.intent().clone();
-    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-        pack_id: "server.projection".into(),
-        java_major: 17,
-        policies: BTreeMap::new(),
-    });
+    if consumer == Consumer::Empack {
+        intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+            pack_id: "server.projection".into(),
+            java_major: 17,
+            policies: BTreeMap::new(),
+        });
+    }
     let project = explicitly_placed(intent, project.lock().clone());
     fs::write(
         root.path().join("empack.yml"),
@@ -958,10 +969,15 @@ async fn native_server_projection_does_not_require_client_downloads() {
     );
     let (owner, governor) = engine(host.path().join("state"));
     let mut selected = request();
-    let recipe = Recipe::new(Consumer::Empack, Delivery::References, Environments::Server).unwrap();
+    let recipe = Recipe::new(consumer, Delivery::References, Environments::Server).unwrap();
+    let artifact = if consumer == Consumer::Empack {
+        "server.empack"
+    } else {
+        "server.mrpack"
+    };
     selected.outputs = NonEmpty::new(vec![BuildOutput {
         target: recipe,
-        artifact: crate::engine::api::tests::path("server.empack"),
+        artifact: crate::engine::api::tests::path(artifact),
     }])
     .unwrap();
     let Preparation::Ready(prepared) = owner
@@ -988,13 +1004,20 @@ async fn native_server_projection_does_not_require_client_downloads() {
     };
     assert_eq!(receipt.artifacts[0].content.target(), recipe);
     let mut archive =
-        zip::ZipArchive::new(fs::File::open(root.path().join("dist/server.empack")).unwrap())
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist").join(artifact)).unwrap())
             .unwrap();
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes).unwrap();
-    let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
-    assert_eq!(release.document().files.len(), 1);
-    assert_eq!(release.document().files[0].destination, "config/server.txt");
+    if consumer == Consumer::Empack {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+        assert_eq!(release.document().files.len(), 1);
+        assert_eq!(release.document().files[0].destination, "config/server.txt");
+    } else {
+        let index: serde_json::Value =
+            serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+        assert!(index["files"].as_array().unwrap().is_empty());
+    }
     let files: Vec<_> = (0..archive.len())
         .filter_map(|index| {
             let member = archive.by_index(index).unwrap();
@@ -1004,7 +1027,13 @@ async fn native_server_projection_does_not_require_client_downloads() {
     assert_eq!(files.len(), 2, "only manifest and selected authored asset");
     let asset = files
         .iter()
-        .find(|name| name.starts_with("assets/"))
+        .find(|name| {
+            if consumer == Consumer::Empack {
+                name.starts_with("assets/")
+            } else {
+                name.as_str() == "server-overrides/config/server.txt"
+            }
+        })
         .unwrap();
     let mut content = Vec::new();
     std::io::Read::read_to_end(&mut archive.by_name(asset).unwrap(), &mut content).unwrap();

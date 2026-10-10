@@ -1173,13 +1173,13 @@ fn capture(
         ensure!(
             matches!(
                 output.target,
-                Recipe::MODRINTH
-                    | Recipe::CURSEFORGE
+                Recipe::CURSEFORGE
                     | Recipe::PRISM_REFERENCES
                     | Recipe::PRISM_BUNDLED
                     | Recipe::SERVER_REFERENCES
                     | Recipe::SERVER_BUNDLED
-            ) || crate::engine::build::native::supports(output.target),
+            ) || crate::engine::build::native::supports(output.target)
+                || crate::engine::mrpack::supports(output.target),
             "Consumer recipe has no executable adapter; no acquisition was started"
         );
         PortableRelPath::parse(output.artifact.as_str(), PathSyntax::ArtifactName)?;
@@ -1190,7 +1190,7 @@ fn capture(
                 "Native release output requires an .empack filename"
             );
         }
-        if output.target == Recipe::MODRINTH {
+        if crate::engine::mrpack::supports(output.target) {
             ensure!(
                 output.artifact.as_str().ends_with(".mrpack"),
                 "Mrpack output requires a .mrpack filename"
@@ -1244,7 +1244,7 @@ fn capture(
     let runtime = resolved.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
-        let optional = if output.target == Recipe::MODRINTH
+        let optional = if crate::engine::mrpack::supports(output.target)
             || crate::engine::build::native::supports(output.target)
         {
             &OptionalPolicy::Preserve
