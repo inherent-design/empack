@@ -131,18 +131,35 @@ exec "$JAVA_PATH" -jar server.jar "$@"
 const START_BAT: &str = "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || exit /b 1\r\ncd game || exit /b 1\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
 fn start_script(references: bool) -> String {
     if references {
-        START_SH.replace("cd -- game", "bash ./install_pack.sh\ncd -- game")
+        START_SH
+            .replace("cd -- game\n", "bash ./install_pack.sh\n")
+            .replace(
+                "exec \"$JAVA_PATH\"",
+                "exec empack --workdir \"$PWD\" --yes instance launch -- \"$JAVA_PATH\"",
+            )
     } else {
         START_SH.into()
     }
 }
 fn start_batch(references: bool) -> String {
-    let command = if references {
-        "call install_pack.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n"
+    if references {
+        START_BAT
+            .replace(
+                "cd game || exit /b 1\r\n",
+                "call install_pack.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n",
+            )
+            .replace(
+                "  \"%JAVA_HOME%",
+                "  empack --workdir \"%cd%\" --yes instance launch -- \"%JAVA_HOME%",
+            )
+            .replace(
+                "  java -jar",
+                "  empack --workdir \"%cd%\" --yes instance launch -- java -jar",
+            )
+            + "exit /b %errorlevel%\r\n"
     } else {
-        ""
-    };
-    START_BAT.replace("cd game", &format!("{command}cd game"))
+        START_BAT.into()
+    }
 }
 fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> String {
     let script = if windows {

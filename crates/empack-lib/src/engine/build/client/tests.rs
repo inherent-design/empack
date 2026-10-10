@@ -142,6 +142,7 @@ fn full_client_archives_include_game_templates_and_exact_launcher_profile() {
                 .unwrap();
             assert!(cfg.contains("InstanceType=OneSix"));
             assert!(cfg.lines().any(|line| line == "PreLaunchCommand="));
+            assert!(cfg.lines().any(|line| line == "WrapperCommand="));
             assert!(!cfg.contains("packwiz-installer-bootstrap.jar"));
             let profile: Value =
                 serde_json::from_reader(zip.by_name("mmc-pack.json").unwrap()).unwrap();
@@ -398,6 +399,10 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
                 DecodedRelease::decode(&fs::read(assets.join("release.json")).unwrap()).unwrap();
             let ini = fs::read_to_string(instance.path().join("instance.cfg")).unwrap();
             assert!(ini.contains("instance prepare"));
+            assert!(
+                ini.lines().any(|line| line.starts_with("WrapperCommand=")
+                    && line.contains("instance launch --"))
+            );
             assert!(ini.contains(release.id()));
             assert!(ini.contains("--layout prism --side client"));
             let provider = release

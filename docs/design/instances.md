@@ -24,6 +24,22 @@ later update. The initial descriptor must name the same pack and runtime. A runt
 change requires updating the consumer integration before launch. Preparation failure
 returns an error and grants no permission to start the game.
 
+Reference-delivery Prism instances use `PreLaunchCommand` to prepare content and
+`WrapperCommand` to run `empack --workdir "$INST_DIR" --yes instance launch --`.
+Prism supplies its selected Java executable and arguments after the wrapper's
+arguments. Empack inherits the console streams, including Prism's launch protocol
+on stdin, and holds the instance lease for that process lifetime. Java selection,
+Minecraft libraries, authentication and launcher components remain Prism's
+responsibility. [Prism wrapper execution](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/launch/LauncherPartLaunch.cpp)
+
+Reference-delivery server scripts prepare the snapshot before invoking
+`instance launch` with the selected Java executable and recipe arguments. The engine
+sets the game working directory; the script remains at the instance root. Failed
+preparation prevents process startup, and a failed runtime produces a failing launch
+command. Bundled snapshot scripts and Prism exports remain independently runnable
+without empack. User-supplied launcher configurations are preserved as user input;
+the generated integration's guarantees do not certify arbitrary replacement scripts.
+
 ## State transitions
 
 ```mermaid

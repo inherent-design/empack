@@ -421,11 +421,26 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
         "install_pack.sh",
         install_script(Some(&id)).as_bytes(),
     );
-    put(root.path(), "bin/empack", b"#!/bin/sh\nprintf '%s\n' \"$@\" > \"$EMPACK_TEST_ARGS\"\nexit \"$EMPACK_TEST_INSTALL_STATUS\"\n");
+    put(
+        root.path(),
+        "bin/empack",
+        br##"#!/bin/sh
+if [ "$5" = prepare ]; then
+  printf '%s\n' "$@" > "$EMPACK_TEST_ARGS"
+  exit "$EMPACK_TEST_INSTALL_STATUS"
+fi
+printf '%s\n' "$@" > "$EMPACK_TEST_ARGS.launch"
+[ "$5" = launch ] && [ "$6" = -- ] || exit 91
+root="$2"
+shift 6
+cd "$root/game" || exit 92
+exec "$@"
+"##,
+    );
     put(
         root.path(),
         "java space/bin/java",
-        b"#!/bin/sh\nprintf '%s\n' \"$@\" > server-arguments\n",
+        b"#!/bin/sh\nprintf '%s\n' \"$@\" > server-arguments\nexit \"$EMPACK_TEST_RUNTIME_STATUS\"\n",
     );
     for name in ["bin/empack", "java space/bin/java"] {
         fs::set_permissions(root.path().join(name), fs::Permissions::from_mode(0o700)).unwrap();
@@ -434,7 +449,7 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
     ))
     .unwrap();
-    for code in [0, 7] {
+    for (code, runtime_code) in [(0, 0), (0, 9), (7, 0)] {
         let arguments = root.path().join("game/server-arguments");
         if arguments.exists() {
             fs::remove_file(&arguments).unwrap();
@@ -446,9 +461,13 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
             .env("PATH", &paths)
             .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
             .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
+            .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
             .status()
             .unwrap();
-        assert_eq!(status.code(), Some(code));
+        assert_eq!(
+            status.code(),
+            Some(if code == 0 { runtime_code } else { code })
+        );
         assert_eq!(arguments.exists(), code == 0);
         let selected = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
         let expected = format!(
@@ -458,6 +477,15 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
         );
         assert_eq!(selected, expected);
         if code == 0 {
+            let launch = fs::read_to_string(root.path().join("instance-arguments.launch")).unwrap();
+            assert_eq!(
+                launch,
+                format!(
+                    "--workdir\n{}\n--yes\ninstance\nlaunch\n--\n{}\n-jar\nserver.jar\nnogui\nan argument\n",
+                    root.path().display(),
+                    root.path().join("java space/bin/java").display()
+                )
+            );
             assert_eq!(
                 fs::read_to_string(arguments).unwrap(),
                 "-jar\nserver.jar\nnogui\nan argument\n"
@@ -470,7 +498,13 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
 fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("game")).unwrap();
-    put(root.path(), "start.bat", start_batch(true).as_bytes());
+    put(
+        root.path(),
+        "start.bat",
+        start_batch(true)
+            .replace("empack --workdir", "call fake-empack.cmd --workdir")
+            .as_bytes(),
+    );
     // CALL lets a batch fixture return like the empack executable it replaces.
     let install = install_batch(Some(&"a".repeat(64)))
         .replace("empack --workdir", "call fake-empack.cmd --workdir");
@@ -478,7 +512,7 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     put(
         root.path(),
         "fake-empack.cmd",
-        b"@echo off\r\necho %* > instance-arguments\r\nexit /b %EMPACK_TEST_INSTALL_STATUS%\r\n",
+        b"@echo off\r\nif %5==launch goto launch\r\necho %* > instance-arguments\r\nexit /b %EMPACK_TEST_INSTALL_STATUS%\r\n:launch\r\necho %* > launch-arguments\r\ncd game || exit /b 92\r\ncall java.cmd nogui\r\nexit /b %errorlevel%\r\n",
     );
     put(
         root.path(),
@@ -502,6 +536,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
         let arguments = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
         assert!(arguments.contains("instance prepare"));
         assert!(arguments.contains("--layout game --side server"));
+        if code == 0 {
+            let launch = fs::read_to_string(root.path().join("launch-arguments")).unwrap();
+            assert!(launch.contains("instance launch -- java -jar server.jar nogui"));
+        }
     }
 }
 

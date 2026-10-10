@@ -331,6 +331,14 @@ pub(super) fn prepare_client_archive(
         "INSTANCE_PREPARE_COMMAND".into(),
         command.clone().unwrap_or_default(),
     );
+    let wrapper = if references {
+        "empack --workdir \"$INST_DIR\" --yes instance launch --"
+    } else {
+        ""
+    };
+    template_options
+        .values
+        .insert("INSTANCE_WRAPPER_COMMAND".into(), wrapper.into());
     let templates = prepare_templates(workspace, target, &template_options, cancel)?;
     for (destination, file) in templates.files() {
         ensure!(
@@ -349,10 +357,13 @@ pub(super) fn prepare_client_archive(
     let instance = path("instance.cfg")?;
     let user_configuration = files.contains_key(&instance);
     if !user_configuration {
-        let values = BTreeMap::from([(
-            "INSTANCE_PREPARE_COMMAND".to_owned(),
-            command.unwrap_or_default(),
-        )]);
+        let values = BTreeMap::from([
+            (
+                "INSTANCE_PREPARE_COMMAND".to_owned(),
+                command.unwrap_or_default(),
+            ),
+            ("INSTANCE_WRAPPER_COMMAND".to_owned(), wrapper.to_owned()),
+        ]);
         let bytes = crate::engine::templates::render_default(
             game.project(),
             include_str!("../../../templates/client/instance.cfg.template"),
