@@ -124,33 +124,3 @@ fn metadata_parent_controls_destination_without_implicit_index_directory_strippi
         assert_eq!(file.destination.relative().as_str(), expected);
     }
 }
-
-#[test]
-fn unrelated_version_of_a_provider_does_not_claim_another_locked_file() {
-    use crate::engine::{documents::DocumentCodec, mrpack::tests::project};
-    use empack_core::model::{DependencyKey, ResolvedIdentity, SourceIntent};
-    let original = project(false, false);
-    let mut observed = parse(DOCUMENT).unwrap();
-    let provider = observed.provider.as_ref().unwrap();
-    let mut intent = original.intent().clone();
-    let key = DependencyKey::parse("assets").unwrap();
-    intent.roots.get_mut(&key).unwrap().source = SourceIntent::Provider(provider.project.clone());
-    let decoded = DocumentCodec
-        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "fixture")
-        .unwrap();
-    let mut lock = original.lock().clone();
-    lock.intent_revision = decoded.semantic_revision();
-    let dependency = lock.dependencies.get_mut(&key).unwrap();
-    dependency.identity = ResolvedIdentity::Provider(provider.project.clone());
-    dependency.selected = Some(ResolvedPin {
-        project: provider.project.clone(),
-        selection: provider.project.parse_pin("Version2").unwrap(),
-    });
-    let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
-    assert!(observed.locked_owner(&project).unwrap().is_none());
-    observed.destination = InstallDestination::parse("resourcepacks/a.zip").unwrap();
-    assert!(
-        observed.locked_owner(&project).is_err(),
-        "a conflicting record at selected content still blocks removal"
-    );
-}

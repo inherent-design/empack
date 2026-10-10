@@ -151,12 +151,6 @@ impl CaptureFilter {
         value.matcher()?;
         Ok(value)
     }
-    /// Retain backend discovery and exact managed inputs without reading unrelated game bytes.
-    pub(super) fn mutation(required: &[PortableRelPath]) -> Result<Self> {
-        let mut value = Self::new(Vec::new(), required)?;
-        value.managed_only = true;
-        Ok(value)
-    }
     pub(super) fn matcher(&self) -> Result<SourceFilter> {
         if let Some(outputs) = &self.template_outputs {
             anyhow::ensure!(
@@ -253,43 +247,6 @@ impl CaptureFilter {
                 };
                 outputs.iter().any(|seed| template_overlap(output, seed))
             });
-        }
-        if self.managed_only {
-            let spelling: Option<Vec<_>> = path
-                .components()
-                .map(|part| match part {
-                    std::path::Component::Normal(value) => value.to_str(),
-                    _ => None,
-                })
-                .collect();
-            if spelling.is_some_and(|parts| {
-                let path = parts.join("/");
-                self.required
-                    .iter()
-                    .any(|required| template_overlap(&path, required))
-            }) {
-                return true;
-            }
-            if [
-                "empack.yml",
-                "empack.lock",
-                "pack/pack.toml",
-                "pack/index.toml",
-                "pack/.packwizignore",
-            ]
-            .iter()
-            .any(|name| path == std::path::Path::new(name))
-            {
-                return true;
-            }
-            // Directories permit bounded backend discovery. Unrelated leaves, including links,
-            // are excluded before portable-name validation or payload reads.
-            return path.starts_with("pack")
-                && (directory
-                    || path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| name.ends_with(".pw.toml")));
         }
         let Ok(relative) = path.strip_prefix("pack") else {
             return true;

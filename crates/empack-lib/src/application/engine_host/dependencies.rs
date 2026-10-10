@@ -629,31 +629,15 @@ pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()>
                 unknown.as_str()
             ));
         }
-        for observed in &view.observed {
-            session.display().status().info(&format!(
-                "Select observed {}: {:?} ({:?}, {:?})",
-                observed.metadata_path.as_str(),
-                observed.destination,
-                observed.provider,
-                observed.digest
-            ));
-        }
-        for path in &view.untracked_evidence {
-            session.display().status().warning(&format!(
-                "Dependency evidence is incomplete for observed {}",
-                path.as_str()
-            ));
-        }
         show_changes(session, &view.files)?;
         apply(session, &engine, prepared, "Removal", |receipt| {
             let ExecutionReceipt::Remove(receipt) = receipt else {
                 anyhow::bail!("Unexpected removal receipt");
             };
             Ok(format!(
-                "Applied {:?} to {} tracked and {} observed selections",
+                "Applied {:?} to {} dependencies",
                 receipt.mode,
-                receipt.selected.len(),
-                receipt.observed.len()
+                receipt.selected.len()
             ))
         })
         .await

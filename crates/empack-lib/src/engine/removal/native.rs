@@ -1,4 +1,4 @@
-//! Exact removal owns placements and matching derivative metadata, never acquisition paths.
+//! Exact removal owns verified native placements, never acquisition paths or foreign records.
 use super::*;
 use crate::{
     application::process_runtime::Cancellation,
@@ -12,28 +12,16 @@ use crate::{
 };
 use anyhow::{Context, ensure};
 use empack_core::{
-    digest::{ContentId, ExpectedDigest},
+    digest::ContentId,
     files::{FileContent, FilePlan, ManagedPath, ObservedPath},
-    model::{ContentLayer, ExpectedContent},
-    path::{PathSyntax, PortableRelPath},
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Exact observed metadata and byte assertions, without secret-bearing locators.
-#[derive(Debug, Clone)]
-pub struct ObservedRemovalSelection {
-    pub metadata_path: PortableRelPath,
-    pub destination: empack_core::path::InstallDestination,
-    pub provider: Option<crate::engine::backend::ProviderObservation>,
-    pub digest: ExpectedDigest,
-}
 pub struct PreparedRemoval {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     candidate: RemovalCandidate,
-    observed: Vec<ObservedRemovalSelection>,
-    untracked_evidence: Vec<PortableRelPath>,
 }
 pub struct RemovalReceipt {
     pub publication: PublicationReceipt,
@@ -41,8 +29,6 @@ pub struct RemovalReceipt {
     pub mode: RemovalMode,
     pub selected: BTreeSet<DependencyKey>,
     pub incomplete_evidence: Vec<DependencyKey>,
-    pub observed: Vec<ObservedRemovalSelection>,
-    pub untracked_evidence: Vec<PortableRelPath>,
 }
 impl PreparedRemoval {
     pub fn files(&self) -> &FilePlan {
@@ -50,12 +36,6 @@ impl PreparedRemoval {
     }
     pub fn candidate(&self) -> &RemovalCandidate {
         &self.candidate
-    }
-    pub fn observed(&self) -> &[ObservedRemovalSelection] {
-        &self.observed
-    }
-    pub fn untracked_evidence(&self) -> &[PortableRelPath] {
-        &self.untracked_evidence
     }
     pub(in crate::engine) fn publish(
         self,
@@ -65,8 +45,6 @@ impl PreparedRemoval {
         let publication = publisher.publish(&self.root, self.change, cancel)?;
         Ok(RemovalReceipt {
             publication,
-            observed: self.observed,
-            untracked_evidence: self.untracked_evidence,
             project: self.candidate.project,
             mode: self.candidate.plan.mode(),
             incomplete_evidence: self.candidate.plan.incomplete_evidence().to_vec(),
@@ -74,11 +52,7 @@ impl PreparedRemoval {
         })
     }
 }
-fn path(name: &str) -> Result<PortableRelPath> {
-    Ok(PortableRelPath::parse(name, PathSyntax::ProjectContent)?)
-}
-/// The reader must capture managed content and backend metadata, including selected placements.
-/// This prepares private documents only. Publication is a separate approved operation.
+/// Preparation binds exact native placements; publication requires a separate grant.
 pub fn prepare_removal(
     workspace: MutationSnapshot,
     selections: &NonEmpty<DependencyKey>,
@@ -108,8 +82,6 @@ pub(in crate::engine) struct RemovalPreparation {
     candidate: RemovalCandidate,
     plan: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
-    observed: Vec<ObservedRemovalSelection>,
-    untracked_evidence: Vec<PortableRelPath>,
 }
 impl RemovalPreparation {
     pub(in crate::engine) fn bytes(&self) -> Result<u64> {
@@ -125,8 +97,6 @@ impl RemovalPreparation {
             candidate,
             plan,
             documents,
-            observed,
-            untracked_evidence,
         } = self;
         let (root, change) = verification::stage_mutation(
             workspace,
@@ -140,8 +110,6 @@ impl RemovalPreparation {
             root,
             change,
             candidate,
-            observed,
-            untracked_evidence,
         })
     }
 }
@@ -174,8 +142,7 @@ pub(in crate::engine) fn plan_selected_removal(
     cancel.check()?;
     let workspace = workspace.into_workspace();
     let current = workspace.require_resolved()?;
-    let records = workspace.backend_files(cancel)?;
-    let selections = selection::resolve(&current, &records, selectors)?;
+    let selections = selection::resolve(&current, selectors)?;
     let candidate = RemovalCandidate::prepare_selected(
         workspace.intent(),
         workspace
@@ -185,8 +152,6 @@ pub(in crate::engine) fn plan_selected_removal(
         mode,
         evidence,
     )?;
-    let untracked_evidence = super::untracked_evidence(&current, &records, mode, evidence)?;
-    let mut selected_observed = Vec::new();
     let mut removals = BTreeSet::new();
     if mode == RemovalMode::RemoveContent {
         for dependency in candidate.plan.selected().values() {
@@ -219,91 +184,6 @@ pub(in crate::engine) fn plan_selected_removal(
                 }
             }
         }
-        for metadata_path in &selections.observed {
-            let record = records
-                .iter()
-                .find(|record| record.metadata_path == *metadata_path)
-                .context("Selected metadata disappeared")?;
-            ensure!(
-                record.locked_owner(&current)?.is_none(),
-                "Observed selection acquired a locked owner"
-            );
-            let target = ManagedPath::Content {
-                layer: ContentLayer::Common,
-                path: record.destination.relative().clone(),
-            };
-            let native = ProjectLayout::path(&target)?;
-            let observed =
-                verification::observed_mutation_for(workspace.observations(), [target.clone()])?;
-            match &observed[&target] {
-                ObservedPath::File(_) => {
-                    workspace.verify_file(
-                        &native,
-                        &ExpectedContent {
-                            digests: Some(empack_core::digest::DigestSet::new(vec![
-                                record.digest.clone(),
-                            ])?),
-                            size: None,
-                            accepted_observation: None,
-                        },
-                        cancel,
-                    )?;
-                    removals.insert(target);
-                }
-                ObservedPath::Absent => {}
-                ObservedPath::Directory => {
-                    anyhow::bail!("Observed removal destination is a directory")
-                }
-            }
-            removals.insert(ManagedPath::BackendDocument(record.metadata_path.clone()));
-            selected_observed.push(ObservedRemovalSelection {
-                metadata_path: record.metadata_path.clone(),
-                destination: record.destination.clone(),
-                provider: record.provider.clone(),
-                digest: record.digest.clone(),
-            });
-        }
-        for record in records {
-            if !candidate.plan.selected().values().any(|dependency| {
-                dependency.files.as_slice().iter().any(|file| {
-                    file.placements.as_slice().iter().any(|placement| {
-                        placement.layer == ContentLayer::Common
-                            && placement.destination == record.destination
-                    })
-                })
-            }) {
-                continue;
-            }
-            let Some((key, file)) = record.locked_owner(&current)? else {
-                continue;
-            };
-            if !candidate.plan.selected().contains_key(key) {
-                continue;
-            }
-            if let Some(digest) = file.expected.digests.as_ref().and_then(|set| {
-                set.values()
-                    .iter()
-                    .find(|digest| digest.algorithm() == record.digest.algorithm())
-            }) {
-                ensure!(
-                    *digest == record.digest,
-                    "Backend digest differs from selected content"
-                );
-            } else {
-                let native = ProjectLayout::path(&ManagedPath::Content {
-                    layer: ContentLayer::Common,
-                    path: record.destination.relative().clone(),
-                })?;
-                let observed = workspace
-                    .verify_file(&native, &file.expected, cancel)
-                    .context("Cannot verify derivative metadata against selected content")?;
-                ensure!(
-                    observed.values().contains(&record.digest),
-                    "Backend digest differs from selected bytes"
-                );
-            }
-            removals.insert(ManagedPath::BackendDocument(record.metadata_path));
-        }
     }
     verification::retain_acquisition_sources(
         workspace.observations(),
@@ -311,27 +191,10 @@ pub(in crate::engine) fn plan_selected_removal(
         &mut removals,
         std::iter::empty(),
     )?;
-    let mut documents = BTreeMap::from([
+    let documents = BTreeMap::from([
         (ManagedPath::IntentDocument, candidate.intent.bytes.clone()),
         (ManagedPath::LockDocument, candidate.lock.clone()),
     ]);
-    if candidate.plan.selected().is_empty() {
-        // Observed-only removal changes no logical documents, including user formatting.
-        documents.insert(
-            ManagedPath::LockDocument,
-            workspace
-                .read_document(&path("empack.lock")?, cancel)?
-                .context("Captured lock disappeared")?,
-        );
-    }
-    if mode == RemovalMode::RemoveContent {
-        crate::engine::backend::index::refresh_index(
-            &workspace,
-            &removals,
-            &mut documents,
-            cancel,
-        )?;
-    }
     let observed = verification::observed_mutation_for(
         workspace.observations(),
         documents.keys().chain(removals.iter()).cloned(),
@@ -357,8 +220,6 @@ pub(in crate::engine) fn plan_selected_removal(
         candidate,
         plan,
         documents,
-        observed: selected_observed,
-        untracked_evidence,
     })
 }
 

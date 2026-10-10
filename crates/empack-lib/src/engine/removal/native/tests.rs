@@ -235,203 +235,36 @@ fn removal_refuses_linked_ancestors_without_deleting_outside_content() {
         b"payload"
     );
 }
-fn metadata(filename: &str, payload: &[u8]) -> Vec<u8> {
-    format!("name = 'untrusted title'\nfilename = '{filename}'\nside = 'client'\n[download]\nurl = 'https://example.com/different-name'\nhash-format = 'sha256'\nhash = '{}'\n", ExpectedDigest::Sha256(Sha256::digest(payload).into()).hex()).into_bytes()
-}
-fn backend(root: &Path, mismatch: bool) {
-    let selected = metadata("a.zip", if mismatch { b"wrong" } else { b"payload" });
-    let unrequested = metadata("unrequested.zip", b"keep");
-    put(root, "pack/resourcepacks/actual-name.pw.toml", &selected);
-    // A metadata stem equal to the manifest key must not select this unrelated installation.
-    put(root, "pack/resourcepacks/assets.pw.toml", &unrequested);
-    let entries = [("resourcepacks/actual-name.pw.toml", selected), ("resourcepacks/assets.pw.toml", unrequested)].into_iter()
-        .map(|(file, bytes)| serde_json::json!({"file":file,"hash":ExpectedDigest::Sha256(Sha256::digest(bytes).into()).hex(),"metafile":true})).collect::<Vec<_>>();
-    let index = toml::to_string(
-        &serde_json::json!({"hash-format":"sha256","files":entries,"user-field":"retained"}),
-    )
-    .unwrap()
-    .into_bytes();
-    let pack = format!(
-        "name = 'backend title'\n[index]\nfile = 'index.toml'\nhash-format = 'sha256'\nhash = '{}'\n",
-        ExpectedDigest::Sha256(Sha256::digest(&index).into()).hex()
-    );
-    put(root, "pack/index.toml", &index);
-    put(root, "pack/pack.toml", pack.as_bytes());
-}
 #[test]
-fn metadata_removal_uses_exact_file_ownership_and_rebinds_the_index() {
+fn foreign_metadata_neither_authorizes_nor_blocks_native_removal() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     fixture(root.path());
-    backend(root.path(), false);
-    let before = fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap();
-    let prepared = prepare(root.path(), state.path(), RemovalMode::RemoveContent).unwrap();
-    prepared
-        .publish(
-            &Publisher::open(&state.path().join("state")).unwrap(),
-            &Cancellation::default(),
-        )
-        .unwrap();
-    assert!(
-        !root
-            .path()
-            .join("pack/resourcepacks/actual-name.pw.toml")
-            .exists()
-    );
-    assert_eq!(
-        fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap(),
-        before
-    );
-    let index = fs::read(root.path().join("pack/index.toml")).unwrap();
-    let decoded: toml::Value = toml::from_str(std::str::from_utf8(&index).unwrap()).unwrap();
-    assert_eq!(decoded["user-field"].as_str(), Some("retained"));
-    let files = decoded["files"].as_array().unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(
-        files[0]["file"].as_str(),
-        Some("resourcepacks/assets.pw.toml")
-    );
-    let pack: toml::Value =
-        toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap()).unwrap();
-    assert_eq!(
-        pack["index"]["hash"].as_str().unwrap(),
-        ExpectedDigest::Sha256(Sha256::digest(index).into()).hex()
-    );
-    kept(root.path());
-}
-#[test]
-fn derivative_digest_drift_cannot_authorize_metadata_or_content_deletion() {
-    let root = tempfile::tempdir().unwrap();
-    let state = tempfile::tempdir().unwrap();
-    fixture(root.path());
-    backend(root.path(), true);
-    let before = fs::read(root.path().join("empack.yml")).unwrap();
-    assert!(prepare(root.path(), state.path(), RemovalMode::RemoveContent).is_err());
-    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), before);
-    assert_eq!(
-        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
-        b"payload"
-    );
-}
-
-#[test]
-fn index_aliases_cannot_leave_a_stale_reference_to_removed_content() {
-    let root = tempfile::tempdir().unwrap();
-    let state = tempfile::tempdir().unwrap();
-    fixture(root.path());
-    backend(root.path(), false);
-    let index = fs::read_to_string(root.path().join("pack/index.toml"))
-        .unwrap()
-        .replace(
-            "resourcepacks/actual-name.pw.toml",
-            "resourcepacks/ACTUAL-NAME.pw.toml",
-        );
-    put(root.path(), "pack/index.toml", index.as_bytes());
-    let mut pack: toml::Value =
-        toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap()).unwrap();
-    pack["index"]["hash"] =
-        toml::Value::String(ExpectedDigest::Sha256(Sha256::digest(index.as_bytes()).into()).hex());
-    put(
-        root.path(),
+    let names = [
+        "pack/resourcepacks/assets.pw.toml",
         "pack/pack.toml",
-        toml::to_string(&pack).unwrap().as_bytes(),
-    );
-    let error = prepare(root.path(), state.path(), RemovalMode::RemoveContent)
-        .err()
-        .unwrap();
-    assert!(format!("{error:#}").contains("Index aliases"), "{error:#}");
-    assert_eq!(
-        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
-        b"payload"
-    );
-}
-
-#[test]
-fn removal_accepts_empty_indexes_and_preserves_disabled_internal_hashes() {
-    for (empty, hash) in [(true, true), (false, false), (true, false)] {
-        let root = tempfile::tempdir().unwrap();
-        let state = tempfile::tempdir().unwrap();
-        fixture(root.path());
-        backend(root.path(), false);
-        let mut index: toml::Value =
-            toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
-                .unwrap();
-        if empty {
-            index.as_table_mut().unwrap().remove("files");
-        }
-        let index = toml::to_string(&index).unwrap();
-        put(root.path(), "pack/index.toml", index.as_bytes());
-        let mut pack: toml::Value =
-            toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap())
-                .unwrap();
-        if hash {
-            pack["index"]["hash"] = toml::Value::String(
-                ExpectedDigest::Sha256(Sha256::digest(index.as_bytes()).into()).hex(),
-            );
-        } else {
-            pack["index"].as_table_mut().unwrap().remove("hash");
-            pack["index"].as_table_mut().unwrap().remove("file");
-            pack.as_table_mut().unwrap().insert(
-                "options".into(),
-                toml::Value::Table(toml::Table::from_iter([(
-                    "no-internal-hashes".into(),
-                    toml::Value::Boolean(true),
-                )])),
-            );
-        }
-        put(
-            root.path(),
-            "pack/pack.toml",
-            toml::to_string(&pack).unwrap().as_bytes(),
-        );
-        let prepared = prepare(root.path(), state.path(), RemovalMode::RemoveContent).unwrap();
-        prepared
-            .publish(
-                &Publisher::open(&state.path().join("state")).unwrap(),
-                &Cancellation::default(),
-            )
-            .unwrap();
-        assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
-        assert!(
-            root.path()
-                .join("pack/resourcepacks/assets.pw.toml")
-                .exists()
-        );
-        let result: toml::Value =
-            toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap())
-                .unwrap();
-        assert_eq!(
-            result["index"]
-                .get("hash")
-                .and_then(toml::Value::as_str)
-                .is_some_and(|value| !value.is_empty()),
-            hash
-        );
-        if !hash {
-            assert_eq!(
-                result["options"]["no-internal-hashes"].as_bool(),
-                Some(true)
-            );
-        }
+        "pack/index.toml",
+        "pack/.packwizignore",
+    ];
+    for name in names {
+        put(root.path(), name, b"invalid foreign data [");
     }
-}
-
-#[test]
-fn installed_stem_removal_publishes_the_canonical_owner_and_preserves_label_collision() {
-    let root = tempfile::tempdir().unwrap();
-    let state = tempfile::tempdir().unwrap();
-    fixture(root.path());
-    backend(root.path(), false);
-    let unrelated = fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap();
     let cancel = Cancellation::default();
-    let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
-        .capture_mutation(root.path(), SnapshotLimits::default(), &cancel)
-        .unwrap();
     let selectors = NonEmpty::new(vec![
-        RemovalSelector::Query("actual-name".into()),
         RemovalSelector::Query("Assets".into()),
+        RemovalSelector::Query("assets".into()),
     ])
     .unwrap();
+    let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
+        .capture_removal(
+            root.path(),
+            &selectors,
+            RemovalMode::RemoveContent,
+            RemovalEvidencePolicy::AcknowledgeUnknown,
+            SnapshotLimits::default(),
+            &cancel,
+        )
+        .unwrap();
     let prepared = plan_selected_removal(
         snapshot,
         &selectors,
@@ -443,26 +276,18 @@ fn installed_stem_removal_publishes_the_canonical_owner_and_preserves_label_coll
     .stage(&cancel)
     .unwrap();
     assert_eq!(prepared.candidate().plan().selected().len(), 1);
-    let receipt = prepared
+    prepared
         .publish(
             &Publisher::open(&state.path().join("state")).unwrap(),
             &cancel,
         )
         .unwrap();
-    assert_eq!(
-        receipt.selected,
-        BTreeSet::from([DependencyKey::parse("assets").unwrap()])
-    );
-    assert!(receipt.project.intent().roots.is_empty());
-    assert!(
-        !root
-            .path()
-            .join("pack/resourcepacks/actual-name.pw.toml")
-            .exists()
-    );
-    assert_eq!(
-        fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap(),
-        unrelated
-    );
+    for name in names {
+        assert_eq!(
+            fs::read(root.path().join(name)).unwrap(),
+            b"invalid foreign data ["
+        );
+    }
+    assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
     kept(root.path());
 }

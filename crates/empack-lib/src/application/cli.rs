@@ -473,7 +473,7 @@ pub enum Commands {
     #[command(alias = "rm")]
     Remove {
         /// Mod names to remove
-        #[arg(help = "Dependency keys, titles, or installed metadata names")]
+        #[arg(help = "Dependency keys, titles, or provider-qualified IDs")]
         mods: Vec<String>,
 
         /// Remove dependencies as well

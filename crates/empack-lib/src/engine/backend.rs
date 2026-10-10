@@ -1,10 +1,9 @@
 //! Packwiz wire observations. Metadata describes an installation; it is not a byte proof.
-pub(in crate::engine) mod index;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::ExpectedDigest,
     identity::{CurseForgeProjectId, ModrinthProjectId, PinSelector, ProviderProjectId},
-    model::{ContentLayer, DependencyKey, ResolvedFile, ResolvedPin, ResolvedProject},
+    model::ResolvedPin,
     path::{InstallDestination, PortableRelPath},
     requirements::{Environments, Requirements},
 };
@@ -154,44 +153,6 @@ impl BackendFile {
             optional,
             download,
         })
-    }
-    /// Bind derivative metadata to one exact locked file, independent of its filename.
-    /// An unclaimed observation remains untracked; conflicting claims are never guessed.
-    pub(super) fn locked_owner<'a>(
-        &self,
-        project: &'a ResolvedProject,
-    ) -> Result<Option<(&'a DependencyKey, &'a ResolvedFile)>> {
-        let mut owner = None;
-        let mut claimed = false;
-        for (key, dependency) in &project.lock().dependencies {
-            for file in dependency.files.as_slice() {
-                for placement in file.placements.as_slice() {
-                    if placement.layer != ContentLayer::Common
-                        || placement.destination != self.destination
-                    {
-                        continue;
-                    }
-                    claimed = true;
-                    if self.matches_selection_and_requirements(
-                        dependency.selected.as_ref(),
-                        &placement.requirements,
-                    )? {
-                        ensure!(
-                            owner.is_none(),
-                            "Backend metadata has multiple locked owners: {}",
-                            self.metadata_path.as_str()
-                        );
-                        owner = Some((key, file));
-                    }
-                }
-            }
-        }
-        ensure!(
-            !claimed || owner.is_some(),
-            "Backend metadata does not identify one exact locked file: {}",
-            self.metadata_path.as_str()
-        );
-        Ok(owner)
     }
     /// Verify the semantic facts this wire format can represent. This does not prove content bytes.
     pub fn matches_selection_and_requirements(

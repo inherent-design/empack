@@ -38,6 +38,12 @@ Establishing the first lock requires explicit file placements or an exact provid
 selection; an automatic placement without either is insufficient evidence. A
 provider world keeps its exact archive selection and verifies its selected members.
 
+Removal selects an exact logical key, an unambiguous title or a provider-qualified
+identity such as `modrinth:AANobbMI`. An exact key takes precedence over title
+matching. The selected native lock records determine placements and dependency
+checks. Untracked files require adoption before managed removal; acknowledging
+incomplete dependency evidence does not turn a filename into deletion authority.
+
 ## File planning
 
 `plan_file` compares prior installed content, current native observation and incoming

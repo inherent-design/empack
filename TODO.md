@@ -128,6 +128,8 @@ readiness or replace executable evidence.
 
 - [x] Remove foreign metadata discovery and index maintenance from addition,
   updates, synchronization and adoption; identify adopted provider content by bytes.
+- [x] Resolve removal through logical keys, titles and canonical provider identities;
+  remove foreign-record selectors, ownership claims and index rewriting.
 - [ ] Apply native `sources.exclude` capture to the remaining author commands.
 - [ ] Remove `BackendDocument`, backend discovery, index refresh, packwiz parser,
   metadata adoption and metadata-based ownership from all project commands.

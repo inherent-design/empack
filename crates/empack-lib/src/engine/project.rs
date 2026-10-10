@@ -807,44 +807,21 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
-        let metadata = super::source::CaptureFilter::mutation(&[])?;
-        let documents =
-            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
+        let documents = self.capture(selected, &[], limits, cancel)?;
         let project = documents.require_resolved()?;
         let selected_keys = selection
             .map(|(selectors, mode, evidence)| {
-                let records = documents.backend_files(cancel)?;
-                let keys = super::removal::resolve_selections(&project, &records, selectors)?;
-                super::removal::untracked_evidence(&project, &records, mode, evidence)?;
-                let plan = super::removal::logical_plan(&project, &keys, mode, evidence)?;
-                let observed_paths = keys
-                    .observed
-                    .iter()
-                    .map(|path| {
-                        let record = records
-                            .iter()
-                            .find(|record| record.metadata_path == *path)
-                            .context("Selected metadata disappeared")?;
-                        super::layout::ProjectLayout::path(
-                            &empack_core::files::ManagedPath::Content {
-                                layer: empack_core::model::ContentLayer::Common,
-                                path: record.destination.relative().clone(),
-                            },
-                        )
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                Ok::<_, anyhow::Error>((plan.removed(), observed_paths))
+                let keys = super::removal::resolve_selections(&project, selectors)?;
+                Ok::<_, anyhow::Error>(
+                    super::removal::logical_plan(&project, &keys, mode, evidence)?.removed(),
+                )
             })
             .transpose()?;
-        let mut required = selected_keys
-            .as_ref()
-            .map(|(_, paths)| paths.clone())
-            .unwrap_or_default();
+        let mut required = Vec::new();
         for (key, dependency) in &project.lock().dependencies {
             if selected_keys
                 .as_ref()
-                .is_some_and(|(keys, _)| !keys.contains(key))
+                .is_some_and(|keys| !keys.contains(key))
             {
                 continue;
             }
@@ -859,7 +836,7 @@ impl ProjectReader {
                 }
             }
         }
-        self.capture_mutation_paths(selected, documents, required, limits, cancel)
+        self.capture_dependency_paths(selected, documents, required, limits, cancel)
     }
     /// Bind old and new placements for the canonical addition without reading unrelated payloads.
     pub fn capture_addition(
@@ -993,17 +970,6 @@ impl ProjectReader {
             }
         }
         self.capture_dependency_paths(selected, documents, required, limits, cancel)
-    }
-    fn capture_mutation_paths(
-        &self,
-        selected: &Path,
-        documents: WorkspaceSnapshot,
-        required: Vec<PortableRelPath>,
-        limits: SnapshotLimits,
-        cancel: &Cancellation,
-    ) -> Result<MutationSnapshot> {
-        let filter = super::source::CaptureFilter::mutation(&required)?;
-        self.capture_mutation_paths_filtered(selected, documents, required, limits, &filter, cancel)
     }
     #[allow(clippy::too_many_arguments)]
     fn capture_mutation_paths_filtered(

@@ -91,15 +91,6 @@ impl RemovalPlan {
     ) -> Result<Self, RemovalError> {
         Self::prepare_keys(project, selections.as_slice(), mode, evidence)
     }
-    /// Preserve logical records while an adapter plans explicitly selected untracked files.
-    /// This grants no file authority: the adapter must verify nonempty observed selections,
-    /// their ownership and bytes, and disclose incomplete external dependency evidence.
-    pub fn prepare_observed(
-        project: &ResolvedProject,
-        evidence: RemovalEvidencePolicy,
-    ) -> Result<Self, RemovalError> {
-        Self::prepare_keys(project, &[], RemovalMode::RemoveContent, evidence)
-    }
     fn prepare_keys(
         project: &ResolvedProject,
         selections: &[DependencyKey],

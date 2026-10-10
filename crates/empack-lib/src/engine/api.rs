@@ -79,10 +79,7 @@ pub use project_change::{
     ImportRequest, InitializeRequest, ProjectChangePreview, ProjectChangeReceipt,
     ReplacementSummary,
 };
-pub use removal::{
-    ObservedRemovalSelection, RemovalSelection, RemovalSelector, RemovePreview, RemoveReceipt,
-    RemoveRequest,
-};
+pub use removal::{RemovalSelection, RemovalSelector, RemovePreview, RemoveReceipt, RemoveRequest};
 pub use synchronization::{SyncPreview, SyncReceipt, SyncRequest};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
