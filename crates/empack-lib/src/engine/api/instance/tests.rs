@@ -845,3 +845,67 @@ async fn prism_layout_binds_launcher_directory_and_handles_empty_releases() {
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let original = || {
+        let mut input = request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+        input.action = InstanceAction::Prepare;
+        input
+    };
+    let a = apply(&engine, root.path(), original()).await;
+    let next = request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]);
+    let b = apply(&engine, root.path(), next).await;
+    assert_ne!(a.release, b.release);
+    let old_consumer = || {
+        let mut input = original();
+        input.supplied.clear();
+        input
+    };
+    let kept = apply(&engine, root.path(), old_consumer()).await;
+    assert_eq!(kept, b);
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"B");
+    let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let mut wrong = old_consumer();
+    wrong.choices.push(ChoiceSelection {
+        key: "new".into(),
+        value: "yes".into(),
+    });
+    assert!(engine.prepare(root.path().to_owned(), wrong).await.is_err());
+    for field in ["runtime", "pack"] {
+        let input = old_consumer();
+        let mut document = input.release.release().document().clone();
+        if field == "runtime" {
+            document.runtime.minecraft = "1.21.2".into();
+        } else {
+            document.pack = "other".into();
+        }
+        assert!(
+            engine
+                .prepare(root.path().to_owned(), replace_document(input, document))
+                .await
+                .is_err()
+        );
+    }
+    fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+    // Missing active content must never be replaced by the obsolete initial asset.
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), original())
+            .await
+            .is_err()
+    );
+    let mut repair = old_consumer();
+    let current_bytes = request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]);
+    repair.supplied = current_bytes.supplied;
+    assert_eq!(apply(&engine, root.path(), repair).await, b);
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"B");
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        before
+    );
+    engine.shutdown().await;
+}

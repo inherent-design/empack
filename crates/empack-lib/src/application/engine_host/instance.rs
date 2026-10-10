@@ -11,14 +11,23 @@ use crate::{
 use std::collections::BTreeMap;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
-    let InstanceCommand::Install {
+    let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
+    let (InstanceCommand::Install {
         release,
         sha256,
         side,
         layout,
         choices,
         files,
-    } = command
+    }
+    | InstanceCommand::Prepare {
+        release,
+        sha256,
+        side,
+        layout,
+        choices,
+        files,
+    }) = command
     else {
         anyhow::bail!("Expected a snapshot installation request");
     };
@@ -64,12 +73,6 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         scope.accept(work.wait().await?)?.transpose()
     })
     .await?;
-    ensure!(
-        local_files
-            .keys()
-            .all(|key| decoded.document().files.iter().any(|f| f.key == *key)),
-        "File association does not name a release file"
-    );
     // Development builds implement this protocol version without pretending to be a tagged binary.
     let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
         "0.6.0-beta"
@@ -79,7 +82,11 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
     let snapshot =
         SelectedSnapshot::select(decoded.bytes(), &sha256, &semver::Version::parse(version)?)?;
     let request = InstallInstanceRequest {
-        action: crate::engine::instance::InstanceAction::Apply,
+        action: if prepare_current {
+            crate::engine::instance::InstanceAction::Prepare
+        } else {
+            crate::engine::instance::InstanceAction::Apply
+        },
         layout: layout
             .map(|layout| match layout.as_str() {
                 "game" => Ok(InstanceLayout::Game),
@@ -136,7 +143,9 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
-        command @ InstanceCommand::Install { .. } => install(session, command).await,
+        command @ (InstanceCommand::Install { .. } | InstanceCommand::Prepare { .. }) => {
+            install(session, command).await
+        }
         InstanceCommand::Inspect => {
             let (invocation, root) = project_path(session)?;
             let state = state_root(session.config().app_config(), &invocation)?;

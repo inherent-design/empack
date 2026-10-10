@@ -344,6 +344,27 @@ pub enum InstanceCommand {
         choices: Vec<String>,
     },
 
+    /// Install the initial release or repair the active release without reverting updates
+    Prepare {
+        /// Immutable JSON release payload, not an author manifest
+        release: std::path::PathBuf,
+        /// Expected SHA-256 of the exact release payload bytes
+        #[arg(long)]
+        sha256: String,
+        /// Environment to install; an existing instance cannot switch sides
+        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
+        side: String,
+        /// Fixed content directory; retained on updates (new instances default to game)
+        #[arg(long, value_parser = ["game", "prism"])]
+        layout: Option<String>,
+        /// Stable release choice and selected alternative
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        /// Associate exact content with a release file key, including manual downloads
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+
     /// Install an exact local release, preserving seeds and rejecting edited managed files
     Install {
         /// Immutable JSON release payload, not an author manifest

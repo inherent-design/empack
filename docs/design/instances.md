@@ -16,6 +16,13 @@ requires its absence and binds that absence through publication. A small owned
 empty release. A release cannot overwrite this marker. Launcher components and
 icons remain outside the content installer's ownership. [Prism directory selection](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/MinecraftInstance.cpp)
 
+`instance prepare RELEASE --sha256 ID` is the consumer entry point. It installs the
+initial snapshot when no completed record exists. Otherwise it verifies and repairs
+the active release with saved choices; it cannot replay the original package over a
+later update. The initial descriptor must name the same pack and runtime. A runtime
+change requires updating the consumer integration before launch. Preparation failure
+returns an error and grants no permission to start the game.
+
 ## State transitions
 
 ```mermaid

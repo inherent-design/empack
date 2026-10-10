@@ -59,6 +59,8 @@ impl InstanceLayout {
 /// Explicit selection, repair and rollback have different durable preconditions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstanceAction {
+    /// Install the initial snapshot, or retain and verify the active compatible release.
+    Prepare,
     Apply,
     Repair,
     Rollback,
@@ -367,8 +369,55 @@ pub(super) fn plan(
             cancel,
         )?)?;
     }
-    let release = selected.release();
+    let active = if action == InstanceAction::Prepare {
+        if let Some(previous) = &previous {
+            ensure!(
+                requested_choices.is_empty(),
+                "Preparation retains completed choices; change them explicitly"
+            );
+            ensure!(
+                previous.root == super::publication::root_key(&root)?,
+                "Instance record belongs to another native root"
+            );
+            let target = descriptor(&previous.release)?;
+            snapshot = snapshot.merge(root.capture(
+                &[ProjectLayout::path(&target)?],
+                document_limits(limits),
+                cancel,
+            )?)?;
+            let bytes = read_optional(&root, &snapshot, &target, cancel)?
+                .context("Completed instance descriptor is missing")?;
+            let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
+                "0.6.0-beta"
+            } else {
+                env!("CARGO_PKG_VERSION")
+            };
+            let active = super::release::trust::SelectedSnapshot::select(
+                &bytes,
+                &previous.release,
+                &semver::Version::parse(version)?,
+            )?;
+            ensure!(
+                active.release().document().pack == selected.release().document().pack,
+                "Consumer release belongs to another pack"
+            );
+            ensure!(
+                active.release().document().runtime == selected.release().document().runtime,
+                "Active runtime differs from this consumer; update its launcher/runtime integration before launch"
+            );
+            Some(active)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let release = active
+        .as_ref()
+        .map(|current| current.release())
+        .unwrap_or_else(|| selected.release());
     match action {
+        InstanceAction::Prepare => {}
         InstanceAction::Apply => {}
         InstanceAction::Repair => {
             let previous = previous
