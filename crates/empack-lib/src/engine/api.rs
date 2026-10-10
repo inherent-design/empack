@@ -625,7 +625,9 @@ impl ExecutionOutcome {
                 operation: recovery.operation.clone(),
                 cause: error,
             }
-        } else if error.is::<PublicationWorkerFailed>() {
+        } else if error.is::<PublicationWorkerFailed>()
+            || error.is::<launch::RuntimeRecoveryRequired>()
+        {
             Self::ExecutionUncertain(error)
         } else if error.is::<crate::application::process_runtime::Interrupted>()
             || matches!(

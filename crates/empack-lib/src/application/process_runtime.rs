@@ -186,15 +186,17 @@ pub(crate) async fn execute_inherited(
         result = child.wait() => result.map_err(anyhow::Error::from),
         _ = cancellation.cancelled() => Err(Interrupted.into()),
     };
-    drop(tree);
+    let termination = tree.terminate();
     if result.is_err() {
         let _ = child.start_kill();
         // Keep the caller's lease until the immediate child is actually reaped.
-        child
-            .wait()
+        tokio::time::timeout(Duration::from_secs(2), child.wait())
             .await
+            .context("Instance runtime reaping timed out; retirement is unconfirmed")?
             .context("Failed to retire instance runtime")?;
     }
+    termination?;
+    tree.wait_retired().await?;
     Ok(RetiredRuntime(result))
 }
 
@@ -208,12 +210,91 @@ impl ProcessTree {
         )?))
     }
 }
+impl ProcessTree {
+    async fn wait_retired(self) -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while self.has_processes()? {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .context("Runtime descendants have not retired; recovery acknowledgment is required")??;
+        self.disarm();
+        Ok(())
+    }
+    #[cfg(unix)]
+    fn disarm(mut self) {
+        self.0 = 0;
+    }
+    #[cfg(windows)]
+    fn disarm(self) {}
+    #[cfg(unix)]
+    fn terminate(&self) -> Result<()> {
+        if unsafe { libc::kill(-(self.0 as i32), libc::SIGKILL) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(anyhow::Error::from(error).context("Cannot terminate runtime process group"))
+        }
+    }
+    #[cfg(unix)]
+    fn has_processes(&self) -> Result<bool> {
+        if unsafe { libc::kill(-(self.0 as i32), 0) } == 0 {
+            return Ok(true);
+        }
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(false)
+        } else {
+            Err(anyhow::Error::from(error)
+                .context("Cannot establish runtime process-group retirement"))
+        }
+    }
+    #[cfg(windows)]
+    fn terminate(&self) -> Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        if unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.0.as_raw_handle(), 130)
+        } == 0
+        {
+            return Err(anyhow::Error::from(std::io::Error::last_os_error())
+                .context("Cannot terminate runtime job"));
+        }
+        Ok(())
+    }
+    #[cfg(windows)]
+    fn has_processes(&self) -> Result<bool> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::*;
+        let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+        if unsafe {
+            QueryInformationJobObject(
+                self.0.as_raw_handle(),
+                JobObjectBasicAccountingInformation,
+                &mut info as *mut _ as *mut _,
+                std::mem::size_of_val(&info) as u32,
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(anyhow::Error::from(std::io::Error::last_os_error())
+                .context("Cannot establish runtime job retirement"));
+        }
+        Ok(info.ActiveProcesses != 0)
+    }
+}
 #[cfg(unix)]
 impl Drop for ProcessTree {
     fn drop(&mut self) {
         // The child was spawned as its own process group leader.
-        unsafe {
-            libc::kill(-(self.0 as i32), libc::SIGKILL);
+        if self.0 != 0 {
+            unsafe {
+                libc::kill(-(self.0 as i32), libc::SIGKILL);
+            }
         }
     }
 }

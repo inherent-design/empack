@@ -12,6 +12,23 @@ fn runtime_fixture() {
     if !current.join("launch-fixture").is_file() {
         return;
     }
+    if current.join("descendant-fixture").is_file() {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+        child.args([
+            "--exact",
+            "engine::api::launch::tests::runtime_descendant",
+            "--nocapture",
+        ]);
+        let descendant = child.spawn().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while !current.join("descendant-started").exists() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // The fixture deliberately exits without waiting, like a daemonizing game helper.
+        drop(descendant);
+        return;
+    }
     fs::write(current.join("launch-started"), b"running").unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
     while !current.join("launch-exit").exists() {
@@ -298,5 +315,127 @@ async fn failed_spawn_does_not_leave_runtime_recovery_evidence() {
             .await
             .is_err()
     );
+    engine.shutdown().await;
+}
+
+#[test]
+fn runtime_descendant() {
+    let root = std::env::current_dir().unwrap();
+    if !root.join("descendant-fixture").is_file() {
+        return;
+    }
+    fs::write(root.join("descendant-started"), b"started").unwrap();
+    let end = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < end {
+        fs::write(
+            root.join("descendant-heartbeat"),
+            format!("{:?}", std::time::Instant::now()),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[tokio::test]
+async fn launcher_exit_does_not_authorize_publication_until_descendants_retire() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    install(&engine, root.path()).await;
+    fs::write(root.path().join("game/launch-fixture"), b"fixture").unwrap();
+    fs::write(root.path().join("game/descendant-fixture"), b"fixture").unwrap();
+    let prepared = prepare(&engine, root.path(), request()).await;
+    let granted = grant(&prepared, true);
+    let mut operation = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(15), operation.wait())
+        .await
+        .unwrap();
+    assert!(root.path().join("game/descendant-started").exists());
+    let heartbeat = fs::read(root.path().join("game/descendant-heartbeat")).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        fs::read(root.path().join("game/descendant-heartbeat")).unwrap(),
+        heartbeat
+    );
+    match &*result {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Launch(
+            receipt,
+        ))) => {
+            assert!(receipt.status.success());
+            assert!(
+                engine
+                    .prepare(root.path().to_owned(), AcknowledgeStoppedRuntime)
+                    .await
+                    .is_err()
+            );
+        }
+        // Some hosts retain reparented zombies. Unconfirmed retirement must remain blocked.
+        OperationOutcome::Completed(ExecutionOutcome::ExecutionUncertain(error)) => {
+            assert!(error.is::<RuntimeRecoveryRequired>());
+            let pending = prepare(&engine, root.path(), AcknowledgeStoppedRuntime).await;
+            drop(pending);
+            let mutation = prepare(&engine, root.path(), install_request(b"new")).await;
+            let granted = grant(&mutation, false);
+            let mut blocked = engine.start(mutation.authorize(granted).unwrap()).unwrap();
+            assert!(matches!(
+                &*blocked.wait().await,
+                OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+            ));
+            engine.release_completed(blocked.id());
+            assert_eq!(
+                fs::read(root.path().join("game/mods/a.jar")).unwrap(),
+                b"original"
+            );
+        }
+        _ => panic!("unexpected runtime outcome"),
+    }
+    drop(result);
+    engine.release_completed(operation.id());
+    engine.shutdown().await;
+}
+
+#[test]
+fn runtime_recovery_failure_takes_precedence_over_cancellation() {
+    let error = anyhow::Error::new(crate::application::process_runtime::Interrupted)
+        .context(RuntimeRecoveryRequired);
+    assert!(matches!(
+        ExecutionOutcome::failed(error, true),
+        ExecutionOutcome::ExecutionUncertain(_)
+    ));
+}
+
+#[tokio::test]
+async fn cancellation_cannot_discard_failed_runtime_evidence_cleanup() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let state_path = state.path().join("state");
+    let (engine, _) = super::super::tests::engine(state_path.clone());
+    install(&engine, root.path()).await;
+    fs::write(root.path().join("game/launch-fixture"), b"fixture").unwrap();
+    let prepared = prepare(&engine, root.path(), request()).await;
+    let granted = grant(&prepared, true);
+    let mut running = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !root.path().join("game/launch-started").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let native_root = crate::engine::snapshot::ProjectReadRoot::open(root.path()).unwrap();
+    let key = crate::engine::publication::root_key(&native_root).unwrap();
+    let marker = state_path.join(key).join("runtime.json");
+    assert!(marker.is_file());
+    fs::write(&marker, b"changed recovery evidence").unwrap();
+    running.cancel();
+    let outcome = tokio::time::timeout(Duration::from_secs(15), running.wait())
+        .await
+        .unwrap();
+    assert!(
+        matches!(&*outcome, OperationOutcome::Completed(ExecutionOutcome::ExecutionUncertain(error)) if error.is::<RuntimeRecoveryRequired>())
+    );
+    assert_eq!(fs::read(marker).unwrap(), b"changed recovery evidence");
+    drop(outcome);
+    engine.release_completed(running.id());
     engine.shutdown().await;
 }

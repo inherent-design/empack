@@ -241,7 +241,11 @@ the shared lock prevents update, cleanup and publication recovery from changing 
 root while the process runs. Console streams are inherited without accumulating
 output or imposing the short timeout used for build tools. Cancellation retires the
 owned process tree before releasing the lease. The receipt carries the real process
-exit status; a nonzero exit is a CLI failure.
+exit status; a nonzero exit is a CLI failure. After the immediate process exits,
+empack terminates remaining owned descendants and checks that the Unix process
+group or Windows job has no active processes. A kill request alone cannot clear
+runtime evidence. Failure to establish retirement within the bounded cleanup period
+retains recovery evidence and blocks publication.
 
 The host chooses the runtime and remains responsible for its compatibility and
 external resource use. Empack's acquisition grant does not sandbox the runtime's

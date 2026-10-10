@@ -22,6 +22,12 @@ pub struct LaunchInstanceReceipt {
     pub release: String,
     pub status: std::process::ExitStatus,
 }
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Instance runtime recovery is required; stop remaining processes, then run instance recover-runtime --acknowledge-stopped"
+)]
+pub(super) struct RuntimeRecoveryRequired;
+
 pub(super) struct PreparedLaunch {
     pub(super) view: LaunchInstancePreview,
     instance: instance::InstancePlan,
@@ -140,13 +146,13 @@ pub(super) async fn run(
                     prepared.command,
                     cancel,
                 )
-                .await?;
+                .await.context(RuntimeRecoveryRequired)?;
                 let status = retired.0;
                 if let Err(cleanup) = lease.complete() {
                     return Err(match status {
                         Err(process) => process.context(format!("Runtime retired, but recovery evidence could not be cleared: {cleanup:#}")),
                         Ok(status) => cleanup.context(format!("Runtime exited with {status}, but recovery evidence could not be cleared")),
-                    });
+                    }.context(RuntimeRecoveryRequired));
                 }
                 Ok::<_, anyhow::Error>(LaunchInstanceReceipt {
                     plan: prepared.view.plan,
@@ -155,7 +161,7 @@ pub(super) async fn run(
                 })
             },
         )?;
-        scope.accept(work.wait().await?)?.transpose()
+        scope.accept_retirement(work.wait().await.context(RuntimeRecoveryRequired)?)?.transpose()
     }
     .await;
     Ok(match result {
