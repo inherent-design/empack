@@ -51,10 +51,10 @@ readiness or replace executable evidence.
 - [x] Wire retained-release inspection, exact repair and managed rollback.
 - [x] Export native snapshots through shared verified acquisition and batch publication, preserving original
   assertions, provider provenance, layers, choices and explicit source rules.
-- [ ] Define strict, independently versioned author, lock, release, channel and
+- [x] Define strict, independently versioned author, lock, release, channel and
   instance schemas. DTO parsing never constructs trusted or approved proof values.
 - [x] Specify author source inclusion in `empack.yml`, not `.packwizignore`.
-- [ ] Specify release canonical identity and signing envelope, key enrollment,
+- [x] Specify release canonical identity and signing envelope, key enrollment,
   rotation, revocation, expiry and monotonic channel sequence handling.
 - [ ] Distinguish expected source assertions, computed content addresses, publisher
   authentication and user authorization in every diagnostic and receipt.
@@ -67,20 +67,20 @@ readiness or replace executable evidence.
   exact provider refresh, bounded transfers and all-selected verification.
 - [x] Implement pure three-way file decisions, including wrong-kind, missing-file,
   unowned collision, changed-content and permission-change cases.
-- [ ] Construct complete plans with collision checks, root bindings, read sets,
+- [x] Construct complete plans with collision checks, root bindings, read sets,
   exact acquisition obligations and instance-record postconditions.
-- [ ] Persist choices by stable choice key; request decisions for new choices,
+- [x] Persist choices by stable choice key; request decisions for new choices,
   changed constraints and removed alternatives without silently resetting choices.
-- [ ] Install, update and repair exact release selections through shared preparation,
+- [x] Install, update and repair exact release selections through shared preparation,
   grants, staging, verification and recoverable publication.
 - [ ] Support manual restricted downloads and restart continuation with original
   digests, release identity and supplied-file associations retained.
-- [ ] Implement changed-config decisions and initial-only configuration seeds;
+- [x] Implement changed-config decisions and initial-only configuration seeds;
   never infer mergeability from an extension or overwrite a played world.
-- [ ] Keep durable instance ownership separate from disposable content caches.
-- [ ] Implement explicit managed rollback with retained previous release evidence;
+- [x] Keep durable instance ownership separate from disposable content caches.
+- [x] Implement explicit managed rollback with retained previous release evidence;
   do not rely on the publication journal's short-lived preimages for release history.
-- [ ] Coordinate prelaunch/server execution and updates with an instance lease.
+- [x] Coordinate prelaunch/server execution and updates with an instance lease.
   Document the limit for programs started outside empack's coordination.
 - [ ] Allow explicitly configured offline launch only from a completed installation;
   distinguish update-check failure from failed or uncertain publication.
@@ -89,14 +89,14 @@ readiness or replace executable evidence.
 
 - [x] Derive portable native releases from the exact lock and selected inventory;
   strip host paths, credentials, cache paths and author-only state.
-- [ ] Use stable pack identity, content-derived release identity and logical file
+- [x] Use stable pack identity, content-derived release identity and logical file
   identity; display names and version labels are not mutation authority.
 - [ ] Publish immutable manifests/assets before changing a channel pointer.
-- [ ] Authenticate channel and release bytes before following content instructions;
+- [x] Authenticate channel and release bytes before following content instructions;
   validate redirects, origins, expiry, signatures and saved sequence floors.
-- [ ] Support explicit publisher enrollment and rotation without silent trust on
+- [x] Support explicit publisher enrollment and rotation without silent trust on
   first unattended use. Keep signing keys outside pack sources and distributions.
-- [ ] Reject downgrade/replay unless the operator explicitly selects rollback;
+- [x] Reject downgrade/replay unless the operator explicitly selects rollback;
   snapshot installation remains possible without a channel subscription.
 - [ ] Keep tool acquisition/version policy independent of pack metadata and test
   executable selection for each supported platform.
@@ -117,9 +117,9 @@ readiness or replace executable evidence.
   substitutions and report content that cannot be represented or distributed.
 - [x] Replace lightweight Prism JAR commands with native instance integration;
   preserve launcher components, icons, templates and ordinary snapshot imports.
-- [ ] Preserve server recipes for vanilla, Fabric, Quilt, Forge and NeoForge,
+- [x] Preserve server recipes for vanilla, Fabric, Quilt, Forge and NeoForge,
   historical loader variants, Java requirements and generated launchers.
-- [ ] Replace full/light naming with explicit dependency delivery. Bundled pack
+- [x] Replace full/light naming with explicit dependency delivery. Bundled pack
   content does not imply bundled client game binaries or permission to redistribute.
 - [ ] Support native release directories/archives and channel output without making
   every consumer depend on an intermediate mrpack.
@@ -136,13 +136,13 @@ readiness or replace executable evidence.
 - [x] Remove `BackendDocument`, foreign discovery, index refresh, metadata
   adoption and metadata-based ownership from project commands.
 - [x] Remove the remaining packwiz serializer/parser with the light consumer recipes.
-- [ ] Preserve explicit adoption of verified local/provider/URL content through
+- [x] Preserve explicit adoption of verified local/provider/URL content through
   native identity and observation, without consulting foreign metadata.
-- [ ] Replace old target selectors, templates, source filters, diagnostics,
+- [x] Replace old target selectors, templates, source filters, diagnostics,
   release recipes and fixture assumptions as their native consumers are wired.
 - [x] Remove packwiz runtime assets, dependency pins, installer interaction options,
   archive projection/verifier branches and obsolete exclusive tests.
-- [ ] Route author and instance operations through one engine facade; retire
+- [x] Route author and instance operations through one engine facade; retire
   replaced implementation paths rather than keeping compatibility dispatch.
 - [ ] Search the complete repository for residual packwiz authority and obsolete
   target/schema claims. Keep third-party format names where semantically required.

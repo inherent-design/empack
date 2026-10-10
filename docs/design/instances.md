@@ -110,6 +110,15 @@ incoming publisher baseline requires a fresh decision. When a release retires th
 entry, the local file stays as user content and its override record retires.
 `instance inspect` reports these deviations. Preview never records a decision.
 
+`--merge PATH=FILE` selects a separately prepared local merge result for a managed
+file. Empack captures its content address and size, verifies it into owned staging,
+and applies the incoming file's permission policy. Publication binds the exact old
+instance observation and records the merged bytes as a local override. The retained
+publisher descriptor and source assertions remain unchanged. A missing, linked or
+directory-valued merge source fails; a competing `--file` association for the same
+logical file is ambiguous and fails. This command verifies selected bytes, not the
+semantic correctness of the user's merge algorithm.
+
 Initial configuration and world templates are seeds. Existing worlds, saves,
 logs, player preferences and runtime-generated data are excluded from ordinary
 release replacement and rollback. New releases cannot change a seed to managed

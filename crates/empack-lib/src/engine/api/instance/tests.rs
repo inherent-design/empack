@@ -1149,7 +1149,7 @@ async fn conflict_decisions_bind_exact_observations_and_never_authorize_director
         let mut input = a();
         input.conflicts.push(ConflictResolution {
             destination: "config/a".into(),
-            choice,
+            choice: choice.clone(),
         });
         let Preparation::Ready(prepared) =
             engine.prepare(root.path().to_owned(), input).await.unwrap()
@@ -1180,7 +1180,7 @@ async fn conflict_decisions_bind_exact_observations_and_never_authorize_director
         let mut input = a();
         input.conflicts.push(ConflictResolution {
             destination: "config/a".into(),
-            choice,
+            choice: choice.clone(),
         });
         assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
         assert_eq!(fs::read(target.join("sentinel")).unwrap(), b"keep");
@@ -1228,6 +1228,154 @@ async fn retired_local_override_preserves_user_content_and_unknown_decisions_fai
     assert_eq!(
         fs::read(root.path().join("game/config/a")).unwrap(),
         b"preexisting"
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn explicit_merge_freezes_local_result_without_rewriting_publisher_evidence() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let merge = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let a = || request(&[("cfg", "config/a", b"publisher", FilePolicy::Managed)]);
+    apply(&engine, root.path(), a()).await;
+    fs::write(root.path().join("game/config/a"), b"edited").unwrap();
+    let file = merge.path().join("result.txt");
+    fs::write(&file, b"merged settings").unwrap();
+    let mut input = a();
+    let release_id = input.release.release().id().to_owned();
+    let release_bytes = input.release.release().bytes().to_vec();
+    input.supplied.clear();
+    input.conflicts.push(ConflictResolution {
+        destination: "config/a".into(),
+        choice: ConflictChoice::Merge { file: file.clone() },
+    });
+    let Preparation::Ready(prepared) = engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"edited"
+    );
+    // Preparation has independently verified and frozen the selected merge bytes.
+    fs::write(&file, b"later source edit").unwrap();
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+    };
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(
+        receipt,
+    ))) = &*outcome
+    else {
+        panic!("merge publication failed")
+    };
+    assert_eq!(
+        receipt.record.local_overrides[0].accepted.sha256,
+        hash(b"merged settings")
+    );
+    assert_eq!(
+        receipt.record.local_overrides[0].original.sha256,
+        hash(b"publisher")
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"merged settings"
+    );
+    assert_eq!(
+        fs::read(
+            root.path()
+                .join(format!(".empack/releases/{release_id}.json"))
+        )
+        .unwrap(),
+        release_bytes
+    );
+    drop(outcome);
+    engine.release_completed(operation.id());
+    let mut repair = a();
+    repair.action = InstanceAction::Repair;
+    repair.supplied.clear();
+    apply(&engine, root.path(), repair).await;
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"merged settings"
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn merge_requires_a_regular_source_and_rejects_competing_associations() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let merge = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let a = || request(&[("cfg", "config/a", b"publisher", FilePolicy::Managed)]);
+    apply(&engine, root.path(), a()).await;
+    fs::write(root.path().join("game/config/a"), b"edited").unwrap();
+    for source in [merge.path().join("missing"), merge.path().to_owned()] {
+        let mut input = a();
+        input.supplied.clear();
+        input.conflicts.push(ConflictResolution {
+            destination: "config/a".into(),
+            choice: ConflictChoice::Merge { file: source },
+        });
+        assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
+    }
+    let file = merge.path().join("result");
+    fs::write(&file, b"merged").unwrap();
+    let mut input = a(); // Existing supplied publisher bytes cannot silently replace the merge result.
+    input.conflicts.push(ConflictResolution {
+        destination: "config/a".into(),
+        choice: ConflictChoice::Merge { file },
+    });
+    assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"edited"
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn byte_identical_conflict_resolution_still_checks_source_assertions() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let mut input = request(&[("cfg", "config/a", b"same", FilePolicy::Managed)]);
+    fs::create_dir_all(root.path().join("game/config")).unwrap();
+    fs::write(root.path().join("game/config/a"), b"same").unwrap();
+    let mut document = input.release.release().document().clone();
+    document.files[0].assertions.push(SourceDigest {
+        algorithm: "sha512".into(),
+        value: "0".repeat(128),
+    });
+    let release = DecodedRelease::encode(document).unwrap();
+    input.release = SelectedRelease::Snapshot(
+        release::trust::SelectedSnapshot::select(
+            release.bytes(),
+            release.id(),
+            &semver::Version::parse("0.6.0-beta").unwrap(),
+        )
+        .unwrap(),
+    );
+    input.conflicts.push(ConflictResolution {
+        destination: "config/a".into(),
+        choice: ConflictChoice::Replace,
+    });
+    assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
+    assert!(!root.path().join(".empack/instance.json").exists());
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"same"
     );
     engine.shutdown().await;
 }

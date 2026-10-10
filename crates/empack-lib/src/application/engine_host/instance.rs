@@ -170,7 +170,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         }
     };
     let request = InstallInstanceRequest {
-        conflicts: conflict_resolutions(conflicts),
+        conflicts: conflict_resolutions(conflicts, &invocation)?,
         action: if prepare_current {
             crate::engine::instance::InstanceAction::Prepare
         } else {
@@ -299,7 +299,8 @@ pub(in crate::application) async fn dispatch(
                     assets.is_none()
                         && files.is_empty()
                         && conflicts.preserve.is_empty()
-                        && conflicts.replace.is_empty(),
+                        && conflicts.replace.is_empty()
+                        && conflicts.merge.is_empty(),
                     "Supply --choice to change instance options"
                 );
                 let (invocation, root) = project_path(session)?;
@@ -450,7 +451,7 @@ async fn maintain(
         })
         .collect::<Result<Vec<_>>>()?;
     let request = InstallInstanceRequest {
-        conflicts: conflict_resolutions(conflicts),
+        conflicts: conflict_resolutions(conflicts, &invocation)?,
         action,
         layout: None,
         release: SelectedRelease::Snapshot(selected),
@@ -722,9 +723,11 @@ async fn launch(session: &dyn Session, command: Vec<std::ffi::OsString>) -> Resu
 
 fn conflict_resolutions(
     args: crate::application::cli::InstanceConflictArgs,
-) -> Vec<crate::engine::instance::ConflictResolution> {
+    invocation: &Path,
+) -> Result<Vec<crate::engine::instance::ConflictResolution>> {
     use crate::engine::instance::{ConflictChoice, ConflictResolution};
-    args.preserve
+    let mut decisions: Vec<_> = args
+        .preserve
         .into_iter()
         .map(|destination| ConflictResolution {
             destination,
@@ -738,5 +741,21 @@ fn conflict_resolutions(
                     choice: ConflictChoice::Replace,
                 }),
         )
-        .collect()
+        .collect();
+    for input in args.merge {
+        let (destination, file) = input
+            .split_once('=')
+            .context("Merge selection must be PATH=FILE")?;
+        ensure!(
+            !destination.is_empty() && !file.is_empty(),
+            "Merge requires a destination and a local file"
+        );
+        decisions.push(ConflictResolution {
+            destination: destination.into(),
+            choice: ConflictChoice::Merge {
+                file: absolute(invocation, Path::new(file)),
+            },
+        });
+    }
+    Ok(decisions)
 }

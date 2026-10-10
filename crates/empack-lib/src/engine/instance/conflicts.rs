@@ -2,10 +2,14 @@
 use super::*;
 use empack_core::{digest::ContentId, files::FilePermissions, instance::FileConflict};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictChoice {
     Preserve,
     Replace,
+    /// Explicit local merge result; no automatic text or world merging.
+    Merge {
+        file: std::path::PathBuf,
+    },
 }
 /// A release-relative destination. Preparation binds the decision to its exact observation.
 #[derive(Debug, Clone)]
@@ -108,7 +112,8 @@ pub(super) fn retained(
     Ok(None)
 }
 pub(super) fn resolve(
-    choice: ConflictChoice,
+    choice: &ConflictChoice,
+    merged: Option<&FileContent>,
     conflict: FileConflict,
     destination: &str,
     current: &ObservedPath,
@@ -132,6 +137,24 @@ pub(super) fn resolve(
                 });
             Ok((FileDecision::Preserve, local))
         }
+        ConflictChoice::Merge { .. } => {
+            let incoming = incoming
+                .filter(|file| file.policy == empack_core::instance::FilePolicy::Managed)
+                .context("Merge requires a selected managed file")?;
+            ensure!(
+                matches!(current, ObservedPath::File(_)),
+                "Merge requires an existing regular file"
+            );
+            let content = merged.context("Merge content was not captured")?.clone();
+            Ok((
+                FileDecision::Replace(content.clone()),
+                Some(LocalOverride {
+                    destination: destination.into(),
+                    original: FileIdentity::from_content(&incoming.content),
+                    accepted: FileIdentity::from_content(&content),
+                }),
+            ))
+        }
         ConflictChoice::Replace => {
             let decision = match (current, incoming) {
                 (ObservedPath::File(_), Some(file)) => FileDecision::Replace(file.content.clone()),
@@ -142,4 +165,37 @@ pub(super) fn resolve(
             Ok((decision, None))
         }
     }
+}
+
+/// Observe a user-selected merge result without staging or modifying either source.
+pub(super) fn capture_merge(
+    file: &Path,
+    limits: SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<FileContent> {
+    ensure!(
+        file.is_absolute(),
+        "Merge result must be an absolute host path"
+    );
+    let root = ProjectReadRoot::open(file.parent().context("Merge result has no parent")?)?;
+    let relative = path(
+        file.file_name()
+            .and_then(|value| value.to_str())
+            .context("Merge result requires a portable filename")?,
+    )?;
+    let (parent, leaf) = super::super::native::parent(&root.directory, &relative)?;
+    let input = super::super::native::open_file(&parent, &leaf)?;
+    ensure!(
+        input.metadata()?.is_file(),
+        "Merge result must be a regular file"
+    );
+    drop(input);
+    let snapshot = root.capture(std::slice::from_ref(&relative), limits, cancel)?;
+    let Some(super::super::snapshot::Observation::File(observed)) =
+        snapshot.entries().get(&relative)
+    else {
+        anyhow::bail!("Merge result must be a regular file")
+    };
+    root.revalidate(&snapshot, cancel)?;
+    Ok(verification::content(observed))
 }

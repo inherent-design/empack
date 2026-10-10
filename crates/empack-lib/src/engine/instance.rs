@@ -173,6 +173,7 @@ pub(super) struct InstancePlan {
     pub(super) files: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     needed: BTreeMap<ManagedPath, ReleaseFile>,
+    merge_sources: BTreeMap<String, std::path::PathBuf>,
     subscription_expires: Option<i64>,
     asset_base: Option<reqwest::Url>,
 }
@@ -660,6 +661,7 @@ pub(super) fn plan(
     let mut desired = BTreeMap::new();
     let mut removals = BTreeSet::new();
     let mut needed = BTreeMap::new();
+    let mut merge_sources = BTreeMap::new();
     let mut conflicts = Vec::new();
     for target in targets {
         let old = old_files
@@ -690,6 +692,7 @@ pub(super) fn plan(
             verification::native_capabilities(),
         );
         let mut retained_override = None;
+        let mut merged_file = None;
         if let Some(value) = old_overrides.get(&target)
             && let Some(retained) = conflicts::retained(
                 value,
@@ -707,7 +710,7 @@ pub(super) fn plan(
             }
         }
         if let Some(choice) = resolutions.remove(&target) {
-            if choice == ConflictChoice::Replace && retained_override.is_some() {
+            if !matches!(choice, ConflictChoice::Preserve) && retained_override.is_some() {
                 decision = FileDecision::Conflict(
                     empack_core::instance::FileConflict::ModifiedManagedFile,
                 );
@@ -724,8 +727,41 @@ pub(super) fn plan(
                 .context("Conflict has no file identity")?
                 .destination
                 .as_str();
-            let (resolved, local) =
-                conflicts::resolve(choice, conflict, destination, current, new.as_ref())?;
+            let merged = if let ConflictChoice::Merge { file } = &choice {
+                ensure!(
+                    conflict != empack_core::instance::FileConflict::WrongKind,
+                    "Cannot merge a directory or link"
+                );
+                let incoming = incoming
+                    .get(&target)
+                    .context("Merge requires incoming content")?;
+                let mut content = conflicts::capture_merge(file, limits, cancel)?;
+                content.permissions = incoming.content()?.permissions;
+                // This transient local acquisition obligation never alters the retained release.
+                let mut obligation = incoming.clone();
+                obligation.sha256 =
+                    empack_core::digest::ExpectedDigest::Sha256(*content.content.bytes()).hex();
+                obligation.bytes = content.bytes;
+                obligation.assertions.clear();
+                obligation.asset = None;
+                obligation.source = ReleaseSource::Manual {
+                    instructions: "Explicit local merge result".into(),
+                    selection: None,
+                };
+                merge_sources.insert(obligation.key.clone(), file.clone());
+                merged_file = Some(obligation);
+                Some(content)
+            } else {
+                None
+            };
+            let (resolved, local) = conflicts::resolve(
+                &choice,
+                merged.as_ref(),
+                conflict,
+                destination,
+                current,
+                new.as_ref(),
+            )?;
             decision = resolved;
             retained_override = local;
         }
@@ -735,7 +771,10 @@ pub(super) fn plan(
         match decision {
             FileDecision::Create(content) | FileDecision::Replace(content) => {
                 desired.insert(target.clone(), content);
-                needed.insert(target.clone(), incoming[&target].clone());
+                needed.insert(
+                    target.clone(),
+                    merged_file.unwrap_or_else(|| incoming[&target].clone()),
+                );
             }
             FileDecision::Remove => {
                 removals.insert(target.clone());
@@ -746,17 +785,7 @@ pub(super) fn plan(
             FileDecision::Unchanged => {
                 // A matching content address does not excuse checking a changed source assertion.
                 if let Some(file) = incoming.get(&target) {
-                    let relative = ProjectLayout::path(&target)?;
-                    let (parent, leaf) = super::native::parent(&root.directory, &relative)?;
-                    let mut input = super::native::open_file(&parent, &leaf)?;
-                    super::content::verify_observation(
-                        &mut input,
-                        &file.expected()?,
-                        file.bytes,
-                        super::content::SourceEvidencePolicy::Compatibility,
-                        super::content::InitialObservation::RequireEvidence,
-                        cancel,
-                    )?;
+                    verify_current_file(&root, &target, file, cancel)?;
                 }
             }
             FileDecision::Preserve => {}
@@ -845,6 +874,13 @@ pub(super) fn plan(
     }
     let files = verification::plan_mutation_files(&observed, &desired, &removals)?;
     documents.retain(|target, _| files.expected().contains_key(target));
+    for (target, file) in &needed {
+        if !files.expected().contains_key(target) {
+            // Byte-identical explicit replacement still checks all original assertions.
+            verify_current_file(&root, target, file, cancel)?;
+        }
+    }
+    needed.retain(|target, _| files.expected().contains_key(target));
     root.revalidate(&snapshot, cancel)?;
     Ok(InstancePlan {
         asset_base,
@@ -855,8 +891,29 @@ pub(super) fn plan(
         files,
         documents,
         needed,
+        merge_sources,
     })
 }
+fn verify_current_file(
+    root: &ProjectReadRoot,
+    target: &ManagedPath,
+    file: &ReleaseFile,
+    cancel: &Cancellation,
+) -> Result<()> {
+    let relative = ProjectLayout::path(target)?;
+    let (parent, leaf) = super::native::parent(&root.directory, &relative)?;
+    let mut input = super::native::open_file(&parent, &leaf)?;
+    super::content::verify_observation(
+        &mut input,
+        &file.expected()?,
+        file.bytes,
+        super::content::SourceEvidencePolicy::Compatibility,
+        super::content::InitialObservation::RequireEvidence,
+        cancel,
+    )?;
+    Ok(())
+}
+
 impl InstancePlan {
     pub(super) fn launch_lease(
         &self,
@@ -967,9 +1024,18 @@ impl InstancePlan {
         cancel: &Cancellation,
     ) -> Result<BTreeMap<String, AcquiredContent>> {
         let mut result = BTreeMap::new();
+        let mut local_files = local_files.clone();
+        for (key, file) in &self.merge_sources {
+            ensure!(
+                !supplied.contains_key(key) && !local_files.contains_key(key),
+                "Merge result has a competing file association: {key}"
+            );
+            local_files.insert(key.clone(), file.clone());
+        }
         let mut pool = super::content::ContentPool::new(self.bytes()?)?;
         for file in self.needed.values() {
-            if let Some(content) = Self::acquire_one(file, supplied, local_files, assets, cancel)? {
+            if let Some(content) = Self::acquire_one(file, supplied, &local_files, assets, cancel)?
+            {
                 result.insert(file.key.clone(), pool.insert(content, cancel)?);
             }
         }

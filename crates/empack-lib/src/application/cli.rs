@@ -335,6 +335,9 @@ pub struct InstanceConflictArgs {
     /// Replace an exact conflicting file with selected release content, or retire it
     #[arg(long = "replace", value_name = "PATH")]
     pub replace: Vec<String>,
+    /// Apply a separately prepared merge result as a local deviation
+    #[arg(long = "merge", value_name = "PATH=FILE")]
+    pub merge: Vec<String>,
 }
 
 #[derive(Debug, Clone, Subcommand)]

@@ -431,11 +431,40 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
         b"B"
     );
+    fs::write(
+        root.path().join("project/.minecraft/mods/test.jar"),
+        b"needs merge",
+    )
+    .unwrap();
+    fs::write(root.path().join("merged.jar"), b"merged").unwrap();
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Repair {
+                conflicts: crate::application::cli::InstanceConflictArgs {
+                    merge: vec!["mods/test.jar=merged.jar".into()],
+                    ..Default::default()
+                },
+                assets: None,
+                files: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"merged"
+    );
+    // The next incoming baseline differs, so rollback explicitly restores publisher bytes.
     fs::write(root.path().join("assets/mod"), b"A").unwrap();
     execute_command_with_session(
         Commands::Instance {
             command: InstanceCommand::Rollback {
-                conflicts: Default::default(),
+                conflicts: crate::application::cli::InstanceConflictArgs {
+                    replace: vec!["mods/test.jar".into()],
+                    ..Default::default()
+                },
                 release: first,
                 assets: Some(".".into()),
                 files: vec![],
