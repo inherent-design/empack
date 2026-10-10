@@ -27,7 +27,15 @@ pub struct AdoptionSourceArgs {
 /// empack CLI - Minecraft modpack management
 #[derive(Debug, Clone, Parser, Default)]
 #[command(name = "empack")]
-#[command(about = "Minecraft modpack manager")]
+#[command(about = "Author, distribute and update Minecraft packs")]
+#[command(after_help = "Start a pack: empack init my-pack
+Author changes: empack --workdir my-pack sync
+Export for a launcher: empack --workdir my-pack build modrinth
+
+Author commands use empack.yml and empack.lock.
+Instance commands manage a separate installed game directory.
+Use --dry-run before a command to preview changes.
+Run empack <command> --help for its options.")]
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
@@ -233,7 +241,8 @@ pub struct InitArgs {
 
 Without CONSUMERS, use distribution.recipes from empack.yml.
 Use --delivery references for a Prism/server snapshot installed by empack.
-Reference consumers need distribution.native identity and Java settings.
+Prism/server reference exports and native empack exports need
+distribution.native identity and Java settings.
 Bundled content does not include client game binaries or imply offline launch.
 Update authority is independent of dependency delivery; snapshots are the default.
 All requested outputs are verified before combined publication.
@@ -344,17 +353,21 @@ pub struct InstanceConflictArgs {
 pub enum ReleaseCommand {
     /// Verify hosted immutable content, then publish a signed channel pointer
     PublishChannel {
+        /// Exact release ID printed by release stage
         release: String,
+        /// Channel name used by subscribers
         #[arg(long)]
         channel: String,
         /// HTTPS directory serving the publisher's dist/ output
         #[arg(long)]
         base_url: String,
+        /// Increasing sequence number; changing metadata requires a higher value
         #[arg(long)]
         sequence: u64,
         /// UTC Unix seconds; must be future-dated by at most 31 days
         #[arg(long)]
         expires: i64,
+        /// External Ed25519 seed file, encoded as 64 lowercase hexadecimal characters
         #[arg(long = "key-file", required = true)]
         keys: Vec<PathBuf>,
         /// Previously enrolled public key, used only to authenticate the old pointer
@@ -375,6 +388,7 @@ pub enum ReleaseCommand {
 pub enum InstanceCommand {
     /// Resume an exact pending release with verified manual file associations.
     Continue {
+        /// Associate exact missing content with its release file key
         #[arg(long = "file", value_name = "KEY=PATH")]
         files: Vec<String>,
     },
@@ -406,22 +420,29 @@ pub enum InstanceCommand {
         conflicts: InstanceConflictArgs,
         /// Local signed release envelope; omit to fetch the saved channel's exact release
         release: Option<std::path::PathBuf>,
+        /// Match the installed environment; use --side server for server instances
         #[arg(long, value_parser = ["client", "server"], default_value = "client")]
         side: String,
+        /// Retain the installed layout; new instances default to game
         #[arg(long, value_parser = ["game", "prism"])]
         layout: Option<String>,
+        /// Select a named alternative; omitted choices retain their saved values
         #[arg(long = "choice", value_name = "KEY=VALUE")]
         choices: Vec<String>,
+        /// Associate exact missing content with its release file key
         #[arg(long = "file", value_name = "KEY=PATH")]
         files: Vec<String>,
     },
 
     /// Enroll an explicit publisher and HTTPS channel; does not install or update content
     Subscribe {
+        /// Stable pack ID from the native release, not its display name
         #[arg(long)]
         pack: String,
+        /// Channel name signed by the publisher
         #[arg(long)]
         channel: String,
+        /// HTTPS URL of the signed channel document
         url: String,
         /// Trusted Ed25519 public key as 64 lowercase hexadecimal characters
         #[arg(long = "key", required = true)]
@@ -429,6 +450,7 @@ pub enum InstanceCommand {
     },
     /// Replace enrolled publisher keys locally, preserving the saved anti-replay floor
     Trust {
+        /// Trusted Ed25519 public key as 64 lowercase hexadecimal characters
         #[arg(
             long = "key",
             required_unless_present = "revoke_all",
@@ -449,10 +471,13 @@ pub enum InstanceCommand {
     Options {
         #[command(flatten)]
         conflicts: InstanceConflictArgs,
+        /// Select a named alternative; omitted choices retain their saved values
         #[arg(long = "choice", value_name = "KEY=VALUE")]
         choices: Vec<String>,
+        /// Directory containing the selected release's immutable asset paths
         #[arg(long)]
         assets: Option<std::path::PathBuf>,
+        /// Associate exact missing content with its release file key
         #[arg(long = "file", value_name = "KEY=PATH")]
         files: Vec<String>,
     },
@@ -475,8 +500,10 @@ pub enum InstanceCommand {
         conflicts: InstanceConflictArgs,
         /// Exact SHA-256 of a retained completed release payload
         release: String,
+        /// Directory containing the selected release's immutable asset paths
         #[arg(long)]
         assets: Option<std::path::PathBuf>,
+        /// Associate exact missing content with its release file key
         #[arg(long = "file", value_name = "KEY=PATH")]
         files: Vec<String>,
         /// Resolve alternatives no longer present in the current saved choices
@@ -542,7 +569,13 @@ pub enum Commands {
         #[command(subcommand)]
         command: ReleaseCommand,
     },
-    /// Install exact native release content into a separate game instance
+    /// Manage exact releases in a separate installed game instance
+    #[command(
+        after_help = "Select an existing directory with empack --workdir INSTANCE instance <command>.
+Create an empty directory before the first installation.
+Use install for a local snapshot; subscribe, observe-channel and update for a signed channel.
+Server installations and updates require --side server."
+    )]
     Instance {
         #[command(subcommand)]
         command: InstanceCommand,
@@ -784,6 +817,25 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn documented_beta_workflows_parse() {
+        for command in [
+            "empack init my-pack --modloader fabric --mc-version 1.21.1",
+            "empack --workdir my-pack add --platform modrinth sodium",
+            "empack --workdir my-pack build modrinth",
+            "empack build prism --optional-defaults",
+            "empack build server --optional CHOICE=true",
+            "empack build --continue --associate-download FILENAME=/tmp/download.jar",
+            "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
+            "empack --workdir ./instance instance update --side server",
+            "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --expires 2000000000 --key-file /tmp/publisher.key",
+        ] {
+            Cli::try_parse_from(command.split_whitespace())
+                .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));
+        }
+    }
 
     #[test]
     fn instance_launch_preserves_native_argument_boundaries() {
@@ -1128,7 +1180,7 @@ mod tests {
 
         match result {
             CliLoad::Display(message) => {
-                assert!(message.contains("Minecraft modpack manager"));
+                assert!(message.contains("Author, distribute and update Minecraft packs"));
                 assert!(message.contains("Usage:"));
             }
             CliLoad::Ready(_) => panic!("help should return a display payload"),

@@ -1,13 +1,12 @@
 # empack
 
-Empack manages Minecraft packs from one authored manifest and an exact resolution
-lock, then prepares distributions for launchers and dedicated servers.
+Empack manages Minecraft modpacks from one editable `empack.yml`. It resolves exact
+dependencies into `empack.lock`, builds launcher and server distributions, and can
+install and update native pack releases while preserving player-owned files.
 
-The target for this branch is **v0.6.0-beta**. Its [design contracts](docs/design/README.md)
-define native installation and hosted updates, consumer-specific exports and
-recoverable file publication. They describe the target behavior, not availability
-in an earlier release. Source API documentation and executable help describe the
-checked-out implementation. Implementation work belongs in [TODO.md](TODO.md).
+This documentation covers **v0.6.0-beta**. It replaces the v0.5 authoring schema and
+packwiz integration; existing projects require a new manifest or re-import from a
+supported Modrinth or CurseForge archive. There is no automatic schema migration.
 
 ## Installation
 
@@ -20,9 +19,30 @@ empack --version
 empack --help
 ```
 
-Java is required for Minecraft and applicable loader installation. Empack itself
-is a native executable. Release archives are executable distribution, not OS package
-manager registrations.
+Choose the beta release explicitly; GitHub's “latest” link may point to a different
+release. Empack is a native executable and does not require packwiz, its installer
+JARs, or a system `7z` command. Java is needed for Minecraft and applicable server
+loader installation. Client launchers manage their own Java and game runtime.
+
+## Quickstart
+
+Create a Fabric pack, add a mod, and export it for a launcher. These commands need
+network access; initialization prompts for any missing project settings.
+
+```sh
+empack init my-pack --modloader fabric --mc-version 1.21.1
+empack --workdir my-pack add --platform modrinth sodium
+empack --workdir my-pack build modrinth
+```
+
+Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism.
+Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run
+`empack --workdir my-pack sync`; use `update` when you deliberately want newer
+compatible dependencies. Commit both `empack.yml` and `empack.lock` with your sources.
+
+For an existing pack archive, use `empack init my-pack --from ./pack.mrpack` or a
+CurseForge manifest ZIP. Preview changes with `--dry-run`. See [usage](docs/usage.md)
+for imports, optional files, restricted downloads and installed-instance commands.
 
 ## Pack authoring and distribution
 
@@ -33,9 +53,10 @@ records its owned files and optional choices separately from the authoring proje
 
 | Reference | Purpose |
 | --- | --- |
-| [Command contract](docs/usage.md) | Author and installed-instance workflows |
+| [Usage](docs/usage.md) | Author and installed-instance workflows |
 | [Consumer outputs](docs/design/builds.md) | Modrinth, CurseForge, Prism, server and native releases |
 | [Instance updates](docs/design/instances.md) | File ownership, user edits, repair and rollback |
+| [Publisher setup](docs/publishing.md) | Signing keys, static hosting and channel publication |
 | [Release trust](docs/design/releases.md) | Immutable releases, subscriptions and publisher authentication |
 | [Engine design](docs/design/architecture.md) | Interfaces, effects and runtime ownership |
 | [Verification](docs/testing.md) | Execution and consumer acceptance |

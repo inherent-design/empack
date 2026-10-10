@@ -1,9 +1,9 @@
 # v0.6.0-beta design
 
-These documents specify the target implementation of empack authoring, distribution
-and installed-instance management. They are normative contracts, not a claim that
-an older executable implements the described interfaces. Types in examples name
-semantic boundaries; generated Rust API documentation defines callable signatures.
+These documents define empack's authoring, distribution and installed-instance
+contracts for v0.6.0-beta. Start with [usage](../usage.md) for commands and workflows.
+Types in design examples name semantic boundaries; generated Rust API documentation
+defines callable signatures.
 
 | Contract | Contents |
 | --- | --- |

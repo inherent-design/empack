@@ -1,7 +1,9 @@
-# Command contract
+# Usage
 
-This page specifies the v0.6.0-beta command surface. It is a target contract; use
-`empack --help` and subcommand help for the executable actually installed.
+Empack separates pack authoring from installed game instances. Use `--workdir` before
+the command to select the authoring project, instance or publisher directory. Relative
+input paths resolve from the directory where you invoked empack, not `--workdir`.
+This guide covers v0.6.0-beta; `empack <command> --help` lists the installed options.
 
 ## Authoring
 
@@ -16,6 +18,10 @@ This page specifies the v0.6.0-beta command surface. It is a target contract; us
 | `build` | Produce explicitly selected consumer distributions |
 | `recover` | Inspect or finish/restore an interrupted publication |
 | `clean` | Retire explicitly owned artifacts, disposable cache or continuation |
+
+Modrinth public resolution needs no API key. For CurseForge, provide your client key
+through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version
+control. Resolution and referenced downloads require network access.
 
 Edit `empack.yml` directly or use authoring commands. Commit its exact generated lock
 when distributing reproducible author sources. Build requires satisfied intent and
@@ -38,15 +44,19 @@ new operation.
 
 | Command | Meaning |
 | --- | --- |
-| `instance install` | Install an exact native release into a selected root |
-| `instance update` | Apply a selected release or explicitly subscribed channel |
+| `instance install` | Install or apply an explicitly selected local snapshot into an instance root |
+| `instance prepare` | Launcher hook: install initially, then repair the active release without reverting updates |
+| `instance update` | Apply the exact signed release selected by the saved subscribed channel |
 | `instance continue --file KEY=PATH` | Resume a retained exact release with verified manual inputs |
 | `instance discard-pending` | Explicitly discard a pending recipe without changing the installation |
 | `instance repair` | Restore the recorded release without selecting newer dependencies |
 | `instance options` | Inspect/change persistent optional choices |
 | `instance rollback` | Return managed content to a retained completed release |
 | `instance launch -- PROGRAM ARGS...` | Verify completed content and run a locally selected runtime under an instance lease |
-| `instance inspect` | Explain release, ownership, choices, conflicts and update authority |
+| `instance inspect` | Show the completed release, saved choices and retained rollback releases |
+| `instance subscribe` / `trust` | Enroll a channel and manage explicitly trusted publisher keys |
+| `instance observe-channel` | Authenticate and save a channel observation without installing content |
+| `instance recover-runtime --acknowledge-stopped` | Clear runtime recovery evidence after all related processes have stopped |
 
 `instance options` lists the completed release's saved values and alternatives.
 Use `instance options --choice KEY=VALUE` to change them. Newly enabled content
@@ -91,6 +101,33 @@ Prism consumes ordinary platform archives without an empack integration. A nativ
 Prism instance can instead carry launcher settings and explicitly subscribe through
 empack. Server recipes preserve exact runtime and startup requirements.
 
+### Optional content and missing downloads
+
+Materialized outputs need explicit optional-file choices. `--yes` approves a complete
+plan; it does not choose optional content. Use authored defaults or name a choice:
+
+```sh
+empack build prism --optional-defaults
+empack build server --optional 'CHOICE=true'
+```
+
+Use the choice key printed by the command. Reference exports may require
+`--allow-optional-metadata-loss` when their format cannot retain choice keys, defaults
+or descriptions. This acknowledges the stated conversion; it does not permit lost
+required files.
+
+If acquisition requires a manual download, the command reports and saves the missing
+obligations after approval. Supply the exact file using the name it reports:
+
+```sh
+empack build --continue --associate-download 'FILENAME=/absolute/path/to/download.jar'
+```
+
+Continuation keeps the original recipes and verifies the supplied bytes. Use
+`--import-file SELECTOR=PATH` with `init --continue` for imports, or
+`instance continue --file KEY=PATH` for installed releases; these identifiers are
+shown in the respective diagnostics.
+
 ## Interaction and failures
 
 Preview may resolve remote facts and use temporary scratch, but writes no project,
@@ -105,6 +142,22 @@ are explicit options rather than side effects of confirmation.
 Errors identify phase, affected object, expected/observed state, known effects and
 recovery action. Failure before publication differs from recovery required after
 possible effects. Completion is not reported until durable postconditions verify.
+
+If publication was interrupted, inspect the selected root first:
+
+```sh
+empack --workdir ./instance recover inspect
+```
+
+Use the reported operation ID with either `recover finish --operation ID` to finish
+the verified candidate or `recover restore --operation ID` to undo that operation's
+owned changes. These are alternative actions. External edits can require a decision;
+do not remove recovery records to force another install. Runtime recovery is separate:
+stop all associated processes before `instance recover-runtime --acknowledge-stopped`.
+
+`clean builds` removes generated distributions, while `clean cache` retires disposable
+cached content. `clean all` means builds and cache; it does not erase author sources,
+installed worlds or recovery evidence. Preview the selected cleanup with `--dry-run`.
 
 Workdir and relative paths resolve from captured invocation context. State and cache
 roots are separately configurable. Configuration precedence is explicit and cannot
@@ -141,14 +194,26 @@ consumers. They preserve optional choices for installation. Extract the archive,
 the JSON payload, not the surrounding archive. Side selection applies the matching
 override layer. Local snapshot selection does not enroll a publisher.
 
+```sh
+mkdir -p ./instance
+empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256
+empack --workdir ./instance instance inspect
+```
+
+Select an existing instance directory. `./export` is the extracted native
+archive; replace `PAYLOAD_SHA256` with the payload digest printed by the build.
+Assets next to `release.json` are discovered automatically. Add `--side server` for
+a server instance. The default `game` layout stores game content under `game/`;
+`--layout prism` uses `.minecraft/` and writes launcher components. Normal Prism
+users should import a Prism ZIP instead of constructing that layout manually.
+Applying another local snapshot uses `instance install` with its new digest.
+
 Publisher enrollment is explicit and separate from snapshot installation:
 
 ```sh
-empack --workdir instance instance subscribe --pack example --channel stable https://example.org/stable.json --key PUBLIC_KEY_HEX
+empack --workdir instance instance subscribe --pack my-pack --channel stable https://packs.example.org/channels/stable.json --key PUBLIC_KEY_HEX
 empack --workdir instance instance observe-channel
 empack --workdir instance instance update
-empack --workdir instance instance trust --key REPLACEMENT_PUBLIC_KEY_HEX
-empack --workdir instance instance trust --revoke-all
 ```
 
 Enrollment and observation save trust and authenticated sequence observations.
@@ -156,8 +221,9 @@ Enrollment and observation save trust and authenticated sequence observations.
 observation after approval. `instance update` fetches the exact signed release
 selected by that saved channel. Both commands also accept a local envelope path.
 Update checks current trust, expiry and exact release identity before applying
-content. Local assets, verified cache entries and exact download sources supply its
-files. Remote immutable assets resolve relative to the authenticated release URL.
+content. Use `instance update --side server` for server instances; this command's
+side defaults to `client` and an existing instance cannot change sides. Local assets,
+verified cache entries and exact download sources supply its files. Remote immutable assets resolve relative to the authenticated release URL.
 `--file KEY=PATH` supplies restricted content.
 For Prism layouts, content application also updates the exact game/loader component
 profile in the same publication. Runtime-changing updates require stopping and
@@ -165,9 +231,15 @@ relaunching Prism so it reloads that profile. Empack does not install Java or cl
 game binaries; Prism performs its normal runtime preparation. Server runtime
 preparation remains a separate obligation.
 Key replacement and revocation retain the highest observed sequence, including
-across restart and managed rollback.
+across restart and managed rollback. These are separate maintenance actions, not
+installation steps. To rotate trust, run
+`empack --workdir instance instance trust --key REPLACEMENT_PUBLIC_KEY_HEX` after
+independently verifying the replacement public key. To disable channel updates,
+use `empack --workdir instance instance trust --revoke-all`.
 
-For an explicitly enrolled instance, a local runtime can request prelaunch updates:
+For an installed, explicitly enrolled **server export**, a local Java runtime can
+request prelaunch updates. This requires the managed entry point produced by
+`build server`; a generic `build empack` content archive does not provide it:
 
 ```sh
 empack --workdir instance --yes instance launch --server --check-updates --allow-offline -- /absolute/path/to/java nogui
@@ -192,35 +264,11 @@ runtime changes require a stopped-launcher update and restart. Snapshot recipes
 remain the default. Native archives support `build empack --updates empack`; their
 release payload enforces the same explicit enrollment requirement.
 
-## Publisher staging
+## Publisher hosting
 
-Extract a native export, keep publisher keys outside the project and export, then
-stage its signed immutable files:
-
-```sh
-empack --workdir ./publisher --yes release stage ./export --key-file ~/.config/empack/publisher.key
-```
-
-The output is `publisher/dist/releases/<release-id>/release.json` and its assets.
-Serve `publisher/dist/` through static HTTPS hosting. Staging checks original asset
-assertions and refuses different bytes at existing release addresses. It does not
-advance a channel or enroll subscribers. Use `--dry-run` to inspect the release,
-output paths and signing fingerprints before publication.
-
-After the immutable release is available through HTTPS, prepare its channel pointer:
-
-```sh
-empack --workdir ./publisher --yes release publish-channel RELEASE_ID \
-  --channel stable --base-url https://packs.example.org/ \
-  --sequence 1 --expires UNIX_UTC_SECONDS \
-  --key-file ~/.config/empack/publisher.key
-```
-
-Choose a future expiry within 31 days. This verifies the hosted envelope and assets
-before writing `publisher/dist/channels/stable.json`. If deployment uses uploads,
-upload this pointer last. Increase the sequence when changing channel metadata.
-`--previous-key` accepts an old public key for authenticating the existing pointer
-after signing-key rotation; it does not sign the replacement or enroll client trust.
+See [publishing](publishing.md) for key generation, signed release staging, static
+HTTPS deployment and channel updates. Publishers share public keys through a trusted
+route; subscribers never need a private signing key.
 
 For an empack-managed server release, run
 `empack instance launch --server -- java nogui`. Java is selected from your local PATH; the completed release supplies the

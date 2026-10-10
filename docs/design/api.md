@@ -108,8 +108,9 @@ Successful activation and subsequent pending-record cleanup have separate outcom
 | PartiallyCompleted | Explicit independent author groups or scoped maintenance; receipt names effects |
 | NeedsInput | No activation; exact unresolved input remains resumable |
 | FailedBeforePublication | Live managed state unchanged |
+| InterruptedBeforePublication | Cancellation retired work before live publication |
+| ExecutionUncertain | Worker or runtime retirement is unconfirmed; inspect recovery before retrying |
 | RecoveryRequired | Live effects may exist; operation identity and recovery route are retained |
-| Cancelled | Work retired; outcome states whether recovery is required |
 
 Public diagnostics carry stable code, phase, affected logical object, expected and
 observed values, effect classification and recovery action. Internal contextual
