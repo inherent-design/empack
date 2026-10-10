@@ -62,7 +62,7 @@ tracing-subscriber = { version = "0.3.23", features = [
     "parking_lot",
 ] }
 windows-core = "0.100.0"
-zip = { version = "8.2", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
+zip = { version = "9.0", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
 tar = "0.4" # Tar archive creation for .tar.gz distribution fallback
 flate2 = "1.1" # Gzip compression paired with tar
 sevenz-rust2 = { version = "0.23", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
