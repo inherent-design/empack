@@ -27,6 +27,17 @@ Author operations use logical roots and required closure evidence. An instance
 update uses the prior installation record and the selected complete release. Pack
 identity, environment, choices and update authority are part of the plan binding.
 
+Add, update, synchronization and adoption bind the union of prior and proposed
+native placements. They do not discover another manager's records or maintain its
+indexes. Files outside the selected footprint cannot confer ownership or invalidate
+the operation merely by naming the same project or destination.
+
+Provider adoption identifies installed bytes against the declared canonical project
+and verifies every proposed placement before publishing intent and resolution.
+Establishing the first lock requires explicit file placements or an exact provider
+selection; an automatic placement without either is insufficient evidence. A
+provider world keeps its exact archive selection and verifies its selected members.
+
 ## File planning
 
 `plan_file` compares prior installed content, current native observation and incoming

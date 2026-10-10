@@ -96,8 +96,6 @@ pub(super) struct CaptureFilter {
     template_outputs: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     managed_only: bool,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    selected_metadata: bool,
 }
 impl CaptureFilter {
     pub(super) fn new(rules: Vec<u8>, required: &[PortableRelPath]) -> Result<Self> {
@@ -110,7 +108,6 @@ impl CaptureFilter {
                 .collect(),
             template_outputs: None,
             managed_only: false,
-            selected_metadata: false,
         };
         value.matcher()?;
         Ok(value)
@@ -119,6 +116,12 @@ impl CaptureFilter {
         SourceFilter::author(excludes)?;
         let mut value = Self::new(excludes.join("\n").into_bytes(), required)?;
         value.native_sources = true;
+        Ok(value)
+    }
+    /// Capture exact native mutation paths and portable aliases, without foreign discovery.
+    pub(super) fn native_mutation(required: &[PortableRelPath]) -> Result<Self> {
+        let mut value = Self::author(&[], required)?;
+        value.managed_only = true;
         Ok(value)
     }
     /// Observe only entries capable of changing whether a default seed may be added.
@@ -144,7 +147,6 @@ impl CaptureFilter {
             required: vec![],
             template_outputs: Some(outputs.into_iter().collect()),
             managed_only: false,
-            selected_metadata: false,
         };
         value.matcher()?;
         Ok(value)
@@ -155,17 +157,7 @@ impl CaptureFilter {
         value.managed_only = true;
         Ok(value)
     }
-    /// Bind controls and exact selected records without authorizing discovery candidates.
-    pub(super) fn selected_mutation(required: &[PortableRelPath]) -> Result<Self> {
-        let mut value = Self::mutation(required)?;
-        value.selected_metadata = true;
-        Ok(value)
-    }
     pub(super) fn matcher(&self) -> Result<SourceFilter> {
-        anyhow::ensure!(
-            !self.selected_metadata || self.managed_only,
-            "Mixed snapshot policies"
-        );
         if let Some(outputs) = &self.template_outputs {
             anyhow::ensure!(
                 self.rules.is_empty() && self.required.is_empty() && !self.managed_only,
@@ -185,7 +177,7 @@ impl CaptureFilter {
         }
         if self.native_sources {
             anyhow::ensure!(
-                !self.managed_only && self.template_outputs.is_none(),
+                self.template_outputs.is_none(),
                 "Mixed native source policies"
             );
             SourceFilter::author(&self.rules.lines().map(str::to_owned).collect::<Vec<_>>())
@@ -207,6 +199,23 @@ impl CaptureFilter {
         path: &std::path::Path,
         directory: bool,
     ) -> bool {
+        if self.native_sources && self.managed_only {
+            let spelling: Option<Vec<_>> = path
+                .components()
+                .map(|part| match part {
+                    std::path::Component::Normal(value) => value.to_str(),
+                    _ => None,
+                })
+                .collect();
+            return spelling.is_some_and(|parts| {
+                let path = parts.join("/");
+                matches!(path.as_str(), "empack.yml" | "empack.lock" | "pack")
+                    || self
+                        .required
+                        .iter()
+                        .any(|required| template_overlap(&path, required))
+            });
+        }
         if self.native_sources {
             if self.required.iter().any(|required| {
                 let required = std::path::Path::new(required);
@@ -272,9 +281,6 @@ impl CaptureFilter {
             .any(|name| path == std::path::Path::new(name))
             {
                 return true;
-            }
-            if self.selected_metadata {
-                return path == std::path::Path::new("pack");
             }
             // Directories permit bounded backend discovery. Unrelated leaves, including links,
             // are excluded before portable-name validation or payload reads.

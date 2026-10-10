@@ -1,4 +1,4 @@
-//! Missing derivative metadata requires provider byte evidence, never a latest-version guess.
+//! Provider adoption uses byte evidence, never metadata filenames or a latest-version guess.
 use super::*;
 use crate::engine::{
     acquisition::{LocalFileRequest, acquire_local_file},

@@ -393,8 +393,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
 }
 
 #[tokio::test]
-async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgrading_or_rewriting_them()
- {
+async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
     use empack_core::{digest::ExpectedDigest, model::*};
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
@@ -405,11 +404,23 @@ async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgradin
             .create_async().await;
     }
     for (pin, bytes) in [("RootVer1", b"payload"), ("RootVer2", b"updated")] {
-        server.mock("GET", format!("/version/{pin}").as_str()).with_body(json!({
+        let hash = ExpectedDigest::Sha512(Sha512::digest(bytes).into()).hex();
+        let version = json!({
             "id":pin,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
-            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(bytes).into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":hash},"url":"https://example.invalid/renderer.jar"}],
             "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-        }).to_string()).create_async().await;
+        });
+        server
+            .mock("GET", format!("/version/{pin}").as_str())
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", format!("/version_file/{hash}").as_str())
+            .match_query(mockito::Matcher::Any)
+            .with_body(version.to_string())
+            .create_async()
+            .await;
     }
     let latest = server
         .mock("GET", "/project/Root0001/version")
@@ -428,6 +439,11 @@ async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgradin
     let key = recorded.intent().roots.keys().next().unwrap().clone();
     let mut intent = recorded.intent().clone();
     intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::Explicit(
+        recorded.lock().dependencies[&key].files.as_slice()[0]
+            .placements
+            .clone(),
+    );
     fs::write(
         root.path().join("project/empack.yml"),
         DocumentCodec.encode_intent(&intent).unwrap(),
@@ -436,8 +452,7 @@ async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgradin
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
-    // Reference-only addition does not install packwiz metadata. Simulate an external
-    // tool selecting a different exact version and materializing its payload.
+    // Simulate an externally materialized exact version. Foreign metadata is unrelated data.
     fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
     let metadata = root.path().join("project/pack/mods/renderer.pw.toml");
     let wire = format!(
@@ -488,19 +503,7 @@ async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgradin
     assert_eq!(super::super::tests::snapshot(root.path()), pinned);
     fs::write(&intent_path, intent_bytes).unwrap();
     fs::write(&lock_path, lock_bytes).unwrap();
-    let metadata_bytes = fs::read_to_string(&metadata).unwrap();
-    fs::write(&metadata, metadata_bytes.replace("Root0001", "Other001")).unwrap();
-    let foreign = super::super::tests::snapshot(root.path());
-    let error = update::adopt_with_services(
-        &session(root.path(), false),
-        vec![key.as_str().into()],
-        services(),
-    )
-    .await
-    .unwrap_err();
-    assert!(error.to_string().contains("another provider identity"));
-    assert_eq!(super::super::tests::snapshot(root.path()), foreign);
-    fs::write(&metadata, metadata_bytes).unwrap();
+    fs::write(&metadata, b"invalid foreign metadata [").unwrap();
     let before = super::super::tests::snapshot(root.path());
     update::adopt_with_services(
         &session(root.path(), true),

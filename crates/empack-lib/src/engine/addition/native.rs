@@ -301,52 +301,8 @@ fn plan_change(
                 removals.insert(target.clone());
             }
         } else if old.contains_key(target) {
-            // Absence needs no file mutation, but any owned direct index entry is stale.
+            // An absent old materialization needs no file mutation.
             removals.insert(target.clone());
-        }
-    }
-    // Derivative backend records for changed selections cannot continue claiming the old pin.
-    // Preserve unrelated metadata; known ownership conflicts at affected destinations fail.
-    for record in workspace.backend_files(cancel)? {
-        let target = ManagedPath::Content {
-            layer: empack_core::model::ContentLayer::Common,
-            path: record.destination.relative().clone(),
-        };
-        if !old.contains_key(&target)
-            && !content.contains_key(&target)
-            && !referenced.contains_key(&target)
-        {
-            continue;
-        }
-        let (key, file) = record
-            .locked_owner(&current)?
-            .context("Addition destination has untracked backend ownership")?;
-        ensure!(
-            selected.contains(key),
-            "Addition overlaps retained backend ownership"
-        );
-        if !candidate.plan().changed().contains(key) && !referenced.contains_key(&target) {
-            continue;
-        }
-        if let Some(digest) = file.expected.digests.as_ref().and_then(|set| {
-            set.values()
-                .iter()
-                .find(|digest| digest.algorithm() == record.digest.algorithm())
-        }) {
-            ensure!(
-                *digest == record.digest,
-                "Backend digest differs from selected content"
-            );
-        } else {
-            let digests =
-                workspace.verify_file(&ProjectLayout::path(&target)?, &file.expected, cancel)?;
-            ensure!(
-                digests.values().contains(&record.digest),
-                "Backend digest differs from selected bytes"
-            );
-        }
-        if candidate.plan().changed().contains(key) {
-            removals.insert(ManagedPath::BackendDocument(record.metadata_path));
         }
     }
     verification::retain_acquisition_sources(
@@ -376,27 +332,6 @@ fn plan_change(
                 .context("Captured lock disappeared")?,
         );
     }
-    let mut updated_index = BTreeMap::new();
-    for (target, file) in &content {
-        if !matches!(&observed_content[target], ObservedPath::File(before) if before.content == file.content.lease().id())
-            && let ManagedPath::Content {
-                layer: empack_core::model::ContentLayer::Common,
-                path,
-            } = target
-        {
-            updated_index.insert(
-                path.clone(),
-                empack_core::digest::ExpectedDigest::Sha256(*file.content.lease().id().bytes()),
-            );
-        }
-    }
-    crate::engine::backend::index::refresh_index_with_updates(
-        &workspace,
-        &removals,
-        &updated_index,
-        &mut documents,
-        cancel,
-    )?;
     let observed = verification::observed_mutation_for(
         workspace.observations(),
         documents

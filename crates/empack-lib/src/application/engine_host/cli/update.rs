@@ -31,7 +31,7 @@ pub async fn update_with_policy(
     )
     .await
 }
-/// Adopt selected installed content. Provider pins come from the observed backend record,
+/// Adopt selected installed content. Provider pins come from verified byte identification,
 /// not from a latest-version query; final native preparation verifies the observed bytes.
 pub async fn adopt(session: &dyn Session, keys: Vec<String>) -> Result<()> {
     adopt_with_services(session, keys, dependencies::configured_services(session)?).await
@@ -66,20 +66,7 @@ pub(super) async fn adopt_with_services(
                 let documents =
                     reader.capture(&selected, &[], SnapshotLimits::default(), &cancel)?;
                 if documents.prior_lock().is_none() {
-                    let documents = reader.capture_backend_metadata(
-                        &selected,
-                        SnapshotLimits::default(),
-                        &cancel,
-                    )?;
-                    ensure!(
-                        documents.prior_lock().is_none(),
-                        "Project lock appeared during adoption discovery"
-                    );
-                    return Ok::<_, anyhow::Error>((
-                        None,
-                        documents.intent().clone(),
-                        documents.backend_files(&cancel)?,
-                    ));
+                    return Ok::<_, anyhow::Error>((None, documents.intent().clone()));
                 }
                 let snapshot = reader.capture_observed_dependencies(
                     &selected,
@@ -91,16 +78,15 @@ pub(super) async fn adopt_with_services(
                 Ok::<_, anyhow::Error>((
                     Some(workspace.require_resolved()?),
                     workspace.intent().clone(),
-                    workspace.backend_files(&cancel)?,
                 ))
             },
         )?;
         scope.accept(worker.wait().await?)?.transpose()
     })
     .await?;
-    let (current, source, records) = &*captured;
+    let (current, source) = &*captured;
     let Some(current) = current else {
-        return initial::adopt(session, &project, source, records, keys, services).await;
+        return initial::adopt(session, &project, source, keys, services).await;
     };
     let mut inputs = selections(current, &project, keys)?.into_vec();
     for input in &mut inputs {
@@ -149,40 +135,11 @@ pub(super) async fn adopt_with_services(
             );
             continue;
         }
-        let mut pin = None;
-        let mut identify = Vec::new();
-        for file in dependency.files.as_slice() {
-            let mut described = false;
-            for placement in file.placements.as_slice() {
-                if placement.layer != empack_core::model::ContentLayer::Common {
-                    continue;
-                }
-                let Some(record) = records
-                    .iter()
-                    .find(|record| record.destination == placement.destination)
-                else {
-                    continue;
-                };
-                let observed = record
-                    .provider
-                    .as_ref()
-                    .context("Observed metadata has no provider identity")?;
-                ensure!(
-                    &observed.project == identity,
-                    "Observed metadata names another provider identity"
-                );
-                let selected = observed
-                    .selection
-                    .as_ref()
-                    .context("Observed metadata has no exact provider pin")?;
-                ensure!(
-                    pin.as_ref().is_none_or(|pin| pin == selected),
-                    "Observed files disagree about their provider selection"
-                );
-                pin = Some(selected.clone());
-                described = true;
-            }
-            if !described {
+        let identify = dependency
+            .files
+            .as_slice()
+            .iter()
+            .map(|file| {
                 let placement = &file.placements.as_slice()[0];
                 let path = crate::engine::layout::ProjectLayout::path(
                     &empack_core::files::ManagedPath::Content {
@@ -190,25 +147,19 @@ pub(super) async fn adopt_with_services(
                         path: placement.destination.relative().clone(),
                     },
                 )?;
-                identify.push((path, Some(file.slot.clone())));
-            }
-        }
-        if !identify.is_empty() {
-            let identified = observation::identify(
+                Ok((path, Some(file.slot.clone())))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        input.pin = Some(
+            observation::identify(
                 session,
                 project.clone(),
                 identity.clone(),
                 identify,
                 &services,
             )
-            .await?;
-            ensure!(
-                pin.as_ref().is_none_or(|pin| pin == &identified),
-                "Observed metadata and bytes disagree about the provider selection"
-            );
-            pin = Some(identified);
-        }
-        input.pin = pin;
+            .await?,
+        );
     }
     dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await
 }

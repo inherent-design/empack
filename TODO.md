@@ -63,6 +63,8 @@ readiness or replace executable evidence.
 
 ## Instance engine
 
+- [x] Acquire referenced files and provider archive members after approval, with
+  exact provider refresh, bounded transfers and all-selected verification.
 - [x] Implement pure three-way file decisions, including wrong-kind, missing-file,
   unowned collision, changed-content and permission-change cases.
 - [ ] Construct complete plans with collision checks, root bindings, read sets,
@@ -124,6 +126,8 @@ readiness or replace executable evidence.
 
 ## Removal and wiring
 
+- [x] Remove foreign metadata discovery and index maintenance from addition,
+  updates, synchronization and adoption; identify adopted provider content by bytes.
 - [ ] Apply native `sources.exclude` capture to the remaining author commands.
 - [ ] Remove `BackendDocument`, backend discovery, index refresh, packwiz parser,
   metadata adoption and metadata-based ownership from all project commands.

@@ -871,18 +871,7 @@ impl ProjectReader {
     ) -> Result<MutationSnapshot> {
         self.capture_addition_mode(selected, group, limits, AdditionCapture::Add, cancel)
     }
-    /// Read documents and derivative installation metadata without capturing unrelated payloads.
-    pub fn capture_backend_metadata(
-        &self,
-        selected: &Path,
-        limits: SnapshotLimits,
-        cancel: &Cancellation,
-    ) -> Result<WorkspaceSnapshot> {
-        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
-        let metadata = super::source::CaptureFilter::mutation(&[])?;
-        self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)
-    }
-    /// Observe selected installed placements and their backend records without comparing them
+    /// Observe selected installed placements without comparing them
     /// with old byte assertions. This nominates adoption inputs; it grants no write authority.
     pub fn capture_observed_dependencies(
         &self,
@@ -891,10 +880,7 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
-        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
-        let metadata = super::source::CaptureFilter::selected_mutation(&[])?;
-        let documents =
-            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
+        let documents = self.capture(selected, &[], limits, cancel)?;
         let current = documents.require_resolved()?;
         let mut required = Vec::new();
         for key in keys.as_slice() {
@@ -956,10 +942,7 @@ impl ProjectReader {
         mode: AdditionCapture<'_>,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
-        let metadata = super::source::CaptureFilter::selected_mutation(&[])?;
-        let documents =
-            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
+        let documents = self.capture(selected, &[], limits, cancel)?;
         let current = documents
             .prior_lock()
             .map(|lock| lock.bind(documents.intent()))
