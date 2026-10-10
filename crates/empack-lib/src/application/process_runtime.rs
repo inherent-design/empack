@@ -276,11 +276,14 @@ impl ProcessTree {
             return Ok(true);
         }
         let error = std::io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ESRCH) {
-            Ok(false)
-        } else {
-            Err(anyhow::Error::from(error)
-                .context("Cannot establish runtime process-group retirement"))
+        match error.raw_os_error() {
+            Some(libc::ESRCH) => Ok(false),
+            // EPERM does not establish absence. Keep the lease and poll within the
+            // retirement deadline: macOS can return it while a killed orphan group
+            // is being reaped. Persistent denial still requires recovery.
+            Some(libc::EPERM) => Ok(true),
+            _ => Err(anyhow::Error::from(error)
+                .context("Cannot establish runtime process-group retirement")),
         }
     }
     #[cfg(windows)]
@@ -577,7 +580,11 @@ mod async_tests {
         };
         let began = std::time::Instant::now();
         let (output, ()) = tokio::join!(process, interrupt);
-        assert!(output.unwrap_err().is::<Interrupted>());
+        let error = output.unwrap_err();
+        assert!(
+            error.is::<Interrupted>(),
+            "unexpected cancellation failure: {error:#}"
+        );
         assert!(began.elapsed() < Duration::from_secs(3));
     }
 }
