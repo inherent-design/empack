@@ -91,7 +91,7 @@ readiness or replace executable evidence.
   strip host paths, credentials, cache paths and author-only state.
 - [x] Use stable pack identity, content-derived release identity and logical file
   identity; display names and version labels are not mutation authority.
-- [ ] Publish immutable manifests/assets before changing a channel pointer.
+- [x] Publish immutable manifests/assets before changing a channel pointer.
 - [x] Authenticate channel and release bytes before following content instructions;
   validate redirects, origins, expiry, signatures and saved sequence floors.
 - [x] Support explicit publisher enrollment and rotation without silent trust on
@@ -121,7 +121,7 @@ readiness or replace executable evidence.
   historical loader variants, Java requirements and generated launchers.
 - [x] Replace full/light naming with explicit dependency delivery. Bundled pack
   content does not imply bundled client game binaries or permission to redistribute.
-- [ ] Support native release directories/archives and channel output without making
+- [x] Support native release directories/archives and channel output without making
   every consumer depend on an intermediate mrpack.
 - [ ] Verify launcher imports and prelaunch status propagation in actual consumers;
   writer/reader agreement within empack is insufficient.

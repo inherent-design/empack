@@ -200,6 +200,25 @@ impl PublisherTrust {
             origin: self.origin.clone(),
         })
     }
+    /// Authenticate historical publisher state for sequence ordering only. Expired metadata
+    /// cannot select an installation through this method or construct an update proof.
+    pub(in crate::engine) fn previous_channel(
+        &self,
+        envelope: &[u8],
+        name: &str,
+    ) -> Result<ChannelDocument> {
+        let payload = self.verify(EnvelopeKind::Channel, envelope)?;
+        let channel = ChannelDocument::decode(&payload)?;
+        ensure!(
+            channel.pack == self.pack && channel.channel == name,
+            "Published channel identity mismatch"
+        );
+        ensure!(
+            https(&channel.release.url)?.origin().ascii_serialization() == self.origin,
+            "Published channel has another origin"
+        );
+        Ok(channel)
+    }
     /// `floor` is durable subscription state, independently retained from installed releases.
     /// Returns a proposed floor; callers persist it before admitting update acquisition.
     pub fn channel(
@@ -279,6 +298,28 @@ impl AuthenticatedRelease {
     pub fn origin(&self) -> &str {
         &self.origin
     }
+}
+/// Inspect a local publisher envelope using explicitly supplied verification keys.
+/// Returns validated data, not subscriber trust or instance update authority.
+pub(in crate::engine) fn publisher_release(
+    envelope: &[u8],
+    expected: &str,
+    keys: &[VerifyingKey],
+    engine: &semver::Version,
+) -> Result<DecodedRelease> {
+    let verifier = PublisherTrust::enroll(
+        "publisher-inspection".into(),
+        "https://publisher.invalid",
+        keys.to_vec(),
+    )?;
+    let payload = verifier.verify(EnvelopeKind::Release, envelope)?;
+    ensure!(
+        hash(&payload) == expected,
+        "Staged release identity mismatch"
+    );
+    let release = DecodedRelease::decode(&payload)?;
+    compatible(&release.document.minimum_engine, engine)?;
+    Ok(release)
 }
 /// Explicit local snapshot selection. No publisher or channel trust is inferred.
 pub struct SelectedSnapshot {

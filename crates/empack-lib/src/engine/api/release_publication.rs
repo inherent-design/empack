@@ -21,6 +21,9 @@ use empack_core::{
     path::{PathSyntax, PortableRelPath},
 };
 use std::collections::BTreeSet;
+mod channel;
+pub use channel::PublishChannelRequest;
+pub(super) use channel::prepare as prepare_channel;
 
 /// Selected local export and independently supplied keys. Keys never enter the receipt or archive.
 pub struct StageReleaseRequest {
@@ -29,6 +32,7 @@ pub struct StageReleaseRequest {
 }
 #[derive(Clone)]
 pub struct ReleasePublicationPreview {
+    pub channel: Option<String>,
     pub plan: PlanId,
     pub release: String,
     pub pack: String,
@@ -38,6 +42,7 @@ pub struct ReleasePublicationPreview {
     pub replacement: ReplacementSummary,
 }
 pub struct ReleasePublicationReceipt {
+    pub channel: Option<String>,
     pub plan: PlanId,
     pub release: String,
     pub envelope: String,
@@ -49,6 +54,7 @@ pub(super) struct PreparedReleasePublication {
     source: ProjectReadRoot,
     source_snapshot: NativeSnapshot,
     change: VerifiedFileChange,
+    remote: Option<channel::HostedRelease>,
 }
 struct Captured {
     root: ProjectReadRoot,
@@ -269,6 +275,7 @@ pub(super) async fn prepare(
         let stage = stage.freeze(limits, &cancel)?;
         let change = VerifiedFileChange::verify_artifacts(snapshot, files.clone(), stage)?;
         let view = ReleasePublicationPreview {
+            channel: None,
             plan: PlanId(
                 NEXT_PLAN
                     .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -283,6 +290,7 @@ pub(super) async fn prepare(
         };
         Ok::<_, anyhow::Error>(PreparedReleasePublication {
             view,
+            remote: None,
             root,
             source,
             source_snapshot,
@@ -294,15 +302,22 @@ pub(super) async fn prepare(
 pub(super) async fn run(
     prepared: RetainedOutput<PreparedReleasePublication>,
     config: EngineConfig,
-    scope: WorkScope,
+    transport: HttpAcquisition,
+    mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancellation = scope.cancellation();
     let result: Result<_> = async {
+        if let Some(remote) = &prepared.remote {
+            channel::verify_hosted(remote, &transport, &config, &mut scope).await?;
+        }
         let work = scope.spawn_blocking(
             config.resources.assembly,
             config.resources.receipt,
             move |cancel| {
                 let (prepared, _reservation) = prepared.into_parts();
+                if let Some(remote) = &prepared.remote {
+                    remote.validate_fresh()?;
+                }
                 prepared
                     .source
                     .revalidate(&prepared.source_snapshot, &cancel)?;
@@ -312,6 +327,7 @@ pub(super) async fn run(
                     &cancel,
                 )?;
                 Ok::<_, anyhow::Error>(ReleasePublicationReceipt {
+                    channel: prepared.view.channel,
                     plan: prepared.view.plan,
                     release: prepared.view.release,
                     envelope: prepared.view.envelope,

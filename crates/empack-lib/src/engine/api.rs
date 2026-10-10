@@ -81,7 +81,8 @@ pub use instance::{
     PendingInstanceCleanup, ResumedInstance, SavedInstanceRecord, SuspendedInstanceReceipt,
 };
 pub use release_publication::{
-    ReleasePublicationPreview, ReleasePublicationReceipt, StageReleaseRequest,
+    PublishChannelRequest, ReleasePublicationPreview, ReleasePublicationReceipt,
+    StageReleaseRequest,
 };
 pub use subscription::{
     SubscriptionPreview, SubscriptionReceipt, SubscriptionRecord, SubscriptionRequest,
@@ -234,6 +235,7 @@ pub enum Request {
     LaunchInstance(LaunchInstanceRequest),
     Subscription(SubscriptionRequest),
     StageRelease(StageReleaseRequest),
+    PublishChannel(PublishChannelRequest),
     InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
     Recover(RecoverRequest),
@@ -256,6 +258,11 @@ pub enum ProjectTarget {
 impl From<PathBuf> for ProjectTarget {
     fn from(path: PathBuf) -> Self {
         Self::Existing(path)
+    }
+}
+impl From<PublishChannelRequest> for Request {
+    fn from(request: PublishChannelRequest) -> Self {
+        Self::PublishChannel(request)
     }
 }
 impl From<StageReleaseRequest> for Request {
@@ -469,6 +476,7 @@ impl OperationPreview {
     pub fn needs_network(&self) -> bool {
         self.build().is_some_and(|view| view.needs_network)
             || matches!(self, Self::Instance(view) if !view.downloads.is_empty())
+            || matches!(self, Self::ReleasePublication(view) if view.channel.is_some())
     }
     pub fn runs_installer(&self) -> bool {
         self.build().is_some_and(|view| view.runs_installer)
@@ -826,6 +834,13 @@ impl Engine {
                                 .await?
                                 .map(|value| PreparedKind::Launch(Box::new(value))))
                         }
+                        Request::PublishChannel(request) => {
+                            Ok(release_publication::prepare_channel(
+                                project, request, &config, &mut scope,
+                            )
+                            .await?
+                            .map(|value| PreparedKind::ReleasePublication(Box::new(value))))
+                        }
                         Request::StageRelease(request) => Ok(release_publication::prepare(
                             project, request, &config, &mut scope,
                         )
@@ -1042,7 +1057,7 @@ impl Engine {
                         PreparedKind::ReleasePublication(value) => *value,
                         _ => unreachable!(),
                     });
-                    release_publication::run(prepared, config, scope).await
+                    release_publication::run(prepared, config, transport, scope).await
                 }
                 PreparedKind::Subscription(_) => {
                     let prepared = data.map(|value| match value {

@@ -3,7 +3,7 @@ use super::*;
 use crate::{
     application::cli::ReleaseCommand,
     engine::{
-        api::{OperationPreview, StageReleaseRequest},
+        api::{OperationPreview, PublishChannelRequest, Request, StageReleaseRequest},
         release,
     },
 };
@@ -13,8 +13,10 @@ pub(in crate::application) async fn dispatch(
     command: ReleaseCommand,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
-    let ReleaseCommand::Stage { source, keys } = command;
-    let source = absolute(&invocation, &source);
+    let (source, keys) = match &command {
+        ReleaseCommand::Stage { source, keys } => (absolute(&invocation, source), keys.clone()),
+        ReleaseCommand::PublishChannel { keys, .. } => (root.clone(), keys.clone()),
+    };
     let files = keys
         .into_iter()
         .map(|key| absolute(&invocation, &key))
@@ -40,25 +42,41 @@ pub(in crate::application) async fn dispatch(
     .await?;
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let Preparation::Ready(prepared) = cancellable(
-            session,
-            engine.prepare(
-                root,
-                StageReleaseRequest {
-                    source,
-                    keys: (*keys).clone(),
-                },
-            ),
-        )
-        .await?
+        let request: Request = match command {
+            ReleaseCommand::Stage { .. } => StageReleaseRequest {
+                source,
+                keys: (*keys).clone(),
+            }
+            .into(),
+            ReleaseCommand::PublishChannel {
+                release,
+                channel,
+                base_url,
+                sequence,
+                expires,
+                previous_keys,
+                ..
+            } => PublishChannelRequest {
+                release,
+                channel,
+                base_url,
+                sequence,
+                expires,
+                keys: (*keys).clone(),
+                previous_keys: release::signing::public_keys(&previous_keys)?,
+            }
+            .into(),
+        };
+        let Preparation::Ready(prepared) =
+            cancellable(session, engine.prepare(root, request)).await?
         else {
-            anyhow::bail!("Release staging requires input")
+            anyhow::bail!("Release publication requires input")
         };
         let OperationPreview::ReleasePublication(view) = prepared.view() else {
             anyhow::bail!("Unexpected release publication preview")
         };
         session.display().status().info(&format!(
-            "Stage release {} for pack {} at {}",
+            "Release {} for pack {} at {}",
             view.release, view.pack, view.envelope
         ));
         for key in &view.keys {
@@ -67,14 +85,28 @@ pub(in crate::application) async fn dispatch(
                 .status()
                 .info(&format!("Publisher key fingerprint: {key}"));
         }
-        apply(session, &engine, prepared, "Immutable release", |receipt| {
+        let label = if let Some(channel) = &view.channel {
+            session.display().status().info(&format!(
+                "Verify hosted release and assets before advancing channel {channel}"
+            ));
+            "Channel publication"
+        } else {
+            "Immutable release"
+        };
+        apply(session, &engine, prepared, label, |receipt| {
             let ExecutionReceipt::ReleasePublication(receipt) = receipt else {
                 anyhow::bail!("Unexpected release publication receipt")
             };
-            Ok(format!(
-                "Staged signed release {} at {}; channel unchanged",
-                receipt.release, receipt.envelope
-            ))
+            Ok(match &receipt.channel {
+                Some(channel) => format!(
+                    "Published channel {channel} for verified release {} at {}",
+                    receipt.release, receipt.envelope
+                ),
+                None => format!(
+                    "Staged signed release {} at {}; channel unchanged",
+                    receipt.release, receipt.envelope
+                ),
+            })
         })
         .await
     }

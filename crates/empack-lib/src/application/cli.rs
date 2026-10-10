@@ -342,6 +342,25 @@ pub struct InstanceConflictArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum ReleaseCommand {
+    /// Verify hosted immutable content, then publish a signed channel pointer
+    PublishChannel {
+        release: String,
+        #[arg(long)]
+        channel: String,
+        /// HTTPS directory serving the publisher's dist/ output
+        #[arg(long)]
+        base_url: String,
+        #[arg(long)]
+        sequence: u64,
+        /// UTC Unix seconds; must be future-dated by at most 31 days
+        #[arg(long)]
+        expires: i64,
+        #[arg(long = "key-file", required = true)]
+        keys: Vec<PathBuf>,
+        /// Previously enrolled public key, used only to authenticate the old pointer
+        #[arg(long = "previous-key")]
+        previous_keys: Vec<String>,
+    },
     /// Stage signed immutable release files under dist/releases/<release-id>/
     Stage {
         /// Extracted native export containing release.json and its selected assets

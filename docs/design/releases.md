@@ -210,3 +210,29 @@ Unknown neighboring files are not acquired or deleted.
 
 Staging does not change a channel. The hosting layer serves `dist/` over HTTPS;
 channel publication verifies the hosted release before exposing a new pointer.
+
+## Channel publication
+
+`release publish-channel RELEASE_ID --channel NAME --base-url HTTPS_DIRECTORY`
+selects an already staged signed release. The caller supplies `--sequence`,
+`--expires` (Unix UTC seconds) and one or more external `--key-file` inputs. The
+base URL serves the publisher's `dist/` directory and has no query or credentials.
+
+Preparation authenticates the staged envelope, checks local immutable assets and
+captures the existing channel pointer. A previous pointer must authenticate under
+the supplied signing keys or explicit `--previous-key` public keys. Its sequence
+remains relevant after expiry; expired metadata never becomes installation authority.
+A new pointer advances the sequence. Repeating identical channel metadata at its
+existing sequence is allowed; changing metadata at that sequence is rejected.
+
+After network approval, execution fetches the exact signed envelope and every
+unique bundled asset from their HTTPS locations. Shared assets combine their source
+assertions for one transfer. Missing, altered or unverifiable hosted bytes prevent
+publication. Preparation and execution both enforce the 31-day freshness window.
+The complete local read set is checked again before recoverable publication of
+`dist/channels/<name>.json`.
+
+For deployment by file transfer, upload immutable release files first, run channel
+publication against the live HTTPS directory, then upload the resulting channel
+file last. The command prepares local hosting output; it does not upload files or
+manage a hosting account. A verification failure leaves the old pointer in place.

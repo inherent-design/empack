@@ -57,3 +57,18 @@ pub(crate) fn read_keys(
     }
     Ok(keys)
 }
+
+pub(crate) fn public_keys(values: &[String]) -> Result<Vec<ed25519_dalek::VerifyingKey>> {
+    ensure!(
+        values.len() <= 16,
+        "Select at most sixteen previous public keys"
+    );
+    values
+        .iter()
+        .map(|value| {
+            Ok(ed25519_dalek::VerifyingKey::from_bytes(
+                &super::decode_hex::<32>(value)?,
+            )?)
+        })
+        .collect()
+}

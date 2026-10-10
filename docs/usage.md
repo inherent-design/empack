@@ -177,3 +177,18 @@ Serve `publisher/dist/` through static HTTPS hosting. Staging checks original as
 assertions and refuses different bytes at existing release addresses. It does not
 advance a channel or enroll subscribers. Use `--dry-run` to inspect the release,
 output paths and signing fingerprints before publication.
+
+After the immutable release is available through HTTPS, prepare its channel pointer:
+
+```sh
+empack --workdir ./publisher --yes release publish-channel RELEASE_ID \
+  --channel stable --base-url https://packs.example.org/ \
+  --sequence 1 --expires UNIX_UTC_SECONDS \
+  --key-file ~/.config/empack/publisher.key
+```
+
+Choose a future expiry within 31 days. This verifies the hosted envelope and assets
+before writing `publisher/dist/channels/stable.json`. If deployment uses uploads,
+upload this pointer last. Increase the sequence when changing channel metadata.
+`--previous-key` accepts an old public key for authenticating the existing pointer
+after signing-key rotation; it does not sign the replacement or enroll client trust.
