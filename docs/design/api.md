@@ -84,6 +84,15 @@ the bytes and captured base, and produces a new plan requiring fresh approval.
 An empty or incomplete response remains `NeedsInput`; it does not silently retry a
 known restricted download or publish the available subset.
 
+`Engine::suspend_instance` explicitly retains a pending recipe and verified content.
+`resume_saved_instance` reconstructs it against the current native root and returns
+a new preparation plus an opaque saved-record observation. Subscription envelopes
+are authenticated again against current enrollment and time. Library callers using
+external publisher trust must supply a fresh authenticated selection for the same
+release. `observe_pending_instance` can select stale or invalid records without
+decoding them; `discard_pending_instance` removes only the exact observed bytes.
+Successful activation and subsequent pending-record cleanup have separate outcomes.
+
 ## Outcomes and diagnostics
 
 | Outcome | Meaning |

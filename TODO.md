@@ -73,7 +73,7 @@ readiness or replace executable evidence.
   changed constraints and removed alternatives without silently resetting choices.
 - [x] Install, update and repair exact release selections through shared preparation,
   grants, staging, verification and recoverable publication.
-- [ ] Support manual restricted downloads and restart continuation with original
+- [x] Support manual restricted downloads and restart continuation with original
   digests, release identity and supplied-file associations retained.
 - [x] Implement changed-config decisions and initial-only configuration seeds;
   never infer mergeability from an extension or overwrite a played world.

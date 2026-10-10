@@ -564,3 +564,121 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+#[tokio::test]
+async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
+    use crate::engine::{
+        instance::subscription::select_release, publication::RecoveryReader, release::*,
+    };
+    use sha2::{Digest, Sha256};
+    let now: i64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .try_into()
+        .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let key = SigningKey::from_bytes(&[43; 32]);
+    let next = SigningKey::from_bytes(&[44; 32]);
+    let (empty, _) = native_release(&key, "manual");
+    let mut document = empty.document().clone();
+    document.files.push(ReleaseFile {
+        key: "mod".into(),
+        destination: "mods/a.jar".into(),
+        layer: ReleaseLayer::Common,
+        policy: FilePolicy::Managed,
+        client: Participation::Required,
+        server: Participation::Required,
+        sha256: Sha256::digest(b"A")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+        bytes: 1,
+        readonly: false,
+        executable: false,
+        assertions: vec![],
+        asset: None,
+        source: ReleaseSource::Manual {
+            instructions: "Supply A".into(),
+            selection: None,
+        },
+    });
+    let release = DecodedRelease::encode(document).unwrap();
+    let envelope = sign(EnvelopeKind::Release, release.bytes(), &[&key]).unwrap();
+    let (engine, _) = super::super::tests::engine(state.clone());
+    apply(&engine, root.path(), enroll(&key)).await;
+    let channel = ChannelDocument {
+        schema: 1,
+        pack: "fixture".into(),
+        channel: "stable".into(),
+        sequence: 1,
+        expires: now + 3600,
+        minimum_engine: ">=0.6.0-beta".into(),
+        release: ChannelRelease {
+            id: release.id().into(),
+            url: "https://publisher.test/release.json".into(),
+            maximum_bytes: 64 << 10,
+        },
+    };
+    apply(
+        &engine,
+        root.path(),
+        SubscriptionRequest::Observe {
+            envelope: sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap(),
+            now,
+            engine: semver::Version::parse("0.6.0-beta").unwrap(),
+        },
+    )
+    .await;
+    let selected = select_release(
+        root.path(),
+        &envelope,
+        now,
+        &semver::Version::parse("0.6.0-beta").unwrap(),
+        RecoveryReader::new(state.clone()),
+        &Default::default(),
+    )
+    .unwrap();
+    let Preparation::NeedsInput(pending) = engine
+        .prepare(root.path().to_owned(), install(selected))
+        .await
+        .unwrap()
+    else {
+        panic!("manual input")
+    };
+    engine.suspend_instance(*pending, None).await.unwrap();
+    engine.shutdown().await;
+    let (engine, _) = super::super::tests::engine(state.clone());
+    let resumed = engine
+        .resume_saved_instance(root.path().to_owned(), BTreeMap::new(), None)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(resumed.preparation, Preparation::NeedsInput(_)));
+    drop(resumed);
+    apply(
+        &engine,
+        root.path(),
+        SubscriptionRequest::ReplaceKeys {
+            keys: vec![next.verifying_key()],
+        },
+    )
+    .await;
+    assert!(
+        engine
+            .resume_saved_instance(root.path().to_owned(), BTreeMap::new(), None)
+            .await
+            .is_err()
+    );
+    assert!(!root.path().join("game/mods/a.jar").exists());
+    assert!(
+        engine
+            .observe_pending_instance(root.path().to_owned())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    engine.shutdown().await;
+}

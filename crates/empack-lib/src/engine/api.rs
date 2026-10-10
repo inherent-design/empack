@@ -77,6 +77,7 @@ pub use launch::{
 mod subscription;
 pub use instance::{
     InstallInstanceRequest, InstanceInputRequirement, InstancePreview, InstanceReceipt,
+    PendingInstanceCleanup, ResumedInstance, SavedInstanceRecord, SuspendedInstanceReceipt,
 };
 pub use subscription::{
     SubscriptionPreview, SubscriptionReceipt, SubscriptionRecord, SubscriptionRequest,

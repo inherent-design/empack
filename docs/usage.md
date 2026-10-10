@@ -29,10 +29,19 @@ fails. Explicit independent batches preserve failed groups and report partial ef
 
 ## Installed instances
 
+Missing manual downloads can be saved after approval. The command reports the exact
+file key, byte count and SHA-256 address. Supply associations to `instance continue`;
+resuming checks the original assertions and instance base before showing a new plan.
+A preview never saves or removes pending state. If the base or publisher enrollment
+has changed, inspect it and explicitly discard the stale recipe before selecting a
+new operation.
+
 | Command | Meaning |
 | --- | --- |
 | `instance install` | Install an exact native release into a selected root |
 | `instance update` | Apply a selected release or explicitly subscribed channel |
+| `instance continue --file KEY=PATH` | Resume a retained exact release with verified manual inputs |
+| `instance discard-pending` | Explicitly discard a pending recipe without changing the installation |
 | `instance repair` | Restore the recorded release without selecting newer dependencies |
 | `instance options` | Inspect/change persistent optional choices |
 | `instance rollback` | Return managed content to a retained completed release |

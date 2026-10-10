@@ -101,8 +101,12 @@ pub struct SubscribedRelease {
     subscription: String,
     expires: i64,
     assets: reqwest::Url,
+    envelope: Vec<u8>,
 }
 impl SubscribedRelease {
+    pub(in crate::engine) fn envelope(&self) -> &[u8] {
+        &self.envelope
+    }
     pub fn release(&self) -> &release::DecodedRelease {
         self.release.release()
     }
@@ -145,6 +149,7 @@ pub fn select_release(
     let selected = channel.release(&record.trust()?, envelope, version)?;
     Ok(SubscribedRelease {
         release: selected,
+        envelope: envelope.to_vec(),
         root: record.root,
         subscription,
         expires: channel.document().expires,

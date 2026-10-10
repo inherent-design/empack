@@ -342,6 +342,13 @@ pub struct InstanceConflictArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Resume an exact pending release with verified manual file associations.
+    Continue {
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+    /// Discard a selected pending instance recipe; keep the completed installation.
+    DiscardPending,
     /// Clear interrupted runtime evidence only after all remaining processes have stopped
     RecoverRuntime {
         #[arg(long, required = true)]

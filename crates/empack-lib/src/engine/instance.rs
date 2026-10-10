@@ -63,7 +63,8 @@ impl InstanceLayout {
     }
 }
 /// Explicit selection, repair and rollback have different durable preconditions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
 pub enum InstanceAction {
     /// Install the initial snapshot, or retain and verify the active compatible release.
     Prepare,
@@ -915,6 +916,10 @@ fn verify_current_file(
 }
 
 impl InstancePlan {
+    pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
+        self.root.revalidate(&self.snapshot, cancel)?;
+        Ok(self.snapshot.fingerprint())
+    }
     pub(super) fn launch_lease(
         &self,
         state: &Path,

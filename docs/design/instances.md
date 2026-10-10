@@ -134,6 +134,14 @@ A provider URL refresh may not change exact selection or expected bytes.
 Missing manual downloads retain a bounded continuation record outside disposable
 cache, bound to release, instance, choices, original assertions and observed base.
 Resuming revalidates all bindings and prepares a new operation for authorization.
+The host stores `pending-instances` records and verified `pending-instance-content`
+separately from disposable cache. Retention uses the shared continuation cleanup
+lock; content remains protected while any record in that category exists. Records
+contain no original host file paths or execution grant. Accepted merge bytes remain
+local deviations, and subscription envelopes retain their authentication context.
+`instance continue --file KEY=PATH` supplies remaining exact inputs.
+`instance discard-pending` conditionally removes an observed record, including an
+invalid or stale record; it does not touch installed game files.
 
 ## Rollback and retention
 

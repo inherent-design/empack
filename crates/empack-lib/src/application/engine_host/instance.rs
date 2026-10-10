@@ -196,10 +196,15 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
     };
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let prepared = require_instance_ready(
+        let Some(prepared) = require_instance_ready(
             session,
+            &engine,
             cancellable(session, engine.prepare(root, request)).await?,
-        )?;
+        )
+        .await?
+        else {
+            return Ok(());
+        };
         let OperationPreview::Instance(view) = prepared.view() else {
             anyhow::bail!("Unexpected instance preview");
         };
@@ -231,6 +236,8 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
+        InstanceCommand::Continue { files } => resume_instance(session, files).await,
+        InstanceCommand::DiscardPending => discard_pending(session).await,
         InstanceCommand::RecoverRuntime {
             acknowledge_stopped,
         } => {
@@ -462,10 +469,15 @@ async fn maintain(
     };
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let prepared = require_instance_ready(
+        let Some(prepared) = require_instance_ready(
             session,
+            &engine,
             cancellable(session, engine.prepare(root, request)).await?,
-        )?;
+        )
+        .await?
+        else {
+            return Ok(());
+        };
         let OperationPreview::Instance(view) = prepared.view() else {
             anyhow::bail!("Unexpected instance preview");
         };
@@ -769,18 +781,119 @@ pub(super) fn report_requirements(
         ));
     }
 }
-fn require_instance_ready(
+async fn require_instance_ready(
     session: &dyn Session,
+    engine: &Engine,
     preparation: Preparation,
-) -> Result<crate::engine::api::PreparedOperation> {
+) -> Result<Option<crate::engine::api::PreparedOperation>> {
     match preparation {
-        Preparation::Ready(prepared) => Ok(prepared),
+        Preparation::Ready(prepared) => Ok(Some(prepared)),
         Preparation::NeedsInput(pending) => {
             let OperationPreview::Instance(view) = pending.view() else {
                 anyhow::bail!("Unexpected instance input request")
             };
             report_requirements(session, &view.manual);
-            anyhow::bail!("Instance was not applied; supply the exact missing file associations")
+            if !approve(session, "Save pending instance")? {
+                return Ok(None);
+            }
+            save_pending(session, engine, *pending).await?;
+            unreachable!()
         }
     }
+}
+pub(super) async fn save_pending(
+    session: &dyn Session,
+    engine: &Engine,
+    pending: crate::engine::api::PreparationContinuation,
+) -> Result<()> {
+    let saved = cancellable(session, engine.suspend_instance(pending, None)).await?;
+    session.display().status().info(&format!("Saved pending instance with {} verified files; resume with instance continue --file KEY=PATH",saved.retained_files));
+    anyhow::bail!("Instance was not applied; exact manual inputs remain pending")
+}
+async fn resume_instance(session: &dyn Session, files: Vec<String>) -> Result<()> {
+    let (invocation, root) = project_path(session)?;
+    let mut associations = BTreeMap::new();
+    for file in files {
+        let (key, path) = file
+            .split_once('=')
+            .context("File association must be KEY=PATH")?;
+        ensure!(
+            !key.is_empty() && !path.is_empty(),
+            "File association must name a key and path"
+        );
+        ensure!(
+            associations
+                .insert(key.to_owned(), absolute(&invocation, Path::new(path)))
+                .is_none(),
+            "Duplicate file association"
+        );
+    }
+    let engine = engine(session.config().app_config(), &invocation)?;
+    let result = async {
+        let resumed = cancellable(
+            session,
+            engine.resume_saved_instance(root, associations, None),
+        )
+        .await?
+        .context("No pending instance operation")?;
+        let Some(prepared) = require_instance_ready(session, &engine, resumed.preparation).await?
+        else {
+            return Ok(());
+        };
+        let mut published = false;
+        apply(
+            session,
+            &engine,
+            prepared,
+            "Instance continuation",
+            |receipt| {
+                let ExecutionReceipt::Instance(receipt) = receipt else {
+                    anyhow::bail!("Unexpected instance receipt")
+                };
+                published = true;
+                Ok(format!("Applied release {}", receipt.record.release))
+            },
+        )
+        .await?;
+        if published {
+            // Cleanup follows publication; a cleanup failure cannot undo completed installation.
+            match engine.discard_saved_instance(resumed.saved).await {
+                Ok(true) => {}
+                Ok(false) => session
+                    .display()
+                    .status()
+                    .warning("Instance applied; pending state changed and was retained"),
+                Err(error) => session.display().status().warning(&format!(
+                    "Instance applied; pending cleanup failed: {error:#}"
+                )),
+            }
+        }
+        Ok(())
+    }
+    .await;
+    engine.shutdown().await;
+    result
+}
+async fn discard_pending(session: &dyn Session) -> Result<()> {
+    let (invocation, root) = project_path(session)?;
+    let engine = engine(session.config().app_config(), &invocation)?;
+    let result = async {
+        let pending = cancellable(session, engine.observe_pending_instance(root))
+            .await?
+            .context("No pending instance operation")?;
+        if approve(session, "Discard pending instance")? {
+            ensure!(
+                cancellable(session, engine.discard_pending_instance(pending)).await?,
+                "Pending state changed; inspect it again"
+            );
+            session
+                .display()
+                .status()
+                .complete("Pending instance discarded; installed content retained");
+        }
+        Ok(())
+    }
+    .await;
+    engine.shutdown().await;
+    result
 }

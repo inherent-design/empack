@@ -1578,3 +1578,215 @@ async fn restricted_provider_input_returns_owned_continuation_without_publicatio
     engine.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn durable_instance_inputs_survive_engine_restart_without_source_files() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, governor) = super::super::tests::engine(state.path().join("state"));
+    let mut input = request(&[
+        ("a", "mods/a.jar", b"A", FilePolicy::Managed),
+        ("b", "mods/b.jar", b"B", FilePolicy::Managed),
+    ]);
+    input.supplied.remove("b");
+    let Preparation::NeedsInput(pending) =
+        engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("missing b")
+    };
+    let saved = engine.suspend_instance(*pending, None).await.unwrap();
+    assert_eq!(saved.retained_files, 1);
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    drop(saved);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let (engine, governor) = super::super::tests::engine(state.path().join("state"));
+    let input = state.path().join("b.jar");
+    fs::write(&input, b"B").unwrap();
+    let resumed = engine
+        .resume_saved_instance(
+            root.path().to_owned(),
+            BTreeMap::from([("b".into(), input)]),
+            None,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let Preparation::Ready(prepared) = resumed.preparation else {
+        panic!("exact retained a and supplied b")
+    };
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = operation.wait().await;
+    if let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(e)) = &*outcome {
+        panic!("{e:#}");
+    }
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+    ));
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    assert_eq!(fs::read(root.path().join("game/mods/b.jar")).unwrap(), b"B");
+    assert!(engine.discard_saved_instance(resumed.saved).await.unwrap());
+    assert!(
+        engine
+            .resume_saved_instance(root.path().to_owned(), BTreeMap::new(), None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(outcome);
+    engine.release_completed(operation.id());
+    drop(operation);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn saved_instance_rejects_changed_base_without_discarding_pending_input() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    apply(
+        &engine,
+        root.path(),
+        request(&[("a", "mods/a.jar", b"A", FilePolicy::Managed)]),
+    )
+    .await;
+    let mut input = request(&[
+        ("a", "mods/a.jar", b"A", FilePolicy::Managed),
+        ("b", "mods/b.jar", b"B", FilePolicy::Managed),
+    ]);
+    input.supplied.clear();
+    let Preparation::NeedsInput(pending) =
+        engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("missing b")
+    };
+    let saved = engine.suspend_instance(*pending, None).await.unwrap();
+    let entries = || {
+        fs::read_dir(state.path().join("state/pending-instances"))
+            .unwrap()
+            .map(|e| {
+                let e = e.unwrap();
+                (e.file_name(), fs::read(e.path()).unwrap())
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let before = entries();
+    fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+    assert!(
+        engine
+            .resume_saved_instance(root.path().to_owned(), BTreeMap::new(), None)
+            .await
+            .is_err()
+    );
+    assert_eq!(entries(), before);
+    assert!(!root.path().join("game/mods/b.jar").exists());
+    assert!(engine.discard_saved_instance(saved.saved).await.unwrap());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn durable_instance_merge_retains_local_evidence_and_cleanup_is_conditional() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    for merged in [b"edited".as_slice(), b"merged".as_slice()] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (engine, _) = super::super::tests::engine(state.path().join("state"));
+        apply(
+            &engine,
+            root.path(),
+            request(&[("cfg", "config/a", b"original", FilePolicy::Managed)]),
+        )
+        .await;
+        fs::write(root.path().join("game/config/a"), b"edited").unwrap();
+        let merge = state.path().join("merge");
+        fs::write(&merge, merged).unwrap();
+        let mut input = request(&[
+            ("cfg", "config/a", b"publisher", FilePolicy::Managed),
+            ("mod", "mods/a.jar", b"A", FilePolicy::Managed),
+        ]);
+        input.supplied.clear();
+        input.conflicts.push(ConflictResolution {
+            destination: "config/a".into(),
+            choice: ConflictChoice::Merge {
+                file: merge.clone(),
+            },
+        });
+        let Preparation::NeedsInput(pending) =
+            engine.prepare(root.path().to_owned(), input).await.unwrap()
+        else {
+            panic!("missing mod")
+        };
+        engine.suspend_instance(*pending, None).await.unwrap();
+        engine.shutdown().await;
+        fs::remove_file(merge).unwrap();
+        let (engine, _) = super::super::tests::engine(state.path().join("state"));
+        let observed = engine
+            .observe_pending_instance(root.path().to_owned())
+            .await
+            .unwrap()
+            .unwrap();
+        let resumed = engine
+            .resume_saved_instance(root.path().to_owned(), BTreeMap::new(), None)
+            .await
+            .unwrap()
+            .unwrap();
+        let Preparation::NeedsInput(pending) = resumed.preparation else {
+            panic!("still missing mod")
+        };
+        let file = state.path().join("a.jar");
+        fs::write(&file, b"A").unwrap();
+        let Preparation::Ready(prepared) = engine
+            .resume_instance_files(*pending, BTreeMap::from([("mod".into(), file)]))
+            .await
+            .unwrap()
+        else {
+            panic!("ready")
+        };
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            network: NetworkPermission::Offline,
+            run_installer: false,
+            run_runtime: false,
+            replacement: prepared.view().replacement(),
+        };
+        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        assert!(matches!(
+            &*operation.wait().await,
+            OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+        ));
+        assert_eq!(fs::read(root.path().join("game/config/a")).unwrap(), merged);
+        let record =
+            InstanceRecord::decode(&fs::read(root.path().join(".empack/instance.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            record.local_overrides[0].original.sha256,
+            hash(b"publisher")
+        );
+        assert_eq!(record.local_overrides[0].accepted.sha256, hash(merged));
+        let directory = state.path().join("state/pending-instances");
+        let path = fs::read_dir(&directory)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.extension().is_some_and(|e| e == "json"))
+            .unwrap();
+        fs::write(&path, b"changed invalid record").unwrap();
+        assert!(!engine.discard_pending_instance(observed).await.unwrap());
+        let observed = engine
+            .observe_pending_instance(root.path().to_owned())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(engine.discard_pending_instance(observed).await.unwrap());
+        engine.shutdown().await;
+    }
+}

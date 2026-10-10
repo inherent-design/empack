@@ -21,6 +21,7 @@ fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
         .with_config(MockConfigProvider::new(crate::application::AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
+            cache_dir: Some("cache".into()),
             yes,
             dry_run: dry,
             curseforge_api_client_key: None,
@@ -922,4 +923,96 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             .is_err()
     );
     assert_eq!(before, snapshot(&root.path().join("project")));
+}
+
+#[tokio::test]
+async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart() {
+    use crate::{application::cli::InstanceCommand, engine::release::*};
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    let payload = DecodedRelease::encode(ReleaseDocument {
+        schema: 1,
+        pack: "manual".into(),
+        version: "1".into(),
+        minimum_engine: ">=0.6.0-beta".into(),
+        runtime: ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java_major: 21,
+        },
+        choices: vec![],
+        files: vec![ReleaseFile {
+            key: "mod".into(),
+            destination: "mods/a.jar".into(),
+            layer: ReleaseLayer::Common,
+            policy: FilePolicy::Managed,
+            client: Participation::Required,
+            server: Participation::Required,
+            sha256: Sha256::digest(b"A")
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            bytes: 1,
+            readonly: false,
+            executable: false,
+            assertions: vec![],
+            asset: None,
+            source: ReleaseSource::Manual {
+                instructions: "Supply a.jar".into(),
+                selection: None,
+            },
+        }],
+    })
+    .unwrap();
+    fs::write(root.path().join("release.json"), payload.bytes()).unwrap();
+    let install = Commands::Instance {
+        command: InstanceCommand::Install {
+            conflicts: Default::default(),
+            release: "release.json".into(),
+            sha256: payload.id().into(),
+            side: "client".into(),
+            layout: None,
+            choices: vec![],
+            files: vec![],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(install.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    let error = execute_command_with_session(install, &session(root.path(), true, false))
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("manual inputs remain pending"));
+    fs::remove_file(root.path().join("release.json")).unwrap();
+    fs::write(root.path().join("a.jar"), b"A").unwrap();
+    let continuation = Commands::Instance {
+        command: InstanceCommand::Continue {
+            files: vec!["mod=a.jar".into()],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(continuation.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    execute_command_with_session(continuation, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    assert!(
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Continue { files: vec![] }
+            },
+            &session(root.path(), true, false)
+        )
+        .await
+        .is_err()
+    );
 }

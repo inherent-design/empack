@@ -549,7 +549,17 @@ pub(super) async fn save_execution_input(
 ) -> Result<()> {
     if !input.instance_requirements().is_empty() {
         super::instance::report_requirements(session, input.instance_requirements());
-        anyhow::bail!("Instance was not applied; supply the exact missing file associations");
+        if !approve(session, "Save pending instance")? {
+            anyhow::bail!("Instance was not applied; pending input was not saved");
+        }
+        return super::instance::save_pending(
+            session,
+            engine,
+            input
+                .take_continuation()
+                .context("Instance continuation was already taken")?,
+        )
+        .await;
     }
     for need in input.requirements() {
         session.display().status().warning(&format!(

@@ -9,6 +9,10 @@ use crate::engine::{
 use empack_core::files::{FileChange, FilePlan, ObservedPath};
 mod acquisition;
 mod continuation;
+mod suspension;
+mod suspension_cleanup;
+pub use suspension::{ResumedInstance, SavedInstanceRecord, SuspendedInstanceReceipt};
+pub use suspension_cleanup::PendingInstanceCleanup;
 
 pub struct InstallInstanceRequest {
     pub conflicts: Vec<crate::engine::instance::ConflictResolution>,
@@ -53,6 +57,9 @@ pub(super) struct PreparedInstanceOperation {
     instance: instance::InstancePlan,
     content: BTreeMap<String, AcquiredContent>,
     downloads: Vec<crate::engine::release::ReleaseFile>,
+    resume: suspension::Recipe,
+    target: PathBuf,
+    saved: Option<crate::engine::continuation_store::SavedRecord>,
 }
 pub(super) async fn prepare(
     target: ProjectTarget,
@@ -68,6 +75,7 @@ pub(super) async fn prepare(
     ensure!(root.is_absolute(), "Instance root must be absolute");
     let state = config.state_root.clone();
     let limits = config.snapshot;
+    let selected_target = root.clone();
     let InstallInstanceRequest {
         conflicts,
         action,
@@ -83,32 +91,36 @@ pub(super) async fn prepare(
         config.resources.capture,
         config.resources.prepared,
         move |cancel| {
-            instance::plan(
+            let selection = instance::InstanceSelection {
+                conflicts,
+                release,
+                side,
+                layout,
+                choices,
+                action,
+            };
+            let resume = suspension::Recipe::capture(&selection)?;
+            let planned = instance::plan(
                 &root,
-                instance::InstanceSelection {
-                    conflicts,
-                    release,
-                    side,
-                    layout,
-                    choices,
-                    action,
-                },
+                selection,
                 RecoveryReader::new(state),
                 limits,
                 &cancel,
-            )
+            )?;
+            Ok::<_, anyhow::Error>((planned, resume))
         },
     )?;
     let planned = scope.accept(work.wait().await?)?.transpose()?;
-    let (resources, retained) = project_change::resources(planned.bytes()?, config)?;
+    let (resources, retained) = project_change::resources(planned.0.bytes()?, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
-        let (planned, _reservation) = planned.into_parts();
+        let ((planned, resume), _reservation) = planned.into_parts();
         let content =
             planned.acquire_available(&supplied, &local_files, assets.as_deref(), &cancel)?;
-        Ok::<_, anyhow::Error>((planned, content))
+        Ok::<_, anyhow::Error>((planned, resume, content))
     })?;
     let available = scope.accept(work.wait().await?)?.transpose()?;
-    let ((planned, mut content), reservation) = available.into_parts();
+    let ((planned, mut resume, mut content), reservation) = available.into_parts();
+    resume.normalize(&planned);
     if let Some(cache) = cache {
         acquisition::acquire_cached(&planned, &mut content, cache, config, scope).await?;
     }
@@ -134,6 +146,9 @@ pub(super) async fn prepare(
     Ok(RetainedOutput::from_parts(
         PreparedInstanceOperation {
             view,
+            resume,
+            target: selected_target,
+            saved: None,
             instance: planned,
             content,
             downloads,
