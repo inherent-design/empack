@@ -201,7 +201,7 @@ fn smoke_native_lifecycle_preserves_exact_files_across_sync_build_remove() {
     }
     assert_eq!(project_snapshot(&project), before);
     command(&project)
-        .args(["build", "mrpack", "--yes"])
+        .args(["build", "modrinth", "--yes"])
         .assert()
         .success();
     let mut archive =
@@ -334,7 +334,7 @@ fn smoke_invalid_optional_flags_do_not_mutate_project() {
     let project = initialized();
     let before = snapshot(&project);
     for args in [
-        vec!["build", "mrpack", "--optional", "choice=maybe"],
+        vec!["build", "modrinth", "--optional", "choice=maybe"],
         vec!["build", "--continue", "--optional-defaults"],
         vec!["remove", "fixture", "--forget", "--acknowledge-unknown"],
     ] {

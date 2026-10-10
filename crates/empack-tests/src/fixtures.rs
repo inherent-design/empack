@@ -131,16 +131,16 @@ impl WorkflowProjectFixture {
         match artifact {
             WorkflowArtifact::Mrpack => format!("{}-{}.mrpack", self.pack_name, self.version),
             WorkflowArtifact::Client => {
-                format!("{}-{}-client.zip", self.pack_name, self.version)
+                format!("{}-{}-prism-references.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::Server => {
-                format!("{}-{}-server.zip", self.pack_name, self.version)
+                format!("{}-{}-server-references.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::ClientFull => {
-                format!("{}-{}-client-full.zip", self.pack_name, self.version)
+                format!("{}-{}-prism-bundled.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::ServerFull => {
-                format!("{}-{}-server-full.zip", self.pack_name, self.version)
+                format!("{}-{}-server-bundled.zip", self.pack_name, self.version)
             }
         }
     }
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(
             fixture.artifact_path(&root, WorkflowArtifact::ServerFull),
             root.join("dist")
-                .join("workflow-fixture-pack-1.0.0-server-full.zip")
+                .join("workflow-fixture-pack-1.0.0-server-bundled.zip")
         );
     }
 }

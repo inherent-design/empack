@@ -14,7 +14,10 @@ pub(super) async fn build(
         "Select the native consumer alone until combined consumer recipes are enabled"
     );
     ensure!(
-        !args.continue_build
+        args.delivery.is_none()
+            && args.environment.is_none()
+            && args.updates.is_none()
+            && !args.continue_build
             && !args.clean
             && !args.optional_defaults
             && args.optional_choices.is_empty()

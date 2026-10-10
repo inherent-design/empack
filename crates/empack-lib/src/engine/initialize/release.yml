@@ -5,7 +5,7 @@ on:
 permissions:
   contents: write
 env:
-  EMPACK_VERSION: v0.5.0-alpha.1
+  EMPACK_VERSION: v0.6.0-beta
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -17,7 +17,7 @@ jobs:
       - name: Install empack
         run: cargo install --git https://github.com/inherent-design/empack.git --tag "$EMPACK_VERSION" --locked empack
       - name: Build verified distribution
-        run: empack build --yes mrpack
+        run: empack build --yes modrinth
       - name: Publish tagged distribution
         env:
           GH_TOKEN: ${{ github.token }}

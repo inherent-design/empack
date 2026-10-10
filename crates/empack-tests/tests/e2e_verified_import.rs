@@ -121,12 +121,12 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
     assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
     // The authored optional decision must be acknowledged for this lossy export format.
     assert_cmd::Command::from_std(empack_cmd(&imported))
-        .args(["--yes", "build", "mrpack"])
+        .args(["--yes", "build", "modrinth"])
         .assert()
         .failure();
     run(
         &imported,
-        &["build", "mrpack", "--allow-optional-metadata-loss"],
+        &["build", "modrinth", "--allow-optional-metadata-loss"],
     );
     let mut archive = zip::ZipArchive::new(
         fs::File::open(assert_dist_artifact_suffix(&imported, ".mrpack")).unwrap(),
@@ -146,9 +146,9 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
         manifest["files"][0]["downloads"].as_array().unwrap().len(),
         2
     );
-    run(&imported, &["build", "client-full", "--optional-defaults"]);
+    run(&imported, &["build", "prism", "--optional-defaults"]);
     let mut client = zip::ZipArchive::new(
-        fs::File::open(assert_dist_artifact_suffix(&imported, "client-full.zip")).unwrap(),
+        fs::File::open(assert_dist_artifact_suffix(&imported, "prism-bundled.zip")).unwrap(),
     )
     .unwrap();
     assert_eq!(

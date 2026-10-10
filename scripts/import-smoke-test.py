@@ -1141,7 +1141,7 @@ def find_client_full_artifact(project_dir: Path) -> Optional[Path]:
     candidates = sorted(
         [
             path for path in dist_dir.iterdir()
-            if path.is_file() and path.name.endswith("-client-full.zip")
+            if path.is_file() and path.name.endswith("-prism-bundled.zip")
         ],
         key=lambda path: path.stat().st_mtime,
         reverse=True,
@@ -1237,7 +1237,7 @@ def run_curated_build(pack: CuratedPack, project_dir: Path, empack_bin: Path,
             return CuratedBuildResult(output_tail=(sync.stdout + sync.stderr)[-4000:])
         if any((project_dir / name).read_bytes() != value for name, value in documents.items()):
             raise RuntimeError("sync changed imported intent or exact selections")
-    built = run_empack_command(empack_bin, ["--yes", "build", "client-full"], layout,
+    built = run_empack_command(empack_bin, ["--yes", "build", "prism"], layout,
                               timeout=timeout, label=f"{label}:build", cwd=project_dir,
                               prefer_pty=announce)
     result = CuratedBuildResult(success=built.success, elapsed_secs=built.elapsed_secs,

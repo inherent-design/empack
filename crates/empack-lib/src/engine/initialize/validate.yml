@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 env:
-  EMPACK_VERSION: v0.5.0-alpha.1
+  EMPACK_VERSION: v0.6.0-beta
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -19,7 +19,7 @@ jobs:
       - name: Install empack
         run: cargo install --git https://github.com/inherent-design/empack.git --tag "$EMPACK_VERSION" --locked empack
       - name: Verify recorded project and build
-        run: empack build --yes mrpack
+        run: empack build --yes modrinth
       - uses: actions/upload-artifact@v7
         with:
           name: verified-pack

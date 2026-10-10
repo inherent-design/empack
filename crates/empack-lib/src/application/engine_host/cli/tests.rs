@@ -1001,7 +1001,7 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     build(
         &session(root.path(), false),
         &crate::application::BuildArgs {
-            targets: vec!["client-full".into()],
+            targets: vec!["prism".into()],
             ..Default::default()
         },
     )

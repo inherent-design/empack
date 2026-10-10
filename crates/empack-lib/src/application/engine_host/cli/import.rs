@@ -530,7 +530,7 @@ mod tests {
         super::super::super::build(
             &session(root.path(), false),
             &BuildArgs {
-                targets: vec!["mrpack".into()],
+                targets: vec!["modrinth".into()],
                 ..Default::default()
             },
             BuildDecisions::default(),
@@ -734,7 +734,7 @@ mod tests {
         build(
             &session,
             &crate::application::BuildArgs {
-                targets: vec!["mrpack".into()],
+                targets: vec!["modrinth".into()],
                 ..Default::default()
             },
             BuildDecisions {
@@ -913,7 +913,7 @@ mod tests {
             build(
                 &session,
                 &crate::application::BuildArgs {
-                    targets: vec!["mrpack".into()],
+                    targets: vec!["modrinth".into()],
                     ..Default::default()
                 },
                 BuildDecisions::default(),

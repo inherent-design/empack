@@ -3,6 +3,7 @@ use crate::application::{
     InitArgs,
     session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
 };
+use crate::engine::documents::DocumentCodec;
 use std::{collections::BTreeMap, fs, io::Read};
 
 fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
@@ -42,7 +43,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 fn args() -> BuildArgs {
     BuildArgs {
-        targets: vec!["mrpack".into(), "client-full".into()],
+        targets: vec!["modrinth".into(), "prism".into()],
         ..Default::default()
     }
 }
@@ -77,7 +78,7 @@ async fn native_build_host_preserves_preview_decline_and_publishes_current_bytes
     run(root.path(), &args(), true, false).await.unwrap();
     let project = root.path().join("project");
     let mrpack = project.join("dist/Native Pack-1.0.mrpack");
-    let client = project.join("dist/Native Pack-1.0-client-full.zip");
+    let client = project.join("dist/Native Pack-1.0-prism-bundled.zip");
     assert_eq!(zip_bytes(&mrpack, "overrides/config/example.txt"), b"first");
     assert_eq!(
         zip_bytes(&client, ".minecraft/config/example.txt"),
@@ -188,14 +189,14 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
     ] {
         let options = BuildArgs {
             format: Some(format),
-            targets: vec!["client-full".into(), "client-full".into(), "mrpack".into()],
+            targets: vec!["prism".into(), "prism".into(), "modrinth".into()],
             ..Default::default()
         };
         let built = request(intent.intent(), &options, choices.clone()).unwrap();
         assert_eq!(built.outputs.as_slice().len(), 2);
         assert_eq!(
             built.outputs.as_slice()[0].artifact.as_str(),
-            format!("Native Pack-1.0-client-full.{extension}")
+            format!("Native Pack-1.0-prism-bundled.{extension}")
         );
         assert_eq!(
             built.outputs.as_slice()[1].artifact.as_str(),
@@ -216,7 +217,7 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
         .outputs
         .as_slice()
         .len(),
-        5
+        3
     );
     let mut selected = intent.intent().clone();
     selected.distribution.archive = DistributionArchive::TarGz;
@@ -361,7 +362,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     )
     .unwrap();
     let options = BuildArgs {
-        targets: vec!["client-full".into()],
+        targets: vec!["prism".into()],
         ..Default::default()
     };
     let before = snapshot(root.path());
@@ -478,7 +479,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     run(root.path(), &discovered, true, false).await.unwrap();
     assert_eq!(
         zip_bytes(
-            &project.join("dist/Native Pack-1.0-client-full.zip"),
+            &project.join("dist/Native Pack-1.0-prism-bundled.zip"),
             ".minecraft/resourcepacks/custom.zip"
         ),
         b"verified manual bytes"
@@ -524,7 +525,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     .unwrap();
     assert_eq!(
         zip_bytes(
-            &project.join("dist/Native Pack-1.0-client-full.zip"),
+            &project.join("dist/Native Pack-1.0-prism-bundled.zip"),
             ".minecraft/resourcepacks/custom.zip"
         ),
         b"verified manual bytes"
@@ -553,7 +554,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     .unwrap();
     assert_eq!(
         zip_bytes(
-            &project.join("dist/Native Pack-1.0-client-full.zip"),
+            &project.join("dist/Native Pack-1.0-prism-bundled.zip"),
             ".minecraft/resourcepacks/custom.zip"
         ),
         b"verified manual bytes"
@@ -658,29 +659,66 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
     )
     .await
     .unwrap();
-    run(
-        root.path(),
-        &BuildArgs {
-            targets: vec!["all".into()],
-            ..Default::default()
-        },
-        true,
-        false,
-    )
-    .await
+    let project = root.path().join("project");
+    let codec = crate::engine::documents::DocumentCodec;
+    let old = codec
+        .decode_intent(&fs::read(project.join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let mut lock = codec
+        .decode_lock(
+            &fs::read(project.join("empack.lock")).unwrap(),
+            &old,
+            "test",
+        )
+        .unwrap()
+        .lock()
+        .clone();
+    let mut intent = old.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "budget.probe".into(),
+        java_major: 21,
+        delivery: empack_core::distribution::Delivery::References,
+        policies: BTreeMap::new(),
+    });
+    intent.distribution.recipes = NonEmpty::new(vec![
+        Recipe::MODRINTH,
+        Recipe::PRISM_REFERENCES,
+        Recipe::SERVER_REFERENCES,
+        Recipe::PRISM_BUNDLED,
+        Recipe::SERVER_BUNDLED,
+    ])
     .unwrap();
+    let bytes = codec.encode_intent(&intent).unwrap();
+    lock.intent_revision = codec
+        .decode_intent(&bytes, "test")
+        .unwrap()
+        .semantic_revision();
+    let revision = lock.intent_revision;
+    fs::write(project.join("empack.yml"), bytes).unwrap();
+    fs::write(
+        project.join("empack.lock"),
+        codec
+            .encode_lock(
+                &empack_core::model::ResolvedProject::validate(intent, lock, revision).unwrap(),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    run(root.path(), &BuildArgs::default(), true, false)
+        .await
+        .unwrap();
     let dist = root.path().join("project/dist");
     for suffix in [
         ".mrpack",
-        "-client.zip",
-        "-server.zip",
-        "-client-full.zip",
-        "-server-full.zip",
+        "-prism-references.zip",
+        "-server-references.zip",
+        "-prism-bundled.zip",
+        "-server-bundled.zip",
     ] {
         let path = dist.join(format!("Budget Probe-1.0{suffix}"));
         let mut archive = zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
         assert!(!archive.is_empty(), "empty artifact: {}", path.display());
-        if suffix == "-server-full.zip" {
+        if suffix == "-server-bundled.zip" {
             assert!(archive.by_name("start.sh").is_ok());
         }
     }
@@ -726,4 +764,57 @@ async fn curseforge_cli_recipe_uses_zip_and_only_publishes_requested_output() {
         .read_to_string(&mut bytes)
         .unwrap();
     assert_eq!(bytes, "first");
+}
+
+#[tokio::test]
+async fn consumer_overrides_preserve_delivery_and_reject_lossy_policies() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let parsed = DocumentCodec
+        .decode_intent(
+            &fs::read(root.path().join("project/empack.yml")).unwrap(),
+            "test",
+        )
+        .unwrap();
+    for (consumer, bundled, references) in [
+        ("prism", Recipe::PRISM_BUNDLED, Recipe::PRISM_REFERENCES),
+        ("server", Recipe::SERVER_BUNDLED, Recipe::SERVER_REFERENCES),
+    ] {
+        let mut options = BuildArgs {
+            targets: vec![consumer.into()],
+            ..Default::default()
+        };
+        let snapshot = request(parsed.intent(), &options, BuildDecisions::default()).unwrap();
+        assert_eq!(snapshot.outputs.as_slice()[0].target, bundled);
+        options.delivery = Some("references".into());
+        let referenced = request(parsed.intent(), &options, BuildDecisions::default()).unwrap();
+        assert_eq!(referenced.outputs.as_slice()[0].target, references);
+        assert_ne!(
+            snapshot.outputs.as_slice()[0].artifact,
+            referenced.outputs.as_slice()[0].artifact
+        );
+        options.environment = Some("both".into());
+        assert!(request(parsed.intent(), &options, BuildDecisions::default()).is_err());
+    }
+    let invalid = BuildArgs {
+        targets: vec!["modrinth".into()],
+        delivery: Some("bundled".into()),
+        ..Default::default()
+    };
+    let before = snapshot(root.path());
+    assert!(run(root.path(), &invalid, true, false).await.is_err());
+    assert_eq!(snapshot(root.path()), before);
+    for obsolete in ["mrpack", "client", "client-full", "server-full", "all"] {
+        assert!(
+            request(
+                parsed.intent(),
+                &BuildArgs {
+                    targets: vec![obsolete.into()],
+                    ..Default::default()
+                },
+                BuildDecisions::default()
+            )
+            .is_err()
+        );
+    }
 }

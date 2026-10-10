@@ -17,10 +17,11 @@ use crate::{
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::{
-    distribution::Recipe,
+    distribution::{Delivery, Recipe, UpdateAuthority},
     inventory::OptionalPolicy,
     model::{DistributionArchive, NonEmpty, ProjectIntent},
     path::{ArtifactStem, PathSyntax, PortableRelPath},
+    requirements::Environments,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -291,36 +292,47 @@ fn request(
     args: &BuildArgs,
     decisions: BuildDecisions,
 ) -> Result<BuildRequest> {
-    const ALL: [Recipe; 6] = [
-        Recipe::MODRINTH,
-        Recipe::CURSEFORGE,
-        Recipe::PRISM_REFERENCES,
-        Recipe::SERVER_REFERENCES,
-        Recipe::PRISM_BUNDLED,
-        Recipe::SERVER_BUNDLED,
-    ];
     let mut targets = Vec::new();
-    // Validate every spelling, including values after `all`, before expanding the selection.
     for name in &args.targets {
-        let selected: &[Recipe] = match name.as_str() {
-            "all" => &ALL,
-            "mrpack" => &[Recipe::MODRINTH],
-            "curseforge" => &[Recipe::CURSEFORGE],
-            "client" => &[Recipe::PRISM_REFERENCES],
-            "server" => &[Recipe::SERVER_REFERENCES],
-            "client-full" => &[Recipe::PRISM_BUNDLED],
-            "server-full" => &[Recipe::SERVER_BUNDLED],
+        targets.push(match name.as_str() {
+            "modrinth" => Recipe::MODRINTH,
+            "curseforge" => Recipe::CURSEFORGE,
+            "prism" => Recipe::PRISM_BUNDLED,
+            "server" => Recipe::SERVER_BUNDLED,
             _ => {
                 return Err(empack_core::model::ModelError(format!(
-                    "Unknown build target: {name}"
+                    "Unknown build consumer: {name}"
                 ))
                 .into());
             }
-        };
-        targets.extend_from_slice(selected);
+        });
     }
     if targets.is_empty() {
         targets.extend(intent.distribution.recipes.as_slice());
+    }
+    for recipe in &mut targets {
+        let delivery = match args.delivery.as_deref() {
+            None => recipe.delivery(),
+            Some("references") => Delivery::References,
+            Some("bundled") => Delivery::Bundled,
+            Some(_) => anyhow::bail!("Unknown dependency delivery"),
+        };
+        let environment = match args.environment.as_deref() {
+            None => recipe.environments(),
+            Some("client") => Environments::Client,
+            Some("server") => Environments::Server,
+            Some("both") => Environments::Both,
+            Some(_) => anyhow::bail!("Unknown distribution environment"),
+        };
+        let authority = match args.updates.as_deref() {
+            None => recipe.update_authority(),
+            Some("snapshot") => UpdateAuthority::Snapshot,
+            Some("platform") => UpdateAuthority::Platform,
+            Some("empack") => UpdateAuthority::Empack,
+            Some(_) => anyhow::bail!("Unknown update authority"),
+        };
+        *recipe = Recipe::new(recipe.consumer(), delivery, environment)?
+            .with_update_authority(authority)?;
     }
     let targets = empack_core::distribution::plan_recipes(&targets);
     let name = ArtifactStem::parse(&intent.metadata.name)
@@ -344,10 +356,10 @@ fn request(
             let (suffix, extension) = match target {
                 Recipe::MODRINTH => ("", "mrpack"),
                 Recipe::CURSEFORGE => ("-curseforge", "zip"),
-                Recipe::PRISM_REFERENCES => ("-client", extension),
-                Recipe::SERVER_REFERENCES => ("-server", extension),
-                Recipe::PRISM_BUNDLED => ("-client-full", extension),
-                Recipe::SERVER_BUNDLED => ("-server-full", extension),
+                Recipe::PRISM_REFERENCES => ("-prism-references", extension),
+                Recipe::SERVER_REFERENCES => ("-server-references", extension),
+                Recipe::PRISM_BUNDLED => ("-prism-bundled", extension),
+                Recipe::SERVER_BUNDLED => ("-server-bundled", extension),
                 _ => anyhow::bail!("Consumer recipe is not available through this build adapter"),
             };
             Ok(BuildOutput {

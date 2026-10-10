@@ -224,36 +224,45 @@ pub struct InitArgs {
 
 /// Arguments for the `build` subcommand.
 #[derive(Args, Debug, Clone, Default)]
-#[command(after_help = "Targets:
-  empack       Exact native release and immutable assets
-  mrpack       Importable modpack archive with download references
-  curseforge   CurseForge client ZIP with exact references and overrides
-  client       Lightweight client distribution with a Java bootstrap
-  server       Lightweight server distribution with a prepared runtime
-  client-full  Prism-compatible instance with pack content
-  server-full  Server distribution with runtime and pack content
-  all          Build all six targets
+#[command(after_help = "Consumers:
+  modrinth    Modrinth archive with exact references and overrides
+  curseforge  CurseForge client ZIP with exact references and overrides
+  prism       Launcher instance; bundled pack content by default
+  server      Prepared server runtime; bundled pack content by default
+  empack      Exact native release and immutable assets
 
-Without TARGETS, use distribution.recipes from empack.yml.
-Native export requires distribution.native and exact materialized content.
-It retains all side layers and optional choices in dist/release.empack.
-CurseForge requires exact CurseForge references or authored local overrides.
-Selecting all requires every recipe to represent the selected content.
-Client-full leaves Minecraft and game-asset downloads to the launcher.
-Forge/NeoForge server targets run the selected Java installer during preparation.
-All requested targets are prepared and verified before publication.
+Without CONSUMERS, use distribution.recipes from empack.yml.
+Use --delivery references for a Prism/server snapshot installed by empack.
+Reference consumers need distribution.native identity and Java settings.
+Bundled content does not include client game binaries or imply offline launch.
+Update authority is independent of dependency delivery; snapshots are the default.
+All requested outputs are verified before combined publication.
 
 Examples:
-  empack build --dry-run all
-  empack build mrpack client-full
+  empack build --dry-run modrinth prism
+  empack build prism server --delivery references
   empack build --continue")]
 pub struct BuildArgs {
-    /// Build targets to execute
+    /// Consumers to build with explicit policy overrides
     #[arg(
-        help = "Targets to build (default: distribution.recipes in empack.yml)",
+        help = "Consumers to build (default: distribution.recipes in empack.yml)",
+        value_name = "CONSUMERS",
+        value_parser = ["modrinth", "curseforge", "prism", "server", "empack"],
         conflicts_with = "continue_build"
     )]
     pub targets: Vec<String>,
+
+    /// How dependency bytes reach the consumer; independent of update authority
+    #[arg(long, value_parser = ["references", "bundled"], conflicts_with = "continue_build")]
+    pub delivery: Option<String>,
+
+    /// Environment to project; each consumer validates the selected side
+    #[arg(long, value_parser = ["client", "server", "both"], conflicts_with = "continue_build")]
+    pub environment: Option<String>,
+
+    /// Who may select future releases; requires a bound platform or publisher association
+    #[arg(long, value_parser = ["snapshot", "platform", "empack"], conflicts_with = "continue_build")]
+    pub updates: Option<String>,
 
     /// Continue a previously blocked restricted-mod build
     #[arg(
@@ -849,17 +858,17 @@ mod tests {
     #[test]
     fn build_archive_override_distinguishes_absence_from_explicit_zip() {
         for (arguments, expected) in [
-            (vec!["empack", "build", "client-full"], None),
+            (vec!["empack", "build", "prism"], None),
             (
-                vec!["empack", "build", "client-full", "--format", "zip"],
+                vec!["empack", "build", "prism", "--format", "zip"],
                 Some(CliArchiveFormat::Zip),
             ),
             (
-                vec!["empack", "build", "client-full", "--format", "tar.gz"],
+                vec!["empack", "build", "prism", "--format", "tar.gz"],
                 Some(CliArchiveFormat::TarGz),
             ),
             (
-                vec!["empack", "build", "client-full", "--format", "7z"],
+                vec!["empack", "build", "prism", "--format", "7z"],
                 Some(CliArchiveFormat::SevenZ),
             ),
         ] {
@@ -984,7 +993,7 @@ mod tests {
 
     #[test]
     fn cli_config_load_from_rejects_build_continue_with_targets() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "client-full"]);
+        let result = CliConfig::load_from(["empack", "build", "--continue", "prism"]);
 
         let err = match result {
             Ok(_) => panic!("continue build with targets should fail at parse time"),
@@ -1087,13 +1096,13 @@ mod tests {
             std::env::set_var("EMPACK_DOWNLOADS_DIR", "/tmp/from-env");
         }
 
-        let config = CliConfig::load_from(["empack", "build", "client-full"]).expect("parse build");
+        let config = CliConfig::load_from(["empack", "build", "prism"]).expect("parse build");
 
         let Some(Commands::Build(args)) = config.command else {
             panic!("expected build command");
         };
 
-        assert_eq!(args.targets, vec!["client-full"]);
+        assert_eq!(args.targets, vec!["prism"]);
         assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/from-env"));
     }
 }
@@ -1152,5 +1161,33 @@ fn adoption_source_choices_are_explicit_and_cannot_mix_with_tracked_keys() {
         ],
     ] {
         assert!(Cli::try_parse_from(&args).is_err(), "accepted {args:?}");
+    }
+}
+
+#[cfg(test)]
+mod consumer_cli_tests {
+    use super::*;
+    #[test]
+    fn consumer_delivery_is_explicit_and_cannot_change_a_continuation() {
+        let config = CliConfig::load_from([
+            "empack",
+            "build",
+            "prism",
+            "server",
+            "--delivery",
+            "references",
+        ])
+        .unwrap();
+        let Commands::Build(args) = config.command.unwrap() else {
+            panic!("expected build")
+        };
+        assert_eq!(args.targets, ["prism", "server"]);
+        assert_eq!(args.delivery.as_deref(), Some("references"));
+        for args in [
+            vec!["empack", "build", "client-full"],
+            vec!["empack", "build", "--continue", "--delivery", "bundled"],
+        ] {
+            assert!(CliConfig::load_from(args).is_err());
+        }
     }
 }

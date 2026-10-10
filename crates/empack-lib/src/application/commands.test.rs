@@ -121,7 +121,7 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
     )
     .unwrap();
     let build = Commands::Build(BuildArgs {
-        targets: vec!["mrpack".into()],
+        targets: vec!["modrinth".into()],
         ..Default::default()
     });
     execute_command_with_session(build.clone(), &selected)
@@ -535,7 +535,8 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     // The actual client build dispatch uses native preparation without acquiring installer JARs.
     execute_command_with_session(
         Commands::Build(BuildArgs {
-            targets: vec!["client".into()],
+            targets: vec!["prism".into()],
+            delivery: Some("references".into()),
             ..Default::default()
         }),
         &selected,
@@ -545,7 +546,11 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     let prism = root.path().join("prism");
     fs::create_dir(&prism).unwrap();
     let mut archive = zip::ZipArchive::new(
-        fs::File::open(root.path().join("project/dist/Native Pack-1-client.zip")).unwrap(),
+        fs::File::open(
+            root.path()
+                .join("project/dist/Native Pack-1-prism-references.zip"),
+        )
+        .unwrap(),
     )
     .unwrap();
     archive.extract(&prism).unwrap();

@@ -55,6 +55,21 @@ configuration. Where supported, select reference or bundled delivery independent
 of snapshot/channel updating. Platform format compatibility, platform eligibility
 and uploading are distinct results. Selecting every output is not the default.
 
+For example:
+
+```sh
+empack build modrinth prism
+empack build prism server --delivery references
+empack build server --delivery bundled --format tar.gz
+```
+
+With no consumer arguments, build uses the complete `distribution.recipes` list.
+Explicit arguments start with snapshot policies: Modrinth/CurseForge references,
+bundled Prism/server content. `--delivery`, `--environment` and `--updates` override
+the selected recipes. Invalid combinations fail before acquisition. Different
+policies for the same consumer belong in separate authored recipe objects.
+Continuation retains its saved recipes and rejects policy overrides.
+
 Prism consumes ordinary platform archives without an empack integration. A native
 Prism instance can instead carry launcher settings and explicitly subscribe through
 empack. Server recipes preserve exact runtime and startup requirements.
