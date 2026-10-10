@@ -95,7 +95,7 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = operation.wait().await;
-    match &*outcome {
+    let record = match &*outcome {
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(
             receipt,
         ))) => receipt.record.clone(),
@@ -106,7 +106,11 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
             panic!("recovery: {cause:#}")
         }
         _ => panic!("unexpected instance outcome"),
-    }
+    };
+    drop(outcome);
+    engine.release_completed(operation.id());
+    drop(operation);
+    record
 }
 #[tokio::test]
 async fn install_update_repair_and_rollback_preserve_seeds_and_unowned_data() {
@@ -908,4 +912,139 @@ async fn consumer_preparation_installs_once_and_never_reverts_active_updates() {
         before
     );
     engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn repair_reuses_verified_cache_after_restart_without_network_or_original_assets() {
+    use crate::engine::content::cache::ContentCache;
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let assets = tempfile::tempdir().unwrap();
+    let cache_path = host.path().join("cache");
+    let mut server = mockito::Server::new_async().await;
+    let download = server
+        .mock("GET", "/payload")
+        .with_body("A")
+        .expect(1)
+        .create_async()
+        .await;
+    let input = || {
+        let mut input = request(&[("a", "mods/a.jar", b"A", FilePolicy::Managed)]);
+        let mut doc = input.release.release().document().clone();
+        doc.files[0].source = ReleaseSource::Url {
+            alternatives: vec!["https://release.test/payload".into()],
+        };
+        doc.files[0].asset = Some("assets/a".into());
+        input = replace_document(input, doc);
+        input.supplied.clear();
+        input.assets = Some(assets.path().to_owned());
+        input
+    };
+    let (engine, governor) = super::super::tests::engine(host.path().join("state"));
+    let mut engine = engine
+        .with_content_cache(ContentCache::new(cache_path.clone(), Default::default()).unwrap());
+    engine.transport = HttpAcquisition::for_loopback_tests()
+        .with_test_origin("https://release.test", &server.url());
+    let Preparation::Ready(preview) = engine
+        .prepare(root.path().to_owned(), input())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(preview.view().needs_network());
+    drop(preview);
+    assert!(!cache_path.exists(), "preview cannot create a cache");
+    assert!(execute_network(&engine, root.path(), input()).await);
+    download.assert_async().await;
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    drop(engine);
+
+    fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+    let (engine, governor) = super::super::tests::engine(host.path().join("state"));
+    let engine = engine
+        .with_content_cache(ContentCache::new(cache_path.clone(), Default::default()).unwrap());
+    let repair = || {
+        let mut value = input();
+        value.action = InstanceAction::Repair;
+        value
+    };
+    // Explicit associations must still fail rather than silently using another source.
+    let mut missing = repair();
+    missing
+        .local_files
+        .insert("a".into(), assets.path().join("missing"));
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), missing)
+            .await
+            .is_err()
+    );
+    fs::create_dir_all(assets.path().join("assets")).unwrap();
+    fs::write(assets.path().join("assets/a"), b"X").unwrap();
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), repair())
+            .await
+            .is_err()
+    );
+    fs::remove_file(assets.path().join("assets/a")).unwrap();
+    let Preparation::Ready(preview) = engine
+        .prepare(root.path().to_owned(), repair())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(!preview.view().needs_network());
+    drop(preview);
+    apply(&engine, root.path(), repair()).await;
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    download.assert_async().await;
+    // Corrupt cache bytes are discarded as evidence, leaving the network obligation.
+    fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+    let blob = cache_path.join(format!("{}.blob", hash(b"A")));
+    fs::write(&blob, b"X").unwrap();
+    let Preparation::Ready(preview) = engine
+        .prepare(root.path().to_owned(), repair())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert!(preview.view().needs_network());
+    drop(preview);
+    assert!(!root.path().join("game/mods/a.jar").exists());
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn approved_local_instance_content_is_reusable_but_cache_failure_is_nonfatal() {
+    use crate::engine::content::cache::ContentCache;
+    for unavailable in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let cache_path = host.path().join("cache");
+        if unavailable {
+            fs::write(&cache_path, b"unavailable").unwrap();
+        }
+        let (engine, governor) = super::super::tests::engine(host.path().join("state"));
+        let engine =
+            engine.with_content_cache(ContentCache::new(cache_path, Default::default()).unwrap());
+        let input = || request(&[("a", "mods/a.jar", b"A", FilePolicy::Managed)]);
+        apply(&engine, root.path(), input()).await;
+        assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+        if !unavailable {
+            fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+            let mut repair = input();
+            repair.action = InstanceAction::Repair;
+            repair.supplied.clear();
+            apply(&engine, root.path(), repair).await;
+            assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+        }
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
 }

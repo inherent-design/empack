@@ -706,8 +706,22 @@ impl InstancePlan {
             } else {
                 return Ok(None);
             };
-            let (parent, leaf) = super::native::parent(&root.directory, &relative)?;
-            let mut input = super::native::open_file(&parent, &leaf)?;
+            let input = (|| {
+                let (parent, leaf) = super::native::parent(&root.directory, &relative)?;
+                super::native::open_file(&parent, &leaf)
+            })();
+            let mut input = match input {
+                Ok(file) => file,
+                Err(error)
+                    if !local_files.contains_key(&file.key)
+                        && error
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
             acquired = super::content::verify_stream(
                 &mut input,
                 &expected,

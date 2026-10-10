@@ -234,3 +234,76 @@ pub(super) async fn acquire(
     }
     Ok(content)
 }
+
+/// Read-only verified cache reuse is allowed during preparation. Missing or damaged
+/// disposable entries leave the original acquisition obligation intact.
+pub(super) async fn acquire_cached(
+    plan: &instance::InstancePlan,
+    content: &mut BTreeMap<String, AcquiredContent>,
+    cache: &crate::engine::content::cache::ContentCache,
+    config: &EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<()> {
+    if plan.needed().all(|file| content.contains_key(&file.key)) {
+        return Ok(());
+    }
+    let lookup = cache.lookup(scope).await;
+    scope.cancellation().check()?;
+    let lookup = match lookup {
+        Ok(lookup) => lookup,
+        Err(error)
+            if error
+                .downcast_ref::<RuntimeError>()
+                .is_some_and(RuntimeError::is_capacity_exhausted) =>
+        {
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    let Some(lookup) = lookup.as_ref() else {
+        return Ok(());
+    };
+    let mut bytes = content.values().try_fold(0u64, |total, file| {
+        total
+            .checked_add(file.lease().len())
+            .context("Instance content size overflow")
+    })?;
+    let deadline = std::time::Instant::now()
+        .checked_add(config.transfer.deadline)
+        .context("Instance cache deadline overflow")?;
+    for file in plan.needed() {
+        if content.contains_key(&file.key) {
+            continue;
+        }
+        scope.cancellation().check()?;
+        ensure!(
+            std::time::Instant::now() < deadline,
+            "Instance cache lookup deadline exceeded"
+        );
+        let remaining = config.transfer.transfer_bytes.saturating_sub(bytes);
+        if file.bytes > remaining || file.bytes > config.transfer.file_bytes {
+            continue;
+        }
+        let candidate = lookup
+            .retain_expected(
+                scope,
+                file.expected()?,
+                remaining.min(config.transfer.file_bytes),
+                SourceEvidencePolicy::Compatibility,
+                InitialObservation::RequireEvidence,
+            )
+            .await;
+        scope.cancellation().check()?;
+        match candidate {
+            Ok(Some(acquired)) => {
+                bytes = bytes
+                    .checked_add(acquired.lease().len())
+                    .context("Instance cached content size overflow")?;
+                content.insert(file.key.clone(), acquired);
+            }
+            Ok(None) => {}
+            Err(_) => tracing::debug!("Cached bytes did not satisfy the release obligation"),
+        }
+    }
+    Ok(())
+}

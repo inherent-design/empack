@@ -38,21 +38,16 @@ pub struct InstanceReceipt {
 }
 pub(super) struct PreparedInstanceOperation {
     pub(super) view: InstancePreview,
-    instance: InstanceCandidate,
-}
-enum InstanceCandidate {
-    Staged(instance::PreparedInstance),
-    Acquire {
-        plan: instance::InstancePlan,
-        content: BTreeMap<String, AcquiredContent>,
-        downloads: Vec<crate::engine::release::ReleaseFile>,
-    },
+    instance: instance::InstancePlan,
+    content: BTreeMap<String, AcquiredContent>,
+    downloads: Vec<crate::engine::release::ReleaseFile>,
 }
 pub(super) async fn prepare(
     target: ProjectTarget,
     request: InstallInstanceRequest,
     config: &EngineConfig,
     provider_access: ProviderAvailability,
+    cache: Option<&crate::engine::content::cache::ContentCache>,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedInstanceOperation>> {
     let ProjectTarget::Existing(root) = target else {
@@ -96,59 +91,58 @@ pub(super) async fn prepare(
         let (planned, _reservation) = planned.into_parts();
         let content =
             planned.acquire_available(&supplied, &local_files, assets.as_deref(), &cancel)?;
-        let downloads: Vec<_> = planned
-            .needed()
-            .filter(|file| !content.contains_key(&file.key))
-            .cloned()
-            .collect();
-        for file in &downloads {
-            ensure!(
-                acquisition::available(file, provider_access)?,
-                "Instance requires exact content for {}; supply --file {}=PATH",
-                file.key,
-                file.key
-            );
-        }
-        let view = InstancePreview {
-            downloads: downloads.iter().map(|file| file.key.clone()).collect(),
-            plan: PlanId(
-                NEXT_PLAN
-                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-                    .map_err(|_| anyhow::anyhow!("Plan identifier exhausted"))?,
-            ),
-            record: planned.record.clone(),
-            replacement: project_change::summary(&planned.files)?,
-            files: planned.files.clone(),
-        };
-        Ok::<_, anyhow::Error>(PreparedInstanceOperation {
-            view,
-            instance: if downloads.is_empty() {
-                InstanceCandidate::Staged(planned.stage(
-                    &content,
-                    &BTreeMap::new(),
-                    None,
-                    &cancel,
-                )?)
-            } else {
-                InstanceCandidate::Acquire {
-                    plan: planned,
-                    content,
-                    downloads,
-                }
-            },
-        })
+        Ok::<_, anyhow::Error>((planned, content))
     })?;
-    scope.accept(work.wait().await?)?.transpose()
+    let available = scope.accept(work.wait().await?)?.transpose()?;
+    let ((planned, mut content), reservation) = available.into_parts();
+    if let Some(cache) = cache {
+        acquisition::acquire_cached(&planned, &mut content, cache, config, scope).await?;
+    }
+    let downloads: Vec<_> = planned
+        .needed()
+        .filter(|file| !content.contains_key(&file.key))
+        .cloned()
+        .collect();
+    for file in &downloads {
+        ensure!(
+            acquisition::available(file, provider_access)?,
+            "Instance requires exact content for {}; supply --file {}=PATH",
+            file.key,
+            file.key
+        );
+    }
+    let view = InstancePreview {
+        downloads: downloads.iter().map(|file| file.key.clone()).collect(),
+        plan: PlanId(
+            NEXT_PLAN
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                .map_err(|_| anyhow::anyhow!("Plan identifier exhausted"))?,
+        ),
+        record: planned.record.clone(),
+        replacement: project_change::summary(&planned.files)?,
+        files: planned.files.clone(),
+    };
+    scope.cancellation().check()?;
+    Ok(RetainedOutput::from_parts(
+        PreparedInstanceOperation {
+            view,
+            instance: planned,
+            content,
+            downloads,
+        },
+        reservation,
+    ))
 }
 pub(super) async fn run(
     prepared: RetainedOutput<PreparedInstanceOperation>,
     config: EngineConfig,
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, transport, catalog, &mut scope).await;
+    let result = execute(prepared, config, transport, catalog, cache, &mut scope).await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Instance(Box::new(receipt))),
         Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
@@ -159,6 +153,7 @@ async fn execute(
     config: EngineConfig,
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<InstanceReceipt>> {
     let bytes = prepared
@@ -181,24 +176,32 @@ async fn execute(
                 .context("Instance publication size overflow")
         })?;
     let (mut prepared, reservation) = prepared.into_parts();
-    if let InstanceCandidate::Acquire {
-        content, downloads, ..
-    } = &mut prepared.instance
-    {
-        content.extend(
-            acquisition::acquire(downloads, &transport, catalog.as_ref(), &config, scope).await?,
+    if !prepared.downloads.is_empty() {
+        prepared.content.extend(
+            acquisition::acquire(
+                &prepared.downloads,
+                &transport,
+                catalog.as_ref(),
+                &config,
+                scope,
+            )
+            .await?,
         );
+    }
+    if let Some(cache) = cache {
+        // Release addresses remain distinct from original provider assertions.
+        cache
+            .publish(scope, prepared.content.values().cloned().collect())
+            .await?;
     }
     let mut resources = config.resources.assembly;
     resources.scratch_bytes = resources.scratch_bytes.max(bytes);
     let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
         let _reservation = reservation;
-        let instance = match prepared.instance {
-            InstanceCandidate::Staged(instance) => instance,
-            InstanceCandidate::Acquire { plan, content, .. } => {
-                plan.stage(&content, &BTreeMap::new(), None, &cancel)?
-            }
-        };
+        let instance =
+            prepared
+                .instance
+                .stage(&prepared.content, &BTreeMap::new(), None, &cancel)?;
         let (publication, record) =
             instance.publish(&Publisher::open(&config.state_root)?, &cancel)?;
         Ok::<_, anyhow::Error>(InstanceReceipt {

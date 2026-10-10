@@ -131,6 +131,12 @@ KEY=VALUE` selects a stable alternative. Applying a snapshot never subscribes to
 a channel or establishes publisher trust.
 
 Preparation verifies supplied files and bundled assets without network access.
+It can reuse disposable cache entries only after checking the release's address,
+size and original assertions. A missing optional asset leaves an acquisition
+obligation; an explicitly associated missing file, unsafe path or corrupt asset
+remains an error. Cache lookup never creates the store. Approved execution may
+cache local, supplied and downloaded bytes for exact repair after restart;
+unavailable storage or cache-only capacity exhaustion does not block installation.
 Missing referenced files appear as exact acquisition obligations in the preview.
 Execution requires a network grant before using their HTTPS alternatives. Downloads
 share the engine's transfer limits and resource admission; every selected file must

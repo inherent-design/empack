@@ -730,6 +730,7 @@ impl Engine {
                             *request,
                             &config,
                             provider_access,
+                            content_cache.as_ref(),
                             &mut scope,
                         )
                         .await?
@@ -927,10 +928,10 @@ impl Engine {
                         _ => unreachable!(),
                     });
                     let transport = match content_cache {
-                        Some(cache) => transport.with_execution_cache(cache),
+                        Some(ref cache) => transport.with_cache_lookup(cache.clone()),
                         None => transport,
                     };
-                    instance::run(prepared, config, transport, catalog, scope).await
+                    instance::run(prepared, config, transport, catalog, content_cache, scope).await
                 }
                 PreparedKind::CacheClean(_) => {
                     let prepared = data.map(|kind| match kind {
