@@ -170,24 +170,27 @@ across restart and managed rollback.
 For an explicitly enrolled instance, a local runtime can request prelaunch updates:
 
 ```sh
-empack --workdir instance --yes instance launch --check-updates --allow-offline -- /absolute/path/to/java -jar server.jar nogui
+empack --workdir instance --yes instance launch --server --check-updates --allow-offline -- /absolute/path/to/java nogui
 ```
 
 Omit `--allow-offline` to require a successful channel check. Fallback applies only
 to channel connection failures or timeouts. Invalid signatures, revoked keys,
-HTTP errors, changed runtime requirements and failed installation stop launch.
+HTTP errors and failed installation stop launch. Prism runtime changes require a
+launcher restart; managed servers publish their new runtime before launch.
 The saved channel floor precedes release acquisition. Preview or declined approval
 stops the sequence; launch still verifies the completed files and acquires its
-runtime lease. The executable and arguments remain locally selected, never supplied
-by the pack publisher. Without `--check-updates`, launch uses the completed release
+runtime lease. Java remains locally selected; `--server` uses the completed release
+entry point. Without `--check-updates`, launch uses the completed release
 without consulting a channel.
 
 Choose `empack build prism --updates empack` or `empack build server --updates empack`
 to export a consumer that requires an enrolled channel. Both reference and bundled
 delivery are supported. Enroll with `instance subscribe` in the extracted instance
 before its first launch. The generated consumer checks for updates; it never copies
-publisher keys into local trust. Runtime-changing updates stop until the consumer's
-runtime integration is prepared. Snapshot recipes remain the default.
+publisher keys into local trust. Managed server updates include runtime files; Prism
+runtime changes require a stopped-launcher update and restart. Snapshot recipes
+remain the default. Native archives support `build empack --updates empack`; their
+release payload enforces the same explicit enrollment requirement.
 
 ## Publisher staging
 
@@ -224,3 +227,10 @@ For an empack-managed server release, run
 verified JAR or loader argument-file path. Add `--check-updates` before `--` for an
 explicitly enrolled subscription. Changing Java or updating empack remains a local
 operator action.
+
+`build modrinth --updates platform` and `build curseforge --updates platform`
+produce platform-targeted archives. They do not upload a project or associate a
+recipient's instance with one. Upload the artifact and install it through the
+platform's project/version interface to obtain platform updates. Importing the
+archive directly remains a snapshot. Modrinth platform exports reject unsupported
+hosting download domains; ordinary snapshot mrpacks may still use other HTTPS hosts.

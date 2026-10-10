@@ -1325,7 +1325,7 @@ fn capture(
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
         ensure!(
-            (output.target == Recipe::CURSEFORGE
+            (crate::engine::build::curseforge::supports(output.target)
                 || crate::engine::build::launcher_recipe(output.target))
                 || crate::engine::build::native::supports(output.target)
                 || crate::engine::mrpack::supports(output.target),

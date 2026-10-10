@@ -31,10 +31,9 @@ use std::{
     fs::File,
 };
 
-/// Snapshot archives support both environments or an explicit side projection.
+/// Archive exports support side projection; platform installation binds the later update association.
 pub(crate) fn supports(recipe: Recipe) -> bool {
     recipe.consumer() == Consumer::Modrinth
-        && recipe.update_authority() == UpdateAuthority::Snapshot
 }
 
 /// Acquisition is associated with an exact logical file, never a guessed filename.
@@ -474,6 +473,11 @@ impl MrpackPlan {
                     executable: false,
                 },
             },
+        );
+        ensure!(
+            recipe.update_authority() != UpdateAuthority::Platform
+                || hosting.download_domains_allowed(),
+            "Platform-managed Modrinth export contains download domains that Modrinth hosting does not allow; use snapshot export or supported download locations"
         );
         Ok(Self {
             resolution: project.lock().clone(),

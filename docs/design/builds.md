@@ -29,7 +29,13 @@ Per-file environment requirements still participate in each projection.
 
 Platform update authority requires platform project/version association; writing an
 archive does not create that association. Automatic marketplace upload is outside
-this contract. Tar/7z output is permitted for directory distributions where supported;
+this contract. Platform-targeted exports retain their policy in the receipt and
+report the required external association. The receiving platform establishes that
+association when installing its hosted project/version; generic archive import
+remains a snapshot. Empack does not invent embedded project IDs or claim an upload
+occurred. Modrinth platform exports require allowed hosting download domains;
+snapshot mrpacks report domain ineligibility without rejecting a valid archive.
+Tar/7z output is permitted for directory distributions where supported;
 it must not be advertised as a launcher-importable ZIP.
 
 Authored `distribution.recipes` is a nonempty ordered list of objects. Each object

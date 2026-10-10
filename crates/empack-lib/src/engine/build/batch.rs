@@ -14,7 +14,7 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use empack_core::{
-    distribution::{Consumer, Recipe, UpdateAuthority},
+    distribution::{Consumer, Recipe},
     files::ManagedPath,
     inventory::BuildInventory,
     model::NonEmpty,
@@ -86,12 +86,6 @@ impl DistributionRequest {
             recipe.consumer() == expected,
             "Recipe belongs to another consumer adapter"
         );
-        ensure!(
-            recipe.update_authority() == UpdateAuthority::Snapshot
-                || super::launcher_recipe(recipe)
-                || recipe.consumer() == Consumer::Empack,
-            "Consumer update authority requires a bound association or subscription"
-        );
         Ok(())
     }
 }
@@ -111,6 +105,13 @@ pub struct BuiltDistribution {
     pub user_configuration: Option<bool>,
     pub server_runtime: Option<crate::engine::server_runtime::ServerRuntimeEvidence>,
 }
+impl BuiltDistribution {
+    /// Export does not establish a marketplace project/version association for the recipient.
+    pub fn requires_platform_association(&self) -> bool {
+        self.target.update_authority() == empack_core::distribution::UpdateAuthority::Platform
+    }
+}
+
 pub struct PreparedBuildBatch {
     publication: PreparedArtifact,
     artifacts: Vec<BuiltDistribution>,
@@ -199,10 +200,13 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 cancel,
             )?,
             DistributionRequest::CurseForge {
-                artifact, options, ..
+                artifact,
+                recipe,
+                options,
             } => super::curseforge::prepare_archive(
                 &workspace,
                 artifact.clone(),
+                *recipe,
                 external,
                 options,
                 cancel,

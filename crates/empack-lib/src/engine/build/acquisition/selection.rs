@@ -35,7 +35,7 @@ pub fn plan_target_build_acquisitions(
             cancel,
         );
     }
-    let references = target == Recipe::CURSEFORGE;
+    let references = crate::engine::build::curseforge::supports(target);
     let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
@@ -104,7 +104,8 @@ pub(in crate::engine::build) fn select_game_inputs(
     cancel: &Cancellation,
 ) -> Result<(BuildSelection, BTreeMap<ContentOwner, AcquisitionKey>)> {
     let project = workspace.require_resolved()?;
-    let references = crate::engine::build::instance_managed(target) || target == Recipe::CURSEFORGE;
+    let references = crate::engine::build::instance_managed(target)
+        || crate::engine::build::curseforge::supports(target);
     let mut inputs = Vec::new();
     let mut occupied = BTreeSet::new();
     let mut keys = BTreeMap::new();

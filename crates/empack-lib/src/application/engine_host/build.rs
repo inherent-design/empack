@@ -363,7 +363,9 @@ fn request(
                     },
                     "mrpack",
                 ),
-                Recipe::CURSEFORGE => ("-curseforge", "zip"),
+                recipe if crate::engine::build::curseforge::supports(recipe) => {
+                    ("-curseforge", "zip")
+                }
                 recipe if crate::engine::build::native::supports(recipe) => {
                     let suffix = match (recipe.delivery(), recipe.environments()) {
                         (Delivery::References, Environments::Both) => "-empack-references",
@@ -396,6 +398,8 @@ fn request(
                         version.as_str(),
                         if target.update_authority() == UpdateAuthority::Empack {
                             "-subscribed"
+                        } else if target.update_authority() == UpdateAuthority::Platform {
+                            "-platform"
                         } else {
                             ""
                         }
@@ -530,6 +534,9 @@ async fn finish_once(
         };
         published = true;
         for artifact in &receipt.artifacts {
+            if artifact.requires_platform_association() {
+                session.display().status().warning("Platform export requires upload to a platform project and installation through its project/version interface for updates. Direct archive import remains a snapshot; no platform association was created");
+            }
             if let Some(hosting) = &artifact.modrinth_hosting {
                 for blocked in &hosting.blocked_downloads {
                     session.display().status().warning(&format!(

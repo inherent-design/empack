@@ -772,3 +772,52 @@ fn hosting_domains_are_exact_and_generic_exports_remain_valid() {
     let mut archive = tempfile::tempfile().unwrap();
     plan.write(&mut archive, &Cancellation::default()).unwrap();
 }
+
+#[test]
+fn platform_recipe_requires_hosting_domains_without_inventing_an_association() {
+    let original = project(false, false);
+    let recipe = Recipe::MODRINTH
+        .with_update_authority(UpdateAuthority::Platform)
+        .unwrap();
+    assert!(
+        MrpackPlan::prepare_recipe(
+            &original,
+            &BTreeMap::new(),
+            vec![],
+            OptionalConversion::RejectMetadataLoss,
+            recipe
+        )
+        .is_err()
+    );
+    let mut lock = original.lock().clone();
+    for dependency in lock.dependencies.values_mut() {
+        let mut files = dependency.files.as_slice().to_vec();
+        for file in &mut files {
+            let AcquisitionSpec::Url(alternatives) = &mut file.acquisition else {
+                panic!()
+            };
+            *alternatives =
+                NonEmpty::new(vec!["https://cdn.modrinth.com/fixture.jar".into()]).unwrap();
+        }
+        dependency.files = NonEmpty::new(files).unwrap();
+    }
+    let mut intent = original.intent().clone();
+    for root in intent.roots.values_mut() {
+        root.source = SourceIntent::Url(
+            NonEmpty::new(vec!["https://cdn.modrinth.com/fixture.jar".into()]).unwrap(),
+        );
+    }
+    let resolved = explicitly_placed(intent, lock);
+    let plan = MrpackPlan::prepare_recipe(
+        &resolved,
+        &BTreeMap::new(),
+        vec![],
+        OptionalConversion::RejectMetadataLoss,
+        recipe,
+    )
+    .unwrap();
+    assert_eq!(plan.inventory().target(), recipe);
+    assert!(plan.hosting_eligibility().download_domains_allowed());
+    let index: serde_json::Value = serde_json::from_slice(&plan.index).unwrap();
+    assert!(index.get("project_id").is_none());
+}

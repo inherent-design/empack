@@ -9,6 +9,7 @@ use crate::engine::{
     snapshot::SnapshotLimits,
     templates::TemplateOptions,
 };
+use empack_core::distribution::UpdateAuthority;
 use empack_core::{
     files::FilePermissions,
     inventory::OptionalPolicy,

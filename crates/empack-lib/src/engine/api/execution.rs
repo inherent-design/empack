@@ -222,16 +222,18 @@ async fn execute(
                 limits: config.archive,
             };
             requests.push(match output.target {
-                Recipe::CURSEFORGE => DistributionRequest::CurseForge {
-                    recipe: Recipe::CURSEFORGE,
-                    artifact,
-                    options: crate::engine::build::curseforge::CurseForgeOptions {
-                        optional: request.optional.clone(),
-                        conversion: request.mrpack_optional,
-                        evidence,
-                        limits: config.archive,
-                    },
-                },
+                recipe if crate::engine::build::curseforge::supports(recipe) => {
+                    DistributionRequest::CurseForge {
+                        recipe,
+                        artifact,
+                        options: crate::engine::build::curseforge::CurseForgeOptions {
+                            optional: request.optional.clone(),
+                            conversion: request.mrpack_optional,
+                            evidence,
+                            limits: config.archive,
+                        },
+                    }
+                }
                 recipe if crate::engine::build::native::supports(recipe) => {
                     DistributionRequest::Native {
                         artifact,

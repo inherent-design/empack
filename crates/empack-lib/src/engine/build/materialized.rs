@@ -99,7 +99,7 @@ pub fn prepare_reference_game_content(
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        target == Recipe::CURSEFORGE,
+        super::curseforge::supports(target),
         "Reference content needs a platform consumer"
     );
     prepare_selected_content(
@@ -245,7 +245,7 @@ fn prepare_selected_content(
                 references && matches!(entry.representation, Representation::Download { .. }),
                 "Full game inventory contains a reference"
             );
-            if target == Recipe::CURSEFORGE {
+            if super::curseforge::supports(target) {
                 // The shared acquisition map also contains files for other recipes. Check
                 // attributes only after side, precedence and optional participation selection.
                 ensure!(
@@ -284,7 +284,7 @@ pub(super) fn reference_for_target(
     acquired: Option<&AcquiredBuildFile>,
     target: Recipe,
 ) -> Result<Option<Representation>> {
-    if target == Recipe::CURSEFORGE {
+    if super::curseforge::supports(target) {
         let selection = match &file.acquisition {
             AcquisitionSpec::Provider { pin, slot, .. } => Some((pin, slot)),
             AcquisitionSpec::Manual { pin: Some(pin), .. } => Some((pin, &file.slot)),

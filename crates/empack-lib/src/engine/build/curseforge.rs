@@ -1,4 +1,4 @@
-//! CurseForge client snapshots: exact references plus authored, selected override bytes.
+//! CurseForge client exports: exact references plus authored, selected override bytes.
 mod verification;
 use super::{
     ArchiveCandidate, BuildAcquisitions, batch::BuiltDistribution,
@@ -29,6 +29,10 @@ use empack_core::{
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) fn supports(recipe: Recipe) -> bool {
+    recipe.consumer() == empack_core::distribution::Consumer::CurseForge
+}
+
 pub struct CurseForgeOptions {
     pub optional: OptionalPolicy,
     pub conversion: OptionalConversion,
@@ -39,10 +43,12 @@ pub struct CurseForgeOptions {
 pub(super) fn prepare_archive(
     workspace: &WorkspaceSnapshot,
     artifact: PortableRelPath,
+    recipe: Recipe,
     external: &BuildAcquisitions,
     options: &CurseForgeOptions,
     cancel: &Cancellation,
 ) -> Result<(ArchiveCandidate, BuiltDistribution)> {
+    ensure!(supports(recipe), "Unsupported CurseForge recipe");
     ensure!(
         artifact.as_str().ends_with(".zip"),
         "CurseForge output requires a .zip filename"
@@ -50,7 +56,7 @@ pub(super) fn prepare_archive(
     let game = prepare_reference_game_content(
         workspace,
         external,
-        Recipe::CURSEFORGE,
+        recipe,
         &options.optional,
         options.evidence,
         cancel,
@@ -252,7 +258,7 @@ pub(super) fn prepare_archive(
     let receipt = BuiltDistribution {
         modrinth_hosting: None,
         native_release: None,
-        target: Recipe::CURSEFORGE,
+        target: recipe,
         artifact: artifact.clone(),
         bytes: verified.len(),
         content: game.inventory().clone(),
@@ -370,56 +376,74 @@ mod tests {
     }
     #[test]
     fn exact_references_and_client_overrides_publish_without_downloads_or_installers() {
-        let root = tempfile::tempdir().unwrap();
-        let host = tempfile::tempdir().unwrap();
-        write(root.path(), &fixture(false, false));
-        let cancel = Cancellation::default();
-        let snapshot = capture(root.path(), host.path());
-        let external = BuildAcquisitions::default();
-        let acquisition = super::super::acquisition::plan_target_build_acquisitions(
-            &snapshot,
-            &external,
-            Recipe::CURSEFORGE,
-            &OptionalPolicy::Preserve,
-            SourceEvidencePolicy::Compatibility,
-            &cancel,
-        )
-        .unwrap();
-        assert!(acquisition.needs().is_empty());
-        let batch = prepare_build_batch(
-            snapshot,
-            NonEmpty::new(vec![request(OptionalConversion::RejectMetadataLoss)]).unwrap(),
-            &external,
-            &cancel,
-        )
-        .unwrap();
-        assert_eq!(batch.artifacts()[0].members.len(), 2);
-        batch
-            .publish(
-                &Publisher::open(&host.path().join("private")).unwrap(),
+        for authority in [
+            empack_core::distribution::UpdateAuthority::Snapshot,
+            empack_core::distribution::UpdateAuthority::Platform,
+        ] {
+            let recipe = Recipe::CURSEFORGE.with_update_authority(authority).unwrap();
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            write(root.path(), &fixture(false, false));
+            let cancel = Cancellation::default();
+            let snapshot = capture(root.path(), host.path());
+            let external = BuildAcquisitions::default();
+            let acquisition = super::super::acquisition::plan_target_build_acquisitions(
+                &snapshot,
+                &external,
+                recipe,
+                &OptionalPolicy::Preserve,
+                SourceEvidencePolicy::Compatibility,
                 &cancel,
             )
             .unwrap();
-        let mut zip =
-            zip::ZipArchive::new(fs::File::open(root.path().join("dist/curseforge.zip")).unwrap())
-                .unwrap();
-        let manifest: serde_json::Value =
-            serde_json::from_reader(zip.by_name("manifest.json").unwrap()).unwrap();
-        assert_eq!(
-            manifest["files"],
-            json!([{"projectID":123,"fileID":456,"required":true}])
-        );
-        assert_eq!(
-            manifest["minecraft"]["modLoaders"],
-            json!([{"id":"fabric-0.16.0","primary":true}])
-        );
-        let mut bytes = String::new();
-        zip.by_name("overrides/config/options.txt")
-            .unwrap()
-            .read_to_string(&mut bytes)
+            assert!(acquisition.needs().is_empty());
+            let mut selected = request(OptionalConversion::RejectMetadataLoss);
+            let DistributionRequest::CurseForge { recipe: target, .. } = &mut selected else {
+                panic!()
+            };
+            *target = recipe;
+            let batch = prepare_build_batch(
+                snapshot,
+                NonEmpty::new(vec![selected]).unwrap(),
+                &external,
+                &cancel,
+            )
             .unwrap();
-        assert_eq!(bytes, "client");
-        assert!(zip.by_name("overrides/server-only.txt").is_err());
+            assert_eq!(batch.artifacts()[0].members.len(), 2);
+            assert_eq!(batch.artifacts()[0].target, recipe);
+            assert_eq!(batch.artifacts()[0].content.target(), recipe);
+            assert_eq!(
+                batch.artifacts()[0].requires_platform_association(),
+                authority == empack_core::distribution::UpdateAuthority::Platform
+            );
+            batch
+                .publish(
+                    &Publisher::open(&host.path().join("private")).unwrap(),
+                    &cancel,
+                )
+                .unwrap();
+            let mut zip = zip::ZipArchive::new(
+                fs::File::open(root.path().join("dist/curseforge.zip")).unwrap(),
+            )
+            .unwrap();
+            let manifest: serde_json::Value =
+                serde_json::from_reader(zip.by_name("manifest.json").unwrap()).unwrap();
+            assert_eq!(
+                manifest["files"],
+                json!([{"projectID":123,"fileID":456,"required":true}])
+            );
+            assert_eq!(
+                manifest["minecraft"]["modLoaders"],
+                json!([{"id":"fabric-0.16.0","primary":true}])
+            );
+            let mut bytes = String::new();
+            zip.by_name("overrides/config/options.txt")
+                .unwrap()
+                .read_to_string(&mut bytes)
+                .unwrap();
+            assert_eq!(bytes, "client");
+            assert!(zip.by_name("overrides/server-only.txt").is_err());
+        }
     }
     #[test]
     fn optional_reference_requires_explicit_metadata_conversion() {
@@ -439,6 +463,7 @@ mod tests {
         let (mut archive, receipt) = prepare_archive(
             &capture(root.path(), host.path()),
             path("curseforge.zip"),
+            Recipe::CURSEFORGE,
             &BuildAcquisitions::default(),
             &CurseForgeOptions {
                 optional: OptionalPolicy::Preserve,
@@ -685,6 +710,7 @@ mod tests {
         let (mut candidate, _) = prepare_archive(
             &workspace,
             path("curseforge.zip"),
+            Recipe::CURSEFORGE,
             &BuildAcquisitions::default(),
             &options,
             &cancel,
