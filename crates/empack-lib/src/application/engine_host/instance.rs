@@ -4,7 +4,7 @@ use crate::{
     application::cli::InstanceCommand,
     engine::{
         api::{InstallInstanceRequest, OperationPreview},
-        instance::{ChoiceSelection, InstanceSide, SelectedRelease},
+        instance::{ChoiceSelection, InstanceLayout, InstanceSide, SelectedRelease},
         release::{DecodedRelease, trust::SelectedSnapshot},
     },
 };
@@ -15,6 +15,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         release,
         sha256,
         side,
+        layout,
         choices,
         files,
     } = command
@@ -79,6 +80,13 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         SelectedSnapshot::select(decoded.bytes(), &sha256, &semver::Version::parse(version)?)?;
     let request = InstallInstanceRequest {
         action: crate::engine::instance::InstanceAction::Apply,
+        layout: layout
+            .map(|layout| match layout.as_str() {
+                "game" => Ok(InstanceLayout::Game),
+                "prism" => Ok(InstanceLayout::Prism),
+                _ => anyhow::bail!("Instance layout must be game or prism"),
+            })
+            .transpose()?,
         release: SelectedRelease::Snapshot(snapshot),
         side: match side.as_str() {
             "server" => InstanceSide::Server,
@@ -111,8 +119,9 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
                 anyhow::bail!("Unexpected instance receipt");
             };
             Ok(format!(
-                "Applied release {} to game/",
-                receipt.record.release
+                "Applied release {} to {}/",
+                receipt.record.release,
+                receipt.record.layout.directory()
             ))
         })
         .await
@@ -244,6 +253,7 @@ async fn maintain(
         .collect::<Result<Vec<_>>>()?;
     let request = InstallInstanceRequest {
         action,
+        layout: None,
         release: SelectedRelease::Snapshot(selected),
         side: record.side,
         choices,
@@ -277,8 +287,9 @@ async fn maintain(
                     anyhow::bail!("Unexpected instance receipt");
                 };
                 Ok(format!(
-                    "Applied release {} to game/",
-                    receipt.record.release
+                    "Applied release {} to {}/",
+                    receipt.record.release,
+                    receipt.record.layout.directory()
                 ))
             },
         )

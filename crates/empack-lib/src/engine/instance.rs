@@ -34,6 +34,28 @@ impl SelectedRelease {
         }
     }
 }
+/// Fixed consumer directories are part of installed ownership, not arbitrary host paths.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstanceLayout {
+    #[default]
+    Game,
+    Prism,
+}
+impl InstanceLayout {
+    pub fn directory(self) -> &'static str {
+        match self {
+            Self::Game => "game",
+            Self::Prism => ".minecraft",
+        }
+    }
+    fn target(self, path: PortableRelPath) -> ManagedPath {
+        match self {
+            Self::Game => ManagedPath::InstanceFile(path),
+            Self::Prism => ManagedPath::PrismFile(path),
+        }
+    }
+}
 /// Explicit selection, repair and rollback have different durable preconditions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstanceAction {
@@ -63,6 +85,7 @@ pub struct InstanceRecord {
     pub pack: String,
     pub release: String,
     pub side: InstanceSide,
+    pub layout: InstanceLayout,
     pub choices: Vec<ChoiceSelection>,
     /// Completed descriptor identities, separate from short-lived publication preimages.
     pub history: Vec<String>,
@@ -75,6 +98,10 @@ impl InstanceRecord {
         );
         let record: Self = serde_json::from_slice(bytes).context("Invalid instance record")?;
         ensure!(record.schema == 1, "Unsupported instance schema");
+        ensure!(
+            record.layout != InstanceLayout::Prism || record.side == InstanceSide::Client,
+            "Prism instance record requires client environment"
+        );
         super::release::decode_hex::<32>(&record.release)?;
         let mut history = BTreeSet::new();
         for id in &record.history {
@@ -134,6 +161,7 @@ fn policy(policy: FilePolicy) -> empack_core::instance::FilePolicy {
 fn project_files(
     release: &DecodedRelease,
     side: InstanceSide,
+    layout: InstanceLayout,
     choices: &[ChoiceSelection],
 ) -> Result<BTreeMap<ManagedPath, ReleaseFile>> {
     let selected: BTreeMap<_, _> = choices
@@ -168,8 +196,17 @@ fn project_files(
             }
         };
         if applies {
+            ensure!(
+                layout != InstanceLayout::Prism
+                    || !file
+                        .destination
+                        .split('/')
+                        .next()
+                        .is_some_and(|name| name.eq_ignore_ascii_case(".empack-layout")),
+                "Release destination collides with Prism layout control"
+            );
             let target = path(&file.destination)?;
-            let target = ManagedPath::InstanceFile(target);
+            let target = layout.target(target);
             if let Some(prior) = files.get(&target) {
                 let prior: &ReleaseFile = prior;
                 ensure!(
@@ -264,6 +301,7 @@ pub fn inspect(
 pub(super) struct InstanceSelection {
     pub release: SelectedRelease,
     pub side: InstanceSide,
+    pub layout: Option<InstanceLayout>,
     pub choices: Vec<ChoiceSelection>,
     pub action: InstanceAction,
 }
@@ -277,6 +315,7 @@ pub(super) fn plan(
     let InstanceSelection {
         release: selected,
         side,
+        layout,
         choices: requested_choices,
         action,
     } = selection;
@@ -287,6 +326,47 @@ pub(super) fn plan(
     let previous = read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)?
         .map(|bytes| InstanceRecord::decode(&bytes))
         .transpose()?;
+    let layout = layout
+        .or_else(|| previous.as_ref().map(|record| record.layout))
+        .unwrap_or_default();
+    ensure!(
+        layout != InstanceLayout::Prism || side == InstanceSide::Client,
+        "Prism layout requires the client environment"
+    );
+    if layout == InstanceLayout::Prism {
+        // Prism prefers minecraft/ whenever it exists, even beside .minecraft/.
+        // Refuse that competing layout rather than updating a directory it will not use.
+        match root.directory.symlink_metadata("minecraft") {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+            Ok(_) => anyhow::bail!(
+                "Prism layout requires minecraft/ to be absent; selected content uses .minecraft/"
+            ),
+        }
+        let absent = root.capture(
+            &[path("minecraft")?],
+            SnapshotLimits {
+                entries: 1,
+                depth: 1,
+                file_bytes: 0,
+                total_bytes: 0,
+            },
+            cancel,
+        )?;
+        ensure!(
+            matches!(
+                absent.entries().get(&path("minecraft")?),
+                Some(super::snapshot::Observation::Absent)
+            ),
+            "Prism game directory changed during preparation"
+        );
+        snapshot = snapshot.merge(absent)?;
+        snapshot = snapshot.merge(root.capture(
+            &[ProjectLayout::path(&ManagedPath::PrismLayoutMarker)?],
+            document_limits(limits),
+            cancel,
+        )?)?;
+    }
     let release = selected.release();
     match action {
         InstanceAction::Apply => {}
@@ -321,8 +401,10 @@ pub(super) fn plan(
             "Instance record belongs to another native root"
         );
         ensure!(
-            previous.pack == release.document().pack && previous.side == side,
-            "Instance pack or side cannot change during an update"
+            previous.pack == release.document().pack
+                && previous.side == side
+                && previous.layout == layout,
+            "Instance pack, side or layout cannot change during an update"
         );
         let target = descriptor(&previous.release)?;
         snapshot = snapshot.merge(root.capture(
@@ -337,7 +419,7 @@ pub(super) fn plan(
             old.id() == previous.release && old.document().pack == previous.pack,
             "Installed release descriptor changed"
         );
-        old_files = project_files(&old, side, &previous.choices)?;
+        old_files = project_files(&old, side, layout, &previous.choices)?;
     }
     let mut choices: BTreeMap<_, _> = requested_choices
         .iter()
@@ -372,7 +454,7 @@ pub(super) fn plan(
         .into_iter()
         .map(|(key, value)| ChoiceSelection { key, value })
         .collect();
-    let incoming = project_files(release, side, &choices)?;
+    let incoming = project_files(release, side, layout, &choices)?;
     let targets: BTreeSet<_> = old_files.keys().chain(incoming.keys()).cloned().collect();
     let release_target = descriptor(release.id())?;
     let scopes: BTreeSet<_> = targets
@@ -398,7 +480,8 @@ pub(super) fn plan(
         targets
             .iter()
             .cloned()
-            .chain([release_target.clone(), ManagedPath::InstanceRecord]),
+            .chain([release_target.clone(), ManagedPath::InstanceRecord])
+            .chain((layout == InstanceLayout::Prism).then_some(ManagedPath::PrismLayoutMarker)),
     )?;
     let mut desired = BTreeMap::new();
     let mut removals = BTreeSet::new();
@@ -474,6 +557,7 @@ pub(super) fn plan(
     }
     let record = InstanceRecord {
         schema: 1,
+        layout,
         root: root_identity,
         pack: release.document().pack.clone(),
         release: release.id().into(),
@@ -484,6 +568,18 @@ pub(super) fn plan(
     let record_bytes = serde_json::to_vec(&record)?;
     InstanceRecord::decode(&record_bytes)?;
     let mut documents = BTreeMap::from([(ManagedPath::InstanceRecord, record_bytes)]);
+    if layout == InstanceLayout::Prism {
+        let marker = b"empack-prism-layout-v1\n";
+        if let Some(bytes) =
+            read_optional(&root, &snapshot, &ManagedPath::PrismLayoutMarker, cancel)?
+        {
+            ensure!(
+                bytes == marker && previous.is_some(),
+                "Prism layout marker is not owned by this completed instance"
+            );
+        }
+        documents.insert(ManagedPath::PrismLayoutMarker, marker.to_vec());
+    }
     // Immutable descriptors cannot overwrite an unrelated or corrupt file, even if explicitly selected.
     if let Some(ObservedPath::File(existing)) = observed.get(&release_target) {
         ensure!(

@@ -3,6 +3,19 @@
 An instance installs exact published releases while preserving player and operator
 state. Author dependency resolution does not run implicitly during an update.
 
+## Consumer layout
+
+The completed record binds a fixed content layout: `game/` for native instances or
+`.minecraft/` for Prism. `instance install --layout prism` selects the latter;
+subsequent installation, repair and rollback retain it. Changing layout requires a
+separate installation rather than moving ownership implicitly.
+
+Prism prefers `minecraft/` if that directory exists. The Prism layout therefore
+requires its absence and binds that absence through publication. A small owned
+`.minecraft/.empack-layout` marker keeps the selected directory present even for an
+empty release. A release cannot overwrite this marker. Launcher components and
+icons remain outside the content installer's ownership. [Prism directory selection](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/MinecraftInstance.cpp)
+
 ## State transitions
 
 ```mermaid

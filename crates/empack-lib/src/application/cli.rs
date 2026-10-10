@@ -354,6 +354,9 @@ pub enum InstanceCommand {
         /// Environment to install; an existing instance cannot switch sides
         #[arg(long, value_parser = ["client", "server"], default_value = "client")]
         side: String,
+        /// Fixed content directory; retained on updates (new instances default to game)
+        #[arg(long, value_parser = ["game", "prism"])]
+        layout: Option<String>,
         /// Stable release choice and selected alternative
         #[arg(long = "choice", value_name = "KEY=VALUE")]
         choices: Vec<String>,

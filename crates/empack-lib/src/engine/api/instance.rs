@@ -1,7 +1,7 @@
 //! Instance changes use the same plan grants, task ownership and publisher as author operations.
 use super::*;
 pub use crate::engine::instance::{
-    ChoiceSelection, InstanceAction, InstanceRecord, InstanceSide, SelectedRelease,
+    ChoiceSelection, InstanceAction, InstanceLayout, InstanceRecord, InstanceSide, SelectedRelease,
 };
 use crate::engine::{
     content::AcquiredContent, instance, publication::Publisher, runtime::WorkScope,
@@ -13,6 +13,8 @@ pub struct InstallInstanceRequest {
     pub action: InstanceAction,
     pub release: SelectedRelease,
     pub side: InstanceSide,
+    /// Keep the completed layout when omitted, otherwise default to game/.
+    pub layout: Option<InstanceLayout>,
     pub choices: Vec<ChoiceSelection>,
     /// Already acquired exact bytes, keyed by release logical file identity.
     pub supplied: BTreeMap<String, AcquiredContent>,
@@ -63,6 +65,7 @@ pub(super) async fn prepare(
         action,
         release,
         side,
+        layout,
         choices,
         supplied,
         local_files,
@@ -77,6 +80,7 @@ pub(super) async fn prepare(
                 instance::InstanceSelection {
                     release,
                     side,
+                    layout,
                     choices,
                     action,
                 },

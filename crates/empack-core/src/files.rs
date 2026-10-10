@@ -28,6 +28,10 @@ pub enum ManagedPath {
     Artifact(PortableRelPath),
     /// Native installed game content, separate from author sources.
     InstanceFile(PortableRelPath),
+    /// Native instance content inside Prism's fixed game directory.
+    PrismFile(PortableRelPath),
+    /// Fixed layout marker keeps an empty Prism game directory present.
+    PrismLayoutMarker,
     /// Completed native installation ownership and choices.
     InstanceRecord,
     /// Retained immutable native release descriptor.

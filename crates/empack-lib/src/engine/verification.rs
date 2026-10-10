@@ -278,6 +278,8 @@ impl VerifiedFileChange {
             targets.iter().all(|target| matches!(
                 target,
                 ManagedPath::InstanceFile(_)
+                    | ManagedPath::PrismFile(_)
+                    | ManagedPath::PrismLayoutMarker
                     | ManagedPath::InstanceRecord
                     | ManagedPath::InstanceRelease(_)
             )),

@@ -75,6 +75,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
         action: crate::engine::instance::InstanceAction::Apply,
         release: SelectedRelease::Snapshot(selected),
         side: InstanceSide::Client,
+        layout: None,
         choices: vec![],
         supplied,
         local_files: BTreeMap::new(),
@@ -704,4 +705,143 @@ async fn provider_world_archive_downloads_once_and_verifies_each_member() {
         engine.shutdown().await;
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
+}
+
+#[tokio::test]
+async fn prism_layout_persists_through_update_repair_and_rollback() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let a = || request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+    let mut first = a();
+    first.layout = Some(InstanceLayout::Prism);
+    let initial = apply(&engine, root.path(), first).await;
+    assert_eq!(initial.layout, InstanceLayout::Prism);
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    fs::create_dir_all(root.path().join(".minecraft/saves/world")).unwrap();
+    fs::write(
+        root.path().join(".minecraft/saves/world/level.dat"),
+        b"played",
+    )
+    .unwrap();
+    let b = || request(&[("new", "mods/b.jar", b"B", FilePolicy::Managed)]);
+    let current = apply(&engine, root.path(), b()).await;
+    assert_eq!(current.layout, InstanceLayout::Prism);
+    assert!(!root.path().join(".minecraft/mods/a.jar").exists());
+    fs::remove_file(root.path().join(".minecraft/mods/b.jar")).unwrap();
+    let mut repair = b();
+    repair.action = InstanceAction::Repair;
+    apply(&engine, root.path(), repair).await;
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/b.jar")).unwrap(),
+        b"B"
+    );
+    let mut rollback = a();
+    rollback.action = InstanceAction::Rollback;
+    let restored = apply(&engine, root.path(), rollback).await;
+    assert_eq!(restored.release, initial.release);
+    assert_eq!(restored.layout, InstanceLayout::Prism);
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    assert!(!root.path().join(".minecraft/mods/b.jar").exists());
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/saves/world/level.dat")).unwrap(),
+        b"played"
+    );
+    assert!(!root.path().join("game").exists());
+    let mut move_layout = a();
+    move_layout.layout = Some(InstanceLayout::Game);
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), move_layout)
+            .await
+            .is_err()
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn prism_layout_binds_launcher_directory_and_handles_empty_releases() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let prism = || {
+        let mut input = request(&[]);
+        input.layout = Some(InstanceLayout::Prism);
+        input
+    };
+    let mut server = prism();
+    server.side = InstanceSide::Server;
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), server)
+            .await
+            .is_err()
+    );
+    fs::create_dir(root.path().join("minecraft")).unwrap();
+    fs::write(root.path().join("minecraft/sentinel"), b"unowned").unwrap();
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), prism())
+            .await
+            .is_err()
+    );
+    assert!(!root.path().join(".empack").exists());
+    fs::remove_file(root.path().join("minecraft/sentinel")).unwrap();
+    fs::remove_dir(root.path().join("minecraft")).unwrap();
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_path_buf(), prism())
+        .await
+        .unwrap()
+    else {
+        panic!("ready")
+    };
+    assert!(!root.path().join(".minecraft").exists());
+    fs::create_dir(root.path().join("minecraft")).unwrap();
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().replacement(),
+    };
+    let approved = prepared.authorize(grant).unwrap();
+    let mut handle = engine.start(approved).unwrap();
+    assert!(matches!(
+        &*handle.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    assert!(!root.path().join(".empack").exists());
+    assert!(!root.path().join(".minecraft").exists());
+    fs::remove_dir(root.path().join("minecraft")).unwrap();
+    apply(&engine, root.path(), prism()).await;
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/.empack-layout")).unwrap(),
+        b"empack-prism-layout-v1\n"
+    );
+    let mut collision = request(&[(
+        "collision",
+        ".EMPACK-layout/other",
+        b"bad",
+        FilePolicy::Managed,
+    )]);
+    collision.layout = Some(InstanceLayout::Prism);
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), collision)
+            .await
+            .is_err()
+    );
+    fs::write(root.path().join(".minecraft/.empack-layout"), b"tampered").unwrap();
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), prism())
+            .await
+            .is_err()
+    );
+    engine.shutdown().await;
 }

@@ -320,6 +320,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
                 release: "release.json".into(),
                 sha256: payload.id().into(),
                 side: "client".into(),
+                layout: Some("prism".into()),
                 choices: vec![],
                 files: vec![],
             },
@@ -342,7 +343,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         .await
         .unwrap();
     assert_eq!(
-        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
         b"A"
     );
     let b = make(b"B");
@@ -350,7 +351,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         .await
         .unwrap();
     assert_eq!(
-        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
         b"B"
     );
     let before = snapshot(root.path());
@@ -363,7 +364,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     .await
     .unwrap();
     assert_eq!(before, snapshot(root.path()));
-    fs::remove_file(root.path().join("project/game/mods/test.jar")).unwrap();
+    fs::remove_file(root.path().join("project/.minecraft/mods/test.jar")).unwrap();
     let repair = Commands::Instance {
         command: InstanceCommand::Repair {
             assets: Some(".".into()),
@@ -379,7 +380,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         .await
         .unwrap();
     assert_eq!(
-        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
         b"B"
     );
     fs::write(root.path().join("assets/mod"), b"A").unwrap();
@@ -397,7 +398,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     .await
     .unwrap();
     assert_eq!(
-        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
         b"A"
     );
     let c = make(b"C");
@@ -511,6 +512,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
                     release: export.join("release.json"),
                     sha256: decoded.id().into(),
                     side: side.into(),
+                    layout: None,
                     choices: vec![],
                     files: vec![],
                 },
