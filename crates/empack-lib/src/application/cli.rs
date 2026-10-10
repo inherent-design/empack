@@ -331,8 +331,8 @@ pub struct CommandInputRequired(pub &'static str);
 pub enum InstanceCommand {
     /// Apply the exact signed release selected by the saved authenticated channel observation
     Update {
-        /// Signed release envelope; its payload must match the observed channel
-        release: std::path::PathBuf,
+        /// Local signed release envelope; omit to fetch the saved channel's exact release
+        release: Option<std::path::PathBuf>,
         #[arg(long, value_parser = ["client", "server"], default_value = "client")]
         side: String,
         #[arg(long, value_parser = ["game", "prism"])]
@@ -368,8 +368,8 @@ pub enum InstanceCommand {
     },
     /// Verify a signed channel envelope and save its anti-replay floor without installing content
     ObserveChannel {
-        /// Signed channel envelope obtained from the enrolled publisher
-        envelope: std::path::PathBuf,
+        /// Local signed envelope; omit to fetch the enrolled HTTPS channel
+        envelope: Option<std::path::PathBuf>,
     },
 
     /// Show the completed release, saved choices and retained rollback releases

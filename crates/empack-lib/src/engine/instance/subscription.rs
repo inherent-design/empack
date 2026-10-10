@@ -100,6 +100,7 @@ pub struct SubscribedRelease {
     root: String,
     subscription: String,
     expires: i64,
+    assets: reqwest::Url,
 }
 impl SubscribedRelease {
     pub fn release(&self) -> &release::DecodedRelease {
@@ -111,6 +112,9 @@ impl SubscribedRelease {
             "Publisher enrollment or observed channel changed; select the release again"
         );
         ensure_fresh(self.expires)
+    }
+    pub(super) fn assets(&self) -> reqwest::Url {
+        self.assets.clone()
     }
     pub(super) fn expires(&self) -> i64 {
         self.expires
@@ -136,6 +140,32 @@ pub fn select_release(
     recovery: crate::engine::publication::RecoveryReader,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<SubscribedRelease> {
+    let (record, subscription) = read_current(selected_root, recovery, cancel)?;
+    let channel = record.authenticated_channel(now, version)?;
+    let selected = channel.release(&record.trust()?, envelope, version)?;
+    Ok(SubscribedRelease {
+        release: selected,
+        root: record.root,
+        subscription,
+        expires: channel.document().expires,
+        assets: asset_base(&channel.document().release.url)?,
+    })
+}
+
+/// Inspect durable enrollment without granting trust or mutation authority.
+pub fn inspect(
+    selected_root: &std::path::Path,
+    recovery: crate::engine::publication::RecoveryReader,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<SubscriptionRecord> {
+    read_current(selected_root, recovery, cancel).map(|(record, _)| record)
+}
+
+fn read_current(
+    selected_root: &std::path::Path,
+    recovery: crate::engine::publication::RecoveryReader,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<(SubscriptionRecord, String)> {
     use crate::engine::{
         layout::ProjectLayout,
         publication::root_key,
@@ -166,13 +196,116 @@ pub fn select_release(
         record.root == binding,
         "Subscription belongs to another instance root"
     );
-    let channel = record.authenticated_channel(now, version)?;
-    let selected = channel.release(&record.trust()?, envelope, version)?;
     root.revalidate(&snapshot, cancel)?;
-    Ok(SubscribedRelease {
-        release: selected,
-        root: binding,
-        subscription: release::hash(&bytes),
-        expires: channel.document().expires,
-    })
+    Ok((record, release::hash(&bytes)))
+}
+
+/// Fetch only the release selected by an already durable authenticated observation.
+/// The channel floor must have been published before this acquisition is called.
+pub async fn fetch_release(
+    scope: &mut crate::engine::runtime::WorkScope,
+    root: std::path::PathBuf,
+    state: std::path::PathBuf,
+    transport: &crate::engine::acquisition::HttpAcquisition,
+    version: semver::Version,
+) -> Result<crate::engine::runtime::RetainedOutput<SubscribedRelease>> {
+    use crate::engine::{publication::RecoveryReader, resources::ResourceRequest};
+    let selected_root = root.clone();
+    let selected_state = state.clone();
+    let read = scope.spawn_blocking(
+        ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            open_files: 8,
+            ..Default::default()
+        },
+        ResourceRequest {
+            memory_bytes: 128 << 10,
+            ..Default::default()
+        },
+        move |cancel| inspect(&selected_root, RecoveryReader::new(selected_state), &cancel),
+    )?;
+    let record = scope.accept(read.wait().await?)?.transpose()?;
+    let channel = record.authenticated_channel(current_time()?, &version)?;
+    let envelope = transport
+        .publisher_metadata(
+            scope,
+            &channel.document().release.url,
+            channel.document().release.maximum_bytes,
+            std::time::Duration::from_secs(60),
+        )
+        .await?;
+    let work = scope.spawn_blocking(
+        ResourceRequest {
+            jobs: 1,
+            memory_bytes: 128 << 20,
+            open_files: 16,
+            ..Default::default()
+        },
+        ResourceRequest {
+            memory_bytes: 64 << 20,
+            ..Default::default()
+        },
+        move |cancel| {
+            select_release(
+                &root,
+                &envelope,
+                current_time()?,
+                &version,
+                RecoveryReader::new(state),
+                &cancel,
+            )
+        },
+    )?;
+    scope.accept(work.wait().await?)?.transpose()
+}
+fn current_time() -> Result<i64> {
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs()
+        .try_into()?)
+}
+
+fn asset_base(release_url: &str) -> Result<reqwest::Url> {
+    let mut base = release::https(release_url)?;
+    base.set_query(None);
+    base.path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("Release URL cannot contain assets"))?
+        .pop_if_empty()
+        .pop()
+        .push("");
+    Ok(base)
+}
+
+pub(super) fn asset_url(base: &reqwest::Url, path: &str) -> Result<String> {
+    let path = empack_core::path::PortableRelPath::parse(
+        path,
+        empack_core::path::PathSyntax::ArchiveMember,
+    )?;
+    let mut url = base.clone();
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| anyhow::anyhow!("Invalid asset base"))?;
+        segments.pop_if_empty();
+        for component in path.as_str().split('/') {
+            segments.push(component);
+        }
+    }
+    Ok(url.to_string())
+}
+
+#[cfg(test)]
+mod locator_tests {
+    use super::*;
+    #[test]
+    fn asset_paths_are_literal_relative_components_without_release_credentials() {
+        let base = asset_base("https://publisher.test/releases/v1.json?token=private").unwrap();
+        assert_eq!(
+            asset_url(&base, "assets/a%2fb").unwrap(),
+            "https://publisher.test/releases/assets/a%252fb"
+        );
+        assert!(asset_url(&base, "../outside").is_err());
+        assert!(asset_url(&base, "/absolute").is_err());
+    }
 }

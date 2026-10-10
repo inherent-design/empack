@@ -20,6 +20,7 @@ use tokio::{sync::mpsc, time::Instant};
 mod cache;
 pub mod discovery;
 mod local;
+mod metadata;
 pub use local::{LocalFileRequest, acquire_local_file};
 
 const CHUNK_BYTES: usize = 64 * 1024;

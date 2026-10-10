@@ -101,8 +101,8 @@ pub(super) async fn prepare(
     let downloads: Vec<_> = planned
         .needed()
         .filter(|file| !content.contains_key(&file.key))
-        .cloned()
-        .collect();
+        .map(|file| planned.download(file))
+        .collect::<Result<_>>()?;
     for file in &downloads {
         ensure!(
             acquisition::available(file, provider_access)?,

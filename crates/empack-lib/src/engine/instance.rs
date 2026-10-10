@@ -3,7 +3,7 @@ use super::{
     content::AcquiredContent,
     layout::{CollisionIndex, ProjectLayout},
     publication::{PublicationReceipt, Publisher, RecoveryReader},
-    release::{DecodedRelease, FilePolicy, Participation, ReleaseFile},
+    release::{DecodedRelease, FilePolicy, Participation, ReleaseFile, ReleaseSource},
     snapshot::{NativeSnapshot, ProjectReadRoot, SnapshotLimits},
     staging::MutableStage,
     verification::{self, VerifiedFileChange},
@@ -136,6 +136,7 @@ pub(super) struct InstancePlan {
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     needed: BTreeMap<ManagedPath, ReleaseFile>,
     subscription_expires: Option<i64>,
+    asset_base: Option<reqwest::Url>,
 }
 pub(super) struct PreparedInstance {
     subscription_expires: Option<i64>,
@@ -331,6 +332,10 @@ pub(super) fn plan(
         choices: requested_choices,
         action,
     } = selection;
+    let asset_base = match &selected {
+        SelectedRelease::Subscribed(proof) => Some(proof.assets()),
+        _ => None,
+    };
     let subscription_expires = match &selected {
         SelectedRelease::Subscribed(proof) => Some(proof.expires()),
         _ => None,
@@ -704,6 +709,7 @@ pub(super) fn plan(
     documents.retain(|target, _| files.expected().contains_key(target));
     root.revalidate(&snapshot, cancel)?;
     Ok(InstancePlan {
+        asset_base,
         subscription_expires,
         root,
         snapshot,
@@ -714,6 +720,17 @@ pub(super) fn plan(
     })
 }
 impl InstancePlan {
+    /// Resolve signed relative asset identity to a transient transport locator.
+    /// The persisted release and original source assertions remain unchanged.
+    pub(super) fn download(&self, file: &ReleaseFile) -> Result<ReleaseFile> {
+        let mut file = file.clone();
+        if let (Some(base), ReleaseSource::Asset { path }) = (&self.asset_base, &file.source) {
+            file.source = ReleaseSource::Url {
+                alternatives: vec![subscription::asset_url(base, path)?],
+            };
+        }
+        Ok(file)
+    }
     pub(super) fn bytes(&self) -> Result<u64> {
         self.files.expected().values().try_fold(0u64, |sum, file| {
             sum.checked_add(file.bytes)

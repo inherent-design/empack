@@ -699,7 +699,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
     let update = || Commands::Instance {
         command: InstanceCommand::Update {
-            release: "signed-release.json".into(),
+            release: Some("signed-release.json".into()),
             side: "client".into(),
             layout: None,
             choices: vec![],
@@ -736,7 +736,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     execute_command_with_session(
         Commands::Instance {
             command: InstanceCommand::ObserveChannel {
-                envelope: "channel.json".into(),
+                envelope: Some("channel.json".into()),
             },
         },
         &session(root.path(), true, false),

@@ -159,7 +159,8 @@ retaining its sequence floor. Reenrollment and revocation therefore cannot make
 old channel metadata fresh again. Rotation through explicit local reenrollment
 does not require a remote key-transition protocol.
 
-`instance observe-channel ENVELOPE` verifies a bounded local signed envelope
+`instance observe-channel [ENVELOPE]` fetches the enrolled channel when no local
+envelope is selected. Both paths verify bounded signed bytes
 against the current enrollment and persists its sequence and exact payload identity.
 It does not acquire or install release content. Channel acquisition must complete
 this publication before admitting content instructions. A same-sequence identical
@@ -168,7 +169,7 @@ fails. A late trust edit invalidates the prepared operation. These control-docum
 changes use the same exact grants, native observations and recoverable publication
 as other engine operations; they cannot write game files or installation history.
 
-`instance update ENVELOPE` selects the exact release named by the retained,
+`instance update [ENVELOPE]` selects the exact release named by the retained,
 authenticated channel. Selection verifies the envelope signature, payload identity,
 size, pack and minimum engine version. The selected proof binds the native instance
 root and exact subscription bytes; it cannot survive key rotation or a newer channel
@@ -176,3 +177,17 @@ observation. Preparation captures that subscription as part of the publication r
 set. Expiry is checked again before publication, after acquisition and verification.
 A valid signature from another trust context cannot bypass the enrolled keys.
 Explicit snapshots remain separately selected by their expected payload digest.
+
+Remote metadata requests use no provider credentials, cookies or automatic response
+decompression. Every redirect remains within the initial HTTPS origin; response
+status, declared size, running bytes and total elapsed time are checked. Received
+metadata retains its resource reservation through signature verification. Fetching a
+release uses the already published channel observation and its exact envelope size
+bound. It cannot advance a sequence floor or select a newer release by itself.
+
+Immutable remote asset paths resolve against the authenticated release envelope's
+directory. Components are encoded as literal path segments; query credentials from
+the envelope URL are not inherited. These locators are transient acquisition inputs.
+The saved release retains its signed relative asset identity and original assertions.
+Content transfer still requires the installation's explicit network grant and verifies
+exact bytes before publication.

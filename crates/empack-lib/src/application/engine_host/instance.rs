@@ -29,7 +29,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             layout,
             choices,
             files,
-        } => (release, Some(sha256), side, layout, choices, files),
+        } => (Some(release), Some(sha256), side, layout, choices, files),
         InstanceCommand::Update {
             release,
             side,
@@ -40,11 +40,11 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         _ => anyhow::bail!("Expected an instance installation request"),
     };
     let (invocation, root) = project_path(session)?;
-    let selected = absolute(&invocation, &release);
+    let selected = release.map(|path| absolute(&invocation, &path));
     let assets = selected
-        .parent()
-        .context("Release source has no directory")?
-        .to_owned();
+        .as_ref()
+        .and_then(|path| path.parent())
+        .map(Path::to_owned);
     let mut local_files = BTreeMap::new();
     for input in files {
         let (key, path) = input
@@ -90,6 +90,16 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         let selected_root = root.clone();
         let state = state_root(session.config().app_config(), &invocation)?;
         let proof = initialize::discover(session, move |mut scope| async move {
+            let Some(selected) = selected else {
+                return crate::engine::instance::subscription::fetch_release(
+                    &mut scope,
+                    selected_root,
+                    state,
+                    &crate::engine::acquisition::HttpAcquisition::new()?,
+                    version,
+                )
+                .await;
+            };
             let work = scope.spawn_blocking(
                 ResourceRequest {
                     jobs: 1,
@@ -123,6 +133,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         .await?;
         ReleaseInput::Subscribed(proof.map(std::sync::Arc::new))
     } else {
+        let selected = selected.context("Snapshot requires a local release descriptor")?;
         let decoded = initialize::discover(session, move |mut scope| async move {
             let mut resources = operation_resources().capture;
             resources.scratch_bytes = 0;
@@ -167,7 +178,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         choices,
         supplied: BTreeMap::new(),
         local_files,
-        assets: Some(assets),
+        assets,
     };
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
@@ -415,8 +426,23 @@ async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result
             keys: keys(values)?,
         },
         InstanceCommand::ObserveChannel { envelope } => {
-            let path = absolute(&invocation, &envelope);
+            let path = envelope.map(|path| absolute(&invocation, &path));
+            let selected_root = root.clone();
+            let state = state_root(session.config().app_config(), &invocation)?;
             let bytes = initialize::discover(session, move |mut scope| async move {
+                let Some(path) = path else {
+                    let record = read_subscription(&mut scope, selected_root, state).await?;
+                    // Revoked enrollment must fail before issuing a request.
+                    record.trust()?;
+                    return crate::engine::acquisition::HttpAcquisition::new()?
+                        .publisher_metadata(
+                            &mut scope,
+                            &record.url,
+                            48 << 10,
+                            Duration::from_secs(30),
+                        )
+                        .await;
+                };
                 let work = scope.spawn_blocking(
                     ResourceRequest {
                         jobs: 1,
@@ -491,4 +517,31 @@ async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result
     .await;
     engine.shutdown().await;
     result
+}
+
+async fn read_subscription(
+    scope: &mut crate::engine::runtime::WorkScope,
+    root: PathBuf,
+    state: PathBuf,
+) -> Result<crate::engine::runtime::RetainedOutput<crate::engine::api::SubscriptionRecord>> {
+    let work = scope.spawn_blocking(
+        ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            open_files: 8,
+            ..Default::default()
+        },
+        ResourceRequest {
+            memory_bytes: 128 << 10,
+            ..Default::default()
+        },
+        move |cancel| {
+            crate::engine::instance::subscription::inspect(
+                &root,
+                crate::engine::publication::RecoveryReader::new(state),
+                &cancel,
+            )
+        },
+    )?;
+    scope.accept(work.wait().await?)?.transpose()
 }
