@@ -270,3 +270,89 @@ async fn inspection_commands_need_no_project_or_backend_bootstrap() {
         .unwrap();
     assert_eq!(snapshot(root.path()), before);
 }
+
+#[tokio::test]
+async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tampering() {
+    use crate::application::cli::InstanceCommand;
+    use crate::engine::release::*;
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    fs::create_dir(root.path().join("assets")).unwrap();
+    let make = |bytes: &[u8]| {
+        fs::write(root.path().join("assets/mod"), bytes).unwrap();
+        let payload = DecodedRelease::encode(ReleaseDocument {
+            schema: 1,
+            pack: "dispatch".into(),
+            version: "1".into(),
+            minimum_engine: ">=0.6.0-beta".into(),
+            runtime: ReleaseRuntime {
+                minecraft: "1.21.1".into(),
+                loader: ReleaseLoader::Vanilla,
+                java_major: 21,
+            },
+            choices: vec![],
+            files: vec![ReleaseFile {
+                key: "mod".into(),
+                destination: "mods/test.jar".into(),
+                policy: FilePolicy::Managed,
+                client: Participation::Required,
+                server: Participation::Unsupported,
+                sha256: Sha256::digest(bytes)
+                    .iter()
+                    .map(|v| format!("{v:02x}"))
+                    .collect(),
+                bytes: bytes.len() as u64,
+                readonly: false,
+                executable: false,
+                assertions: vec![],
+                source: ReleaseSource::Asset {
+                    path: "assets/mod".into(),
+                },
+            }],
+        })
+        .unwrap();
+        fs::write(root.path().join("release.json"), payload.bytes()).unwrap();
+        Commands::Instance {
+            command: InstanceCommand::Apply {
+                release: "release.json".into(),
+                sha256: payload.id().into(),
+                side: "client".into(),
+                choices: vec![],
+                files: vec![],
+            },
+        }
+    };
+    let a = make(b"A");
+    let before = snapshot(root.path());
+    execute_command_with_session(a.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(a, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        b"A"
+    );
+    let b = make(b"B");
+    execute_command_with_session(b.clone(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        b"B"
+    );
+    let c = make(b"C");
+    fs::write(root.path().join("assets/mod"), b"wrong").unwrap();
+    let before = snapshot(&root.path().join("project"));
+    assert!(
+        execute_command_with_session(c, &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(before, snapshot(&root.path().join("project")));
+    assert!(!root.path().join("project/empack.yml").exists());
+    assert!(!root.path().join("project/pack").exists());
+}

@@ -314,9 +314,37 @@ pub struct BuildArgs {
 #[error("{0}")]
 pub struct CommandInputRequired(pub &'static str);
 
+/// Native instance commands are separate from author dependency updates.
+#[derive(Debug, Clone, Subcommand)]
+pub enum InstanceCommand {
+    /// Apply an exact local release, preserving seeds and rejecting edited managed files
+    Apply {
+        /// Immutable JSON release payload, not an author manifest
+        release: std::path::PathBuf,
+        /// Expected SHA-256 of the exact release payload bytes
+        #[arg(long)]
+        sha256: String,
+        /// Environment to install; an existing instance cannot switch sides
+        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
+        side: String,
+        /// Stable release choice and selected alternative
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        /// Associate exact content with a release file key, including manual downloads
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Install exact native release content into a separate game instance
+    Instance {
+        #[command(subcommand)]
+        command: InstanceCommand,
+    },
+
     /// Check tool dependencies and show setup guidance
     Requirements,
 
@@ -520,6 +548,7 @@ impl Commands {
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
+            Commands::Instance { .. } => false,
             Commands::Recover { .. } => false,
             Commands::Requirements => false,
             Commands::Version => false,
@@ -535,6 +564,7 @@ impl Commands {
     /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
+            Commands::Instance { .. } => 1,
             Commands::Recover { .. } => 0,
             Commands::Requirements => 0,
             Commands::Version => 0,

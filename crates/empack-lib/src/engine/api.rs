@@ -68,6 +68,8 @@ pub use recovery::{
     RecoverPreview, RecoverRequest, RecoveryAction, RecoveryKind, RecoveryReceipt, RecoveryStatus,
 };
 mod execution;
+mod instance;
+pub use instance::{InstallInstanceRequest, InstancePreview, InstanceReceipt};
 mod project_change;
 mod removal;
 mod synchronization;
@@ -216,6 +218,7 @@ struct PreparedBuild {
     acquired_permit: Option<super::resources::AdmissionPermit>,
 }
 pub enum Request {
+    InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
     Recover(RecoverRequest),
     Build(Box<BuildPreparationRequest>),
@@ -237,6 +240,11 @@ pub enum ProjectTarget {
 impl From<PathBuf> for ProjectTarget {
     fn from(path: PathBuf) -> Self {
         Self::Existing(path)
+    }
+}
+impl From<InstallInstanceRequest> for Request {
+    fn from(request: InstallInstanceRequest) -> Self {
+        Self::InstallInstance(Box::new(request))
     }
 }
 impl From<CleanRequest> for Request {
@@ -301,6 +309,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    Instance(InstancePreview),
     CacheClean(CacheCleanPreview),
     Clean(CleanPreview),
     Recovery(RecoverPreview),
@@ -316,6 +325,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::Instance(view) => view.plan,
             Self::CacheClean(view) => view.plan,
             Self::Clean(view) => view.plan,
             Self::Recovery(view) => view.plan,
@@ -397,6 +407,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::Instance(view) => Some(view.replacement),
             Self::CacheClean(view) => Some(view.replacement),
             Self::Clean(view) => Some(view.replacement),
             Self::Recovery(view) => Some(view.replacement),
@@ -416,6 +427,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    Instance(Box<instance::PreparedInstanceOperation>),
     CacheClean(Box<cache_cleanup::PreparedCacheCleanup>),
     Clean(Box<cleanup::PreparedCleanup>),
     Recovery(Box<recovery::PreparedRecoveryOperation>),
@@ -430,6 +442,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::Instance(value) => OperationPreview::Instance(value.view.clone()),
             Self::CacheClean(value) => OperationPreview::CacheClean(value.view.clone()),
             Self::Clean(value) => OperationPreview::Clean(value.view.clone()),
             Self::Recovery(value) => OperationPreview::Recovery(value.view.clone()),
@@ -526,6 +539,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    Instance(Box<RetainedOutput<InstanceReceipt>>),
     CacheClean(Box<CacheCleanReceipt>),
     Clean(Box<RetainedOutput<CleanReceipt>>),
     Recovery(Box<RetainedOutput<RecoveryReceipt>>),
@@ -715,6 +729,11 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::InstallInstance(request) => {
+                            Ok(instance::prepare(project, *request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Instance(Box::new(value))))
+                        }
                         Request::Clean(request) => {
                             Ok(cleanup::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -902,6 +921,13 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::Instance(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::Instance(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    instance::run(prepared, config, scope).await
+                }
                 PreparedKind::CacheClean(_) => {
                     let prepared = data.map(|kind| match kind {
                         PreparedKind::CacheClean(value) => *value,

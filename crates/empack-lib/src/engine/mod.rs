@@ -32,6 +32,7 @@ pub mod documents;
 pub mod addition;
 pub mod import;
 pub mod initialize;
+pub mod instance;
 mod io;
 pub mod layout;
 pub mod mrpack;

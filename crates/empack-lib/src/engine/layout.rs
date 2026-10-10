@@ -34,6 +34,9 @@ impl ProjectLayout {
             }
             .to_owned(),
             ManagedPath::Artifact(path) => format!("dist/{}", path.as_str()),
+            ManagedPath::InstanceFile(path) => format!("game/{}", path.as_str()),
+            ManagedPath::InstanceRecord => ".empack/instance.json".to_owned(),
+            ManagedPath::InstanceRelease(path) => format!(".empack/releases/{}", path.as_str()),
         };
         Ok(PortableRelPath::parse(&value, PathSyntax::ProjectContent)?)
     }
@@ -42,6 +45,7 @@ impl ProjectLayout {
     pub fn classify(path: &PortableRelPath) -> Result<ManagedPath> {
         let value = path.as_str();
         match value {
+            ".empack/instance.json" => return Ok(ManagedPath::InstanceRecord),
             "empack.yml" => return Ok(ManagedPath::IntentDocument),
             "empack.lock" => return Ok(ManagedPath::LockDocument),
             ".gitignore" => return Ok(ManagedPath::Scaffold(ProjectScaffold::GitIgnore)),
@@ -56,6 +60,12 @@ impl ProjectLayout {
         let relative = |value: &str| {
             PortableRelPath::parse(value, PathSyntax::ProjectContent).map_err(anyhow::Error::from)
         };
+        if let Some(value) = value.strip_prefix("game/") {
+            return Ok(ManagedPath::InstanceFile(relative(value)?));
+        }
+        if let Some(value) = value.strip_prefix(".empack/releases/") {
+            return Ok(ManagedPath::InstanceRelease(relative(value)?));
+        }
         if let Some(value) = value.strip_prefix("pack/") {
             let path = relative(value)?;
             return Ok(

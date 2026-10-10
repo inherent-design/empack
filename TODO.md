@@ -46,6 +46,8 @@ readiness or replace executable evidence.
 ## Contracts and documents
 
 - [x] Replace author/backend descriptions with the consumer and instance contracts.
+- [x] Implement strict release/channel payload codecs and signed-envelope verification.
+- [x] Wire exact local snapshot content application through the engine and CLI.
 - [ ] Define strict, independently versioned author, lock, release, channel and
   instance schemas. DTO parsing never constructs trusted or approved proof values.
 - [ ] Specify author source inclusion in `empack.yml`, not `.packwizignore`.

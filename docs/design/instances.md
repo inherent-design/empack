@@ -92,3 +92,32 @@ completed installation when a network update check fails. It cannot bypass a fai
 signature, known incompatible runtime, unresolved conflict or pending recovery.
 Launch errors distinguish update availability, acquisition, publication and game
 process failures. Updating empack itself requires independent tool policy.
+
+## Native layout and snapshot application
+
+The selected instance directory contains `game/` for installed content and
+`.empack/instance.json` for ownership. Immutable release payloads are retained at
+`.empack/releases/<sha256>.json`. Authoring documents and `pack/` are not created
+or consulted. The root-bound instance record identifies its pack, side, installed
+release, selected choices and prior completed releases. Copying the record to a
+different native root does not authorize replacement there.
+
+Snapshot application takes an explicit payload digest. The CLI form is
+`empack --workdir <instance> instance apply <release.json> --sha256 <digest>`.
+`--side client|server` selects the environment. Relative immutable assets resolve
+beneath the selected release directory through no-follow handles. `--file KEY=PATH`
+associates a separately supplied file with its exact release identity; `--choice
+KEY=VALUE` selects a stable alternative. Applying a snapshot never subscribes to
+a channel or establishes publisher trust.
+
+A new instance uses declared choice defaults. Updates retain choices by stable key.
+A newly introduced choice or an unavailable prior alternative requires a decision;
+a changed publisher default does not overwrite a saved selection. Projection
+rejects colliding paths before content staging, including case and Unicode aliases.
+
+Preparation captures the prior record, retained descriptor, and the union of old
+and incoming selected paths. Unrelated game data is outside this read set. Content
+staging checks selected addresses and original source assertions independently.
+Only actual changes enter the write set, while all captured observations remain
+publication preconditions. Payload installation alone does not authorize game launch;
+consumer/runtime preparation and launch coordination must also complete.

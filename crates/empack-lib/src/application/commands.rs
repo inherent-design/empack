@@ -54,6 +54,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
 }
 fn command_name(command: &Commands) -> &'static str {
     match command {
+        Commands::Instance { .. } => "instance",
         Commands::Init(_) => "init",
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
@@ -72,6 +73,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     // Preparation captures its own generation. The publisher acquires mutation ownership;
     // a legacy outer lock would deadlock it and make preview unnecessarily mutating.
     match command {
+        Commands::Instance { command } => engine_host::instance::dispatch(session, command).await,
         Commands::Recover { action, operation } => {
             engine_host::recover(session, action, operation).await
         }

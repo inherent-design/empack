@@ -28,6 +28,12 @@ pub enum ManagedPath {
     Scaffold(ProjectScaffold),
     /// Generated distribution output.
     Artifact(PortableRelPath),
+    /// Native installed game content, separate from author sources.
+    InstanceFile(PortableRelPath),
+    /// Completed native installation ownership and choices.
+    InstanceRecord,
+    /// Retained immutable native release descriptor.
+    InstanceRelease(PortableRelPath),
 }
 /// The bounded set of authoring helpers outside the content and template roots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
