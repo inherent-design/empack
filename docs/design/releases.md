@@ -113,3 +113,9 @@ which retain original provider digests. Acquisition checks both. Sources are
 immutable relative assets, HTTPS alternatives, exact provider selections or manual
 instructions. They cannot encode workspace paths. File destinations cannot select
 instance control files. World content is restricted to initial-only seeds.
+
+File records carry an explicit `layer`: `common`, `common-override`, `client` or
+`server`. Side layers cannot participate on the other side. Selection resolves
+choices before applying overlay priority, so disabling a side-specific optional
+file exposes its common fallback. Equal-layer duplicate destinations and portable
+case/Unicode aliases are errors. Array order never controls replacement.

@@ -161,9 +161,22 @@ fn project_files(
         };
         if applies {
             let target = path(&file.destination)?;
-            collisions.insert_file(&target)?;
-            files.insert(ManagedPath::InstanceFile(target), file.clone());
+            let target = ManagedPath::InstanceFile(target);
+            if let Some(prior) = files.get(&target) {
+                let prior: &ReleaseFile = prior;
+                ensure!(
+                    prior.layer != file.layer,
+                    "Two selected files claim the same layer and destination"
+                );
+                if prior.layer > file.layer {
+                    continue;
+                }
+            }
+            files.insert(target, file.clone());
         }
+    }
+    for file in files.values() {
+        collisions.insert_file(&path(&file.destination)?)?;
     }
     Ok(files)
 }
@@ -421,6 +434,7 @@ impl InstancePlan {
         assets: Option<&Path>,
         cancel: &Cancellation,
     ) -> Result<PreparedInstance> {
+        let limits = verification::candidate_stage_limits(&self.snapshot, &self.files)?;
         let mut stage = MutableStage::empty()?;
         for (target, bytes) in &self.documents {
             stage.write_attributed(
@@ -490,10 +504,7 @@ impl InstancePlan {
                 cancel,
             )?;
         }
-        let stage = stage.freeze(
-            verification::candidate_stage_limits(&self.snapshot, &self.files)?,
-            cancel,
-        )?;
+        let stage = stage.freeze(limits, cancel)?;
         let change = VerifiedFileChange::verify_instance(self.snapshot, self.files, stage)?;
         Ok(PreparedInstance {
             root: self.root,

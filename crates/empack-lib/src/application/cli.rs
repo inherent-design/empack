@@ -317,8 +317,8 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
-    /// Apply an exact local release, preserving seeds and rejecting edited managed files
-    Apply {
+    /// Install an exact local release, preserving seeds and rejecting edited managed files
+    Install {
         /// Immutable JSON release payload, not an author manifest
         release: std::path::PathBuf,
         /// Expected SHA-256 of the exact release payload bytes
@@ -581,6 +581,42 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn instance_install_requires_a_digest_and_keeps_exact_input_associations() {
+        assert!(Cli::try_parse_from(["empack", "instance", "install", "release.json"]).is_err());
+        let cli = Cli::try_parse_from([
+            "empack",
+            "instance",
+            "install",
+            "release.json",
+            "--sha256",
+            &"00".repeat(32),
+            "--side",
+            "server",
+            "--choice",
+            "extra=yes",
+            "--file",
+            "one=some=file.jar",
+        ])
+        .unwrap();
+        let Some(Commands::Instance {
+            command:
+                InstanceCommand::Install {
+                    side,
+                    choices,
+                    files,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("not instance install")
+        };
+        assert_eq!(side, "server");
+        assert_eq!(choices, ["extra=yes"]);
+        assert_eq!(files, ["one=some=file.jar"]);
+    }
+
     use clap::CommandFactory;
     use std::str::FromStr;
 

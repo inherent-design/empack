@@ -38,10 +38,19 @@ pub struct ReleaseRuntime {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReleaseLoader {
     Vanilla,
-    Fabric { version: String },
-    Quilt { version: String },
-    Forge { version: String },
-    NeoForge { version: String },
+    Fabric {
+        version: String,
+    },
+    Quilt {
+        version: String,
+    },
+    Forge {
+        version: String,
+    },
+    #[serde(rename = "neoforge")]
+    NeoForge {
+        version: String,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -49,6 +58,7 @@ pub struct ReleaseChoice {
     pub key: String,
     pub alternatives: Vec<String>,
     pub default: String,
+    pub description: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
@@ -63,12 +73,22 @@ pub enum FilePolicy {
     Managed,
     Seed,
 }
+/// Overlay priority is explicit; file order never grants replacement authority.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReleaseLayer {
+    Common,
+    CommonOverride,
+    Client,
+    Server,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseFile {
     /// Stable logical role, independent of the destination and display name.
     pub key: String,
     pub destination: String,
+    pub layer: ReleaseLayer,
     pub policy: FilePolicy,
     pub client: Participation,
     pub server: Participation,
@@ -90,6 +110,7 @@ pub struct SourceDigest {
 #[serde(rename_all = "kebab-case")]
 pub enum ReleaseProvider {
     Modrinth,
+    #[serde(rename = "curseforge")]
     CurseForge,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -204,7 +225,13 @@ impl ReleaseDocument {
         }
         let mut keys = BTreeSet::new();
         for choice in &self.choices {
-            identifier(&choice.key)?;
+            empack_core::requirements::ChoiceKey::parse(&choice.key)?;
+            if let Some(description) = &choice.description {
+                ensure!(
+                    description.len() <= 16 * 1024 && !description.contains('\0'),
+                    "Invalid choice description"
+                );
+            }
             ensure!(keys.insert(&choice.key), "Duplicate release choice");
             let mut values = BTreeSet::new();
             for value in &choice.alternatives {
@@ -233,6 +260,14 @@ impl ReleaseDocument {
                     "saves" | "world" | "world_nether" | "world_the_end"
                 ) || file.policy == FilePolicy::Seed,
                 "World content must be initial-only seeds"
+            );
+            ensure!(
+                file.layer != ReleaseLayer::Client || file.server == Participation::Unsupported,
+                "Client-layer files cannot participate on servers"
+            );
+            ensure!(
+                file.layer != ReleaseLayer::Server || file.client == Participation::Unsupported,
+                "Server-layer files cannot participate on clients"
             );
             file.content()?;
             file.expected()?;

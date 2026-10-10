@@ -295,6 +295,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
             files: vec![ReleaseFile {
                 key: "mod".into(),
                 destination: "mods/test.jar".into(),
+                layer: ReleaseLayer::Common,
                 policy: FilePolicy::Managed,
                 client: Participation::Required,
                 server: Participation::Unsupported,
@@ -314,7 +315,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         .unwrap();
         fs::write(root.path().join("release.json"), payload.bytes()).unwrap();
         Commands::Instance {
-            command: InstanceCommand::Apply {
+            command: InstanceCommand::Install {
                 release: "release.json".into(),
                 sha256: payload.id().into(),
                 side: "client".into(),

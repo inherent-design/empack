@@ -103,7 +103,7 @@ release, selected choices and prior completed releases. Copying the record to a
 different native root does not authorize replacement there.
 
 Snapshot application takes an explicit payload digest. The CLI form is
-`empack --workdir <instance> instance apply <release.json> --sha256 <digest>`.
+`empack --workdir <instance> instance install <release.json> --sha256 <digest>`.
 `--side client|server` selects the environment. Relative immutable assets resolve
 beneath the selected release directory through no-follow handles. `--file KEY=PATH`
 associates a separately supplied file with its exact release identity; `--choice

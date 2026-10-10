@@ -22,6 +22,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
             let file = ReleaseFile {
                 key: (*key).into(),
                 destination: (*path).into(),
+                layer: ReleaseLayer::Common,
                 policy: *policy,
                 client: Participation::Required,
                 server: Participation::Required,
@@ -280,6 +281,7 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
         key: "extra".into(),
         alternatives: vec!["yes".into(), "no".into()],
         default: "yes".into(),
+        description: None,
     }];
     document.files[0].client = Participation::Choice {
         key: "extra".into(),
@@ -304,6 +306,7 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
         key: "new".into(),
         alternatives: vec!["yes".into(), "no".into()],
         default: "no".into(),
+        description: None,
     });
     assert!(
         engine
@@ -327,4 +330,80 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
     ];
     apply(&engine, root.path(), input).await;
     assert!(!root.path().join("game/mods/a.jar").exists());
+}
+
+#[tokio::test]
+async fn native_layers_preserve_optional_fallback_and_side_specific_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let input = || {
+        request(&[
+            ("common", "config/a", b"common", FilePolicy::Managed),
+            ("client", "config/a", b"client", FilePolicy::Managed),
+            ("server", "config/a", b"server", FilePolicy::Managed),
+        ])
+    };
+    let mut doc = input().release.release().document().clone();
+    doc.choices = vec![ReleaseChoice {
+        key: "variant".into(),
+        alternatives: vec!["yes".into(), "no".into()],
+        default: "no".into(),
+        description: None,
+    }];
+    for file in &mut doc.files {
+        match file.key.as_str() {
+            "client" => {
+                file.layer = ReleaseLayer::Client;
+                file.client = Participation::Choice {
+                    key: "variant".into(),
+                    value: "yes".into(),
+                };
+                file.server = Participation::Unsupported;
+            }
+            "server" => {
+                file.layer = ReleaseLayer::Server;
+                file.client = Participation::Unsupported;
+            }
+            _ => {}
+        }
+    }
+    let make = || replace_document(input(), doc.clone());
+    apply(&engine, root.path(), make()).await;
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"common"
+    );
+    let mut enabled = make();
+    enabled.choices = vec![ChoiceSelection {
+        key: "variant".into(),
+        value: "yes".into(),
+    }];
+    apply(&engine, root.path(), enabled).await;
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"client"
+    );
+    let server = tempfile::tempdir().unwrap();
+    let mut selected = make();
+    selected.side = InstanceSide::Server;
+    apply(&engine, server.path(), selected).await;
+    assert_eq!(
+        fs::read(server.path().join("game/config/a")).unwrap(),
+        b"server"
+    );
+}
+#[tokio::test]
+async fn same_layer_and_portable_alias_collisions_fail_before_publication() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    for path in ["mods/a.jar", "mods/A.jar", "MODS/a.jar"] {
+        let input = request(&[
+            ("one", "mods/a.jar", b"one", FilePolicy::Managed),
+            ("two", path, b"two", FilePolicy::Managed),
+        ]);
+        assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
 }

@@ -1,4 +1,4 @@
-//! Executable dispatch to the v0.5 engine. Publication owns its project lock.
+//! Executable dispatch to native engine operations. Publication owns its root lock.
 use super::engine_host;
 use crate::Result;
 use crate::application::session::{CommandSession, Session};

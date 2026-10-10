@@ -19,6 +19,7 @@ pub(super) fn document() -> ReleaseDocument {
         files: vec![ReleaseFile {
             key: "config".into(),
             destination: "config/example.toml".into(),
+            layer: ReleaseLayer::Common,
             policy: FilePolicy::Seed,
             client: Participation::Required,
             server: Participation::Required,
@@ -315,4 +316,41 @@ fn unknown_algorithms_duplicate_signatures_and_ambiguous_encodings_are_rejected(
                 .is_err()
         );
     }
+}
+
+#[test]
+fn release_wire_spellings_match_native_provider_and_loader_names() {
+    let mut document = document();
+    document.files[0].source = ReleaseSource::Provider {
+        provider: ReleaseProvider::CurseForge,
+        project: "12".into(),
+        selection: "34".into(),
+        slot: "primary".into(),
+        alternatives: vec![],
+    };
+    let encoded = DecodedRelease::encode(document).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(encoded.bytes()).unwrap();
+    assert_eq!(json["runtime"]["loader"]["kind"], "neoforge");
+    assert_eq!(json["files"][0]["source"]["provider"], "curseforge");
+}
+
+#[test]
+fn release_choices_preserve_author_labels_and_descriptions() {
+    let mut doc = document();
+    doc.choices = vec![ReleaseChoice {
+        key: "Fancy particles".into(),
+        alternatives: vec!["enabled".into(), "disabled".into()],
+        default: "enabled".into(),
+        description: Some("Extra particles\nMay reduce performance".into()),
+    }];
+    doc.files[0].client = Participation::Choice {
+        key: "Fancy particles".into(),
+        value: "enabled".into(),
+    };
+    let encoded = DecodedRelease::encode(doc.clone()).unwrap();
+    assert_eq!(encoded.document().choices[0].key, doc.choices[0].key);
+    assert_eq!(
+        encoded.document().choices[0].description,
+        doc.choices[0].description
+    );
 }

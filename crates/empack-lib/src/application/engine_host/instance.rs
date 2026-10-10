@@ -14,7 +14,7 @@ pub(in crate::application) async fn dispatch(
     session: &dyn Session,
     command: InstanceCommand,
 ) -> Result<()> {
-    let InstanceCommand::Apply {
+    let InstanceCommand::Install {
         release,
         sha256,
         side,
