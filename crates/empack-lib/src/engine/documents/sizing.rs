@@ -144,7 +144,7 @@ pub(super) fn encoding_memory(project: &ResolvedProject) -> Result<u64> {
     for path in intent.layout.values() {
         size.text(path.as_str())?;
     }
-    size.nodes(intent.distribution.targets.as_slice().len())?;
+    size.nodes(intent.distribution.recipes.as_slice().len())?;
     for (key, value) in &intent.extensions {
         size.text(key)?;
         size.extension(value)?;

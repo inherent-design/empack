@@ -1,9 +1,9 @@
 use super::*;
 use std::fs;
-const DOCUMENT: &str = r#"schema: 2
+const DOCUMENT: &str = r#"schema: 3
 pack: {name: Example, version: alpha}
 runtime: {minecraft: '1.20.1', loader: {kind: vanilla}}
-distribution: {targets: [mrpack], archive: zip}
+distribution: {recipes: [{consumer: modrinth, delivery: references, environment: both, updates: snapshot}], archive: zip}
 dependencies: {}
 layout: {}
 extensions: {}

@@ -45,7 +45,7 @@ fn capture(root: &std::path::Path, host: &std::path::Path) -> WorkspaceSnapshot 
 
 #[test]
 fn acquisition_selection_matches_materialized_missing_content_and_optional_choices() {
-    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let cancel = Cancellation::default();
@@ -58,7 +58,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
             choices: BTreeMap::from([("extra".into(), enabled)]),
             use_defaults: false,
         };
-        for target in [BuildTarget::ClientFull, BuildTarget::ServerFull] {
+        for target in [Recipe::PRISM_BUNDLED, Recipe::SERVER_BUNDLED] {
             let plan = plan_target_build_acquisitions(
                 &workspace,
                 &BuildAcquisitions::default(),
@@ -76,7 +76,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
                 SourceEvidencePolicy::Compatibility,
                 &cancel,
             );
-            if enabled && target == BuildTarget::ClientFull {
+            if enabled && target == Recipe::PRISM_BUNDLED {
                 let error = actual.err().unwrap();
                 let missing = error
                     .downcast_ref::<super::super::materialized::MissingGameContent>()
@@ -107,7 +107,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
 
 #[test]
 fn native_references_acquire_addresses_and_retain_source_evidence() {
-    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let cancel = Cancellation::default();
@@ -126,22 +126,25 @@ fn native_references_acquire_addresses_and_retain_source_evidence() {
         )
     };
     assert_eq!(
-        plan(BuildTarget::Client, SourceEvidencePolicy::Compatibility)
-            .unwrap()
-            .needs()
-            .len(),
+        plan(
+            Recipe::PRISM_REFERENCES,
+            SourceEvidencePolicy::Compatibility
+        )
+        .unwrap()
+        .needs()
+        .len(),
         2
     );
     assert!(
         plan(
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             SourceEvidencePolicy::StrongSourceRequired
         )
         .is_err()
     );
     assert!(
         plan(
-            BuildTarget::ServerFull,
+            Recipe::SERVER_BUNDLED,
             SourceEvidencePolicy::StrongSourceRequired
         )
         .unwrap()
@@ -152,7 +155,7 @@ fn native_references_acquire_addresses_and_retain_source_evidence() {
         super::super::materialized::prepare_game_content(
             &workspace,
             &BuildAcquisitions::default(),
-            BuildTarget::ServerFull,
+            Recipe::SERVER_BUNDLED,
             &OptionalPolicy::Preserve,
             SourceEvidencePolicy::StrongSourceRequired,
             &cancel,
@@ -161,7 +164,7 @@ fn native_references_acquire_addresses_and_retain_source_evidence() {
     );
     // Both native releases and mrpack establish their required content hashes.
     assert_eq!(
-        plan(BuildTarget::Mrpack, SourceEvidencePolicy::Compatibility)
+        plan(Recipe::MODRINTH, SourceEvidencePolicy::Compatibility)
             .unwrap()
             .needs()
             .len(),
@@ -171,7 +174,7 @@ fn native_references_acquire_addresses_and_retain_source_evidence() {
 
 #[test]
 fn full_target_acquires_only_surviving_overlay_owners() {
-    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     write_project(root.path(), &project(false, false));
@@ -189,7 +192,7 @@ fn full_target_acquires_only_surviving_overlay_owners() {
     let plan = plan_target_build_acquisitions(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &OptionalPolicy::Preserve,
         SourceEvidencePolicy::Compatibility,
         &Cancellation::default(),
@@ -204,9 +207,9 @@ fn full_target_acquires_only_surviving_overlay_owners() {
 #[test]
 fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
     use empack_core::{
+        distribution::Recipe,
         inventory::OptionalPolicy,
         model::{ResolvedIdentity, SourceIntent},
-        projection::BuildTarget,
     };
     let base = project(true, true);
     let mut intent = base.intent().clone();
@@ -242,7 +245,7 @@ fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
             let actual = super::super::materialized::prepare_game_content(
                 &workspace,
                 &BuildAcquisitions::default(),
-                BuildTarget::ClientFull,
+                Recipe::PRISM_BUNDLED,
                 &optional,
                 SourceEvidencePolicy::Compatibility,
                 &Cancellation::default(),
@@ -257,7 +260,7 @@ fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
                     plan_target_build_acquisitions(
                         &workspace,
                         &BuildAcquisitions::default(),
-                        BuildTarget::ClientFull,
+                        Recipe::PRISM_BUNDLED,
                         &optional,
                         SourceEvidencePolicy::Compatibility,
                         &Cancellation::default()
@@ -1243,7 +1246,7 @@ fn verify_world_build(
     acquired: &BuildAcquisitions,
 ) {
     use empack_core::{
-        inventory::OptionalPolicy, model::*, path::InstallDestination, projection::BuildTarget,
+        distribution::Recipe, inventory::OptionalPolicy, model::*, path::InstallDestination,
     };
     let base = project(false, false);
     let mut intent = base.intent().clone();
@@ -1327,7 +1330,7 @@ fn verify_world_build(
     }
     let cancel = Cancellation::default();
     let workspace = capture(root.path(), host.path());
-    for target in [BuildTarget::Mrpack, BuildTarget::ClientFull] {
+    for target in [Recipe::MODRINTH, Recipe::PRISM_BUNDLED] {
         assert_eq!(
             plan_target_build_acquisitions(
                 &workspace,

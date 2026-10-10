@@ -49,7 +49,7 @@ impl WorkflowProjectFixture {
     }
 
     pub fn write_to(&self, workdir: &Path) -> Result<WorkflowProjectPaths> {
-        use empack_core::{model::*, projection::BuildTarget};
+        use empack_core::{distribution::Recipe, model::*};
         use empack_lib::engine::{
             documents::DocumentCodec,
             initialize::{InitializeCandidate, default_templates},
@@ -90,7 +90,7 @@ impl WorkflowProjectFixture {
                 extensions: BTreeMap::new(),
                 distribution: DistributionIntent {
                     native: None,
-                    targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                    recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
                     archive: DistributionArchive::Zip,
                 },
             },

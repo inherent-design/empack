@@ -14,8 +14,8 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use empack_core::{
-    files::ManagedPath, inventory::BuildInventory, model::NonEmpty, path::PortableRelPath,
-    projection::BuildTarget,
+    distribution::Recipe, files::ManagedPath, inventory::BuildInventory, model::NonEmpty,
+    path::PortableRelPath,
 };
 
 /// An implemented distribution recipe and its explicit output. Further targets add recipes here;
@@ -60,19 +60,19 @@ impl DistributionRequest {
             | Self::ServerFull { artifact, .. } => artifact,
         }
     }
-    fn target(&self) -> BuildTarget {
+    fn target(&self) -> Recipe {
         match self {
-            Self::CurseForge { .. } => BuildTarget::CurseForge,
-            Self::Mrpack { .. } => BuildTarget::Mrpack,
-            Self::Client { .. } => BuildTarget::Client,
-            Self::ClientFull { .. } => BuildTarget::ClientFull,
-            Self::Server { .. } => BuildTarget::Server,
-            Self::ServerFull { .. } => BuildTarget::ServerFull,
+            Self::CurseForge { .. } => Recipe::CURSEFORGE,
+            Self::Mrpack { .. } => Recipe::MODRINTH,
+            Self::Client { .. } => Recipe::PRISM_REFERENCES,
+            Self::ClientFull { .. } => Recipe::PRISM_BUNDLED,
+            Self::Server { .. } => Recipe::SERVER_REFERENCES,
+            Self::ServerFull { .. } => Recipe::SERVER_BUNDLED,
         }
     }
 }
 pub struct BuiltDistribution {
-    pub target: BuildTarget,
+    pub target: Recipe,
     pub artifact: PortableRelPath,
     pub bytes: u64,
     /// Pack-content inventory: full-client launcher/template files are verified by its recipe too.

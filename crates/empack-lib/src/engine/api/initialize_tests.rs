@@ -33,7 +33,7 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
         layout: BTreeMap::from([(ContentKind::DataPack, path("custom-data"))]),
         distribution: DistributionIntent {
             native: None,
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack, BuildTarget::ClientFull]).unwrap(),
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH, Recipe::PRISM_BUNDLED]).unwrap(),
             archive: DistributionArchive::SevenZip,
         },
         extensions: BTreeMap::from([(
@@ -398,7 +398,7 @@ async fn initialized_project_builds_an_empty_mrpack_with_preserved_runtime() {
     ));
     let mut build = super::tests::request();
     build.outputs = NonEmpty::new(vec![BuildOutput {
-        target: BuildTarget::Mrpack,
+        target: Recipe::MODRINTH,
         artifact: path("empty.mrpack"),
     }])
     .unwrap();
@@ -536,7 +536,7 @@ async fn initialization_preserves_user_template_destinations_and_common_preceden
             .unwrap();
         let rendered = crate::engine::templates::prepare_templates(
             &workspace,
-            BuildTarget::ClientFull,
+            Recipe::PRISM_BUNDLED,
             &TemplateOptions::default(),
             &crate::application::process_runtime::Cancellation::default(),
         )

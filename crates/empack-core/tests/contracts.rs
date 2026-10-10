@@ -1,5 +1,5 @@
+use empack_core::distribution::{Recipe, plan_recipes};
 use empack_core::path::{ArtifactStem, InstallDestination, PathSyntax, PortableRelPath};
-use empack_core::projection::{BuildTarget::*, plan_build_targets};
 
 #[test]
 fn portable_paths_reject_host_dependent_or_ambiguous_names() {
@@ -55,7 +55,14 @@ fn file_values_preserve_unicode_and_punctuation() {
 
 #[test]
 fn build_selection_is_unique_and_stable_for_every_short_request() {
-    let targets = [Mrpack, CurseForge, Client, Server, ClientFull, ServerFull];
+    let targets = [
+        Recipe::MODRINTH,
+        Recipe::CURSEFORGE,
+        Recipe::PRISM_REFERENCES,
+        Recipe::SERVER_REFERENCES,
+        Recipe::PRISM_BUNDLED,
+        Recipe::SERVER_BUNDLED,
+    ];
     for length in 0..=5u32 {
         for mut combination in 0..targets.len().pow(length) {
             let mut request = Vec::new();
@@ -63,7 +70,7 @@ fn build_selection_is_unique_and_stable_for_every_short_request() {
                 request.push(targets[combination % targets.len()]);
                 combination /= targets.len();
             }
-            let plan = plan_build_targets(&request);
+            let plan = plan_recipes(&request);
             let mut expected = Vec::new();
             for target in request {
                 if !expected.contains(&target) {
@@ -71,7 +78,7 @@ fn build_selection_is_unique_and_stable_for_every_short_request() {
                 }
             }
             assert_eq!(plan, expected);
-            assert_eq!(plan_build_targets(&plan), plan);
+            assert_eq!(plan_recipes(&plan), plan);
         }
     }
 }

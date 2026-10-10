@@ -234,7 +234,7 @@ pub struct InitArgs {
   server-full  Server distribution with runtime and pack content
   all          Build all six targets
 
-Without TARGETS, use distribution.targets from empack.yml.
+Without TARGETS, use distribution.recipes from empack.yml.
 Native export requires distribution.native and exact materialized content.
 It retains all side layers and optional choices in dist/release.empack.
 CurseForge requires exact CurseForge references or authored local overrides.
@@ -250,7 +250,7 @@ Examples:
 pub struct BuildArgs {
     /// Build targets to execute
     #[arg(
-        help = "Targets to build (default: distribution.targets in empack.yml)",
+        help = "Targets to build (default: distribution.recipes in empack.yml)",
         conflicts_with = "continue_build"
     )]
     pub targets: Vec<String>,

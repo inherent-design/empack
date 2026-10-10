@@ -568,7 +568,7 @@ async fn an_allowed_mirror_remains_usable_without_losing_source_alternatives() {
 
 fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCandidateOptions {
     use super::super::{ImportCandidateOptions, ImportFileDecision, ImportPersistence};
-    use empack_core::{model::*, projection::BuildTarget, requirements::*};
+    use empack_core::{distribution::Recipe, model::*, requirements::*};
     let requirement = |requirement, key: &str| match requirement {
         ImportedRequirement::Required => Requirement::Required,
         ImportedRequirement::Unsupported => Requirement::Unsupported,
@@ -637,7 +637,7 @@ fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCan
         layout: BTreeMap::new(),
         distribution: DistributionIntent {
             native: None,
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack]).unwrap(),
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH]).unwrap(),
             archive: DistributionArchive::Zip,
         },
         files,

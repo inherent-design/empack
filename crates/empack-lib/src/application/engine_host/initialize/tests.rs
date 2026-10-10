@@ -154,7 +154,14 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
         "saves"
     );
     assert_eq!(project.intent().metadata.author.as_deref(), Some("Tester"));
-    assert_eq!(project.intent().distribution.targets.as_slice().len(), 5);
+    assert_eq!(
+        project.intent().distribution.recipes.as_slice(),
+        [
+            Recipe::MODRINTH,
+            Recipe::PRISM_BUNDLED,
+            Recipe::SERVER_BUNDLED
+        ]
+    );
 }
 
 #[tokio::test]
@@ -241,12 +248,12 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
-                target: BuildTarget::Mrpack,
+                target: Recipe::MODRINTH,
                 artifact: PortableRelPath::parse("pack.mrpack", PathSyntax::ProjectContent)
                     .unwrap(),
             },
             BuildOutput {
-                target: BuildTarget::ClientFull,
+                target: Recipe::PRISM_BUNDLED,
                 artifact: PortableRelPath::parse("client.zip", PathSyntax::ProjectContent).unwrap(),
             },
         ])

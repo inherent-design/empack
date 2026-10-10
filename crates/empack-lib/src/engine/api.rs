@@ -28,13 +28,13 @@ use super::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     inventory::OptionalPolicy,
     model::{
         DistributionArchive, ExpectedContent, LoaderKind, NonEmpty, RuntimeResolution,
         SemanticRevision,
     },
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::{
     collections::BTreeMap,
@@ -87,7 +87,7 @@ static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 pub struct PlanId(u64);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildOutput {
-    pub target: BuildTarget,
+    pub target: Recipe,
     pub artifact: PortableRelPath,
 }
 #[derive(Clone)]
@@ -1185,9 +1185,21 @@ fn capture(
     ensure!(project.is_absolute(), "Project selection must be absolute");
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
+        ensure!(
+            matches!(
+                output.target,
+                Recipe::MODRINTH
+                    | Recipe::CURSEFORGE
+                    | Recipe::PRISM_REFERENCES
+                    | Recipe::PRISM_BUNDLED
+                    | Recipe::SERVER_REFERENCES
+                    | Recipe::SERVER_BUNDLED
+            ),
+            "Consumer recipe has no executable adapter; no acquisition was started"
+        );
         PortableRelPath::parse(output.artifact.as_str(), PathSyntax::ArtifactName)?;
         collisions.insert_file(&output.artifact)?;
-        if output.target == BuildTarget::Mrpack {
+        if output.target == Recipe::MODRINTH {
             ensure!(
                 output.artifact.as_str().ends_with(".mrpack"),
                 "Mrpack output requires a .mrpack filename"
@@ -1230,18 +1242,18 @@ fn capture(
         "Continuation project selection changed during capture"
     );
     let resolved = workspace.require_resolved()?;
-    if request
-        .outputs
-        .as_slice()
-        .iter()
-        .any(|output| matches!(output.target, BuildTarget::Client | BuildTarget::Server))
-    {
+    if request.outputs.as_slice().iter().any(|output| {
+        matches!(
+            output.target,
+            Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES
+        )
+    }) {
         super::release::producer::NativeReleaseOptions::from_project(&resolved)?;
     }
     let runtime = resolved.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
-        let optional = if output.target == BuildTarget::Mrpack {
+        let optional = if output.target == Recipe::MODRINTH {
             &OptionalPolicy::Preserve
         } else {
             &request.optional
@@ -1276,11 +1288,12 @@ fn capture(
         })
         .map(|need| need.key.clone())
         .collect();
-    let server = request
-        .outputs
-        .as_slice()
-        .iter()
-        .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::ServerFull));
+    let server = request.outputs.as_slice().iter().any(|output| {
+        matches!(
+            output.target,
+            Recipe::SERVER_REFERENCES | Recipe::SERVER_BUNDLED
+        )
+    });
     let resolved = workspace.require_resolved()?;
     let mut file_names = BTreeMap::new();
     for need in &acquisition.pending {

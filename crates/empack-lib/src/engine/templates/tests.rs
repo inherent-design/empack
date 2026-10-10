@@ -93,17 +93,17 @@ fn captured_templates_keep_nested_paths_side_precedence_and_user_inputs() {
     };
     for (target, expected, source) in [
         (
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             "client Test 1.20.1 fabric 0.16.0",
             "client",
         ),
         (
-            BuildTarget::ClientFull,
+            Recipe::PRISM_BUNDLED,
             "client Test 1.20.1 fabric 0.16.0",
             "client",
         ),
-        (BuildTarget::Server, "server alpha", "server"),
-        (BuildTarget::ServerFull, "server alpha", "server"),
+        (Recipe::SERVER_REFERENCES, "server alpha", "server"),
+        (Recipe::SERVER_BUNDLED, "server alpha", "server"),
     ] {
         let rendered =
             prepare_templates(&workspace, target, &options, &Cancellation::default()).unwrap();
@@ -152,7 +152,7 @@ fn template_failures_never_return_partial_outputs_or_modify_project() {
         assert!(
             prepare_templates(
                 &workspace,
-                BuildTarget::Client,
+                Recipe::PRISM_REFERENCES,
                 &TemplateOptions::default(),
                 &Cancellation::default()
             )
@@ -190,7 +190,7 @@ fn template_failures_never_return_partial_outputs_or_modify_project() {
         assert!(
             prepare_templates(
                 &workspace,
-                BuildTarget::Client,
+                Recipe::PRISM_REFERENCES,
                 &TemplateOptions {
                     limits,
                     ..Default::default()
@@ -205,7 +205,7 @@ fn template_failures_never_return_partial_outputs_or_modify_project() {
     assert!(
         prepare_templates(
             &workspace,
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &TemplateOptions::default(),
             &cancel
         )
@@ -224,7 +224,7 @@ fn template_projection_rejects_ambiguous_output_and_stale_input() {
     assert!(
         prepare_templates(
             &workspace,
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &TemplateOptions::default(),
             &Cancellation::default()
         )
@@ -237,7 +237,7 @@ fn template_projection_rejects_ambiguous_output_and_stale_input() {
         assert!(
             prepare_templates(
                 &workspace,
-                BuildTarget::Client,
+                Recipe::PRISM_REFERENCES,
                 &TemplateOptions::default(),
                 &Cancellation::default()
             )
@@ -253,7 +253,7 @@ fn template_projection_rejects_ambiguous_output_and_stale_input() {
     assert!(
         prepare_templates(
             &workspace,
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &options,
             &Cancellation::default()
         )
@@ -262,7 +262,7 @@ fn template_projection_rejects_ambiguous_output_and_stale_input() {
     assert!(
         prepare_templates(
             &workspace,
-            BuildTarget::Mrpack,
+            Recipe::MODRINTH,
             &TemplateOptions::default(),
             &Cancellation::default()
         )
@@ -272,7 +272,7 @@ fn template_projection_rejects_ambiguous_output_and_stale_input() {
     assert!(
         prepare_templates(
             &workspace,
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &TemplateOptions::default(),
             &Cancellation::default()
         )

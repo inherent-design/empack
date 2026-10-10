@@ -17,10 +17,10 @@ use crate::{
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::{
+    distribution::Recipe,
     inventory::OptionalPolicy,
     model::{DistributionArchive, NonEmpty, ProjectIntent},
     path::{ArtifactStem, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -291,25 +291,25 @@ fn request(
     args: &BuildArgs,
     decisions: BuildDecisions,
 ) -> Result<BuildRequest> {
-    const ALL: [BuildTarget; 6] = [
-        BuildTarget::Mrpack,
-        BuildTarget::CurseForge,
-        BuildTarget::Client,
-        BuildTarget::Server,
-        BuildTarget::ClientFull,
-        BuildTarget::ServerFull,
+    const ALL: [Recipe; 6] = [
+        Recipe::MODRINTH,
+        Recipe::CURSEFORGE,
+        Recipe::PRISM_REFERENCES,
+        Recipe::SERVER_REFERENCES,
+        Recipe::PRISM_BUNDLED,
+        Recipe::SERVER_BUNDLED,
     ];
     let mut targets = Vec::new();
     // Validate every spelling, including values after `all`, before expanding the selection.
     for name in &args.targets {
-        let selected: &[BuildTarget] = match name.as_str() {
+        let selected: &[Recipe] = match name.as_str() {
             "all" => &ALL,
-            "mrpack" => &[BuildTarget::Mrpack],
-            "curseforge" => &[BuildTarget::CurseForge],
-            "client" => &[BuildTarget::Client],
-            "server" => &[BuildTarget::Server],
-            "client-full" => &[BuildTarget::ClientFull],
-            "server-full" => &[BuildTarget::ServerFull],
+            "mrpack" => &[Recipe::MODRINTH],
+            "curseforge" => &[Recipe::CURSEFORGE],
+            "client" => &[Recipe::PRISM_REFERENCES],
+            "server" => &[Recipe::SERVER_REFERENCES],
+            "client-full" => &[Recipe::PRISM_BUNDLED],
+            "server-full" => &[Recipe::SERVER_BUNDLED],
             _ => {
                 return Err(empack_core::model::ModelError(format!(
                     "Unknown build target: {name}"
@@ -320,9 +320,9 @@ fn request(
         targets.extend_from_slice(selected);
     }
     if targets.is_empty() {
-        targets.extend(intent.distribution.targets.as_slice());
+        targets.extend(intent.distribution.recipes.as_slice());
     }
-    let targets = empack_core::projection::plan_build_targets(&targets);
+    let targets = empack_core::distribution::plan_recipes(&targets);
     let name = ArtifactStem::parse(&intent.metadata.name)
         .context("Pack name cannot form a portable artifact name")?;
     let version = ArtifactStem::parse(&intent.metadata.version)
@@ -342,12 +342,13 @@ fn request(
         .into_iter()
         .map(|target| {
             let (suffix, extension) = match target {
-                BuildTarget::Mrpack => ("", "mrpack"),
-                BuildTarget::CurseForge => ("-curseforge", "zip"),
-                BuildTarget::Client => ("-client", extension),
-                BuildTarget::Server => ("-server", extension),
-                BuildTarget::ClientFull => ("-client-full", extension),
-                BuildTarget::ServerFull => ("-server-full", extension),
+                Recipe::MODRINTH => ("", "mrpack"),
+                Recipe::CURSEFORGE => ("-curseforge", "zip"),
+                Recipe::PRISM_REFERENCES => ("-client", extension),
+                Recipe::SERVER_REFERENCES => ("-server", extension),
+                Recipe::PRISM_BUNDLED => ("-client-full", extension),
+                Recipe::SERVER_BUNDLED => ("-server-full", extension),
+                _ => anyhow::bail!("Consumer recipe is not available through this build adapter"),
             };
             Ok(BuildOutput {
                 target,

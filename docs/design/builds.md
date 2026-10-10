@@ -32,6 +32,19 @@ archive does not create that association. Automatic marketplace upload is outsid
 this contract. Tar/7z output is permitted for directory distributions where supported;
 it must not be advertised as a launcher-importable ZIP.
 
+Authored `distribution.recipes` is a nonempty ordered list of objects. Each object
+requires `consumer`, `delivery` and `environment`; `updates` defaults to `snapshot`.
+Unknown fields, old target strings and unsupported combinations fail decoding.
+The exact four-field recipe survives planning, build receipts and restart requests.
+Deduplication compares the complete recipe, so delivery or authority changes never
+collapse into the same request.
+
+Initialization and imports default to Modrinth references, bundled Prism and bundled
+server snapshots. Native reference consumers require an explicit stable pack identity
+and Java requirement; those values are not inferred from display names. Selecting a
+valid policy does not establish a platform association or publisher trust. Execution
+must bind the relevant evidence before acquiring or publishing an output.
+
 ## Build data flow
 
 Capture intent, lock, source layers, templates and exact runtime once. Resolve saved

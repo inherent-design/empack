@@ -18,12 +18,12 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use empack_core::{
+    distribution::Recipe,
     files::{FileContent, FilePermissions},
     identity::{PinSelector, ProviderProjectId},
     inventory::{ContentOwner, DownloadOrigins, OptionalPolicy, Representation},
     model::{ContentKind, DistributionArchive, ExpectedContent, LoaderKind},
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
     requirements::Requirement,
 };
 use serde_json::json;
@@ -50,7 +50,7 @@ pub(super) fn prepare_archive(
     let game = prepare_reference_game_content(
         workspace,
         external,
-        BuildTarget::CurseForge,
+        Recipe::CURSEFORGE,
         &options.optional,
         options.evidence,
         cancel,
@@ -250,7 +250,7 @@ pub(super) fn prepare_archive(
         cancel,
     )?;
     let receipt = BuiltDistribution {
-        target: BuildTarget::CurseForge,
+        target: Recipe::CURSEFORGE,
         artifact: artifact.clone(),
         bytes: verified.len(),
         content: game.inventory().clone(),
@@ -376,7 +376,7 @@ mod tests {
         let acquisition = super::super::acquisition::plan_target_build_acquisitions(
             &snapshot,
             &external,
-            BuildTarget::CurseForge,
+            Recipe::CURSEFORGE,
             &OptionalPolicy::Preserve,
             SourceEvidencePolicy::Compatibility,
             &cancel,
@@ -666,7 +666,7 @@ mod tests {
         let game = prepare_reference_game_content(
             &workspace,
             &BuildAcquisitions::default(),
-            BuildTarget::CurseForge,
+            Recipe::CURSEFORGE,
             &OptionalPolicy::Preserve,
             SourceEvidencePolicy::Compatibility,
             &cancel,

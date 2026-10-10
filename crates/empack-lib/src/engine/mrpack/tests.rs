@@ -61,7 +61,7 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
     } else {
         json!({"client":"required","server":"unsupported"})
     };
-    let intent = DocumentCodec.decode_intent(&serde_json::to_vec(&json!({"schema":2,"pack":{"name":"Test","version":"alpha"},"runtime":{"minecraft":"1.20.1","loader":{"kind":"fabric","version":"0.16.0"}},"distribution":{"targets":["mrpack"],"archive":"zip"},"dependencies":{
+    let intent = DocumentCodec.decode_intent(&serde_json::to_vec(&json!({"schema":3,"pack":{"name":"Test","version":"alpha"},"runtime":{"minecraft":"1.20.1","loader":{"kind":"fabric","version":"0.16.0"}},"distribution":{"recipes":[{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot"}],"archive":"zip"},"dependencies":{
         "assets":{"source":{"kind":"url","downloads":[url]},"content":"resource-pack","version":{"mode":"follow-compatible"},"placement":"automatic","environment":environment}
     }})).unwrap(), "test.yml").unwrap();
     let key = DependencyKey::parse("assets").unwrap();

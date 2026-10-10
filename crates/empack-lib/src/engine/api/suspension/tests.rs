@@ -235,11 +235,11 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         selected.archive = archive;
         selected.outputs = NonEmpty::new(
             [
-                BuildTarget::Mrpack,
-                BuildTarget::Client,
-                BuildTarget::Server,
-                BuildTarget::ClientFull,
-                BuildTarget::ServerFull,
+                Recipe::MODRINTH,
+                Recipe::PRISM_REFERENCES,
+                Recipe::SERVER_REFERENCES,
+                Recipe::PRISM_BUNDLED,
+                Recipe::SERVER_BUNDLED,
             ]
             .into_iter()
             .enumerate()
@@ -278,12 +278,12 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
                 mode,
             );
         }
-        let recipe = record::Recipe::from(&selected);
+        let recipe = record::SavedRecipe::from(&selected);
         let wire = serde_json::to_value(recipe).unwrap();
-        let decoded: record::Recipe = serde_json::from_value(wire.clone()).unwrap();
+        let decoded: record::SavedRecipe = serde_json::from_value(wire.clone()).unwrap();
         let restored = decoded.parse().unwrap();
         assert_eq!(
-            serde_json::to_value(record::Recipe::from(&restored)).unwrap(),
+            serde_json::to_value(record::SavedRecipe::from(&restored)).unwrap(),
             wire
         );
         assert_eq!(restored.outputs.as_slice(), selected.outputs.as_slice());
@@ -291,7 +291,7 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         assert_eq!(restored.templates.values, selected.templates.values);
         let mut unexpected = wire;
         unexpected["run_command"] = "never execute me".into();
-        assert!(serde_json::from_value::<record::Recipe>(unexpected).is_err());
+        assert!(serde_json::from_value::<record::SavedRecipe>(unexpected).is_err());
     }
 }
 #[tokio::test]

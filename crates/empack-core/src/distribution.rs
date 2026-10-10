@@ -68,6 +68,48 @@ pub struct Recipe {
     authority: UpdateAuthority,
 }
 impl Recipe {
+    /// Snapshot Modrinth recipe with references delivery.
+    pub const MODRINTH: Self = Self {
+        consumer: Consumer::Modrinth,
+        delivery: Delivery::References,
+        environments: Environments::Both,
+        authority: UpdateAuthority::Snapshot,
+    };
+    /// Snapshot CurseForge recipe with references delivery.
+    pub const CURSEFORGE: Self = Self {
+        consumer: Consumer::CurseForge,
+        delivery: Delivery::References,
+        environments: Environments::Client,
+        authority: UpdateAuthority::Snapshot,
+    };
+    /// Snapshot Prism recipe with references delivery.
+    pub const PRISM_REFERENCES: Self = Self {
+        consumer: Consumer::Prism,
+        delivery: Delivery::References,
+        environments: Environments::Client,
+        authority: UpdateAuthority::Snapshot,
+    };
+    /// Snapshot Prism recipe with bundled delivery.
+    pub const PRISM_BUNDLED: Self = Self {
+        consumer: Consumer::Prism,
+        delivery: Delivery::Bundled,
+        environments: Environments::Client,
+        authority: UpdateAuthority::Snapshot,
+    };
+    /// Snapshot Server recipe with references delivery.
+    pub const SERVER_REFERENCES: Self = Self {
+        consumer: Consumer::Server,
+        delivery: Delivery::References,
+        environments: Environments::Server,
+        authority: UpdateAuthority::Snapshot,
+    };
+    /// Snapshot Server recipe with bundled delivery.
+    pub const SERVER_BUNDLED: Self = Self {
+        consumer: Consumer::Server,
+        delivery: Delivery::Bundled,
+        environments: Environments::Server,
+        authority: UpdateAuthority::Snapshot,
+    };
     /// Validate delivery and environment with snapshot updates as the default.
     ///
     /// This pure constructor does not inspect content, contact providers or install
@@ -142,4 +184,15 @@ impl Recipe {
     pub fn update_authority(&self) -> UpdateAuthority {
         self.authority
     }
+}
+
+/// Deduplicate complete recipes without changing their requested order.
+pub fn plan_recipes(recipes: &[Recipe]) -> alloc::vec::Vec<Recipe> {
+    let mut ordered = alloc::vec::Vec::new();
+    for recipe in recipes {
+        if !ordered.contains(recipe) {
+            ordered.push(*recipe);
+        }
+    }
+    ordered
 }

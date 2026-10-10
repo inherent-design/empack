@@ -1,10 +1,10 @@
 use empack_core::{
     digest::{ContentId, DigestSet},
+    distribution::Recipe,
     files::FilePermissions,
     inventory::*,
     model::{ContentLayer, ExpectedContent, NonEmpty},
     path::InstallDestination,
-    projection::BuildTarget,
     requirements::*,
 };
 use std::collections::BTreeMap;
@@ -49,7 +49,7 @@ fn sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers() {
         input(ContentLayer::Common, "config/a", 1),
         input(ContentLayer::Client, "config/a", 2),
     ];
-    for (target, byte) in [(BuildTarget::ClientFull, 2), (BuildTarget::ServerFull, 3)] {
+    for (target, byte) in [(Recipe::PRISM_BUNDLED, 2), (Recipe::SERVER_BUNDLED, 3)] {
         let inventory =
             BuildInventory::project(&entries, target, &OptionalPolicy::Preserve).unwrap();
         assert_eq!(inventory.entries().len(), 1);
@@ -59,13 +59,13 @@ fn sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers() {
         assert_eq!(inventory.precedence().len(), 1);
     }
     let inventory =
-        BuildInventory::project(&entries, BuildTarget::Mrpack, &OptionalPolicy::Preserve).unwrap();
+        BuildInventory::project(&entries, Recipe::MODRINTH, &OptionalPolicy::Preserve).unwrap();
     assert_eq!(inventory.entries().len(), 3);
     let mut reversed = entries.clone();
     reversed.reverse();
     assert_eq!(
         inventory,
-        BuildInventory::project(&reversed, BuildTarget::Mrpack, &OptionalPolicy::Preserve).unwrap()
+        BuildInventory::project(&reversed, Recipe::MODRINTH, &OptionalPolicy::Preserve).unwrap()
     );
 }
 #[test]
@@ -74,11 +74,12 @@ fn optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices() {
     optional.requirements.client = Requirement::Optional(choice());
     let inputs = [optional];
     assert!(matches!(
-        BuildInventory::project(&inputs, BuildTarget::ClientFull, &OptionalPolicy::Preserve),
+        BuildInventory::project(&inputs, Recipe::PRISM_BUNDLED, &OptionalPolicy::Preserve),
         Err(InventoryError::ChoiceRequired(_))
     ));
     let bootstrap =
-        BuildInventory::project(&inputs, BuildTarget::Client, &OptionalPolicy::Preserve).unwrap();
+        BuildInventory::project(&inputs, Recipe::PRISM_REFERENCES, &OptionalPolicy::Preserve)
+            .unwrap();
     assert!(matches!(
         bootstrap.entries()[0].requirements.client,
         Requirement::Optional(_)
@@ -87,7 +88,7 @@ fn optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices() {
         choices: BTreeMap::new(),
         use_defaults: true,
     };
-    let full = BuildInventory::project(&inputs, BuildTarget::ClientFull, &policy).unwrap();
+    let full = BuildInventory::project(&inputs, Recipe::PRISM_BUNDLED, &policy).unwrap();
     assert!(full.entries().is_empty());
     assert!(!full.choices()[0].enabled);
     assert!(full.choices()[0].used_default);
@@ -96,7 +97,7 @@ fn optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices() {
         use_defaults: false,
     };
     assert_eq!(
-        BuildInventory::project(&inputs, BuildTarget::ClientFull, &selected)
+        BuildInventory::project(&inputs, Recipe::PRISM_BUNDLED, &selected)
             .unwrap()
             .entries()
             .len(),
@@ -107,7 +108,7 @@ fn optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices() {
         use_defaults: true,
     };
     assert!(matches!(
-        BuildInventory::project(&inputs, BuildTarget::ClientFull, &typo),
+        BuildInventory::project(&inputs, Recipe::PRISM_BUNDLED, &typo),
         Err(InventoryError::UnknownChoice(_))
     ));
 }
@@ -127,7 +128,7 @@ fn reference_presence_never_satisfies_full_bytes_and_replaced_content_is_recorde
     assert!(matches!(
         BuildInventory::project(
             &[reference.clone()],
-            BuildTarget::ClientFull,
+            Recipe::PRISM_BUNDLED,
             &OptionalPolicy::Preserve
         ),
         Err(InventoryError::MaterializationRequired(_))
@@ -135,7 +136,7 @@ fn reference_presence_never_satisfies_full_bytes_and_replaced_content_is_recorde
     assert_eq!(
         BuildInventory::project(
             &[reference.clone()],
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &OptionalPolicy::Preserve
         )
         .unwrap()
@@ -146,7 +147,7 @@ fn reference_presence_never_satisfies_full_bytes_and_replaced_content_is_recorde
     let replacement = input(ContentLayer::Client, "mods/a.jar", 2);
     let full = BuildInventory::project(
         &[reference, replacement],
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &OptionalPolicy::Preserve,
     )
     .unwrap();
@@ -160,7 +161,7 @@ fn duplicate_destinations_and_conflicting_choice_definitions_fail() {
     assert!(matches!(
         BuildInventory::project(
             &[a.clone(), a.clone()],
-            BuildTarget::Mrpack,
+            Recipe::MODRINTH,
             &OptionalPolicy::Preserve
         ),
         Err(InventoryError::DuplicateDestination(_))
@@ -170,7 +171,7 @@ fn duplicate_destinations_and_conflicting_choice_definitions_fail() {
     different.default_enabled = true;
     b.requirements.client = Requirement::Optional(different);
     assert!(matches!(
-        BuildInventory::project(&[a, b], BuildTarget::Mrpack, &OptionalPolicy::Preserve),
+        BuildInventory::project(&[a, b], Recipe::MODRINTH, &OptionalPolicy::Preserve),
         Err(InventoryError::ConflictingChoice(_))
     ));
 }
@@ -183,7 +184,7 @@ fn optional_overlay_keeps_fallback_or_requires_a_materialized_choice() {
     assert!(matches!(
         BuildInventory::project(
             &[common.clone(), side.clone()],
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &OptionalPolicy::Preserve
         ),
         Err(InventoryError::OptionalOverlayNeedsSelection(_))
@@ -194,7 +195,7 @@ fn optional_overlay_keeps_fallback_or_requires_a_materialized_choice() {
     };
     let result = BuildInventory::project(
         &[common.clone(), side.clone()],
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &disabled,
     )
     .unwrap();
@@ -207,7 +208,7 @@ fn optional_overlay_keeps_fallback_or_requires_a_materialized_choice() {
     side.requirements.client = Requirement::Required;
     let result = BuildInventory::project(
         &[common_optional, side],
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &OptionalPolicy::Preserve,
     )
     .unwrap();
@@ -230,10 +231,10 @@ fn selection_can_defer_bytes_but_completed_inventory_cannot() {
     };
     let inputs = vec![common.clone()];
     for target in [
-        BuildTarget::Mrpack,
-        BuildTarget::Client,
-        BuildTarget::ClientFull,
-        BuildTarget::ServerFull,
+        Recipe::MODRINTH,
+        Recipe::PRISM_REFERENCES,
+        Recipe::PRISM_BUNDLED,
+        Recipe::SERVER_BUNDLED,
     ] {
         let selected = BuildSelection::select(&inputs, target, &OptionalPolicy::Preserve).unwrap();
         assert_eq!(selected.entries().len(), 1);
@@ -243,7 +244,7 @@ fn selection_can_defer_bytes_but_completed_inventory_cannot() {
     let side = input(ContentLayer::Client, "config/a", 2);
     let complete = BuildSelection::select(
         &[common, side],
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &OptionalPolicy::Preserve,
     )
     .unwrap()
@@ -277,7 +278,7 @@ fn provider_references_preserve_unknown_size_and_require_real_byte_evidence() {
     };
     let planned = BuildInventory::project(
         &[reference.clone()],
-        BuildTarget::Server,
+        Recipe::SERVER_REFERENCES,
         &OptionalPolicy::Preserve,
     )
     .unwrap();
@@ -288,7 +289,7 @@ fn provider_references_preserve_unknown_size_and_require_real_byte_evidence() {
     assert!(matches!(
         BuildInventory::project(
             &[reference.clone()],
-            BuildTarget::ServerFull,
+            Recipe::SERVER_BUNDLED,
             &OptionalPolicy::Preserve
         ),
         Err(InventoryError::MaterializationRequired(_))
@@ -299,7 +300,7 @@ fn provider_references_preserve_unknown_size_and_require_real_byte_evidence() {
     assert!(matches!(
         BuildInventory::project(
             &[reference.clone()],
-            BuildTarget::Server,
+            Recipe::SERVER_REFERENCES,
             &OptionalPolicy::Preserve
         ),
         Err(InventoryError::InvalidReference(_))
@@ -313,7 +314,11 @@ fn provider_references_preserve_unknown_size_and_require_real_byte_evidence() {
         pin.selection = PinSelector::ModrinthVersion(ModrinthVersionId::parse("abcdefgh").unwrap());
     }
     assert!(matches!(
-        BuildInventory::project(&[reference], BuildTarget::Server, &OptionalPolicy::Preserve),
+        BuildInventory::project(
+            &[reference],
+            Recipe::SERVER_REFERENCES,
+            &OptionalPolicy::Preserve
+        ),
         Err(InventoryError::InvalidReference(_))
     ));
 }
@@ -326,8 +331,8 @@ fn common_overrides_have_explicit_precedence_between_base_and_side() {
         input(ContentLayer::Client, "config/a", 3),
     ];
     for (target, byte, replaced) in [
-        (BuildTarget::ClientFull, 3, 2),
-        (BuildTarget::ServerFull, 2, 1),
+        (Recipe::PRISM_BUNDLED, 3, 2),
+        (Recipe::SERVER_BUNDLED, 2, 1),
     ] {
         let inventory =
             BuildInventory::project(&entries, target, &OptionalPolicy::Preserve).unwrap();
@@ -344,7 +349,7 @@ fn common_overrides_have_explicit_precedence_between_base_and_side() {
         );
     }
     assert_eq!(
-        BuildInventory::project(&entries, BuildTarget::Mrpack, &OptionalPolicy::Preserve)
+        BuildInventory::project(&entries, Recipe::MODRINTH, &OptionalPolicy::Preserve)
             .unwrap()
             .entries()
             .len(),
@@ -359,13 +364,13 @@ fn optional_common_override_requires_a_choice_and_preserves_disabled_fallback() 
     overlay.requirements.server = Requirement::Unsupported;
     let inputs = [base, overlay];
     assert!(matches!(
-        BuildInventory::project(&inputs, BuildTarget::Client, &OptionalPolicy::Preserve),
+        BuildInventory::project(&inputs, Recipe::PRISM_REFERENCES, &OptionalPolicy::Preserve),
         Err(InventoryError::OptionalOverlayNeedsSelection(_))
     ));
     for (enabled, byte) in [(false, 1), (true, 2)] {
         let inventory = BuildInventory::project(
             &inputs,
-            BuildTarget::ClientFull,
+            Recipe::PRISM_BUNDLED,
             &OptionalPolicy::Resolve {
                 choices: BTreeMap::from([("extra".into(), enabled)]),
                 use_defaults: false,
@@ -378,9 +383,45 @@ fn optional_common_override_requires_a_choice_and_preserves_disabled_fallback() 
         assert_eq!(inventory.choices()[0].enabled, enabled);
     }
     let inventory =
-        BuildInventory::project(&inputs, BuildTarget::ServerFull, &OptionalPolicy::Preserve)
+        BuildInventory::project(&inputs, Recipe::SERVER_BUNDLED, &OptionalPolicy::Preserve)
             .unwrap();
     assert!(
         matches!(&inventory.entries()[0].representation, Representation::Embedded { content, .. } if content.bytes() == &[1;32])
     );
+}
+
+#[test]
+fn layered_consumers_respect_environment_without_flattening() {
+    use empack_core::distribution::{Consumer, Delivery};
+    let entries = vec![
+        input(ContentLayer::Common, "config/a", 1),
+        input(ContentLayer::Client, "config/a", 2),
+        input(ContentLayer::Server, "config/a", 3),
+    ];
+    for consumer in [Consumer::Modrinth, Consumer::Empack] {
+        for (environment, absent) in [
+            (Environments::Client, ContentLayer::Server),
+            (Environments::Server, ContentLayer::Client),
+        ] {
+            let recipe = Recipe::new(consumer, Delivery::References, environment).unwrap();
+            let inventory =
+                BuildInventory::project(&entries, recipe, &OptionalPolicy::Preserve).unwrap();
+            assert_eq!(inventory.target(), recipe);
+            assert_eq!(inventory.entries().len(), 2);
+            assert!(
+                inventory
+                    .entries()
+                    .iter()
+                    .all(|entry| entry.layer != absent)
+            );
+            assert!(inventory.entries().iter().all(|entry| {
+                if environment == Environments::Client {
+                    entry.requirements.server == Requirement::Unsupported
+                } else {
+                    entry.requirements.client == Requirement::Unsupported
+                }
+            }));
+            assert!(inventory.precedence().is_empty());
+        }
+    }
 }

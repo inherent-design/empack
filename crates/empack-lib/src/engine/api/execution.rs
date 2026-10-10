@@ -188,7 +188,7 @@ async fn execute(
             .iter()
             .any(|output| output.target == target)
     };
-    let runtime = if has(BuildTarget::Server) || has(BuildTarget::ServerFull) {
+    let runtime = if has(Recipe::SERVER_REFERENCES) || has(Recipe::SERVER_BUNDLED) {
         Some(prepare_runtime(&transport, scope, view.runtime.clone(), evidence, &config).await?)
     } else {
         None
@@ -223,7 +223,7 @@ async fn execute(
                 limits: config.archive,
             };
             requests.push(match output.target {
-                BuildTarget::CurseForge => DistributionRequest::CurseForge {
+                Recipe::CURSEFORGE => DistributionRequest::CurseForge {
                     artifact,
                     options: crate::engine::build::curseforge::CurseForgeOptions {
                         optional: request.optional.clone(),
@@ -232,20 +232,20 @@ async fn execute(
                         limits: config.archive,
                     },
                 },
-                BuildTarget::Mrpack => DistributionRequest::Mrpack {
+                Recipe::MODRINTH => DistributionRequest::Mrpack {
                     artifact,
                     optional: request.mrpack_optional,
                     evidence,
                 },
-                BuildTarget::ClientFull => DistributionRequest::ClientFull {
+                Recipe::PRISM_BUNDLED => DistributionRequest::ClientFull {
                     artifact,
                     options: client_options(),
                 },
-                BuildTarget::Client => DistributionRequest::Client {
+                Recipe::PRISM_REFERENCES => DistributionRequest::Client {
                     artifact,
                     options: client_options(),
                 },
-                BuildTarget::ServerFull => DistributionRequest::ServerFull {
+                Recipe::SERVER_BUNDLED => DistributionRequest::ServerFull {
                     artifact,
                     options: server_options(),
                     runtime: runtime
@@ -253,7 +253,7 @@ async fn execute(
                         .context("Missing prepared server runtime")?
                         .clone(),
                 },
-                BuildTarget::Server => DistributionRequest::Server {
+                Recipe::SERVER_REFERENCES => DistributionRequest::Server {
                     artifact,
                     options: server_options(),
                     runtime: runtime
@@ -261,6 +261,7 @@ async fn execute(
                         .context("Missing prepared server runtime")?
                         .clone(),
                 },
+                _ => anyhow::bail!("Consumer recipe has no prepared adapter"),
             });
         }
         let removals = view

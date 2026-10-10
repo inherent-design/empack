@@ -84,7 +84,11 @@ Set stable native publication identity and runtime requirements in `empack.yml`:
 
 ```yaml
 distribution:
-  targets: [mrpack]
+  recipes:
+    - consumer: modrinth
+      delivery: references
+      environment: both
+      updates: snapshot
   archive: zip
   native:
     pack-id: my-pack

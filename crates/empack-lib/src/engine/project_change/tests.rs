@@ -15,7 +15,7 @@ use crate::engine::{
 use std::{fs, io::Read, sync::Arc};
 
 fn author_exclusions(root: &std::path::Path) {
-    fs::write(root.join("empack.yml"), "schema: 2\npack: {name: Example, version: alpha}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {targets: [mrpack], archive: zip}\ndependencies: {}\nsources: {exclude: [private/, '*.zip']}\nlayout: {}\nextensions: {}\n").unwrap();
+    fs::write(root.join("empack.yml"), "schema: 3\npack: {name: Example, version: alpha}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {recipes: [{consumer: modrinth, delivery: references, environment: both, updates: snapshot}], archive: zip}\ndependencies: {}\nsources: {exclude: [private/, '*.zip']}\nlayout: {}\nextensions: {}\n").unwrap();
 }
 async fn candidate() -> ImportCandidate {
     let archive = source(

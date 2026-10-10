@@ -21,10 +21,10 @@ use super::{
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     files::FilePermissions,
     model::{ContentLayer, ExpectedContent, LoaderKind},
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::{
     collections::BTreeMap,
@@ -120,14 +120,14 @@ pub(super) fn template_address(
 /// Call from an admitted worker: parsing and local file verification are synchronous.
 pub fn prepare_templates(
     workspace: &WorkspaceSnapshot,
-    target: BuildTarget,
+    target: Recipe,
     options: &TemplateOptions,
     cancel: &Cancellation,
 ) -> Result<RenderedTemplates> {
     let side = match target {
-        BuildTarget::Client | BuildTarget::ClientFull => ContentLayer::Client,
-        BuildTarget::Server | BuildTarget::ServerFull => ContentLayer::Server,
-        BuildTarget::Mrpack | BuildTarget::CurseForge => {
+        Recipe::PRISM_REFERENCES | Recipe::PRISM_BUNDLED => ContentLayer::Client,
+        Recipe::SERVER_REFERENCES | Recipe::SERVER_BUNDLED => ContentLayer::Server,
+        _ => {
             anyhow::bail!("Reference archives have no standalone template projection")
         }
     };

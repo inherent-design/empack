@@ -382,8 +382,8 @@ pub struct NativeDistributionIntent {
 pub struct DistributionIntent {
     /// Native release settings; required when selecting the empack consumer.
     pub native: Option<NativeDistributionIntent>,
-    /// Explicit default target order.
-    pub targets: NonEmpty<crate::projection::BuildTarget>,
+    /// Complete consumer policies in explicit default order.
+    pub recipes: NonEmpty<crate::distribution::Recipe>,
     /// Archive container for standalone distributions.
     pub archive: DistributionArchive,
 }
@@ -410,7 +410,7 @@ pub struct ProjectIntent {
     pub roots: BTreeMap<DependencyKey, DependencyIntent>,
     /// Explicit content-kind directory overrides.
     pub layout: BTreeMap<ContentKind, PortableRelPath>,
-    /// Default build targets and archive format.
+    /// Default consumer recipes and archive format.
     pub distribution: DistributionIntent,
     /// Documented extension namespace, preserved during edits.
     pub extensions: BTreeMap<String, ExtensionValue>,

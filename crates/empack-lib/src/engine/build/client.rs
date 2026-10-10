@@ -20,11 +20,11 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     distribution::Delivery,
+    distribution::Recipe,
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent, LoaderKind, RuntimeResolution},
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use serde_json::{Value, json};
 use std::{
@@ -258,9 +258,9 @@ pub(super) fn prepare_client_archive(
         "Client artifact extension differs from selected format"
     );
     let target = if references {
-        BuildTarget::Client
+        Recipe::PRISM_REFERENCES
     } else {
-        BuildTarget::ClientFull
+        Recipe::PRISM_BUNDLED
     };
     let game = if references {
         prepare_native_game_content(

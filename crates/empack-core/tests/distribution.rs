@@ -84,3 +84,17 @@ fn instance_consumers_reject_platform_authority_and_wrong_sides() {
         );
     }
 }
+
+#[test]
+fn ordering_preserves_complete_policy_identity() {
+    use empack_core::distribution::plan_recipes;
+    let snapshot = Recipe::PRISM_REFERENCES;
+    let followed = snapshot
+        .with_update_authority(UpdateAuthority::Empack)
+        .unwrap();
+    let bundled = Recipe::PRISM_BUNDLED;
+    assert_eq!(
+        plan_recipes(&[snapshot, followed, bundled, snapshot, followed]),
+        [snapshot, followed, bundled]
+    );
+}

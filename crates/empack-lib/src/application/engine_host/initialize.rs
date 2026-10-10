@@ -12,12 +12,12 @@ use crate::{
     },
 };
 use empack_core::{
+    distribution::Recipe,
     model::{
         ContentKind, DistributionArchive, DistributionIntent, GameVersion, LoaderKind,
         LoaderVersion, NonEmpty, PackMetadata, ProjectIntent, RuntimeIntent, RuntimeResolution,
     },
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::collections::BTreeMap;
 
@@ -209,12 +209,10 @@ async fn initialize_with_catalog(
         layout,
         distribution: DistributionIntent {
             native: None,
-            targets: NonEmpty::new(vec![
-                BuildTarget::Mrpack,
-                BuildTarget::Client,
-                BuildTarget::Server,
-                BuildTarget::ClientFull,
-                BuildTarget::ServerFull,
+            recipes: NonEmpty::new(vec![
+                Recipe::MODRINTH,
+                Recipe::PRISM_BUNDLED,
+                Recipe::SERVER_BUNDLED,
             ])?,
             archive: DistributionArchive::Zip,
         },

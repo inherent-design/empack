@@ -11,13 +11,13 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     inventory::{
         BuildInventory, BuildSelection, ContentOwner, DownloadOrigins, InventoryInput,
         OptionalPolicy, Representation,
     },
     model::{AcquisitionSpec, ExpectedContent, NonEmpty, ResolvedFile},
     path::PortableRelPath,
-    projection::BuildTarget,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -76,13 +76,13 @@ fn check_expected(file: &AcquiredBuildFile, expected: &ExpectedContent) -> Resul
 pub fn prepare_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull),
+        matches!(target, Recipe::PRISM_BUNDLED | Recipe::SERVER_BUNDLED),
         "Game materialization requires a full target"
     );
     prepare_selected_content(
@@ -93,13 +93,13 @@ pub fn prepare_game_content(
 pub fn prepare_reference_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        target == BuildTarget::CurseForge,
+        target == Recipe::CURSEFORGE,
         "Reference content needs a platform consumer"
     );
     prepare_selected_content(
@@ -111,13 +111,13 @@ pub fn prepare_reference_game_content(
 pub fn prepare_native_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(target, BuildTarget::Client | BuildTarget::Server),
+        matches!(target, Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES),
         "Native consumer requires a client or server environment"
     );
     prepare_selected_content(
@@ -127,7 +127,7 @@ pub fn prepare_native_game_content(
 fn prepare_selected_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     references: bool,
@@ -245,7 +245,7 @@ fn prepare_selected_content(
                 references && matches!(entry.representation, Representation::Download { .. }),
                 "Full game inventory contains a reference"
             );
-            if target == BuildTarget::CurseForge {
+            if target == Recipe::CURSEFORGE {
                 // The shared acquisition map also contains files for other recipes. Check
                 // attributes only after side, precedence and optional participation selection.
                 ensure!(
@@ -282,9 +282,9 @@ fn prepare_selected_content(
 pub(super) fn reference_for_target(
     file: &empack_core::model::ResolvedFile,
     acquired: Option<&AcquiredBuildFile>,
-    target: BuildTarget,
+    target: Recipe,
 ) -> Result<Option<Representation>> {
-    if target == BuildTarget::CurseForge {
+    if target == Recipe::CURSEFORGE {
         let selection = match &file.acquisition {
             AcquisitionSpec::Provider { pin, slot, .. } => Some((pin, slot)),
             AcquisitionSpec::Manual { pin: Some(pin), .. } => Some((pin, &file.slot)),

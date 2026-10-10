@@ -13,12 +13,12 @@ use crate::{
     },
 };
 use empack_core::{
+    distribution::Recipe,
     model::{
         DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent, GameVersion,
         LoaderKind, PackMetadata,
     },
     path::{InstallDestination, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
     requirements::{ChoiceKey, OptionalChoice},
 };
 use std::collections::BTreeMap;
@@ -438,12 +438,10 @@ fn decisions(
         layout,
         distribution: DistributionIntent {
             native: None,
-            targets: NonEmpty::new(vec![
-                BuildTarget::Mrpack,
-                BuildTarget::Client,
-                BuildTarget::Server,
-                BuildTarget::ClientFull,
-                BuildTarget::ServerFull,
+            recipes: NonEmpty::new(vec![
+                Recipe::MODRINTH,
+                Recipe::PRISM_BUNDLED,
+                Recipe::SERVER_BUNDLED,
             ])?,
             archive: DistributionArchive::Zip,
         },

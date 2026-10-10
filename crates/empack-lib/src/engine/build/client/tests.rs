@@ -354,7 +354,7 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
             &cancel,
         )
         .unwrap();
-        assert_eq!(plan.game().inventory().target(), BuildTarget::Client);
+        assert_eq!(plan.game().inventory().target(), Recipe::PRISM_REFERENCES);
         assert!(
             !plan
                 .inventory()

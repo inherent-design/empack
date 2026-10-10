@@ -258,7 +258,7 @@ fn native_client_joins_requested_publication_without_installer_tools() {
         &cancel,
     )
     .unwrap();
-    assert_eq!(plan.artifacts()[1].target, BuildTarget::Client);
+    assert_eq!(plan.artifacts()[1].target, Recipe::PRISM_REFERENCES);
     plan.publish(
         &Publisher::open(&host.path().join("private")).unwrap(),
         &cancel,

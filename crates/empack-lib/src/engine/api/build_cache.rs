@@ -36,7 +36,7 @@ pub(super) fn refresh(value: &mut PreparedBuild) {
     value.view.needs_network = value.request.outputs.as_slice().iter().any(|output| {
         matches!(
             output.target,
-            BuildTarget::Client | BuildTarget::Server | BuildTarget::ServerFull
+            Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES | Recipe::SERVER_BUNDLED
         )
     }) || value.acquisition.pending.iter().any(|need| {
         matches!(

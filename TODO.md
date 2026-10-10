@@ -106,8 +106,10 @@ readiness or replace executable evidence.
 - [x] Implement validated consumer/delivery/update-authority recipe values, with
   snapshot defaults and explicit environment/authority capability errors.
 
-- [ ] Replace `BuildTarget` and persisted target strings with validated consumer,
+- [x] Replace `BuildTarget` and persisted target strings with validated consumer,
   delivery, environment and update-policy recipes; reject invalid combinations.
+- [ ] Wire complete recipes into CLI selection and every executable consumer adapter;
+  bind platform associations and native subscriptions before activation.
 - [ ] Preserve mrpack hashes, sizes, URLs, side layers and requirements. Separate
   generic format validation from Modrinth hosting-domain eligibility.
 - [x] Implement CurseForge manifest ZIP export and independently inspect its

@@ -15,7 +15,7 @@ pub(super) struct Record {
     pub schema: u32,
     pub fingerprint: [u8; 32],
     pub documents: [Option<[u8; 32]>; 2],
-    pub recipe: Recipe,
+    pub recipe: SavedRecipe,
     pub files: Vec<SavedFile>,
 }
 #[derive(Serialize, Deserialize)]
@@ -63,9 +63,9 @@ impl SavedFile {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Recipe {
+pub(super) struct SavedRecipe {
     clean: bool,
-    outputs: Vec<(String, String)>,
+    outputs: Vec<(serde_json::Value, String)>,
     archive: String,
     optional: Optional,
     allow_optional_metadata_loss: bool,
@@ -91,7 +91,7 @@ struct Templates {
     total_bytes: u64,
     entries: usize,
 }
-impl From<&BuildRequest> for Recipe {
+impl From<&BuildRequest> for SavedRecipe {
     fn from(request: &BuildRequest) -> Self {
         Self {
             clean: request.clean,
@@ -101,15 +101,7 @@ impl From<&BuildRequest> for Recipe {
                 .iter()
                 .map(|output| {
                     (
-                        match output.target {
-                            BuildTarget::Mrpack => "mrpack",
-                            BuildTarget::CurseForge => "curseforge",
-                            BuildTarget::Client => "client",
-                            BuildTarget::Server => "server",
-                            BuildTarget::ClientFull => "client-full",
-                            BuildTarget::ServerFull => "server-full",
-                        }
-                        .into(),
+                        crate::engine::documents::recipe::encode(&output.target),
                         output.artifact.as_str().into(),
                     )
                 })
@@ -159,7 +151,7 @@ impl From<&BuildRequest> for Recipe {
         }
     }
 }
-impl Recipe {
+impl SavedRecipe {
     pub fn parse(&self) -> Result<BuildRequest> {
         Ok(BuildRequest {
             clean: self.clean,
@@ -168,15 +160,7 @@ impl Recipe {
                     .iter()
                     .map(|(target, path)| {
                         Ok(BuildOutput {
-                            target: match target.as_str() {
-                                "mrpack" => BuildTarget::Mrpack,
-                                "curseforge" => BuildTarget::CurseForge,
-                                "client" => BuildTarget::Client,
-                                "server" => BuildTarget::Server,
-                                "client-full" => BuildTarget::ClientFull,
-                                "server-full" => BuildTarget::ServerFull,
-                                _ => anyhow::bail!("Unsupported saved build target"),
-                            },
+                            target: crate::engine::documents::recipe::decode(target)?,
                             artifact: PortableRelPath::parse(path, PathSyntax::ArtifactName)?,
                         })
                     })

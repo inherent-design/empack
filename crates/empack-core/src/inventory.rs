@@ -1,11 +1,11 @@
 //! Independent expected build content, including environment precedence and optional choices.
 use crate::{
     digest::ContentId,
+    distribution::{Consumer, Delivery, Recipe},
     files::FilePermissions,
     model::{ContentLayer, DependencyKey, ExpectedContent, FileSlot, NonEmpty, ResolvedPin},
     path::InstallDestination,
-    projection::BuildTarget,
-    requirements::{OptionalChoice, Requirement, Requirements},
+    requirements::{Environments, OptionalChoice, Requirement, Requirements},
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -132,7 +132,7 @@ pub struct ChoiceDecision {
 /// Immutable expected content; it grants no writer or publication authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildInventory {
-    target: BuildTarget,
+    target: Recipe,
     entries: Vec<ProjectedEntry>,
     precedence: Vec<Precedence>,
     choices: Vec<ChoiceDecision>,
@@ -192,7 +192,7 @@ impl BuildInventory {
     /// Plan and require target representations to be complete.
     pub fn project(
         inputs: &[InventoryInput],
-        target: BuildTarget,
+        target: Recipe,
         policy: &OptionalPolicy,
     ) -> Result<Self, InventoryError> {
         BuildSelection::select(inputs, target, policy)?.finish()
@@ -205,7 +205,7 @@ impl BuildSelection {
     /// Select surviving obligations before deciding which missing bytes must be acquired.
     pub fn select(
         inputs: &[InventoryInput],
-        target: BuildTarget,
+        target: Recipe,
         policy: &OptionalPolicy,
     ) -> Result<Self, InventoryError> {
         let mut by_layer = BTreeMap::new();
@@ -245,7 +245,7 @@ impl BuildSelection {
                 }
             }
         }
-        if target == BuildTarget::Mrpack {
+        if matches!(target.consumer(), Consumer::Modrinth | Consumer::Empack) {
             if !matches!(policy, OptionalPolicy::Preserve) {
                 return Err(InventoryError::ReferenceChoicesMustBePreserved);
             }
@@ -253,23 +253,33 @@ impl BuildSelection {
                 target,
                 entries: by_layer
                     .values()
-                    .map(|input| ProjectedEntry {
-                        owner: input.owner.clone(),
-                        destination: input.destination.clone(),
-                        layer: input.layer,
-                        requirements: input.requirements.clone(),
-                        representation: input.representation.clone(),
+                    .filter_map(|input| {
+                        let mut requirements = input.requirements.clone();
+                        match target.environments() {
+                            Environments::Client => requirements.server = Requirement::Unsupported,
+                            Environments::Server => requirements.client = Requirement::Unsupported,
+                            Environments::Both => {}
+                        }
+                        if requirements.client == Requirement::Unsupported
+                            && requirements.server == Requirement::Unsupported
+                        {
+                            return None;
+                        }
+                        Some(ProjectedEntry {
+                            owner: input.owner.clone(),
+                            destination: input.destination.clone(),
+                            layer: input.layer,
+                            requirements,
+                            representation: input.representation.clone(),
+                        })
                     })
                     .collect(),
                 precedence: Vec::new(),
                 choices: Vec::new(),
             }));
         }
-        let client = matches!(
-            target,
-            BuildTarget::Client | BuildTarget::ClientFull | BuildTarget::CurseForge
-        );
-        let full = matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull);
+        let client = target.environments() == Environments::Client;
+        let full = target.delivery() == Delivery::Bundled;
         let side = if client {
             ContentLayer::Client
         } else {
@@ -361,10 +371,7 @@ impl BuildSelection {
     }
     /// Complete only after every included entry has an allowed target representation.
     pub fn finish(self) -> Result<BuildInventory, InventoryError> {
-        let full = matches!(
-            self.0.target,
-            BuildTarget::ClientFull | BuildTarget::ServerFull
-        );
+        let full = self.0.target.delivery() == Delivery::Bundled;
         for entry in &self.0.entries {
             if let Representation::Download { expected, allowed } = &entry.representation {
                 let invalid_origin = match allowed {
@@ -392,7 +399,7 @@ impl BuildSelection {
 }
 impl BuildInventory {
     /// Requested target.
-    pub fn target(&self) -> BuildTarget {
+    pub fn target(&self) -> Recipe {
         self.target
     }
     /// Complete included content obligations.

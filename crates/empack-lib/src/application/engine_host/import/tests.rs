@@ -12,9 +12,9 @@ use crate::{
     },
 };
 use empack_core::{
+    distribution::Recipe,
     inventory::OptionalPolicy,
     model::{ContentKind, DependencyKey, DistributionArchive, DistributionIntent, PackMetadata},
-    projection::BuildTarget,
     requirements::{ChoiceKey, OptionalChoice, Requirement, Requirements},
 };
 use serde_json::{Value, json};
@@ -145,7 +145,7 @@ fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> 
         layout: BTreeMap::new(),
         distribution: DistributionIntent {
             native: None,
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
             archive: DistributionArchive::Zip,
         },
         files,
@@ -702,7 +702,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
                 layout: BTreeMap::new(),
                 distribution: DistributionIntent {
                     native: None,
-                    targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                    recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
                     archive: DistributionArchive::Zip,
                 },
                 files: BTreeMap::new(),

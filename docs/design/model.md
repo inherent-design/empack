@@ -33,7 +33,8 @@ selectors are resolved before persistence; a slug never becomes an ID by assignm
 | Instance record | Instance engine | Last completed release, owned files, side, choices, authority and source binding |
 | Recovery journal | Publisher | Approved operation, native root, before/after evidence and durable progress |
 
-Each schema has its own explicit version. Unknown intent fields and invalid explicit
+Author intent uses schema 3; exact resolution uses schema 1. Release, channel and
+instance schemas have their own explicit versions. Unknown intent fields and invalid explicit
 variants fail; they cannot silently become search input. Original author bytes are
 preserved when no semantic edit is required. Canonical semantic identity and raw
 file revision serve different purposes.

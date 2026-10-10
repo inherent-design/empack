@@ -11,6 +11,7 @@ use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::{ContentId, DigestAlgorithm},
+    distribution::Recipe,
     files::{FileContent, FilePermissions},
     inventory::{
         BuildInventory, ContentOwner, DownloadOrigins, InventoryInput, OptionalPolicy,
@@ -21,7 +22,6 @@ use empack_core::{
         FileSlot, LoaderKind, NonEmpty, ResolutionLock, ResolvedProject,
     },
     path::{InstallDestination, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
     requirements::{Requirement, Requirements},
 };
 use serde_json::{Value, json};
@@ -257,7 +257,7 @@ impl MrpackPlan {
             }
         }
         let inventory =
-            BuildInventory::project(&inputs, BuildTarget::Mrpack, &OptionalPolicy::Preserve)?;
+            BuildInventory::project(&inputs, Recipe::MODRINTH, &OptionalPolicy::Preserve)?;
         let mut archive_entries: Vec<_> = inventory
             .entries()
             .iter()
@@ -269,7 +269,7 @@ impl MrpackPlan {
                 .iter()
                 .map(|index| inputs[*index].clone())
                 .collect();
-            for target in [BuildTarget::Client, BuildTarget::Server] {
+            for target in [Recipe::PRISM_REFERENCES, Recipe::SERVER_REFERENCES] {
                 let view = BuildInventory::project(&group, target, &OptionalPolicy::Preserve)?;
                 archive_entries.extend_from_slice(view.entries());
             }

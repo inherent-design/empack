@@ -98,7 +98,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
     let server = prepare_game_content(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::ServerFull,
+        Recipe::SERVER_BUNDLED,
         &policy,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -109,7 +109,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
     let error = prepare_game_content(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &policy,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -123,7 +123,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
     let client = prepare_game_content(
         &workspace,
         &acquired(&project, b"payload"),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &policy,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -157,7 +157,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
         prepare_game_content(
             &workspace,
             &acquired(&project, b"wrong"),
-            BuildTarget::ClientFull,
+            Recipe::PRISM_BUNDLED,
             &policy,
             SourceEvidencePolicy::Compatibility,
             &cancel
@@ -200,7 +200,7 @@ fn disabled_unacquired_optional_overlays_preserve_common_fallback() {
     let result = prepare_game_content(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &policy,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -219,7 +219,7 @@ fn disabled_unacquired_optional_overlays_preserve_common_fallback() {
     let missing = prepare_game_content(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &policy,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -237,7 +237,7 @@ fn disabled_unacquired_optional_overlays_preserve_common_fallback() {
     let result = prepare_game_content(
         &workspace,
         &acquired(&project, b"payload"),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &policy,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -262,8 +262,8 @@ fn native_shared_override_is_preserved_and_selected_before_side_content() {
     put(root.path(), "overrides/client/config/options", b"client");
     let workspace = capture(root.path(), host.path());
     for (target, expected) in [
-        (BuildTarget::ClientFull, b"client"),
-        (BuildTarget::ServerFull, b"shared"),
+        (Recipe::PRISM_BUNDLED, b"client"),
+        (Recipe::SERVER_BUNDLED, b"shared"),
     ] {
         let view = prepare_game_content(
             &workspace,
@@ -311,7 +311,7 @@ fn native_reference_projection_keeps_selected_identity_and_omits_excluded_bytes(
     let server = prepare_native_game_content(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::Server,
+        Recipe::SERVER_REFERENCES,
         &OptionalPolicy::Preserve,
         SourceEvidencePolicy::Compatibility,
         &cancel,
@@ -331,7 +331,7 @@ fn native_reference_projection_keeps_selected_identity_and_omits_excluded_bytes(
         prepare_native_game_content(
             &workspace,
             &BuildAcquisitions::default(),
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             &OptionalPolicy::Preserve,
             SourceEvidencePolicy::Compatibility,
             &cancel
@@ -341,7 +341,7 @@ fn native_reference_projection_keeps_selected_identity_and_omits_excluded_bytes(
     let client = prepare_native_game_content(
         &workspace,
         &acquired(&project, b"payload"),
-        BuildTarget::Client,
+        Recipe::PRISM_REFERENCES,
         &OptionalPolicy::Preserve,
         SourceEvidencePolicy::Compatibility,
         &cancel,

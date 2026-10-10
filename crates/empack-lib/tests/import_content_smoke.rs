@@ -1,5 +1,5 @@
 //! Live import acquisition, semantic assembly and publication into temporary projects.
-use empack_core::{model::*, path::InstallDestination, projection::BuildTarget, requirements::*};
+use empack_core::{distribution::Recipe, model::*, path::InstallDestination, requirements::*};
 use empack_lib::{
     application::process_runtime::Cancellation,
     engine::{
@@ -241,7 +241,7 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         files,
         distribution: DistributionIntent {
             native: None,
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
             archive: DistributionArchive::Zip,
         },
         // The known generated CurseForge report is not game content. Reject any additional

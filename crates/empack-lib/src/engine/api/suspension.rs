@@ -367,10 +367,10 @@ async fn suspend(
         ..Default::default()
     })?;
     let mut record = record::Record {
-        schema: 1,
+        schema: 2,
         fingerprint: build.workspace.observations().fingerprint(),
         documents: store::documents(build.workspace.observations())?,
-        recipe: record::Recipe::from(&build.request),
+        recipe: record::SavedRecipe::from(&build.request),
         files: vec![],
     };
     let save_guard =

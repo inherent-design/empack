@@ -1,8 +1,8 @@
 //! Select exact obligations without acquiring bytes or running a backend.
 use super::*;
 use empack_core::{
+    distribution::Recipe,
     inventory::{BuildSelection, ContentOwner, InventoryInput, OptionalPolicy, Representation},
-    projection::BuildTarget,
 };
 
 /// Plan one target with its actual environment and optional choices. In a build batch, callers
@@ -10,12 +10,12 @@ use empack_core::{
 pub fn plan_target_build_acquisitions(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
-    if target == BuildTarget::Mrpack {
+    if target == Recipe::MODRINTH {
         ensure!(
             matches!(optional, OptionalPolicy::Preserve),
             "Mrpack preserves optional choices"
@@ -29,7 +29,7 @@ pub fn plan_target_build_acquisitions(
             cancel,
         );
     }
-    let references = target == BuildTarget::CurseForge;
+    let references = target == Recipe::CURSEFORGE;
     let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
@@ -66,7 +66,7 @@ pub fn plan_target_build_acquisitions(
                 );
             }
             if matches!(entry.representation, Representation::Unacquired { .. })
-                || (matches!(target, BuildTarget::Client | BuildTarget::Server)
+                || (matches!(target, Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES)
                     && matches!(entry.representation, Representation::Download { .. }))
             {
                 needed.insert(key.clone());
@@ -93,14 +93,14 @@ pub fn plan_target_build_acquisitions(
 
 pub(in crate::engine::build) fn select_game_inputs(
     workspace: &WorkspaceSnapshot,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     cancel: &Cancellation,
 ) -> Result<(BuildSelection, BTreeMap<ContentOwner, AcquisitionKey>)> {
     let project = workspace.require_resolved()?;
     let references = matches!(
         target,
-        BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
+        Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES | Recipe::CURSEFORGE
     );
     let mut inputs = Vec::new();
     let mut occupied = BTreeSet::new();

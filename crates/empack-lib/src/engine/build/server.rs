@@ -21,11 +21,11 @@ use crate::{
 use anyhow::{Result, ensure};
 use empack_core::{
     distribution::Delivery,
+    distribution::Recipe,
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent},
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::collections::BTreeMap;
 
@@ -229,9 +229,9 @@ pub(super) fn prepare_server_archive(
         "Server artifact extension differs from selected format"
     );
     let target = if references {
-        BuildTarget::Server
+        Recipe::SERVER_REFERENCES
     } else {
-        BuildTarget::ServerFull
+        Recipe::SERVER_BUNDLED
     };
     let game = if references {
         prepare_native_game_content(
