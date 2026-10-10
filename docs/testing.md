@@ -58,6 +58,20 @@ consumer. Prism ZIP imports, Modrinth and CurseForge format acceptance, server s
 and native instance updates are separate gates. Do not assume a TAR/7z tree is
 importable wherever a ZIP is accepted.
 
+Use a separate Prism profile through `--dir` and import each generated archive
+through `--import`. Authenticate through the launcher when needed; never copy
+account files into test fixtures or publish launcher logs containing credentials.
+Check the imported runtime components and selected file bytes. Prism may use
+`minecraft/` for platform imports and `.minecraft/` for native instance archives.
+
+For a referenced Prism export, launch the imported instance and verify both native
+preparation and the `Prism → empack → Java` process chain. Change the test release
+descriptor without updating its expected hash, then launch again: empack must fail
+preparation, Prism must propagate the nonzero result, and Java must not start.
+Restore the descriptor afterward. Modrinth and CurseForge snapshot imports must
+launch without empack hooks. Record the consumer version and distinguish successful
+import, game startup and gameplay; these are different assertions.
+
 Native release acceptance includes A-to-B updates, choices, user-edited configuration,
 manual content, offline policy, trust failures, runtime changes and rollback. Crash
 tests terminate a real subprocess at durable boundaries and recover in a new process.

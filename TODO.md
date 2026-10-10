@@ -124,7 +124,7 @@ readiness or replace executable evidence.
   content does not imply bundled client game binaries or permission to redistribute.
 - [x] Support native release directories/archives and channel output without making
   every consumer depend on an intermediate mrpack.
-- [ ] Verify launcher imports and prelaunch status propagation in actual consumers;
+- [x] Verify launcher imports and prelaunch status propagation in actual consumers;
   writer/reader agreement within empack is insufficient.
 
 ## Removal and wiring
@@ -160,7 +160,7 @@ readiness or replace executable evidence.
   revoked publisher keys, cross-pack substitution and explicit trust rotation.
 - [x] Test optional groups, side-specific overrides, local seeds, renamed files,
   shared ownership, unexpected directories/links and destination collisions.
-- [ ] Run native-platform tests, strict provider/runtime/curated-pack workflows,
+- [x] Run native-platform tests, strict provider/runtime/curated-pack workflows,
   formatting, Clippy, architecture/API checks and consumer import verification.
 - [ ] Review and fix the completed implementation, then bind release acceptance to
   one immutable revision and publish `v0.6.0-beta` only after the release gates pass.
