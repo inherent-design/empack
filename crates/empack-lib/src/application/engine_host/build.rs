@@ -515,6 +515,14 @@ async fn finish_once(
         };
         published = true;
         for artifact in &receipt.artifacts {
+            if let Some(hosting) = &artifact.modrinth_hosting {
+                for blocked in &hosting.blocked_downloads {
+                    session.display().status().warning(&format!(
+                        "Valid mrpack download for {} uses {}; Modrinth hosting does not allow this domain",
+                        blocked.destination.as_str(), blocked.host
+                    ));
+                }
+            }
             if let Some(release) = &artifact.native_release {
                 session
                     .display()

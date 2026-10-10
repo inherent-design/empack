@@ -110,7 +110,7 @@ readiness or replace executable evidence.
   delivery, environment and update-policy recipes; reject invalid combinations.
 - [ ] Wire complete recipes into CLI selection and every executable consumer adapter;
   bind platform associations and native subscriptions before activation.
-- [ ] Preserve mrpack hashes, sizes, URLs, side layers and requirements. Separate
+- [x] Preserve mrpack hashes, sizes, URLs, side layers and requirements. Separate
   generic format validation from Modrinth hosting-domain eligibility.
 - [x] Implement CurseForge manifest ZIP export and independently inspect its
   referenced project/file identities and overrides. Reject unverifiable cross-provider

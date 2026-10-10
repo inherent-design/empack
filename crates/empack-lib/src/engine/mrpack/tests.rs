@@ -718,3 +718,57 @@ fn environment_export_preserves_selected_layers_without_excluded_evidence() {
         .is_err()
     );
 }
+
+#[test]
+fn hosting_domains_are_exact_and_generic_exports_remain_valid() {
+    let destination =
+        PortableRelPath::parse("mods/example.jar", PathSyntax::ArchiveMember).unwrap();
+    let mut report = HostingEligibility::default();
+    for host in [
+        "cdn.modrinth.com",
+        "github.com",
+        "raw.githubusercontent.com",
+        "gitlab.com",
+    ] {
+        report
+            .observe(&destination, &format!("https://{host}/file.jar"))
+            .unwrap();
+    }
+    assert!(report.download_domains_allowed());
+    for host in [
+        "cdn.modrinth.com.example.org",
+        "downloads.github.com",
+        "example.org",
+    ] {
+        report
+            .observe(
+                &destination,
+                &format!("https://{host}/secret-path?token=secret"),
+            )
+            .unwrap();
+    }
+    assert_eq!(report.blocked_downloads.len(), 3);
+    assert!(!format!("{report:?}").contains("secret"));
+    assert!(
+        report
+            .observe(&destination, "http://github.com/file.jar")
+            .is_err()
+    );
+    let project = project(false, false);
+    let plan = MrpackPlan::prepare(
+        &project,
+        &BTreeMap::new(),
+        vec![],
+        OptionalConversion::RejectMetadataLoss,
+    )
+    .unwrap();
+    assert_eq!(plan.hosting_eligibility().blocked_downloads.len(), 3);
+    assert!(
+        plan.hosting_eligibility()
+            .blocked_downloads
+            .iter()
+            .all(|entry| entry.host == "example.com")
+    );
+    let mut archive = tempfile::tempfile().unwrap();
+    plan.write(&mut archive, &Cancellation::default()).unwrap();
+}

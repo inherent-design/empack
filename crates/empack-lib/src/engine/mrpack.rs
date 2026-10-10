@@ -65,6 +65,39 @@ pub enum OptionalConversion {
     /// Host explicitly accepted loss of choice metadata; participation remains optional.
     AcknowledgedMetadataLoss,
 }
+/// Download-domain eligibility only; this does not establish redistribution rights,
+/// marketplace acceptance, upload, or a launcher-owned platform association.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HostingEligibility {
+    pub blocked_downloads: BTreeSet<HostingDownload>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HostingDownload {
+    pub destination: PortableRelPath,
+    /// Host only: credentials and URL paths are never included in this report.
+    pub host: String,
+}
+impl HostingEligibility {
+    pub fn download_domains_allowed(&self) -> bool {
+        self.blocked_downloads.is_empty()
+    }
+    fn observe(&mut self, destination: &PortableRelPath, locator: &str) -> Result<()> {
+        let url = reqwest::Url::parse(locator)?;
+        ensure!(url.scheme() == "https", "Mrpack requires HTTPS downloads");
+        let host = url.host_str().context("Mrpack download has no host")?;
+        // Exact domains from Modrinth's format policy, not suffix or substring matches.
+        if !matches!(
+            host,
+            "cdn.modrinth.com" | "github.com" | "raw.githubusercontent.com" | "gitlab.com"
+        ) {
+            self.blocked_downloads.insert(HostingDownload {
+                destination: destination.clone(),
+                host: host.to_owned(),
+            });
+        }
+        Ok(())
+    }
+}
 /// Immutable format plan retains all embedded bytes until the candidate is written.
 pub struct MrpackPlan {
     resolution: ResolutionLock,
@@ -73,6 +106,7 @@ pub struct MrpackPlan {
     embedded: BTreeMap<PortableRelPath, ContentLease>,
     expected: BTreeMap<PortableRelPath, FileContent>,
     conversions: Vec<String>,
+    hosting: HostingEligibility,
 }
 impl MrpackPlan {
     /// Every locked file and placement contributes an obligation. Missing acquisition fails before writing.
@@ -318,6 +352,7 @@ impl MrpackPlan {
         let mut embedded = BTreeMap::new();
         let mut expected = BTreeMap::new();
         let mut references = Vec::new();
+        let mut hosting = HostingEligibility::default();
         let mut reference_paths = CollisionIndex::default();
         let mut member_paths = CollisionIndex::default();
         let mut installation_paths = CollisionIndex::default();
@@ -353,6 +388,9 @@ impl MrpackPlan {
                         );
                     }
                     reference_paths.insert_file(entry.destination.relative())?;
+                    for url in urls.as_slice() {
+                        hosting.observe(entry.destination.relative(), url)?;
+                    }
                     let mut hashes = BTreeMap::new();
                     for digest in digests.values() {
                         if matches!(
@@ -444,6 +482,7 @@ impl MrpackPlan {
             embedded,
             expected,
             conversions: conversions.into_iter().collect(),
+            hosting,
         })
     }
     pub fn archive_inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
@@ -457,6 +496,9 @@ impl MrpackPlan {
         &self.resolution
     }
 
+    pub fn hosting_eligibility(&self) -> &HostingEligibility {
+        &self.hosting
+    }
     pub fn conversions(&self) -> &[String] {
         &self.conversions
     }

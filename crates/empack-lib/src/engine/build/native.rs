@@ -66,6 +66,7 @@ pub(super) fn prepare_archive(
     let mut output = PrivateFile::new()?;
     let verified = plan.write(output.file(), options.archive, options.limits, cancel)?;
     let receipt = batch::BuiltDistribution {
+        modrinth_hosting: None,
         native_release: Some(plan.release().id().into()),
         target: recipe,
         artifact: artifact.clone(),

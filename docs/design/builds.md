@@ -96,6 +96,12 @@ and optionality separate. Conditional fallback and grouped choices require an
 explicit representable selection when the format cannot preserve them.
 
 Generic format validity and Modrinth hosting eligibility are separate results.
+Each mrpack build receipt includes a download-domain report. The CLI identifies
+blocked destinations and hosts while retaining the valid generic archive. The
+check uses exact domains: `cdn.modrinth.com`, `github.com`,
+`raw.githubusercontent.com` and `gitlab.com`. It does not establish redistribution
+rights, marketplace approval, upload, or a launcher association. URL paths and
+credentials are omitted from this report.
 Hosting validation uses the documented download-domain rules, not an assumption
 that all valid HTTPS URLs are accepted. Standalone archive import does not subscribe
 the instance to an arbitrary update URL.

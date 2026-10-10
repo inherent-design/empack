@@ -84,6 +84,7 @@ impl DistributionRequest {
 pub struct BuiltDistribution {
     /// Exact portable payload identity; archive hashes are a separate namespace.
     pub native_release: Option<String>,
+    pub modrinth_hosting: Option<crate::engine::mrpack::HostingEligibility>,
     pub target: Recipe,
     pub artifact: PortableRelPath,
     pub bytes: u64,
@@ -207,6 +208,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 let verified = plan.write(archive.file(), cancel)?;
                 let evidence = BuiltDistribution {
                     native_release: None,
+                    modrinth_hosting: Some(plan.hosting_eligibility().clone()),
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: verified.len(),
@@ -249,6 +251,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 )?;
                 let evidence = BuiltDistribution {
                     native_release: None,
+                    modrinth_hosting: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: archive.verified.len(),
@@ -285,6 +288,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 };
                 let evidence = BuiltDistribution {
                     native_release: None,
+                    modrinth_hosting: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: built.archive.verified.len(),
