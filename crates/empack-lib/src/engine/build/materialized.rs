@@ -313,6 +313,16 @@ fn prepare_selected_content(
                 references && matches!(entry.representation, Representation::Download { .. }),
                 "Full game inventory contains a reference"
             );
+            if target == BuildTarget::CurseForge {
+                // The shared acquisition map also contains files for other recipes. Check
+                // attributes only after side, precedence and optional participation selection.
+                ensure!(
+                    leases.get(&entry.owner).is_none_or(
+                        |file| !file.permissions.readonly && !file.permissions.executable
+                    ),
+                    "CurseForge references cannot preserve custom file permissions"
+                );
+            }
             collisions.insert_file(entry.destination.relative())?;
             continue;
         };
@@ -351,11 +361,6 @@ pub(super) fn reference_for_target(
             _ => None,
         };
         if let Some((pin, slot)) = selection {
-            ensure!(
-                acquired
-                    .is_none_or(|file| !file.permissions.readonly && !file.permissions.executable),
-                "CurseForge references cannot preserve custom file permissions"
-            );
             return Ok(Some(Representation::Download {
                 expected: file.expected.clone(),
                 allowed: DownloadOrigins::Provider {

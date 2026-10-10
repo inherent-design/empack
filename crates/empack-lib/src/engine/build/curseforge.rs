@@ -759,4 +759,103 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn shared_batch_permissions_are_checked_only_in_selected_environments() {
+        use crate::engine::{
+            build::server::ServerOptions, server_runtime::tests::prepared_fixture,
+            templates::TemplateOptions,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let project = fixture(false, false);
+        let mut intent = project.intent().clone();
+        intent.runtime.loader = LoaderKind::Vanilla;
+        intent.runtime.loader_version = None;
+        let mut lock = project.lock().clone();
+        lock.runtime.loader = LoaderKind::Vanilla;
+        lock.runtime.loader_version = None;
+        let key = DependencyKey::parse("assets").unwrap();
+        let dependency = lock.dependencies.get_mut(&key).unwrap();
+        let mut file = dependency.files.as_slice()[0].clone();
+        let mut placement = file.placements.as_slice()[0].clone();
+        placement.requirements.client = Requirement::Unsupported;
+        placement.requirements.server = Requirement::Required;
+        file.placements = NonEmpty::new(vec![placement]).unwrap();
+        dependency.files = NonEmpty::new(vec![file.clone()]).unwrap();
+        let project = explicitly_placed(intent, lock);
+        write(root.path(), &project);
+        let cancel = Cancellation::default();
+        let content = verify_stream(
+            &mut b"payload".as_slice(),
+            &file.expected,
+            100,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &cancel,
+        )
+        .unwrap();
+        let mut external = BuildAcquisitions::default();
+        external.locked.insert(
+            crate::engine::mrpack::LockedFileKey {
+                dependency: key,
+                slot: file.slot,
+            },
+            crate::engine::mrpack::AcquiredBuildFile {
+                content,
+                permissions: FilePermissions {
+                    readonly: true,
+                    executable: false,
+                },
+            },
+        );
+        let workspace = ProjectReader::new(RecoveryReader::new(host.path().join("private")))
+            .capture_build(
+                root.path(),
+                &[path("curseforge.zip"), path("server.zip")],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        let batch = prepare_build_batch(
+            workspace,
+            NonEmpty::new(vec![
+                request(OptionalConversion::RejectMetadataLoss),
+                DistributionRequest::ServerFull {
+                    artifact: path("server.zip"),
+                    options: ServerOptions {
+                        archive: DistributionArchive::Zip,
+                        optional: OptionalPolicy::Preserve,
+                        templates: TemplateOptions::default(),
+                        evidence: SourceEvidencePolicy::Compatibility,
+                        limits: ArchiveLimits::default(),
+                    },
+                    runtime: prepared_fixture(),
+                },
+            ])
+            .unwrap(),
+            &external,
+            &cancel,
+        )
+        .unwrap();
+        assert!(
+            !batch.artifacts()[0]
+                .content
+                .entries()
+                .iter()
+                .any(|entry| matches!(entry.owner, ContentOwner::Dependency { .. }))
+        );
+        assert!(
+            batch.artifacts()[1].members[&path("resourcepacks/assets.zip")]
+                .permissions
+                .readonly
+        );
+        batch
+            .publish(
+                &Publisher::open(&host.path().join("private")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        assert!(root.path().join("dist/curseforge.zip").is_file());
+        assert!(root.path().join("dist/server.zip").is_file());
+    }
 }
