@@ -624,7 +624,7 @@ fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
         fs::write(project.path().join("pack/.packwizignore"), b"ignored/\n").unwrap();
         fs::write(project.path().join("pack/ignored/huge"), vec![0; 1024]).unwrap();
         let filter =
-            crate::engine::source::CaptureFilter::new(b"ignored/\n".to_vec(), &[]).unwrap();
+            crate::engine::source::CaptureFilter::author(&["ignored/".into()], &[]).unwrap();
         let state = tempfile::tempdir().unwrap();
         let publisher = Publisher::open(&state.path().join("private")).unwrap();
         let root = ProjectReadRoot::open(project.path()).unwrap();

@@ -25,7 +25,6 @@ pub(super) async fn supply(
             .acquired
             .locked
             .values()
-            .chain(prepared.acquisition.acquired.observed.values())
             .all(|file| file.content.lease().len() <= limits.file_bytes),
         "Retained build file exceeds byte limit"
     );
@@ -105,9 +104,6 @@ pub(super) async fn supply(
                 let previous = match key {
                     AcquisitionKey::Locked(key) => {
                         value.acquisition.acquired.locked.insert(key, file)
-                    }
-                    AcquisitionKey::Observed(path) => {
-                        value.acquisition.acquired.observed.insert(path, file)
                     }
                 };
                 ensure!(

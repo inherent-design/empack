@@ -34,6 +34,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         .unwrap()
         .intent()
         .clone();
+    intent.source_excludes = vec!["ignored/".into()];
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
@@ -281,7 +282,6 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
     .unwrap();
     assert_eq!(source, b"fresh source");
     drop(fresh);
-    let artifact = fs::read(project.join("dist/new.mrpack")).unwrap();
     fs::create_dir_all(project.join("pack/mods")).unwrap();
     fs::write(
         project.join("pack/mods/unaccounted.pw.toml"),
@@ -296,31 +296,17 @@ version = "Version1"
 "#,
     )
     .unwrap();
-    assert!(prepare().is_err());
-    assert_eq!(fs::read(project.join("dist/new.mrpack")).unwrap(), artifact);
-    let metadata = project.join("pack/mods/unaccounted.pw.toml");
-    let record = fs::read_to_string(&metadata).unwrap().replace(
-        "00000000000000000000000000000000",
-        "321c3cf486ed509164edec1e1981fec8",
-    );
-    fs::write(&metadata, &record).unwrap();
-    fs::write(project.join("pack/mods/other.jar"), b"payload").unwrap();
-    let prepared = prepare().unwrap();
-    assert_eq!(prepared.observed().len(), 1);
-    assert_eq!(
-        prepared.observed()[0].declared.algorithm(),
-        empack_core::digest::DigestAlgorithm::Md5
-    );
-    prepared.publish(&publisher, &cancel).unwrap();
+    prepare().unwrap().publish(&publisher, &cancel).unwrap();
     let mut retained =
         zip::ZipArchive::new(fs::File::open(project.join("dist/new.mrpack")).unwrap()).unwrap();
+    assert!(
+        retained
+            .by_name("overrides/mods/unaccounted.pw.toml")
+            .is_ok()
+    );
     let index: serde_json::Value =
         serde_json::from_reader(retained.by_name("modrinth.index.json").unwrap()).unwrap();
-    assert_eq!(index["files"][0]["path"], "mods/other.jar");
-    assert_eq!(index["files"][0]["fileSize"], 7);
-    assert!(index["files"][0]["hashes"]["sha512"].is_string());
-    assert!(retained.by_name("overrides/mods/other.jar").is_err());
-    assert_eq!(fs::read_to_string(metadata).unwrap(), record);
+    assert!(index["files"].as_array().unwrap().is_empty());
     assert_eq!(fs::read(project.join("empack.yml")).unwrap(), document);
     fs::write(project.join("pack/data/oversize.bin"), vec![0; 4097]).unwrap();
     assert!(
@@ -401,68 +387,13 @@ fn malformed_lock_is_an_error_and_comment_changes_invalidate_preparation() {
 }
 
 #[test]
-fn backend_observation_reads_captured_bytes_and_rejects_destination_aliases() {
-    let temp = tempfile::tempdir().unwrap();
-    fs::write(temp.path().join("empack.yml"), DOCUMENT).unwrap();
-    fs::create_dir_all(temp.path().join("pack/mods")).unwrap();
-    let metadata = r#"filename = "renderer.jar"
-side = "client"
-[download]
-url = "https://example.com/renderer.jar"
-hash-format = "sha256"
-hash = "0000000000000000000000000000000000000000000000000000000000000000"
-[update.modrinth]
-mod-id = "AANobbMI"
-version = "Version1"
-[option]
-optional = true
-default = false
-description = "Renderer"
-"#;
-    let path = temp.path().join("pack/mods/arbitrary-label.pw.toml");
-    fs::write(&path, metadata).unwrap();
-    let reader = ProjectReader::new(RecoveryReader::new(temp.path().join("unused-host")));
-    let cancel = Cancellation::default();
-    let capture = || {
-        reader
-            .capture(
-                temp.path(),
-                &[PortableRelPath::parse("pack", PathSyntax::ProjectContent).unwrap()],
-                SnapshotLimits::default(),
-                &cancel,
-            )
-            .unwrap()
-    };
-    let snapshot = capture();
-    let files = snapshot.backend_files(&cancel).unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(
-        files[0].metadata_path.as_str(),
-        "mods/arbitrary-label.pw.toml"
-    );
-    assert_eq!(
-        files[0].destination.relative().as_str(),
-        "mods/renderer.jar"
-    );
-    assert_eq!(
-        files[0].provider.as_ref().unwrap().project.to_string(),
-        "AANobbMI"
-    );
-    assert!(!files[0].optional.as_ref().unwrap().default_enabled);
-    fs::write(&path, metadata.replace("Version1", "Version2")).unwrap();
-    assert!(snapshot.backend_files(&cancel).is_err());
-    fs::write(
-        temp.path().join("pack/mods/second.pw.toml"),
-        metadata.replace("renderer.jar", "Renderer.jar"),
-    )
-    .unwrap();
-    assert!(capture().backend_files(&cancel).is_err());
-}
-
-#[test]
 fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_rules() {
     let temp = tempfile::tempdir().unwrap();
-    fs::write(temp.path().join("empack.yml"), DOCUMENT).unwrap();
+    fs::write(
+        temp.path().join("empack.yml"),
+        format!("{DOCUMENT}\nsources:\n  exclude: [config/private.toml, mods/ignored.pw.toml]\n"),
+    )
+    .unwrap();
     for name in [
         "pack/config/new.toml",
         "pack/config/private.toml",
@@ -493,19 +424,25 @@ fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_r
         .capture(temp.path(), &scopes, SnapshotLimits::default(), &cancel)
         .unwrap();
     let entries = snapshot.source_entries(&cancel).unwrap();
-    let paths: Vec<_> = entries.iter().map(|entry| entry.path.as_str()).collect();
+    let mut paths: Vec<_> = entries.iter().map(|entry| entry.path.as_str()).collect();
+    paths.sort();
     assert_eq!(
         paths,
         vec![
             "overrides/client/config/new.toml",
             "overrides/common/config/new.toml",
-            "overrides/server/config/private.toml",
-            "pack/config/new.toml"
+            "pack/.packwizignore",
+            "pack/config/new.toml",
+            "pack/index.toml"
         ]
     );
-    assert!(snapshot.backend_files(&cancel).unwrap().is_empty());
     fs::write(&ignore, b"").unwrap();
-    assert!(snapshot.source_entries(&cancel).is_err());
+    assert!(
+        snapshot
+            .root()
+            .revalidate(snapshot.observations(), &cancel)
+            .is_err()
+    );
     let documents_only = reader
         .capture(temp.path(), &[], SnapshotLimits::default(), &cancel)
         .unwrap();

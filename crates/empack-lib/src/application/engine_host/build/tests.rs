@@ -549,7 +549,6 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
                     },
                 },
             )]),
-            observed: BTreeMap::new(),
         },
     )
     .await

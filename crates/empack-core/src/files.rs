@@ -13,8 +13,6 @@ pub enum ManagedPath {
     IntentDocument,
     /// Exact selection document.
     LockDocument,
-    /// Backend metadata relative to its managed root.
-    BackendDocument(PortableRelPath),
     /// Content in an explicit environment layer.
     Content {
         /// Environment layer.

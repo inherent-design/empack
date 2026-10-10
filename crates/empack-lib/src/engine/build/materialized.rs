@@ -3,10 +3,9 @@ use super::{BuildAcquisitions, capture_build_content};
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
-        backend::BackendDigestComparison,
         content::SourceEvidencePolicy,
         layout::CollisionIndex,
-        mrpack::{AcquiredBuildFile, LockedFileKey, ObservedFileEvidence},
+        mrpack::{AcquiredBuildFile, LockedFileKey},
         project::WorkspaceSnapshot,
     },
 };
@@ -24,10 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Exact logical files still needed after side, override and optional selection.
 #[derive(Debug, thiserror::Error)]
-#[error("Acquire selected game content before full build: {files:?}; observed: {observed:?}")]
+#[error("Acquire selected game content before full build: {files:?}")]
 pub struct MissingGameContent {
     pub files: Vec<LockedFileKey>,
-    pub observed: Vec<PortableRelPath>,
 }
 
 /// Complete game projection and retained embedded bytes, not launcher/server runtime completeness.
@@ -35,8 +33,6 @@ pub struct PreparedGameContent {
     project: empack_core::model::ResolvedProject,
     inventory: BuildInventory,
     files: BTreeMap<PortableRelPath, AcquiredBuildFile>,
-    observed: Vec<ObservedFileEvidence>,
-    comparisons: Vec<BackendDigestComparison>,
 }
 impl PreparedGameContent {
     /// Encode the selected reference view; the returned tree still needs runtime assembly.
@@ -74,12 +70,6 @@ impl PreparedGameContent {
     }
     pub fn files(&self) -> &BTreeMap<PortableRelPath, AcquiredBuildFile> {
         &self.files
-    }
-    pub fn observed(&self) -> &[ObservedFileEvidence] {
-        &self.observed
-    }
-    pub fn backend_comparisons(&self) -> &[BackendDigestComparison] {
-        &self.comparisons
     }
 }
 fn representation(file: &AcquiredBuildFile) -> Representation {
@@ -155,7 +145,7 @@ fn prepare_selected_content(
         BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
     );
     let (selection, _) =
-        super::acquisition::select_game_inputs(workspace, external, target, optional, cancel)?;
+        super::acquisition::select_game_inputs(workspace, target, optional, cancel)?;
     let selected: BTreeSet<_> = selection
         .entries()
         .iter()
@@ -227,47 +217,8 @@ fn prepare_selected_content(
             representation,
         });
     }
-    let mut observed = Vec::new();
-    let mut observed_labels = BTreeMap::new();
-    for file in captured.observed {
-        match file {
-            super::ObservedBuildContent::Verified(file) => {
-                let (input, acquired, evidence) = if references {
-                    file.into_reference()
-                } else {
-                    file.into_materialized()
-                };
-                leases.insert(input.owner.clone(), acquired);
-                inputs.push(input);
-                observed.push(evidence);
-            }
-            super::ObservedBuildContent::Unacquired { record, choice } => {
-                if references
-                    && selected.contains(&ContentOwner::Source(format!(
-                        "backend:{}",
-                        record.metadata_path.as_str()
-                    )))
-                    && let Some((input, evidence)) =
-                        crate::engine::mrpack::ObservedFile::reference_input(
-                            &record, &choice, evidence,
-                        )?
-                {
-                    inputs.push(input);
-                    observed.push(evidence);
-                    continue;
-                }
-                let input = crate::engine::mrpack::ObservedFile::pending_input(&record, &choice)?;
-                let ContentOwner::Source(label) = &input.owner else {
-                    unreachable!()
-                };
-                observed_labels.insert(label.clone(), record.metadata_path);
-                inputs.push(input);
-            }
-        }
-    }
     let selection = BuildSelection::select(&inputs, target, optional)?;
     let mut missing = BTreeSet::new();
-    let mut missing_observed = BTreeSet::new();
     for entry in selection.entries() {
         if matches!(entry.representation, Representation::Unacquired { .. }) {
             match &entry.owner {
@@ -277,24 +228,16 @@ fn prepare_selected_content(
                         slot: slot.clone(),
                     });
                 }
-                ContentOwner::Source(label) => {
-                    missing_observed.insert(
-                        observed_labels
-                            .get(label)
-                            .context("Unacquired observed content has no owner")?
-                            .clone(),
-                    );
-                }
+                ContentOwner::Source(_) => anyhow::bail!("Captured source has no acquired bytes"),
                 ContentOwner::Runtime(_) => {
                     anyhow::bail!("Game selection unexpectedly requires runtime content")
                 }
             }
         }
     }
-    if !missing.is_empty() || !missing_observed.is_empty() {
+    if !missing.is_empty() {
         return Err(MissingGameContent {
             files: missing.into_iter().collect(),
-            observed: missing_observed.into_iter().collect(),
         }
         .into());
     }
@@ -344,8 +287,6 @@ fn prepare_selected_content(
         project: captured.project,
         inventory,
         files,
-        observed,
-        comparisons: captured.comparisons,
     })
 }
 

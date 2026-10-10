@@ -174,7 +174,6 @@ async fn execute(
             .acquired
             .locked
             .values()
-            .chain(acquired.acquired.observed.values())
             .map(|file| file.content.clone())
             .collect();
         cache.publish(scope, files).await?;

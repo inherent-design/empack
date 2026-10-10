@@ -293,7 +293,6 @@ impl Engine {
             let key = file.key.parse()?;
             let acquired = match &key {
                 AcquisitionKey::Locked(key) => build.acquisition.acquired.locked.get(key),
-                AcquisitionKey::Observed(path) => build.acquisition.acquired.observed.get(path),
             };
             ensure!(
                 keys.insert(key.clone()) && (expected.contains_key(&key) || acquired.is_some()),
@@ -394,15 +393,7 @@ async fn suspend(
         .acquired
         .locked
         .into_iter()
-        .map(|(key, file)| (AcquisitionKey::Locked(key), file))
-        .chain(
-            build
-                .acquisition
-                .acquired
-                .observed
-                .into_iter()
-                .map(|(path, file)| (AcquisitionKey::Observed(path), file)),
-        );
+        .map(|(key, file)| (AcquisitionKey::Locked(key), file));
     for (key, file) in files {
         scope.cancellation().check()?;
         let content = ExpectedDigest::Sha256(*file.content.lease().id().bytes()).hex();
@@ -515,9 +506,6 @@ async fn restore(
         match key {
             AcquisitionKey::Locked(key) => {
                 content.locked.insert(key, file);
-            }
-            AcquisitionKey::Observed(path) => {
-                content.observed.insert(path, file);
             }
         }
     }

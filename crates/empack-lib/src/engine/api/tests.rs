@@ -1145,8 +1145,7 @@ async fn owned_import_publishes_complete_content_and_retains_a_typed_receipt() {
     let host = tempfile::tempdir().unwrap();
     let (engine, governor) = engine(host.path().join("state"));
     put(root.path(), "README", b"unrelated");
-    put(root.path(), "pack/backup.zip", b"private");
-    put(root.path(), "pack/.packwizignore", b"private/\n");
+    put(root.path(), "backups/backup.zip", b"private");
     let prepared = ready_import(&engine, &governor, root.path()).await;
     assert!(prepared.view().import().unwrap().replacement.is_none());
     let expected_bytes: u64 = prepared
@@ -1181,7 +1180,7 @@ async fn owned_import_publishes_complete_content_and_retains_a_typed_receipt() {
         b"new config"
     );
     assert_eq!(
-        fs::read(root.path().join("pack/backup.zip")).unwrap(),
+        fs::read(root.path().join("backups/backup.zip")).unwrap(),
         b"private"
     );
     assert_eq!(fs::read(root.path().join("README")).unwrap(), b"unrelated");

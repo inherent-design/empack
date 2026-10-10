@@ -250,7 +250,6 @@ fn input_selector(key: &AcquisitionKey) -> String {
             encode(key.dependency.as_str()),
             encode(key.slot.as_str())
         ),
-        AcquisitionKey::Observed(path) => format!("observed:{}", encode(path.as_str())),
     }
 }
 fn associations(
@@ -278,7 +277,7 @@ fn associations(
             .collect();
         ensure!(
             matches.len() == 1,
-            "Download selector must match exactly one pending obligation; use its displayed locked: or observed: selector when filenames are ambiguous"
+            "Download selector must match exactly one pending obligation; use its displayed locked: selector when filenames are ambiguous"
         );
         ensure!(
             files
@@ -448,7 +447,7 @@ async fn finish_once(
             .info("This build executes the selected runtime installer in private staging");
     }
     for input in &view.content {
-        // AcquisitionKey contains only logical dependency/slot or observed metadata names.
+        // AcquisitionKey contains only logical dependency and slot names.
         session.display().status().info(&format!(
             "content {}: {:?} {:?}",
             input_selector(&input.key),

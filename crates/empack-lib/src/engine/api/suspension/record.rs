@@ -33,7 +33,6 @@ pub(super) struct SavedFile {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum Key {
     Locked { dependency: String, slot: String },
-    Observed { metadata: String },
 }
 impl From<&AcquisitionKey> for Key {
     fn from(key: &AcquisitionKey) -> Self {
@@ -41,9 +40,6 @@ impl From<&AcquisitionKey> for Key {
             AcquisitionKey::Locked(key) => Self::Locked {
                 dependency: key.dependency.as_str().into(),
                 slot: key.slot.as_str().into(),
-            },
-            AcquisitionKey::Observed(path) => Self::Observed {
-                metadata: path.as_str().into(),
             },
         }
     }
@@ -57,10 +53,6 @@ impl Key {
                     slot: FileSlot::parse(slot)?,
                 })
             }
-            Self::Observed { metadata } => AcquisitionKey::Observed(PortableRelPath::parse(
-                metadata,
-                PathSyntax::ProjectContent,
-            )?),
         })
     }
 }
@@ -291,9 +283,6 @@ pub(super) fn estimated_bytes(request: &BuildRequest, content: &BuildAcquisition
     }
     for key in content.locked.keys() {
         add(text(key.dependency.as_str()) + text(key.slot.as_str()) + 256)?;
-    }
-    for path in content.observed.keys() {
-        add(text(path.as_str()) + 256)?;
     }
     Ok(total)
 }

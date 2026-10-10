@@ -450,7 +450,7 @@ pub(in crate::engine) fn capture(
         }
     }
     let mut sources = Vec::new();
-    for source in workspace.native_source_entries(cancel)? {
+    for source in workspace.source_entries(cancel)? {
         if occupied.contains(&source.path) {
             continue;
         }

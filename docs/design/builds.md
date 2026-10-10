@@ -41,7 +41,13 @@ producing one consumer does not require publishing another consumer's artifact.
 
 Prepare every requested output before combined publication. A later failed recipe
 leaves earlier published artifacts unchanged. Build does not silently sync, upgrade
-provider selections or turn observed untracked references into authored intent.
+provider selections or infer dependencies from untracked metadata. Acquisition keys
+contain the logical dependency key and exact file role from the native lock.
+
+Untracked included source files contribute their captured bytes, without provider
+identity or download authority. `sources.exclude` applies to every source layer;
+archives have no implicit exemption. Explicit locked sources and placements remain
+observation obligations even when a broad exclusion matches them.
 
 ## Modrinth
 

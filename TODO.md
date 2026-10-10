@@ -130,9 +130,10 @@ readiness or replace executable evidence.
   updates, synchronization and adoption; identify adopted provider content by bytes.
 - [x] Resolve removal through logical keys, titles and canonical provider identities;
   remove foreign-record selectors, ownership claims and index rewriting.
-- [ ] Apply native `sources.exclude` capture to the remaining author commands.
-- [ ] Remove `BackendDocument`, backend discovery, index refresh, packwiz parser,
-  metadata adoption and metadata-based ownership from all project commands.
+- [x] Apply native `sources.exclude` capture to the remaining author commands.
+- [x] Remove `BackendDocument`, foreign discovery, index refresh, metadata
+  adoption and metadata-based ownership from project commands.
+- [ ] Remove the remaining packwiz serializer/parser with the light consumer recipes.
 - [ ] Preserve explicit adoption of verified local/provider/URL content through
   native identity and observation, without consulting foreign metadata.
 - [ ] Replace old target selectors, templates, source filters, diagnostics,

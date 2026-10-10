@@ -37,14 +37,10 @@ pub struct ReplacementSnapshot {
     native: NativeSnapshot,
     recovery: RecoveryReader,
     limits: SnapshotLimits,
-    policy: Option<(Vec<u8>, FilePermissions)>,
 }
 impl ReplacementSnapshot {
     pub fn observations(&self) -> &NativeSnapshot {
         &self.native
-    }
-    pub(super) fn preserved_policy(&self) -> Option<&(Vec<u8>, FilePermissions)> {
-        self.policy.as_ref()
     }
     /// Observe only explicit seed destinations. Existing regular files are user-owned;
     /// directories and links cannot authorize a seed or broaden the replacement footprint.
@@ -275,71 +271,8 @@ impl WorkspaceSnapshot {
             .context(ProjectDocumentsError::MissingLock)?
             .bind(&self.intent)
     }
-    fn source_filter(&self, cancel: &Cancellation) -> Result<super::source::SourceFilter> {
-        let path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
-        let bytes = if self.native.entries().contains_key(&path) {
-            read_document(&self.root, &self.native, path.as_str(), cancel)?.unwrap_or_default()
-        } else {
-            // A complete pack directory observation proves the rule file was absent.
-            ensure!(
-                matches!(
-                    self.native
-                        .entries()
-                        .get(&PortableRelPath::parse("pack", PathSyntax::ProjectContent)?),
-                    Some(Observation::Directory { .. } | Observation::Absent)
-                ),
-                "Source rules were not captured"
-            );
-            Vec::new()
-        };
-        super::source::SourceFilter::parse(&bytes)
-    }
-    /// Enumerate game content independently of the backend's index. Fresh configuration files
-    /// participate, ignore rules remain inputs, and all content roots must be captured.
-    pub fn source_entries(&self, cancel: &Cancellation) -> Result<Vec<super::source::SourceEntry>> {
-        use empack_core::{files::ManagedPath, model::ContentLayer, path::InstallDestination};
-        for name in [
-            "pack",
-            "overrides/common",
-            "overrides/client",
-            "overrides/server",
-        ] {
-            let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
-            ensure!(
-                matches!(
-                    self.native.entries().get(&path),
-                    Some(Observation::Directory { .. } | Observation::Absent)
-                ),
-                "Source root was not captured: {name}"
-            );
-        }
-        let filter = self.source_filter(cancel)?;
-        let mut result = Vec::new();
-        for (path, observation) in self.native.entries() {
-            cancel.check()?;
-            if !matches!(observation, Observation::File(_)) {
-                continue;
-            }
-            let Ok(ManagedPath::Content {
-                layer,
-                path: relative,
-            }) = super::layout::ProjectLayout::classify(path)
-            else {
-                continue;
-            };
-            if layer == ContentLayer::Common && !filter.includes(&relative, false) {
-                continue;
-            }
-            result.push(super::source::SourceEntry {
-                path: path.clone(),
-                destination: InstallDestination::parse(relative.as_str())?,
-                layer,
-            });
-        }
-        Ok(result)
-    }
     /// Enumerate native source layers without interpreting foreign metadata names.
-    pub(in crate::engine) fn native_source_entries(
+    pub(in crate::engine) fn source_entries(
         &self,
         cancel: &Cancellation,
     ) -> Result<Vec<super::source::SourceEntry>> {
@@ -379,41 +312,6 @@ impl WorkspaceSnapshot {
                 }
             }
         }
-        Ok(result)
-    }
-    /// Decode backend metadata only from captured pack files, retaining native byte and object
-    /// checks. This is an observation of the tree, not proof that an index includes every record.
-    pub fn backend_files(&self, cancel: &Cancellation) -> Result<Vec<super::backend::BackendFile>> {
-        self.root.check_binding()?;
-        let filter = self.source_filter(cancel)?;
-        let mut result = Vec::new();
-        let mut destinations = super::layout::CollisionIndex::default();
-        for (path, observation) in self.native.entries() {
-            let Some(relative) = path.as_str().strip_prefix("pack/") else {
-                continue;
-            };
-            if !relative.ends_with(".pw.toml")
-                || !filter.includes(
-                    &PortableRelPath::parse(relative, PathSyntax::ProjectContent)?,
-                    matches!(observation, Observation::Directory { .. }),
-                )
-            {
-                continue;
-            }
-            ensure!(
-                matches!(observation, Observation::File(_)),
-                "Backend metadata is not a regular file"
-            );
-            let bytes = read_document(&self.root, &self.native, path.as_str(), cancel)?
-                .context("Captured backend metadata disappeared")?;
-            let file = super::backend::BackendFile::parse(
-                PortableRelPath::parse(relative, PathSyntax::ProjectContent)?,
-                &bytes,
-            )?;
-            destinations.insert_file(file.destination.relative())?;
-            result.push(file);
-        }
-        self.root.check_binding()?;
         Ok(result)
     }
     /// Copy one captured regular input into a verified private lease. This cannot read an
@@ -609,21 +507,19 @@ impl ProjectReader {
         .into_iter()
         .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
         .collect::<std::result::Result<Vec<_>, _>>()?;
-        let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
-        let rules_snapshot = root.capture(std::slice::from_ref(&rules_path), limits, cancel)?;
-        let rules = read_document(&root, &rules_snapshot, rules_path.as_str(), cancel)?;
-        let policy = rules.as_ref().map(|bytes| {
-            let Observation::File(file) = &rules_snapshot.entries()[&rules_path] else {
-                unreachable!()
-            };
-            (
-                bytes.clone(),
-                super::verification::content(file).permissions,
-            )
-        });
-        let capture_filter = super::source::CaptureFilter::new(rules.unwrap_or_default(), &[])?;
+        let document = PortableRelPath::parse("empack.yml", PathSyntax::ProjectContent)?;
+        let prior = root.capture(&[document], limits, cancel)?;
+        let excludes = read_document(&root, &prior, "empack.yml", cancel)?
+            .and_then(|bytes| {
+                DocumentCodec
+                    .decode_intent(&bytes, "replacement source")
+                    .ok()
+            })
+            .map(|document| document.intent().source_excludes.clone())
+            .unwrap_or_default();
+        let capture_filter = super::source::CaptureFilter::author(&excludes, &[])?;
         let native = root.capture_filtered(&scopes, limits, Some(&capture_filter), cancel)?;
-        let native = rules_snapshot.merge(native)?;
+        let native = prior.merge(native)?;
         let _final_guard = self.recovery.enter(&root)?;
         root.revalidate(&native, cancel)?;
         Ok(ReplacementSnapshot {
@@ -631,7 +527,6 @@ impl ProjectReader {
             native,
             recovery: self.recovery.clone(),
             limits,
-            policy,
         })
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside
@@ -679,15 +574,7 @@ impl ProjectReader {
         artifact_limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
-        let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
-        let documents = self.capture(selected, &[rules_path], limits, cancel)?;
-        let rules = read_document(
-            &documents.root,
-            &documents.native,
-            "pack/.packwizignore",
-            cancel,
-        )?
-        .unwrap_or_default();
+        let documents = self.capture(selected, &[], limits, cancel)?;
         let project = documents.require_resolved()?;
         let mut required_sources = Vec::new();
         let mut scopes = [
@@ -729,7 +616,22 @@ impl ProjectReader {
             })
             .cloned()
             .collect();
-        let filter = super::source::CaptureFilter::new(rules, &required_sources)?;
+        for dependency in project.lock().dependencies.values() {
+            for file in dependency.files.as_slice() {
+                for placement in file.placements.as_slice() {
+                    required_sources.push(super::layout::ProjectLayout::path(
+                        &empack_core::files::ManagedPath::Content {
+                            layer: placement.layer,
+                            path: placement.destination.relative().clone(),
+                        },
+                    )?);
+                }
+            }
+        }
+        let filter = super::source::CaptureFilter::author(
+            &documents.intent.intent().source_excludes,
+            &required_sources,
+        )?;
         let mut captured =
             self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
         // The rule bytes used to select traversal remain exact read-set inputs.

@@ -13,36 +13,11 @@ pub struct SourceEntry {
 }
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
-/// Packwiz-compatible pack-root ignore rules. Never consult host/global Git configuration.
+/// Author-declared source rules. Never consult host/global Git configuration.
 pub struct SourceFilter {
     matcher: Gitignore,
-    native: bool,
 }
 impl SourceFilter {
-    /// Rules are captured bytes, not a path that the matcher may reopen later.
-    pub fn parse(document: &[u8]) -> Result<Self> {
-        let text = std::str::from_utf8(document)?;
-        let mut builder = GitignoreBuilder::new("");
-        for line in [
-            ".git/**",
-            ".gitattributes",
-            ".gitignore",
-            ".DS_Store",
-            "/*.zip",
-            "*.mrpack",
-            "packwiz.exe",
-            "packwiz",
-        ]
-        .into_iter()
-        .chain(text.lines())
-        {
-            builder.add_line(None, line)?;
-        }
-        Ok(Self {
-            matcher: builder.build()?,
-            native: false,
-        })
-    }
     /// Native author policy has no foreign control names or implicit archive exclusions.
     pub fn author(excludes: &[String]) -> Result<Self> {
         let mut builder = GitignoreBuilder::new("");
@@ -58,21 +33,13 @@ impl SourceFilter {
         }
         Ok(Self {
             matcher: builder.build()?,
-            native: true,
         })
     }
-    /// Backend control documents are never game files. Metadata membership is checked separately.
+    /// Apply the captured author policy to a source-layer relative path.
     pub fn includes(&self, relative: &PortableRelPath, directory: bool) -> bool {
         self.includes_native(std::path::Path::new(relative.as_str()), directory)
     }
     fn includes_native(&self, relative: &std::path::Path, directory: bool) -> bool {
-        if !self.native
-            && ["pack.toml", "index.toml", ".packwizignore"]
-                .iter()
-                .any(|name| relative == std::path::Path::new(name))
-        {
-            return false;
-        }
         // Match each traversed ancestor before the leaf. Native names are allowed here only
         // for exclusion; included objects must still pass portable-path validation.
         if relative.ancestors().skip(1).any(|parent| {
@@ -88,9 +55,7 @@ impl SourceFilter {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CaptureFilter {
-    #[serde(default)]
-    native_sources: bool,
-    rules: String,
+    excludes: Vec<String>,
     required: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     template_outputs: Option<Vec<String>>,
@@ -98,10 +63,9 @@ pub(super) struct CaptureFilter {
     managed_only: bool,
 }
 impl CaptureFilter {
-    pub(super) fn new(rules: Vec<u8>, required: &[PortableRelPath]) -> Result<Self> {
+    pub(super) fn author(excludes: &[String], required: &[PortableRelPath]) -> Result<Self> {
         let value = Self {
-            native_sources: false,
-            rules: String::from_utf8(rules)?,
+            excludes: excludes.to_vec(),
             required: required
                 .iter()
                 .map(|path| path.as_str().to_owned())
@@ -110,12 +74,6 @@ impl CaptureFilter {
             managed_only: false,
         };
         value.matcher()?;
-        Ok(value)
-    }
-    pub(super) fn author(excludes: &[String], required: &[PortableRelPath]) -> Result<Self> {
-        SourceFilter::author(excludes)?;
-        let mut value = Self::new(excludes.join("\n").into_bytes(), required)?;
-        value.native_sources = true;
         Ok(value)
     }
     /// Capture exact native mutation paths and portable aliases, without foreign discovery.
@@ -142,8 +100,7 @@ impl CaptureFilter {
             }
         }
         let value = Self {
-            native_sources: false,
-            rules: String::new(),
+            excludes: vec![],
             required: vec![],
             template_outputs: Some(outputs.into_iter().collect()),
             managed_only: false,
@@ -154,7 +111,7 @@ impl CaptureFilter {
     pub(super) fn matcher(&self) -> Result<SourceFilter> {
         if let Some(outputs) = &self.template_outputs {
             anyhow::ensure!(
-                self.rules.is_empty() && self.required.is_empty() && !self.managed_only,
+                self.excludes.is_empty() && self.required.is_empty() && !self.managed_only,
                 "Mixed snapshot policies"
             );
             for output in outputs {
@@ -169,15 +126,7 @@ impl CaptureFilter {
         for path in &self.required {
             PortableRelPath::parse(path, empack_core::path::PathSyntax::ProjectContent)?;
         }
-        if self.native_sources {
-            anyhow::ensure!(
-                self.template_outputs.is_none(),
-                "Mixed native source policies"
-            );
-            SourceFilter::author(&self.rules.lines().map(str::to_owned).collect::<Vec<_>>())
-        } else {
-            SourceFilter::parse(self.rules.as_bytes())
-        }
+        SourceFilter::author(&self.excludes)
     }
     pub(super) fn includes(
         &self,
@@ -193,7 +142,7 @@ impl CaptureFilter {
         path: &std::path::Path,
         directory: bool,
     ) -> bool {
-        if self.native_sources && self.managed_only {
+        if self.managed_only {
             let spelling: Option<Vec<_>> = path
                 .components()
                 .map(|part| match part {
@@ -209,26 +158,6 @@ impl CaptureFilter {
                         .iter()
                         .any(|required| template_overlap(&path, required))
             });
-        }
-        if self.native_sources {
-            if self.required.iter().any(|required| {
-                let required = std::path::Path::new(required);
-                required.starts_with(path) || path.starts_with(required)
-            }) {
-                return true;
-            }
-            for base in [
-                "pack",
-                "overrides/common",
-                "overrides/client",
-                "overrides/server",
-            ] {
-                if let Ok(relative) = path.strip_prefix(base) {
-                    return relative.as_os_str().is_empty()
-                        || matcher.includes_native(relative, directory);
-                }
-            }
-            return true;
         }
         if let Some(outputs) = &self.template_outputs {
             let parts: Option<Vec<_>> = path
@@ -248,26 +177,24 @@ impl CaptureFilter {
                 outputs.iter().any(|seed| template_overlap(output, seed))
             });
         }
-        let Ok(relative) = path.strip_prefix("pack") else {
-            return true;
-        };
-        if relative.as_os_str().is_empty() {
-            return true;
-        }
-        if ["pack.toml", "index.toml", ".packwizignore"]
-            .iter()
-            .any(|name| relative == std::path::Path::new(name))
-        {
-            return true;
-        }
-        // Explicit locked local/archive sources cannot disappear behind an ignore rule.
         if self.required.iter().any(|required| {
             let required = std::path::Path::new(required);
             required.starts_with(path) || path.starts_with(required)
         }) {
             return true;
         }
-        matcher.includes_native(relative, directory)
+        for base in [
+            "pack",
+            "overrides/common",
+            "overrides/client",
+            "overrides/server",
+        ] {
+            if let Ok(relative) = path.strip_prefix(base) {
+                return relative.as_os_str().is_empty()
+                    || matcher.includes_native(relative, directory);
+            }
+        }
+        true
     }
 }
 
@@ -373,53 +300,62 @@ mod tests {
         }
     }
     #[test]
-    fn excluded_pack_contents_do_not_hide_the_control_root() {
-        let policy = CaptureFilter::new(b"**\n".to_vec(), &[]).unwrap();
+    fn excluded_sources_keep_roots_and_explicit_obligations() {
+        let required =
+            [
+                PortableRelPath::parse("pack/mods/required.jar", PathSyntax::ProjectContent)
+                    .unwrap(),
+            ];
+        let policy = CaptureFilter::author(&["**".into()], &required).unwrap();
+        let encoded = serde_json::to_vec(&policy).unwrap();
+        let policy: CaptureFilter = serde_json::from_slice(&encoded).unwrap();
         let matcher = policy.matcher().unwrap();
+        for name in ["pack", "overrides/client", "pack/mods/required.jar"] {
+            assert!(policy.includes_native(&matcher, std::path::Path::new(name), false));
+        }
         for name in [
-            "pack",
+            "pack/other",
             "pack/.packwizignore",
             "pack/pack.toml",
-            "pack/index.toml",
+            "overrides/client/private",
         ] {
-            assert!(
-                policy.includes_native(&matcher, std::path::Path::new(name), name == "pack"),
-                "{name}"
-            );
+            assert!(!policy.includes_native(&matcher, std::path::Path::new(name), false));
         }
-        assert!(!policy.includes_native(&matcher, std::path::Path::new("pack/other"), false));
     }
     #[test]
-    fn source_rules_preserve_defaults_negation_and_ignored_parent_semantics() {
-        let filter = SourceFilter::parse(b"!keep.zip\nconfig/private/\n!config/private/rescue.toml\n*.secret\n!config/keep.secret\n").unwrap();
+    fn author_rules_have_no_foreign_controls_or_archive_exclusions() {
+        let filter = SourceFilter::author(&[
+            "config/private/".into(),
+            "!config/private/rescue.toml".into(),
+            "*.secret".into(),
+            "!config/keep.secret".into(),
+        ])
+        .unwrap();
         let includes = |name| {
             filter.includes(
                 &PortableRelPath::parse(name, PathSyntax::ProjectContent).unwrap(),
                 false,
             )
         };
-        for path in [
-            "archive.zip",
-            "nested/pack.mrpack",
+        for name in [
             ".git/config",
             ".DS_Store",
             "config/private/rescue.toml",
             "config/a.secret",
+        ] {
+            assert!(!includes(name), "{name}");
+        }
+        for name in [
+            "archive.zip",
+            "nested/pack.mrpack",
             "pack.toml",
             "index.toml",
             ".packwizignore",
-        ] {
-            assert!(!includes(path), "{path}");
-        }
-        for path in [
-            "keep.zip",
-            "resourcepacks/assets.zip",
-            "config/keep.secret",
             "mods/entry.pw.toml",
-            "config/new.toml",
+            "config/keep.secret",
         ] {
-            assert!(includes(path), "{path}");
+            assert!(includes(name), "{name}");
         }
-        assert!(SourceFilter::parse(&[0xff]).is_err());
+        assert!(SourceFilter::author(&["a\nb".into()]).is_err());
     }
 }

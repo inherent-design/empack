@@ -1,6 +1,5 @@
 //! Build preparation from one captured workspace, before any distribution write.
 use super::{
-    backend::{BackendDigestComparison, BackendFile, DigestComparisonBasis},
     content::{ContentPool, SourceEvidencePolicy},
     layout::ProjectLayout,
     mrpack::{AcquiredBuildFile, LockedFileKey, MrpackPlan, OptionalConversion, SourceFile},
@@ -24,30 +23,26 @@ pub mod curseforge;
 pub mod materialized;
 pub mod server;
 
-/// Exact logical requests and retained metadata records occupy distinct acquisition namespaces.
+/// Acquisition is keyed by exact native dependency and file role.
 #[derive(Default)]
 pub struct BuildAcquisitions {
     pub locked: BTreeMap<LockedFileKey, AcquiredBuildFile>,
-    pub observed: BTreeMap<empack_core::path::PortableRelPath, AcquiredBuildFile>,
 }
 
 impl BuildAcquisitions {
-    /// Count logical slots, including content shared by distinct locked or observed records.
+    /// Count logical slots, including content shared by distinct locked records.
     pub(crate) fn retained_bytes(&self) -> Result<u64> {
-        self.locked
-            .values()
-            .chain(self.observed.values())
-            .try_fold(0u64, |total, file| {
-                total
-                    .checked_add(file.content.lease().len())
-                    .context("Retained build content size overflow")
-            })
+        self.locked.values().try_fold(0u64, |total, file| {
+            total
+                .checked_add(file.content.lease().len())
+                .context("Retained build content size overflow")
+        })
     }
 }
 
 /// Prepare a reference export using captured local bytes and exact locked download evidence.
 /// Remote acquisition is a separate operation; missing reference evidence remains an error.
-/// Unlisted backend content remains an observed obligation; it never becomes invented intent.
+/// Untracked source bytes are included by authored source policy, without foreign identity.
 pub fn prepare_mrpack(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
@@ -56,25 +51,12 @@ pub fn prepare_mrpack(
     cancel: &Cancellation,
 ) -> Result<MrpackPlan> {
     let content = capture_build_content(workspace, external, evidence, None, cancel)?;
-    let mut plan = MrpackPlan::prepare_with_observed(
+    MrpackPlan::prepare(
         &content.project,
         &content.acquired,
         content.sources,
-        content
-            .observed
-            .into_iter()
-            .map(|file| match file {
-                ObservedBuildContent::Verified(file) => Ok(*file),
-                ObservedBuildContent::Unacquired { record, .. } => anyhow::bail!(
-                    "Acquire retained backend file before export: {}",
-                    record.metadata_path.as_str()
-                ),
-            })
-            .collect::<Result<Vec<_>>>()?,
         optional,
-    )?;
-    plan.backend_comparisons = content.comparisons;
-    Ok(plan)
+    )
 }
 
 /// Shared captured obligations for reference and materialized projections.
@@ -82,48 +64,6 @@ struct CapturedBuildContent {
     project: ResolvedProject,
     acquired: BTreeMap<super::mrpack::LockedFileKey, AcquiredBuildFile>,
     sources: Vec<super::mrpack::SourceFile>,
-    observed: Vec<ObservedBuildContent>,
-    comparisons: Vec<BackendDigestComparison>,
-}
-enum ObservedBuildContent {
-    Verified(Box<super::mrpack::ObservedFile>),
-    Unacquired {
-        record: Box<BackendFile>,
-        choice: empack_core::requirements::ChoiceKey,
-    },
-}
-fn declared_choices(project: &ResolvedProject) -> BTreeSet<String> {
-    let mut choices = BTreeSet::new();
-    for dependency in project.lock().dependencies.values() {
-        for file in dependency.files.as_slice() {
-            for placement in file.placements.as_slice() {
-                for requirement in [
-                    &placement.requirements.client,
-                    &placement.requirements.server,
-                ] {
-                    if let Requirement::Optional(choice) = requirement {
-                        choices.insert(choice.key.as_str().to_owned());
-                    }
-                }
-            }
-        }
-    }
-    choices
-}
-fn next_observed_choice(
-    record: &BackendFile,
-    choices: &mut BTreeSet<String>,
-) -> Result<empack_core::requirements::ChoiceKey> {
-    let base = format!("observed:{}", record.metadata_path.as_str());
-    let mut choice = base.clone();
-    let mut sequence = 0u64;
-    while !choices.insert(choice.clone()) {
-        sequence = sequence
-            .checked_add(1)
-            .context("Observed choice identifier exhausted")?;
-        choice = format!("{base}#{sequence}");
-    }
-    Ok(empack_core::requirements::ChoiceKey::parse(&choice)?)
 }
 fn capture_build_content(
     workspace: &WorkspaceSnapshot,
@@ -134,7 +74,6 @@ fn capture_build_content(
 ) -> Result<CapturedBuildContent> {
     let project = workspace.require_resolved()?;
     let sources = workspace.source_entries(cancel)?;
-    let backend = workspace.backend_files(cancel)?;
     let maximum = workspace
         .observations()
         .entries()
@@ -263,87 +202,6 @@ fn capture_build_content(
         .map(|(key, value)| (key.clone(), value))
         .chain(acquired.iter().map(|(key, value)| (key.clone(), value)))
         .collect();
-    let backend_check = check_backend(&project, &backend, &combined)?;
-    let unlisted = backend_check.unlisted;
-    let mut choices = declared_choices(&project);
-    let mut observed_files = Vec::new();
-    let mut used_observed = BTreeSet::new();
-    for record in backend {
-        if !unlisted.contains(&record.metadata_path) {
-            continue;
-        }
-        let expected = empack_core::model::ExpectedContent {
-            digests: Some(empack_core::digest::DigestSet::new(vec![
-                record.digest.clone(),
-            ])?),
-            size: None,
-            accepted_observation: None,
-        };
-        let path = ProjectLayout::path(&ManagedPath::Content {
-            layer: ContentLayer::Common,
-            path: record.destination.relative().clone(),
-        })?;
-        occupied.insert(path.clone());
-        let choice = next_observed_choice(&record, &mut choices)?;
-        if selected.is_some_and(|owners| {
-            !owners.contains(&ContentOwner::Source(format!(
-                "backend:{}",
-                record.metadata_path.as_str()
-            )))
-        }) {
-            if external.observed.contains_key(&record.metadata_path) {
-                used_observed.insert(record.metadata_path.clone());
-            }
-            observed_files.push(ObservedBuildContent::Unacquired {
-                record: Box::new(record),
-                choice,
-            });
-            continue;
-        }
-        ensure!(
-            !matches!(
-                workspace.observations().entries().get(&path),
-                Some(Observation::Directory { .. } | Observation::Ancestor(_))
-            ),
-            "Observed backend payload destination is a directory"
-        );
-        let mut file = external.observed.get(&record.metadata_path).cloned();
-        if file.is_some() {
-            used_observed.insert(record.metadata_path.clone());
-        }
-        if matches!(
-            workspace.observations().entries().get(&path),
-            Some(Observation::File(_))
-        ) {
-            let (content, permissions) =
-                workspace.acquire_file(&path, Some(&expected), evidence, cancel)?;
-            let content = pool.insert(content, cancel)?;
-            if let Some(previous) = &file {
-                ensure!(
-                    previous.content.lease().id() == content.lease().id()
-                        && previous.permissions == permissions,
-                    "Acquired observed file differs from captured content"
-                );
-            }
-            file = Some(AcquiredBuildFile {
-                content,
-                permissions,
-            });
-        }
-        observed_files.push(match file {
-            Some(file) => ObservedBuildContent::Verified(Box::new(
-                super::mrpack::ObservedFile::verify(record, file, choice, evidence)?,
-            )),
-            None => ObservedBuildContent::Unacquired {
-                record: Box::new(record),
-                choice,
-            },
-        });
-    }
-    ensure!(
-        used_observed.len() == external.observed.len(),
-        "Acquisition contains an unrelated observed file"
-    );
     let mut source_files = Vec::new();
     for source in sources {
         if occupied.contains(&source.path) {
@@ -393,100 +251,6 @@ fn capture_build_content(
         project,
         acquired: owned,
         sources: source_files,
-        observed: observed_files,
-        comparisons: backend_check.comparisons,
-    })
-}
-
-struct BackendCheck {
-    unlisted: BTreeSet<empack_core::path::PortableRelPath>,
-    comparisons: Vec<BackendDigestComparison>,
-}
-
-fn check_backend(
-    project: &ResolvedProject,
-    observed: &[BackendFile],
-    acquired: &BTreeMap<LockedFileKey, &AcquiredBuildFile>,
-) -> Result<BackendCheck> {
-    let mut unlisted = BTreeSet::new();
-    let mut comparisons = Vec::new();
-    for observed in observed {
-        let mut matches = 0;
-        let mut claimed = false;
-        for (key, dependency) in &project.lock().dependencies {
-            if observed.provider.as_ref().is_some_and(|provider| matches!(&dependency.identity,
-                empack_core::model::ResolvedIdentity::Provider(project) if project == &provider.project)) {
-                claimed = true;
-            }
-            for file in dependency.files.as_slice() {
-                let mut matched = false;
-                for placement in file.placements.as_slice() {
-                    if placement.destination != observed.destination {
-                        continue;
-                    }
-                    claimed = true;
-                    if !observed.matches_selection_and_requirements(
-                        dependency.selected.as_ref(),
-                        &placement.requirements,
-                    )? {
-                        continue;
-                    }
-                    let acquired = acquired.get(&LockedFileKey {
-                        dependency: key.clone(),
-                        slot: file.slot.clone(),
-                    });
-                    let basis = if let Some(acquired) = acquired {
-                        ensure!(
-                            acquired
-                                .content
-                                .observed_digests()
-                                .values()
-                                .contains(&observed.digest),
-                            "Backend digest differs from acquired bytes"
-                        );
-                        DigestComparisonBasis::AcquiredBytes
-                    } else if let Some(comparable) =
-                        file.expected.digests.as_ref().and_then(|set| {
-                            set.values()
-                                .iter()
-                                .find(|digest| digest.algorithm() == observed.digest.algorithm())
-                        })
-                    {
-                        ensure!(
-                            *comparable == observed.digest,
-                            "Backend digest differs from locked declaration"
-                        );
-                        DigestComparisonBasis::SameAlgorithmDeclaration
-                    } else {
-                        // The format planner still requires complete independent reference evidence.
-                        // Never use the unmatched backend URL/digest to manufacture a proof.
-                        DigestComparisonBasis::IndependentLockedReference
-                    };
-                    if !matched {
-                        comparisons.push(BackendDigestComparison {
-                            metadata_path: observed.metadata_path.clone(),
-                            declared: observed.digest.clone(),
-                            basis,
-                        });
-                    }
-                    matched = true;
-                }
-                matches += usize::from(matched);
-            }
-        }
-        if matches == 0 && !claimed {
-            unlisted.insert(observed.metadata_path.clone());
-            continue;
-        }
-        ensure!(
-            matches == 1,
-            "Backend file is unaccounted or ambiguous in exact lock: {}",
-            observed.metadata_path.as_str()
-        );
-    }
-    Ok(BackendCheck {
-        unlisted,
-        comparisons,
     })
 }
 
@@ -494,16 +258,8 @@ fn check_backend(
 pub struct PreparedMrpackBuild {
     publication: PreparedArtifact,
     conversions: Vec<String>,
-    backend_comparisons: Vec<BackendDigestComparison>,
-    observed: Vec<super::mrpack::ObservedFileEvidence>,
 }
 impl PreparedMrpackBuild {
-    pub fn backend_comparisons(&self) -> &[BackendDigestComparison] {
-        &self.backend_comparisons
-    }
-    pub fn observed(&self) -> &[super::mrpack::ObservedFileEvidence] {
-        &self.observed
-    }
     pub fn conversions(&self) -> &[String] {
         &self.conversions
     }
@@ -541,8 +297,6 @@ pub fn prepare_mrpack_build(
     Ok(PreparedMrpackBuild {
         publication,
         conversions: plan.conversions().to_vec(),
-        backend_comparisons: plan.backend_comparisons().to_vec(),
-        observed: plan.observed().to_vec(),
     })
 }
 

@@ -259,35 +259,12 @@ pub fn prepare_project_replacement(
         .map(ProjectLayout::path)
         .collect::<Result<Vec<_>>>()?;
     let workspace = workspace.complete_for(&targets, cancel)?;
-    let policy_path = ManagedPath::Content {
-        layer: empack_core::model::ContentLayer::Common,
-        path: empack_core::path::PortableRelPath::parse(
-            ".packwizignore",
-            empack_core::path::PathSyntax::ProjectContent,
-        )?,
-    };
-    if let Some((bytes, permissions)) = workspace.preserved_policy() {
-        ensure!(
-            !desired.contains_key(&policy_path),
-            "Import cannot replace the existing source inclusion policy"
-        );
-        desired.insert(
-            policy_path.clone(),
-            FileContent {
-                content: ContentId::from_sha256(Sha256::digest(bytes).into()),
-                bytes: bytes.len() as u64,
-                permissions: *permissions,
-            },
-        );
-        documents.insert(policy_path.clone(), bytes.clone());
-    }
     let observed =
         observed_project_replacement_for(workspace.observations(), desired.keys().cloned())?;
     let existing: BTreeSet<_> = observed
         .iter()
         .filter_map(|(target, value)| {
             (matches!(value, ObservedPath::File(_))
-                && *target != policy_path
                 && !matches!(
                     target,
                     ManagedPath::UserTemplate(_) | ManagedPath::Scaffold(_)

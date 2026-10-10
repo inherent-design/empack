@@ -131,13 +131,9 @@ pub(super) async fn publish(
                 session,
                 governor(session.config().app_config()),
                 move |mut scope| async move {
-                    let mut acquired = BuildAcquisitions {
-                        locked: retained,
-                        observed: BTreeMap::new(),
-                    };
+                    let mut acquired = BuildAcquisitions { locked: retained };
                     pending.retain(|need| match &need.key {
                         AcquisitionKey::Locked(key) => !acquired.locked.contains_key(key),
-                        _ => true,
                     });
                     let mut total = acquired.retained_bytes()?;
                     ensure!(
@@ -177,7 +173,6 @@ pub(super) async fn publish(
                     }
                     pending.retain(|need| match &need.key {
                         AcquisitionKey::Locked(key) => !acquired.locked.contains_key(key),
-                        _ => true,
                     });
                     let result = BuildAcquisitionResult { acquired, pending }
                         .acquire_cached(&cache, &mut scope, evidence, services.files.transfer)
@@ -218,7 +213,8 @@ pub(super) async fn publish(
             .await?;
             if !acquired.pending.is_empty() {
                 for need in &acquired.pending {
-                    if let AcquisitionKey::Locked(key) = &need.key {
+                    {
+                        let AcquisitionKey::Locked(key) = &need.key;
                         session.display().status().warning(&format!(
                             "Synchronization input {}/{}",
                             key.dependency.as_str(),

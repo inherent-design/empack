@@ -107,13 +107,12 @@ async fn initialize_all_loader_intents_without_preview_writes() {
             )) => {
                 assert_eq!(receipt.project.intent(), expected.intent());
                 assert_eq!(receipt.project.lock(), expected.lock());
-                assert_eq!(receipt.publication.changed_files, 8);
+                assert_eq!(receipt.publication.changed_files, 7);
             }
             _ => panic!("initialization failed"),
         }
         for name in [
             ".gitignore",
-            "pack/.packwizignore",
             ".github/workflows/validate.yml",
             ".github/workflows/release.yml",
         ] {
@@ -276,12 +275,18 @@ async fn initialization_preserves_scaffolds_and_binds_their_prior_state() {
             (".gitignore", b"custom-ignore\n".as_slice()),
             (".github/workflows/validate.yml", b"user validation"),
             (".github/workflows/release.yml", b"user release"),
-            ("pack/.packwizignore", b"ignored/**\n"),
             ("pack/ignored/keep", b"unowned"),
-            ("empack.yml", b"old: ["),
         ] {
             put(root.path(), name, bytes);
         }
+        let mut prior = request(LoaderKind::Vanilla, false)
+            .candidate
+            .project()
+            .intent()
+            .clone();
+        prior.source_excludes = vec!["ignored/**".into()];
+        let prior_bytes = DocumentCodec.encode_intent(&prior).unwrap();
+        put(root.path(), "empack.yml", &prior_bytes);
         let prepared = prepare(
             &engine,
             ProjectTarget::Existing(root.path().to_path_buf()),
@@ -315,7 +320,10 @@ async fn initialization_preserves_scaffolds_and_binds_their_prior_state() {
                 &*outcome,
                 OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
             ));
-            assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), b"old: [");
+            assert_eq!(
+                fs::read(root.path().join("empack.yml")).unwrap(),
+                prior_bytes
+            );
             assert!(!root.path().join("empack.lock").exists());
         } else {
             assert!(matches!(
@@ -332,10 +340,6 @@ async fn initialization_preserves_scaffolds_and_binds_their_prior_state() {
         assert_eq!(
             fs::read(root.path().join(".github/workflows/release.yml")).unwrap(),
             b"user release"
-        );
-        assert_eq!(
-            fs::read(root.path().join("pack/.packwizignore")).unwrap(),
-            b"ignored/**\n"
         );
         assert_eq!(
             fs::read(root.path().join("pack/ignored/keep")).unwrap(),

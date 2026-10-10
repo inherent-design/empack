@@ -90,7 +90,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
     put(root.path(), "pack/config/options", b"common");
     put(root.path(), "overrides/client/config/options", b"client");
     put(root.path(), "overrides/server/config/options", b"server");
-    // Unlisted client-only download is not a server obligation, even when missing.
+    // Foreign metadata is ordinary source data, with no download or side authority.
     put(root.path(), "pack/mods/extra.pw.toml", b"filename='extra.jar'\nside='client'\n[download]\nurl='https://example.com/extra.jar'\nhash-format='md5'\nhash='321c3cf486ed509164edec1e1981fec8'\n");
     let workspace = capture(root.path(), host.path());
     let cancel = Cancellation::default();
@@ -104,7 +104,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
         &cancel,
     )
     .unwrap();
-    assert_eq!(server.files().len(), 1);
+    assert_eq!(server.files().len(), 2);
     assert_eq!(bytes(&server.files()[&path("config/options")]), b"server");
     let error = prepare_game_content(
         &workspace,
@@ -118,7 +118,6 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
     .unwrap();
     let missing = error.downcast_ref::<MissingGameContent>().unwrap();
     assert_eq!(missing.files.len(), 2);
-    assert_eq!(missing.observed, vec![path("mods/extra.pw.toml")]);
     put(root.path(), "pack/mods/extra.jar", b"payload");
     let workspace = capture(root.path(), host.path());
     let client = prepare_game_content(
@@ -130,13 +129,12 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
         &cancel,
     )
     .unwrap();
-    assert_eq!(client.files().len(), 5);
+    assert_eq!(client.files().len(), 6);
     assert_eq!(bytes(&client.files()[&path("config/options")]), b"client");
     assert_eq!(
         bytes(&client.files()[&path("resourcepacks/a.zip")]),
         b"payload"
     );
-    assert_eq!(client.observed().len(), 1);
     // Identical bytes do not merge independent source assurance by content address.
     assert_eq!(
         client.files()[&path("resourcepacks/a.zip")]
@@ -153,7 +151,7 @@ fn materialized_views_select_side_content_and_validate_every_included_file() {
     ));
     assert!(matches!(
         client.files()[&path("mods/extra.jar")].content.evidence(),
-        empack_core::digest::IntegrityEvidence::MatchedExpected { .. }
+        empack_core::digest::IntegrityEvidence::ObservedOnly { .. }
     ));
     assert!(
         prepare_game_content(
@@ -251,86 +249,6 @@ fn disabled_unacquired_optional_overlays_preserve_common_fallback() {
     );
     assert!(result.inventory().choices()[0].enabled);
     assert_eq!(result.inventory().precedence().len(), 1);
-}
-
-#[test]
-fn captured_bootstrap_projection_retains_references_and_declared_observed_evidence() {
-    use crate::engine::packwiz::InstallerInteraction;
-    let root = tempfile::tempdir().unwrap();
-    let host = tempfile::tempdir().unwrap();
-    let project = project(true, false);
-    write_project(root.path(), &project);
-    put(root.path(), "pack/config/value.bin", b"settings");
-    put(
-        root.path(),
-        "pack/mods/extra.pw.toml",
-        br#"name = "Extra"
-filename = "extra.jar"
-side = "client"
-[download]
-url = "https://example.com/extra.jar"
-hash-format = "md5"
-hash = "321c3cf486ed509164edec1e1981fec8"
-"#,
-    );
-    let workspace = capture(root.path(), host.path());
-    let cancel = Cancellation::default();
-    let game = prepare_bootstrap_game_content(
-        &workspace,
-        &BuildAcquisitions::default(),
-        BuildTarget::Client,
-        &OptionalPolicy::Preserve,
-        SourceEvidencePolicy::Compatibility,
-        &cancel,
-    )
-    .unwrap();
-    assert_eq!(game.inventory().entries().len(), 5);
-    assert_eq!(game.files().len(), 1);
-    assert_eq!(game.observed().len(), 1);
-    assert_eq!(game.observed()[0].actual, None);
-    assert_eq!(
-        game.observed()[0].declared.algorithm(),
-        empack_core::digest::DigestAlgorithm::Md5
-    );
-    let tree = game
-        .packwiz(InstallerInteraction::Headless, &cancel)
-        .unwrap();
-    assert_eq!(tree.files().len(), 7);
-    assert_eq!(bytes(&tree.files()[&path("config/value.bin")]), b"settings");
-    assert!(!tree.files().contains_key(&path("mods/extra.jar")));
-    assert!(
-        prepare_game_content(
-            &workspace,
-            &BuildAcquisitions::default(),
-            BuildTarget::ClientFull,
-            &OptionalPolicy::Preserve,
-            SourceEvidencePolicy::Compatibility,
-            &cancel
-        )
-        .is_err()
-    );
-    assert!(
-        prepare_bootstrap_game_content(
-            &workspace,
-            &BuildAcquisitions::default(),
-            BuildTarget::Client,
-            &OptionalPolicy::Preserve,
-            SourceEvidencePolicy::StrongSourceRequired,
-            &cancel
-        )
-        .is_err()
-    );
-    assert!(
-        prepare_bootstrap_game_content(
-            &workspace,
-            &acquired(&project, b"wrong"),
-            BuildTarget::Client,
-            &OptionalPolicy::Preserve,
-            SourceEvidencePolicy::Compatibility,
-            &cancel
-        )
-        .is_err()
-    );
 }
 
 #[test]

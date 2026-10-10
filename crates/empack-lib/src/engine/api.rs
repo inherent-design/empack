@@ -1183,12 +1183,6 @@ fn capture(
                 "Continuation repeats a supplied locked file"
             );
         }
-        for (path, file) in prior.acquisition.acquired.observed {
-            ensure!(
-                supplied.observed.insert(path, file).is_none(),
-                "Continuation repeats a supplied observed file"
-            );
-        }
     }
     ensure!(project.is_absolute(), "Project selection must be absolute");
     let mut collisions = CollisionIndex::default();
@@ -1286,7 +1280,6 @@ fn capture(
         .iter()
         .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::Client));
     let resolved = workspace.require_resolved()?;
-    let records = workspace.backend_files(cancel)?;
     let mut file_names = BTreeMap::new();
     for need in &acquisition.pending {
         let names = match &need.key {
@@ -1316,17 +1309,6 @@ fn capture(
                         .to_owned()
                 })
                 .collect(),
-            AcquisitionKey::Observed(path) => std::collections::BTreeSet::from([records
-                .iter()
-                .find(|record| &record.metadata_path == path)
-                .context("Build obligation has no observed metadata")?
-                .destination
-                .relative()
-                .as_str()
-                .rsplit('/')
-                .next()
-                .unwrap()
-                .to_owned()]),
         };
         file_names.insert(need.key.clone(), names);
     }

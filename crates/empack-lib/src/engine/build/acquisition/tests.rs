@@ -8,9 +8,15 @@ use crate::engine::{
     runtime::{OperationOutcome, OperationRuntime},
     snapshot::SnapshotLimits,
 };
-use empack_core::path::PathSyntax;
+use empack_core::{digest::DigestSet, path::PathSyntax};
 use std::fs;
 
+fn locked_key(name: &str) -> LockedFileKey {
+    LockedFileKey {
+        dependency: empack_core::model::DependencyKey::parse(name).unwrap(),
+        slot: empack_core::model::FileSlot::parse("main").unwrap(),
+    }
+}
 fn path(value: &str) -> PortableRelPath {
     PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap()
 }
@@ -49,10 +55,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
     let workspace = capture(root.path(), host.path());
     for enabled in [false, true] {
         let optional = OptionalPolicy::Resolve {
-            choices: BTreeMap::from([
-                ("extra".into(), enabled),
-                ("observed:mods/extra.pw.toml".into(), enabled),
-            ]),
+            choices: BTreeMap::from([("extra".into(), enabled)]),
             use_defaults: false,
         };
         for target in [BuildTarget::ClientFull, BuildTarget::ServerFull] {
@@ -83,13 +86,6 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
                     .iter()
                     .cloned()
                     .map(AcquisitionKey::Locked)
-                    .chain(
-                        missing
-                            .observed
-                            .iter()
-                            .cloned()
-                            .map(AcquisitionKey::Observed),
-                    )
                     .collect();
                 assert_eq!(
                     plan.needs()
@@ -98,7 +94,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
                         .collect::<BTreeSet<_>>(),
                     expected
                 );
-                assert_eq!(plan.needs().len(), 3);
+                assert_eq!(plan.needs().len(), 2);
             } else {
                 assert!(plan.needs().is_empty());
                 assert!(actual.is_ok());
@@ -168,7 +164,7 @@ fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
             .unwrap()
             .needs()
             .len(),
-        3
+        2
     );
 }
 
@@ -827,7 +823,7 @@ async fn build_downloads_share_the_batch_budget_and_validate_all_declarations_fi
                     expected.size = Some(100);
                 }
                 AcquisitionNeed {
-                    key: AcquisitionKey::Observed(path(name)),
+                    key: AcquisitionKey::Locked(locked_key(name)),
                     reason: AcquisitionReason::MaterializedTarget,
                     expected,
                     source: BuildContentSource::Download(
@@ -1037,8 +1033,8 @@ async fn retained_build_inputs_reduce_the_http_batch_allowance() {
         .unwrap();
         let result = BuildAcquisitionResult {
             acquired: BuildAcquisitions {
-                observed: BTreeMap::from([(
-                    path("first"),
+                locked: BTreeMap::from([(
+                    locked_key("first"),
                     AcquiredBuildFile {
                         content,
                         permissions: FilePermissions {
@@ -1047,10 +1043,9 @@ async fn retained_build_inputs_reduce_the_http_batch_allowance() {
                         },
                     },
                 )]),
-                locked: BTreeMap::new(),
             },
             pending: vec![AcquisitionNeed {
-                key: AcquisitionKey::Observed(path("second")),
+                key: AcquisitionKey::Locked(locked_key("second")),
                 reason: AcquisitionReason::MaterializedTarget,
                 expected,
                 source: BuildContentSource::Download(

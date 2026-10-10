@@ -38,8 +38,9 @@ Required behavior:
 Apply captured source-exclusion rules to native directory entries before requiring
 portable names or opening payloads. An ignored backup remains unowned even if its
 name cannot be used in a portable pack. Included files still require portable paths;
-explicit locked inputs and backend control documents cannot disappear behind ignore
-rules. Revalidation and recovery repeat the same captured traversal policy.
+explicit locked inputs cannot disappear behind exclusion rules. Author exclusions
+come from `sources.exclude` in `empack.yml` and apply within each source layer.
+No foreign index, metadata filename or ignore file changes traversal or ownership. Revalidation and recovery repeat the same captured traversal policy.
 
 No normal user workflow should need arbitrary recursive project deletion. Root discovery can require ambient filesystem authority at the outer boundary; that authority should not leak to importers or planners.
 

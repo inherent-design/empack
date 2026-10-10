@@ -55,10 +55,6 @@ pub(super) fn prepare_archive(
         options.evidence,
         cancel,
     )?;
-    ensure!(
-        game.observed().is_empty(),
-        "CurseForge export requires owned content; adopt observed files first"
-    );
     let mut references = BTreeMap::new();
     let mut stage = MutableStage::empty()?;
     let mut members = BTreeMap::new();
@@ -260,8 +256,6 @@ pub(super) fn prepare_archive(
         content: game.inventory().clone(),
         members,
         resolution: game.project().lock().clone(),
-        observed: game.observed().to_vec(),
-        backend_comparisons: game.backend_comparisons().to_vec(),
         conversions: conversions.into_iter().collect(),
         user_configuration: None,
         toolchain: Vec::new(),

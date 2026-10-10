@@ -15,7 +15,6 @@ impl ProjectLayout {
         let value = match target {
             ManagedPath::IntentDocument => "empack.yml".to_owned(),
             ManagedPath::LockDocument => "empack.lock".to_owned(),
-            ManagedPath::BackendDocument(path) => format!("pack/{}", path.as_str()),
             ManagedPath::Content { layer, path } => format!(
                 "{}/{}",
                 match layer {
@@ -41,7 +40,7 @@ impl ProjectLayout {
         Ok(PortableRelPath::parse(&value, PathSyntax::ProjectContent)?)
     }
 
-    /// Observation assigns backend documents their own role; unrelated root files are not managed.
+    /// Classify native managed namespaces; unrelated root files are not managed.
     pub fn classify(path: &PortableRelPath) -> Result<ManagedPath> {
         let value = path.as_str();
         match value {
@@ -68,16 +67,10 @@ impl ProjectLayout {
         }
         if let Some(value) = value.strip_prefix("pack/") {
             let path = relative(value)?;
-            return Ok(
-                if matches!(value, "pack.toml" | "index.toml") || value.ends_with(".pw.toml") {
-                    ManagedPath::BackendDocument(path)
-                } else {
-                    ManagedPath::Content {
-                        layer: ContentLayer::Common,
-                        path,
-                    }
-                },
-            );
+            return Ok(ManagedPath::Content {
+                layer: ContentLayer::Common,
+                path,
+            });
         }
         for (prefix, layer) in [
             ("overrides/common/", ContentLayer::CommonOverride),

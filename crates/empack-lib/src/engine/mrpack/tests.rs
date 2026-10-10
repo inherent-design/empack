@@ -510,7 +510,7 @@ fn optional_layered_fallback_requires_a_representable_conversion() {
 }
 
 #[test]
-fn independent_reference_digests_do_not_require_the_backends_algorithm() {
+fn native_references_ignore_foreign_identity_and_digest_claims() {
     use crate::engine::{
         build::{BuildAcquisitions, prepare_mrpack_build},
         project::ProjectReader,
@@ -599,12 +599,7 @@ hash = "321c3cf486ed509164edec1e1981fec8"
             &cancel,
         )
     };
-    use crate::engine::backend::DigestComparisonBasis;
     let prepared = prepare(&BuildAcquisitions::default()).unwrap();
-    assert_eq!(
-        prepared.backend_comparisons()[0].basis,
-        DigestComparisonBasis::IndependentLockedReference
-    );
     let publisher =
         crate::engine::publication::Publisher::open(&host.path().join("state")).unwrap();
     prepared.publish(&publisher, &cancel).unwrap();
@@ -618,64 +613,13 @@ hash = "321c3cf486ed509164edec1e1981fec8"
         "https://example.com/unrelated-name.jar"
     );
     assert!(index["files"][0]["hashes"]["sha512"].is_string());
-    let record = std::fs::read_to_string(&metadata).unwrap();
-    let digest = resolved
-        .lock()
-        .dependencies
-        .values()
-        .next()
-        .unwrap()
-        .files
-        .as_slice()[0]
-        .expected
-        .digests
-        .as_ref()
-        .unwrap()
-        .values()
-        .iter()
-        .find(|hash| hash.algorithm() == DigestAlgorithm::Sha1)
-        .unwrap();
-    let sha1 = digest
-        .bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let matching = record
-        .replace("md5", "sha1")
-        .replace("321c3cf486ed509164edec1e1981fec8", &sha1);
-    std::fs::write(&metadata, &matching).unwrap();
-    assert_eq!(
-        prepare(&BuildAcquisitions::default())
-            .unwrap()
-            .backend_comparisons()[0]
-            .basis,
-        DigestComparisonBasis::SameAlgorithmDeclaration
-    );
-    std::fs::write(&metadata, matching.replace(&sha1, &"00".repeat(20))).unwrap();
-    assert!(prepare(&BuildAcquisitions::default()).is_err());
-    assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
-    std::fs::write(&metadata, &record).unwrap();
-    let external = BuildAcquisitions {
-        locked: BTreeMap::from([(
-            LockedFileKey {
-                dependency: DependencyKey::parse("assets").unwrap(),
-                slot: FileSlot::parse("first").unwrap(),
-            },
-            build_file(b"payload"),
-        )]),
-        ..BuildAcquisitions::default()
-    };
-    assert_eq!(
-        prepare(&external).unwrap().backend_comparisons()[0].basis,
-        DigestComparisonBasis::AcquiredBytes
-    );
-    std::fs::write(
-        &metadata,
-        record.replace("321c3cf486ed509164edec1e1981fec8", &"00".repeat(16)),
-    )
-    .unwrap();
-    assert!(prepare(&external).is_err());
-    assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
+    std::fs::write(&metadata, b"invalid foreign metadata").unwrap();
+    let prepared = prepare(&BuildAcquisitions::default()).unwrap();
+    prepared.publish(&publisher, &cancel).unwrap();
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact_path).unwrap()).unwrap();
+    let updated: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index, updated);
 }
 
 #[test]

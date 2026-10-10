@@ -112,14 +112,6 @@ fn default_scaffolds() -> BTreeMap<ManagedPath, Vec<u8>> {
             ManagedPath::Scaffold(ProjectScaffold::ReleaseWorkflow),
             include_bytes!("initialize/release.yml").as_slice(),
         ),
-        (
-            ManagedPath::Content {
-                layer: empack_core::model::ContentLayer::Common,
-                path: PortableRelPath::parse(".packwizignore", PathSyntax::ProjectContent)
-                    .expect("embedded ignore path"),
-            },
-            include_bytes!("initialize/packwizignore").as_slice(),
-        ),
     ]
     .into_iter()
     .map(|(path, bytes)| (path, bytes.to_vec()))

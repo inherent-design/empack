@@ -33,7 +33,7 @@ pub fn plan_target_build_acquisitions(
         target,
         BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
     );
-    let (selected, keys) = select_game_inputs(workspace, external, target, optional, cancel)?;
+    let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
     for entry in selected.entries() {
@@ -43,7 +43,8 @@ pub fn plan_target_build_acquisitions(
                 | Representation::Download { expected, .. } => expected,
                 Representation::Embedded { .. } => continue,
             };
-            let expected = if let AcquisitionKey::Locked(key) = key {
+            let expected = {
+                let AcquisitionKey::Locked(key) = key;
                 let file = project.lock().dependencies[&key.dependency]
                     .files
                     .as_slice()
@@ -54,8 +55,6 @@ pub fn plan_target_build_acquisitions(
                     AcquisitionSpec::ProviderArchiveMember { archive, .. } => &archive.expected,
                     _ => expected,
                 }
-            } else {
-                expected
             };
             if evidence == SourceEvidencePolicy::StrongSourceRequired {
                 ensure!(
@@ -94,19 +93,11 @@ pub fn plan_target_build_acquisitions(
 
 pub(in crate::engine::build) fn select_game_inputs(
     workspace: &WorkspaceSnapshot,
-    external: &BuildAcquisitions,
     target: BuildTarget,
     optional: &OptionalPolicy,
     cancel: &Cancellation,
 ) -> Result<(BuildSelection, BTreeMap<ContentOwner, AcquisitionKey>)> {
     let project = workspace.require_resolved()?;
-    let records = workspace.backend_files(cancel)?;
-    let available = external
-        .locked
-        .iter()
-        .map(|(key, file)| (key.clone(), file))
-        .collect();
-    let backend = check_backend(&project, &records, &available)?;
     let references = matches!(
         target,
         BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
@@ -156,37 +147,6 @@ pub(in crate::engine::build) fn select_game_inputs(
                 });
             }
         }
-    }
-    let mut choices = super::super::declared_choices(&project);
-    for record in records
-        .iter()
-        .filter(|record| backend.unlisted.contains(&record.metadata_path))
-    {
-        cancel.check()?;
-        let choice = super::super::next_observed_choice(record, &mut choices)?;
-        // Policy is checked after selection so another environment cannot require acquisition.
-        let input = if references {
-            crate::engine::mrpack::ObservedFile::reference_input(
-                record,
-                &choice,
-                SourceEvidencePolicy::Compatibility,
-            )?
-            .map(|(input, _)| input)
-        } else {
-            None
-        }
-        .unwrap_or(crate::engine::mrpack::ObservedFile::pending_input(
-            record, &choice,
-        )?);
-        keys.insert(
-            input.owner.clone(),
-            AcquisitionKey::Observed(record.metadata_path.clone()),
-        );
-        occupied.insert(ProjectLayout::path(&ManagedPath::Content {
-            layer: ContentLayer::Common,
-            path: record.destination.relative().clone(),
-        })?);
-        inputs.push(input);
     }
     for source in workspace.source_entries(cancel)? {
         if occupied.contains(&source.path) {
