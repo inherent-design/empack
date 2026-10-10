@@ -1379,3 +1379,202 @@ async fn byte_identical_conflict_resolution_still_checks_source_assertions() {
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn manual_instance_continuation_retains_verified_inputs_and_requires_fresh_approval() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let mut input = request(&[
+        ("a", "mods/a.jar", b"first", FilePolicy::Managed),
+        ("b", "mods/b.jar", b"second", FilePolicy::Managed),
+    ]);
+    input.supplied.remove("b");
+    let Preparation::NeedsInput(pending) =
+        engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("manual content must be an owned continuation")
+    };
+    let OperationPreview::Instance(view) = pending.view() else {
+        panic!()
+    };
+    assert_eq!(view.manual.len(), 1);
+    assert_eq!(view.manual[0].key, "b");
+    assert_eq!(view.manual[0].sha256, hash(b"second"));
+    let old_plan = view.plan;
+    assert!(!root.path().join(".empack").exists());
+    let file = source.path().join("manual.jar");
+    fs::write(&file, b"second").unwrap();
+    let Preparation::Ready(prepared) = engine
+        .resume_instance_files(*pending, BTreeMap::from([("b".into(), file)]))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_ne!(prepared.view().plan(), old_plan);
+    assert!(!root.path().join("game").exists());
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+    };
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
+    ));
+    assert_eq!(
+        fs::read(root.path().join("game/mods/a.jar")).unwrap(),
+        b"first"
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/mods/b.jar")).unwrap(),
+        b"second"
+    );
+    engine.release_completed(operation.id());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn manual_instance_continuation_rejects_wrong_bytes_unknown_keys_and_changed_base() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let a = || request(&[("a", "mods/a.jar", b"first", FilePolicy::Managed)]);
+    apply(&engine, root.path(), a()).await;
+    let pending = || {
+        let mut input = request(&[
+            ("a", "mods/a.jar", b"first", FilePolicy::Managed),
+            ("b", "mods/b.jar", b"second", FilePolicy::Managed),
+        ]);
+        input.supplied.clear();
+        input
+    };
+    let file = source.path().join("manual.jar");
+    for (key, bytes, change_base) in [
+        ("b", b"bad".as_slice(), false),
+        ("unknown", b"second".as_slice(), false),
+        ("b", b"second".as_slice(), true),
+    ] {
+        let Preparation::NeedsInput(continuation) = engine
+            .prepare(root.path().to_owned(), pending())
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        fs::write(&file, bytes).unwrap();
+        if change_base {
+            fs::write(root.path().join("game/mods/a.jar"), b"changed").unwrap();
+        }
+        assert!(
+            engine
+                .resume_instance_files(*continuation, BTreeMap::from([(key.into(), file.clone())]))
+                .await
+                .is_err()
+        );
+        assert!(!root.path().join("game/mods/b.jar").exists());
+    }
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn restricted_provider_input_returns_owned_continuation_without_publication() {
+    let mut server = mockito::Server::new_async().await;
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, governor) = super::super::tests::engine(state.path().join("state"));
+    let engine = engine.with_provider_catalog(
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        CatalogLimits::default(),
+    );
+    let project = server.mock("GET", "/mods/123").with_body(
+        serde_json::json!({"data":{"id":123,"gameId":432,"slug":"fixture","name":"Fixture","classId":6}}).to_string()
+    ).expect(1).create_async().await;
+    let digest = sha1::Sha1::digest(b"A")
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let metadata = server.mock("GET", "/mods/123/files/456").with_body(
+        serde_json::json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"a.jar","fileLength":1,"downloadUrl":null,"hashes":[{"algo":1,"value":digest}],"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()
+    ).expect(1).create_async().await;
+    let mut input = request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+    let mut document = input.release.release().document().clone();
+    document.files[0].source = ReleaseSource::Provider {
+        provider: ReleaseProvider::CurseForge,
+        project: "123".into(),
+        selection: "456".into(),
+        slot: "primary".into(),
+        alternatives: vec![],
+    };
+    document.files[0].assertions = vec![SourceDigest {
+        algorithm: "sha1".into(),
+        value: digest,
+    }];
+    input = replace_document(input, document);
+    input.supplied.clear();
+    let Preparation::Ready(prepared) = engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("provider lookup is available")
+    };
+    let approval = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Allow,
+        run_installer: false,
+        run_runtime: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut operation = engine.start(prepared.authorize(approval).unwrap()).unwrap();
+    let outcome = operation.wait().await;
+    let pending = match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::NeedsInput(input)) => {
+            assert_eq!(input.instance_requirements()[0].key, "mod");
+            input.take_continuation().unwrap()
+        }
+        _ => panic!("restricted file must remain resumable"),
+    };
+    let Preparation::NeedsInput(pending) = engine
+        .resume_instance_files(pending, BTreeMap::new())
+        .await
+        .unwrap()
+    else {
+        panic!("empty resume must retain missing input")
+    };
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    let file = state.path().join("a.jar");
+    fs::write(&file, b"A").unwrap();
+    let Preparation::Ready(prepared) = engine
+        .resume_instance_files(*pending, BTreeMap::from([("mod".into(), file)]))
+        .await
+        .unwrap()
+    else {
+        panic!("exact input is ready")
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut resumed = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    assert!(matches!(
+        &*resumed.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+    ));
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    project.assert_async().await;
+    metadata.assert_async().await;
+    drop(outcome);
+    engine.release_completed(operation.id());
+    engine.release_completed(resumed.id());
+    drop(operation);
+    drop(resumed);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

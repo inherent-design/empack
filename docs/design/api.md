@@ -74,6 +74,16 @@ verified associations and root/read-set binding. It is not replayable authorizat
 Resume validates saved content, detects staleness and obtains a new grant. Preview
 never deletes stale continuation or updates subscription state.
 
+Instance preparation exposes missing logical file keys, exact SHA-256 addresses and
+byte counts in `InstancePreview.manual`. A provider can also discover restricted
+content during approved acquisition; `ExecutionInput.instance_requirements()`
+reports those obligations. Build obligations use `ExecutionInput.requirements()`.
+The single-consumer continuation retains verified inputs.
+`Engine::resume_instance_files` accepts explicit key-to-file associations, verifies
+the bytes and captured base, and produces a new plan requiring fresh approval.
+An empty or incomplete response remains `NeedsInput`; it does not silently retry a
+known restricted download or publish the available subset.
+
 ## Outcomes and diagnostics
 
 | Outcome | Meaning |

@@ -547,6 +547,10 @@ pub(super) async fn save_execution_input(
     engine: &Engine,
     input: &crate::engine::api::ExecutionInput,
 ) -> Result<()> {
+    if !input.instance_requirements().is_empty() {
+        super::instance::report_requirements(session, input.instance_requirements());
+        anyhow::bail!("Instance was not applied; supply the exact missing file associations");
+    }
     for need in input.requirements() {
         session.display().status().warning(&format!(
             "Missing content {}: {:?}",

@@ -8,6 +8,7 @@ use crate::engine::{
 };
 use empack_core::files::{FileChange, FilePlan, ObservedPath};
 mod acquisition;
+mod continuation;
 
 pub struct InstallInstanceRequest {
     pub conflicts: Vec<crate::engine::instance::ConflictResolution>,
@@ -24,6 +25,15 @@ pub struct InstallInstanceRequest {
     /// Root for immutable relative assets, read through no-follow native capabilities.
     pub assets: Option<PathBuf>,
 }
+#[derive(Debug, Clone)]
+pub struct InstanceInputRequirement {
+    pub key: String,
+    pub sha256: String,
+    pub bytes: u64,
+}
+#[derive(Debug, thiserror::Error)]
+#[error("Instance requires exact manual inputs: {0:?}")]
+pub(super) struct MissingInstanceInputs(pub Vec<InstanceInputRequirement>);
 #[derive(Clone)]
 pub struct InstancePreview {
     pub plan: PlanId,
@@ -31,6 +41,7 @@ pub struct InstancePreview {
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
     pub downloads: Vec<String>,
+    pub manual: Vec<InstanceInputRequirement>,
 }
 pub struct InstanceReceipt {
     pub plan: PlanId,
@@ -106,15 +117,9 @@ pub(super) async fn prepare(
         .filter(|file| !content.contains_key(&file.key))
         .map(|file| planned.download(file))
         .collect::<Result<_>>()?;
-    for file in &downloads {
-        ensure!(
-            acquisition::available(file, provider_access)?,
-            "Instance requires exact content for {}; supply --file {}=PATH",
-            file.key,
-            file.key
-        );
-    }
+    let manual = manual_inputs(&downloads, provider_access)?;
     let view = InstancePreview {
+        manual,
         downloads: downloads.iter().map(|file| file.key.clone()).collect(),
         plan: PlanId(
             NEXT_PLAN
@@ -142,12 +147,16 @@ pub(super) async fn run(
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
     cache: Option<crate::engine::content::cache::ContentCache>,
+    owner: Arc<()>,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, transport, catalog, cache, &mut scope).await;
+    let result = execute(
+        prepared, config, transport, catalog, cache, owner, &mut scope,
+    )
+    .await;
     Ok(match result {
-        Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Instance(Box::new(receipt))),
+        Ok(outcome) => outcome,
         Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
@@ -157,8 +166,9 @@ async fn execute(
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
     cache: Option<crate::engine::content::cache::ContentCache>,
+    owner: Arc<()>,
     scope: &mut WorkScope,
-) -> Result<RetainedOutput<InstanceReceipt>> {
+) -> Result<ExecutionOutcome> {
     let bytes = prepared
         .view
         .files
@@ -180,16 +190,39 @@ async fn execute(
         })?;
     let (mut prepared, reservation) = prepared.into_parts();
     if !prepared.downloads.is_empty() {
-        prepared.content.extend(
-            acquisition::acquire(
-                &prepared.downloads,
-                &transport,
-                catalog.as_ref(),
-                &config,
-                scope,
-            )
-            .await?,
-        );
+        match acquisition::acquire(
+            &prepared.downloads,
+            &transport,
+            catalog.as_ref(),
+            &config,
+            scope,
+        )
+        .await
+        {
+            Ok(content) => prepared.content.extend(content),
+            Err(error) => {
+                if let Some(missing) = error.downcast_ref::<MissingInstanceInputs>() {
+                    prepared.view.manual = missing.0.clone();
+                    let instance_requirements = missing.0.clone();
+                    let data = RetainedOutput::from_parts(
+                        PreparedKind::Instance(Box::new(prepared)),
+                        reservation,
+                    );
+                    return Ok(ExecutionOutcome::NeedsInput(ExecutionInput {
+                        requirements: Vec::new(),
+                        instance_requirements,
+                        continuation: std::sync::Mutex::new(Some(PreparationContinuation {
+                            prepared: PreparedOperation {
+                                owner,
+                                view: Box::new(data.view()),
+                                data: Box::new(data),
+                            },
+                        })),
+                    }));
+                }
+                return Err(error);
+            }
+        }
     }
     if let Some(cache) = cache {
         // Release addresses remain distinct from original provider assertions.
@@ -213,10 +246,31 @@ async fn execute(
             record,
         })
     })?;
-    scope
+    let receipt = scope
         .accept_publication(work.wait().await.map_err(PublicationWorkerFailed)?)?
-        .transpose()
+        .transpose()?;
+    Ok(ExecutionOutcome::Completed(ExecutionReceipt::Instance(
+        Box::new(receipt),
+    )))
 }
 
 #[cfg(test)]
 mod tests;
+
+fn manual_inputs(
+    files: &[crate::engine::release::ReleaseFile],
+    access: ProviderAvailability,
+) -> Result<Vec<InstanceInputRequirement>> {
+    files
+        .iter()
+        .filter_map(|file| match acquisition::available(file, access) {
+            Ok(true) => None,
+            Ok(false) => Some(Ok(InstanceInputRequirement {
+                key: file.key.clone(),
+                sha256: file.sha256.clone(),
+                bytes: file.bytes,
+            })),
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
+}

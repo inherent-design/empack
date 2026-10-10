@@ -75,7 +75,9 @@ pub use launch::{
     RuntimeRecoveryPreview, RuntimeRecoveryReceipt,
 };
 mod subscription;
-pub use instance::{InstallInstanceRequest, InstancePreview, InstanceReceipt};
+pub use instance::{
+    InstallInstanceRequest, InstanceInputRequirement, InstancePreview, InstanceReceipt,
+};
 pub use subscription::{
     SubscriptionPreview, SubscriptionReceipt, SubscriptionRecord, SubscriptionRequest,
 };
@@ -538,6 +540,18 @@ pub struct ExecutionGrant {
     pub replacement: Option<ReplacementSummary>,
 }
 impl PreparedOperation {
+    fn classify(self) -> Preparation {
+        let needs_input = match self.view() {
+            OperationPreview::Build(view) => !view.unresolved.is_empty(),
+            OperationPreview::Instance(view) => !view.manual.is_empty(),
+            _ => false,
+        };
+        if needs_input {
+            Preparation::NeedsInput(Box::new(PreparationContinuation { prepared: self }))
+        } else {
+            Preparation::Ready(self)
+        }
+    }
     pub fn view(&self) -> &OperationPreview {
         &self.view
     }
@@ -660,9 +674,13 @@ impl ExecutionOutcome {
 /// Taking the continuation is single-consumer and grants no execution or durable-write authority.
 pub struct ExecutionInput {
     requirements: Vec<ContentRequirement>,
+    instance_requirements: Vec<InstanceInputRequirement>,
     continuation: std::sync::Mutex<Option<PreparationContinuation>>,
 }
 impl ExecutionInput {
+    pub fn instance_requirements(&self) -> &[InstanceInputRequirement] {
+        &self.instance_requirements
+    }
     pub fn requirements(&self) -> &[ContentRequirement] {
         &self.requirements
     }
@@ -910,17 +928,7 @@ impl Engine {
         let prepared = receiver
             .await
             .context("Preparation result was not retained")??;
-        if prepared
-            .view()
-            .build()
-            .is_none_or(|view| view.unresolved.is_empty())
-        {
-            Ok(Preparation::Ready(prepared))
-        } else {
-            Ok(Preparation::NeedsInput(Box::new(PreparationContinuation {
-                prepared,
-            })))
-        }
+        Ok(prepared.classify())
     }
     /// Revalidate a suspended build and merge additional explicit inputs before making a new plan.
     pub async fn resume(
@@ -1021,7 +1029,16 @@ impl Engine {
                         Some(ref cache) => transport.with_cache_lookup(cache.clone()),
                         None => transport,
                     };
-                    instance::run(prepared, config, transport, catalog, content_cache, scope).await
+                    instance::run(
+                        prepared,
+                        config,
+                        transport,
+                        catalog,
+                        content_cache,
+                        owner,
+                        scope,
+                    )
+                    .await
                 }
                 PreparedKind::CacheClean(_) => {
                     let prepared = data.map(|kind| match kind {

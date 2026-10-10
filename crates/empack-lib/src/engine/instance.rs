@@ -1041,6 +1041,32 @@ impl InstancePlan {
         }
         Ok(result)
     }
+    pub(super) fn resume_files(
+        &self,
+        supplied: &BTreeMap<String, AcquiredContent>,
+        files: &BTreeMap<String, std::path::PathBuf>,
+        cancel: &Cancellation,
+    ) -> Result<BTreeMap<String, AcquiredContent>> {
+        self.root.revalidate(&self.snapshot, cancel)?;
+        if let Some(expires) = self.subscription_expires {
+            subscription::ensure_fresh(expires)?;
+        }
+        for key in files.keys() {
+            ensure!(
+                self.needed.values().any(|file| &file.key == key) && !supplied.contains_key(key),
+                "Association must name an unresolved instance file: {key}"
+            );
+        }
+        let mut content = BTreeMap::new();
+        let mut pool = super::content::ContentPool::new(self.bytes()?)?;
+        for file in self.needed.values() {
+            if let Some(acquired) = Self::acquire_one(file, supplied, files, None, cancel)? {
+                content.insert(file.key.clone(), pool.insert(acquired, cancel)?);
+            }
+        }
+        self.root.revalidate(&self.snapshot, cancel)?;
+        Ok(content)
+    }
     pub(super) fn stage(
         self,
         supplied: &BTreeMap<String, AcquiredContent>,

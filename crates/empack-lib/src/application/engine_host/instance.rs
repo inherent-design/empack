@@ -196,11 +196,10 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
     };
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let Preparation::Ready(prepared) =
-            cancellable(session, engine.prepare(root, request)).await?
-        else {
-            anyhow::bail!("Instance content requires input");
-        };
+        let prepared = require_instance_ready(
+            session,
+            cancellable(session, engine.prepare(root, request)).await?,
+        )?;
         let OperationPreview::Instance(view) = prepared.view() else {
             anyhow::bail!("Unexpected instance preview");
         };
@@ -463,11 +462,10 @@ async fn maintain(
     };
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
-        let Preparation::Ready(prepared) =
-            cancellable(session, engine.prepare(root, request)).await?
-        else {
-            anyhow::bail!("Instance maintenance requires input");
-        };
+        let prepared = require_instance_ready(
+            session,
+            cancellable(session, engine.prepare(root, request)).await?,
+        )?;
         let OperationPreview::Instance(view) = prepared.view() else {
             anyhow::bail!("Unexpected instance preview");
         };
@@ -758,4 +756,31 @@ fn conflict_resolutions(
         });
     }
     Ok(decisions)
+}
+
+pub(super) fn report_requirements(
+    session: &dyn Session,
+    needs: &[crate::engine::api::InstanceInputRequirement],
+) {
+    for need in needs {
+        session.display().status().warning(&format!(
+            "Missing instance file {}: {} bytes, SHA-256 {}; associate with --file {}=PATH",
+            need.key, need.bytes, need.sha256, need.key
+        ));
+    }
+}
+fn require_instance_ready(
+    session: &dyn Session,
+    preparation: Preparation,
+) -> Result<crate::engine::api::PreparedOperation> {
+    match preparation {
+        Preparation::Ready(prepared) => Ok(prepared),
+        Preparation::NeedsInput(pending) => {
+            let OperationPreview::Instance(view) = pending.view() else {
+                anyhow::bail!("Unexpected instance input request")
+            };
+            report_requirements(session, &view.manual);
+            anyhow::bail!("Instance was not applied; supply the exact missing file associations")
+        }
+    }
 }

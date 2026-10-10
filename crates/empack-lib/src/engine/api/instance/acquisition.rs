@@ -116,6 +116,17 @@ pub(super) async fn acquire(
             }
         }
     }
+    let manual: Vec<_> = needs
+        .iter()
+        .filter(|need| need.alternatives.is_empty())
+        .flat_map(|need| &need.files)
+        .map(|file| InstanceInputRequirement {
+            key: file.key.clone(),
+            sha256: file.sha256.clone(),
+            bytes: file.bytes,
+        })
+        .collect();
+    ensure!(manual.is_empty(), MissingInstanceInputs(manual));
     let requests = needs
         .iter()
         .map(|need| {

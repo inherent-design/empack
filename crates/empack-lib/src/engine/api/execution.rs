@@ -61,6 +61,7 @@ fn pending(
         },
     };
     ExecutionOutcome::NeedsInput(ExecutionInput {
+        instance_requirements: Vec::new(),
         requirements,
         continuation: std::sync::Mutex::new(Some(continuation)),
     })
