@@ -28,8 +28,8 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display a success status with optional details
     ///
-    /// Example: `display.status().success("packwiz", "v0.16.1")`
-    /// Output: `✓ packwiz: v0.16.1`
+    /// Example: `display.status().success("java", "21.0.1")`
+    /// Output: `✓ java: 21.0.1`
     pub fn success(&self, item: &str, details: &str) {
         let message = if details.is_empty() {
             item.to_string()
@@ -41,8 +41,8 @@ impl<'a> StatusDisplay<'a> {
 
     /// Display an error status with details
     ///
-    /// Example: `display.status().error("packwiz", "not found")`
-    /// Output: `✗ packwiz: not found`
+    /// Example: `display.status().error("java", "not found")`
+    /// Output: `✗ java: not found`
     pub fn error(&self, item: &str, details: &str) {
         let message = if details.is_empty() {
             item.to_string()
@@ -99,7 +99,7 @@ impl<'a> StatusDisplay<'a> {
     /// # use empack_lib::display::Display;
     /// let display = Display::default();
     /// display.status().list(&[
-    ///     "packwiz installed",
+    ///     "java installed",
     ///     "archive tools available",
     ///     "configuration loaded"
     /// ]);
@@ -123,7 +123,7 @@ impl<'a> StatusDisplay<'a> {
 impl<'a> StatusDisplay<'a> {
     /// Check and report tool availability
     ///
-    /// Example: `display.status().tool_check("packwiz", true, "v0.16.1")`
+    /// Example: `display.status().tool_check("java", true, "21.0.1")`
     pub fn tool_check(&self, tool: &str, available: bool, version: &str) {
         if available {
             self.success(tool, version);

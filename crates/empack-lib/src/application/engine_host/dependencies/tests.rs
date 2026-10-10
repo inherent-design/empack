@@ -293,7 +293,7 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
         );
     }
     drop(archive);
-    // Full-client output needs actual payloads. Supply verified fixture bytes rather than
+    // Bundled Prism output needs actual payloads. Supply verified fixture bytes rather than
     // allowing synthetic provider IDs to reach the live service during this offline test.
     let mut supplied = BuildAcquisitions::default();
     for (key, dependency) in &read(&project).lock().dependencies {

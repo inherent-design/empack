@@ -27,7 +27,7 @@ impl<'a> StructuredDisplay<'a> {
     /// # use empack_lib::display::Display;
     /// Display::default().table().table()
     ///     .header(&["Tool", "Status", "Version"])
-    ///     .row(&["packwiz", "✓", "v0.16.1"])
+    ///     .row(&["java", "✓", "21.0.1"])
     ///     .row(&["Go", "✗", "not found"])
     ///     .render();
     /// ```

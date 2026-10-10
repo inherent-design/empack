@@ -60,7 +60,7 @@ Curated mode phases:
     2. Download archives to /tmp/empack-curated-smoke/packs/ (cached)
     3. Import with explicit auxiliary and optional-file conversion choices
     4. If needed, verify a read-only preview and resume native import with exact supplied files
-    5. Synchronize twice without document changes and verify the full-client archive
+    5. Synchronize twice without document changes and verify the bundled Prism archive
     6. Record build results and output artifact paths
 
 Survey mode phases:

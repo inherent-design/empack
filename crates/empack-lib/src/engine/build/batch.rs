@@ -87,7 +87,7 @@ pub struct BuiltDistribution {
     pub target: Recipe,
     pub artifact: PortableRelPath,
     pub bytes: u64,
-    /// Pack-content inventory: full-client launcher/template files are verified by its recipe too.
+    /// Pack-content inventory: bundled Prism launcher/template files are verified by its recipe too.
     pub content: BuildInventory,
     pub members: std::collections::BTreeMap<PortableRelPath, empack_core::files::FileContent>,
     pub resolution: empack_core::model::ResolutionLock,
