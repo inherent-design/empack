@@ -37,6 +37,7 @@ pub(super) struct PreparedLaunch {
     pub(super) view: LaunchInstancePreview,
     instance: instance::InstancePlan,
     command: std::process::Command,
+    java_major: Option<u16>,
 }
 pub(super) async fn prepare(
     target: ProjectTarget,
@@ -73,6 +74,9 @@ pub(super) async fn prepare(
             } else {
                 env!("CARGO_PKG_VERSION")
             })?;
+            let java_major = request
+                .server
+                .then_some(release.document().runtime.java_major);
             let mut arguments = if request.server {
                 ensure!(
                     record.side == instance::InstanceSide::Server,
@@ -129,6 +133,7 @@ pub(super) async fn prepare(
                 },
                 instance,
                 command,
+                java_major,
             })
         },
     )?;
@@ -158,7 +163,7 @@ pub(super) async fn run(
         let work = scope.spawn(
             ResourceRequest {
                 jobs: 1,
-                memory_bytes: 256 << 10,
+                memory_bytes: 1 << 20,
                 open_files: 8,
                 ..Default::default()
             },
@@ -170,12 +175,17 @@ pub(super) async fn run(
                 let ((prepared, mut lease), _lease_reservation) = leased.into_parts();
                 let (prepared, _prepared_reservation) = prepared.into_parts();
                 lease.begin()?;
-                let retired = crate::application::process_runtime::execute_inherited(
-                    prepared.command,
-                    cancel,
-                )
-                .await.context(RuntimeRecoveryRequired)?;
-                let status = retired.0;
+                let status = match prepared.java_major {
+                    Some(required) => check_java(&prepared.command, required, cancel.clone()).await
+                        .context(RuntimeRecoveryRequired)?,
+                    None => Ok(()),
+                };
+                let status = match status {
+                    Ok(()) => crate::application::process_runtime::execute_inherited(
+                        prepared.command, cancel,
+                    ).await.context(RuntimeRecoveryRequired)?.0,
+                    Err(error) => Err(error),
+                };
                 if let Err(cleanup) = lease.complete() {
                     return Err(match status {
                         Err(process) => process.context(format!("Runtime retired, but recovery evidence could not be cleared: {cleanup:#}")),
@@ -282,4 +292,56 @@ pub(super) async fn recover(
         }
         Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
+}
+
+/// Probe only after runtime approval and under its durable lease. No release chooses this program.
+async fn check_java(
+    runtime: &std::process::Command,
+    required: u16,
+    cancel: crate::application::process_runtime::Cancellation,
+) -> Result<Result<()>> {
+    let mut command = std::process::Command::new(runtime.get_program());
+    command.args(["-XshowSettings:properties", "-version"]);
+    command.stdin(std::process::Stdio::null());
+    if let Some(directory) = runtime.get_current_dir() {
+        command.current_dir(directory);
+    }
+    let output = crate::application::process_runtime::execute_captured(
+        command,
+        std::time::Duration::from_secs(15),
+        cancel,
+        None,
+        64 << 10,
+    )
+    .await?;
+    Ok(output.0.and_then(|output| {
+        ensure!(output.success, "Selected Java failed its version check: {}", output.stderr);
+        let actual = java_major(&output.stdout, &output.stderr)?;
+        ensure!(actual >= required,
+            "Selected Java is version {actual}; this release requires Java {required} or newer. Select a compatible Java executable");
+        Ok(())
+    }))
+}
+fn java_major(stdout: &str, stderr: &str) -> Result<u16> {
+    let mut values = stdout.lines().chain(stderr.lines()).filter_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        (key.trim() == "java.specification.version").then_some(value.trim())
+    });
+    let value = values
+        .next()
+        .context("Selected program did not report a Java specification version")?;
+    ensure!(
+        values.next().is_none(),
+        "Java reported ambiguous specification versions"
+    );
+    let version = value.strip_prefix("1.").unwrap_or(value);
+    ensure!(
+        !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit()),
+        "Invalid Java specification version"
+    );
+    let version = version
+        .parse::<u16>()
+        .context("Invalid Java specification version")?;
+    ensure!(version >= 8, "Selected Java is older than supported Java 8");
+    Ok(version)
 }

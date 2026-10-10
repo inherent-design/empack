@@ -219,8 +219,8 @@ upload this pointer last. Increase the sequence when changing channel metadata.
 `--previous-key` accepts an old public key for authenticating the existing pointer
 after signing-key rotation; it does not sign the replacement or enroll client trust.
 
-For an empack-managed server release, run `empack instance launch --server -- java
-nogui`. Java is selected from your local PATH; the completed release supplies the
+For an empack-managed server release, run
+`empack instance launch --server -- java nogui`. Java is selected from your local PATH; the completed release supplies the
 verified JAR or loader argument-file path. Add `--check-updates` before `--` for an
 explicitly enrolled subscription. Changing Java or updating empack remains a local
 operator action.

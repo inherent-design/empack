@@ -511,3 +511,105 @@ async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
     );
     engine.shutdown().await;
 }
+
+#[test]
+fn java_properties_reject_ambiguous_missing_or_malformed_versions() {
+    assert_eq!(
+        java_major("", "    java.specification.version = 1.8\n").unwrap(),
+        8
+    );
+    assert_eq!(
+        java_major("java.specification.version = 21\n", "").unwrap(),
+        21
+    );
+    for (out, err) in [
+        ("", "java.version = 21"),
+        (
+            "java.specification.version = 21",
+            "java.specification.version = 17",
+        ),
+        ("", "java.specification.version = 21.0.1"),
+        ("", "java.specification.version = +21"),
+    ] {
+        assert!(java_major(out, err).is_err());
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn java_validation_requires_approval_and_retires_before_rejecting_old_java() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let mut input = install_request(b"server bytes");
+    let mut document = input.release.release().document().clone();
+    document.server_launch = Some(ReleaseServerLaunch::Jar {
+        path: "mods/a.jar".into(),
+    });
+    let release = DecodedRelease::encode(document).unwrap();
+    input.release = SelectedRelease::Snapshot(
+        trust::SelectedSnapshot::select(
+            release.bytes(),
+            release.id(),
+            &semver::Version::parse("0.6.0-beta").unwrap(),
+        )
+        .unwrap(),
+    );
+    input.side = InstanceSide::Server;
+    let prepared = prepare(&engine, root.path(), input).await;
+    let approval = grant(&prepared, false);
+    let mut operation = engine.start(prepared.authorize(approval).unwrap()).unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
+    ));
+    let program = state.path().join("selected-java");
+    for version in ["1.8", "21"] {
+        fs::write(&program, format!("#!/bin/sh\nif [ \"$1\" = '-XshowSettings:properties' ]; then\n  echo probe > java-probed\n  echo 'java.specification.version = {version}' >&2\n  exit 0\nfi\nprintf '%s\\n' \"$@\" > server-started\n")).unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+        let selected = || LaunchInstanceRequest {
+            server: true,
+            expected_release: None,
+            program: program.clone(),
+            arguments: vec!["nogui".into()],
+        };
+        let preview = prepare(&engine, root.path(), selected()).await;
+        assert!(!root.path().join("game/java-probed").exists());
+        let denied = grant(&preview, false);
+        assert!(preview.authorize(denied).is_err());
+        let prepared = prepare(&engine, root.path(), selected()).await;
+        let approved = grant(&prepared, true);
+        let mut operation = engine.start(prepared.authorize(approved).unwrap()).unwrap();
+        let result = operation.wait().await;
+        if version == "1.8" {
+            let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) =
+                &*result
+            else {
+                panic!()
+            };
+            assert!(error.to_string().contains("requires Java 21"));
+            assert!(!root.path().join("game/server-started").exists());
+        } else {
+            assert!(matches!(
+                &*result,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Launch(
+                    _
+                )))
+            ));
+            assert_eq!(
+                fs::read_to_string(root.path().join("game/server-started")).unwrap(),
+                "-jar\nmods/a.jar\nnogui\n"
+            );
+        }
+        fs::remove_file(root.path().join("game/java-probed")).unwrap();
+        // Both successful and incompatible probes retire normally; neither strands runtime evidence.
+        assert!(
+            engine
+                .prepare(root.path().to_owned(), selected())
+                .await
+                .is_ok()
+        );
+    }
+    engine.shutdown().await;
+}

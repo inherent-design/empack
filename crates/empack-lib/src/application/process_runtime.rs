@@ -64,6 +64,7 @@ async fn read_stream(
     mut pipe: impl AsyncRead + Unpin,
     stream: ProcessStream,
     sender: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
+    limit: usize,
 ) -> Result<Vec<u8>> {
     let mut all = Vec::new();
     let mut pending = Vec::new();
@@ -73,8 +74,8 @@ async fn read_stream(
         if count == 0 {
             break;
         }
-        if all.len() + count > OUTPUT_LIMIT {
-            anyhow::bail!("Subprocess output exceeds 16 MiB per stream");
+        if all.len() + count > limit {
+            anyhow::bail!("Subprocess output exceeds {limit} bytes per stream");
         }
         all.extend_from_slice(&buffer[..count]);
         pending.extend_from_slice(&buffer[..count]);
@@ -104,7 +105,23 @@ pub async fn execute_async(
     cancellation: Cancellation,
     progress: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
 ) -> Result<ProcessOutput> {
-    cancellation.check()?;
+    execute_captured(command, timeout, cancellation, progress, OUTPUT_LIMIT)
+        .await?
+        .0
+}
+
+/// Outer failure means retirement is unconfirmed; the inner result preserves process failure.
+pub(crate) struct RetiredCapture(pub Result<ProcessOutput>);
+pub(crate) async fn execute_captured(
+    command: std::process::Command,
+    timeout: Duration,
+    cancellation: Cancellation,
+    progress: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
+    limit: usize,
+) -> Result<RetiredCapture> {
+    if let Err(error) = cancellation.check() {
+        return Ok(RetiredCapture(Err(error)));
+    }
     let program = command.get_program().to_string_lossy().into_owned();
     let sender = progress;
     let mut command = tokio::process::Command::from(command);
@@ -115,7 +132,14 @@ pub async fn execute_async(
     #[cfg(unix)]
     command.process_group(0);
     #[cfg(unix)]
-    let mut child = command.spawn().context("Failed to spawn command")?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return Ok(RetiredCapture(Err(
+                anyhow::Error::from(error).context("Failed to spawn command")
+            )));
+        }
+    };
     #[cfg(unix)]
     let tree = ProcessTree::new(&child)?;
     #[cfg(windows)]
@@ -126,8 +150,8 @@ pub async fn execute_async(
         let collect = async {
             let (status, stdout, stderr) = tokio::try_join!(
                 async { child.wait().await.map_err(anyhow::Error::from) },
-                read_stream(stdout, ProcessStream::Stdout, sender.clone()),
-                read_stream(stderr, ProcessStream::Stderr, sender),
+                read_stream(stdout, ProcessStream::Stdout, sender.clone(), limit),
+                read_stream(stderr, ProcessStream::Stderr, sender, limit),
             )?;
             Ok(ProcessOutput {
                 success: status.success(),
@@ -142,12 +166,17 @@ pub async fn execute_async(
         }
     };
     // Drop pipe futures before shutdown so descendants cannot keep readers blocked.
-    drop(tree);
+    let termination = tree.terminate();
     if result.is_err() {
         let _ = child.start_kill();
-        let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+        tokio::time::timeout(Duration::from_secs(2), child.wait())
+            .await
+            .context("Subprocess reaping timed out; retirement is unconfirmed")?
+            .context("Failed to retire subprocess")?;
     }
-    result
+    termination?;
+    tree.wait_retired().await?;
+    Ok(RetiredCapture(result))
 }
 
 /// Supervise a long-running caller-selected runtime with inherited console streams.

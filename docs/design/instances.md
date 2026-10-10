@@ -316,5 +316,14 @@ prelaunch may update runtime and game files in one recoverable publication. A fa
 or interrupted update cannot start Java. Rollback restores the previous managed
 runtime and entry point while preserving played worlds and JVM configuration.
 
-The local operator selects Java. A runtime update never installs or changes the
-empack executable or acknowledges the Minecraft EULA.
+The local operator selects Java. After runtime approval, `--server` runs a bounded
+version probe on that same executable under the instance lease. The probe has a
+15-second deadline and a 64 KiB limit per output stream. It requires a unique
+`java.specification.version` meeting the release's minimum major version. This is a
+minimum-version check, not a guarantee that every newer Java works with every mod.
+A failed check retires the probe and blocks server execution. Unconfirmed process
+retirement preserves the runtime recovery marker. Preview and declined approval
+never execute the probe.
+
+A runtime update never installs or changes the empack executable or acknowledges
+the Minecraft EULA.
