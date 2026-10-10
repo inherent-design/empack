@@ -610,11 +610,22 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
 async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
     let mut server = mockito::Server::new_async().await;
     let mut stalled = mockito::Server::new_async().await;
+    // NeoForge cannot finish until the later Forge request starts. This proves
+    // concurrent discovery without requiring the host to serve HTTP within 200 ms.
+    let (release, wait_for_forge) = std::sync::mpsc::sync_channel(1);
+    let wait_for_forge = std::sync::Mutex::new(wait_for_forge);
+    let released = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let observed = released.clone();
     let slow = stalled
         .mock("GET", "/neoforge")
         .with_status(200)
-        .with_chunked_body(|writer| {
-            std::thread::sleep(Duration::from_millis(500));
+        .with_chunked_body(move |writer| {
+            wait_for_forge
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(std::io::Error::other)?;
+            observed.store(true, std::sync::atomic::Ordering::SeqCst);
             writer.write_all(b"{}")
         })
         .create_async()
@@ -628,7 +639,10 @@ async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
     let forge = server
         .mock("GET", "/forge")
         .with_status(200)
-        .with_body(r#"{"1.7.10":["1.7.10-10.13.4.1614-1.7.10"]}"#)
+        .with_chunked_body(move |writer| {
+            release.send(()).map_err(std::io::Error::other)?;
+            writer.write_all(br#"{"1.7.10":["1.7.10-10.13.4.1614-1.7.10"]}"#)
+        })
         .create_async()
         .await;
     let quilt = server
@@ -641,7 +655,7 @@ async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
     let host = session(root.path(), false, false)
         .with_interactive(MockInteractiveProvider::new().queue_select(0));
     let mut limits = RuntimeCatalogLimits::default();
-    limits.transfer.deadline = Duration::from_millis(200);
+    limits.transfer.deadline = Duration::from_secs(10);
     let (family, versions) = compatible_loader(
         &host,
         RuntimeCatalog::for_loopback_tests(&server.url())
@@ -652,6 +666,10 @@ async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
     )
     .await
     .unwrap();
+    assert!(
+        released.load(std::sync::atomic::Ordering::SeqCst),
+        "Forge must respond while the earlier NeoForge request is still pending"
+    );
     assert_eq!(family, LoaderKind::Forge);
     assert_eq!(
         versions
