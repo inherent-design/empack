@@ -162,3 +162,18 @@ files. Remote immutable assets resolve relative to the authenticated release URL
 Content application does not install Java or establish runtime launch readiness.
 Key replacement and revocation retain the highest observed sequence, including
 across restart and managed rollback.
+
+## Publisher staging
+
+Extract a native export, keep publisher keys outside the project and export, then
+stage its signed immutable files:
+
+```sh
+empack --workdir ./publisher --yes release stage ./export --key-file ~/.config/empack/publisher.key
+```
+
+The output is `publisher/dist/releases/<release-id>/release.json` and its assets.
+Serve `publisher/dist/` through static HTTPS hosting. Staging checks original asset
+assertions and refuses different bytes at existing release addresses. It does not
+advance a channel or enroll subscribers. Use `--dry-run` to inspect the release,
+output paths and signing fingerprints before publication.

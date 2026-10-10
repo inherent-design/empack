@@ -74,10 +74,14 @@ pub use launch::{
     AcknowledgeStoppedRuntime, LaunchInstancePreview, LaunchInstanceReceipt, LaunchInstanceRequest,
     RuntimeRecoveryPreview, RuntimeRecoveryReceipt,
 };
+mod release_publication;
 mod subscription;
 pub use instance::{
     InstallInstanceRequest, InstanceInputRequirement, InstancePreview, InstanceReceipt,
     PendingInstanceCleanup, ResumedInstance, SavedInstanceRecord, SuspendedInstanceReceipt,
+};
+pub use release_publication::{
+    ReleasePublicationPreview, ReleasePublicationReceipt, StageReleaseRequest,
 };
 pub use subscription::{
     SubscriptionPreview, SubscriptionReceipt, SubscriptionRecord, SubscriptionRequest,
@@ -229,6 +233,7 @@ pub enum Request {
     AcknowledgeStoppedRuntime,
     LaunchInstance(LaunchInstanceRequest),
     Subscription(SubscriptionRequest),
+    StageRelease(StageReleaseRequest),
     InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
     Recover(RecoverRequest),
@@ -251,6 +256,11 @@ pub enum ProjectTarget {
 impl From<PathBuf> for ProjectTarget {
     fn from(path: PathBuf) -> Self {
         Self::Existing(path)
+    }
+}
+impl From<StageReleaseRequest> for Request {
+    fn from(request: StageReleaseRequest) -> Self {
+        Self::StageRelease(request)
     }
 }
 impl From<SubscriptionRequest> for Request {
@@ -338,6 +348,7 @@ pub enum OperationPreview {
     RuntimeRecovery(RuntimeRecoveryPreview),
     Launch(LaunchInstancePreview),
     Subscription(SubscriptionPreview),
+    ReleasePublication(ReleasePublicationPreview),
     Instance(InstancePreview),
     CacheClean(CacheCleanPreview),
     Clean(CleanPreview),
@@ -357,6 +368,7 @@ impl OperationPreview {
             Self::RuntimeRecovery(view) => view.plan,
             Self::Launch(view) => view.plan,
             Self::Subscription(view) => view.plan,
+            Self::ReleasePublication(view) => view.plan,
             Self::Instance(view) => view.plan,
             Self::CacheClean(view) => view.plan,
             Self::Clean(view) => view.plan,
@@ -441,6 +453,7 @@ impl OperationPreview {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
             Self::Launch(_) | Self::RuntimeRecovery(_) => None,
             Self::Subscription(view) => Some(view.replacement),
+            Self::ReleasePublication(view) => Some(view.replacement),
             Self::Instance(view) => Some(view.replacement),
             Self::CacheClean(view) => Some(view.replacement),
             Self::Clean(view) => Some(view.replacement),
@@ -465,6 +478,7 @@ enum PreparedKind {
     RuntimeRecovery(Box<launch::PreparedRuntimeRecovery>),
     Launch(Box<launch::PreparedLaunch>),
     Subscription(Box<subscription::PreparedSubscription>),
+    ReleasePublication(Box<release_publication::PreparedReleasePublication>),
     Instance(Box<instance::PreparedInstanceOperation>),
     CacheClean(Box<cache_cleanup::PreparedCacheCleanup>),
     Clean(Box<cleanup::PreparedCleanup>),
@@ -483,6 +497,9 @@ impl PreparedKind {
             Self::RuntimeRecovery(value) => OperationPreview::RuntimeRecovery(value.view.clone()),
             Self::Launch(value) => OperationPreview::Launch(value.view.clone()),
             Self::Subscription(value) => OperationPreview::Subscription(value.view.clone()),
+            Self::ReleasePublication(value) => {
+                OperationPreview::ReleasePublication(value.view.clone())
+            }
             Self::Instance(value) => OperationPreview::Instance(value.view.clone()),
             Self::CacheClean(value) => OperationPreview::CacheClean(value.view.clone()),
             Self::Clean(value) => OperationPreview::Clean(value.view.clone()),
@@ -601,6 +618,7 @@ pub enum ExecutionReceipt {
     RuntimeRecovered(Box<RetainedOutput<RuntimeRecoveryReceipt>>),
     Launch(Box<RetainedOutput<LaunchInstanceReceipt>>),
     Subscription(Box<RetainedOutput<SubscriptionReceipt>>),
+    ReleasePublication(Box<RetainedOutput<ReleasePublicationReceipt>>),
     Instance(Box<RetainedOutput<InstanceReceipt>>),
     CacheClean(Box<CacheCleanReceipt>),
     Clean(Box<RetainedOutput<CleanReceipt>>),
@@ -808,6 +826,11 @@ impl Engine {
                                 .await?
                                 .map(|value| PreparedKind::Launch(Box::new(value))))
                         }
+                        Request::StageRelease(request) => Ok(release_publication::prepare(
+                            project, request, &config, &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::ReleasePublication(Box::new(value)))),
                         Request::Subscription(request) => {
                             Ok(subscription::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -1013,6 +1036,13 @@ impl Engine {
                         _ => unreachable!(),
                     });
                     launch::run(prepared, config, scope).await
+                }
+                PreparedKind::ReleasePublication(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::ReleasePublication(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    release_publication::run(prepared, config, scope).await
                 }
                 PreparedKind::Subscription(_) => {
                     let prepared = data.map(|value| match value {

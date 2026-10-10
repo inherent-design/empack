@@ -341,6 +341,18 @@ pub struct InstanceConflictArgs {
 }
 
 #[derive(Debug, Clone, Subcommand)]
+pub enum ReleaseCommand {
+    /// Stage signed immutable release files under dist/releases/<release-id>/
+    Stage {
+        /// Extracted native export containing release.json and its selected assets
+        source: PathBuf,
+        /// External file containing a 32-byte Ed25519 seed as 64 hexadecimal characters
+        #[arg(long = "key-file", required = true)]
+        keys: Vec<PathBuf>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
     /// Resume an exact pending release with verified manual file associations.
     Continue {
@@ -494,6 +506,11 @@ pub enum InstanceCommand {
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Sign and publish native releases for static HTTPS hosting
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
     /// Install exact native release content into a separate game instance
     Instance {
         #[command(subcommand)]
@@ -703,7 +720,7 @@ impl Commands {
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
-            Commands::Instance { .. } => false,
+            Commands::Instance { .. } | Commands::Release { .. } => false,
             Commands::Recover { .. } => false,
             Commands::Requirements => false,
             Commands::Version => false,
@@ -719,7 +736,7 @@ impl Commands {
     /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
-            Commands::Instance { .. } => 1,
+            Commands::Instance { .. } | Commands::Release { .. } => 1,
             Commands::Recover { .. } => 0,
             Commands::Requirements => 0,
             Commands::Version => 0,

@@ -191,3 +191,22 @@ the envelope URL are not inherited. These locators are transient acquisition inp
 The saved release retains its signed relative asset identity and original assertions.
 Content transfer still requires the installation's explicit network grant and verifies
 exact bytes before publication.
+
+## Immutable publisher staging
+
+`release stage SOURCE --key-file KEY` reads an extracted native export, verifies
+its selected assets and original assertions, and signs the exact release payload.
+The preview identifies the release, pack, public-key fingerprints and output paths.
+Signing keys are explicit host files outside both the project and export roots;
+the CLI accepts a 32-byte Ed25519 seed encoded as 64 lowercase hexadecimal characters.
+Keys never enter project documents, distributions or receipts.
+
+Approved staging publishes `dist/releases/<release-id>/release.json` as the signed
+envelope, with its selected assets at their declared relative paths. Repeating the
+same publication is harmless. Existing immutable files must match exactly; changing
+signatures requires a newly identified release rather than overwriting an envelope
+already served to clients. Input changes after preparation invalidate the operation.
+Unknown neighboring files are not acquired or deleted.
+
+Staging does not change a channel. The hosting layer serves `dist/` over HTTPS;
+channel publication verifies the hosted release before exposing a new pointer.

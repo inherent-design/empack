@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 pub mod producer;
+pub(crate) mod signing;
 pub mod trust;
 
 /// Independent of the author schema and executable version.

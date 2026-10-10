@@ -518,3 +518,4 @@ pub use files::add_files;
 pub mod cli;
 
 pub(super) mod instance;
+pub(super) mod release;
