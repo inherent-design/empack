@@ -29,10 +29,7 @@ pub fn plan_target_build_acquisitions(
             cancel,
         );
     }
-    let references = matches!(
-        target,
-        BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
-    );
+    let references = matches!(target, BuildTarget::Server | BuildTarget::CurseForge);
     let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
@@ -68,7 +65,10 @@ pub fn plan_target_build_acquisitions(
                     "Selected build content has only weaker source evidence"
                 );
             }
-            if matches!(entry.representation, Representation::Unacquired { .. }) {
+            if matches!(entry.representation, Representation::Unacquired { .. })
+                || (target == BuildTarget::Client
+                    && matches!(entry.representation, Representation::Download { .. }))
+            {
                 needed.insert(key.clone());
             }
         }

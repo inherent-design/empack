@@ -200,11 +200,12 @@ fn project_files(
         if applies {
             ensure!(
                 layout != InstanceLayout::Prism
-                    || !file
-                        .destination
-                        .split('/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(".empack-layout")),
+                    || !file.destination.split('/').next().is_some_and(|name| [
+                        ".empack-layout",
+                        ".empack-consumer"
+                    ]
+                    .iter()
+                    .any(|reserved| name.eq_ignore_ascii_case(reserved))),
                 "Release destination collides with Prism layout control"
             );
             let target = path(&file.destination)?;

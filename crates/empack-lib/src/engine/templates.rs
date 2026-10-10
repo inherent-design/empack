@@ -320,7 +320,7 @@ fn template_values(
             }
             .into(),
         ),
-        ("BOOTSTRAP_COMMAND", "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar -s client pack/pack.toml".into()),
+        ("INSTANCE_PREPARE_COMMAND", String::new()),
         ("NAME", metadata.name.clone()),
         ("VERSION", metadata.version.clone()),
         ("AUTHOR", metadata.author.clone().unwrap_or_default()),

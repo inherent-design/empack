@@ -10,4 +10,4 @@ iconKey=empack_icon
 AutoUpdate=false
 ManagedPack=true
 OverrideCommands=true
-PreLaunchCommand={{#if BOOTSTRAP}}{{ini_quote BOOTSTRAP_COMMAND}}{{/if}}
+PreLaunchCommand={{#if INSTANCE_PREPARE_COMMAND}}{{ini_quote INSTANCE_PREPARE_COMMAND}}{{/if}}

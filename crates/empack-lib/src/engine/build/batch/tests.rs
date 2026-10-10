@@ -20,7 +20,15 @@ fn path(value: &str) -> PortableRelPath {
     PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap()
 }
 fn fixture(root: &Path) -> BuildAcquisitions {
-    let project = project(false, false);
+    let initial = project(false, false);
+    let mut intent = initial.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "test.pack".into(),
+        java_major: 21,
+        delivery: empack_core::distribution::Delivery::References,
+        policies: std::collections::BTreeMap::new(),
+    });
+    let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     fs::write(
         root.join("empack.yml"),
         DocumentCodec.encode_intent(project.intent()).unwrap(),
@@ -220,8 +228,7 @@ fn duplicate_output_ownership_is_rejected_before_preparation() {
 }
 
 #[test]
-fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
-    use crate::engine::{bootstrap_tools::InstallerAssets, packwiz::InstallerInteraction};
+fn native_client_joins_requested_publication_without_installer_tools() {
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let external = fixture(root.path());
@@ -241,10 +248,6 @@ fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
                 evidence: SourceEvidencePolicy::Compatibility,
                 limits: ArchiveLimits::default(),
             },
-            bootstrap: ClientBootstrap {
-                assets: InstallerAssets::fixture(),
-                interaction: InstallerInteraction::Headless,
-            },
         },
     ])
     .unwrap();
@@ -255,7 +258,7 @@ fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
         &cancel,
     )
     .unwrap();
-    assert_eq!(plan.artifacts()[1].toolchain.len(), 2);
+    assert!(plan.artifacts()[1].toolchain.is_empty());
     assert_eq!(plan.artifacts()[1].target, BuildTarget::Client);
     plan.publish(
         &Publisher::open(&host.path().join("private")).unwrap(),

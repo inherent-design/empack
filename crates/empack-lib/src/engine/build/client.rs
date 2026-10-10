@@ -1,18 +1,17 @@
 //! Full launcher distributions: selected game bytes, captured templates and exact components.
 use super::{
     BuildAcquisitions, PreparedArtifact,
-    materialized::{PreparedGameContent, prepare_bootstrap_game_content, prepare_game_content},
+    materialized::{PreparedGameContent, prepare_game_content, prepare_native_game_content},
 };
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
         artifacts::{ArchiveLimits, write_archive},
-        bootstrap_tools::{InstallerArtifact, InstallerAssets, InstallerRelease},
         content::{InitialObservation, SourceEvidencePolicy, verify_stream},
         layout::CollisionIndex,
         mrpack::AcquiredBuildFile,
-        packwiz::InstallerInteraction,
         project::WorkspaceSnapshot,
+        release::producer::{NativeReleaseOptions, NativeReleasePlan},
         snapshot::SnapshotLimits,
         staging::{MutableStage, PrivateFile},
         templates::{TemplateOptions, prepare_templates},
@@ -20,6 +19,7 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Delivery,
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent, LoaderKind, RuntimeResolution},
@@ -39,35 +39,14 @@ pub struct ClientOptions {
     pub evidence: SourceEvidencePolicy,
     pub limits: ArchiveLimits,
 }
-/// Exact bundled tools and whether the installer may present optional choices.
-pub struct ClientBootstrap {
-    pub assets: InstallerAssets,
-    pub interaction: InstallerInteraction,
-}
-impl ClientBootstrap {
-    fn command(&self) -> String {
-        let interaction = if self.interaction == InstallerInteraction::Headless {
-            " --no-gui"
-        } else {
-            ""
-        };
-        format!(
-            "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar{interaction} -s client pack/pack.toml"
-        )
-    }
-}
 /// Verified selected game representation and launcher declarations, not an offline Minecraft installation.
 pub struct PreparedClientBuild {
     publication: PreparedArtifact,
     game: PreparedGameContent,
     inventory: BTreeMap<PortableRelPath, FileContent>,
     user_configuration: bool,
-    toolchain: Vec<InstallerRelease>,
 }
 impl PreparedClientBuild {
-    pub fn toolchain(&self) -> &[InstallerRelease] {
-        &self.toolchain
-    }
     pub fn game(&self) -> &PreparedGameContent {
         &self.game
     }
@@ -222,7 +201,6 @@ pub fn prepare_client_full_build(
         game: candidate.game,
         inventory: candidate.inventory,
         user_configuration: candidate.user_configuration,
-        toolchain: candidate.toolchain,
     })
 }
 pub(super) struct ClientCandidate {
@@ -230,7 +208,6 @@ pub(super) struct ClientCandidate {
     pub(super) game: PreparedGameContent,
     pub(super) inventory: BTreeMap<PortableRelPath, FileContent>,
     pub(super) user_configuration: bool,
-    pub(super) toolchain: Vec<InstallerRelease>,
 }
 pub(super) fn prepare_client_full_archive(
     workspace: &WorkspaceSnapshot,
@@ -239,25 +216,17 @@ pub(super) fn prepare_client_full_archive(
     options: &ClientOptions,
     cancel: &Cancellation,
 ) -> Result<ClientCandidate> {
-    prepare_client_archive(workspace, artifact, external, options, None, cancel)
+    prepare_client_archive(workspace, artifact, external, options, false, cancel)
 }
-/// Prepare the lightweight client with exact bundled tools and reference content.
+/// Prepare a Prism reference distribution with an exact native release.
 pub fn prepare_client_build(
     workspace: WorkspaceSnapshot,
     artifact: PortableRelPath,
     external: &BuildAcquisitions,
     options: &ClientOptions,
-    bootstrap: &ClientBootstrap,
     cancel: &Cancellation,
 ) -> Result<PreparedClientBuild> {
-    let built = prepare_client_archive(
-        &workspace,
-        artifact,
-        external,
-        options,
-        Some(bootstrap),
-        cancel,
-    )?;
+    let built = prepare_client_archive(&workspace, artifact, external, options, true, cancel)?;
     let publication = super::prepare_archives_publication(
         workspace,
         vec![built.archive],
@@ -269,7 +238,6 @@ pub fn prepare_client_build(
         game: built.game,
         inventory: built.inventory,
         user_configuration: built.user_configuration,
-        toolchain: built.toolchain,
     })
 }
 pub(super) fn prepare_client_archive(
@@ -277,7 +245,7 @@ pub(super) fn prepare_client_archive(
     artifact: PortableRelPath,
     external: &BuildAcquisitions,
     options: &ClientOptions,
-    bootstrap: Option<&ClientBootstrap>,
+    references: bool,
     cancel: &Cancellation,
 ) -> Result<ClientCandidate> {
     let suffix = match options.archive {
@@ -289,13 +257,13 @@ pub(super) fn prepare_client_archive(
         artifact.as_str().ends_with(suffix),
         "Client artifact extension differs from selected format"
     );
-    let target = if bootstrap.is_some() {
+    let target = if references {
         BuildTarget::Client
     } else {
         BuildTarget::ClientFull
     };
-    let game = if bootstrap.is_some() {
-        prepare_bootstrap_game_content(
+    let game = if references {
+        prepare_native_game_content(
             workspace,
             external,
             target,
@@ -314,48 +282,56 @@ pub(super) fn prepare_client_archive(
         )?
     };
     let mut template_options = options.templates.clone();
-    if let Some(bootstrap) = bootstrap {
-        template_options
-            .values
-            .entry("BOOTSTRAP_COMMAND".into())
-            .or_insert_with(|| bootstrap.command());
-    }
-    let templates = prepare_templates(workspace, target, &template_options, cancel)?;
     let mut files = BTreeMap::new();
-    for (destination, file) in game.files() {
+    let command = if references {
+        let mut release_options = NativeReleaseOptions::from_project(game.project())?;
+        release_options.delivery = Delivery::References;
+        release_options
+            .policies
+            .retain(|destination, _| game.files().contains_key(destination));
+        for destination in game.files().keys() {
+            ensure!(
+                !destination.as_str().split('/').next().is_some_and(|name| [
+                    ".empack-layout",
+                    ".empack-consumer"
+                ]
+                .iter()
+                .any(|reserved| name.eq_ignore_ascii_case(reserved))),
+                "Game content collides with a reserved Prism control path"
+            );
+        }
+        let release = NativeReleasePlan::prepare_selected(&game, release_options)?;
         files.insert(
-            path(&format!(".minecraft/{}", destination.as_str()))?,
-            file.clone(),
+            path(".minecraft/.empack-consumer/release.json")?,
+            generated(release.release().bytes(), cancel)?,
         );
-    }
-    if let Some(bootstrap) = bootstrap {
-        let tree = game.packwiz(bootstrap.interaction, cancel)?;
-        for (destination, file) in tree.files() {
-            let destination = path(&format!(".minecraft/pack/{}", destination.as_str()))?;
-            ensure!(
-                !files.contains_key(&destination),
-                "Game content collides with bootstrap tree"
-            );
-            files.insert(destination, file.clone());
-        }
-        for artifact in [InstallerArtifact::Bootstrap, InstallerArtifact::Installer] {
-            let destination = path(&format!(".minecraft/{}", artifact.release().filename))?;
-            ensure!(
-                !files.contains_key(&destination),
-                "Game content collides with bundled installer"
-            );
+        for (destination, file) in release.assets() {
             files.insert(
-                destination,
-                AcquiredBuildFile {
-                    content: bootstrap.assets.content(artifact).clone(),
-                    permissions: FilePermissions {
-                        readonly: false,
-                        executable: false,
-                    },
-                },
+                path(&format!(
+                    ".minecraft/.empack-consumer/{}",
+                    destination.as_str()
+                ))?,
+                file.clone(),
             );
         }
-    }
+        Some(format!(
+            "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client",
+            release.release().id()
+        ))
+    } else {
+        for (destination, file) in game.files() {
+            files.insert(
+                path(&format!(".minecraft/{}", destination.as_str()))?,
+                file.clone(),
+            );
+        }
+        None
+    };
+    template_options.values.insert(
+        "INSTANCE_PREPARE_COMMAND".into(),
+        command.clone().unwrap_or_default(),
+    );
+    let templates = prepare_templates(workspace, target, &template_options, cancel)?;
     for (destination, file) in templates.files() {
         ensure!(
             !files.contains_key(destination),
@@ -373,16 +349,13 @@ pub(super) fn prepare_client_archive(
     let instance = path("instance.cfg")?;
     let user_configuration = files.contains_key(&instance);
     if !user_configuration {
-        let mut values = BTreeMap::from([(
-            "BOOTSTRAP".to_owned(),
-            if bootstrap.is_some() { "true" } else { "" }.to_owned(),
+        let values = BTreeMap::from([(
+            "INSTANCE_PREPARE_COMMAND".to_owned(),
+            command.unwrap_or_default(),
         )]);
-        if let Some(bootstrap) = bootstrap {
-            values.insert("BOOTSTRAP_COMMAND".to_owned(), bootstrap.command());
-        }
         let bytes = crate::engine::templates::render_default(
             game.project(),
-            if bootstrap.is_some() {
+            if references {
                 BuildTarget::Client
             } else {
                 BuildTarget::ClientFull
@@ -414,6 +387,12 @@ pub(super) fn prepare_client_archive(
         .read_to_end(&mut profile_bytes)?;
     verify_profile(&profile_bytes, &game.project().lock().runtime)?;
     let mut collisions = CollisionIndex::default();
+    if references {
+        // Future installed paths participate in the same collision check as packaged inputs.
+        for destination in game.files().keys() {
+            collisions.insert_file(&path(&format!(".minecraft/{}", destination.as_str()))?)?;
+        }
+    }
     let mut inventory = BTreeMap::new();
     for (destination, file) in &files {
         collisions.insert_file(destination)?;
@@ -462,14 +441,6 @@ pub(super) fn prepare_client_archive(
         game,
         inventory,
         user_configuration,
-        toolchain: if bootstrap.is_some() {
-            vec![
-                InstallerArtifact::Bootstrap.release(),
-                InstallerArtifact::Installer.release(),
-            ]
-        } else {
-            Vec::new()
-        },
     })
 }
 

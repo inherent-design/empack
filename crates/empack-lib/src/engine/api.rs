@@ -1231,7 +1231,16 @@ fn capture(
         prior_root.is_none_or(|binding| workspace.root().binding == binding),
         "Continuation project selection changed during capture"
     );
-    let runtime = workspace.require_resolved()?.lock().runtime.clone();
+    let resolved = workspace.require_resolved()?;
+    if request
+        .outputs
+        .as_slice()
+        .iter()
+        .any(|output| output.target == BuildTarget::Client)
+    {
+        super::release::producer::NativeReleaseOptions::from_project(&resolved)?;
+    }
+    let runtime = resolved.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
         let optional = if output.target == BuildTarget::Mrpack {
@@ -1278,7 +1287,7 @@ fn capture(
         .outputs
         .as_slice()
         .iter()
-        .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::Client));
+        .any(|output| output.target == BuildTarget::Server);
     let resolved = workspace.require_resolved()?;
     let mut file_names = BTreeMap::new();
     for need in &acquisition.pending {

@@ -113,7 +113,7 @@ readiness or replace executable evidence.
 - [x] Implement CurseForge manifest ZIP export and independently inspect its
   referenced project/file identities and overrides. Reject unverifiable cross-provider
   substitutions and report content that cannot be represented or distributed.
-- [ ] Replace lightweight Prism JAR commands with native instance integration;
+- [x] Replace lightweight Prism JAR commands with native instance integration;
   preserve launcher components, icons, templates and ordinary snapshot imports.
 - [ ] Preserve server recipes for vanilla, Fabric, Quilt, Forge and NeoForge,
   historical loader variants, Java requirements and generated launchers.

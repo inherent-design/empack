@@ -31,6 +31,35 @@ pub struct NativeReleaseOptions {
     /// Exact destination policies; unspecified configuration/world files are seeds.
     pub policies: BTreeMap<PortableRelPath, FilePolicy>,
 }
+impl NativeReleaseOptions {
+    pub fn from_project(project: &ResolvedProject) -> Result<Self> {
+        let native = project
+            .intent()
+            .distribution
+            .native
+            .as_ref()
+            .context("Native distribution requires distribution.native settings")?;
+        Ok(Self {
+            pack: native.pack_id.clone(),
+            minimum_engine: ">=0.6.0-beta".into(),
+            java_major: native.java_major,
+            delivery: native.delivery,
+            policies: native
+                .policies
+                .iter()
+                .map(|(p, policy)| {
+                    (
+                        p.clone(),
+                        match policy {
+                            empack_core::instance::FilePolicy::Managed => FilePolicy::Managed,
+                            empack_core::instance::FilePolicy::Seed => FilePolicy::Seed,
+                        },
+                    )
+                })
+                .collect(),
+        })
+    }
+}
 /// Verified immutable assets remain leased through writing and independent archive verification.
 pub struct NativeReleasePlan {
     release: DecodedRelease,
@@ -455,31 +484,7 @@ pub(in crate::engine) fn capture(
     };
     use empack_core::files::ManagedPath;
     let project = workspace.require_resolved()?;
-    let native = project
-        .intent()
-        .distribution
-        .native
-        .as_ref()
-        .context("Native export requires distribution.native settings")?;
-    let options = NativeReleaseOptions {
-        pack: native.pack_id.clone(),
-        minimum_engine: ">=0.6.0-beta".into(),
-        java_major: native.java_major,
-        delivery: native.delivery,
-        policies: native
-            .policies
-            .iter()
-            .map(|(p, policy)| {
-                (
-                    p.clone(),
-                    match policy {
-                        empack_core::instance::FilePolicy::Managed => FilePolicy::Managed,
-                        empack_core::instance::FilePolicy::Seed => FilePolicy::Seed,
-                    },
-                )
-            })
-            .collect(),
-    };
+    let options = NativeReleaseOptions::from_project(&project)?;
     let maximum = workspace
         .observations()
         .entries()

@@ -3,7 +3,7 @@ use crate::engine::{
     bootstrap_tools::InstallerAssets,
     build::{
         batch::{DistributionRequest, prepare_build_batch_with_cleanup},
-        client::{ClientBootstrap, ClientOptions},
+        client::ClientOptions,
         server::{ServerBootstrap, ServerOptions},
     },
     publication::Publisher,
@@ -189,7 +189,7 @@ async fn execute(
             .iter()
             .any(|output| output.target == target)
     };
-    let assets = if has(BuildTarget::Client) || has(BuildTarget::Server) {
+    let assets = if has(BuildTarget::Server) {
         Some(InstallerAssets::acquire(&transport, scope, config.transfer).await?)
     } else {
         None
@@ -250,13 +250,6 @@ async fn execute(
                 BuildTarget::Client => DistributionRequest::Client {
                     artifact,
                     options: client_options(),
-                    bootstrap: ClientBootstrap {
-                        assets: assets
-                            .as_ref()
-                            .context("Missing acquired installer assets")?
-                            .clone(),
-                        interaction: request.interaction,
-                    },
                 },
                 BuildTarget::ServerFull => DistributionRequest::ServerFull {
                     artifact,

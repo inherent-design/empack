@@ -13,7 +13,7 @@ separate installation rather than moving ownership implicitly.
 Prism prefers `minecraft/` if that directory exists. The Prism layout therefore
 requires its absence and binds that absence through publication. A small owned
 `.minecraft/.empack-layout` marker keeps the selected directory present even for an
-empty release. A release cannot overwrite this marker. Launcher components and
+empty release. A release cannot overwrite this marker or the `.empack-consumer` input directory. Launcher components and
 icons remain outside the content installer's ownership. [Prism directory selection](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/MinecraftInstance.cpp)
 
 `instance prepare RELEASE --sha256 ID` is the consumer entry point. It installs the

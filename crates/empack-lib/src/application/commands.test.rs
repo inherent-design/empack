@@ -532,4 +532,55 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
         assert!(!instance.join("game/private").exists());
         assert!(!instance.join("game/pack.toml").exists());
     }
+    // The actual client build dispatch uses native preparation without acquiring installer JARs.
+    execute_command_with_session(
+        Commands::Build(BuildArgs {
+            targets: vec!["client".into()],
+            ..Default::default()
+        }),
+        &selected,
+    )
+    .await
+    .unwrap();
+    let prism = root.path().join("prism");
+    fs::create_dir(&prism).unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(root.path().join("project/dist/Native Pack-1-client.zip")).unwrap(),
+    )
+    .unwrap();
+    archive.extract(&prism).unwrap();
+    let descriptor = prism.join(".minecraft/.empack-consumer/release.json");
+    let release = DecodedRelease::decode(&fs::read(&descriptor).unwrap()).unwrap();
+    let host = session(root.path(), true, false).with_config(MockConfigProvider::new(
+        crate::application::AppConfig {
+            workdir: Some("prism".into()),
+            state_dir: Some("state".into()),
+            yes: true,
+            curseforge_api_client_key: None,
+            ..Default::default()
+        },
+    ));
+    let prepare = Commands::Instance {
+        command: InstanceCommand::Prepare {
+            release: descriptor,
+            sha256: release.id().into(),
+            side: "client".into(),
+            layout: Some("prism".into()),
+            choices: vec![],
+            files: vec![],
+        },
+    };
+    for _ in 0..2 {
+        execute_command_with_session(prepare.clone(), &host)
+            .await
+            .unwrap();
+        assert_eq!(
+            fs::read(prism.join(".minecraft/mods/fixture.jar")).unwrap(),
+            mod_bytes
+        );
+        assert_eq!(
+            fs::read(prism.join(".minecraft/config/value")).unwrap(),
+            b"client"
+        );
+    }
 }

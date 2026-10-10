@@ -1,7 +1,7 @@
 //! AllRequested publication across independently verified distribution candidates.
 use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
-    client::{ClientBootstrap, ClientOptions, prepare_client_archive, prepare_client_full_archive},
+    client::{ClientOptions, prepare_client_archive, prepare_client_full_archive},
     prepare_archives_publication, prepare_mrpack,
     server::{ServerBootstrap, ServerOptions, prepare_server_archive},
 };
@@ -33,7 +33,6 @@ pub enum DistributionRequest {
     Client {
         artifact: PortableRelPath,
         options: ClientOptions,
-        bootstrap: ClientBootstrap,
     },
     Server {
         artifact: PortableRelPath,
@@ -239,13 +238,13 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
             | DistributionRequest::Client {
                 artifact, options, ..
             } => {
-                let built = if let DistributionRequest::Client { bootstrap, .. } = request {
+                let built = if let DistributionRequest::Client { .. } = request {
                     prepare_client_archive(
                         &workspace,
                         artifact.clone(),
                         external,
                         options,
-                        Some(bootstrap),
+                        true,
                         cancel,
                     )?
                 } else {
@@ -266,7 +265,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     resolution: built.game.project().lock().clone(),
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
-                    toolchain: built.toolchain,
+                    toolchain: Vec::new(),
                     server_runtime: None,
                 };
                 (built.archive, evidence)

@@ -106,7 +106,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
 }
 
 #[test]
-fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
+fn native_references_acquire_addresses_and_retain_source_evidence() {
     use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
@@ -125,11 +125,12 @@ fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
             &cancel,
         )
     };
-    assert!(
+    assert_eq!(
         plan(BuildTarget::Client, SourceEvidencePolicy::Compatibility)
             .unwrap()
             .needs()
-            .is_empty()
+            .len(),
+        2
     );
     assert!(
         plan(
@@ -158,7 +159,7 @@ fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
         )
         .is_ok()
     );
-    // Mrpack requires export hashes, unlike a packwiz bootstrap reference.
+    // Both native releases and mrpack establish their required content hashes.
     assert_eq!(
         plan(BuildTarget::Mrpack, SourceEvidencePolicy::Compatibility)
             .unwrap()

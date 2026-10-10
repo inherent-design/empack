@@ -111,8 +111,21 @@ components, selected icons/configuration and `.minecraft` content. The launcher
 obtains its normal game binaries, libraries and assets. Ordinary snapshots require
 no empack updater when pack content is bundled.
 
-Reference delivery and subscribed instances invoke native empack installation/update
-through a verified executable integration. Preserve argument boundaries, prelaunch
+Reference delivery carries an exact release and embedded authored assets under
+`.minecraft/.empack-consumer/`. This input directory also establishes Prism's game
+layout before its first prelaunch hook. It is reserved against selected game files
+and templates. Installed payloads are created by the instance engine, not preseeded
+as unowned archive members. Templates cannot occupy a future installed path.
+
+The generated `instance.cfg` invokes `empack instance prepare` with an exact release
+hash, explicit instance root and Prism layout. The executable must be on the
+launcher's PATH and satisfy the descriptor's engine requirement. Failed preparation
+must stop launch. Subsequent preparation retains the active release and saved
+choices; it cannot reinstall the archive's original release over an update. The
+launcher profile must still match the active runtime.
+
+Captured user configurations remain user input; their arbitrary commands are not
+certified as native prelaunch integration. Preserve argument boundaries, prelaunch
 exit status and runtime-component requirements. Do not allow platform and empack
 updaters to manage the same files without an explicit authority transfer. Real
 launcher import and execution tests establish compatibility, not only JSON parsing.
