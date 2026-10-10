@@ -209,3 +209,15 @@ The host chooses the runtime and remains responsible for its compatibility and
 external resource use. Empack's acquisition grant does not sandbox the runtime's
 network or filesystem access. Independently started processes are outside this
 coordination.
+
+Before starting a managed process, empack durably records runtime ownership in its
+host-private, root-bound publication state. Confirmed retirement removes that record.
+A crash, panic or failure to establish retirement retains it, even when the operating
+system has released the locks. Further publication and launch refuse the unresolved
+record. A missing parent process is not proof that Java or its descendants stopped.
+
+After stopping all remaining runtime processes, the operator can use
+`instance recover-runtime --acknowledge-stopped`. This is an explicit assertion of
+retirement, not process detection or a command to kill a recorded PID. Preparation
+captures the exact recovery record. Execution requires both exclusive locks and
+refuses a changed record or a live managed runtime. Preview never clears evidence.

@@ -137,6 +137,14 @@ async fn runtime_lease_blocks_updates_and_duplicate_launch_until_owned_retiremen
     })
     .await
     .unwrap();
+    let recover = prepare(&engine, root.path(), AcknowledgeStoppedRuntime).await;
+    let granted = grant(&recover, false);
+    let mut recover = engine.start(recover.authorize(granted).unwrap()).unwrap();
+    assert!(matches!(
+        &*recover.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    engine.release_completed(recover.id());
     let duplicate = prepare(&engine, root.path(), request()).await;
     let granted = grant(&duplicate, true);
     let mut duplicate = engine.start(duplicate.authorize(granted).unwrap()).unwrap();
@@ -162,6 +170,13 @@ async fn runtime_lease_blocks_updates_and_duplicate_launch_until_owned_retiremen
         .await
         .unwrap();
     engine.release_completed(running.id());
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), AcknowledgeStoppedRuntime)
+            .await
+            .is_err(),
+        "confirmed cancellation clears runtime evidence"
+    );
     // A fully retired process releases both locks; a later launch can finish normally.
     fs::write(root.path().join("game/launch-exit"), b"exit").unwrap();
     let prepared = prepare(&engine, root.path(), request()).await;
@@ -256,5 +271,31 @@ async fn empty_native_installation_has_a_launchable_owned_directory() {
     );
     drop(result);
     engine.release_completed(operation.id());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn failed_spawn_does_not_leave_runtime_recovery_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    install(&engine, root.path()).await;
+    let mut input = request();
+    input.program = root.path().join("missing-executable");
+    let prepared = prepare(&engine, root.path(), input).await;
+    let granted = grant(&prepared, true);
+    let mut operation = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    engine.release_completed(operation.id());
+    #[cfg(unix)]
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), AcknowledgeStoppedRuntime)
+            .await
+            .is_err()
+    );
     engine.shutdown().await;
 }

@@ -69,7 +69,10 @@ pub use recovery::{
 mod execution;
 mod instance;
 mod launch;
-pub use launch::{LaunchInstancePreview, LaunchInstanceReceipt, LaunchInstanceRequest};
+pub use launch::{
+    AcknowledgeStoppedRuntime, LaunchInstancePreview, LaunchInstanceReceipt, LaunchInstanceRequest,
+    RuntimeRecoveryPreview, RuntimeRecoveryReceipt,
+};
 mod subscription;
 pub use instance::{InstallInstanceRequest, InstancePreview, InstanceReceipt};
 pub use subscription::{
@@ -219,6 +222,7 @@ struct PreparedBuild {
     acquired_permit: Option<super::resources::AdmissionPermit>,
 }
 pub enum Request {
+    AcknowledgeStoppedRuntime,
     LaunchInstance(LaunchInstanceRequest),
     Subscription(SubscriptionRequest),
     InstallInstance(Box<InstallInstanceRequest>),
@@ -248,6 +252,11 @@ impl From<PathBuf> for ProjectTarget {
 impl From<SubscriptionRequest> for Request {
     fn from(request: SubscriptionRequest) -> Self {
         Self::Subscription(request)
+    }
+}
+impl From<AcknowledgeStoppedRuntime> for Request {
+    fn from(_: AcknowledgeStoppedRuntime) -> Self {
+        Self::AcknowledgeStoppedRuntime
     }
 }
 impl From<LaunchInstanceRequest> for Request {
@@ -322,6 +331,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    RuntimeRecovery(RuntimeRecoveryPreview),
     Launch(LaunchInstancePreview),
     Subscription(SubscriptionPreview),
     Instance(InstancePreview),
@@ -340,6 +350,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::RuntimeRecovery(view) => view.plan,
             Self::Launch(view) => view.plan,
             Self::Subscription(view) => view.plan,
             Self::Instance(view) => view.plan,
@@ -424,7 +435,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
-            Self::Launch(_) => None,
+            Self::Launch(_) | Self::RuntimeRecovery(_) => None,
             Self::Subscription(view) => Some(view.replacement),
             Self::Instance(view) => Some(view.replacement),
             Self::CacheClean(view) => Some(view.replacement),
@@ -447,6 +458,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    RuntimeRecovery(Box<launch::PreparedRuntimeRecovery>),
     Launch(Box<launch::PreparedLaunch>),
     Subscription(Box<subscription::PreparedSubscription>),
     Instance(Box<instance::PreparedInstanceOperation>),
@@ -464,6 +476,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::RuntimeRecovery(value) => OperationPreview::RuntimeRecovery(value.view.clone()),
             Self::Launch(value) => OperationPreview::Launch(value.view.clone()),
             Self::Subscription(value) => OperationPreview::Subscription(value.view.clone()),
             Self::Instance(value) => OperationPreview::Instance(value.view.clone()),
@@ -569,6 +582,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    RuntimeRecovered(Box<RetainedOutput<RuntimeRecoveryReceipt>>),
     Launch(Box<RetainedOutput<LaunchInstanceReceipt>>),
     Subscription(Box<RetainedOutput<SubscriptionReceipt>>),
     Instance(Box<RetainedOutput<InstanceReceipt>>),
@@ -762,6 +776,11 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::AcknowledgeStoppedRuntime => {
+                            Ok(launch::prepare_recovery(project, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::RuntimeRecovery(Box::new(value))))
+                        }
                         Request::LaunchInstance(request) => {
                             Ok(launch::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -969,6 +988,13 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::RuntimeRecovery(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::RuntimeRecovery(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    launch::recover(prepared, config, scope).await
+                }
                 PreparedKind::Launch(_) => {
                     let prepared = data.map(|value| match value {
                         PreparedKind::Launch(value) => *value,

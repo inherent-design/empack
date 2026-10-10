@@ -51,7 +51,11 @@ pub(super) struct ProjectReadGuard {
 pub(super) struct InstanceRunLease {
     _run: File,
     _publication: File,
+    state: Dir,
+    marker: Option<Vec<u8>>,
 }
+mod instance_runtime;
+pub(super) use instance_runtime::PendingRuntime;
 impl RecoveryReader {
     pub fn new(host_state: std::path::PathBuf) -> Self {
         Self { host_state }
@@ -212,8 +216,11 @@ impl Publisher {
             !self.recovery_required(root)?,
             "Instance requires publication recovery before launch"
         );
+        instance_runtime::ensure_stopped(&state)?;
         root.check_binding()?;
         Ok(InstanceRunLease {
+            state,
+            marker: None,
             _run: run,
             _publication: publication,
         })
@@ -855,6 +862,7 @@ fn private_directory(directory: &Dir) -> Result<()> {
 fn lock(directory: &Dir) -> Result<File> {
     let file = lock_file(directory, "operation.lock")?;
     file.try_lock().context("Project publication is busy")?;
+    instance_runtime::ensure_stopped(directory)?;
     Ok(file)
 }
 fn lock_file(directory: &Dir, name: &str) -> Result<File> {

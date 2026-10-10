@@ -153,11 +153,14 @@ pub async fn execute_async(
 /// Supervise a long-running caller-selected runtime with inherited console streams.
 /// There is no build-tool deadline or accumulated-output limit. The owning engine scope
 /// must retain this future and its instance lease until process-tree retirement.
+pub(crate) struct RetiredRuntime(pub Result<std::process::ExitStatus>);
 pub(crate) async fn execute_inherited(
     command: std::process::Command,
     cancellation: Cancellation,
-) -> Result<std::process::ExitStatus> {
-    cancellation.check()?;
+) -> Result<RetiredRuntime> {
+    if let Err(error) = cancellation.check() {
+        return Ok(RetiredRuntime(Err(error)));
+    }
     let mut command = tokio::process::Command::from(command);
     command
         .kill_on_drop(true)
@@ -167,9 +170,14 @@ pub(crate) async fn execute_inherited(
     #[cfg(unix)]
     command.process_group(0);
     #[cfg(unix)]
-    let mut child = command
-        .spawn()
-        .context("Failed to start instance runtime")?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return Ok(RetiredRuntime(Err(
+                anyhow::Error::from(error).context("Failed to start instance runtime")
+            )));
+        }
+    };
     #[cfg(unix)]
     let tree = ProcessTree::new(&child)?;
     #[cfg(windows)]
@@ -187,7 +195,7 @@ pub(crate) async fn execute_inherited(
             .await
             .context("Failed to retire instance runtime")?;
     }
-    result
+    Ok(RetiredRuntime(result))
 }
 
 #[cfg(unix)]

@@ -132,14 +132,21 @@ pub(super) async fn run(
                 ..Default::default()
             },
             move |cancel| async move {
-                let ((prepared, lease), _lease_reservation) = leased.into_parts();
+                let ((prepared, mut lease), _lease_reservation) = leased.into_parts();
                 let (prepared, _prepared_reservation) = prepared.into_parts();
-                let status = crate::application::process_runtime::execute_inherited(
+                lease.begin()?;
+                let retired = crate::application::process_runtime::execute_inherited(
                     prepared.command,
                     cancel,
                 )
-                .await;
-                drop(lease);
+                .await?;
+                let status = retired.0;
+                if let Err(cleanup) = lease.complete() {
+                    return Err(match status {
+                        Err(process) => process.context(format!("Runtime retired, but recovery evidence could not be cleared: {cleanup:#}")),
+                        Ok(status) => cleanup.context(format!("Runtime exited with {status}, but recovery evidence could not be cleared")),
+                    });
+                }
                 Ok::<_, anyhow::Error>(LaunchInstanceReceipt {
                     plan: prepared.view.plan,
                     release: prepared.view.record.release,
@@ -158,3 +165,86 @@ pub(super) async fn run(
 
 #[cfg(test)]
 mod tests;
+
+/// Explicit operator assertion that processes left by an interrupted host have stopped.
+pub struct AcknowledgeStoppedRuntime;
+#[derive(Clone)]
+pub struct RuntimeRecoveryPreview {
+    pub plan: PlanId,
+}
+pub struct RuntimeRecoveryReceipt {
+    pub plan: PlanId,
+}
+pub(super) struct PreparedRuntimeRecovery {
+    pub(super) view: RuntimeRecoveryPreview,
+    root: crate::engine::snapshot::ProjectReadRoot,
+    pending: crate::engine::publication::PendingRuntime,
+}
+pub(super) async fn prepare_recovery(
+    target: ProjectTarget,
+    config: &EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<RetainedOutput<PreparedRuntimeRecovery>> {
+    let ProjectTarget::Existing(root) = target else {
+        anyhow::bail!("Runtime recovery requires an existing root")
+    };
+    let state = config.state_root.clone();
+    let work = scope.spawn_blocking(
+        config.resources.capture,
+        config.resources.prepared,
+        move |cancel| {
+            cancel.check()?;
+            let root = crate::engine::snapshot::ProjectReadRoot::open(&root)?;
+            let publisher = crate::engine::publication::Publisher::open_existing(&state)?
+                .context("No runtime state exists")?;
+            let pending = publisher
+                .observe_runtime(&root)?
+                .context("No interrupted runtime needs acknowledgment")?;
+            Ok::<_, anyhow::Error>(PreparedRuntimeRecovery {
+                view: RuntimeRecoveryPreview {
+                    plan: PlanId(
+                        NEXT_PLAN
+                            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
+                                id.checked_add(1)
+                            })
+                            .map_err(|_| anyhow::anyhow!("Plan identifier exhausted"))?,
+                    ),
+                },
+                root,
+                pending,
+            })
+        },
+    )?;
+    scope.accept(work.wait().await?)?.transpose()
+}
+pub(super) async fn recover(
+    prepared: RetainedOutput<PreparedRuntimeRecovery>,
+    config: EngineConfig,
+    mut scope: WorkScope,
+) -> Result<ExecutionOutcome, RuntimeError> {
+    let cancel = scope.cancellation();
+    let result = async {
+        let work = scope.spawn_blocking(
+            config.resources.capture,
+            config.resources.receipt,
+            move |cancel| {
+                cancel.check()?;
+                let (prepared, _reservation) = prepared.into_parts();
+                crate::engine::publication::Publisher::open_existing(&config.state_root)?
+                    .context("Runtime state disappeared")?
+                    .acknowledge_stopped(&prepared.root, prepared.pending)?;
+                Ok::<_, anyhow::Error>(RuntimeRecoveryReceipt {
+                    plan: prepared.view.plan,
+                })
+            },
+        )?;
+        scope.accept(work.wait().await?)?.transpose()
+    }
+    .await;
+    Ok(match result {
+        Ok(receipt) => {
+            ExecutionOutcome::Completed(ExecutionReceipt::RuntimeRecovered(Box::new(receipt)))
+        }
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
+    })
+}

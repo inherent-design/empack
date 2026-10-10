@@ -329,6 +329,11 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Clear interrupted runtime evidence only after all remaining processes have stopped
+    RecoverRuntime {
+        #[arg(long, required = true)]
+        acknowledge_stopped: bool,
+    },
     /// Run a locally selected runtime while preventing concurrent managed updates
     Launch {
         /// Runtime program and arguments after --; no shell expansion or remote commands
@@ -703,6 +708,16 @@ mod tests {
     #[test]
     fn instance_launch_preserves_native_argument_boundaries() {
         assert!(Cli::try_parse_from(["empack", "instance", "launch"]).is_err());
+        assert!(Cli::try_parse_from(["empack", "instance", "recover-runtime"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "recover-runtime",
+                "--acknowledge-stopped"
+            ])
+            .is_ok()
+        );
         let cli = Cli::try_parse_from([
             "empack",
             "instance",

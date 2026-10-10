@@ -220,6 +220,26 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
+        InstanceCommand::RecoverRuntime {
+            acknowledge_stopped,
+        } => {
+            ensure!(
+                acknowledge_stopped,
+                "Confirm that the runtime and all descendants have stopped"
+            );
+            let (invocation, root) = project_path(session)?;
+            let engine = engine(session.config().app_config(), &invocation)?;
+            let result = async {
+                let Preparation::Ready(prepared) = cancellable(session, engine.prepare(root, crate::engine::api::AcknowledgeStoppedRuntime)).await? else { anyhow::bail!("Unexpected runtime recovery input") };
+                session.display().status().info("Clear the interrupted runtime marker after confirming all game/runtime processes have stopped");
+                apply(session, &engine, prepared, "Runtime recovery", |receipt| {
+                    ensure!(matches!(receipt, ExecutionReceipt::RuntimeRecovered(_)), "Unexpected runtime recovery receipt");
+                    Ok("Cleared interrupted runtime evidence".into())
+                }).await
+            }.await;
+            engine.shutdown().await;
+            result
+        }
         InstanceCommand::Launch { command } => launch(session, command).await,
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
