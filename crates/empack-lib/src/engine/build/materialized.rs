@@ -351,6 +351,11 @@ pub(super) fn reference_for_target(
             _ => None,
         };
         if let Some((pin, slot)) = selection {
+            ensure!(
+                acquired
+                    .is_none_or(|file| !file.permissions.readonly && !file.permissions.executable),
+                "CurseForge references cannot preserve custom file permissions"
+            );
             return Ok(Some(Representation::Download {
                 expected: file.expected.clone(),
                 allowed: DownloadOrigins::Provider {

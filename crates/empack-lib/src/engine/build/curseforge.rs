@@ -1,4 +1,5 @@
 //! CurseForge client snapshots: exact references plus authored, selected override bytes.
+mod verification;
 use super::{
     ArchiveCandidate, BuildAcquisitions, batch::BuiltDistribution,
     materialized::prepare_bootstrap_game_content,
@@ -100,14 +101,6 @@ pub(super) fn prepare_archive(
                         "CurseForge export requires an owned dependency record; adopt observed content first"
                     );
                 };
-                ensure!(
-                    game.files()
-                        .get(entry.destination.relative())
-                        .is_none_or(
-                            |file| !file.permissions.readonly && !file.permissions.executable
-                        ),
-                    "CurseForge references cannot preserve custom file permissions"
-                );
                 let dependency = &game.project().lock().dependencies[key];
                 let folder = match dependency.kind {
                     ContentKind::Mod => "mods",
@@ -252,6 +245,12 @@ pub(super) fn prepare_archive(
         DistributionArchive::Zip,
         &members,
         options.limits,
+        cancel,
+    )?;
+    verification::verify_archive_manifest(
+        archive.file(),
+        &game,
+        options.limits.file_bytes,
         cancel,
     )?;
     let receipt = BuiltDistribution {
@@ -635,6 +634,129 @@ mod tests {
                 .members
                 .keys()
                 .any(|path| path.as_str().starts_with("overrides/resourcepacks/"))
+        );
+    }
+    #[test]
+    fn captured_reference_permissions_cannot_disappear_during_export() {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        write(root.path(), &fixture(false, false));
+        let file = root.path().join("pack/resourcepacks/assets.zip");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, b"payload").unwrap();
+        let original = fs::metadata(&file).unwrap().permissions();
+        let mut readonly = original.clone();
+        readonly.set_readonly(true);
+        fs::set_permissions(&file, readonly).unwrap();
+        let result = prepare_build_batch(
+            capture(root.path(), host.path()),
+            NonEmpty::new(vec![request(OptionalConversion::RejectMetadataLoss)]).unwrap(),
+            &BuildAcquisitions::default(),
+            &Cancellation::default(),
+        );
+        fs::set_permissions(&file, original).unwrap();
+        let error = result
+            .err()
+            .expect("A reference must not discard captured permissions");
+        assert!(
+            format!("{error:#}").contains("custom file permissions"),
+            "{error:#}"
+        );
+        assert!(!root.path().join("dist/curseforge.zip").exists());
+    }
+    #[test]
+    fn semantic_verifier_rejects_writer_errors_and_duplicate_fields() {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        write(root.path(), &fixture(false, false));
+        let cancel = Cancellation::default();
+        let workspace = capture(root.path(), host.path());
+        let game = prepare_bootstrap_game_content(
+            &workspace,
+            &BuildAcquisitions::default(),
+            BuildTarget::CurseForge,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::Compatibility,
+            &cancel,
+        )
+        .unwrap();
+        let options = CurseForgeOptions {
+            optional: OptionalPolicy::Preserve,
+            conversion: OptionalConversion::RejectMetadataLoss,
+            evidence: SourceEvidencePolicy::Compatibility,
+            limits: ArchiveLimits::default(),
+        };
+        let (mut candidate, _) = prepare_archive(
+            &workspace,
+            path("curseforge.zip"),
+            &BuildAcquisitions::default(),
+            &options,
+            &cancel,
+        )
+        .unwrap();
+        let mut zip = zip::ZipArchive::new(candidate.archive.file()).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_reader(zip.by_name("manifest.json").unwrap()).unwrap();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        verification::verify_manifest_bytes(&bytes, &game, &cancel).unwrap();
+        for pointer in [
+            "/files/0/projectID",
+            "/files/0/fileID",
+            "/files/0/required",
+            "/minecraft/version",
+            "/minecraft/modLoaders/0/id",
+            "/minecraft/modLoaders/0/primary",
+            "/overrides",
+            "/name",
+        ] {
+            let mut changed = manifest.clone();
+            let value = changed.pointer_mut(pointer).unwrap();
+            *value = match value {
+                serde_json::Value::Bool(_) => json!(false),
+                serde_json::Value::Number(_) => json!(999),
+                _ => json!("wrong"),
+            };
+            assert!(
+                verification::verify_manifest_bytes(
+                    &serde_json::to_vec(&changed).unwrap(),
+                    &game,
+                    &cancel
+                )
+                .is_err(),
+                "accepted {pointer}"
+            );
+        }
+        let mut missing = manifest.clone();
+        missing["files"] = json!([]);
+        assert!(
+            verification::verify_manifest_bytes(
+                &serde_json::to_vec(&missing).unwrap(),
+                &game,
+                &cancel
+            )
+            .is_err()
+        );
+        let mut duplicate = manifest.clone();
+        duplicate["files"]
+            .as_array_mut()
+            .unwrap()
+            .push(manifest["files"][0].clone());
+        assert!(
+            verification::verify_manifest_bytes(
+                &serde_json::to_vec(&duplicate).unwrap(),
+                &game,
+                &cancel
+            )
+            .is_err()
+        );
+        let duplicate_field = String::from_utf8(bytes).unwrap().replacen(
+            "\"manifestVersion\":1",
+            "\"manifestVersion\":1,\"manifestVersion\":1",
+            1,
+        );
+        assert!(
+            verification::verify_manifest_bytes(duplicate_field.as_bytes(), &game, &cancel)
+                .is_err()
         );
     }
 }

@@ -82,6 +82,12 @@ cross-provider file association or explicitly permitted embedding is required.
 Format validity is not hosting approval or redistribution permission. Report hosting
 eligibility separately and do not silently embed provider-restricted files.
 
+Verification reads the candidate manifest through a separate strict decoder and
+compares project/file IDs, participation, metadata and loader selection with the
+selected inventory and exact lock. ZIP byte verification alone does not establish
+these semantics. Custom provider file permissions are checked before reference
+projection; a reference cannot silently discard observed attributes.
+
 Reference: [CurseForge export contract](https://support.curseforge.com/support/solutions/articles/9000197908-exporting-a-modpack-for-curseforge-project-submission).
 
 ## Prism
