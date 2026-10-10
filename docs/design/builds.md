@@ -39,6 +39,13 @@ choices, construct the expected game inventory, project consumer requirements, t
 acquire only bytes needed by each recipe. Shared verified content uses leases;
 producing one consumer does not require publishing another consumer's artifact.
 
+Native reference consumers establish exact content addresses from the selected game
+inventory before emitting a release. They retain original provider selections and
+source assertions alongside those addresses. Excluded environments and disabled
+choices do not require acquisition. Authored assets remain embedded; referenced
+dependencies retain acquisition instructions. Projecting a consumer never rewrites
+the author lock or adds invented source evidence.
+
 Prepare every requested output before combined publication. A later failed recipe
 leaves earlier published artifacts unchanged. Build does not silently sync, upgrade
 provider selections or infer dependencies from untracked metadata. Acquisition keys

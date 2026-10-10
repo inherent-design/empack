@@ -5,7 +5,6 @@ use crate::{
     application::process_runtime::Cancellation,
     engine::{
         artifacts::{ArchiveLimits, VerifiedArchive, write_archive},
-        content::ContentLease,
         documents::DocumentCodec,
         mrpack::{AcquiredBuildFile, LockedFileKey, SourceFile},
         snapshot::SnapshotLimits,
@@ -35,12 +34,16 @@ pub struct NativeReleaseOptions {
 /// Verified immutable assets remain leased through writing and independent archive verification.
 pub struct NativeReleasePlan {
     release: DecodedRelease,
-    assets: BTreeMap<PortableRelPath, ContentLease>,
+    assets: BTreeMap<PortableRelPath, AcquiredBuildFile>,
     expected: BTreeMap<PortableRelPath, FileContent>,
 }
 impl NativeReleasePlan {
     pub fn release(&self) -> &DecodedRelease {
         &self.release
+    }
+    /// Immutable asset bytes for embedding the release in a consumer distribution.
+    pub fn assets(&self) -> &BTreeMap<PortableRelPath, AcquiredBuildFile> {
+        &self.assets
     }
     pub fn archive_inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
         &self.expected
@@ -51,36 +54,10 @@ impl NativeReleasePlan {
         sources: Vec<SourceFile>,
         options: NativeReleaseOptions,
     ) -> Result<Self> {
-        // Reapply stable-locator and strict semantic checks to programmatically supplied models.
-        DocumentCodec.encode_lock(project)?;
-        let runtime = &project.lock().runtime;
-        let version = || {
-            runtime
-                .loader_version
-                .as_ref()
-                .map(|v| v.as_str().to_owned())
-                .context("Native release requires an exact loader version")
-        };
-        let loader = match runtime.loader {
-            LoaderKind::Vanilla => ReleaseLoader::Vanilla,
-            LoaderKind::Fabric => ReleaseLoader::Fabric {
-                version: version()?,
-            },
-            LoaderKind::Quilt => ReleaseLoader::Quilt {
-                version: version()?,
-            },
-            LoaderKind::Forge => ReleaseLoader::Forge {
-                version: version()?,
-            },
-            LoaderKind::NeoForge => ReleaseLoader::NeoForge {
-                version: version()?,
-            },
-        };
         let mut files = Vec::new();
         let mut choices = BTreeMap::new();
         let mut assets = BTreeMap::new();
         let mut used = BTreeSet::new();
-        let mut destinations = BTreeSet::new();
         for (key, dependency) in &project.lock().dependencies {
             for file in dependency.files.as_slice() {
                 let logical = LockedFileKey {
@@ -108,64 +85,17 @@ impl NativeReleasePlan {
                 }
                 let address = hex_address(supplied.content.lease().id().bytes());
                 let asset = format!("assets/{address}");
-                let source = match &file.acquisition {
-                    AcquisitionSpec::Local(_) | AcquisitionSpec::Embedded { .. } => {
-                        ReleaseSource::Asset {
-                            path: asset.clone(),
-                        }
-                    }
-                    AcquisitionSpec::Url(urls) => ReleaseSource::Url {
-                        alternatives: urls.as_slice().to_vec(),
-                    },
-                    AcquisitionSpec::Provider {
-                        pin,
-                        slot,
-                        alternatives,
-                    } => {
-                        let selected = selection(pin, slot.as_str())?;
-                        ReleaseSource::Provider {
-                            provider: selected.provider,
-                            project: selected.project,
-                            selection: selected.selection,
-                            slot: selected.slot,
-                            alternatives: alternatives.clone(),
-                        }
-                    }
-                    AcquisitionSpec::Manual { pin, instructions } => ReleaseSource::Manual {
-                        instructions: instructions.clone(),
-                        selection: pin
-                            .as_ref()
-                            .map(|p| selection(p, file.slot.as_str()))
-                            .transpose()?,
-                    },
-                    AcquisitionSpec::ProviderArchiveMember { archive, member } => {
-                        ReleaseSource::ProviderArchiveMember {
-                            archive: ReleaseArchiveSource {
-                                selection: selection(&archive.pin, archive.slot.as_str())?,
-                                alternatives: archive.alternatives.clone(),
-                                assertions: assertions_from(&archive.expected),
-                                bytes: archive.expected.size,
-                                sha256: archive
-                                    .expected
-                                    .accepted_observation
-                                    .as_ref()
-                                    .map(|id| hex_address(id.bytes())),
-                            },
-                            member: member.as_str().into(),
-                        }
-                    }
-                };
+                let source = file_source(file, &asset)?;
                 let embed = options.delivery == Delivery::Bundled
                     || matches!(source, ReleaseSource::Asset { .. });
                 if embed {
                     assets.insert(
                         PortableRelPath::parse(&asset, PathSyntax::ArchiveMember)?,
-                        supplied.content.lease().clone(),
+                        asset_file(supplied),
                     );
                 }
                 for placement in file.placements.as_slice() {
                     let destination = placement.destination.relative();
-                    destinations.insert(destination.clone());
                     let policy = policy(&options, destination, dependency.kind)?;
                     let layer = layer(placement.layer);
                     files.push(ReleaseFile {
@@ -202,13 +132,18 @@ impl NativeReleasePlan {
         );
         for source in sources {
             let destination = source.destination.relative();
-            destinations.insert(destination.clone());
             let policy = policy(&options, destination, ContentKind::OtherFile)?;
             let address = hex_address(source.content.lease().id().bytes());
             let asset = format!("assets/{address}");
             assets.insert(
                 PortableRelPath::parse(&asset, PathSyntax::ArchiveMember)?,
-                source.content.lease().clone(),
+                AcquiredBuildFile {
+                    content: source.content.clone(),
+                    permissions: FilePermissions {
+                        readonly: false,
+                        executable: false,
+                    },
+                },
             );
             let layer = layer(source.layer);
             files.push(ReleaseFile {
@@ -227,6 +162,164 @@ impl NativeReleasePlan {
                 asset: None,
             });
         }
+        Self::finish(project, files, assets, choices, options)
+    }
+    /// Project one consumer's verified game inventory without acquiring excluded files.
+    /// The original lock still supplies provider identity and source assertions.
+    pub fn prepare_selected(
+        game: &crate::engine::build::materialized::PreparedGameContent,
+        options: NativeReleaseOptions,
+    ) -> Result<Self> {
+        use empack_core::inventory::{ContentOwner, Representation};
+        let project = game.project();
+        let inventory = game.inventory();
+        let content = game.files();
+        ensure!(
+            inventory.entries().len() == content.len(),
+            "Selected release has unrelated content"
+        );
+        let mut files = Vec::new();
+        let mut assets = BTreeMap::new();
+        let mut choices = BTreeMap::new();
+        for entry in inventory.entries() {
+            let destination = entry.destination.relative();
+            let supplied = content
+                .get(destination)
+                .context("Selected release needs verified content")?;
+            let Representation::Embedded {
+                content: expected,
+                bytes,
+                permissions,
+            } = &entry.representation
+            else {
+                anyhow::bail!("Selected native release requires acquired content");
+            };
+            ensure!(
+                *expected == supplied.content.lease().id()
+                    && *bytes == supplied.content.lease().len()
+                    && *permissions == supplied.permissions,
+                "Selected release content differs from the verified inventory"
+            );
+            let address = hex_address(supplied.content.lease().id().bytes());
+            let asset = format!("assets/{address}");
+            let (key, kind, source, assertions) = match &entry.owner {
+                ContentOwner::Dependency { key, slot } => {
+                    let dependency = project
+                        .lock()
+                        .dependencies
+                        .get(key)
+                        .context("Selected release owner is not in the lock")?;
+                    let file = dependency
+                        .files
+                        .as_slice()
+                        .iter()
+                        .find(|file| &file.slot == slot)
+                        .context("Selected release role is not in the lock")?;
+                    ensure!(
+                        file.placements
+                            .as_slice()
+                            .iter()
+                            .any(|placement| placement.destination == entry.destination),
+                        "Selected release destination is not a locked placement"
+                    );
+                    check_expected(supplied, &file.expected)?;
+                    let assertions =
+                        assertions(&file.expected, file.provenance.declared_digests.as_ref())?;
+                    if !assertions.is_empty() {
+                        DigestSet::parse(
+                            assertions
+                                .iter()
+                                .map(|d| (d.algorithm.as_str(), d.value.as_str())),
+                        )?
+                        .check(supplied.content.observed_digests().values())?;
+                    }
+                    (
+                        logical_key(&[
+                            "dependency",
+                            key.as_str(),
+                            slot.as_str(),
+                            "common",
+                            destination.as_str(),
+                        ])?,
+                        dependency.kind,
+                        file_source(file, &asset)?,
+                        assertions,
+                    )
+                }
+                ContentOwner::Source(_) => (
+                    logical_key(&["source", "common", destination.as_str()])?,
+                    ContentKind::OtherFile,
+                    ReleaseSource::Asset {
+                        path: asset.clone(),
+                    },
+                    Vec::new(),
+                ),
+                ContentOwner::Runtime(_) => {
+                    anyhow::bail!("Runtime content requires a runtime release recipe")
+                }
+            };
+            let embed = options.delivery == Delivery::Bundled
+                || matches!(source, ReleaseSource::Asset { .. });
+            if embed {
+                assets.insert(
+                    PortableRelPath::parse(&asset, PathSyntax::ArchiveMember)?,
+                    asset_file(supplied),
+                );
+            }
+            files.push(ReleaseFile {
+                key,
+                destination: destination.as_str().into(),
+                layer: ReleaseLayer::Common,
+                policy: policy(&options, destination, kind)?,
+                client: participation(&entry.requirements.client, &mut choices)?,
+                server: participation(&entry.requirements.server, &mut choices)?,
+                sha256: address,
+                bytes: *bytes,
+                readonly: permissions.readonly,
+                executable: permissions.executable,
+                assertions,
+                asset: (embed && !matches!(source, ReleaseSource::Asset { .. })).then_some(asset),
+                source,
+            });
+        }
+        Self::finish(project, files, assets, choices, options)
+    }
+    fn finish(
+        project: &ResolvedProject,
+        files: Vec<ReleaseFile>,
+        assets: BTreeMap<PortableRelPath, AcquiredBuildFile>,
+        choices: BTreeMap<String, ReleaseChoice>,
+        options: NativeReleaseOptions,
+    ) -> Result<Self> {
+        // Reapply stable-locator and strict semantic checks to programmatically supplied models.
+        DocumentCodec.encode_lock(project)?;
+        let runtime = &project.lock().runtime;
+        let version = || {
+            runtime
+                .loader_version
+                .as_ref()
+                .map(|v| v.as_str().to_owned())
+                .context("Native release requires an exact loader version")
+        };
+        let loader = match runtime.loader {
+            LoaderKind::Vanilla => ReleaseLoader::Vanilla,
+            LoaderKind::Fabric => ReleaseLoader::Fabric {
+                version: version()?,
+            },
+            LoaderKind::Quilt => ReleaseLoader::Quilt {
+                version: version()?,
+            },
+            LoaderKind::Forge => ReleaseLoader::Forge {
+                version: version()?,
+            },
+            LoaderKind::NeoForge => ReleaseLoader::NeoForge {
+                version: version()?,
+            },
+        };
+        let destinations: BTreeSet<_> = files
+            .iter()
+            .map(|file| PortableRelPath::parse(&file.destination, PathSyntax::ProjectContent))
+            .collect::<std::result::Result<_, _>>()?;
         ensure!(
             options
                 .policies
@@ -267,8 +360,8 @@ impl NativeReleasePlan {
             expected.insert(
                 path.clone(),
                 FileContent {
-                    content: lease.id(),
-                    bytes: lease.len(),
+                    content: lease.content.lease().id(),
+                    bytes: lease.content.lease().len(),
                     permissions,
                 },
             );
@@ -318,7 +411,12 @@ impl NativeReleasePlan {
         }
         let mut stage = MutableStage::empty()?;
         for (path, lease) in &self.assets {
-            stage.write(path, &mut lease.open(), lease.len(), cancel)?;
+            stage.write(
+                path,
+                &mut lease.content.lease().open(),
+                lease.content.lease().len(),
+                cancel,
+            )?;
         }
         stage.write(
             &PortableRelPath::parse("release.json", PathSyntax::ArchiveMember)?,
@@ -496,6 +594,62 @@ fn layer(value: ContentLayer) -> ReleaseLayer {
         ContentLayer::Client => ReleaseLayer::Client,
         ContentLayer::Server => ReleaseLayer::Server,
     }
+}
+fn asset_file(file: &AcquiredBuildFile) -> AcquiredBuildFile {
+    AcquiredBuildFile {
+        content: file.content.clone(),
+        permissions: FilePermissions {
+            readonly: false,
+            executable: false,
+        },
+    }
+}
+fn file_source(file: &empack_core::model::ResolvedFile, asset: &str) -> Result<ReleaseSource> {
+    Ok(match &file.acquisition {
+        AcquisitionSpec::Local(_) | AcquisitionSpec::Embedded { .. } => ReleaseSource::Asset {
+            path: asset.to_owned(),
+        },
+        AcquisitionSpec::Url(urls) => ReleaseSource::Url {
+            alternatives: urls.as_slice().to_vec(),
+        },
+        AcquisitionSpec::Provider {
+            pin,
+            slot,
+            alternatives,
+        } => {
+            let selected = selection(pin, slot.as_str())?;
+            ReleaseSource::Provider {
+                provider: selected.provider,
+                project: selected.project,
+                selection: selected.selection,
+                slot: selected.slot,
+                alternatives: alternatives.clone(),
+            }
+        }
+        AcquisitionSpec::Manual { pin, instructions } => ReleaseSource::Manual {
+            instructions: instructions.clone(),
+            selection: pin
+                .as_ref()
+                .map(|p| selection(p, file.slot.as_str()))
+                .transpose()?,
+        },
+        AcquisitionSpec::ProviderArchiveMember { archive, member } => {
+            ReleaseSource::ProviderArchiveMember {
+                archive: ReleaseArchiveSource {
+                    selection: selection(&archive.pin, archive.slot.as_str())?,
+                    alternatives: archive.alternatives.clone(),
+                    assertions: assertions_from(&archive.expected),
+                    bytes: archive.expected.size,
+                    sha256: archive
+                        .expected
+                        .accepted_observation
+                        .as_ref()
+                        .map(|id| hex_address(id.bytes())),
+                },
+                member: member.as_str().into(),
+            }
+        }
+    })
 }
 fn layer_name(value: ReleaseLayer) -> &'static str {
     match value {

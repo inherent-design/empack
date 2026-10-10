@@ -285,3 +285,91 @@ fn native_shared_override_is_preserved_and_selected_before_side_content() {
         b"shared"
     );
 }
+
+#[test]
+fn native_reference_projection_keeps_selected_identity_and_omits_excluded_bytes() {
+    use crate::engine::release::{
+        Participation, ReleaseSource,
+        producer::{NativeReleaseOptions, NativeReleasePlan},
+    };
+    use empack_core::distribution::Delivery;
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let project = project(true, true);
+    write_project(root.path(), &project);
+    put(root.path(), "pack/config/settings", b"common");
+    put(root.path(), "overrides/client/config/settings", b"client");
+    let workspace = capture(root.path(), state.path());
+    let options = || NativeReleaseOptions {
+        pack: "consumer-fixture".into(),
+        minimum_engine: ">=0.6.0-beta".into(),
+        java_major: 17,
+        delivery: Delivery::References,
+        policies: BTreeMap::new(),
+    };
+    let cancel = Cancellation::default();
+    let server = prepare_native_game_content(
+        &workspace,
+        &BuildAcquisitions::default(),
+        BuildTarget::Server,
+        &OptionalPolicy::Preserve,
+        SourceEvidencePolicy::Compatibility,
+        &cancel,
+    )
+    .unwrap();
+    let plan = NativeReleasePlan::prepare_selected(&server, options()).unwrap();
+    assert_eq!(plan.release().document().files.len(), 1);
+    assert_eq!(
+        plan.release().document().files[0].client,
+        Participation::Unsupported
+    );
+    assert_eq!(
+        plan.release().document().files[0].sha256,
+        crate::engine::release::hash(b"common")
+    );
+    assert!(
+        prepare_native_game_content(
+            &workspace,
+            &BuildAcquisitions::default(),
+            BuildTarget::Client,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::Compatibility,
+            &cancel
+        )
+        .is_err()
+    );
+    let client = prepare_native_game_content(
+        &workspace,
+        &acquired(&project, b"payload"),
+        BuildTarget::Client,
+        &OptionalPolicy::Preserve,
+        SourceEvidencePolicy::Compatibility,
+        &cancel,
+    )
+    .unwrap();
+    let plan = NativeReleasePlan::prepare_selected(&client, options()).unwrap();
+    let document = plan.release().document();
+    assert_eq!(document.choices.len(), 1);
+    assert_eq!(document.files.len(), 4);
+    let config = document
+        .files
+        .iter()
+        .find(|f| f.destination == "config/settings")
+        .unwrap();
+    assert_eq!(config.sha256, crate::engine::release::hash(b"client"));
+    for file in document
+        .files
+        .iter()
+        .filter(|file| file.destination.starts_with("resourcepacks/"))
+    {
+        assert!(matches!(file.source, ReleaseSource::Url { .. }));
+        assert!(file.asset.is_none());
+        assert!(file.assertions.iter().any(|hash| hash.algorithm == "md5"));
+        assert!(matches!(file.client, Participation::Choice { .. }));
+        assert_eq!(file.server, Participation::Unsupported);
+        assert_eq!(file.sha256, crate::engine::release::hash(b"payload"));
+    }
+    // The only bundled bytes are authored configuration, not downloadable pack content.
+    assert_eq!(plan.archive_inventory().len(), 2);
+    assert!(!root.path().join("dist").exists());
+}

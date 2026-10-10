@@ -112,7 +112,9 @@ pub fn prepare_game_content(
         matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull),
         "Game materialization requires a full target"
     );
-    prepare_selected_content(workspace, external, target, optional, evidence, cancel)
+    prepare_selected_content(
+        workspace, external, target, optional, evidence, false, cancel,
+    )
 }
 /// Preserve representable references for a selected bootstrap environment.
 pub fn prepare_bootstrap_game_content(
@@ -130,9 +132,13 @@ pub fn prepare_bootstrap_game_content(
         ),
         "Bootstrap content needs a reference target"
     );
-    prepare_selected_content(workspace, external, target, optional, evidence, cancel)
+    prepare_selected_content(
+        workspace, external, target, optional, evidence, true, cancel,
+    )
 }
-fn prepare_selected_content(
+/// Select native reference content with exact bytes while preserving representable choices.
+/// Delivery is applied by the release producer, after content identity has been established.
+pub fn prepare_native_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
     target: BuildTarget,
@@ -140,10 +146,23 @@ fn prepare_selected_content(
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
-    let references = matches!(
-        target,
-        BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
+    ensure!(
+        matches!(target, BuildTarget::Client | BuildTarget::Server),
+        "Native consumer requires a client or server environment"
     );
+    prepare_selected_content(
+        workspace, external, target, optional, evidence, false, cancel,
+    )
+}
+fn prepare_selected_content(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    target: BuildTarget,
+    optional: &OptionalPolicy,
+    evidence: SourceEvidencePolicy,
+    references: bool,
+    cancel: &Cancellation,
+) -> Result<PreparedGameContent> {
     let (selection, _) =
         super::acquisition::select_game_inputs(workspace, target, optional, cancel)?;
     let selected: BTreeSet<_> = selection
