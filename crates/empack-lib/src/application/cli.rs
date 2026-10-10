@@ -225,6 +225,7 @@ pub struct InitArgs {
 /// Arguments for the `build` subcommand.
 #[derive(Args, Debug, Clone, Default)]
 #[command(after_help = "Targets:
+  empack       Exact native release and immutable assets
   mrpack       Importable modpack archive with download references
   curseforge   CurseForge client ZIP with exact references and overrides
   client       Lightweight client distribution with a Java bootstrap
@@ -234,6 +235,8 @@ pub struct InitArgs {
   all          Build all six targets
 
 Without TARGETS, use distribution.targets from empack.yml.
+Native export requires distribution.native and exact materialized content.
+It retains all side layers and optional choices in dist/release.empack.
 CurseForge requires exact CurseForge references or authored local overrides.
 Selecting all requires every recipe to represent the selected content.
 Client-full leaves Minecraft and game-asset downloads to the launcher.

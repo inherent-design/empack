@@ -338,6 +338,49 @@ impl WorkspaceSnapshot {
         }
         Ok(result)
     }
+    /// Enumerate native source layers without interpreting foreign metadata names.
+    pub(in crate::engine) fn native_source_entries(
+        &self,
+        cancel: &Cancellation,
+    ) -> Result<Vec<super::source::SourceEntry>> {
+        use empack_core::{model::ContentLayer, path::InstallDestination};
+        let filter = super::source::SourceFilter::author(&self.intent.intent().source_excludes)?;
+        let mut result = Vec::new();
+        for (prefix, layer) in [
+            ("pack/", ContentLayer::Common),
+            ("overrides/common/", ContentLayer::CommonOverride),
+            ("overrides/client/", ContentLayer::Client),
+            ("overrides/server/", ContentLayer::Server),
+        ] {
+            let base =
+                PortableRelPath::parse(prefix.trim_end_matches('/'), PathSyntax::ProjectContent)?;
+            ensure!(
+                matches!(
+                    self.native.entries().get(&base),
+                    Some(Observation::Directory { .. } | Observation::Absent)
+                ),
+                "Native source layer was not captured"
+            );
+            for (path, entry) in self.native.entries() {
+                cancel.check()?;
+                if !matches!(entry, Observation::File(_)) {
+                    continue;
+                }
+                let Some(relative) = path.as_str().strip_prefix(prefix) else {
+                    continue;
+                };
+                let destination = InstallDestination::parse(relative)?;
+                if filter.includes(destination.relative(), false) {
+                    result.push(super::source::SourceEntry {
+                        path: path.clone(),
+                        destination,
+                        layer,
+                    });
+                }
+            }
+        }
+        Ok(result)
+    }
     /// Decode backend metadata only from captured pack files, retaining native byte and object
     /// checks. This is an observation of the tree, not proof that an index includes every record.
     pub fn backend_files(&self, cancel: &Cancellation) -> Result<Vec<super::backend::BackendFile>> {
@@ -466,6 +509,83 @@ enum AdditionCapture<'a> {
 impl ProjectReader {
     pub fn new(recovery: RecoveryReader) -> Self {
         Self { recovery }
+    }
+    /// Capture native release input from author documents only. No foreign index/rule document is loaded.
+    pub(in crate::engine) fn capture_native_release(
+        &self,
+        selected: &Path,
+        artifact: &PortableRelPath,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<WorkspaceSnapshot> {
+        use empack_core::files::ManagedPath;
+        let documents = self.capture(selected, &[], limits, cancel)?;
+        let project = documents.require_resolved()?;
+        let mut scopes = [
+            "pack",
+            "overrides/common",
+            "overrides/client",
+            "overrides/server",
+        ]
+        .iter()
+        .map(|s| PortableRelPath::parse(s, PathSyntax::ProjectContent))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut required = Vec::new();
+        for dep in project.lock().dependencies.values() {
+            for file in dep.files.as_slice() {
+                match &file.acquisition {
+                    AcquisitionSpec::Local(path)
+                    | AcquisitionSpec::Embedded { archive: path, .. } => {
+                        required.push(path.clone());
+                        scopes.push(path.clone());
+                    }
+                    _ => {}
+                }
+                for placement in file.placements.as_slice() {
+                    required.push(super::layout::ProjectLayout::path(&ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    })?);
+                }
+            }
+        }
+        scopes.sort();
+        scopes.dedup();
+        let names: std::collections::BTreeSet<_> =
+            scopes.iter().map(PortableRelPath::as_str).collect();
+        let scopes: Vec<_> = scopes
+            .iter()
+            .filter(|p| {
+                !p.as_str()
+                    .match_indices('/')
+                    .any(|(i, _)| names.contains(&p.as_str()[..i]))
+            })
+            .cloned()
+            .collect();
+        let filter =
+            super::source::CaptureFilter::author(&project.intent().source_excludes, &required)?;
+        let mut captured =
+            self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
+        ensure!(
+            documents.revision() == captured.revision(),
+            "Native export documents changed during capture"
+        );
+        captured.native = documents.native.merge(captured.native)?;
+        let output = super::layout::ProjectLayout::path(&ManagedPath::Artifact(artifact.clone()))?;
+        let mut collision = super::layout::CollisionIndex::default();
+        for path in &scopes {
+            collision.insert_file(path)?;
+        }
+        collision
+            .insert_file(&output)
+            .context("Native export output overlaps an input")?;
+        let _guard = self.recovery.enter(&captured.root)?;
+        captured.native =
+            captured
+                .native
+                .merge(captured.root.capture(&[output], limits, cancel)?)?;
+        captured.root.revalidate(&captured.native, cancel)?;
+        Ok(captured)
     }
     /// Observe only authoring documents and managed content roots, without requiring valid
     /// prior schemas. Templates, distributions and unrelated root files remain outside replacement.

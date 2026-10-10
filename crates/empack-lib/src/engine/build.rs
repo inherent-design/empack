@@ -547,13 +547,16 @@ pub fn prepare_mrpack_build(
 }
 
 /// Internal file publication proof, reached only after the caller's semantic archive checks.
-struct PreparedArtifact {
+pub(in crate::engine) struct PreparedArtifact {
     root: super::snapshot::ProjectReadRoot,
     change: super::verification::VerifiedFileChange,
     bytes: u64,
 }
 impl PreparedArtifact {
-    fn publish(
+    pub(in crate::engine) fn plan(&self) -> &empack_core::files::FilePlan {
+        self.change.plan()
+    }
+    pub(in crate::engine) fn publish(
         self,
         publisher: &super::publication::Publisher,
         cancel: &Cancellation,
@@ -561,7 +564,7 @@ impl PreparedArtifact {
         publisher.publish(&self.root, self.change, cancel)
     }
 }
-fn prepare_archive_publication(
+pub(in crate::engine) fn prepare_archive_publication(
     workspace: WorkspaceSnapshot,
     artifact: empack_core::path::PortableRelPath,
     archive: super::staging::PrivateFile,

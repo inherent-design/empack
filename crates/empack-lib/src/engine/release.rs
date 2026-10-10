@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
+pub mod producer;
 pub mod trust;
 
 /// Independent of the author schema and executable version.
@@ -99,6 +100,9 @@ pub struct ReleaseFile {
     pub executable: bool,
     pub assertions: Vec<SourceDigest>,
     pub source: ReleaseSource,
+    /// Optional bundled bytes; source attribution remains independent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -130,9 +134,81 @@ pub enum ReleaseSource {
         slot: String,
         alternatives: Vec<String>,
     },
+    ProviderArchiveMember {
+        archive: ReleaseArchiveSource,
+        member: String,
+    },
     Manual {
         instructions: String,
+        selection: Option<ReleaseSelection>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseSelection {
+    pub provider: ReleaseProvider,
+    pub project: String,
+    pub selection: String,
+    pub slot: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseArchiveSource {
+    pub selection: ReleaseSelection,
+    pub alternatives: Vec<String>,
+    pub assertions: Vec<SourceDigest>,
+    pub bytes: Option<u64>,
+    pub sha256: Option<String>,
+}
+impl ReleaseSelection {
+    fn validate(&self) -> Result<()> {
+        identifier(&self.project)?;
+        identifier(&self.selection)?;
+        label(&self.slot)?;
+        if self.provider == ReleaseProvider::CurseForge {
+            ensure!(
+                self.project.parse::<u64>().is_ok_and(|n| n > 0)
+                    && self.selection.parse::<u64>().is_ok_and(|n| n > 0),
+                "CurseForge references require positive numeric identities"
+            );
+        }
+        Ok(())
+    }
+}
+impl ReleaseArchiveSource {
+    pub fn expected(&self) -> Result<empack_core::model::ExpectedContent> {
+        ensure!(
+            !self.assertions.is_empty(),
+            "Source archive requires original assertions"
+        );
+        let digests = DigestSet::new(
+            self.assertions
+                .iter()
+                .map(|d| ExpectedDigest::parse(&d.algorithm, &d.value))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        )?;
+        ensure!(
+            digests.values().len() == self.assertions.len(),
+            "Duplicate archive digest algorithm"
+        );
+        let observed = self.sha256.as_deref().map(decode_hex::<32>).transpose()?;
+        if let Some(observed) = observed {
+            ensure!(
+                digests
+                    .values()
+                    .iter()
+                    .all(|d| !matches!(d, ExpectedDigest::Sha256(value) if *value != observed)),
+                "Archive SHA-256 assertion conflicts with address"
+            );
+        }
+        ensure!(self.bytes != Some(0), "Empty source archive");
+        Ok(empack_core::model::ExpectedContent {
+            digests: Some(digests),
+            size: self.bytes,
+            accepted_observation: observed.map(ContentId::from_sha256),
+        })
+    }
 }
 
 /// Exact checked bytes and identity. This value alone does not authorize installation.
@@ -203,8 +279,13 @@ impl DecodedRelease {
         for file in &mut document.files {
             file.assertions
                 .sort_by(|a, b| a.algorithm.cmp(&b.algorithm));
+            if let ReleaseSource::ProviderArchiveMember { archive, .. } = &mut file.source {
+                archive
+                    .assertions
+                    .sort_by(|a, b| a.algorithm.cmp(&b.algorithm));
+            }
         }
-        Self::decode(&serde_json::to_vec(&document)?)
+        Self::decode(&bounded_json(&document, MAX_RELEASE_BYTES)?)
     }
 }
 impl ReleaseDocument {
@@ -295,8 +376,15 @@ impl ReleaseDocument {
                     || file.server != Participation::Unsupported,
                 "File is unsupported on both sides"
             );
+            if let Some(asset) = &file.asset {
+                PortableRelPath::parse(asset, PathSyntax::ArchiveMember)?;
+            }
             match &file.source {
                 ReleaseSource::Asset { path } => {
+                    ensure!(
+                        file.asset.as_ref().is_none_or(|asset| asset == path),
+                        "Authored asset locations disagree"
+                    );
                     PortableRelPath::parse(path, PathSyntax::ArchiveMember)?;
                 }
                 ReleaseSource::Url { alternatives } => {
@@ -312,27 +400,51 @@ impl ReleaseDocument {
                     slot,
                     alternatives,
                 } => {
-                    identifier(project)?;
-                    identifier(selection)?;
-                    label(slot)?;
-                    if *provider == ReleaseProvider::CurseForge {
-                        ensure!(
-                            project.parse::<u64>().is_ok_and(|n| n > 0)
-                                && selection.parse::<u64>().is_ok_and(|n| n > 0),
-                            "CurseForge references require positive numeric identities"
-                        );
+                    ReleaseSelection {
+                        provider: provider.clone(),
+                        project: project.clone(),
+                        selection: selection.clone(),
+                        slot: slot.clone(),
                     }
+                    .validate()?;
                     for url in alternatives {
                         https(url)?;
                     }
                 }
-                ReleaseSource::Manual { instructions } => label(instructions)?,
+                ReleaseSource::ProviderArchiveMember { archive, member } => {
+                    archive.selection.validate()?;
+                    archive.expected()?;
+                    PortableRelPath::parse(member, PathSyntax::ArchiveMember)?;
+                    for url in &archive.alternatives {
+                        https(url)?;
+                    }
+                    ensure!(
+                        file.policy == FilePolicy::Seed,
+                        "Provider world members must be seeds"
+                    );
+                }
+                ReleaseSource::Manual {
+                    instructions,
+                    selection,
+                } => {
+                    label(instructions)?;
+                    if let Some(selection) = selection {
+                        selection.validate()?;
+                    }
+                }
             }
         }
         Ok(())
     }
 }
 impl ReleaseFile {
+    pub fn asset_path(&self) -> Option<&str> {
+        self.asset.as_deref().or(match &self.source {
+            ReleaseSource::Asset { path } => Some(path.as_str()),
+            _ => None,
+        })
+    }
+
     pub fn content(&self) -> Result<FileContent> {
         let digest = decode_hex::<32>(&self.sha256)?;
         Ok(FileContent {
@@ -424,3 +536,29 @@ pub(super) fn decode_hex<const N: usize>(value: &str) -> Result<[u8; N]> {
 
 #[cfg(test)]
 mod tests;
+
+/// Serialization obeys the wire bound while producing bytes, including JSON escaping growth.
+fn bounded_json(value: &impl Serialize, maximum: usize) -> Result<Vec<u8>> {
+    struct Buffer {
+        bytes: Vec<u8>,
+        maximum: usize,
+    }
+    impl std::io::Write for Buffer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > self.maximum.saturating_sub(self.bytes.len()) {
+                return Err(std::io::Error::other("Release exceeds document byte limit"));
+            }
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut buffer = Buffer {
+        bytes: Vec::new(),
+        maximum,
+    };
+    serde_json::to_writer(&mut buffer, value)?;
+    Ok(buffer.bytes)
+}

@@ -102,6 +102,7 @@ impl VerifiedImportContent {
         })?;
         let runtime = select_runtime(&source.runtime, options.loader)?;
         let mut intent = ProjectIntent {
+            source_excludes: Vec::new(),
             metadata: options.metadata,
             runtime: RuntimeIntent {
                 minecraft: runtime.minecraft.clone(),

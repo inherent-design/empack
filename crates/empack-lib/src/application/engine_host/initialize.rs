@@ -197,6 +197,7 @@ async fn initialize_with_catalog(
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
     let intent = ProjectIntent {
+        source_excludes: Vec::new(),
         metadata,
         runtime: RuntimeIntent {
             minecraft: game,
@@ -207,6 +208,7 @@ async fn initialize_with_catalog(
         roots: BTreeMap::new(),
         layout,
         distribution: DistributionIntent {
+            native: None,
             targets: NonEmpty::new(vec![
                 BuildTarget::Mrpack,
                 BuildTarget::Client,

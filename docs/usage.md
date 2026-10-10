@@ -77,3 +77,29 @@ possible effects. Completion is not reported until durable postconditions verify
 Workdir and relative paths resolve from captured invocation context. State and cache
 roots are separately configurable. Configuration precedence is explicit and cannot
 cause an inherited environment value to override a supplied command-line value.
+
+## Native release example
+
+Set stable native publication identity and runtime requirements in `empack.yml`:
+
+```yaml
+distribution:
+  targets: [mrpack]
+  archive: zip
+  native:
+    pack-id: my-pack
+    java-major: 21
+    delivery: bundled
+    policies:
+      config/server-defaults.toml: seed
+sources:
+  exclude:
+    - private/**
+```
+
+`empack build empack` writes `dist/release.empack` using the configured archive
+format. It requires exact materialized dependencies and preserves optional choices
+for installation. Extract the archive, then select its `release.json` with
+`instance install` and the payload SHA-256 printed by the build. The digest names
+the JSON payload, not the surrounding archive. Side selection applies the matching
+override layer. Local snapshot selection does not enroll a publisher.

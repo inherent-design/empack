@@ -307,6 +307,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
                 readonly: false,
                 executable: false,
                 assertions: vec![],
+                asset: None,
                 source: ReleaseSource::Asset {
                     path: "assets/mod".into(),
                 },
@@ -410,4 +411,123 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     assert_eq!(before, snapshot(&root.path().join("project")));
     assert!(!root.path().join("project/empack.yml").exists());
     assert!(!root.path().join("project/pack").exists());
+}
+
+#[tokio::test]
+async fn native_export_to_install_preserves_layers_and_uses_author_source_policy() {
+    use crate::{application::cli::InstanceCommand, engine::release::DecodedRelease};
+    use empack_core::{
+        distribution::Delivery,
+        model::{NativeDistributionIntent, ResolvedProject},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let selected = session(root.path(), true, false);
+    let mod_bytes = jar(root.path());
+    execute_command_with_session(init(), &selected)
+        .await
+        .unwrap();
+    execute_command_with_session(add("fixture.jar"), &selected)
+        .await
+        .unwrap();
+    let project = resolved(root.path());
+    let mut intent = project.intent().clone();
+    intent.distribution.native = Some(NativeDistributionIntent {
+        pack_id: "native-dispatch".into(),
+        java_major: 21,
+        delivery: Delivery::Bundled,
+        policies: Default::default(),
+    });
+    intent.source_excludes = vec![
+        "*.pw.toml".into(),
+        "pack.toml".into(),
+        "index.toml".into(),
+        ".packwizignore".into(),
+        "private/**".into(),
+        "mods/**".into(),
+    ];
+    let encoded = DocumentCodec.encode_intent(&intent).unwrap();
+    let decoded = DocumentCodec
+        .decode_intent(&encoded, "native fixture")
+        .unwrap();
+    let mut lock = project.lock().clone();
+    lock.intent_revision = decoded.semantic_revision();
+    let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+    fs::write(root.path().join("project/empack.yml"), encoded).unwrap();
+    fs::write(
+        root.path().join("project/empack.lock"),
+        DocumentCodec.encode_lock(&project).unwrap(),
+    )
+    .unwrap();
+    for (path, bytes) in [
+        ("pack/config/value", "common"),
+        ("overrides/client/config/value", "client"),
+        ("overrides/server/config/value", "server"),
+        ("pack/private/secret", "exclude me"),
+        // Invalid foreign controls are not parsed, and cannot exclude native source input.
+        ("pack/pack.toml", "invalid"),
+        ("pack/.packwizignore", "config/"),
+    ] {
+        let path = root.path().join("project").join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    let build = Commands::Build(BuildArgs {
+        targets: vec!["empack".into()],
+        ..Default::default()
+    });
+    let before = snapshot(root.path());
+    execute_command_with_session(build.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(build, &selected)
+        .await
+        .unwrap();
+    let export = root.path().join("export");
+    fs::create_dir(&export).unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(root.path().join("project/dist/release.empack")).unwrap(),
+    )
+    .unwrap();
+    archive.extract(&export).unwrap();
+    let decoded = DecodedRelease::decode(&fs::read(export.join("release.json")).unwrap()).unwrap();
+    assert_eq!(decoded.document().files.len(), 4);
+    assert!(!String::from_utf8_lossy(decoded.bytes()).contains("private/secret"));
+    for side in ["client", "server"] {
+        let instance = root.path().join(side);
+        fs::create_dir(&instance).unwrap();
+        let host = session(root.path(), true, false).with_config(MockConfigProvider::new(
+            crate::application::AppConfig {
+                workdir: Some(side.into()),
+                state_dir: Some("state".into()),
+                yes: true,
+                curseforge_api_client_key: None,
+                ..Default::default()
+            },
+        ));
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Install {
+                    release: export.join("release.json"),
+                    sha256: decoded.id().into(),
+                    side: side.into(),
+                    choices: vec![],
+                    files: vec![],
+                },
+            },
+            &host,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read(instance.join("game/config/value")).unwrap(),
+            side.as_bytes()
+        );
+        assert_eq!(
+            fs::read(instance.join("game/mods/fixture.jar")).unwrap(),
+            mod_bytes
+        );
+        assert!(!instance.join("game/private").exists());
+        assert!(!instance.join("game/pack.toml").exists());
+    }
 }

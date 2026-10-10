@@ -240,6 +240,7 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         layout: BTreeMap::new(),
         files,
         distribution: DistributionIntent {
+            native: None,
             targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
             archive: DistributionArchive::Zip,
         },

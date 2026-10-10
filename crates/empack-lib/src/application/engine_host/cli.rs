@@ -482,6 +482,9 @@ mod tests;
 
 /// Optional participation and lossy export decisions are independent of execution approval.
 pub async fn build(session: &dyn Session, args: &crate::application::BuildArgs) -> Result<()> {
+    if args.targets.iter().any(|target| target == "empack") {
+        return super::native_export::build(session, args).await;
+    }
     if args.continue_build {
         ensure!(
             !args.optional_defaults

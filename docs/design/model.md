@@ -51,9 +51,21 @@ path and destination are independent. Provider-owned world archives retain the
 provider/exact archive identity and verified interpreted member ownership. A local
 source change is observed drift, not automatic authorization to overwrite a project.
 
-Source inclusion lives under authored layout policy in `empack.yml`. Rules are
-captured with the read set and never inherited from host-global ignore files.
-Reserved engine control files are excluded by the native layout adapter.
+Source inclusion uses `sources.exclude` in `empack.yml`: ordered, layer-relative
+ignore patterns applied independently to `pack/` and each `overrides/` layer.
+Patterns are single lines; parent exclusions apply before leaf traversal. Explicit
+locked source files and placements remain required observations even when a rule
+excludes the same path from incidental content. Rules are captured with the author
+document and never inherited from host-global ignore files. Native source capture
+has no package-manager control filenames; exclusions are authored policy.
+
+`distribution.native` defines `pack-id`, `java-major`, `delivery` (`references` or
+`bundled`) and `policies`, an exact destination-to-`managed|seed` map. The stable
+pack ID is a bounded portable identifier and must survive display-name/version
+changes. Java major is an explicit requirement; runtime activation checks it against
+the selected game/loader. Unknown policy destinations are errors. Configuration
+and world content default to seeds. World content cannot become managed replacement
+content, including worlds placed under an authored custom directory.
 
 ## Environments and optionality
 

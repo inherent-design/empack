@@ -217,6 +217,7 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
     .unwrap();
     let runtime = choices.resolve(None).unwrap();
     let intent = ProjectIntent {
+        source_excludes: Vec::new(),
         metadata: PackMetadata {
             name: "Catalog selection".into(),
             version: "1.0.0".into(),
@@ -233,6 +234,7 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
         layout: BTreeMap::new(),
         extensions: BTreeMap::new(),
         distribution: DistributionIntent {
+            native: None,
             targets: NonEmpty::new(vec![BuildTarget::Mrpack]).unwrap(),
             archive: DistributionArchive::Zip,
         },

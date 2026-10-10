@@ -28,6 +28,7 @@ pub(super) fn document() -> ReleaseDocument {
             readonly: false,
             executable: false,
             assertions: vec![],
+            asset: None,
             source: ReleaseSource::Asset {
                 path: "assets/config".into(),
             },
@@ -353,4 +354,12 @@ fn release_choices_preserve_author_labels_and_descriptions() {
         encoded.document().choices[0].description,
         doc.choices[0].description
     );
+}
+
+#[test]
+fn release_writer_bounds_escaped_output_before_serialization_finishes() {
+    let value = "\\".repeat(128);
+    assert!(bounded_json(&value, 128).is_err());
+    let bytes = bounded_json(&value, 258).unwrap();
+    assert_eq!(serde_json::from_slice::<String>(&bytes).unwrap(), value);
 }

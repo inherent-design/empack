@@ -69,7 +69,9 @@ pub use recovery::{
 };
 mod execution;
 mod instance;
+mod native_export;
 pub use instance::{InstallInstanceRequest, InstancePreview, InstanceReceipt};
+pub use native_export::{NativeExportPreview, NativeExportReceipt, NativeExportRequest};
 mod project_change;
 mod removal;
 mod synchronization;
@@ -218,6 +220,7 @@ struct PreparedBuild {
     acquired_permit: Option<super::resources::AdmissionPermit>,
 }
 pub enum Request {
+    NativeExport(NativeExportRequest),
     InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
     Recover(RecoverRequest),
@@ -240,6 +243,11 @@ pub enum ProjectTarget {
 impl From<PathBuf> for ProjectTarget {
     fn from(path: PathBuf) -> Self {
         Self::Existing(path)
+    }
+}
+impl From<NativeExportRequest> for Request {
+    fn from(value: NativeExportRequest) -> Self {
+        Self::NativeExport(value)
     }
 }
 impl From<InstallInstanceRequest> for Request {
@@ -309,6 +317,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    NativeExport(NativeExportPreview),
     Instance(InstancePreview),
     CacheClean(CacheCleanPreview),
     Clean(CleanPreview),
@@ -325,6 +334,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::NativeExport(view) => view.plan,
             Self::Instance(view) => view.plan,
             Self::CacheClean(view) => view.plan,
             Self::Clean(view) => view.plan,
@@ -407,6 +417,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::NativeExport(view) => Some(view.replacement),
             Self::Instance(view) => Some(view.replacement),
             Self::CacheClean(view) => Some(view.replacement),
             Self::Clean(view) => Some(view.replacement),
@@ -427,6 +438,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    NativeExport(Box<native_export::PreparedNativeExport>),
     Instance(Box<instance::PreparedInstanceOperation>),
     CacheClean(Box<cache_cleanup::PreparedCacheCleanup>),
     Clean(Box<cleanup::PreparedCleanup>),
@@ -442,6 +454,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::NativeExport(value) => OperationPreview::NativeExport(value.view.clone()),
             Self::Instance(value) => OperationPreview::Instance(value.view.clone()),
             Self::CacheClean(value) => OperationPreview::CacheClean(value.view.clone()),
             Self::Clean(value) => OperationPreview::Clean(value.view.clone()),
@@ -539,6 +552,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    NativeExport(Box<RetainedOutput<NativeExportReceipt>>),
     Instance(Box<RetainedOutput<InstanceReceipt>>),
     CacheClean(Box<CacheCleanReceipt>),
     Clean(Box<RetainedOutput<CleanReceipt>>),
@@ -729,6 +743,11 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::NativeExport(request) => Ok(native_export::prepare(
+                            project, request, &config, &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::NativeExport(Box::new(value)))),
                         Request::InstallInstance(request) => {
                             Ok(instance::prepare(project, *request, &config, &mut scope)
                                 .await?
@@ -921,6 +940,13 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::NativeExport(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::NativeExport(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    native_export::run(prepared, config, scope).await
+                }
                 PreparedKind::Instance(_) => {
                     let prepared = data.map(|value| match value {
                         PreparedKind::Instance(value) => *value,

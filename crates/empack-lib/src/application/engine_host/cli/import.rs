@@ -437,6 +437,7 @@ fn decisions(
         acceptable_versions,
         layout,
         distribution: DistributionIntent {
+            native: None,
             targets: NonEmpty::new(vec![
                 BuildTarget::Mrpack,
                 BuildTarget::Client,

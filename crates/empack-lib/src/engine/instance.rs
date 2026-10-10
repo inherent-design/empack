@@ -566,9 +566,7 @@ impl InstancePlan {
                         .and_then(|v| v.to_str())
                         .context("Invalid instance input filename")?;
                     (ProjectReadRoot::open(parent)?, path(name)?)
-                } else if let (Some(root), super::release::ReleaseSource::Asset { path: member }) =
-                    (assets, &file.source)
-                {
+                } else if let (Some(root), Some(member)) = (assets, file.asset_path()) {
                     ensure!(root.is_absolute(), "Instance asset root must be absolute");
                     (ProjectReadRoot::open(root)?, path(member)?)
                 } else {

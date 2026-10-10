@@ -1039,6 +1039,7 @@ async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCa
                             layout: BTreeMap::new(),
                             exclude_auxiliary_members: false,
                             distribution: DistributionIntent {
+                                native: None,
                                 targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
                                 archive: DistributionArchive::Zip,
                             },

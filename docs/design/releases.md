@@ -119,3 +119,25 @@ File records carry an explicit `layer`: `common`, `common-override`, `client` or
 choices before applying overlay priority, so disabling a side-specific optional
 file exposes its common fallback. Equal-layer duplicate destinations and portable
 case/Unicode aliases are errors. Array order never controls replacement.
+
+## Author projection and assets
+
+Native projection consumes the resolved author model and verified content, without
+reading a foreign package index. It preserves all environment layers and optional
+branches. Each file placement has a stable key derived from logical dependency,
+file role, layer and destination; source locations are never serialized as host
+paths. Optional boolean groups become `enabled`/`disabled` alternatives, retaining
+their stable key, default and description. Conflicting group definitions fail.
+
+`source` records provenance and exact acquisition. An optional `asset` names bundled
+bytes without replacing that provenance. Authored local content uses an immutable
+asset source. Assets are stored at `assets/<sha256>` and deduplicated by bytes;
+different placements retain independent policies and permissions. Provider-owned
+world members carry the archive selection, archive digests/size and exact member
+path. Archive assertions are never copied into the member's assertion list.
+
+The native archive contains `release.json` and its bundled immutable assets. The
+writer checks the complete expected inventory independently after encoding ZIP,
+TAR.GZ or 7z. Capture, candidate preparation and publication retain their resource
+reservations and exact input read set. A changed author file invalidates a prepared
+export. Export does not create a subscription or sign with an implicit key.

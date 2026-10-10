@@ -16,6 +16,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 /// Packwiz-compatible pack-root ignore rules. Never consult host/global Git configuration.
 pub struct SourceFilter {
     matcher: Gitignore,
+    native: bool,
 }
 impl SourceFilter {
     /// Rules are captured bytes, not a path that the matcher may reopen later.
@@ -39,6 +40,25 @@ impl SourceFilter {
         }
         Ok(Self {
             matcher: builder.build()?,
+            native: false,
+        })
+    }
+    /// Native author policy has no foreign control names or implicit archive exclusions.
+    pub fn author(excludes: &[String]) -> Result<Self> {
+        let mut builder = GitignoreBuilder::new("");
+        for line in [".git/**", ".DS_Store"]
+            .into_iter()
+            .chain(excludes.iter().map(String::as_str))
+        {
+            anyhow::ensure!(
+                !line.chars().any(char::is_control),
+                "Source pattern contains a control character"
+            );
+            builder.add_line(None, line)?;
+        }
+        Ok(Self {
+            matcher: builder.build()?,
+            native: true,
         })
     }
     /// Backend control documents are never game files. Metadata membership is checked separately.
@@ -46,9 +66,10 @@ impl SourceFilter {
         self.includes_native(std::path::Path::new(relative.as_str()), directory)
     }
     fn includes_native(&self, relative: &std::path::Path, directory: bool) -> bool {
-        if ["pack.toml", "index.toml", ".packwizignore"]
-            .iter()
-            .any(|name| relative == std::path::Path::new(name))
+        if !self.native
+            && ["pack.toml", "index.toml", ".packwizignore"]
+                .iter()
+                .any(|name| relative == std::path::Path::new(name))
         {
             return false;
         }
@@ -67,6 +88,8 @@ impl SourceFilter {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CaptureFilter {
+    #[serde(default)]
+    native_sources: bool,
     rules: String,
     required: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,6 +102,7 @@ pub(super) struct CaptureFilter {
 impl CaptureFilter {
     pub(super) fn new(rules: Vec<u8>, required: &[PortableRelPath]) -> Result<Self> {
         let value = Self {
+            native_sources: false,
             rules: String::from_utf8(rules)?,
             required: required
                 .iter()
@@ -89,6 +113,12 @@ impl CaptureFilter {
             selected_metadata: false,
         };
         value.matcher()?;
+        Ok(value)
+    }
+    pub(super) fn author(excludes: &[String], required: &[PortableRelPath]) -> Result<Self> {
+        SourceFilter::author(excludes)?;
+        let mut value = Self::new(excludes.join("\n").into_bytes(), required)?;
+        value.native_sources = true;
         Ok(value)
     }
     /// Observe only entries capable of changing whether a default seed may be added.
@@ -109,6 +139,7 @@ impl CaptureFilter {
             }
         }
         let value = Self {
+            native_sources: false,
             rules: String::new(),
             required: vec![],
             template_outputs: Some(outputs.into_iter().collect()),
@@ -152,7 +183,15 @@ impl CaptureFilter {
         for path in &self.required {
             PortableRelPath::parse(path, empack_core::path::PathSyntax::ProjectContent)?;
         }
-        SourceFilter::parse(self.rules.as_bytes())
+        if self.native_sources {
+            anyhow::ensure!(
+                !self.managed_only && self.template_outputs.is_none(),
+                "Mixed native source policies"
+            );
+            SourceFilter::author(&self.rules.lines().map(str::to_owned).collect::<Vec<_>>())
+        } else {
+            SourceFilter::parse(self.rules.as_bytes())
+        }
     }
     pub(super) fn includes(
         &self,
@@ -168,6 +207,26 @@ impl CaptureFilter {
         path: &std::path::Path,
         directory: bool,
     ) -> bool {
+        if self.native_sources {
+            if self.required.iter().any(|required| {
+                let required = std::path::Path::new(required);
+                required.starts_with(path) || path.starts_with(required)
+            }) {
+                return true;
+            }
+            for base in [
+                "pack",
+                "overrides/common",
+                "overrides/client",
+                "overrides/server",
+            ] {
+                if let Ok(relative) = path.strip_prefix(base) {
+                    return relative.as_os_str().is_empty()
+                        || matcher.includes_native(relative, directory);
+                }
+            }
+            return true;
+        }
         if let Some(outputs) = &self.template_outputs {
             let parts: Option<Vec<_>> = path
                 .components()

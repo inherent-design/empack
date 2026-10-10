@@ -72,6 +72,7 @@ impl WorkflowProjectFixture {
         };
         let candidate = InitializeCandidate::new(
             ProjectIntent {
+                source_excludes: Vec::new(),
                 metadata: PackMetadata {
                     name: self.pack_name.clone(),
                     author: Some(self.author.clone()),
@@ -88,6 +89,7 @@ impl WorkflowProjectFixture {
                 layout: BTreeMap::new(),
                 extensions: BTreeMap::new(),
                 distribution: DistributionIntent {
+                    native: None,
                     targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
                     archive: DistributionArchive::Zip,
                 },

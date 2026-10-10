@@ -16,6 +16,7 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
             .then(|| LoaderVersion::parse("exact-test-version").unwrap()),
     };
     let intent = ProjectIntent {
+        source_excludes: Vec::new(),
         metadata: PackMetadata {
             name: "New pack $(literal)".into(),
             version: "0.1.0".into(),
@@ -31,6 +32,7 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
         roots: BTreeMap::new(),
         layout: BTreeMap::from([(ContentKind::DataPack, path("custom-data"))]),
         distribution: DistributionIntent {
+            native: None,
             targets: NonEmpty::new(vec![BuildTarget::Mrpack, BuildTarget::ClientFull]).unwrap(),
             archive: DistributionArchive::SevenZip,
         },

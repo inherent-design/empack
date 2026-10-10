@@ -31,6 +31,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
                 readonly: false,
                 executable: false,
                 assertions: vec![],
+                asset: None,
                 source: ReleaseSource::Asset {
                     path: format!("assets/{key}"),
                 },

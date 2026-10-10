@@ -745,3 +745,36 @@ fn encoding_admission_scales_with_variable_intent_and_lock_data() {
         + DocumentCodec.encode_lock(&large).unwrap().len();
     assert!(estimate > encoded as u64 * 8);
 }
+
+#[test]
+fn native_publication_and_source_rules_are_strict_author_intent() {
+    let project = crate::engine::mrpack::tests::project(false, false);
+    let mut intent = project.intent().clone();
+    intent.source_excludes = vec!["private/**".into(), "!private/shared.txt".into()];
+    intent.distribution.native = Some(NativeDistributionIntent {
+        pack_id: "stable.pack".into(),
+        java_major: 17,
+        delivery: empack_core::distribution::Delivery::References,
+        policies: std::collections::BTreeMap::from([(
+            PortableRelPath::parse("config/options.txt", PathSyntax::ProjectContent).unwrap(),
+            empack_core::instance::FilePolicy::Seed,
+        )]),
+    });
+    let codec = DocumentCodec;
+    let encoded = codec.encode_intent(&intent).unwrap();
+    let decoded = codec.decode_intent(&encoded, "native").unwrap();
+    assert_eq!(decoded.intent(), &intent);
+    let old = codec
+        .decode_intent(&codec.encode_intent(project.intent()).unwrap(), "old")
+        .unwrap();
+    assert_ne!(decoded.semantic_revision(), old.semantic_revision());
+    intent.source_excludes.push("bad\npattern".into());
+    assert!(codec.encode_intent(&intent).is_err());
+    let mut value: serde_json::Value = serde_saphyr::from_slice(&encoded).unwrap();
+    value["distribution"]["native"]["extra"] = serde_json::json!(true);
+    assert!(
+        codec
+            .decode_intent(&serde_json::to_vec(&value).unwrap(), "unknown")
+            .is_err()
+    );
+}

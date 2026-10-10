@@ -48,9 +48,12 @@ readiness or replace executable evidence.
 - [x] Replace author/backend descriptions with the consumer and instance contracts.
 - [x] Implement strict release/channel payload codecs and signed-envelope verification.
 - [x] Wire exact local snapshot content application through the engine and CLI.
+- [x] Wire retained-release inspection, exact repair and managed rollback.
+- [x] Export native snapshots from materialized author content, preserving original
+  assertions, provider provenance, layers, choices and explicit source rules.
 - [ ] Define strict, independently versioned author, lock, release, channel and
   instance schemas. DTO parsing never constructs trusted or approved proof values.
-- [ ] Specify author source inclusion in `empack.yml`, not `.packwizignore`.
+- [x] Specify author source inclusion in `empack.yml`, not `.packwizignore`.
 - [ ] Specify release canonical identity and signing envelope, key enrollment,
   rotation, revocation, expiry and monotonic channel sequence handling.
 - [ ] Distinguish expected source assertions, computed content addresses, publisher
@@ -82,7 +85,7 @@ readiness or replace executable evidence.
 
 ## Release distribution and trust
 
-- [ ] Derive portable native releases from the exact lock and selected inventory;
+- [x] Derive portable native releases from the exact lock and selected inventory;
   strip host paths, credentials, cache paths and author-only state.
 - [ ] Use stable pack identity, content-derived release identity and logical file
   identity; display names and version labels are not mutation authority.
@@ -121,6 +124,7 @@ readiness or replace executable evidence.
 
 ## Removal and wiring
 
+- [ ] Apply native `sources.exclude` capture to the remaining author commands.
 - [ ] Remove `BackendDocument`, backend discovery, index refresh, packwiz parser,
   metadata adoption and metadata-based ownership from all project commands.
 - [ ] Preserve explicit adoption of verified local/provider/URL content through

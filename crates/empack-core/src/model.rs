@@ -367,7 +367,21 @@ pub enum ExtensionValue {
 }
 /// Distribution preferences retained independently of runtime and dependencies.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeDistributionIntent {
+    /// Stable publisher-selected identity, independent of display name and version.
+    pub pack_id: String,
+    /// Explicit runtime requirement, verified by the selected runtime adapter before launch.
+    pub java_major: u16,
+    /// Whether exact remote dependencies are referenced or bundled.
+    pub delivery: crate::distribution::Delivery,
+    /// Exact destination ownership overrides; world content remains seed-only.
+    pub policies: BTreeMap<PortableRelPath, crate::instance::FilePolicy>,
+}
+/// Distribution defaults and native publisher policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistributionIntent {
+    /// Native release settings; required when selecting the empack consumer.
+    pub native: Option<NativeDistributionIntent>,
     /// Explicit default target order.
     pub targets: NonEmpty<crate::projection::BuildTarget>,
     /// Archive container for standalone distributions.
@@ -386,6 +400,8 @@ pub enum DistributionArchive {
 /// Authoring intent. It contains no installed state or native write authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectIntent {
+    /// Layer-relative exclusion rules; locked sources remain explicit obligations.
+    pub source_excludes: Vec<String>,
     /// Human metadata.
     pub metadata: PackMetadata,
     /// Runtime compatibility.
@@ -613,6 +629,26 @@ impl ProjectIntent {
 
     /// Check source/policy combinations without imposing target-format restrictions.
     pub fn validate(&self) -> Result<(), ModelError> {
+        if self
+            .source_excludes
+            .iter()
+            .any(|rule| rule.len() > 4096 || rule.chars().any(char::is_control))
+        {
+            return Err(invalid("Source exclusion must be one bounded pattern"));
+        }
+        if let Some(native) = &self.distribution.native
+            && (native.pack_id.is_empty()
+                || native.pack_id.len() > 128
+                || !native
+                    .pack_id
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"-_.+".contains(&c))
+                || native.java_major < 8)
+        {
+            return Err(invalid(
+                "Native distribution requires stable pack identity and Java major",
+            ));
+        }
         if self.metadata.name.trim().is_empty() || self.metadata.version.trim().is_empty() {
             return Err(invalid("Pack name and version are required"));
         }

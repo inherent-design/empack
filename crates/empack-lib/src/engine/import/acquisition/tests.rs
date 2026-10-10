@@ -636,6 +636,7 @@ fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCan
         acceptable_versions: vec![],
         layout: BTreeMap::new(),
         distribution: DistributionIntent {
+            native: None,
             targets: NonEmpty::new(vec![BuildTarget::Mrpack]).unwrap(),
             archive: DistributionArchive::Zip,
         },
