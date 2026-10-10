@@ -69,6 +69,7 @@ pub use recovery::{
 mod execution;
 mod instance;
 mod launch;
+pub(super) use launch::RuntimeRecoveryRequired;
 pub use launch::{
     AcknowledgeStoppedRuntime, LaunchInstancePreview, LaunchInstanceReceipt, LaunchInstanceRequest,
     RuntimeRecoveryPreview, RuntimeRecoveryReceipt,

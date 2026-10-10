@@ -105,3 +105,9 @@ An exact-plan grant must separately permit `run_runtime`; allowing installers do
 not permit runtime launch. `LaunchInstanceReceipt` retains the process exit status.
 The engine owns process supervision and the instance lease independently of the
 caller's handle. Release and channel documents cannot construct launch requests.
+
+Unconfirmed runtime retirement produces `runtime-recovery-required` in the execution
+phase with required recovery. It is distinct from uncertain file publication and
+ordinary cancellation. Hosts route it to stopped-process confirmation and
+`instance recover-runtime --acknowledge-stopped`; replaying a publication journal
+does not clear runtime ownership evidence.

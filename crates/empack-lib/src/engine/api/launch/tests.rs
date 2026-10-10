@@ -324,6 +324,8 @@ fn runtime_descendant() {
     if !root.join("descendant-fixture").is_file() {
         return;
     }
+    // Publish readiness only after the observable work fixture exists.
+    fs::write(root.join("descendant-heartbeat"), b"initial").unwrap();
     fs::write(root.join("descendant-started"), b"started").unwrap();
     let end = std::time::Instant::now() + Duration::from_secs(30);
     while std::time::Instant::now() < end {

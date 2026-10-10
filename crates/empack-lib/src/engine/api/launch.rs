@@ -26,7 +26,7 @@ pub struct LaunchInstanceReceipt {
 #[error(
     "Instance runtime recovery is required; stop remaining processes, then run instance recover-runtime --acknowledge-stopped"
 )]
-pub(super) struct RuntimeRecoveryRequired;
+pub(in crate::engine) struct RuntimeRecoveryRequired;
 
 pub(super) struct PreparedLaunch {
     pub(super) view: LaunchInstancePreview,

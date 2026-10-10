@@ -14,6 +14,7 @@ pub enum DiagnosticCode {
     PublicationConflict,
     RecoveryRequired,
     ExecutionUncertain,
+    RuntimeRecoveryRequired,
     Interrupted,
     ResourceAdmission,
     AcquisitionFailed,
@@ -67,6 +68,11 @@ impl Diagnostic {
         use DiagnosticCode::*;
         if let Some(value) = error.downcast_ref::<Self>() {
             return value.clone();
+        }
+        if error.is::<super::api::RuntimeRecoveryRequired>() {
+            let mut diagnostic = Self::new(RuntimeRecoveryRequired, DiagnosticPhase::Execution);
+            diagnostic.recovery = RecoveryClassification::Required;
+            return diagnostic;
         }
         // Runtime admission keeps its typed cause even through the transparent runtime wrapper.
         let admission = error
@@ -145,6 +151,10 @@ impl super::api::ExecutionOutcome {
                 Diagnostic::new(DiagnosticCode::Interrupted, DiagnosticPhase::Execution),
                 RecoveryClassification::NotPublished,
             ),
+            ExecutionUncertain(cause) if cause.is::<super::api::RuntimeRecoveryRequired>() => (
+                Diagnostic::from_error(cause, DiagnosticPhase::Execution),
+                RecoveryClassification::Required,
+            ),
             ExecutionUncertain(_) => (
                 Diagnostic::new(
                     DiagnosticCode::ExecutionUncertain,
@@ -172,6 +182,17 @@ impl super::api::ExecutionOutcome {
 mod tests {
     use super::*;
     use crate::engine::api::ExecutionOutcome;
+    #[test]
+    fn runtime_retirement_has_a_distinct_machine_readable_recovery_route() {
+        let cause = anyhow::Error::new(crate::application::process_runtime::Interrupted)
+            .context(crate::engine::api::RuntimeRecoveryRequired);
+        let diagnostic = ExecutionOutcome::ExecutionUncertain(cause)
+            .diagnostic()
+            .unwrap();
+        assert_eq!(diagnostic.code, DiagnosticCode::RuntimeRecoveryRequired);
+        assert_eq!(diagnostic.phase, DiagnosticPhase::Execution);
+        assert_eq!(diagnostic.recovery, RecoveryClassification::Required);
+    }
     #[test]
     fn admission_diagnostics_survive_runtime_and_context_wrappers() {
         use crate::engine::{
