@@ -416,3 +416,44 @@ fn server_entry_point_requires_exact_managed_required_content() {
     payload.files.push(shadow);
     assert!(DecodedRelease::encode(payload).is_err());
 }
+
+#[test]
+fn diagnostics_separate_publisher_authentication_from_payload_identity_and_tool_version() {
+    use crate::engine::diagnostics::{Diagnostic, DiagnosticCode, DiagnosticPhase};
+    let release = DecodedRelease::encode(document()).unwrap();
+    let wrong = hash(b"another payload");
+    let identity = SelectedSnapshot::select(release.bytes(), &wrong, &version())
+        .err()
+        .unwrap();
+    let identity = Diagnostic::from_error(&identity, DiagnosticPhase::Preparation);
+    assert_eq!(identity.code, DiagnosticCode::ReleaseIdentityMismatch);
+    assert_eq!(identity.expected.as_deref(), Some(wrong.as_str()));
+    assert_eq!(identity.observed.as_deref(), Some(release.id()));
+    let envelope = sign(
+        EnvelopeKind::Release,
+        release.bytes(),
+        &[&SigningKey::from_bytes(&[99; 32])],
+    )
+    .unwrap();
+    let authentication = trust()
+        .release(&envelope, release.id(), &version())
+        .err()
+        .unwrap();
+    let diagnostic = Diagnostic::from_error(&authentication, DiagnosticPhase::Preparation);
+    assert_eq!(
+        diagnostic.code,
+        DiagnosticCode::PublisherAuthenticationFailed
+    );
+    assert!(diagnostic.expected.is_none() && diagnostic.observed.is_none());
+    assert!(format!("{authentication:#}").contains("No enrolled publisher"));
+    let old = SelectedSnapshot::select(
+        release.bytes(),
+        release.id(),
+        &semver::Version::new(0, 5, 0),
+    )
+    .err()
+    .unwrap();
+    let old = Diagnostic::from_error(&old, DiagnosticPhase::Preparation);
+    assert_eq!(old.code, DiagnosticCode::IncompatibleEngine);
+    assert_eq!(old.observed.as_deref(), Some("0.5.0"));
+}

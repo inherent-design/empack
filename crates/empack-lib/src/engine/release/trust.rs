@@ -1,5 +1,6 @@
 //! Publisher authentication over exact payload bytes. No network or write authority.
 use super::*;
+use crate::engine::diagnostics::{Diagnostic, DiagnosticCode, DiagnosticPhase};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use std::collections::BTreeMap;
 
@@ -115,6 +116,22 @@ impl PublisherTrust {
         &self.origin
     }
     fn verify(&self, kind: EnvelopeKind, encoded: &[u8]) -> Result<Vec<u8>> {
+        self.verify_envelope(kind, encoded).map_err(|error| {
+            let mut diagnostic = Diagnostic::new(
+                DiagnosticCode::PublisherAuthenticationFailed,
+                DiagnosticPhase::Verification,
+            );
+            diagnostic.object = Some(
+                match kind {
+                    EnvelopeKind::Release => "release",
+                    EnvelopeKind::Channel => "channel",
+                }
+                .into(),
+            );
+            error.context(diagnostic)
+        })
+    }
+    fn verify_envelope(&self, kind: EnvelopeKind, encoded: &[u8]) -> Result<Vec<u8>> {
         let limit = match kind {
             EnvelopeKind::Release => MAX_ENVELOPE_BYTES,
             EnvelopeKind::Channel => MAX_CHANNEL_BYTES * 2 + 16 * 1024,
@@ -185,10 +202,7 @@ impl PublisherTrust {
     ) -> Result<AuthenticatedRelease> {
         decode_hex::<32>(expected)?;
         let payload = self.verify(EnvelopeKind::Release, envelope)?;
-        ensure!(
-            hash(&payload) == expected,
-            "Release payload identity mismatch"
-        );
+        check_identity(&payload, expected)?;
         let release = DecodedRelease::decode(&payload)?;
         ensure!(
             release.document.pack == self.pack,
@@ -280,10 +294,33 @@ impl PublisherTrust {
     }
 }
 fn compatible(requirement: &str, engine: &semver::Version) -> Result<()> {
-    ensure!(
-        semver::VersionReq::parse(requirement)?.matches(engine),
-        "Release requires another empack version; tool installation needs separate authorization"
-    );
+    if !semver::VersionReq::parse(requirement)?.matches(engine) {
+        let mut diagnostic = Diagnostic::new(
+            DiagnosticCode::IncompatibleEngine,
+            DiagnosticPhase::Verification,
+        );
+        diagnostic.object = Some("empack executable".into());
+        diagnostic.expected = Some(requirement.into());
+        diagnostic.observed = Some(engine.to_string());
+        return Err(anyhow::Error::new(diagnostic).context("Release requires another empack version; tool installation needs separate authorization"));
+    }
+    Ok(())
+}
+fn check_identity(bytes: &[u8], expected: &str) -> Result<()> {
+    decode_hex::<32>(expected)?;
+    let actual = hash(bytes);
+    if actual != expected {
+        let mut diagnostic = Diagnostic::new(
+            DiagnosticCode::ReleaseIdentityMismatch,
+            DiagnosticPhase::Verification,
+        );
+        diagnostic.object = Some("release payload SHA-256".into());
+        diagnostic.expected = Some(expected.into());
+        diagnostic.observed = Some(actual);
+        return Err(
+            anyhow::Error::new(diagnostic).context("Selected release payload identity mismatch")
+        );
+    }
     Ok(())
 }
 /// Proof is constructed only after verification against explicitly enrolled keys.
@@ -313,10 +350,7 @@ pub(in crate::engine) fn publisher_release(
         keys.to_vec(),
     )?;
     let payload = verifier.verify(EnvelopeKind::Release, envelope)?;
-    ensure!(
-        hash(&payload) == expected,
-        "Staged release identity mismatch"
-    );
+    check_identity(&payload, expected)?;
     let release = DecodedRelease::decode(&payload)?;
     compatible(&release.document.minimum_engine, engine)?;
     Ok(release)
@@ -328,10 +362,7 @@ pub struct SelectedSnapshot {
 impl SelectedSnapshot {
     pub fn select(bytes: &[u8], expected: &str, engine: &semver::Version) -> Result<Self> {
         decode_hex::<32>(expected)?;
-        ensure!(
-            hash(bytes) == expected,
-            "Selected snapshot identity mismatch"
-        );
+        check_identity(bytes, expected)?;
         let release = DecodedRelease::decode(bytes)?;
         compatible(&release.document.minimum_engine, engine)?;
         Ok(Self { release })

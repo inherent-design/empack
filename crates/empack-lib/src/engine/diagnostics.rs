@@ -6,6 +6,12 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 pub enum DiagnosticCode {
     AuthorizationDenied,
+    /// Signature/envelope authentication failed against enrolled publisher keys.
+    PublisherAuthenticationFailed,
+    /// Exact release payload bytes differ from the selected content address.
+    ReleaseIdentityMismatch,
+    /// The selected executable cannot satisfy the release's engine requirement.
+    IncompatibleEngine,
     StaleSnapshot,
     DigestMismatch,
     SizeMismatch,

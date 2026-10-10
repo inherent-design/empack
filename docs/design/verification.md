@@ -51,7 +51,13 @@ No helper named `normalize` should silently alter content meaning. Prefer `parse
 The public [diagnostic envelope](../../crates/empack-lib/src/engine/diagnostics.rs)
 provides stable codes and optional expected/observed evidence. Classification uses
 typed causes; unclassified failures retain an explicit generic code. Human-readable
-context remains available without becoming the automation contract.
+context remains available without becoming the automation contract. Publisher
+signature/envelope failure uses `publisher-authentication-failed`; an exact selected
+release address mismatch uses `release-identity-mismatch`. Neither means an upstream
+source digest failed or a user authorized mutation. `incompatible-engine` exposes
+the required version range and current engine version without granting a tool
+update. Source assertion mismatches and operation grants retain their separate
+`digest-mismatch` and `authorization-denied` classifications.
 
 ## Contract tests and failure injection
 
