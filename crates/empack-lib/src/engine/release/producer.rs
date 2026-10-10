@@ -84,6 +84,112 @@ impl NativeReleasePlan {
     pub fn archive_inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
         &self.expected
     }
+    /// Bind the already prepared runtime to the same immutable selection as game content.
+    /// Server distributions already carry these bytes; embedding retains their original evidence.
+    pub(crate) fn with_server_runtime(
+        mut self,
+        runtime: &crate::engine::server_runtime::PreparedServerRuntime,
+    ) -> Result<Self> {
+        use crate::engine::server_runtime::ServerLaunch;
+        ensure!(
+            crate::engine::prism::runtime(&self.release.document().runtime)? == *runtime.runtime(),
+            "Server runtime differs from release requirements"
+        );
+        ensure!(
+            runtime.evidence().java_major.is_none_or(|required| self
+                .release
+                .document()
+                .runtime
+                .java_major
+                >= required),
+            "Release Java requirement is below the prepared server runtime requirement"
+        );
+        let mut document = self.release.document().clone();
+        ensure!(
+            document.server_launch.is_none(),
+            "Release already contains a server runtime"
+        );
+        let mut collisions = crate::engine::layout::CollisionIndex::default();
+        // Runtime paths cannot alias any game layer or its parent, including inactive variants.
+        let mut seen = BTreeSet::new();
+        for file in &document.files {
+            let destination =
+                PortableRelPath::parse(&file.destination, PathSyntax::ProjectContent)?;
+            // Side variants may legitimately share the exact game destination.
+            if seen.insert(&file.destination) {
+                collisions.insert_file(&destination)?;
+            }
+        }
+        for (destination, supplied) in runtime.files() {
+            collisions.insert_file(destination)?;
+            let address = hex_address(supplied.content.lease().id().bytes());
+            let asset = format!("assets/{address}");
+            let assertions = match supplied.content.evidence() {
+                empack_core::digest::IntegrityEvidence::MatchedExpected { expected, .. } => {
+                    assertions_from(&ExpectedContent {
+                        digests: Some(expected.clone()),
+                        size: None,
+                        accepted_observation: None,
+                    })
+                }
+                _ => Vec::new(),
+            };
+            let asset_path = PortableRelPath::parse(&asset, PathSyntax::ArchiveMember)?;
+            self.assets.insert(asset_path.clone(), asset_file(supplied));
+            self.expected.insert(
+                asset_path,
+                FileContent {
+                    content: supplied.content.lease().id(),
+                    bytes: supplied.content.lease().len(),
+                    permissions: FilePermissions {
+                        readonly: false,
+                        executable: false,
+                    },
+                },
+            );
+            document.files.push(ReleaseFile {
+                key: logical_key(&["runtime", destination.as_str()])?,
+                destination: destination.as_str().into(),
+                layer: ReleaseLayer::Server,
+                policy: if destination.as_str() == "user_jvm_args.txt" {
+                    FilePolicy::Seed
+                } else {
+                    FilePolicy::Managed
+                },
+                client: Participation::Unsupported,
+                server: Participation::Required,
+                sha256: address,
+                bytes: supplied.content.lease().len(),
+                readonly: supplied.permissions.readonly,
+                executable: supplied.permissions.executable,
+                assertions,
+                source: ReleaseSource::Asset { path: asset },
+                asset: None,
+            });
+        }
+        document.server_launch = Some(match runtime.launch() {
+            ServerLaunch::Jar(path) => ReleaseServerLaunch::Jar {
+                path: path.as_str().into(),
+            },
+            ServerLaunch::Arguments { unix, windows } => ReleaseServerLaunch::Arguments {
+                unix: unix.as_str().into(),
+                windows: windows.as_str().into(),
+            },
+        });
+        self.release = DecodedRelease::encode(document)?;
+        self.expected.insert(
+            PortableRelPath::parse("release.json", PathSyntax::ArchiveMember)?,
+            FileContent {
+                content: ContentId::from_sha256(decode_hex(self.release.id())?),
+                bytes: self.release.bytes().len() as u64,
+                permissions: FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            },
+        );
+        Ok(self)
+    }
     pub fn prepare(
         project: &ResolvedProject,
         acquired: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
@@ -442,6 +548,7 @@ impl NativeReleasePlan {
                 )?)?;
         }
         let release = DecodedRelease::encode(ReleaseDocument {
+            server_launch: None,
             schema: RELEASE_SCHEMA,
             pack: options.pack,
             version: project.intent().metadata.version.clone(),

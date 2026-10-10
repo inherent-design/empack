@@ -114,7 +114,10 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             assert!(!root.path().join("dist").exists());
             assert!(!build.uses_user_configuration());
             let expected = build.inventory().clone();
-            assert!(expected.contains_key(&path("game/server.jar").unwrap()));
+            assert_eq!(
+                expected.contains_key(&path("game/server.jar").unwrap()),
+                !lightweight
+            );
             assert!(expected.contains_key(&path("install_pack.bat").unwrap()));
             assert!(!expected.contains_key(&path("eula.txt").unwrap()));
             assert!(!expected.contains_key(&path("excluded").unwrap()));
@@ -201,7 +204,14 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                             )
                         })
                         .collect();
-                    let runtime_before = fs::read(instance.path().join("game/server.jar")).unwrap();
+                    assert!(!instance.path().join("game/server.jar").exists());
+                    let mut runtime_before = Vec::new();
+                    prepared_fixture().files()[&path("server.jar").unwrap()]
+                        .content
+                        .lease()
+                        .open()
+                        .read_to_end(&mut runtime_before)
+                        .unwrap();
                     let plan = crate::engine::instance::plan(
                         instance.path(),
                         InstanceSelection {
@@ -416,7 +426,11 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
         .tempdir()
         .unwrap();
     fs::create_dir(root.path().join("game")).unwrap();
-    put(root.path(), "start.sh", start_script(true).as_bytes());
+    put(
+        root.path(),
+        "start.sh",
+        runtime_start(&ServerLaunch::Jar(path("server.jar").unwrap()), true, false).as_bytes(),
+    );
     let id = "a".repeat(64);
     put(
         root.path(),
@@ -432,11 +446,13 @@ if [ "$5" = prepare ]; then
   exit "$EMPACK_TEST_INSTALL_STATUS"
 fi
 printf '%s\n' "$@" > "$EMPACK_TEST_ARGS.launch"
-[ "$5" = launch ] && [ "$6" = -- ] || exit 91
+[ "$5" = launch ] && [ "$6" = --server ] && [ "$7" = -- ] || exit 91
 root="$2"
-shift 6
+shift 7
 cd "$root/game" || exit 92
-exec "$@"
+program="$1"
+shift
+exec "$program" -jar server.jar "$@"
 "##,
     );
     put(
@@ -483,7 +499,7 @@ exec "$@"
             assert_eq!(
                 launch,
                 format!(
-                    "--workdir\n{}\n--yes\ninstance\nlaunch\n--\n{}\n-jar\nserver.jar\nnogui\nan argument\n",
+                    "--workdir\n{}\n--yes\ninstance\nlaunch\n--server\n--\n{}\nnogui\nan argument\n",
                     root.path().display(),
                     root.path().join("java space/bin/java").display()
                 )
@@ -613,7 +629,7 @@ fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
             ),
             recipe,
         );
-        assert!(launch.contains("instance launch --check-updates --"));
+        assert!(launch.contains("instance launch --server --check-updates --"));
         let install = consumer_script(
             if windows {
                 install_batch(Some("digest"))

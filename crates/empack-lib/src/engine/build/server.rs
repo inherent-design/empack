@@ -176,6 +176,11 @@ fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> Stri
     } else {
         start_script(references)
     };
+    if references {
+        return script
+            .replace("instance launch --", "instance launch --server --")
+            .replace(" -jar server.jar", "");
+    }
     let quote = |value: &str| {
         if windows {
             format!("\"{}\"", value.replace('%', "%%"))
@@ -200,7 +205,10 @@ fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> Stri
 fn consumer_script(script: String, target: Recipe) -> String {
     if target.update_authority() == empack_core::distribution::UpdateAuthority::Empack {
         script
-            .replace("instance launch --", "instance launch --check-updates --")
+            .replace(
+                "instance launch --server --",
+                "instance launch --server --check-updates --",
+            )
             .replace("--side server", "--side server --require-subscription")
     } else {
         script
@@ -296,7 +304,10 @@ pub(super) fn prepare_server_archive(
         release_options
             .policies
             .retain(|destination, _| game.files().contains_key(destination));
-        Some(NativeReleasePlan::prepare_selected(&game, release_options)?)
+        Some(
+            NativeReleasePlan::prepare_selected(&game, release_options)?
+                .with_server_runtime(runtime)?,
+        )
     } else {
         for (destination, file) in game.files() {
             files.insert(
@@ -315,7 +326,7 @@ pub(super) fn prepare_server_archive(
         files.insert(destination, file);
         Ok(())
     };
-    for (destination, file) in runtime.files() {
+    for (destination, file) in runtime.files().iter().filter(|_| !references) {
         insert(
             path(&format!("game/{}", destination.as_str()))?,
             file.clone(),
@@ -425,7 +436,7 @@ pub(super) fn prepare_server_archive(
     }
     let mut collisions = CollisionIndex::default();
     if references {
-        for destination in game.files().keys() {
+        for destination in game.files().keys().chain(runtime.files().keys()) {
             collisions.insert_file(&path(&format!("game/{}", destination.as_str()))?)?;
         }
     }

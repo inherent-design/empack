@@ -387,6 +387,9 @@ pub enum InstanceCommand {
     },
     /// Run a locally selected runtime while preventing concurrent managed updates
     Launch {
+        /// Use the completed release's server entry point; PROGRAM is locally selected Java
+        #[arg(long)]
+        server: bool,
         /// Check the explicitly enrolled channel and apply a verified update before launch
         #[arg(long)]
         check_updates: bool,

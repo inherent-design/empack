@@ -8,6 +8,8 @@ use std::ffi::OsString;
 
 /// A local runtime chosen by the host, never a command supplied by a release payload.
 pub struct LaunchInstanceRequest {
+    /// Treat program as local Java and prepend the completed release's verified server entry point.
+    pub server: bool,
     /// Bind prelaunch/update decisions to the release the runtime will actually run.
     /// None explicitly selects whichever completed release is captured during preparation.
     pub expected_release: Option<String>,
@@ -71,6 +73,21 @@ pub(super) async fn prepare(
             } else {
                 env!("CARGO_PKG_VERSION")
             })?;
+            let mut arguments = if request.server {
+                ensure!(
+                    record.side == instance::InstanceSide::Server,
+                    "Server launch requires a server installation"
+                );
+                release
+                    .document()
+                    .server_launch
+                    .as_ref()
+                    .context("Completed release contains no managed server runtime")?
+                    .arguments(cfg!(windows))
+            } else {
+                Vec::new()
+            };
+            arguments.extend(request.arguments);
             let release = super::super::release::trust::SelectedSnapshot::select(
                 release.bytes(),
                 release.id(),
@@ -102,7 +119,7 @@ pub(super) async fn prepare(
             );
             let mut command = std::process::Command::new(&request.program);
             command
-                .args(request.arguments)
+                .args(arguments)
                 .current_dir(root.join(record.layout.directory()));
             Ok::<_, anyhow::Error>(PreparedLaunch {
                 view: LaunchInstancePreview {

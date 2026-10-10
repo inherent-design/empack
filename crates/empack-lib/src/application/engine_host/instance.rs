@@ -269,19 +269,20 @@ pub(in crate::application) async fn dispatch(
             result
         }
         InstanceCommand::Launch {
+            server,
             command,
             check_updates,
             allow_offline,
         } => {
             let expected_release = if check_updates {
-                let Some(release) = prelaunch::update(session, allow_offline).await? else {
+                let Some(release) = prelaunch::update(session, allow_offline, server).await? else {
                     return Ok(());
                 };
                 Some(release)
             } else {
                 None
             };
-            launch(session, command, expected_release).await
+            launch(session, command, expected_release, server).await
         }
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
@@ -698,6 +699,7 @@ async fn launch(
     session: &dyn Session,
     command: Vec<std::ffi::OsString>,
     expected_release: Option<String>,
+    server: bool,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut args = command.into_iter();
@@ -725,6 +727,7 @@ async fn launch(
             engine.prepare(
                 root,
                 crate::engine::api::LaunchInstanceRequest {
+                    server,
                     expected_release,
                     program,
                     arguments: args.collect(),

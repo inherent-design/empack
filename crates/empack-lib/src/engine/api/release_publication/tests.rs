@@ -5,6 +5,7 @@ fn source(root: &Path, assertions: Vec<SourceDigest>) -> DecodedRelease {
     fs::create_dir_all(root.join("assets")).unwrap();
     fs::write(root.join("assets/config"), b"settings").unwrap();
     let release = DecodedRelease::encode(ReleaseDocument {
+        server_launch: None,
         schema: 1,
         pack: "published".into(),
         version: "1".into(),

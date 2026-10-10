@@ -52,6 +52,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
         })
         .collect();
     let release = DecodedRelease::encode(ReleaseDocument {
+        server_launch: None,
         schema: 1,
         pack: "fixture".into(),
         version: "1".into(),
@@ -1960,6 +1961,67 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
     assert_eq!(restored["components"].as_array().unwrap().len(), 2);
     assert_eq!(
         fs::read(root.path().join(".minecraft/saves/world/level.dat")).unwrap(),
+        b"played"
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn server_release_updates_runtime_and_rolls_back_without_touching_user_data() {
+    fn server(version: &str, destination: &str, bytes: &[u8]) -> InstallInstanceRequest {
+        let input = request(&[
+            ("runtime", destination, bytes, FilePolicy::Managed),
+            ("jvm", "user_jvm_args.txt", b"defaults", FilePolicy::Seed),
+        ]);
+        let mut doc = input.release.release().document().clone();
+        doc.runtime.minecraft = version.into();
+        doc.server_launch = Some(ReleaseServerLaunch::Jar {
+            path: destination.into(),
+        });
+        let mut input = replace_document(input, doc);
+        input.side = InstanceSide::Server;
+        input
+    }
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let a = || server("1.21.1", "server-a.jar", b"runtime A");
+    let b = || server("1.21.2", "libraries/server-b.jar", b"runtime B");
+    let first = apply(&engine, root.path(), a()).await;
+    fs::write(root.path().join("game/user_jvm_args.txt"), b"-Xmx4G").unwrap();
+    fs::create_dir(root.path().join("game/world")).unwrap();
+    fs::write(root.path().join("game/world/level.dat"), b"played").unwrap();
+    let second = apply(&engine, root.path(), b()).await;
+    assert_ne!(first.release, second.release);
+    assert!(!root.path().join("game/server-a.jar").exists());
+    assert_eq!(
+        fs::read(root.path().join("game/libraries/server-b.jar")).unwrap(),
+        b"runtime B"
+    );
+    let mut original = a();
+    original.action = InstanceAction::Prepare;
+    original.supplied.clear();
+    assert_eq!(
+        apply(&engine, root.path(), original).await.release,
+        second.release
+    );
+    let mut rollback = a();
+    rollback.action = InstanceAction::Rollback;
+    assert_eq!(
+        apply(&engine, root.path(), rollback).await.release,
+        first.release
+    );
+    assert!(!root.path().join("game/libraries/server-b.jar").exists());
+    assert_eq!(
+        fs::read(root.path().join("game/server-a.jar")).unwrap(),
+        b"runtime A"
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/user_jvm_args.txt")).unwrap(),
+        b"-Xmx4G"
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/world/level.dat")).unwrap(),
         b"played"
     );
     engine.shutdown().await;

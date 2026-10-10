@@ -4,6 +4,7 @@ use ed25519_dalek::SigningKey;
 
 pub(super) fn document() -> ReleaseDocument {
     ReleaseDocument {
+        server_launch: None,
         schema: 1,
         pack: "test-pack".into(),
         version: "1.0".into(),
@@ -382,4 +383,35 @@ fn provider_selections_require_canonical_project_and_version_identities() {
         };
         assert!(DecodedRelease::encode(release).is_err());
     }
+}
+
+#[test]
+fn server_entry_point_requires_exact_managed_required_content() {
+    let mut payload = document();
+    payload.server_launch = Some(ReleaseServerLaunch::Jar {
+        path: "server.jar".into(),
+    });
+    assert!(DecodedRelease::encode(payload.clone()).is_err());
+    payload.files[0].destination = "server.jar".into();
+    assert!(DecodedRelease::encode(payload.clone()).is_err()); // seed cannot authorize a runtime
+    payload.files[0].policy = FilePolicy::Managed;
+    let valid = DecodedRelease::encode(payload.clone()).unwrap();
+    assert_eq!(
+        valid
+            .document()
+            .server_launch
+            .as_ref()
+            .unwrap()
+            .arguments(false),
+        vec![std::ffi::OsString::from("-jar"), "server.jar".into()]
+    );
+    payload.files[0].server = Participation::Unsupported;
+    assert!(DecodedRelease::encode(payload.clone()).is_err());
+    payload.files[0].server = Participation::Required;
+    let mut shadow = payload.files[0].clone();
+    shadow.key = "shadow".into();
+    shadow.layer = ReleaseLayer::Server;
+    shadow.client = Participation::Unsupported;
+    payload.files.push(shadow);
+    assert!(DecodedRelease::encode(payload).is_err());
 }

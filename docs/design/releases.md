@@ -236,3 +236,13 @@ For deployment by file transfer, upload immutable release files first, run chann
 publication against the live HTTPS directory, then upload the resulting channel
 file last. The command prepares local hosting output; it does not upload files or
 manage a hosting account. A verification failure leaves the old pointer in place.
+
+## Server entry points
+
+An optional `server_launch` value names either `{kind: jar, path}` or
+`{kind: arguments, unix, windows}`. Every named entry point must resolve to exactly
+one required managed server file in the release inventory. This value contains no
+program, shell command or arbitrary executable-selection policy. Argument-file
+launches use the local `user_jvm_args.txt` seed before the verified loader arguments.
+The same exact release binds runtime requirements, executable content, launch paths
+and game files, so managed update and rollback cannot keep an older entry point.

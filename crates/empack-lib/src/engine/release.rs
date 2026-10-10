@@ -21,6 +21,9 @@ pub const MAX_RELEASE_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseDocument {
+    /// Typed Java entry point into required, verified server files; never a host executable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_launch: Option<ReleaseServerLaunch>,
     pub schema: u32,
     pub pack: String,
     pub version: String,
@@ -28,6 +31,30 @@ pub struct ReleaseDocument {
     pub runtime: ReleaseRuntime,
     pub choices: Vec<ReleaseChoice>,
     pub files: Vec<ReleaseFile>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ReleaseServerLaunch {
+    Jar { path: String },
+    Arguments { unix: String, windows: String },
+}
+impl ReleaseServerLaunch {
+    fn paths(&self) -> Vec<&str> {
+        match self {
+            Self::Jar { path } => vec![path],
+            Self::Arguments { unix, windows } => vec![unix, windows],
+        }
+    }
+    /// Java is selected locally. Only typed, inventory-bound arguments come from the release.
+    pub fn arguments(&self, windows: bool) -> Vec<std::ffi::OsString> {
+        match self {
+            Self::Jar { path } => vec!["-jar".into(), path.into()],
+            Self::Arguments { unix, windows: win } => vec![
+                "@user_jvm_args.txt".into(),
+                format!("@{}", if windows { win } else { unix }).into(),
+            ],
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -331,6 +358,24 @@ impl ReleaseDocument {
                 values.contains(&choice.default),
                 "Choice default is not an alternative"
             );
+        }
+        if let Some(launch) = &self.server_launch {
+            for destination in launch.paths() {
+                PortableRelPath::parse(destination, PathSyntax::ProjectContent)?;
+                let matching: Vec<_> = self
+                    .files
+                    .iter()
+                    .filter(|file| {
+                        file.destination == destination && file.server != Participation::Unsupported
+                    })
+                    .collect();
+                ensure!(
+                    matching.len() == 1
+                        && matching[0].server == Participation::Required
+                        && matching[0].policy == FilePolicy::Managed,
+                    "Server launch requires one required managed file at {destination}"
+                );
+            }
         }
         let mut files = BTreeSet::new();
         // Side-disjoint variants may share a destination; selected projection checks collisions.

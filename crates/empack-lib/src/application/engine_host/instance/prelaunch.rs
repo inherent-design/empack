@@ -6,10 +6,15 @@ use crate::engine::{
 };
 
 /// None means preview or declined approval; callers must not start a runtime.
-pub(super) async fn update(session: &dyn Session, allow_offline: bool) -> Result<Option<String>> {
+pub(super) async fn update(
+    session: &dyn Session,
+    allow_offline: bool,
+    server: bool,
+) -> Result<Option<String>> {
     update_with_transport(
         session,
         allow_offline,
+        server,
         crate::engine::acquisition::HttpAcquisition::new()?,
     )
     .await
@@ -17,6 +22,7 @@ pub(super) async fn update(session: &dyn Session, allow_offline: bool) -> Result
 async fn update_with_transport(
     session: &dyn Session,
     allow_offline: bool,
+    server: bool,
     transport: crate::engine::acquisition::HttpAcquisition,
 ) -> Result<Option<String>> {
     let (invocation, root) = project_path(session)?;
@@ -95,7 +101,8 @@ async fn update_with_transport(
                 version,
             ).await
         }).await?;
-        ensure!(proof.release().document().runtime == release.document().runtime,
+        ensure!(proof.release().document().runtime == release.document().runtime
+            || (server && record.side == InstanceSide::Server && proof.release().document().server_launch.is_some()),
             if record.layout == InstanceLayout::Prism {
                 "Channel release changes the runtime; stop Prism, run instance update, then relaunch so Prism reloads its components"
             } else {

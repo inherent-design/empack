@@ -249,8 +249,10 @@ or launcher. Program and arguments remain separate native arguments; release
 metadata cannot supply a program or shell source. The executable is resolved before
 approval. Preparation verifies the completed record and its selected content;
 missing or modified managed bytes require repair or a conflict decision first.
-This entry point coordinates execution of an already prepared runtime. It does not
-select Java, download game binaries or infer a launch command from release metadata.
+The generic entry point coordinates execution of a caller-prepared runtime. With
+`--server`, PROGRAM is locally selected Java and empack prepends the completed
+release's typed JAR or argument-file entry point. The descriptor cannot select a
+host executable. Trailing arguments remain separate native arguments.
 
 The execution grant has a separate `run_runtime` permission. After approval, execution
 acquires an exclusive instance-run lock and a shared publication lock, then rechecks
@@ -297,3 +299,22 @@ A runtime-changing channel update stops the current prelaunch sequence. Apply
 its component metadata and prepares the required game, loader and Java. Changing
 `mmc-pack.json` after Prism has loaded metadata does not update its in-memory launch
 plan. Empack does not download client game binaries or silently replace Java.
+
+## Managed server runtime transitions
+
+Server releases include verified runtime files and a typed `server_launch` entry
+point. Runtime JARs, libraries and generated loader arguments are required managed
+files. Initial `user_jvm_args.txt` is a seed so local memory settings survive updates.
+The server adapter embeds the runtime bytes it already prepared; reference delivery
+continues to describe pack dependencies by their supported sources. Embedding does
+not establish permission to redistribute third-party runtime binaries.
+
+`instance launch --server -- JAVA ARGUMENTS...` chooses arguments from the completed
+release after checking its exact managed inventory. Server launchers use this entry
+point instead of retaining a version-specific JAR or argument-file path. A subscribed
+prelaunch may update runtime and game files in one recoverable publication. A failed
+or interrupted update cannot start Java. Rollback restores the previous managed
+runtime and entry point while preserving played worlds and JVM configuration.
+
+The local operator selects Java. A runtime update never installs or changes the
+empack executable or acknowledges the Minecraft EULA.

@@ -67,6 +67,7 @@ fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
     )
     .unwrap();
     let payload = DecodedRelease::encode(ReleaseDocument {
+        server_launch: None,
         schema: 1,
         pack: "launch".into(),
         version: "1".into(),
@@ -111,6 +112,7 @@ fn grant(prepared: &PreparedOperation, runtime: bool) -> ExecutionGrant {
 }
 fn request() -> LaunchInstanceRequest {
     LaunchInstanceRequest {
+        server: false,
         expected_release: None,
         program: std::env::current_exe().unwrap(),
         arguments: vec![
@@ -454,5 +456,58 @@ async fn launch_binds_the_release_selected_by_prelaunch() {
     input.expected_release = Some("00".repeat(32));
     assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
     assert!(!root.path().join("game/launch-started").exists());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let mut input = install_request(b"server bytes");
+    let mut document = input.release.release().document().clone();
+    document.files[0].destination = "server-exact.jar".into();
+    document.server_launch = Some(ReleaseServerLaunch::Jar {
+        path: "server-exact.jar".into(),
+    });
+    let release = DecodedRelease::encode(document).unwrap();
+    input.release = SelectedRelease::Snapshot(
+        trust::SelectedSnapshot::select(
+            release.bytes(),
+            release.id(),
+            &semver::Version::parse("0.6.0-beta").unwrap(),
+        )
+        .unwrap(),
+    );
+    input.side = InstanceSide::Server;
+    let prepared = prepare(&engine, root.path(), input).await;
+    let approval = grant(&prepared, false);
+    let mut operation = engine.start(prepared.authorize(approval).unwrap()).unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
+    ));
+    let selected = || LaunchInstanceRequest {
+        server: true,
+        expected_release: Some(release.id().into()),
+        program: std::env::current_exe().unwrap(),
+        arguments: vec!["nogui".into(), "literal argument".into()],
+    };
+    let prepared = prepare(&engine, root.path(), selected()).await;
+    let PreparedKind::Launch(launch) = &**prepared.data else {
+        panic!()
+    };
+    assert_eq!(
+        launch.command.get_args().collect::<Vec<_>>(),
+        ["-jar", "server-exact.jar", "nogui", "literal argument"]
+    );
+    drop(prepared);
+    fs::write(root.path().join("game/server-exact.jar"), b"changed").unwrap();
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), selected())
+            .await
+            .is_err()
+    );
     engine.shutdown().await;
 }

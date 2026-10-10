@@ -31,6 +31,7 @@ fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
 }
 fn release(version: &str) -> DecodedRelease {
     DecodedRelease::encode(ReleaseDocument {
+        server_launch: None,
         schema: 1,
         pack: "prelaunch".into(),
         version: version.into(),
@@ -124,15 +125,21 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
         update_with_transport(
             &session(root.path(), true, false),
             false,
+            false,
             transport(&origin)
         )
         .await
         .is_err()
     );
     assert_eq!(
-        update_with_transport(&session(root.path(), true, false), true, transport(&origin))
-            .await
-            .unwrap(),
+        update_with_transport(
+            &session(root.path(), true, false),
+            true,
+            false,
+            transport(&origin)
+        )
+        .await
+        .unwrap(),
         Some(release("A").id().into())
     );
     assert_eq!(
@@ -149,9 +156,14 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
     .await
     .unwrap();
     assert!(
-        update_with_transport(&session(root.path(), true, false), true, transport(&origin))
-            .await
-            .is_err()
+        update_with_transport(
+            &session(root.path(), true, false),
+            true,
+            false,
+            transport(&origin)
+        )
+        .await
+        .is_err()
     );
 }
 #[tokio::test]
@@ -172,6 +184,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
             update_with_transport(
                 &session(root.path(), yes, dry),
                 true,
+                false,
                 transport(&server.url())
             )
             .await
@@ -188,6 +201,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         update_with_transport(
             &session(root.path(), true, false),
             true,
+            false,
             transport(&server.url())
         )
         .await
@@ -201,6 +215,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
     assert_eq!(
         update_with_transport(
             &session(root.path(), true, false),
+            false,
             false,
             transport(&server.url())
         )
@@ -219,6 +234,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         update_with_transport(
             &session(root.path(), true, false),
             true,
+            false,
             transport(&server.url())
         )
         .await

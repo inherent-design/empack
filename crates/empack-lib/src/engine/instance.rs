@@ -505,6 +505,8 @@ pub(super) fn plan(
             );
             ensure!(
                 layout == InstanceLayout::Prism
+                    || (side == InstanceSide::Server
+                        && active.release().document().server_launch.is_some())
                     || active.release().document().runtime == selected.release().document().runtime,
                 "Active runtime differs from this consumer; update its launcher/runtime integration before launch"
             );
