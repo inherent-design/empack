@@ -42,24 +42,82 @@ const KINDS: [ResourceKind; 4] = [
     ResourceKind::ScratchBytes,
     ResourceKind::OpenFiles,
 ];
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+impl std::fmt::Display for ResourceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Jobs => "worker slots",
+            Self::MemoryBytes => "estimated memory",
+            Self::ScratchBytes => "temporary storage",
+            Self::OpenFiles => "file reservations",
+        })
+    }
+}
+impl ResourceKind {
+    pub(super) fn quantity(self, value: u64) -> String {
+        match self {
+            Self::MemoryBytes | Self::ScratchBytes if value >= 1 << 20 => {
+                format!("{:.1} MiB ({value} bytes)", value as f64 / (1 << 20) as f64)
+            }
+            Self::MemoryBytes | Self::ScratchBytes => format!("{value} bytes"),
+            Self::Jobs | Self::OpenFiles => value.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdmissionError {
-    #[error("Operation admission is closed")]
     Closed,
-    #[error("Operation admission was cancelled")]
     Cancelled,
-    #[error("Request for {resource:?} exceeds maximum {maximum}")]
     TooLarge {
         resource: ResourceKind,
+        requested: u64,
         maximum: u64,
     },
-    #[error("Resource {resource:?} is busy; {available} available")]
     Busy {
         resource: ResourceKind,
+        requested: u64,
         available: u64,
     },
-    #[error("Cannot transfer more resources than the permit owns")]
     InvalidTransfer,
+}
+impl std::error::Error for AdmissionError {}
+impl std::fmt::Display for AdmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Closed => f.write_str("Operation admission is closed"),
+            Self::Cancelled => f.write_str("Operation admission was cancelled"),
+            Self::InvalidTransfer => {
+                f.write_str("Cannot transfer more resources than the permit owns")
+            }
+            Self::TooLarge {
+                resource,
+                requested,
+                maximum,
+            } => {
+                write!(
+                    f,
+                    "Resource budget exceeded for {resource}: requested {}; configured limit {}",
+                    resource.quantity(requested),
+                    resource.quantity(maximum)
+                )?;
+                if resource == ResourceKind::MemoryBytes {
+                    f.write_str(". This is a work estimate, not measured RAM usage")?;
+                }
+                Ok(())
+            }
+            Self::Busy {
+                resource,
+                requested,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Resource budget unavailable for {resource}: requested {}; currently available {}",
+                    resource.quantity(requested),
+                    resource.quantity(available)
+                )
+            }
+        }
+    }
 }
 #[derive(Debug, Clone, Copy)]
 pub struct ResourceStatus {
@@ -117,6 +175,7 @@ impl ResourceGovernor {
             if *value > state.limits[index] {
                 return Err(AdmissionError::TooLarge {
                     resource: KINDS[index],
+                    requested: *value,
                     maximum: state.limits[index],
                 });
             }
@@ -126,6 +185,7 @@ impl ResourceGovernor {
             if *value > available {
                 return Err(AdmissionError::Busy {
                     resource: KINDS[index],
+                    requested: *value,
                     available,
                 });
             }

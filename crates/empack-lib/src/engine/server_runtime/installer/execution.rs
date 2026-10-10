@@ -160,7 +160,10 @@ impl InstallerServerPlan {
             })
             .await
             .context("Installer verification worker panicked")?
-        })?;
+        });
+        let worker = worker.context(
+            "Cannot start the Forge/NeoForge installer; its Java process has not been launched",
+        )?;
         let (mut prepared, mut permit) = scope
             .accept(worker.wait().await?)?
             .transpose()?

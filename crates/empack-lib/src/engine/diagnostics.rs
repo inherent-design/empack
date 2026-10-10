@@ -68,6 +68,38 @@ impl Diagnostic {
         if let Some(value) = error.downcast_ref::<Self>() {
             return value.clone();
         }
+        // Runtime admission keeps its typed cause even through the transparent runtime wrapper.
+        let admission = error
+            .downcast_ref::<super::resources::AdmissionError>()
+            .or_else(
+                || match error.downcast_ref::<super::runtime::RuntimeError>() {
+                    Some(super::runtime::RuntimeError::Admission(cause)) => Some(cause),
+                    _ => None,
+                },
+            );
+        if let Some(admission) = admission {
+            use super::resources::AdmissionError;
+            let mut diagnostic = Self::new(ResourceAdmission, phase);
+            let values = match *admission {
+                AdmissionError::TooLarge {
+                    resource,
+                    requested,
+                    maximum,
+                } => Some((resource, requested, maximum)),
+                AdmissionError::Busy {
+                    resource,
+                    requested,
+                    available,
+                } => Some((resource, requested, available)),
+                _ => None,
+            };
+            if let Some((resource, requested, capacity)) = values {
+                diagnostic.object = Some(resource.to_string());
+                diagnostic.expected = Some(resource.quantity(capacity));
+                diagnostic.observed = Some(resource.quantity(requested));
+            }
+            return diagnostic;
+        }
         let code = if error.is::<crate::application::process_runtime::Interrupted>() {
             Interrupted
         } else if let Some(digest) = error.downcast_ref::<empack_core::digest::DigestError>() {
@@ -76,8 +108,6 @@ impl Diagnostic {
             } else {
                 InvalidDigest
             }
-        } else if error.is::<super::resources::AdmissionError>() {
-            ResourceAdmission
         } else if error.is::<super::acquisition::TransferError>() {
             AcquisitionFailed
         } else if error.is::<super::publication::RecoveryRequired>() {
@@ -142,6 +172,51 @@ impl super::api::ExecutionOutcome {
 mod tests {
     use super::*;
     use crate::engine::api::ExecutionOutcome;
+    #[test]
+    fn admission_diagnostics_survive_runtime_and_context_wrappers() {
+        use crate::engine::{
+            resources::{AdmissionError, ResourceKind},
+            runtime::RuntimeError,
+        };
+        for wrapped in [false, true] {
+            for busy in [false, true] {
+                let error = if busy {
+                    AdmissionError::Busy {
+                        resource: ResourceKind::MemoryBytes,
+                        requested: 1152 << 20,
+                        available: 512 << 20,
+                    }
+                } else {
+                    AdmissionError::TooLarge {
+                        resource: ResourceKind::MemoryBytes,
+                        requested: 1152 << 20,
+                        maximum: 512 << 20,
+                    }
+                };
+                let cause = if wrapped {
+                    anyhow::Error::new(RuntimeError::Admission(error))
+                } else {
+                    anyhow::Error::new(error)
+                }
+                .context("Cannot start installer");
+                let outcome = ExecutionOutcome::FailedBeforePublication(cause);
+                let diagnostic = outcome.diagnostic().unwrap();
+                assert_eq!(diagnostic.code, DiagnosticCode::ResourceAdmission);
+                assert_eq!(diagnostic.phase, DiagnosticPhase::Execution);
+                assert_eq!(diagnostic.recovery, RecoveryClassification::NotPublished);
+                assert_eq!(diagnostic.object.as_deref(), Some("estimated memory"));
+                assert_eq!(
+                    diagnostic.expected.as_deref(),
+                    Some("512.0 MiB (536870912 bytes)")
+                );
+                assert_eq!(
+                    diagnostic.observed.as_deref(),
+                    Some("1152.0 MiB (1207959552 bytes)")
+                );
+            }
+        }
+    }
+
     #[test]
     fn classification_uses_causes_and_owned_outcome_not_message_text() {
         let error = anyhow::Error::new(empack_core::digest::DigestError::Mismatch(

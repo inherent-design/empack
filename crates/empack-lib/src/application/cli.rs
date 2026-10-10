@@ -123,7 +123,11 @@ pub struct InitArgs {
     pub dir: Option<String>,
 
     /// Force overwrite existing files
-    #[arg(short, long, help = "Force overwrite existing modpack files")]
+    #[arg(
+        short,
+        long,
+        help = "Replace existing managed project content after preparation succeeds"
+    )]
     pub force: bool,
 
     /// Mod loader (neoforge, fabric, forge, quilt, none)
@@ -220,10 +224,27 @@ pub struct InitArgs {
 
 /// Arguments for the `build` subcommand.
 #[derive(Args, Debug, Clone, Default)]
+#[command(after_help = "Targets:
+  mrpack       Importable modpack archive with download references
+  client       Lightweight client distribution with a Java bootstrap
+  server       Lightweight server distribution with a prepared runtime
+  client-full  Prism-compatible instance with pack content
+  server-full  Server distribution with runtime and pack content
+  all          Build all five targets
+
+Without TARGETS, use distribution.targets from empack.yml.
+Client-full leaves Minecraft and game-asset downloads to the launcher.
+Forge/NeoForge server targets run the selected Java installer during preparation.
+All requested targets are prepared and verified before publication.
+
+Examples:
+  empack build --dry-run all
+  empack build mrpack client-full
+  empack build --continue")]
 pub struct BuildArgs {
     /// Build targets to execute
     #[arg(
-        help = "Build targets: mrpack, client, server, client-full, server-full, all",
+        help = "Targets to build (default: distribution.targets in empack.yml)",
         conflicts_with = "continue_build"
     )]
     pub targets: Vec<String>,
@@ -231,16 +252,20 @@ pub struct BuildArgs {
     /// Continue a previously blocked restricted-mod build
     #[arg(
         long = "continue",
-        help = "Continue a pending restricted-mod build",
+        help = "Resume a saved build after supplying missing downloads",
         conflicts_with = "clean"
     )]
     pub continue_build: bool,
 
-    /// Clean before building
-    #[arg(short, long, help = "Clean build directories before building")]
+    /// Remove obsolete artifacts when the verified build is published
+    #[arg(
+        short,
+        long,
+        help = "Remove obsolete artifacts when the verified build is published"
+    )]
     pub clean: bool,
 
-    /// Archive format override (otherwise use the project preference)
+    /// Archive format override for distributions; mrpack always uses ZIP
     #[arg(long, value_enum, conflicts_with = "continue_build")]
     pub format: Option<CliArchiveFormat>,
 
@@ -295,7 +320,7 @@ pub enum Commands {
     /// Show version information
     Version,
 
-    /// Initialize modpack development environment
+    /// Create a project or import a modpack archive
     Init(InitArgs),
 
     /// Reconcile installed content with recorded intent and exact selections
@@ -337,7 +362,7 @@ pub enum Commands {
         selection: AdoptionSourceArgs,
     },
 
-    /// Build modpack targets
+    /// Build verified distribution archives
     Build(BuildArgs),
 
     /// Add projects to the modpack
@@ -346,7 +371,7 @@ pub enum Commands {
         #[arg(long)]
         continue_independent: bool,
         /// Mod names, URLs, or project IDs to add
-        #[arg(help = "Mod names, URLs, or project IDs")]
+        #[arg(help = "Names, provider URLs/IDs, HTTPS files, or local paths")]
         mods: Vec<String>,
 
         /// Update an existing selection of the same identity
@@ -390,7 +415,7 @@ pub enum Commands {
     #[command(alias = "rm")]
     Remove {
         /// Mod names to remove
-        #[arg(help = "Mod names to remove")]
+        #[arg(help = "Dependency keys, titles, or installed metadata names")]
         mods: Vec<String>,
 
         /// Remove dependencies as well
@@ -419,7 +444,7 @@ pub enum Commands {
         operation: Option<String>,
     },
 
-    /// Clean build directories
+    /// Remove generated builds, caches or saved continuation data
     Clean {
         /// What to clean
         #[arg(
@@ -431,8 +456,11 @@ pub enum Commands {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum CliRecoveryAction {
+    /// Show interrupted publication and available recovery actions
     Inspect,
+    /// Finish publishing the verified candidate
     Finish,
+    /// Restore changes owned by the interrupted operation
     Restore,
 }
 

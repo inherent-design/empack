@@ -38,9 +38,11 @@ Run the live normalized-runtime checks explicitly:
 
 ```bash
 mise run smoke:runtime
-# Exercise the CLI host budgets with all five NeoForge build targets (Java 21)
-cargo nextest run -p empack-lib --lib --all-features --run-ignored ignored-only -E 'test(cli_neoforge_build_all_targets_with_default_resource_budget)'
 ```
+
+The runtime smoke task first builds all five NeoForge targets through the CLI host
+using production resource budgets, then runs the engine-level runtime and launcher
+probes. The CLI case requires Java 21 on PATH.
 
 This suite requires public Mojang/Fabric/Quilt/Maven access and Java 21, selected
 through `JAVA_HOME` or `PATH`. Set `EMPACK_TEST_JAVA8_HOME` to a Java 8 installation
@@ -173,8 +175,8 @@ root. The harness supplies explicit optional and auxiliary-content choices, exer
 restricted-file `init --continue` with a read-only preview, checks two unchanged syncs,
 and inspects a full-client archive. This profile does not exercise server runtime
 installation, and its deliberately small fixtures do not establish large-pack
-coverage. Stage failures remain failures. The explicit CLI-host NeoForge test
-above builds all five targets using production resource defaults; engine-only
+coverage. Stage failures remain failures. The CLI-host NeoForge test in the runtime smoke
+task builds all five targets using production resource defaults; engine-only
 runtime probes use their own budgets and cannot establish CLI admission behavior.
 
 The offline driver contracts run with `python3 -m unittest discover -s scripts/tests`

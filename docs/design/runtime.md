@@ -23,7 +23,10 @@ sizes. Forge-family installers run with a 1,024 MiB Java heap and reserve anothe
 128 MiB for overhead. Their output capture is bounded separately from project
 capture: 1,024 entries, 2 GiB per file and 4 GiB in total. Installer work,
 retained project inputs and subsequent assembly must fit the shared budget;
-raising only the Java heap does not raise that budget.
+raising only the Java heap does not raise that budget. Admission failures report
+the requested quantity and configured or currently available capacity, with byte
+units made explicit. Runtime wrappers preserve the resource-admission diagnostic
+code and its expected/observed quantities.
 
 After a parser retires, its retained result may release unused allowance based on the
 observed manifest size and entry count. This transfer can only shrink the reservation.

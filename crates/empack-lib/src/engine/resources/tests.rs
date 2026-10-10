@@ -146,3 +146,53 @@ fn concurrent_close_and_admission_never_admit_after_closed_state() {
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+#[test]
+fn admission_failures_report_requested_capacity_without_charging_it() {
+    let governor = ResourceGovernor::new(ResourceRequest {
+        memory_bytes: 512 << 20,
+        open_files: 16,
+        ..Default::default()
+    });
+    let error = governor
+        .try_admit(ResourceRequest {
+            memory_bytes: 1152 << 20,
+            ..Default::default()
+        })
+        .err()
+        .unwrap();
+    assert!(matches!(error, AdmissionError::TooLarge {
+        resource: ResourceKind::MemoryBytes,
+        requested,
+        maximum,
+    } if requested == 1152 << 20 && maximum == 512 << 20));
+    let message = error.to_string();
+    assert!(message.contains("1152.0 MiB"));
+    assert!(message.contains("512.0 MiB"));
+    assert!(message.contains("not measured RAM usage"));
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+
+    let held = governor
+        .try_admit(ResourceRequest {
+            open_files: 12,
+            ..Default::default()
+        })
+        .unwrap();
+    let error = governor
+        .try_admit(ResourceRequest {
+            open_files: 8,
+            ..Default::default()
+        })
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        AdmissionError::Busy {
+            resource: ResourceKind::OpenFiles,
+            requested: 8,
+            available: 4,
+        }
+    ));
+    assert!(error.to_string().contains("file reservations"));
+    assert_eq!(governor.status().reserved, held.reserved());
+}
