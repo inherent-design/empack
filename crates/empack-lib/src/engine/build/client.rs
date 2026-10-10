@@ -19,8 +19,8 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{
-    distribution::Delivery,
     distribution::Recipe,
+    distribution::{Consumer, Delivery, UpdateAuthority},
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent, LoaderKind, RuntimeResolution},
@@ -216,7 +216,14 @@ pub(super) fn prepare_client_full_archive(
     options: &ClientOptions,
     cancel: &Cancellation,
 ) -> Result<ClientCandidate> {
-    prepare_client_archive(workspace, artifact, external, options, false, cancel)
+    prepare_client_archive(
+        workspace,
+        artifact,
+        external,
+        options,
+        Recipe::PRISM_BUNDLED,
+        cancel,
+    )
 }
 /// Prepare a Prism reference distribution with an exact native release.
 pub fn prepare_client_build(
@@ -226,7 +233,14 @@ pub fn prepare_client_build(
     options: &ClientOptions,
     cancel: &Cancellation,
 ) -> Result<PreparedClientBuild> {
-    let built = prepare_client_archive(&workspace, artifact, external, options, true, cancel)?;
+    let built = prepare_client_archive(
+        &workspace,
+        artifact,
+        external,
+        options,
+        Recipe::PRISM_REFERENCES,
+        cancel,
+    )?;
     let publication = super::prepare_archives_publication(
         workspace,
         vec![built.archive],
@@ -245,7 +259,7 @@ pub(super) fn prepare_client_archive(
     artifact: PortableRelPath,
     external: &BuildAcquisitions,
     options: &ClientOptions,
-    references: bool,
+    target: Recipe,
     cancel: &Cancellation,
 ) -> Result<ClientCandidate> {
     let suffix = match options.archive {
@@ -257,11 +271,12 @@ pub(super) fn prepare_client_archive(
         artifact.as_str().ends_with(suffix),
         "Client artifact extension differs from selected format"
     );
-    let target = if references {
-        Recipe::PRISM_REFERENCES
-    } else {
-        Recipe::PRISM_BUNDLED
-    };
+    ensure!(
+        target.consumer() == Consumer::Prism
+            && target.update_authority() == UpdateAuthority::Snapshot,
+        "Prism adapter requires an executable consumer recipe"
+    );
+    let references = target.delivery() == Delivery::References;
     let game = if references {
         prepare_native_game_content(
             workspace,

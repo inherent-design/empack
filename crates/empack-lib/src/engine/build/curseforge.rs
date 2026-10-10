@@ -358,6 +358,7 @@ mod tests {
     }
     fn request(conversion: OptionalConversion) -> DistributionRequest {
         DistributionRequest::CurseForge {
+            recipe: Recipe::CURSEFORGE,
             artifact: path("curseforge.zip"),
             options: CurseForgeOptions {
                 optional: OptionalPolicy::Preserve,
@@ -815,7 +816,8 @@ mod tests {
             workspace,
             NonEmpty::new(vec![
                 request(OptionalConversion::RejectMetadataLoss),
-                DistributionRequest::ServerFull {
+                DistributionRequest::Server {
+                    recipe: Recipe::SERVER_BUNDLED,
                     artifact: path("server.zip"),
                     options: ServerOptions {
                         archive: DistributionArchive::Zip,
@@ -824,7 +826,7 @@ mod tests {
                         evidence: SourceEvidencePolicy::Compatibility,
                         limits: ArchiveLimits::default(),
                     },
-                    runtime: prepared_fixture(),
+                    runtime: Box::new(prepared_fixture()),
                 },
             ])
             .unwrap(),

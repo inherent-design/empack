@@ -92,7 +92,8 @@ fn requests() -> NonEmpty<DistributionRequest> {
             optional: OptionalConversion::RejectMetadataLoss,
             evidence: SourceEvidencePolicy::Compatibility,
         },
-        DistributionRequest::ClientFull {
+        DistributionRequest::Prism {
+            recipe: Recipe::PRISM_BUNDLED,
             artifact: path("client.zip"),
             options: ClientOptions {
                 archive: DistributionArchive::Zip,
@@ -241,7 +242,8 @@ fn native_client_joins_requested_publication_without_installer_tools() {
             optional: OptionalConversion::RejectMetadataLoss,
             evidence: SourceEvidencePolicy::Compatibility,
         },
-        DistributionRequest::Client {
+        DistributionRequest::Prism {
+            recipe: Recipe::PRISM_REFERENCES,
             artifact: path("client.zip"),
             options: ClientOptions {
                 archive: DistributionArchive::Zip,
@@ -298,7 +300,8 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
     };
     let requests = || {
         NonEmpty::new(vec![
-            DistributionRequest::ClientFull {
+            DistributionRequest::Prism {
+                recipe: Recipe::PRISM_BUNDLED,
                 artifact: path("client.zip"),
                 options: ClientOptions {
                     archive: DistributionArchive::Zip,
@@ -308,7 +311,8 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
                     limits: ArchiveLimits::default(),
                 },
             },
-            DistributionRequest::ServerFull {
+            DistributionRequest::Server {
+                recipe: Recipe::SERVER_BUNDLED,
                 artifact: path("server.zip"),
                 options: server::ServerOptions {
                     archive: DistributionArchive::Zip,
@@ -317,7 +321,7 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
                     evidence: SourceEvidencePolicy::Compatibility,
                     limits: ArchiveLimits::default(),
                 },
-                runtime: prepared_fixture(),
+                runtime: Box::new(prepared_fixture()),
             },
         ])
         .unwrap()
@@ -519,4 +523,42 @@ fn native_and_platform_exports_share_publication_and_preserve_prior_outputs_on_f
             .iter()
             .all(|file| file.asset.is_some())
     );
+}
+
+#[test]
+fn recipe_identity_cannot_be_reinterpreted_by_another_adapter() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let acquired = fixture(root.path());
+    for recipe in [
+        Recipe::MODRINTH,
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        let request = DistributionRequest::Prism {
+            recipe,
+            artifact: path("client.zip"),
+            options: ClientOptions {
+                archive: DistributionArchive::Zip,
+                optional: OptionalPolicy::Preserve,
+                templates: TemplateOptions::default(),
+                evidence: SourceEvidencePolicy::Compatibility,
+                limits: ArchiveLimits::default(),
+            },
+        };
+        assert!(
+            prepare_build_batch(
+                capture(root.path(), host.path()),
+                NonEmpty::new(vec![request]).unwrap(),
+                &acquired,
+                &Cancellation::default()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/client.zip")).unwrap(),
+            b"old client"
+        );
+    }
 }

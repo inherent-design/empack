@@ -225,6 +225,7 @@ async fn execute(
             };
             requests.push(match output.target {
                 Recipe::CURSEFORGE => DistributionRequest::CurseForge {
+                    recipe: Recipe::CURSEFORGE,
                     artifact,
                     options: crate::engine::build::curseforge::CurseForgeOptions {
                         optional: request.optional.clone(),
@@ -248,30 +249,25 @@ async fn execute(
                     optional: request.mrpack_optional,
                     evidence,
                 },
-                Recipe::PRISM_BUNDLED => DistributionRequest::ClientFull {
-                    artifact,
-                    options: client_options(),
-                },
-                Recipe::PRISM_REFERENCES => DistributionRequest::Client {
-                    artifact,
-                    options: client_options(),
-                },
-                Recipe::SERVER_BUNDLED => DistributionRequest::ServerFull {
-                    artifact,
-                    options: server_options(),
-                    runtime: runtime
-                        .as_ref()
-                        .context("Missing prepared server runtime")?
-                        .clone(),
-                },
-                Recipe::SERVER_REFERENCES => DistributionRequest::Server {
-                    artifact,
-                    options: server_options(),
-                    runtime: runtime
-                        .as_ref()
-                        .context("Missing prepared server runtime")?
-                        .clone(),
-                },
+                recipe @ (Recipe::PRISM_BUNDLED | Recipe::PRISM_REFERENCES) => {
+                    DistributionRequest::Prism {
+                        recipe,
+                        artifact,
+                        options: client_options(),
+                    }
+                }
+                recipe @ (Recipe::SERVER_BUNDLED | Recipe::SERVER_REFERENCES) => {
+                    DistributionRequest::Server {
+                        recipe,
+                        artifact,
+                        options: server_options(),
+                        runtime: runtime
+                            .as_ref()
+                            .context("Missing prepared server runtime")?
+                            .clone()
+                            .into(),
+                    }
+                }
                 _ => anyhow::bail!("Consumer recipe has no prepared adapter"),
             });
         }

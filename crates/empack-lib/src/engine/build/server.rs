@@ -84,7 +84,17 @@ pub fn prepare_server_build(
     cancel: &Cancellation,
 ) -> Result<PreparedServerBuild> {
     let (archive, candidate) = prepare_server_archive(
-        &workspace, artifact, external, options, runtime, references, cancel,
+        &workspace,
+        artifact,
+        external,
+        options,
+        runtime,
+        if references {
+            Recipe::SERVER_REFERENCES
+        } else {
+            Recipe::SERVER_BUNDLED
+        },
+        cancel,
     )?;
     let publication = super::prepare_archives_publication(
         workspace,
@@ -210,7 +220,7 @@ pub(super) fn prepare_server_archive(
     external: &BuildAcquisitions,
     options: &ServerOptions,
     runtime: &PreparedServerRuntime,
-    references: bool,
+    target: Recipe,
     cancel: &Cancellation,
 ) -> Result<(super::ArchiveCandidate, ServerEvidence)> {
     ensure!(
@@ -245,11 +255,12 @@ pub(super) fn prepare_server_archive(
         artifact.as_str().ends_with(suffix),
         "Server artifact extension differs from selected format"
     );
-    let target = if references {
-        Recipe::SERVER_REFERENCES
-    } else {
-        Recipe::SERVER_BUNDLED
-    };
+    ensure!(
+        target.consumer() == empack_core::distribution::Consumer::Server
+            && target.update_authority() == empack_core::distribution::UpdateAuthority::Snapshot,
+        "Server adapter requires an executable consumer recipe"
+    );
+    let references = target.delivery() == empack_core::distribution::Delivery::References;
     let game = if references {
         prepare_native_game_content(
             workspace,

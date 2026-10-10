@@ -1,7 +1,7 @@
 //! AllRequested publication across independently verified distribution candidates.
 use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
-    client::{ClientOptions, prepare_client_archive, prepare_client_full_archive},
+    client::{ClientOptions, prepare_client_archive},
     prepare_archives_publication, prepare_mrpack_recipe,
     server::{ServerOptions, prepare_server_archive},
 };
@@ -14,7 +14,10 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use empack_core::{
-    distribution::Recipe, files::ManagedPath, inventory::BuildInventory, model::NonEmpty,
+    distribution::{Consumer, Recipe, UpdateAuthority},
+    files::ManagedPath,
+    inventory::BuildInventory,
+    model::NonEmpty,
     path::PortableRelPath,
 };
 
@@ -29,6 +32,7 @@ pub enum DistributionRequest {
         limits: crate::engine::artifacts::ArchiveLimits,
     },
     CurseForge {
+        recipe: Recipe,
         artifact: PortableRelPath,
         options: super::curseforge::CurseForgeOptions,
     },
@@ -38,23 +42,16 @@ pub enum DistributionRequest {
         optional: OptionalConversion,
         evidence: SourceEvidencePolicy,
     },
-    Client {
+    Prism {
+        recipe: Recipe,
         artifact: PortableRelPath,
         options: ClientOptions,
     },
     Server {
+        recipe: Recipe,
         artifact: PortableRelPath,
         options: ServerOptions,
-        runtime: crate::engine::server_runtime::PreparedServerRuntime,
-    },
-    ServerFull {
-        artifact: PortableRelPath,
-        options: ServerOptions,
-        runtime: crate::engine::server_runtime::PreparedServerRuntime,
-    },
-    ClientFull {
-        artifact: PortableRelPath,
-        options: ClientOptions,
+        runtime: Box<crate::engine::server_runtime::PreparedServerRuntime>,
     },
 }
 impl DistributionRequest {
@@ -63,24 +60,40 @@ impl DistributionRequest {
             Self::Native { artifact, .. }
             | Self::CurseForge { artifact, .. }
             | Self::Mrpack { artifact, .. }
-            | Self::Client { artifact, .. }
-            | Self::ClientFull { artifact, .. }
-            | Self::Server { artifact, .. }
-            | Self::ServerFull { artifact, .. } => artifact,
+            | Self::Prism { artifact, .. }
+            | Self::Server { artifact, .. } => artifact,
         }
     }
     fn target(&self) -> Recipe {
         match self {
-            Self::Native { recipe, .. } => *recipe,
-            Self::CurseForge { .. } => Recipe::CURSEFORGE,
-            Self::Mrpack { recipe, .. } => *recipe,
-            Self::Client { .. } => Recipe::PRISM_REFERENCES,
-            Self::ClientFull { .. } => Recipe::PRISM_BUNDLED,
-            Self::Server { .. } => Recipe::SERVER_REFERENCES,
-            Self::ServerFull { .. } => Recipe::SERVER_BUNDLED,
+            Self::Native { recipe, .. }
+            | Self::CurseForge { recipe, .. }
+            | Self::Mrpack { recipe, .. }
+            | Self::Prism { recipe, .. }
+            | Self::Server { recipe, .. } => *recipe,
         }
     }
+    fn validate(&self) -> Result<()> {
+        let recipe = self.target();
+        let expected = match self {
+            Self::Native { .. } => Consumer::Empack,
+            Self::CurseForge { .. } => Consumer::CurseForge,
+            Self::Mrpack { .. } => Consumer::Modrinth,
+            Self::Prism { .. } => Consumer::Prism,
+            Self::Server { .. } => Consumer::Server,
+        };
+        ensure!(
+            recipe.consumer() == expected,
+            "Recipe belongs to another consumer adapter"
+        );
+        ensure!(
+            recipe.update_authority() == UpdateAuthority::Snapshot,
+            "Consumer update authority requires a bound association or subscription"
+        );
+        Ok(())
+    }
 }
+
 pub struct BuiltDistribution {
     /// Exact portable payload identity; archive hashes are a separate namespace.
     pub native_release: Option<String>,
@@ -150,6 +163,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
 ) -> Result<PreparedBuildBatch> {
     let mut collisions = CollisionIndex::default();
     for request in requests.as_slice() {
+        request.validate()?;
         collisions.insert_file(request.artifact())?;
     }
     observed_artifacts_for(
@@ -182,15 +196,15 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 },
                 cancel,
             )?,
-            DistributionRequest::CurseForge { artifact, options } => {
-                super::curseforge::prepare_archive(
-                    &workspace,
-                    artifact.clone(),
-                    external,
-                    options,
-                    cancel,
-                )?
-            }
+            DistributionRequest::CurseForge {
+                artifact, options, ..
+            } => super::curseforge::prepare_archive(
+                &workspace,
+                artifact.clone(),
+                external,
+                options,
+                cancel,
+            )?,
             DistributionRequest::Mrpack {
                 recipe,
                 artifact,
@@ -228,25 +242,19 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     evidence,
                 )
             }
-            DistributionRequest::ServerFull {
+            DistributionRequest::Server {
+                recipe,
                 artifact,
                 options,
                 runtime,
-            }
-            | DistributionRequest::Server {
-                artifact,
-                options,
-                runtime,
-                ..
             } => {
-                let references = matches!(request, DistributionRequest::Server { .. });
                 let (archive, built) = prepare_server_archive(
                     &workspace,
                     artifact.clone(),
                     external,
                     options,
                     runtime,
-                    references,
+                    *recipe,
                     cancel,
                 )?;
                 let evidence = BuiltDistribution {
@@ -264,28 +272,19 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 };
                 (archive, evidence)
             }
-            DistributionRequest::ClientFull { artifact, options }
-            | DistributionRequest::Client {
-                artifact, options, ..
+            DistributionRequest::Prism {
+                recipe,
+                artifact,
+                options,
             } => {
-                let built = if let DistributionRequest::Client { .. } = request {
-                    prepare_client_archive(
-                        &workspace,
-                        artifact.clone(),
-                        external,
-                        options,
-                        true,
-                        cancel,
-                    )?
-                } else {
-                    prepare_client_full_archive(
-                        &workspace,
-                        artifact.clone(),
-                        external,
-                        options,
-                        cancel,
-                    )?
-                };
+                let built = prepare_client_archive(
+                    &workspace,
+                    artifact.clone(),
+                    external,
+                    options,
+                    *recipe,
+                    cancel,
+                )?;
                 let evidence = BuiltDistribution {
                     native_release: None,
                     modrinth_hosting: None,
