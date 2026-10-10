@@ -417,10 +417,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
 #[tokio::test]
 async fn native_export_to_install_preserves_layers_and_uses_author_source_policy() {
     use crate::{application::cli::InstanceCommand, engine::release::DecodedRelease};
-    use empack_core::{
-        distribution::Delivery,
-        model::{NativeDistributionIntent, ResolvedProject},
-    };
+    use empack_core::model::{NativeDistributionIntent, ResolvedProject};
     let root = tempfile::tempdir().unwrap();
     let selected = session(root.path(), true, false);
     let mod_bytes = jar(root.path());
@@ -435,7 +432,6 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     intent.distribution.native = Some(NativeDistributionIntent {
         pack_id: "native-dispatch".into(),
         java_major: 21,
-        delivery: Delivery::Bundled,
         policies: Default::default(),
     });
     intent.source_excludes = vec![
@@ -474,6 +470,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     }
     let build = Commands::Build(BuildArgs {
         targets: vec!["empack".into()],
+        delivery: Some("bundled".into()),
         ..Default::default()
     });
     let before = snapshot(root.path());
@@ -487,7 +484,11 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     let export = root.path().join("export");
     fs::create_dir(&export).unwrap();
     let mut archive = zip::ZipArchive::new(
-        fs::File::open(root.path().join("project/dist/release.empack")).unwrap(),
+        fs::File::open(
+            root.path()
+                .join("project/dist/Native Pack-1-empack-bundled.empack"),
+        )
+        .unwrap(),
     )
     .unwrap();
     archive.extract(&export).unwrap();

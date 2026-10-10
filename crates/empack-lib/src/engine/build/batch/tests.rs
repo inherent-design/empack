@@ -25,7 +25,6 @@ fn fixture(root: &Path) -> BuildAcquisitions {
     intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
         pack_id: "test.pack".into(),
         java_major: 21,
-        delivery: empack_core::distribution::Delivery::References,
         policies: std::collections::BTreeMap::new(),
     });
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
@@ -419,4 +418,101 @@ fn interrupted_clean_build_finishes_or_restores_the_same_publication() {
         }
         assert!(!publisher.recovery_required(&prepared.root).unwrap());
     }
+}
+
+#[test]
+fn native_and_platform_exports_share_publication_and_preserve_prior_outputs_on_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let external = fixture(root.path());
+    fs::write(root.path().join("dist/native.empack"), b"prior native").unwrap();
+    let cancel = Cancellation::default();
+    let capture = || {
+        ProjectReader::new(RecoveryReader::new(host.path().join("state")))
+            .capture_build(
+                root.path(),
+                &[path("pack.mrpack"), path("native.empack")],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap()
+    };
+    let requests = || {
+        NonEmpty::new(vec![
+            DistributionRequest::Mrpack {
+                artifact: path("pack.mrpack"),
+                optional: OptionalConversion::RejectMetadataLoss,
+                evidence: SourceEvidencePolicy::Compatibility,
+            },
+            DistributionRequest::Native {
+                artifact: path("native.empack"),
+                recipe: Recipe::EMPACK_BUNDLED,
+                archive: DistributionArchive::Zip,
+                evidence: SourceEvidencePolicy::Compatibility,
+                limits: ArchiveLimits::default(),
+            },
+        ])
+        .unwrap()
+    };
+    assert!(
+        prepare_build_batch(
+            capture(),
+            requests(),
+            &BuildAcquisitions::default(),
+            &cancel
+        )
+        .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("dist/pack.mrpack")).unwrap(),
+        b"old mrpack"
+    );
+    assert_eq!(
+        fs::read(root.path().join("dist/native.empack")).unwrap(),
+        b"prior native"
+    );
+    let batch = prepare_build_batch(capture(), requests(), &external, &cancel).unwrap();
+    let release_id = batch.artifacts()[1].native_release.clone().unwrap();
+    assert_eq!(
+        batch.artifacts()[1].content.target(),
+        Recipe::EMPACK_BUNDLED
+    );
+    assert_eq!(
+        batch.artifacts()[1]
+            .content
+            .entries()
+            .iter()
+            .map(|file| file.destination.relative().as_str())
+            .collect::<Vec<_>>(),
+        [
+            "resourcepacks/a.zip",
+            "resourcepacks/b.zip",
+            "resourcepacks/copy.zip"
+        ]
+    );
+    assert_eq!(
+        fs::read(root.path().join("dist/native.empack")).unwrap(),
+        b"prior native"
+    );
+    batch
+        .publish(
+            &Publisher::open(&host.path().join("state")).unwrap(),
+            &cancel,
+        )
+        .unwrap();
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist/native.empack")).unwrap())
+            .unwrap();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes).unwrap();
+    let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+    assert_eq!(release.id(), release_id);
+    assert_eq!(release.document().files.len(), 3);
+    assert!(
+        release
+            .document()
+            .files
+            .iter()
+            .all(|file| file.asset.is_some())
+    );
 }

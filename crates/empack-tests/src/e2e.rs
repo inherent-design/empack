@@ -188,10 +188,7 @@ impl TestProject {
 
     /// Supply explicit publisher/runtime policy for native-consumer fixtures.
     pub fn configure_native_distribution(&self, pack_id: &str, java_major: u16) {
-        use empack_core::{
-            distribution::Delivery,
-            model::{NativeDistributionIntent, ResolvedProject},
-        };
+        use empack_core::model::{NativeDistributionIntent, ResolvedProject};
         use empack_lib::engine::documents::DocumentCodec;
         let manifest = self.root.join("empack.yml");
         let lock_path = self.root.join("empack.lock");
@@ -205,7 +202,6 @@ impl TestProject {
         intent.distribution.native = Some(NativeDistributionIntent {
             pack_id: pack_id.into(),
             java_major,
-            delivery: Delivery::References,
             policies: Default::default(),
         });
         let bytes = DocumentCodec.encode_intent(&intent).unwrap();

@@ -12,8 +12,9 @@ use crate::{
     },
 };
 use empack_core::{
-    distribution::Delivery,
+    distribution::{Delivery, Recipe},
     identity::{PinSelector, ProviderProjectId},
+    inventory::{BuildInventory, ContentOwner, InventoryInput, OptionalPolicy, Representation},
     model::{
         AcquisitionSpec, ContentKind, ContentLayer, DistributionArchive, ExpectedContent,
         LoaderKind, ResolvedPin, ResolvedProject,
@@ -43,7 +44,7 @@ impl NativeReleaseOptions {
             pack: native.pack_id.clone(),
             minimum_engine: ">=0.6.0-beta".into(),
             java_major: native.java_major,
-            delivery: native.delivery,
+            delivery: Delivery::References,
             policies: native
                 .policies
                 .iter()
@@ -62,11 +63,15 @@ impl NativeReleaseOptions {
 }
 /// Verified immutable assets remain leased through writing and independent archive verification.
 pub struct NativeReleasePlan {
+    inventory: BuildInventory,
     release: DecodedRelease,
     assets: BTreeMap<PortableRelPath, AcquiredBuildFile>,
     expected: BTreeMap<PortableRelPath, FileContent>,
 }
 impl NativeReleasePlan {
+    pub fn inventory(&self) -> &BuildInventory {
+        &self.inventory
+    }
     pub fn release(&self) -> &DecodedRelease {
         &self.release
     }
@@ -83,6 +88,7 @@ impl NativeReleasePlan {
         sources: Vec<SourceFile>,
         options: NativeReleaseOptions,
     ) -> Result<Self> {
+        let mut inputs = Vec::new();
         let mut files = Vec::new();
         let mut choices = BTreeMap::new();
         let mut assets = BTreeMap::new();
@@ -101,6 +107,18 @@ impl NativeReleasePlan {
                     )
                 })?;
                 used.insert(logical);
+                for placement in file.placements.as_slice() {
+                    inputs.push(InventoryInput {
+                        owner: ContentOwner::Dependency {
+                            key: key.clone(),
+                            slot: file.slot.clone(),
+                        },
+                        destination: placement.destination.clone(),
+                        layer: placement.layer,
+                        requirements: placement.requirements.clone(),
+                        representation: observed(supplied),
+                    });
+                }
                 check_expected(supplied, &file.expected)?;
                 let assertions =
                     assertions(&file.expected, file.provenance.declared_digests.as_ref())?;
@@ -160,6 +178,17 @@ impl NativeReleasePlan {
             "Native release contains an unrelated acquisition"
         );
         for source in sources {
+            inputs.push(InventoryInput {
+                owner: ContentOwner::Source(source.label.clone()),
+                destination: source.destination.clone(),
+                layer: source.layer,
+                requirements: source.requirements.clone(),
+                representation: Representation::Embedded {
+                    content: source.content.lease().id(),
+                    bytes: source.content.lease().len(),
+                    permissions: source.permissions,
+                },
+            });
             let destination = source.destination.relative();
             let policy = policy(&options, destination, ContentKind::OtherFile)?;
             let address = hex_address(source.content.lease().id().bytes());
@@ -191,7 +220,13 @@ impl NativeReleasePlan {
                 asset: None,
             });
         }
-        Self::finish(project, files, assets, choices, options)
+        let recipe = if options.delivery == Delivery::Bundled {
+            Recipe::EMPACK_BUNDLED
+        } else {
+            Recipe::EMPACK_REFERENCES
+        };
+        let inventory = BuildInventory::project(&inputs, recipe, &OptionalPolicy::Preserve)?;
+        Self::finish(project, files, assets, choices, options, inventory)
     }
     /// Project one consumer's verified game inventory without acquiring excluded files.
     /// The original lock still supplies provider identity and source assertions.
@@ -311,7 +346,7 @@ impl NativeReleasePlan {
                 source,
             });
         }
-        Self::finish(project, files, assets, choices, options)
+        Self::finish(project, files, assets, choices, options, inventory.clone())
     }
     fn finish(
         project: &ResolvedProject,
@@ -319,6 +354,7 @@ impl NativeReleasePlan {
         assets: BTreeMap<PortableRelPath, AcquiredBuildFile>,
         choices: BTreeMap<String, ReleaseChoice>,
         options: NativeReleaseOptions,
+        inventory: BuildInventory,
     ) -> Result<Self> {
         // Reapply stable-locator and strict semantic checks to programmatically supplied models.
         DocumentCodec.encode_lock(project)?;
@@ -404,6 +440,7 @@ impl NativeReleasePlan {
             },
         );
         Ok(Self {
+            inventory,
             release,
             assets,
             expected,
@@ -472,120 +509,6 @@ impl NativeReleasePlan {
         )
     }
 }
-/// Capture author-owned bytes without observing any external package-manager metadata.
-pub(in crate::engine) fn capture(
-    workspace: &crate::engine::project::WorkspaceSnapshot,
-    cancel: &Cancellation,
-) -> Result<NativeReleasePlan> {
-    use crate::engine::{
-        content::{ContentPool, SourceEvidencePolicy},
-        layout::ProjectLayout,
-        snapshot::Observation,
-    };
-    use empack_core::files::ManagedPath;
-    let project = workspace.require_resolved()?;
-    let options = NativeReleaseOptions::from_project(&project)?;
-    let maximum = workspace
-        .observations()
-        .entries()
-        .values()
-        .try_fold(0u64, |sum, entry| {
-            sum.checked_add(match entry {
-                Observation::File(file) => file.bytes,
-                _ => 0,
-            })
-            .context("Captured release input size overflow")
-        })?;
-    let mut pool = ContentPool::new(maximum)?;
-    let mut occupied = BTreeSet::new();
-    let mut acquired = BTreeMap::new();
-    for (key, dep) in &project.lock().dependencies {
-        for file in dep.files.as_slice() {
-            cancel.check()?;
-            let mut paths = BTreeSet::new();
-            match &file.acquisition {
-                AcquisitionSpec::Local(path) => {
-                    occupied.insert(path.clone());
-                    paths.insert(path.clone());
-                }
-                AcquisitionSpec::Embedded { archive, .. } => {
-                    occupied.insert(archive.clone());
-                }
-                _ => {}
-            }
-            for placement in file.placements.as_slice() {
-                let path = ProjectLayout::path(&ManagedPath::Content {
-                    layer: placement.layer,
-                    path: placement.destination.relative().clone(),
-                })?;
-                occupied.insert(path.clone());
-                paths.insert(path);
-            }
-            let mut selected: Option<AcquiredBuildFile> = None;
-            for path in paths {
-                match workspace.observations().entries().get(&path) {
-                    Some(Observation::File(_)) => {
-                        let (content, permissions) = workspace.acquire_file(
-                            &path,
-                            Some(&file.expected),
-                            SourceEvidencePolicy::Compatibility,
-                            cancel,
-                        )?;
-                        let content = pool.insert(content, cancel)?;
-                        if let Some(old) = &selected {
-                            ensure!(
-                                old.content.lease().id() == content.lease().id()
-                                    && old.permissions == permissions,
-                                "Native release placements disagree"
-                            );
-                        } else {
-                            selected = Some(AcquiredBuildFile {
-                                content,
-                                permissions,
-                            });
-                        }
-                    }
-                    Some(Observation::Absent) | None => {}
-                    _ => anyhow::bail!("Native release input is not a regular file"),
-                }
-            }
-            acquired.insert(LockedFileKey { dependency: key.clone(), slot: file.slot.clone() }, selected.with_context(|| format!("Native release needs exact materialized content for {}:{}; run sync --materialize or supply its declared local source", key.as_str(), file.slot.as_str()))?);
-        }
-    }
-    let mut sources = Vec::new();
-    for source in workspace.source_entries(cancel)? {
-        if occupied.contains(&source.path) {
-            continue;
-        }
-        let (content, permissions) = workspace.acquire_file(
-            &source.path,
-            None,
-            SourceEvidencePolicy::Compatibility,
-            cancel,
-        )?;
-        sources.push(SourceFile {
-            label: source.path.as_str().into(),
-            destination: source.destination,
-            layer: source.layer,
-            requirements: empack_core::requirements::Requirements {
-                client: if source.layer == ContentLayer::Server {
-                    Requirement::Unsupported
-                } else {
-                    Requirement::Required
-                },
-                server: if source.layer == ContentLayer::Client {
-                    Requirement::Unsupported
-                } else {
-                    Requirement::Required
-                },
-            },
-            content: pool.insert(content, cancel)?,
-            permissions,
-        });
-    }
-    NativeReleasePlan::prepare(&project, &acquired, sources, options)
-}
-
 fn hex_address(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -795,6 +718,14 @@ fn participation(
             }
         }
     })
+}
+
+fn observed(file: &AcquiredBuildFile) -> Representation {
+    Representation::Embedded {
+        content: file.content.lease().id(),
+        bytes: file.content.lease().len(),
+        permissions: file.permissions,
+    }
 }
 
 #[cfg(test)]

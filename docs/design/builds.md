@@ -69,6 +69,20 @@ identity or download authority. `sources.exclude` applies to every source layer;
 archives have no implicit exemption. Explicit locked sources and placements remain
 observation obligations even when a broad exclusion matches them.
 
+## Native release batches
+
+The empack consumer uses the shared build request and acquisition pipeline. Reference
+and bundled recipes may appear together with platform and launcher outputs. A native
+release establishes exact content addresses before publication; source assertions
+remain separately recorded. Missing restricted bytes use the same saved build request
+and verified association mechanism as other consumers.
+
+`distribution.native` contains stable pack identity, Java requirements and destination
+ownership policies. Delivery belongs to each recipe. Reference and bundled artifacts
+have distinct names and payload identities. A receipt reports the exact release JSON
+identity separately from the surrounding archive inventory. Optional choices remain
+in the release for installation; native-only builds reject materialization choices.
+
 ## Modrinth
 
 Write `modrinth.index.json`, exact SHA-1/SHA-512 assertions, sizes, HTTPS alternatives,

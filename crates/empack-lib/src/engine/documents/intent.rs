@@ -40,7 +40,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
         .get("native")
         .filter(|v| !v.is_null())
         .map(|native| -> Result<NativeDistributionIntent> {
-            fields(native, &["pack-id", "java-major", "delivery", "policies"])?;
+            fields(native, &["pack-id", "java-major", "policies"])?;
             let policies = native
                 .get("policies")
                 .map(|v| {
@@ -68,11 +68,6 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
                         .as_u64()
                         .context("Java major must be an integer")?,
                 )?,
-                delivery: match text(required(native, "delivery")?)? {
-                    "references" => empack_core::distribution::Delivery::References,
-                    "bundled" => empack_core::distribution::Delivery::Bundled,
-                    _ => bail!("Unknown native delivery policy"),
-                },
                 policies,
             })
         })
@@ -271,6 +266,6 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
         "dependencies":roots,
         "sources":{"exclude":intent.source_excludes},
         "layout":intent.layout.iter().map(|(k,v)| (kind_name(*k),v.as_str())).collect::<BTreeMap<_,_>>(),
-        "distribution":{"native":intent.distribution.native.as_ref().map(|native| json!({"pack-id":native.pack_id,"java-major":native.java_major,"delivery":match native.delivery {empack_core::distribution::Delivery::References=>"references",empack_core::distribution::Delivery::Bundled=>"bundled"},"policies":native.policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>() })),"recipes":intent.distribution.recipes.as_slice().iter().map(recipe::encode).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
+        "distribution":{"native":intent.distribution.native.as_ref().map(|native| json!({"pack-id":native.pack_id,"java-major":native.java_major,"policies":native.policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>() })),"recipes":intent.distribution.recipes.as_slice().iter().map(recipe::encode).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
         "extensions":intent.extensions.iter().map(|(k,v)| (k,extension_value(v))).collect::<BTreeMap<_,_>>()})
 }

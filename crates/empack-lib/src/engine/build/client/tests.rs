@@ -19,7 +19,6 @@ fn fixture(root: &Path) -> BuildAcquisitions {
     intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
         pack_id: "test.pack".into(),
         java_major: 21,
-        delivery: empack_core::distribution::Delivery::References,
         policies: BTreeMap::new(),
     });
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());

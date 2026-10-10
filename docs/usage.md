@@ -64,8 +64,8 @@ empack build server --delivery bundled --format tar.gz
 ```
 
 With no consumer arguments, build uses the complete `distribution.recipes` list.
-Explicit arguments start with snapshot policies: Modrinth/CurseForge references,
-bundled Prism/server content. `--delivery`, `--environment` and `--updates` override
+Explicit arguments start with snapshot policies: Modrinth/CurseForge/empack
+references and bundled Prism/server content. `--delivery`, `--environment` and `--updates` override
 the selected recipes. Invalid combinations fail before acquisition. Different
 policies for the same consumer belong in separate authored recipe objects.
 Continuation retains its saved recipes and rejects policy overrides.
@@ -108,7 +108,6 @@ distribution:
   native:
     pack-id: my-pack
     java-major: 21
-    delivery: bundled
     policies:
       config/server-defaults.toml: seed
 sources:
@@ -116,9 +115,11 @@ sources:
     - private/**
 ```
 
-`empack build empack` writes `dist/release.empack` using the configured archive
-format. It requires exact materialized dependencies and preserves optional choices
-for installation. Extract the archive, then select its `release.json` with
+`empack build empack --delivery bundled` writes
+`dist/<name>-<version>-empack-bundled.empack` using the configured archive format.
+Reference delivery uses an `empack-references` suffix. Native recipes share verified
+acquisition, missing-download continuation and combined publication with the other
+consumers. They preserve optional choices for installation. Extract the archive, then select its `release.json` with
 `instance install` and the payload SHA-256 printed by the build. The digest names
 the JSON payload, not the surrounding archive. Side selection applies the matching
 override layer. Local snapshot selection does not enroll a publisher.

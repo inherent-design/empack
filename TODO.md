@@ -49,7 +49,7 @@ readiness or replace executable evidence.
 - [x] Implement strict release/channel payload codecs and signed-envelope verification.
 - [x] Wire exact local snapshot content application through the engine and CLI.
 - [x] Wire retained-release inspection, exact repair and managed rollback.
-- [x] Export native snapshots from materialized author content, preserving original
+- [x] Export native snapshots through shared verified acquisition and batch publication, preserving original
   assertions, provider provenance, layers, choices and explicit source rules.
 - [ ] Define strict, independently versioned author, lock, release, channel and
   instance schemas. DTO parsing never constructs trusted or approved proof values.

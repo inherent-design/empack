@@ -677,7 +677,6 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
     intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
         pack_id: "budget.probe".into(),
         java_major: 21,
-        delivery: empack_core::distribution::Delivery::References,
         policies: BTreeMap::new(),
     });
     intent.distribution.recipes = NonEmpty::new(vec![

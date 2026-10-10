@@ -372,8 +372,6 @@ pub struct NativeDistributionIntent {
     pub pack_id: String,
     /// Explicit runtime requirement, verified by the selected runtime adapter before launch.
     pub java_major: u16,
-    /// Whether exact remote dependencies are referenced or bundled.
-    pub delivery: crate::distribution::Delivery,
     /// Exact destination ownership overrides; world content remains seed-only.
     pub policies: BTreeMap<PortableRelPath, crate::instance::FilePolicy>,
 }

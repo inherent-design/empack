@@ -754,7 +754,6 @@ fn native_publication_and_source_rules_are_strict_author_intent() {
     intent.distribution.native = Some(NativeDistributionIntent {
         pack_id: "stable.pack".into(),
         java_major: 17,
-        delivery: empack_core::distribution::Delivery::References,
         policies: std::collections::BTreeMap::from([(
             PortableRelPath::parse("config/options.txt", PathSyntax::ProjectContent).unwrap(),
             empack_core::instance::FilePolicy::Seed,

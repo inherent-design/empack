@@ -21,6 +21,7 @@ pub mod batch;
 pub mod client;
 pub mod curseforge;
 pub mod materialized;
+mod native;
 pub mod server;
 
 /// Acquisition is keyed by exact native dependency and file role.
@@ -307,9 +308,6 @@ pub(in crate::engine) struct PreparedArtifact {
     bytes: u64,
 }
 impl PreparedArtifact {
-    pub(in crate::engine) fn plan(&self) -> &empack_core::files::FilePlan {
-        self.change.plan()
-    }
     pub(in crate::engine) fn publish(
         self,
         publisher: &super::publication::Publisher,

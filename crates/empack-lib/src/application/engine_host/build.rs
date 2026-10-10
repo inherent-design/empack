@@ -296,6 +296,7 @@ fn request(
     for name in &args.targets {
         targets.push(match name.as_str() {
             "modrinth" => Recipe::MODRINTH,
+            "empack" => Recipe::EMPACK_REFERENCES,
             "curseforge" => Recipe::CURSEFORGE,
             "prism" => Recipe::PRISM_BUNDLED,
             "server" => Recipe::SERVER_BUNDLED,
@@ -356,6 +357,8 @@ fn request(
             let (suffix, extension) = match target {
                 Recipe::MODRINTH => ("", "mrpack"),
                 Recipe::CURSEFORGE => ("-curseforge", "zip"),
+                Recipe::EMPACK_REFERENCES => ("-empack-references", "empack"),
+                Recipe::EMPACK_BUNDLED => ("-empack-bundled", "empack"),
                 Recipe::PRISM_REFERENCES => ("-prism-references", extension),
                 Recipe::SERVER_REFERENCES => ("-server-references", extension),
                 Recipe::PRISM_BUNDLED => ("-prism-bundled", extension),
@@ -496,6 +499,12 @@ async fn finish_once(
         };
         published = true;
         for artifact in &receipt.artifacts {
+            if let Some(release) = &artifact.native_release {
+                session
+                    .display()
+                    .status()
+                    .info(&format!("Release SHA-256 {release}"));
+            }
             session.display().status().info(&format!(
                 "built dist/{} ({} bytes)",
                 artifact.artifact.as_str(),

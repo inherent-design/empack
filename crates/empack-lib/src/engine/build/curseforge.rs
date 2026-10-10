@@ -250,6 +250,7 @@ pub(super) fn prepare_archive(
         cancel,
     )?;
     let receipt = BuiltDistribution {
+        native_release: None,
         target: Recipe::CURSEFORGE,
         artifact: artifact.clone(),
         bytes: verified.len(),

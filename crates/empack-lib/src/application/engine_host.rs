@@ -514,4 +514,3 @@ pub use files::add_files;
 pub mod cli;
 
 pub(super) mod instance;
-mod native_export;

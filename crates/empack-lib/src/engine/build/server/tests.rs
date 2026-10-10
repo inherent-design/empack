@@ -23,7 +23,6 @@ pub(in crate::engine::build) fn fixture(root: &Path) -> BuildAcquisitions {
     intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
         pack_id: "server.fixture".into(),
         java_major: 21,
-        delivery: empack_core::distribution::Delivery::References,
         policies: BTreeMap::new(),
     });
     intent.runtime.loader = LoaderKind::Vanilla;

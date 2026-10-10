@@ -775,3 +775,136 @@ async fn retaining_new_input_requires_the_exact_saved_recipe_observation() {
     owner.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn native_release_batches_resume_exact_downloads_and_publish_with_other_consumers() {
+    use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let source = DocumentCodec
+        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let project = DocumentCodec
+        .decode_lock(
+            &fs::read(root.path().join("empack.lock")).unwrap(),
+            &source,
+            "test",
+        )
+        .unwrap();
+    let mut intent = project.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "resume.native".into(),
+        java_major: 17,
+        policies: BTreeMap::new(),
+    });
+    let project = explicitly_placed(intent, project.lock().clone());
+    fs::write(
+        root.path().join("empack.yml"),
+        DocumentCodec.encode_intent(project.intent()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&project).unwrap(),
+    )
+    .unwrap();
+    let mut selected = request();
+    selected.outputs = NonEmpty::new(vec![
+        BuildOutput {
+            target: Recipe::EMPACK_REFERENCES,
+            artifact: crate::engine::api::tests::path("references.empack"),
+        },
+        BuildOutput {
+            target: Recipe::EMPACK_BUNDLED,
+            artifact: crate::engine::api::tests::path("bundled.empack"),
+        },
+        BuildOutput {
+            target: Recipe::PRISM_BUNDLED,
+            artifact: crate::engine::api::tests::path("prism.zip"),
+        },
+    ])
+    .unwrap();
+    let (owner, _) = engine(host.path().join("state"));
+    let Preparation::NeedsInput(pending) = owner
+        .prepare(
+            root.path().to_path_buf(),
+            selected.clone().with_content(supplied("first", b"payload")),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("second exact file is missing")
+    };
+    owner.suspend_build(*pending).await.unwrap();
+    owner.shutdown().await;
+    assert!(!root.path().join("dist").exists());
+    let (owner, governor) = engine(host.path().join("state"));
+    let SavedBuildResume::Prepared(resumed) = owner
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+    else {
+        panic!("missing continuation")
+    };
+    let Preparation::NeedsInput(pending) = resumed.preparation else {
+        panic!("second file remains missing")
+    };
+    assert_eq!(
+        pending.build().unwrap().outputs,
+        selected.outputs.as_slice()
+    );
+    let Preparation::Ready(prepared) = owner
+        .resume(*pending, supplied("second", b"payload"))
+        .await
+        .unwrap()
+    else {
+        panic!("exact bytes supplied")
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(receipt))) =
+        &*outcome
+    else {
+        match &*outcome {
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+                panic!("{error:#}")
+            }
+            OperationOutcome::Failed(error) => panic!("{error}"),
+            _ => panic!("native batch did not complete"),
+        }
+    };
+    assert_eq!(receipt.artifacts.len(), 3);
+    for (name, bundled) in [("references.empack", false), ("bundled.empack", true)] {
+        let mut archive =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist").join(name)).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+        assert_eq!(release.document().pack, "resume.native");
+        assert!(
+            release
+                .document()
+                .files
+                .iter()
+                .all(|file| file.asset.is_some() == bundled)
+        );
+        assert!(release.document().files.iter().all(|file| {
+            file.assertions
+                .iter()
+                .any(|digest| digest.algorithm == "md5")
+        }));
+    }
+    owner.release_completed(handle.id());
+    drop((outcome, handle));
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

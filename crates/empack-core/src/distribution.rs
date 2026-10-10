@@ -110,6 +110,20 @@ impl Recipe {
         environments: Environments::Server,
         authority: UpdateAuthority::Snapshot,
     };
+    /// Portable native snapshot with referenced dependencies and both environments.
+    pub const EMPACK_REFERENCES: Self = Self {
+        consumer: Consumer::Empack,
+        delivery: Delivery::References,
+        environments: Environments::Both,
+        authority: UpdateAuthority::Snapshot,
+    };
+    /// Portable native snapshot with bundled dependencies and both environments.
+    pub const EMPACK_BUNDLED: Self = Self {
+        consumer: Consumer::Empack,
+        delivery: Delivery::Bundled,
+        environments: Environments::Both,
+        authority: UpdateAuthority::Snapshot,
+    };
     /// Validate delivery and environment with snapshot updates as the default.
     ///
     /// This pure constructor does not inspect content, contact providers or install

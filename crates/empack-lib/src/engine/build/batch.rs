@@ -21,6 +21,13 @@ use empack_core::{
 /// An implemented distribution recipe and its explicit output. Further targets add recipes here;
 /// runtime recipes remain limited to independently verified runtime preparations.
 pub enum DistributionRequest {
+    Native {
+        artifact: PortableRelPath,
+        recipe: Recipe,
+        archive: empack_core::model::DistributionArchive,
+        evidence: SourceEvidencePolicy,
+        limits: crate::engine::artifacts::ArchiveLimits,
+    },
     CurseForge {
         artifact: PortableRelPath,
         options: super::curseforge::CurseForgeOptions,
@@ -52,7 +59,8 @@ pub enum DistributionRequest {
 impl DistributionRequest {
     fn artifact(&self) -> &PortableRelPath {
         match self {
-            Self::CurseForge { artifact, .. }
+            Self::Native { artifact, .. }
+            | Self::CurseForge { artifact, .. }
             | Self::Mrpack { artifact, .. }
             | Self::Client { artifact, .. }
             | Self::ClientFull { artifact, .. }
@@ -62,6 +70,7 @@ impl DistributionRequest {
     }
     fn target(&self) -> Recipe {
         match self {
+            Self::Native { recipe, .. } => *recipe,
             Self::CurseForge { .. } => Recipe::CURSEFORGE,
             Self::Mrpack { .. } => Recipe::MODRINTH,
             Self::Client { .. } => Recipe::PRISM_REFERENCES,
@@ -72,6 +81,8 @@ impl DistributionRequest {
     }
 }
 pub struct BuiltDistribution {
+    /// Exact portable payload identity; archive hashes are a separate namespace.
+    pub native_release: Option<String>,
     pub target: Recipe,
     pub artifact: PortableRelPath,
     pub bytes: u64,
@@ -151,6 +162,24 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
     for request in requests.as_slice() {
         cancel.check()?;
         let (candidate, evidence) = match request {
+            DistributionRequest::Native {
+                artifact,
+                recipe,
+                archive,
+                evidence,
+                limits,
+            } => super::native::prepare_archive(
+                &workspace,
+                artifact.clone(),
+                external,
+                &super::native::NativeArchiveOptions {
+                    recipe: *recipe,
+                    archive: *archive,
+                    evidence: *evidence,
+                    limits: *limits,
+                },
+                cancel,
+            )?,
             DistributionRequest::CurseForge { artifact, options } => {
                 super::curseforge::prepare_archive(
                     &workspace,
@@ -173,6 +202,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 let mut archive = PrivateFile::new()?;
                 let verified = plan.write(archive.file(), cancel)?;
                 let evidence = BuiltDistribution {
+                    native_release: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: verified.len(),
@@ -214,6 +244,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     cancel,
                 )?;
                 let evidence = BuiltDistribution {
+                    native_release: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: archive.verified.len(),
@@ -249,6 +280,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     )?
                 };
                 let evidence = BuiltDistribution {
+                    native_release: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: built.archive.verified.len(),
