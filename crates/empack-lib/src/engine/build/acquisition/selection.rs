@@ -72,7 +72,7 @@ pub fn plan_target_build_acquisitions(
                 );
             }
             if matches!(entry.representation, Representation::Unacquired { .. })
-                || (matches!(target, Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES)
+                || (crate::engine::build::instance_managed(target)
                     && matches!(entry.representation, Representation::Download { .. }))
             {
                 needed.insert(key.clone());
@@ -104,10 +104,7 @@ pub(in crate::engine::build) fn select_game_inputs(
     cancel: &Cancellation,
 ) -> Result<(BuildSelection, BTreeMap<ContentOwner, AcquisitionKey>)> {
     let project = workspace.require_resolved()?;
-    let references = matches!(
-        target,
-        Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES | Recipe::CURSEFORGE
-    );
+    let references = crate::engine::build::instance_managed(target) || target == Recipe::CURSEFORGE;
     let mut inputs = Vec::new();
     let mut occupied = BTreeSet::new();
     let mut keys = BTreeMap::new();

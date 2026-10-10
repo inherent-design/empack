@@ -351,6 +351,7 @@ pub fn inspect(
 
 /// Capture precisely the previous and incoming inventories. Unrelated game data is not read.
 pub(super) struct InstanceSelection {
+    pub require_subscription: bool,
     pub conflicts: Vec<ConflictResolution>,
     pub release: SelectedRelease,
     pub side: InstanceSide,
@@ -366,6 +367,7 @@ pub(super) fn plan(
     cancel: &Cancellation,
 ) -> Result<InstancePlan> {
     let InstanceSelection {
+        require_subscription,
         conflicts: requested_conflicts,
         release: selected,
         side,
@@ -394,6 +396,9 @@ pub(super) fn plan(
         read_optional(&root, &snapshot, &ManagedPath::InstanceSubscription, cancel)?
     {
         let subscription = subscription::SubscriptionRecord::decode(&bytes)?;
+        if require_subscription {
+            subscription.trust()?;
+        }
         match &selected {
             SelectedRelease::Subscribed(proof) => {
                 proof.validate_current(&super::publication::root_key(&root)?, &bytes)?
@@ -409,6 +414,10 @@ pub(super) fn plan(
             "Selected release belongs to another instance subscription"
         );
     } else {
+        ensure!(
+            !require_subscription,
+            "Consumer requires explicit publisher enrollment; run instance subscribe"
+        );
         ensure!(
             !matches!(selected, SelectedRelease::Subscribed(_)),
             "Enrolled subscription was removed"

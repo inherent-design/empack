@@ -530,12 +530,7 @@ fn recipe_identity_cannot_be_reinterpreted_by_another_adapter() {
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let acquired = fixture(root.path());
-    for recipe in [
-        Recipe::MODRINTH,
-        Recipe::PRISM_BUNDLED
-            .with_update_authority(UpdateAuthority::Empack)
-            .unwrap(),
-    ] {
+    for recipe in [Recipe::MODRINTH, Recipe::SERVER_BUNDLED] {
         let request = DistributionRequest::Prism {
             recipe,
             artifact: path("client.zip"),
@@ -559,6 +554,69 @@ fn recipe_identity_cannot_be_reinterpreted_by_another_adapter() {
         assert_eq!(
             fs::read(root.path().join("dist/client.zip")).unwrap(),
             b"old client"
+        );
+    }
+}
+
+#[test]
+fn subscribed_prism_recipes_preserve_delivery_and_require_local_enrollment() {
+    use std::io::Read;
+    for base in [Recipe::PRISM_REFERENCES, Recipe::PRISM_BUNDLED] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        let recipe = base.with_update_authority(UpdateAuthority::Empack).unwrap();
+        let request = DistributionRequest::Prism {
+            recipe,
+            artifact: path("client.zip"),
+            options: ClientOptions {
+                archive: DistributionArchive::Zip,
+                optional: OptionalPolicy::Preserve,
+                templates: TemplateOptions::default(),
+                evidence: SourceEvidencePolicy::Compatibility,
+                limits: ArchiveLimits::default(),
+            },
+        };
+        let batch = prepare_build_batch(
+            capture(root.path(), host.path()),
+            NonEmpty::new(vec![request]).unwrap(),
+            &external,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert_eq!(batch.artifacts()[0].target, recipe);
+        assert_eq!(batch.artifacts()[0].content.target(), recipe);
+        batch
+            .publish(
+                &Publisher::open(&host.path().join("private")).unwrap(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+        let mut zip =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist/client.zip")).unwrap())
+                .unwrap();
+        let mut ini = String::new();
+        zip.by_name("instance.cfg")
+            .unwrap()
+            .read_to_string(&mut ini)
+            .unwrap();
+        assert!(ini.contains("--require-subscription"));
+        assert!(ini.contains("instance launch --check-updates --"));
+        let mut payload = Vec::new();
+        zip.by_name(".minecraft/.empack-consumer/release.json")
+            .unwrap()
+            .read_to_end(&mut payload)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&payload).unwrap();
+        for file in &release.document().files {
+            assert_eq!(
+                file.asset_path().is_some(),
+                base.delivery() == empack_core::distribution::Delivery::Bundled
+            );
+        }
+        assert!(
+            !zip.file_names()
+                .any(|name| name.ends_with("subscription.json"))
         );
     }
 }

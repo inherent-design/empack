@@ -125,8 +125,12 @@ pub fn prepare_templates(
     cancel: &Cancellation,
 ) -> Result<RenderedTemplates> {
     let side = match target {
-        Recipe::PRISM_REFERENCES | Recipe::PRISM_BUNDLED => ContentLayer::Client,
-        Recipe::SERVER_REFERENCES | Recipe::SERVER_BUNDLED => ContentLayer::Server,
+        recipe if recipe.consumer() == empack_core::distribution::Consumer::Prism => {
+            ContentLayer::Client
+        }
+        recipe if recipe.consumer() == empack_core::distribution::Consumer::Server => {
+            ContentLayer::Server
+        }
         _ => {
             anyhow::bail!("Reference archives have no standalone template projection")
         }

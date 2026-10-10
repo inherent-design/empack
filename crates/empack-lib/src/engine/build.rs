@@ -25,6 +25,19 @@ pub mod materialized;
 pub(crate) mod native;
 pub mod server;
 
+/// Launcher recipes bind native update authority at installation, using explicit local enrollment.
+pub(crate) fn launcher_recipe(recipe: Recipe) -> bool {
+    matches!(
+        recipe.consumer(),
+        empack_core::distribution::Consumer::Prism | empack_core::distribution::Consumer::Server
+    )
+}
+pub(crate) fn instance_managed(recipe: Recipe) -> bool {
+    launcher_recipe(recipe)
+        && (recipe.delivery() == empack_core::distribution::Delivery::References
+            || recipe.update_authority() == empack_core::distribution::UpdateAuthority::Empack)
+}
+
 /// Acquisition is keyed by exact native dependency and file role.
 #[derive(Default)]
 pub struct BuildAcquisitions {

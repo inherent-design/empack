@@ -483,6 +483,9 @@ pub enum InstanceCommand {
 
     /// Install the initial release or repair the active release without reverting updates
     Prepare {
+        /// Require an explicitly enrolled, non-revoked publisher for this pack
+        #[arg(long)]
+        require_subscription: bool,
         #[command(flatten)]
         conflicts: InstanceConflictArgs,
         /// Immutable JSON release payload, not an author manifest

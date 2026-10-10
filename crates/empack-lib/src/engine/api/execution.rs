@@ -182,14 +182,12 @@ async fn execute(
         Some(cache) => transport.with_execution_cache(cache),
         None => transport,
     };
-    let has = |target| {
-        request
-            .outputs
-            .as_slice()
-            .iter()
-            .any(|output| output.target == target)
-    };
-    let runtime = if has(Recipe::SERVER_REFERENCES) || has(Recipe::SERVER_BUNDLED) {
+    let runtime = if request
+        .outputs
+        .as_slice()
+        .iter()
+        .any(|output| output.target.consumer() == empack_core::distribution::Consumer::Server)
+    {
         Some(prepare_runtime(&transport, scope, view.runtime.clone(), evidence, &config).await?)
     } else {
         None
@@ -249,14 +247,14 @@ async fn execute(
                     optional: request.mrpack_optional,
                     evidence,
                 },
-                recipe @ (Recipe::PRISM_BUNDLED | Recipe::PRISM_REFERENCES) => {
+                recipe if recipe.consumer() == empack_core::distribution::Consumer::Prism => {
                     DistributionRequest::Prism {
                         recipe,
                         artifact,
                         options: client_options(),
                     }
                 }
-                recipe @ (Recipe::SERVER_BUNDLED | Recipe::SERVER_REFERENCES) => {
+                recipe if recipe.consumer() == empack_core::distribution::Consumer::Server => {
                     DistributionRequest::Server {
                         recipe,
                         artifact,

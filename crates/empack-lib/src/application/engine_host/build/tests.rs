@@ -817,3 +817,38 @@ async fn consumer_overrides_preserve_delivery_and_reject_lossy_policies() {
         );
     }
 }
+
+#[tokio::test]
+async fn subscribed_recipe_selection_retains_policy_and_distinct_output_names() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let parsed = DocumentCodec
+        .decode_intent(
+            &fs::read(root.path().join("project/empack.yml")).unwrap(),
+            "fixture",
+        )
+        .unwrap();
+    for consumer in ["prism", "server"] {
+        for delivery in ["references", "bundled"] {
+            let selected = request(
+                parsed.intent(),
+                &BuildArgs {
+                    targets: vec![consumer.into()],
+                    delivery: Some(delivery.into()),
+                    updates: Some("empack".into()),
+                    ..Default::default()
+                },
+                BuildDecisions::default(),
+            )
+            .unwrap();
+            let output = &selected.outputs.as_slice()[0];
+            assert_eq!(output.target.update_authority(), UpdateAuthority::Empack);
+            assert!(
+                output
+                    .artifact
+                    .as_str()
+                    .ends_with(&format!("-{consumer}-{delivery}-subscribed.zip"))
+            );
+        }
+    }
+}

@@ -20,14 +20,13 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use empack_core::{
-    distribution::Delivery,
     distribution::Recipe,
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent},
     path::{PathSyntax, PortableRelPath},
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read};
 
 pub struct ServerOptions {
     pub archive: DistributionArchive,
@@ -198,6 +197,16 @@ fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> Stri
     script.replace("-jar server.jar", &arguments)
 }
 
+fn consumer_script(script: String, target: Recipe) -> String {
+    if target.update_authority() == empack_core::distribution::UpdateAuthority::Empack {
+        script
+            .replace("instance launch --", "instance launch --check-updates --")
+            .replace("--side server", "--side server --require-subscription")
+    } else {
+        script
+    }
+}
+
 fn install_batch(release: Option<&str>) -> String {
     let command = release.map(|id| format!("empack --workdir \"%cd%\" --yes instance prepare \"%cd%\\.empack-consumer\\release.json\" --sha256 {id} --layout game --side server\r\nif errorlevel 1 exit /b %errorlevel%\r\n")).unwrap_or_default();
     format!(
@@ -256,11 +265,10 @@ pub(super) fn prepare_server_archive(
         "Server artifact extension differs from selected format"
     );
     ensure!(
-        target.consumer() == empack_core::distribution::Consumer::Server
-            && target.update_authority() == empack_core::distribution::UpdateAuthority::Snapshot,
+        target.consumer() == empack_core::distribution::Consumer::Server,
         "Server adapter requires an executable consumer recipe"
     );
-    let references = target.delivery() == empack_core::distribution::Delivery::References;
+    let references = super::instance_managed(target);
     let game = if references {
         prepare_native_game_content(
             workspace,
@@ -284,7 +292,7 @@ pub(super) fn prepare_server_archive(
     let mut files = BTreeMap::new();
     let release = if references {
         let mut release_options = NativeReleaseOptions::from_project(game.project())?;
-        release_options.delivery = Delivery::References;
+        release_options.delivery = target.delivery();
         release_options
             .policies
             .retain(|destination, _| game.files().contains_key(destination));
@@ -346,28 +354,60 @@ pub(super) fn prepare_server_archive(
     for (name, bytes, executable) in [
         (
             "start.sh",
-            runtime_start(runtime.launch(), references, false).into_bytes(),
+            consumer_script(runtime_start(runtime.launch(), references, false), target)
+                .into_bytes(),
             true,
         ),
         (
             "start.bat",
-            runtime_start(runtime.launch(), references, true).into_bytes(),
+            consumer_script(runtime_start(runtime.launch(), references, true), target).into_bytes(),
             false,
         ),
         (
             "install_pack.bat",
-            install_batch(release.as_ref().map(|release| release.release().id())).into_bytes(),
+            consumer_script(
+                install_batch(release.as_ref().map(|release| release.release().id())),
+                target,
+            )
+            .into_bytes(),
             false,
         ),
         (
             "install_pack.sh",
-            install_script(release.as_ref().map(|release| release.release().id())).into_bytes(),
+            consumer_script(
+                install_script(release.as_ref().map(|release| release.release().id())),
+                target,
+            )
+            .into_bytes(),
             true,
         ),
     ] {
         let destination = path(name)?;
-        if let std::collections::btree_map::Entry::Vacant(entry) = files.entry(destination) {
-            entry.insert(generated(&bytes, executable, cancel)?);
+        match files.entry(destination) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(generated(&bytes, executable, cancel)?);
+            }
+            std::collections::btree_map::Entry::Occupied(entry)
+                if target.update_authority()
+                    == empack_core::distribution::UpdateAuthority::Empack =>
+            {
+                ensure!(
+                    entry.get().content.lease().len() == bytes.len() as u64,
+                    "Subscribed server templates must retain generated scripts"
+                );
+                let mut actual = Vec::new();
+                entry
+                    .get()
+                    .content
+                    .lease()
+                    .open()
+                    .read_to_end(&mut actual)?;
+                ensure!(
+                    actual == bytes,
+                    "Subscribed server templates must retain the generated preparation and launch scripts"
+                );
+            }
+            _ => {}
         }
     }
     let properties = path("game/server.properties")?;

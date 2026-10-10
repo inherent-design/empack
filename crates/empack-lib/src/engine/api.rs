@@ -1325,14 +1325,9 @@ fn capture(
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
         ensure!(
-            matches!(
-                output.target,
-                Recipe::CURSEFORGE
-                    | Recipe::PRISM_REFERENCES
-                    | Recipe::PRISM_BUNDLED
-                    | Recipe::SERVER_REFERENCES
-                    | Recipe::SERVER_BUNDLED
-            ) || crate::engine::build::native::supports(output.target)
+            (output.target == Recipe::CURSEFORGE
+                || crate::engine::build::launcher_recipe(output.target))
+                || crate::engine::build::native::supports(output.target)
                 || crate::engine::mrpack::supports(output.target),
             "Consumer recipe has no executable adapter; no acquisition was started"
         );
@@ -1388,10 +1383,8 @@ fn capture(
     );
     let resolved = workspace.require_resolved()?;
     if request.outputs.as_slice().iter().any(|output| {
-        matches!(
-            output.target,
-            Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES
-        ) || crate::engine::build::native::supports(output.target)
+        crate::engine::build::instance_managed(output.target)
+            || crate::engine::build::native::supports(output.target)
     }) {
         super::release::producer::NativeReleaseOptions::from_project(&resolved)?;
     }
@@ -1435,12 +1428,11 @@ fn capture(
         })
         .map(|need| need.key.clone())
         .collect();
-    let server = request.outputs.as_slice().iter().any(|output| {
-        matches!(
-            output.target,
-            Recipe::SERVER_REFERENCES | Recipe::SERVER_BUNDLED
-        )
-    });
+    let server = request
+        .outputs
+        .as_slice()
+        .iter()
+        .any(|output| output.target.consumer() == empack_core::distribution::Consumer::Server);
     let resolved = workspace.require_resolved()?;
     let mut file_names = BTreeMap::new();
     for need in &acquisition.pending {

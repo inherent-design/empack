@@ -178,6 +178,13 @@ runtime lease. The executable and arguments remain locally selected, never suppl
 by the pack publisher. Without `--check-updates`, launch uses the completed release
 without consulting a channel.
 
+Choose `empack build prism --updates empack` or `empack build server --updates empack`
+to export a consumer that requires an enrolled channel. Both reference and bundled
+delivery are supported. Enroll with `instance subscribe` in the extracted instance
+before its first launch. The generated consumer checks for updates; it never copies
+publisher keys into local trust. Runtime-changing updates stop until the consumer's
+runtime integration is prepared. Snapshot recipes remain the default.
+
 ## Publisher staging
 
 Extract a native export, keep publisher keys outside the project and export, then

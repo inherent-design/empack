@@ -15,6 +15,8 @@ pub use suspension::{ResumedInstance, SavedInstanceRecord, SuspendedInstanceRece
 pub use suspension_cleanup::PendingInstanceCleanup;
 
 pub struct InstallInstanceRequest {
+    /// Require live explicit publisher enrollment before even initial snapshot installation.
+    pub require_subscription: bool,
     pub conflicts: Vec<crate::engine::instance::ConflictResolution>,
     pub action: InstanceAction,
     pub release: SelectedRelease,
@@ -77,6 +79,7 @@ pub(super) async fn prepare(
     let limits = config.snapshot;
     let selected_target = root.clone();
     let InstallInstanceRequest {
+        require_subscription,
         conflicts,
         action,
         release,
@@ -92,6 +95,7 @@ pub(super) async fn prepare(
         config.resources.prepared,
         move |cancel| {
             let selection = instance::InstanceSelection {
+                require_subscription,
                 conflicts,
                 release,
                 side,

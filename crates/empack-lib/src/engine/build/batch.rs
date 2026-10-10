@@ -87,7 +87,8 @@ impl DistributionRequest {
             "Recipe belongs to another consumer adapter"
         );
         ensure!(
-            recipe.update_authority() == UpdateAuthority::Snapshot,
+            recipe.update_authority() == UpdateAuthority::Snapshot
+                || super::launcher_recipe(recipe),
             "Consumer update authority requires a bound association or subscription"
         );
         Ok(())

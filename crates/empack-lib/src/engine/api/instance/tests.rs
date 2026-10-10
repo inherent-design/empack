@@ -72,6 +72,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     )
     .unwrap();
     InstallInstanceRequest {
+        require_subscription: false,
         conflicts: Vec::new(),
         action: crate::engine::instance::InstanceAction::Apply,
         release: SelectedRelease::Snapshot(selected),
@@ -1789,4 +1790,83 @@ async fn durable_instance_merge_retains_local_evidence_and_cleanup_is_conditiona
         assert!(engine.discard_pending_instance(observed).await.unwrap());
         engine.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn required_subscription_is_captured_and_late_revocation_prevents_installation() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let input = || {
+        let mut input = request(&[]);
+        input.require_subscription = true;
+        input
+    };
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), input())
+            .await
+            .is_err()
+    );
+    let key = ed25519_dalek::SigningKey::from_bytes(&[57; 32]);
+    let enroll = SubscriptionRequest::Enroll {
+        pack: "fixture".into(),
+        channel: "stable".into(),
+        url: "https://publisher.test/stable.json".into(),
+        keys: vec![key.verifying_key()],
+    };
+    async fn change(engine: &Engine, root: &Path, request: SubscriptionRequest) {
+        let Preparation::Ready(prepared) = engine.prepare(root.to_owned(), request).await.unwrap()
+        else {
+            panic!()
+        };
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            replacement: prepared.view().replacement(),
+            network: NetworkPermission::Offline,
+            run_installer: false,
+            run_runtime: false,
+        };
+        let mut op = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        assert!(matches!(
+            &*op.wait().await,
+            OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+        ));
+        engine.release_completed(op.id());
+    }
+    change(&engine, root.path(), enroll).await;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), input())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+    };
+    let approved = prepared.authorize(grant).unwrap();
+    change(
+        &engine,
+        root.path(),
+        SubscriptionRequest::ReplaceKeys { keys: vec![] },
+    )
+    .await;
+    let mut op = engine.start(approved).unwrap();
+    assert!(matches!(
+        &*op.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    assert!(!root.path().join(".empack/instance.json").exists());
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), input())
+            .await
+            .is_err()
+    );
+    engine.shutdown().await;
 }

@@ -209,6 +209,7 @@ fn install(
     selected: impl Into<std::sync::Arc<crate::engine::instance::subscription::SubscribedRelease>>,
 ) -> InstallInstanceRequest {
     InstallInstanceRequest {
+        require_subscription: false,
         conflicts: Vec::new(),
         action: crate::engine::instance::InstanceAction::Apply,
         release: crate::engine::instance::SelectedRelease::Subscribed(selected.into()),
@@ -518,6 +519,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             )
             .unwrap();
             let input = InstallInstanceRequest {
+                require_subscription: false,
                 conflicts: Vec::new(),
                 action: crate::engine::instance::InstanceAction::Repair,
                 release: crate::engine::instance::SelectedRelease::Snapshot(snapshot),

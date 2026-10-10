@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Recipe {
+    require_subscription: bool,
     payload: String,
     authority: Authority,
     action: InstanceAction,
@@ -52,6 +53,7 @@ impl Recipe {
     }
     pub(super) fn capture(request: &instance::InstanceSelection) -> Result<Self> {
         Ok(Self {
+            require_subscription: request.require_subscription,
             payload: String::from_utf8(request.release.release().bytes().to_vec())?,
             authority: match &request.release {
                 SelectedRelease::Snapshot(_) => Authority::Snapshot,
@@ -528,6 +530,7 @@ async fn resume(
         Ok::<_, anyhow::Error>((
             temporary,
             InstallInstanceRequest {
+                require_subscription: record_recipe.require_subscription,
                 release,
                 conflicts,
                 action: record_recipe.action,

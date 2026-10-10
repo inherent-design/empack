@@ -100,6 +100,7 @@ async fn update_with_transport(
         let expected = proof.release().id().to_owned();
         let proof = proof.map(std::sync::Arc::new);
         let request = InstallInstanceRequest {
+            require_subscription: false,
             conflicts: Vec::new(),
             action: InstanceAction::Apply,
             release: SelectedRelease::Subscribed(std::sync::Arc::clone(&proof)),

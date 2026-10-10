@@ -20,7 +20,7 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     distribution::Recipe,
-    distribution::{Consumer, Delivery, UpdateAuthority},
+    distribution::{Consumer, UpdateAuthority},
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent, LoaderKind, RuntimeResolution},
@@ -272,12 +272,12 @@ pub(super) fn prepare_client_archive(
         "Client artifact extension differs from selected format"
     );
     ensure!(
-        target.consumer() == Consumer::Prism
-            && target.update_authority() == UpdateAuthority::Snapshot,
+        target.consumer() == Consumer::Prism,
         "Prism adapter requires an executable consumer recipe"
     );
-    let references = target.delivery() == Delivery::References;
-    let game = if references {
+    let managed = super::instance_managed(target);
+    let subscribed = target.update_authority() == UpdateAuthority::Empack;
+    let game = if managed {
         prepare_native_game_content(
             workspace,
             external,
@@ -298,9 +298,9 @@ pub(super) fn prepare_client_archive(
     };
     let mut template_options = options.templates.clone();
     let mut files = BTreeMap::new();
-    let command = if references {
+    let command = if managed {
         let mut release_options = NativeReleaseOptions::from_project(game.project())?;
-        release_options.delivery = Delivery::References;
+        release_options.delivery = target.delivery();
         release_options
             .policies
             .retain(|destination, _| game.files().contains_key(destination));
@@ -330,8 +330,13 @@ pub(super) fn prepare_client_archive(
             );
         }
         Some(format!(
-            "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client",
-            release.release().id()
+            "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
+            release.release().id(),
+            if subscribed {
+                " --require-subscription"
+            } else {
+                ""
+            }
         ))
     } else {
         for (destination, file) in game.files() {
@@ -346,7 +351,9 @@ pub(super) fn prepare_client_archive(
         "INSTANCE_PREPARE_COMMAND".into(),
         command.clone().unwrap_or_default(),
     );
-    let wrapper = if references {
+    let wrapper = if subscribed {
+        "empack --workdir \"$INST_DIR\" --yes instance launch --check-updates --"
+    } else if managed {
         "empack --workdir \"$INST_DIR\" --yes instance launch --"
     } else {
         ""
@@ -371,22 +378,34 @@ pub(super) fn prepare_client_archive(
     }
     let instance = path("instance.cfg")?;
     let user_configuration = files.contains_key(&instance);
+    let values = BTreeMap::from([
+        (
+            "INSTANCE_PREPARE_COMMAND".to_owned(),
+            command.unwrap_or_default(),
+        ),
+        ("INSTANCE_WRAPPER_COMMAND".to_owned(), wrapper.into()),
+    ]);
+    let default_instance = crate::engine::templates::render_default(
+        game.project(),
+        include_str!("../../../templates/client/instance.cfg.template"),
+        values,
+        options.limits.file_bytes,
+        cancel,
+    )?;
     if !user_configuration {
-        let values = BTreeMap::from([
-            (
-                "INSTANCE_PREPARE_COMMAND".to_owned(),
-                command.unwrap_or_default(),
-            ),
-            ("INSTANCE_WRAPPER_COMMAND".to_owned(), wrapper.to_owned()),
-        ]);
-        let bytes = crate::engine::templates::render_default(
-            game.project(),
-            include_str!("../../../templates/client/instance.cfg.template"),
-            values,
-            options.limits.file_bytes,
-            cancel,
-        )?;
-        files.insert(instance, generated(&bytes, cancel)?);
+        files.insert(instance.clone(), generated(&default_instance, cancel)?);
+    } else if subscribed {
+        ensure!(
+            files[&instance].content.lease().len() <= 16 << 20,
+            "Launcher configuration exceeds limit"
+        );
+        let mut bytes = Vec::new();
+        files[&instance]
+            .content
+            .lease()
+            .open()
+            .read_to_end(&mut bytes)?;
+        verify_subscription_commands(&bytes, &default_instance)?;
     }
     let components = path("mmc-pack.json")?;
     if !files.contains_key(&components) {
@@ -408,7 +427,7 @@ pub(super) fn prepare_client_archive(
         .read_to_end(&mut profile_bytes)?;
     verify_profile(&profile_bytes, &game.project().lock().runtime)?;
     let mut collisions = CollisionIndex::default();
-    if references {
+    if managed {
         // Future installed paths participate in the same collision check as packaged inputs.
         for destination in game.files().keys() {
             collisions.insert_file(&path(&format!(".minecraft/{}", destination.as_str()))?)?;
@@ -467,3 +486,60 @@ pub(super) fn prepare_client_archive(
 
 #[cfg(test)]
 mod tests;
+
+/// Require one unambiguous spelling of launcher authority settings while retaining
+/// unrelated names, icons and resource settings from user templates.
+fn verify_subscription_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
+    fn commands(bytes: &[u8]) -> Result<BTreeMap<&str, &str>> {
+        let mut general = false;
+        let mut groups = BTreeSet::new();
+        let mut selected = BTreeMap::new();
+        for line in std::str::from_utf8(bytes)?.lines().map(str::trim) {
+            if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+                continue;
+            }
+            ensure!(
+                !line.ends_with('\\'),
+                "Subscribed launcher settings cannot use continued lines"
+            );
+            if line.starts_with('[') {
+                let section = line
+                    .strip_prefix('[')
+                    .and_then(|v| v.strip_suffix(']'))
+                    .context("Invalid launcher settings section")?;
+                ensure!(
+                    section
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                        && groups.insert(section),
+                    "Ambiguous launcher settings section"
+                );
+                general = section == "General";
+                continue;
+            }
+            let (key, value) = line.split_once('=').context("Invalid launcher setting")?;
+            let key = key.trim();
+            ensure!(
+                key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
+                "Encoded launcher setting keys are unsupported for subscribed consumers"
+            );
+            if general
+                && matches!(
+                    key,
+                    "OverrideCommands" | "PreLaunchCommand" | "WrapperCommand"
+                )
+            {
+                ensure!(
+                    selected.insert(key, value.trim()).is_none(),
+                    "Repeated launcher command setting"
+                );
+            }
+        }
+        Ok(selected)
+    }
+    ensure!(
+        commands(actual)? == commands(generated)?,
+        "Subscribed Prism templates must retain generated preparation and update commands"
+    );
+    Ok(())
+}

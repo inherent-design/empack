@@ -648,6 +648,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     ));
     let prepare = Commands::Instance {
         command: InstanceCommand::Prepare {
+            require_subscription: false,
             conflicts: Default::default(),
             release: descriptor,
             sha256: release.id().into(),

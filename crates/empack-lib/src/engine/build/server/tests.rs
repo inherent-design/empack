@@ -205,6 +205,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                     let plan = crate::engine::instance::plan(
                         instance.path(),
                         InstanceSelection {
+                            require_subscription: false,
                             conflicts: Vec::new(),
                             release: SelectedRelease::Snapshot(
                                 SelectedSnapshot::select(
@@ -595,5 +596,32 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
             assert!(windows.contains("@libraries/loader/win_args.txt"));
             assert!(!windows.contains("unix_args.txt"));
         }
+    }
+}
+
+#[test]
+fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
+    let recipe = Recipe::SERVER_BUNDLED
+        .with_update_authority(empack_core::distribution::UpdateAuthority::Empack)
+        .unwrap();
+    for windows in [false, true] {
+        let launch = consumer_script(
+            runtime_start(
+                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                true,
+                windows,
+            ),
+            recipe,
+        );
+        assert!(launch.contains("instance launch --check-updates --"));
+        let install = consumer_script(
+            if windows {
+                install_batch(Some("digest"))
+            } else {
+                install_script(Some("digest"))
+            },
+            recipe,
+        );
+        assert!(install.contains("--side server --require-subscription"));
     }
 }

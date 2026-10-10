@@ -33,19 +33,20 @@ pub(super) fn refresh(value: &mut PreparedBuild) {
     value.view.content = value.acquisition.pending.iter().map(describe).collect();
     value.view.file_names.retain(|key, _| pending.contains(key));
     value.view.unresolved.retain(|key| pending.contains(key));
-    value.view.needs_network = value.request.outputs.as_slice().iter().any(|output| {
-        matches!(
-            output.target,
-            Recipe::SERVER_REFERENCES | Recipe::SERVER_BUNDLED
-        )
-    }) || value.acquisition.pending.iter().any(|need| {
-        matches!(
-            need.source,
-            BuildContentSource::Download(_)
-                | BuildContentSource::Provider { .. }
-                | BuildContentSource::ProviderArchiveMember { .. }
-        )
-    });
+    value.view.needs_network = value
+        .request
+        .outputs
+        .as_slice()
+        .iter()
+        .any(|output| output.target.consumer() == empack_core::distribution::Consumer::Server)
+        || value.acquisition.pending.iter().any(|need| {
+            matches!(
+                need.source,
+                BuildContentSource::Download(_)
+                    | BuildContentSource::Provider { .. }
+                    | BuildContentSource::ProviderArchiveMember { .. }
+            )
+        });
 }
 
 #[cfg(test)]

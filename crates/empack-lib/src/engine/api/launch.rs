@@ -79,6 +79,7 @@ pub(super) async fn prepare(
             let instance = instance::plan(
                 &root,
                 InstanceSelection {
+                    require_subscription: false,
                     conflicts: Vec::new(),
                     release: SelectedRelease::Snapshot(release),
                     side: record.side,

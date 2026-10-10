@@ -14,6 +14,13 @@ use std::collections::BTreeMap;
 mod prelaunch;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
+    let require_subscription = matches!(
+        &command,
+        InstanceCommand::Prepare {
+            require_subscription: true,
+            ..
+        }
+    );
     let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
     let subscribed = matches!(command, InstanceCommand::Update { .. });
     let (release, sha256, side, layout, choices, files, conflicts) = match command {
@@ -27,6 +34,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             files,
         }
         | InstanceCommand::Prepare {
+            require_subscription: _,
             conflicts,
             release,
             sha256,
@@ -171,6 +179,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         }
     };
     let request = InstallInstanceRequest {
+        require_subscription,
         conflicts: conflict_resolutions(conflicts, &invocation)?,
         action: if prepare_current {
             crate::engine::instance::InstanceAction::Prepare
@@ -472,6 +481,7 @@ async fn maintain(
         })
         .collect::<Result<Vec<_>>>()?;
     let request = InstallInstanceRequest {
+        require_subscription: false,
         conflicts: conflict_resolutions(conflicts, &invocation)?,
         action,
         layout: None,

@@ -430,6 +430,7 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
                 crate::engine::instance::plan(
                     instance.path(),
                     InstanceSelection {
+                        require_subscription: false,
                         conflicts: Vec::new(),
                         release: SelectedRelease::Snapshot(
                             SelectedSnapshot::select(
@@ -513,5 +514,23 @@ fn native_input_and_future_installed_collisions_preserve_existing_distribution()
             fs::read(root.path().join("dist/client.zip")).unwrap(),
             b"prior"
         );
+    }
+}
+
+#[test]
+fn subscribed_custom_settings_cannot_disable_or_shadow_update_commands() {
+    let expected =
+        b"[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
+    verify_subscription_commands(expected, expected).unwrap();
+    let custom = b"[General]\nname=Custom name\nMaxMemAlloc=4096\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
+    verify_subscription_commands(custom, expected).unwrap();
+    for bad in [
+        "[General]\nOverrideCommands=false\nPreLaunchCommand=prepare\nWrapperCommand=launch\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\nWrapperCommand=other\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n[General]\nWrapperCommand=other\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n%57rapperCommand=other\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=other\n",
+    ] {
+        assert!(verify_subscription_commands(bad.as_bytes(), expected).is_err());
     }
 }

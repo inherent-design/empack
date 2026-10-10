@@ -117,7 +117,7 @@ pub fn prepare_native_game_content(
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(target, Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES),
+        super::instance_managed(target),
         "Native consumer requires a client or server environment"
     );
     prepare_selected_content(

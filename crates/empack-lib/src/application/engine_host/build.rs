@@ -17,7 +17,7 @@ use crate::{
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::{
-    distribution::{Delivery, Recipe, UpdateAuthority},
+    distribution::{Consumer, Delivery, Recipe, UpdateAuthority},
     inventory::OptionalPolicy,
     model::{DistributionArchive, NonEmpty, ProjectIntent},
     path::{ArtifactStem, PathSyntax, PortableRelPath},
@@ -375,16 +375,31 @@ fn request(
                     };
                     (suffix, "empack")
                 }
-                Recipe::PRISM_REFERENCES => ("-prism-references", extension),
-                Recipe::SERVER_REFERENCES => ("-server-references", extension),
-                Recipe::PRISM_BUNDLED => ("-prism-bundled", extension),
-                Recipe::SERVER_BUNDLED => ("-server-bundled", extension),
+                recipe if crate::engine::build::launcher_recipe(recipe) => (
+                    match (recipe.consumer(), recipe.delivery()) {
+                        (Consumer::Prism, Delivery::References) => "-prism-references",
+                        (Consumer::Prism, Delivery::Bundled) => "-prism-bundled",
+                        (Consumer::Server, Delivery::References) => "-server-references",
+                        (Consumer::Server, Delivery::Bundled) => "-server-bundled",
+                        _ => unreachable!(),
+                    },
+                    extension,
+                ),
                 _ => anyhow::bail!("Consumer recipe is not available through this build adapter"),
             };
             Ok(BuildOutput {
                 target,
                 artifact: PortableRelPath::parse(
-                    &format!("{}-{}{suffix}.{extension}", name.as_str(), version.as_str()),
+                    &format!(
+                        "{}-{}{suffix}{}.{extension}",
+                        name.as_str(),
+                        version.as_str(),
+                        if target.update_authority() == UpdateAuthority::Empack {
+                            "-subscribed"
+                        } else {
+                            ""
+                        }
+                    ),
                     PathSyntax::ArtifactName,
                 )?,
             })
