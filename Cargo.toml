@@ -10,7 +10,7 @@ repository = "https://github.com/inherent-design/empack"
 version = "0.0.0-dev"
 
 [workspace.metadata.empack]
-release-target = "0.5.0-alpha.1"
+release-target = "0.6.0-beta"
 
 [workspace.dependencies]
 empack-core = { path = "crates/empack-core" }

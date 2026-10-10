@@ -1,6 +1,6 @@
 # Filesystem capabilities and staging
 
-Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+Contract for v0.6.0-beta. Callable types and signatures are defined in the
 [native roots](../../crates/empack-lib/src/engine/native.rs), [staging](../../crates/empack-lib/src/engine/staging.rs) and [managed layout](../../crates/empack-lib/src/engine/layout.rs). This page specifies their behavior and ownership.
 
 ## Filesystem capabilities and staging

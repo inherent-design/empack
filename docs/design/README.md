@@ -1,28 +1,26 @@
-# empack design
+# v0.6.0-beta design
 
-empack is a typed pack engine with verified, recoverable publication. These contracts
-define v0.5.0-alpha.1. Ordinary CLI commands use the native engine; packwiz metadata
-is an interchange format, not a requirement to install the packwiz executable.
+These documents specify the target implementation of empack authoring, distribution
+and installed-instance management. They are normative contracts, not a claim that
+an older executable implements the described interfaces. Types in examples name
+semantic boundaries; generated Rust API documentation defines callable signatures.
 
-| Contract | Scope |
+| Contract | Contents |
 | --- | --- |
-| [Architecture](architecture.md) | Guarantees, module ownership and limits |
-| [Policies](decisions.md) | Batch, integrity, preview and publication rules |
-| [Model](model.md) | Identities, intent, exact resolution and documents |
-| [Planning](planning.md) | Observations, conflicts, effects and authorization |
-| [Acquisition](acquisition.md) | Providers, imports, verified bytes and storage |
-| [Filesystem](filesystem.md) | Native roots, confinement and private staging |
-| [Metadata and processes](backend.md) | Packwiz wire semantics and process ownership |
-| [Builds](builds.md) | Projections, distributions, templates and runtimes |
-| [Publication](publication.md) | Expected-old checks, journals and recovery |
-| [Runtime](runtime.md) | Admission, cancellation, decisions and continuation |
-| [API](api.md) | Engine and host interfaces, operation lifecycles |
-| [Verification](verification.md) | Contract suites and failure injection |
-| [Features](features.md) | Supported workflows and their required behavior |
+| [Decisions](decisions.md) | Product scope and defaults |
+| [Features](features.md) | Preserved capabilities and consumer obligations |
+| [Architecture](architecture.md) | Crates, ports and authority |
+| [Model](model.md) | Identities, authoring documents, release and instance values |
+| [Planning](planning.md) | Read sets, grants and postconditions |
+| [Instances](instances.md) | Three-way reconciliation, choices and launch eligibility |
+| [Releases](releases.md) | Distribution, signatures and channels |
+| [Consumers](builds.md) | Format projections and runtime recipes |
+| [API](api.md) | Requests, outcomes, decisions and host wiring |
+| [Acquisition](acquisition.md) | Provider resolution, imports, downloads and leases |
+| [Filesystem](filesystem.md) | Native roots, path safety and private staging |
+| [Publication](publication.md) | Durable application, recovery and retention |
+| [Runtime](runtime.md) | Async ownership, cancellation and admission |
+| [Verification](verification.md) | Evidence and conformance requirements |
 
-The [CLI reference](../usage.md) describes commands and options. The
-[testing guide](../testing.md) gives executable checks. Rust API documentation and
-compiled examples are generated with `cargo doc --workspace --no-deps`.
-
-Keep behavior and its limits here. Record run-specific evidence in CI and pull
-requests, rather than retaining delivery ledgers or implementation journals.
+Implementation tasks are confined to [TODO.md](../../TODO.md). Design pages contain
+contracts, not progress records or migration ledgers.

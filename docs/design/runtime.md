@@ -1,13 +1,13 @@
 # Runtime ownership and decisions
 
-Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+Contract for v0.6.0-beta. Callable types and signatures are defined in the
 [operation runtime](../../crates/empack-lib/src/engine/runtime.rs), [resource admission](../../crates/empack-lib/src/engine/resources.rs) and [process supervision](../../crates/empack-lib/src/application/process_runtime.rs). This page specifies their behavior and ownership.
 
 ## Runtime ownership, cancellation, and resource budgets
 
 ### One host runtime; one owner per operation
 
-The CLI starts Tokio and constructs `Engine`. Embedders supply their existing runtime. Do not create a private runtime per backend call. Library entry points are asynchronous; embedders retain ownership of runtime startup and shutdown.
+The CLI starts Tokio and constructs `Engine`. Embedders supply their existing runtime. Do not create a private runtime per provider call. Library entry points are asynchronous; embedders retain ownership of runtime startup and shutdown.
 
 Each started operation has an engine-owned driver. The driver owns its cancellation tree, admitted tasks, candidate work, result state, and publication eligibility. Workers receive owned immutable requests, retained content handles, and narrow services. They do not capture `&mut Engine`, a mutable project document, or terminal objects.
 

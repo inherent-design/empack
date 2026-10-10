@@ -1,33 +1,46 @@
-[![PR CI](https://img.shields.io/github/actions/workflow/status/inherent-design/empack/pr-ci.yml?branch=dev&style=flat)](https://github.com/inherent-design/empack/actions/workflows/pr-ci.yml) [![License](https://img.shields.io/github/license/inherent-design/empack?style=flat)](LICENSE)
-
 # empack
 
-empack manages Minecraft packs across Modrinth, CurseForge and local content.
-Its native engine reads and writes packwiz metadata and produces verified distributions;
-the CLI does not require the packwiz-tx executable.
+Empack manages Minecraft packs from one authored manifest and an exact resolution
+lock, then prepares distributions for launchers and dedicated servers.
 
-The development target is **v0.5.0-alpha.1**: a typed pack engine that separates
-intent, exact resolution, observation, staging, verification and recoverable
-publication. The [design](docs/design/README.md) defines its contracts and
-[operational limits](docs/design/architecture.md#operational-limits).
+The target for this branch is **v0.6.0-beta**. Its [design contracts](docs/design/README.md)
+define native installation and hosted updates, consumer-specific exports and
+recoverable file publication. They describe the target behavior, not availability
+in an earlier release. Source API documentation and executable help describe the
+checked-out implementation. Implementation work belongs in [TODO.md](TODO.md).
 
-## Development status
+## Installation
 
-The package remains an alpha. The
-[command contract](docs/usage.md) describes available workflows; the
-[verification guide](docs/testing.md) explains how their behavior is tested.
+Download the archive for your operating system and architecture from
+[GitHub Releases](https://github.com/inherent-design/empack/releases), extract it,
+and place `empack` or `empack.exe` in a directory on your `PATH`.
 
-## Design and implementation
+```sh
+empack --version
+empack --help
+```
 
-| Document | Purpose |
+Java is required for Minecraft and applicable loader installation. Empack itself
+is a native executable. Release archives are executable distribution, not OS package
+manager registrations.
+
+## Pack authoring and distribution
+
+Authors edit `empack.yml`; `empack.lock` records exact selections. Authoring operations
+resolve dependencies and verify content before publication. Distribution recipes
+select a consumer, dependency delivery and update authority. An installed instance
+records its owned files and optional choices separately from the authoring project.
+
+| Reference | Purpose |
 | --- | --- |
-| [Target design](docs/design/README.md) | Guarantees, domain model, ports and publication lifecycle |
-| [Decisions](docs/design/decisions.md) | Accepted policy and verified implementation qualifications |
-| [Feature requirements](docs/design/features.md) | Preserved pack-management capabilities |
-| [CLI contract](docs/usage.md) | Available operations and outcomes |
-| [Verification](docs/testing.md) | Contract suites and native failure tests |
-| [Contributing](CONTRIBUTING.md) | Build and review workflow |
+| [Command contract](docs/usage.md) | Author and installed-instance workflows |
+| [Consumer outputs](docs/design/builds.md) | Modrinth, CurseForge, Prism, server and native releases |
+| [Instance updates](docs/design/instances.md) | File ownership, user edits, repair and rollback |
+| [Release trust](docs/design/releases.md) | Immutable releases, subscriptions and publisher authentication |
+| [Engine design](docs/design/architecture.md) | Interfaces, effects and runtime ownership |
+| [Verification](docs/testing.md) | Execution and consumer acceptance |
 
-## License
+## Contributing and license
 
-[Apache 2.0](LICENSE)
+See [CONTRIBUTING.md](CONTRIBUTING.md). Empack is licensed under
+[Apache 2.0](LICENSE).

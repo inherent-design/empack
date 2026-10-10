@@ -1,6 +1,6 @@
 # Helpers and acceptance tests
 
-Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+Contract for v0.6.0-beta. Callable types and signatures are defined in the
 [verification](../../crates/empack-lib/src/engine/verification.rs), [bounded I/O](../../crates/empack-lib/src/engine/io.rs) and [artifact inspection](../../crates/empack-lib/src/engine/artifacts.rs). This page specifies their behavior and ownership.
 
 ## Shared helpers and utilities
@@ -69,7 +69,7 @@ Public API examples compile as doctests; callable signatures live with their Rus
 | Import adapter | Preserve common/side layers, requirements, URLs/digests, embedded files, layout inference; reject unsupported conversions before live effects. |
 | Acquisition | Chunked/false-length limits; stalled headers/body cancellation; digest mismatch; scoped redirects; no persistent writes under read-only cache policy. |
 | Filesystem | Symlink/junction ancestors, case collisions, absent targets, hardlink copy safety, permissions, cross-device publication rejection. |
-| Backend | Observed exact pin/identity, dependency additions, structured partial failure, success-with-missing-output rejection. |
+| Instance | Three-way ownership, seed preservation, choices, exact release, structured conflicts and launch gating. |
 | Artifact writer/reader | Inventory completeness for all sources; duplicate paths; optional choices; deterministic settings where promised. |
 | Process runner | Closed pipes with live child; live descendant after parent exit; output flooding; timeout during drain; cancellation and job retirement. |
 | Publisher | Every durable crash point; expected-old conflict; before/after/neither recovery classification; prior artifact retained. |
@@ -90,7 +90,7 @@ cancelled_task retains reservation until actual retirement
 publication conflict implies no live changes by that attempted publication
 ```
 
-Equality means the relevant semantic state, not timestamps or nonessential diagnostic ordering. Property generators should vary provider/local/URL/embedded sources, aliases, pins, environments, paths, empty/missing files, and partial backend behavior.
+Equality means the relevant semantic state, not timestamps or nonessential diagnostic ordering. Property generators should vary provider/local/URL/embedded sources, aliases, pins, environments, paths, empty/missing files, and partial provider behavior.
 
 A particularly valuable scenario is `add -> forced re-add under alias -> sync -> build -> remove -> sync`. It catches contracts that look correct in isolation but disagree across command boundaries.
 
@@ -107,3 +107,24 @@ Also inject disk-full, permission changes, antivirus/in-use-file failures where 
 Retain real pack fixtures and cross-platform smoke tests. Compare semantic artifacts rather than trusting archive file size or success logs. Hash verification should be tested with deliberately different bytes served under the same URL/name.
 
 Run both minimum dependency/tool versions and the supported managed toolchain where practical. Record exactly which head/tool digest a live E2E result tested. Coverage percentage is supplemental evidence; it does not establish that every workflow uses the shared contract.
+
+## Consumer and instance acceptance
+
+Exercise actual Prism imports, platform archive readers and generated server startup
+commands. Matching an empack writer with an empack reader is necessary but does not
+establish consumer compatibility. Format validity and hosting eligibility have
+separate fixtures. Unrepresentable optional groups, URLs and placements fail explicitly.
+
+Publish release A, install client and server, change local configuration and choices,
+then publish B with additions, removals and runtime changes. Verify expected bytes,
+retained user files, world sentinels and installed release state after update, repair,
+interruption/recovery and managed rollback. Failed preparation retains A; uncertain
+publication blocks launch.
+
+Trust tests cover wrong keys, unknown algorithms, duplicate fields, changed payloads,
+expired channels, sequence replay, same-sequence substitution, wrong pack/channel,
+key rotation/revocation and explicit rollback without lowering the trust floor.
+Test redirection and credential isolation independently from signature verification.
+
+Compile external API fixtures that cannot construct authentication, approval or
+publication proofs directly. Keep production ports honest when using test doubles.
