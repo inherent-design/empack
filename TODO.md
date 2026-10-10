@@ -56,8 +56,9 @@ readiness or replace executable evidence.
 - [x] Specify author source inclusion in `empack.yml`, not `.packwizignore`.
 - [x] Specify release canonical identity and signing envelope, key enrollment,
   rotation, revocation, expiry and monotonic channel sequence handling.
-- [ ] Distinguish expected source assertions, computed content addresses, publisher
-  authentication and user authorization in every diagnostic and receipt.
+- [x] Keep expected source assertions, computed content addresses, publisher
+  authentication and user authorization distinct in diagnostics and receipts;
+  expose typed release-authentication, identity and engine-compatibility failures.
 - [x] Specify the public request/decision/outcome API and the CLI command groups.
 - [x] Preserve the feature surface in consumer capability and acceptance tables.
 
@@ -98,8 +99,8 @@ readiness or replace executable evidence.
   first unattended use. Keep signing keys outside pack sources and distributions.
 - [x] Reject downgrade/replay unless the operator explicitly selects rollback;
   snapshot installation remains possible without a channel subscription.
-- [ ] Keep tool acquisition/version policy independent of pack metadata and test
-  executable selection for each supported platform.
+- [x] Keep tool acquisition/version policy independent of pack metadata and cover
+  local executable selection with Unix and Windows tests.
 
 ## Consumer adapters
 
@@ -149,15 +150,15 @@ readiness or replace executable evidence.
 
 ## Acceptance
 
-- [ ] Author A, publish A, install client/server, change options and configuration,
+- [x] Author A, publish A, install client/server, change options and configuration,
   publish B with additions/removals/runtime changes, update and inspect exact bytes.
-- [ ] Interrupt acquisition and each durable publication boundary, restart, recover,
+- [x] Interrupt acquisition and each durable publication boundary, restart, recover,
   and establish that no incomplete installation is allowed to launch.
-- [ ] Test managed rollback with user edits, absent retained content, expired channel
+- [x] Test managed rollback with user edits, absent retained content, expired channel
   metadata and a played-world sentinel that must remain unchanged.
-- [ ] Test wrong keys/signatures, expired/replayed channels, changed manifests,
+- [x] Test wrong keys/signatures, expired/replayed channels, changed manifests,
   revoked publisher keys, cross-pack substitution and explicit trust rotation.
-- [ ] Test optional groups, side-specific overrides, local seeds, renamed files,
+- [x] Test optional groups, side-specific overrides, local seeds, renamed files,
   shared ownership, unexpected directories/links and destination collisions.
 - [ ] Run native-platform tests, strict provider/runtime/curated-pack workflows,
   formatting, Clippy, architecture/API checks and consumer import verification.
