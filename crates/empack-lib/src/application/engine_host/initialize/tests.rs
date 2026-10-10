@@ -235,6 +235,7 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
             replacement: prepared.view().replacement(),
             network: NetworkPermission::Offline,
             run_installer: false,
+            run_runtime: false,
         };
         let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
         assert!(matches!(
@@ -277,6 +278,7 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = operation.wait().await;

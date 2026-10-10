@@ -47,6 +47,11 @@ pub struct RecoveryReader {
 pub(super) struct ProjectReadGuard {
     _lock: Option<File>,
 }
+/// One managed process owns execution while its shared publication lock prevents mutation.
+pub(super) struct InstanceRunLease {
+    _run: File,
+    _publication: File,
+}
 impl RecoveryReader {
     pub fn new(host_state: std::path::PathBuf) -> Self {
         Self { host_state }
@@ -194,6 +199,26 @@ struct JournalCapture {
 }
 
 impl Publisher {
+    /// Acquire only during authorized execution, never during a preview.
+    pub(super) fn lease_instance(&self, root: &ProjectReadRoot) -> Result<InstanceRunLease> {
+        let state = self.project_state(root)?;
+        let run = lock_file(&state, "instance-run.lock")?;
+        run.try_lock().context("Instance is already running")?;
+        let publication = lock_file(&state, "operation.lock")?;
+        publication
+            .try_lock_shared()
+            .context("Instance publication is busy")?;
+        ensure!(
+            !self.recovery_required(root)?,
+            "Instance requires publication recovery before launch"
+        );
+        root.check_binding()?;
+        Ok(InstanceRunLease {
+            _run: run,
+            _publication: publication,
+        })
+    }
+
     /// The composition root supplies trusted host state, never an imported project directory.
     pub fn open(host_state: &Path) -> Result<Self> {
         Self::open_impl(host_state, true)
@@ -828,6 +853,11 @@ fn private_directory(directory: &Dir) -> Result<()> {
     Ok(())
 }
 fn lock(directory: &Dir) -> Result<File> {
+    let file = lock_file(directory, "operation.lock")?;
+    file.try_lock().context("Project publication is busy")?;
+    Ok(file)
+}
+fn lock_file(directory: &Dir, name: &str) -> Result<File> {
     use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
     let mut options = OpenOptions::new();
     options
@@ -835,12 +865,11 @@ fn lock(directory: &Dir) -> Result<File> {
         .write(true)
         .create(true)
         .follow(FollowSymlinks::No);
-    let file = directory.open_with("operation.lock", &options)?.into_std();
+    let file = directory.open_with(name, &options)?.into_std();
     ensure!(
         file.metadata()?.is_file(),
         "Operation lock is not a regular file"
     );
-    file.try_lock().context("Project publication is busy")?;
     Ok(file)
 }
 fn new_retained_file(directory: &Dir, name: &str) -> Result<File> {

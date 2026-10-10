@@ -220,6 +220,7 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
+        InstanceCommand::Launch { command } => launch(session, command).await,
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
         | InstanceCommand::ObserveChannel { .. }) => subscription(session, command).await,
@@ -603,4 +604,66 @@ async fn read_subscription(
         },
     )?;
     scope.accept(work.wait().await?)?.transpose()
+}
+
+async fn launch(session: &dyn Session, command: Vec<std::ffi::OsString>) -> Result<()> {
+    let (invocation, root) = project_path(session)?;
+    let mut args = command.into_iter();
+    let program = PathBuf::from(
+        args.next()
+            .context("Select a local runtime program after --")?,
+    );
+    let program = if program.is_absolute() || program.components().count() > 1 {
+        absolute(&invocation, &program)
+    } else {
+        let found = session
+            .process()
+            .find_program(
+                program
+                    .to_str()
+                    .context("Runtime program name is not UTF-8; use an absolute path")?,
+            )
+            .context("Runtime executable was not found on PATH")?;
+        absolute(&invocation, Path::new(&found))
+    };
+    let engine = engine(session.config().app_config(), &invocation)?;
+    let result = async {
+        let Preparation::Ready(prepared) = cancellable(
+            session,
+            engine.prepare(
+                root,
+                crate::engine::api::LaunchInstanceRequest {
+                    program,
+                    arguments: args.collect(),
+                },
+            ),
+        )
+        .await?
+        else {
+            anyhow::bail!("Instance launch requires input")
+        };
+        let OperationPreview::Launch(view) = prepared.view() else {
+            anyhow::bail!("Unexpected launch preview")
+        };
+        session.display().status().info(&format!(
+            "Run {} against completed release {}",
+            view.program.display(),
+            view.record.release
+        ));
+        apply(session, &engine, prepared, "Instance launch", |receipt| {
+            let ExecutionReceipt::Launch(receipt) = receipt else {
+                anyhow::bail!("Unexpected runtime receipt")
+            };
+            ensure!(
+                receipt.status.success(),
+                "Instance runtime exited with {}",
+                receipt.status
+            );
+            Ok(format!("Runtime completed for release {}", receipt.release))
+        })
+        .await
+    }
+    .await;
+    engine.shutdown().await;
+    result
 }

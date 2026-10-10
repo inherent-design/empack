@@ -127,6 +127,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: None,
     }
 }
@@ -368,6 +369,7 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        run_runtime: false,
         replacement: None,
     };
     assert!(prepared.authorize(permission).is_err());
@@ -1092,6 +1094,7 @@ fn import_grant(prepared: &PreparedOperation) -> ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().import().unwrap().replacement,
     }
 }

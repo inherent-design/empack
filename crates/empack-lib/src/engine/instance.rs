@@ -234,14 +234,13 @@ fn project_files(
         };
         if applies {
             ensure!(
-                layout != InstanceLayout::Prism
-                    || !file.destination.split('/').next().is_some_and(|name| [
-                        ".empack-layout",
-                        ".empack-consumer"
-                    ]
-                    .iter()
-                    .any(|reserved| name.eq_ignore_ascii_case(reserved))),
-                "Release destination collides with Prism layout control"
+                !file.destination.split('/').next().is_some_and(|name| [
+                    ".empack-layout",
+                    ".empack-consumer"
+                ]
+                .iter()
+                .any(|reserved| name.eq_ignore_ascii_case(reserved))),
+                "Release destination collides with instance layout control"
             );
             let target = path(&file.destination)?;
             let target = layout.target(target);
@@ -436,12 +435,16 @@ pub(super) fn plan(
             "Prism game directory changed during preparation"
         );
         snapshot = snapshot.merge(absent)?;
-        snapshot = snapshot.merge(root.capture(
-            &[ProjectLayout::path(&ManagedPath::PrismLayoutMarker)?],
-            document_limits(limits),
-            cancel,
-        )?)?;
     }
+    let layout_marker = match layout {
+        InstanceLayout::Prism => ManagedPath::PrismLayoutMarker,
+        InstanceLayout::Game => ManagedPath::InstanceLayoutMarker,
+    };
+    snapshot = snapshot.merge(root.capture(
+        &[ProjectLayout::path(&layout_marker)?],
+        document_limits(limits),
+        cancel,
+    )?)?;
     let active = if action == InstanceAction::Prepare {
         if let Some(previous) = &previous {
             ensure!(
@@ -618,7 +621,7 @@ pub(super) fn plan(
             .iter()
             .cloned()
             .chain([release_target.clone(), ManagedPath::InstanceRecord])
-            .chain((layout == InstanceLayout::Prism).then_some(ManagedPath::PrismLayoutMarker)),
+            .chain([layout_marker.clone()]),
     )?;
     let mut desired = BTreeMap::new();
     let mut removals = BTreeSet::new();
@@ -718,18 +721,17 @@ pub(super) fn plan(
     let record_bytes = serde_json::to_vec(&record)?;
     InstanceRecord::decode(&record_bytes)?;
     let mut documents = BTreeMap::from([(ManagedPath::InstanceRecord, record_bytes)]);
-    if layout == InstanceLayout::Prism {
-        let marker = b"empack-prism-layout-v1\n";
-        if let Some(bytes) =
-            read_optional(&root, &snapshot, &ManagedPath::PrismLayoutMarker, cancel)?
-        {
-            ensure!(
-                bytes == marker && previous.is_some(),
-                "Prism layout marker is not owned by this completed instance"
-            );
-        }
-        documents.insert(ManagedPath::PrismLayoutMarker, marker.to_vec());
+    let marker: &[u8] = match layout {
+        InstanceLayout::Prism => b"empack-prism-layout-v1\n",
+        InstanceLayout::Game => b"empack-game-layout-v1\n",
+    };
+    if let Some(bytes) = read_optional(&root, &snapshot, &layout_marker, cancel)? {
+        ensure!(
+            bytes == marker && previous.is_some(),
+            "Layout marker is not owned by this completed instance"
+        );
     }
+    documents.insert(layout_marker, marker.to_vec());
     // Immutable descriptors cannot overwrite an unrelated or corrupt file, even if explicitly selected.
     if let Some(ObservedPath::File(existing)) = observed.get(&release_target) {
         ensure!(
@@ -773,6 +775,19 @@ pub(super) fn plan(
     })
 }
 impl InstancePlan {
+    pub(super) fn launch_lease(
+        &self,
+        state: &Path,
+        cancel: &Cancellation,
+    ) -> Result<super::publication::InstanceRunLease> {
+        ensure!(
+            self.files.changes().is_empty(),
+            "Instance content requires repair before launch"
+        );
+        let lease = Publisher::open(state)?.lease_instance(&self.root)?;
+        self.root.revalidate(&self.snapshot, cancel)?;
+        Ok(lease)
+    }
     /// Resolve signed relative asset identity to a transient transport locator.
     /// The persisted release and original source assertions remain unchanged.
     pub(super) fn download(&self, file: &ReleaseFile) -> Result<ReleaseFile> {

@@ -36,7 +36,7 @@ fails. Explicit independent batches preserve failed groups and report partial ef
 | `instance repair` | Restore the recorded release without selecting newer dependencies |
 | `instance options` | Inspect/change persistent optional choices |
 | `instance rollback` | Return managed content to a retained completed release |
-| `instance launch` | Coordinate checks, installation state and runtime launch |
+| `instance launch -- PROGRAM ARGS...` | Verify completed content and run a locally selected runtime under an instance lease |
 | `instance inspect` | Explain release, ownership, choices, conflicts and update authority |
 
 `instance options` lists the completed release's saved values and alternatives.

@@ -135,6 +135,7 @@ async fn supplied_manual_files_survive_repeated_input_decisions_and_publish_veri
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = engine.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;
@@ -405,6 +406,7 @@ async fn local_build_inputs_resume_with_verified_private_bytes_and_publish_offli
         replacement: ready.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = engine.start(ready.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;

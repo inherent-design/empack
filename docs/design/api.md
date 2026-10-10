@@ -98,3 +98,10 @@ The executable owns Tokio, Ctrl-C, process exit and terminal restoration. Sessio
 carry invocation paths, user configuration and narrow services. Independent embedded
 sessions must not inherit the first session's display or error configuration.
 Progress is bounded and lossy; completion is retained independently of subscribers.
+
+`LaunchInstanceRequest` carries an absolute host-selected program and native
+arguments. `LaunchInstancePreview` identifies the completed release and executable.
+An exact-plan grant must separately permit `run_runtime`; allowing installers does
+not permit runtime launch. `LaunchInstanceReceipt` retains the process exit status.
+The engine owns process supervision and the instance lease independently of the
+caller's handle. Release and channel documents cannot construct launch requests.

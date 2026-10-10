@@ -244,6 +244,7 @@ async fn package_runtime(
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: true,
+        run_runtime: false,
         replacement: None,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;

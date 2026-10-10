@@ -11,9 +11,10 @@ subsequent installation, repair and rollback retain it. Changing layout requires
 separate installation rather than moving ownership implicitly.
 
 Prism prefers `minecraft/` if that directory exists. The Prism layout therefore
-requires its absence and binds that absence through publication. A small owned
-`.minecraft/.empack-layout` marker keeps the selected directory present even for an
-empty release. A release cannot overwrite this marker or the `.empack-consumer` input directory. Launcher components and
+requires its absence and binds that absence through publication. An owned
+`.empack-layout` marker keeps the selected game directory present even for an empty
+release. A release cannot overwrite this marker or the `.empack-consumer` input
+directory. Launcher components and
 icons remain outside the content installer's ownership. [Prism directory selection](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/MinecraftInstance.cpp)
 
 `instance prepare RELEASE --sha256 ID` is the consumer entry point. It installs the
@@ -184,3 +185,27 @@ Repair rejects a different release or changed choices even through the library A
 Rollback history authorizes selecting a descriptor, not overwriting changed managed
 files. The same three-way comparison applies to all three commands. Previewing
 maintenance captures and verifies inputs without replacing instance or game files.
+
+## Caller-selected runtime execution
+
+`instance launch -- PROGRAM ARGUMENTS...` runs a local runtime selected by the user
+or launcher. Program and arguments remain separate native arguments; release
+metadata cannot supply a program or shell source. The executable is resolved before
+approval. Preparation verifies the completed record and its selected content;
+missing or modified managed bytes require repair or a conflict decision first.
+This entry point coordinates execution of an already prepared runtime. It does not
+select Java, download game binaries or infer a launch command from release metadata.
+
+The execution grant has a separate `run_runtime` permission. After approval, execution
+acquires an exclusive instance-run lock and a shared publication lock, then rechecks
+the captured observations. The instance-run lock prevents a second managed process;
+the shared lock prevents update, cleanup and publication recovery from changing that
+root while the process runs. Console streams are inherited without accumulating
+output or imposing the short timeout used for build tools. Cancellation retires the
+owned process tree before releasing the lease. The receipt carries the real process
+exit status; a nonzero exit is a CLI failure.
+
+The host chooses the runtime and remains responsible for its compatibility and
+external resource use. Empack's acquisition grant does not sandbox the runtime's
+network or filesystem access. Independently started processes are outside this
+coordination.

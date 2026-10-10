@@ -85,6 +85,7 @@ async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;
@@ -865,6 +866,7 @@ async fn native_release_batches_resume_exact_downloads_and_publish_with_other_co
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -994,6 +996,7 @@ async fn server_projection_without_client_downloads(consumer: empack_core::distr
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;

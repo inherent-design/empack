@@ -83,6 +83,7 @@ async fn approved_build_populates_cache_and_next_build_verifies_it_offline_witho
             plan: prepared.view().plan(),
             network: NetworkPermission::Offline,
             run_installer: false,
+            run_runtime: false,
             replacement: prepared.view().replacement(),
         };
         let mut handle = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -132,6 +133,7 @@ async fn approved_build_populates_cache_and_next_build_verifies_it_offline_witho
                 plan,
                 network: NetworkPermission::Offline,
                 run_installer: false,
+                run_runtime: false,
                 replacement: None
             })
             .is_err()
@@ -201,6 +203,7 @@ async fn provider_cache_satisfies_exact_files_without_catalog_access_or_credenti
                 plan: prepared.view().plan(),
                 network: NetworkPermission::Offline,
                 run_installer: false,
+                run_runtime: false,
                 replacement: prepared.view().replacement(),
             };
             let mut handle = engine.start(prepared.authorize(grant).unwrap()).unwrap();

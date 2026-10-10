@@ -87,6 +87,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     }
 }

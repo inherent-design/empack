@@ -68,6 +68,8 @@ pub use recovery::{
 };
 mod execution;
 mod instance;
+mod launch;
+pub use launch::{LaunchInstancePreview, LaunchInstanceReceipt, LaunchInstanceRequest};
 mod subscription;
 pub use instance::{InstallInstanceRequest, InstancePreview, InstanceReceipt};
 pub use subscription::{
@@ -217,6 +219,7 @@ struct PreparedBuild {
     acquired_permit: Option<super::resources::AdmissionPermit>,
 }
 pub enum Request {
+    LaunchInstance(LaunchInstanceRequest),
     Subscription(SubscriptionRequest),
     InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
@@ -245,6 +248,11 @@ impl From<PathBuf> for ProjectTarget {
 impl From<SubscriptionRequest> for Request {
     fn from(request: SubscriptionRequest) -> Self {
         Self::Subscription(request)
+    }
+}
+impl From<LaunchInstanceRequest> for Request {
+    fn from(request: LaunchInstanceRequest) -> Self {
+        Self::LaunchInstance(request)
     }
 }
 impl From<InstallInstanceRequest> for Request {
@@ -314,6 +322,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    Launch(LaunchInstancePreview),
     Subscription(SubscriptionPreview),
     Instance(InstancePreview),
     CacheClean(CacheCleanPreview),
@@ -331,6 +340,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::Launch(view) => view.plan,
             Self::Subscription(view) => view.plan,
             Self::Instance(view) => view.plan,
             Self::CacheClean(view) => view.plan,
@@ -414,6 +424,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::Launch(_) => None,
             Self::Subscription(view) => Some(view.replacement),
             Self::Instance(view) => Some(view.replacement),
             Self::CacheClean(view) => Some(view.replacement),
@@ -436,6 +447,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    Launch(Box<launch::PreparedLaunch>),
     Subscription(Box<subscription::PreparedSubscription>),
     Instance(Box<instance::PreparedInstanceOperation>),
     CacheClean(Box<cache_cleanup::PreparedCacheCleanup>),
@@ -452,6 +464,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::Launch(value) => OperationPreview::Launch(value.view.clone()),
             Self::Subscription(value) => OperationPreview::Subscription(value.view.clone()),
             Self::Instance(value) => OperationPreview::Instance(value.view.clone()),
             Self::CacheClean(value) => OperationPreview::CacheClean(value.view.clone()),
@@ -505,6 +518,8 @@ pub struct ExecutionGrant {
     pub plan: PlanId,
     pub network: NetworkPermission,
     pub run_installer: bool,
+    /// Permit a local host-selected runtime; release metadata cannot choose this command.
+    pub run_runtime: bool,
     /// Exact managed replacement footprint displayed by a project-change preview.
     pub replacement: Option<ReplacementSummary>,
 }
@@ -537,6 +552,10 @@ impl PreparedOperation {
             ))
             .context("Operation requires trusted installer authorization")
         );
+        ensure!(
+            !matches!(&*self.view, OperationPreview::Launch(_)) || grant.run_runtime,
+            "Instance launch requires explicit runtime execution authorization"
+        );
         let replacement = self.view.replacement();
         ensure!(
             grant.replacement == replacement,
@@ -550,6 +569,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    Launch(Box<RetainedOutput<LaunchInstanceReceipt>>),
     Subscription(Box<RetainedOutput<SubscriptionReceipt>>),
     Instance(Box<RetainedOutput<InstanceReceipt>>),
     CacheClean(Box<CacheCleanReceipt>),
@@ -664,6 +684,7 @@ pub struct BuildReceipt {
 ///     plan: prepared.view().plan(),
 ///     network: NetworkPermission::Allow,
 ///     run_installer: true,
+///     run_runtime: false,
 ///     replacement: None,
 /// };
 /// let mut operation = engine.start(prepared.authorize(grant)?)?;
@@ -741,6 +762,11 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::LaunchInstance(request) => {
+                            Ok(launch::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Launch(Box::new(value))))
+                        }
                         Request::Subscription(request) => {
                             Ok(subscription::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -943,6 +969,13 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::Launch(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::Launch(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    launch::run(prepared, config, scope).await
+                }
                 PreparedKind::Subscription(_) => {
                     let prepared = data.map(|value| match value {
                         PreparedKind::Subscription(value) => *value,

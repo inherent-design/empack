@@ -306,6 +306,7 @@ impl VerifiedFileChange {
                 ManagedPath::InstanceFile(_)
                     | ManagedPath::PrismFile(_)
                     | ManagedPath::PrismLayoutMarker
+                    | ManagedPath::InstanceLayoutMarker
                     | ManagedPath::InstanceRecord
                     | ManagedPath::InstanceRelease(_)
             )),

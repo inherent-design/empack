@@ -32,6 +32,8 @@ pub enum ManagedPath {
     PrismFile(PortableRelPath),
     /// Fixed layout marker keeps an empty Prism game directory present.
     PrismLayoutMarker,
+    /// Keeps an empty native game directory present without claiming user content.
+    InstanceLayoutMarker,
     /// Completed native installation ownership and choices.
     InstanceRecord,
     /// Enrolled publisher keys and channel anti-replay state.

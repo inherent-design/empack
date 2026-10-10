@@ -329,6 +329,12 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Run a locally selected runtime while preventing concurrent managed updates
+    Launch {
+        /// Runtime program and arguments after --; no shell expansion or remote commands
+        #[arg(last = true, required = true, num_args = 1..)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Apply the exact signed release selected by the saved authenticated channel observation
     Update {
         /// Local signed release envelope; omit to fetch the saved channel's exact release
@@ -693,6 +699,35 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn instance_launch_preserves_native_argument_boundaries() {
+        assert!(Cli::try_parse_from(["empack", "instance", "launch"]).is_err());
+        let cli = Cli::try_parse_from([
+            "empack",
+            "instance",
+            "launch",
+            "--",
+            "/path with spaces/java",
+            "-Xmx2G",
+            "literal $value",
+        ])
+        .unwrap();
+        let Some(Commands::Instance {
+            command: InstanceCommand::Launch { command },
+        }) = cli.command
+        else {
+            panic!()
+        };
+        assert_eq!(
+            command,
+            vec![
+                std::ffi::OsString::from("/path with spaces/java"),
+                "-Xmx2G".into(),
+                "literal $value".into()
+            ]
+        );
+    }
 
     #[test]
     fn instance_install_requires_a_digest_and_keeps_exact_input_associations() {

@@ -18,6 +18,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     }
 }
 #[tokio::test]

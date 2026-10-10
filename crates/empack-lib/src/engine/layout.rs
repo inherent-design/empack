@@ -34,6 +34,7 @@ impl ProjectLayout {
             .to_owned(),
             ManagedPath::Artifact(path) => format!("dist/{}", path.as_str()),
             ManagedPath::InstanceFile(path) => format!("game/{}", path.as_str()),
+            ManagedPath::InstanceLayoutMarker => "game/.empack-layout".to_owned(),
             ManagedPath::PrismLayoutMarker => ".minecraft/.empack-layout".to_owned(),
             ManagedPath::PrismFile(path) => format!(".minecraft/{}", path.as_str()),
             ManagedPath::InstanceSubscription => ".empack/subscription.json".to_owned(),
@@ -47,6 +48,7 @@ impl ProjectLayout {
     pub fn classify(path: &PortableRelPath) -> Result<ManagedPath> {
         let value = path.as_str();
         match value {
+            "game/.empack-layout" => return Ok(ManagedPath::InstanceLayoutMarker),
             ".minecraft/.empack-layout" => return Ok(ManagedPath::PrismLayoutMarker),
             ".empack/subscription.json" => return Ok(ManagedPath::InstanceSubscription),
             ".empack/instance.json" => return Ok(ManagedPath::InstanceRecord),

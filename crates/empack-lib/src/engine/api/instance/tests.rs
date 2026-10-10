@@ -91,6 +91,7 @@ async fn apply(engine: &Engine, root: &Path, request: InstallInstanceRequest) ->
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -186,6 +187,7 @@ async fn preview_conflicts_and_late_edits_never_overwrite_current_state() {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     fs::write(root.path().join("game/mods/a.jar"), b"user edit").unwrap();
@@ -502,6 +504,7 @@ async fn referenced_instance_content_requires_approval_and_whole_batch_verificat
             plan: prepared.view().plan(),
             network: NetworkPermission::Offline,
             run_installer: false,
+            run_runtime: false,
             replacement: prepared.view().replacement(),
         };
         assert!(prepared.authorize(denied).is_err());
@@ -540,6 +543,7 @@ async fn referenced_instance_content_requires_approval_and_whole_batch_verificat
             plan: prepared.view().plan(),
             network: NetworkPermission::Allow,
             run_installer: false,
+            run_runtime: false,
             replacement: prepared.view().replacement(),
         };
         let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -578,6 +582,7 @@ async fn execute_network(engine: &Engine, root: &Path, input: InstallInstanceReq
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -819,6 +824,7 @@ async fn prism_layout_binds_launcher_directory_and_handles_empty_releases() {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     let approved = prepared.authorize(grant).unwrap();

@@ -294,6 +294,7 @@ async fn publish_with_refreshed_locator(
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        run_runtime: false,
         replacement: None,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;

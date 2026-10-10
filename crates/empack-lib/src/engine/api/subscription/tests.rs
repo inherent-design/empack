@@ -39,6 +39,7 @@ async fn apply(engine: &Engine, root: &Path, request: SubscriptionRequest) -> Su
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -173,6 +174,7 @@ async fn subscription_rejects_copied_roots_and_late_trust_edits() {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     fs::write(&path, b"changed locally").unwrap();
@@ -287,6 +289,7 @@ async fn subscribed_selection_binds_current_keys_floor_and_exact_signed_release(
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     apply(&engine, root.path(), observe(&key, 2, b.id())).await;
@@ -309,6 +312,7 @@ async fn subscribed_selection_binds_current_keys_floor_and_exact_signed_release(
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -448,6 +452,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             plan: prepared.view().plan(),
             network: NetworkPermission::Allow,
             run_installer: false,
+            run_runtime: false,
             replacement: prepared.view().replacement(),
         };
         let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
@@ -530,6 +535,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
                 plan: prepared.view().plan(),
                 network: NetworkPermission::Allow,
                 run_installer: false,
+                run_runtime: false,
                 replacement: prepared.view().replacement(),
             };
             let mut repair = engine.start(prepared.authorize(grant).unwrap()).unwrap();

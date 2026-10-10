@@ -336,6 +336,7 @@ async fn publish_fixture(
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().import().and_then(|view| view.replacement),
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
