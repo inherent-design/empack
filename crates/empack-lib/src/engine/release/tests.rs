@@ -363,3 +363,23 @@ fn release_writer_bounds_escaped_output_before_serialization_finishes() {
     let bytes = bounded_json(&value, 258).unwrap();
     assert_eq!(serde_json::from_slice::<String>(&bytes).unwrap(), value);
 }
+
+#[test]
+fn provider_selections_require_canonical_project_and_version_identities() {
+    for (provider, project, selection) in [
+        (ReleaseProvider::Modrinth, "sodium", "abcdefgh"),
+        (ReleaseProvider::Modrinth, "AANobbMI", "latest"),
+        (ReleaseProvider::CurseForge, "0123", "456"),
+        (ReleaseProvider::CurseForge, "123", "+456"),
+    ] {
+        let mut release = document();
+        release.files[0].source = ReleaseSource::Provider {
+            provider,
+            project: project.into(),
+            selection: selection.into(),
+            slot: "primary".into(),
+            alternatives: vec![],
+        };
+        assert!(DecodedRelease::encode(release).is_err());
+    }
+}

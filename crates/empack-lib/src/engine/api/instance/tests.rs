@@ -556,3 +556,152 @@ async fn referenced_instance_content_requires_approval_and_whole_batch_verificat
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+async fn execute_network(engine: &Engine, root: &Path, input: InstallInstanceRequest) -> bool {
+    let Preparation::Ready(prepared) = engine.prepare(root.to_owned(), input).await.unwrap() else {
+        panic!()
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Allow,
+        run_installer: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    let result = matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
+    );
+    engine.release_completed(operation.id());
+    result
+}
+#[tokio::test]
+async fn provider_refresh_preserves_exact_selection_and_assertions() {
+    use serde_json::json;
+    for wrong_owner in [false, true] {
+        let mut server = mockito::Server::new_async().await;
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (engine, governor) = super::super::tests::engine(state.path().join("state"));
+        let mut engine = engine.with_provider_catalog(
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+            CatalogLimits {
+                response_bytes: 4096,
+                transfer_bytes: 16384,
+                deadline: std::time::Duration::from_secs(3),
+            },
+        );
+        engine.transport = HttpAcquisition::for_loopback_tests()
+            .with_test_origin("https://release.test", &server.url());
+        let project = server.mock("GET", "/project/AANobbMI").with_body(json!({"id":"AANobbMI","slug":"sodium","title":"Sodium","project_type":"mod","client_side":"required","server_side":"unsupported","loaders":["fabric"]}).to_string()).create_async().await;
+        let version = server.mock("GET", "/version/abcdefgh").with_body(json!({"id":"abcdefgh","project_id":if wrong_owner {"ZZZZZZZZ"} else {"AANobbMI"},"game_versions":["1.21.1"],"loaders":["fabric"],"files":[{"filename":"mod.jar","primary":true,"size":1,"hashes":{"sha512":sha2::Sha512::digest(b"A").iter().map(|v|format!("{v:02x}")).collect::<String>()},"url":"https://release.test/fresh"}],"dependencies":[]}).to_string()).create_async().await;
+        let payload = server
+            .mock("GET", "/fresh")
+            .with_body("A")
+            .expect(if wrong_owner { 0 } else { 1 })
+            .create_async()
+            .await;
+        let mut input = request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+        let mut document = input.release.release().document().clone();
+        document.files[0].source = ReleaseSource::Provider {
+            provider: ReleaseProvider::Modrinth,
+            project: "AANobbMI".into(),
+            selection: "abcdefgh".into(),
+            slot: "primary".into(),
+            alternatives: vec![],
+        };
+        input = replace_document(input, document);
+        input.supplied.clear();
+        assert_eq!(
+            execute_network(&engine, root.path(), input).await,
+            !wrong_owner
+        );
+        project.assert_async().await;
+        version.assert_async().await;
+        payload.assert_async().await;
+        if wrong_owner {
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        } else {
+            assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+        }
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+#[tokio::test]
+async fn provider_world_archive_downloads_once_and_verifies_each_member() {
+    use std::io::{Cursor, Write};
+    for wrong_member in [false, true] {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, bytes) in [("world/level.dat", b"A"), ("world/region/r.0.0.mca", b"B")] {
+            archive
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            archive.write_all(bytes).unwrap();
+        }
+        let archive = archive.finish().unwrap().into_inner();
+        let mut server = mockito::Server::new_async().await;
+        let payload = server
+            .mock("GET", "/world.zip")
+            .with_body(archive.clone())
+            .expect(1)
+            .create_async()
+            .await;
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (mut engine, governor) = super::super::tests::engine(state.path().join("state"));
+        engine.transport = HttpAcquisition::for_loopback_tests()
+            .with_test_origin("https://release.test", &server.url());
+        let mut input = request(&[
+            ("level", "world/level.dat", b"A", FilePolicy::Seed),
+            (
+                "region",
+                "world/region/r.0.0.mca",
+                if wrong_member { b"X" } else { b"B" },
+                FilePolicy::Seed,
+            ),
+        ]);
+        let mut document = input.release.release().document().clone();
+        for file in &mut document.files {
+            file.source = ReleaseSource::ProviderArchiveMember {
+                archive: ReleaseArchiveSource {
+                    selection: ReleaseSelection {
+                        provider: ReleaseProvider::CurseForge,
+                        project: "123".into(),
+                        selection: "456".into(),
+                        slot: "primary".into(),
+                    },
+                    alternatives: vec!["https://release.test/world.zip".into()],
+                    assertions: vec![SourceDigest {
+                        algorithm: "sha256".into(),
+                        value: hash(&archive),
+                    }],
+                    bytes: Some(archive.len() as u64),
+                    sha256: Some(hash(&archive)),
+                },
+                member: file.destination.clone(),
+            };
+        }
+        input = replace_document(input, document);
+        input.supplied.clear();
+        assert_eq!(
+            execute_network(&engine, root.path(), input).await,
+            !wrong_member
+        );
+        payload.assert_async().await;
+        if wrong_member {
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        } else {
+            assert_eq!(
+                fs::read(root.path().join("game/world/level.dat")).unwrap(),
+                b"A"
+            );
+            assert_eq!(
+                fs::read(root.path().join("game/world/region/r.0.0.mca")).unwrap(),
+                b"B"
+            );
+        }
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}

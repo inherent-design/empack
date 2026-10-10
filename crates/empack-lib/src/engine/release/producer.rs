@@ -821,8 +821,8 @@ mod tests {
             archive: ReleaseArchiveSource {
                 selection: ReleaseSelection {
                     provider: ReleaseProvider::Modrinth,
-                    project: "project".into(),
-                    selection: "version".into(),
+                    project: "AANobbMI".into(),
+                    selection: "abcdefgh".into(),
                     slot: "world.zip".into(),
                 },
                 alternatives: vec!["https://example.com/world.zip".into()],

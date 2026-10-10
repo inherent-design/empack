@@ -749,11 +749,15 @@ impl Engine {
                         )
                         .await?
                         .map(|value| PreparedKind::NativeExport(Box::new(value)))),
-                        Request::InstallInstance(request) => {
-                            Ok(instance::prepare(project, *request, &config, &mut scope)
-                                .await?
-                                .map(|value| PreparedKind::Instance(Box::new(value))))
-                        }
+                        Request::InstallInstance(request) => Ok(instance::prepare(
+                            project,
+                            *request,
+                            &config,
+                            provider_access,
+                            &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::Instance(Box::new(value)))),
                         Request::Clean(request) => {
                             Ok(cleanup::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -953,7 +957,11 @@ impl Engine {
                         PreparedKind::Instance(value) => *value,
                         _ => unreachable!(),
                     });
-                    instance::run(prepared, config, transport, scope).await
+                    let transport = match content_cache {
+                        Some(cache) => transport.with_execution_cache(cache),
+                        None => transport,
+                    };
+                    instance::run(prepared, config, transport, catalog, scope).await
                 }
                 PreparedKind::CacheClean(_) => {
                     let prepared = data.map(|kind| match kind {

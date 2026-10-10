@@ -162,17 +162,24 @@ pub struct ReleaseArchiveSource {
     pub sha256: Option<String>,
 }
 impl ReleaseSelection {
+    pub(in crate::engine) fn pin(&self) -> Result<empack_core::model::ResolvedPin> {
+        use empack_core::identity::*;
+        Ok(match self.provider {
+            ReleaseProvider::Modrinth => empack_core::model::ResolvedPin {
+                project: ProviderProjectId::Modrinth(ModrinthProjectId::parse(&self.project)?),
+                selection: PinSelector::ModrinthVersion(ModrinthVersionId::parse(&self.selection)?),
+            },
+            ReleaseProvider::CurseForge => empack_core::model::ResolvedPin {
+                project: ProviderProjectId::CurseForge(CurseForgeProjectId::parse(&self.project)?),
+                selection: PinSelector::CurseForgeFile(CurseForgeFileId::parse(&self.selection)?),
+            },
+        })
+    }
     fn validate(&self) -> Result<()> {
         identifier(&self.project)?;
         identifier(&self.selection)?;
         label(&self.slot)?;
-        if self.provider == ReleaseProvider::CurseForge {
-            ensure!(
-                self.project.parse::<u64>().is_ok_and(|n| n > 0)
-                    && self.selection.parse::<u64>().is_ok_and(|n| n > 0),
-                "CurseForge references require positive numeric identities"
-            );
-        }
+        self.pin()?;
         Ok(())
     }
 }

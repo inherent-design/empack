@@ -118,6 +118,13 @@ match both its original assertions and the release's content address before any
 instance change is published. A failed transfer or verification preserves the
 previous installation. A download URL never changes the selected file identity.
 
+Provider acquisition refreshes only the declared project, version and file role.
+Refreshed locators must remain compatible with the release's original assertions;
+they cannot substitute a newer version. Provider world members share one verified
+archive acquisition. Extraction checks each exact member address independently and
+retains seed ownership. Approved execution may reuse and populate the disposable
+verified-content cache; cached bytes remain subject to the same assertions.
+
 A new instance uses declared choice defaults. Updates retain choices by stable key.
 A newly introduced choice or an unavailable prior alternative requires a decision;
 a changed publisher default does not overwrite a saved selection. Projection

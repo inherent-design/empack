@@ -7,6 +7,7 @@ use crate::engine::{
     content::AcquiredContent, instance, publication::Publisher, runtime::WorkScope,
 };
 use empack_core::files::{FileChange, FilePlan, ObservedPath};
+mod acquisition;
 
 pub struct InstallInstanceRequest {
     pub action: InstanceAction,
@@ -49,6 +50,7 @@ pub(super) async fn prepare(
     target: ProjectTarget,
     request: InstallInstanceRequest,
     config: &EngineConfig,
+    provider_access: ProviderAvailability,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedInstanceOperation>> {
     let ProjectTarget::Existing(root) = target else {
@@ -97,7 +99,7 @@ pub(super) async fn prepare(
             .collect();
         for file in &downloads {
             ensure!(
-                !locators(file).is_empty(),
+                acquisition::available(file, provider_access)?,
                 "Instance requires exact content for {}; supply --file {}=PATH",
                 file.key,
                 file.key
@@ -138,10 +140,11 @@ pub(super) async fn run(
     prepared: RetainedOutput<PreparedInstanceOperation>,
     config: EngineConfig,
     transport: HttpAcquisition,
+    catalog: Option<(ProviderCatalog, CatalogLimits)>,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, transport, &mut scope).await;
+    let result = execute(prepared, config, transport, catalog, &mut scope).await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Instance(Box::new(receipt))),
         Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
@@ -151,6 +154,7 @@ async fn execute(
     prepared: RetainedOutput<PreparedInstanceOperation>,
     config: EngineConfig,
     transport: HttpAcquisition,
+    catalog: Option<(ProviderCatalog, CatalogLimits)>,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<InstanceReceipt>> {
     let bytes = prepared
@@ -177,28 +181,9 @@ async fn execute(
         content, downloads, ..
     } = &mut prepared.instance
     {
-        use crate::engine::{
-            acquisition::DownloadRequest,
-            content::{InitialObservation, SourceEvidencePolicy},
-        };
-        let requests = downloads
-            .iter()
-            .map(|file| {
-                Ok(DownloadRequest {
-                    alternatives: NonEmpty::new(locators(file).to_vec())?,
-                    expected: file.expected()?,
-                    limits: config.transfer,
-                    evidence: SourceEvidencePolicy::Compatibility,
-                    initial: InitialObservation::RequireEvidence,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let acquired = transport
-            .acquire_batch(scope, requests, config.transfer)
-            .await?;
-        for (file, bytes) in downloads.iter().zip(acquired) {
-            content.insert(file.key.clone(), bytes);
-        }
+        content.extend(
+            acquisition::acquire(downloads, &transport, catalog.as_ref(), &config, scope).await?,
+        );
     }
     let mut resources = config.resources.assembly;
     resources.scratch_bytes = resources.scratch_bytes.max(bytes);
@@ -223,14 +208,5 @@ async fn execute(
         .transpose()
 }
 
-fn locators(file: &crate::engine::release::ReleaseFile) -> &[String] {
-    use crate::engine::release::ReleaseSource;
-    match &file.source {
-        ReleaseSource::Url { alternatives } | ReleaseSource::Provider { alternatives, .. } => {
-            alternatives
-        }
-        _ => &[],
-    }
-}
 #[cfg(test)]
 mod tests;
