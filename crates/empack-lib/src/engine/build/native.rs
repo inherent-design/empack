@@ -5,7 +5,15 @@ use crate::engine::{
     release::producer::{NativeReleaseOptions, NativeReleasePlan},
     staging::PrivateFile,
 };
-use empack_core::{distribution::Recipe, model::DistributionArchive, path::PortableRelPath};
+use empack_core::{
+    distribution::{Consumer, Recipe, UpdateAuthority},
+    model::DistributionArchive,
+    path::PortableRelPath,
+};
+
+pub(crate) fn supports(recipe: Recipe) -> bool {
+    recipe.consumer() == Consumer::Empack && recipe.update_authority() == UpdateAuthority::Snapshot
+}
 
 pub(super) struct NativeArchiveOptions {
     pub recipe: Recipe,
@@ -22,17 +30,33 @@ pub(super) fn prepare_archive(
     cancel: &Cancellation,
 ) -> Result<(ArchiveCandidate, batch::BuiltDistribution)> {
     let recipe = options.recipe;
-    ensure!(
-        matches!(recipe, Recipe::EMPACK_REFERENCES | Recipe::EMPACK_BUNDLED),
-        "Unsupported native recipe"
-    );
+    ensure!(supports(recipe), "Unsupported native recipe");
     ensure!(
         artifact.as_str().ends_with(".empack"),
         "Native release output requires an .empack filename"
     );
-    let content = capture_build_content(workspace, external, options.evidence, None, cancel)?;
+    let (selection, _) = acquisition::select_game_inputs(
+        workspace,
+        recipe,
+        &empack_core::inventory::OptionalPolicy::Preserve,
+        cancel,
+    )?;
+    let owners = selection
+        .entries()
+        .iter()
+        .map(|entry| entry.owner.clone())
+        .collect();
+    let mut content =
+        capture_build_content(workspace, external, options.evidence, Some(&owners), cancel)?;
+    content.acquired.retain(|key, _| {
+        owners.contains(&ContentOwner::Dependency {
+            key: key.dependency.clone(),
+            slot: key.slot.clone(),
+        })
+    });
     let mut release_options = NativeReleaseOptions::from_project(&content.project)?;
     release_options.delivery = recipe.delivery();
+    release_options.environments = recipe.environments();
     let plan = NativeReleasePlan::prepare(
         &content.project,
         &content.acquired,

@@ -1157,12 +1157,12 @@ fn capture(
         }
     }
     ensure!(project.is_absolute(), "Project selection must be absolute");
-    if request.outputs.as_slice().iter().all(|output| {
-        matches!(
-            output.target,
-            Recipe::EMPACK_REFERENCES | Recipe::EMPACK_BUNDLED
-        )
-    }) {
+    if request
+        .outputs
+        .as_slice()
+        .iter()
+        .all(|output| crate::engine::build::native::supports(output.target))
+    {
         ensure!(
             matches!(request.optional, OptionalPolicy::Preserve),
             "Native releases retain installation choices; select options when installing"
@@ -1179,17 +1179,12 @@ fn capture(
                     | Recipe::PRISM_BUNDLED
                     | Recipe::SERVER_REFERENCES
                     | Recipe::SERVER_BUNDLED
-                    | Recipe::EMPACK_REFERENCES
-                    | Recipe::EMPACK_BUNDLED
-            ),
+            ) || crate::engine::build::native::supports(output.target),
             "Consumer recipe has no executable adapter; no acquisition was started"
         );
         PortableRelPath::parse(output.artifact.as_str(), PathSyntax::ArtifactName)?;
         collisions.insert_file(&output.artifact)?;
-        if matches!(
-            output.target,
-            Recipe::EMPACK_REFERENCES | Recipe::EMPACK_BUNDLED
-        ) {
+        if crate::engine::build::native::supports(output.target) {
             ensure!(
                 output.artifact.as_str().ends_with(".empack"),
                 "Native release output requires an .empack filename"
@@ -1241,21 +1236,17 @@ fn capture(
     if request.outputs.as_slice().iter().any(|output| {
         matches!(
             output.target,
-            Recipe::PRISM_REFERENCES
-                | Recipe::SERVER_REFERENCES
-                | Recipe::EMPACK_REFERENCES
-                | Recipe::EMPACK_BUNDLED
-        )
+            Recipe::PRISM_REFERENCES | Recipe::SERVER_REFERENCES
+        ) || crate::engine::build::native::supports(output.target)
     }) {
         super::release::producer::NativeReleaseOptions::from_project(&resolved)?;
     }
     let runtime = resolved.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
-        let optional = if matches!(
-            output.target,
-            Recipe::MODRINTH | Recipe::EMPACK_REFERENCES | Recipe::EMPACK_BUNDLED
-        ) {
+        let optional = if output.target == Recipe::MODRINTH
+            || crate::engine::build::native::supports(output.target)
+        {
             &OptionalPolicy::Preserve
         } else {
             &request.optional

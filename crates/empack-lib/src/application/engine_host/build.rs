@@ -357,8 +357,17 @@ fn request(
             let (suffix, extension) = match target {
                 Recipe::MODRINTH => ("", "mrpack"),
                 Recipe::CURSEFORGE => ("-curseforge", "zip"),
-                Recipe::EMPACK_REFERENCES => ("-empack-references", "empack"),
-                Recipe::EMPACK_BUNDLED => ("-empack-bundled", "empack"),
+                recipe if crate::engine::build::native::supports(recipe) => {
+                    let suffix = match (recipe.delivery(), recipe.environments()) {
+                        (Delivery::References, Environments::Both) => "-empack-references",
+                        (Delivery::Bundled, Environments::Both) => "-empack-bundled",
+                        (Delivery::References, Environments::Client) => "-empack-references-client",
+                        (Delivery::References, Environments::Server) => "-empack-references-server",
+                        (Delivery::Bundled, Environments::Client) => "-empack-bundled-client",
+                        (Delivery::Bundled, Environments::Server) => "-empack-bundled-server",
+                    };
+                    (suffix, "empack")
+                }
                 Recipe::PRISM_REFERENCES => ("-prism-references", extension),
                 Recipe::SERVER_REFERENCES => ("-server-references", extension),
                 Recipe::PRISM_BUNDLED => ("-prism-bundled", extension),

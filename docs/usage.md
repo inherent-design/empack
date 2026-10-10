@@ -61,6 +61,7 @@ For example:
 empack build modrinth prism
 empack build prism server --delivery references
 empack build server --delivery bundled --format tar.gz
+empack build empack --environment server --delivery references
 ```
 
 With no consumer arguments, build uses the complete `distribution.recipes` list.

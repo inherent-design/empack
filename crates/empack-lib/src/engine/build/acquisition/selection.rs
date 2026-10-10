@@ -29,20 +29,6 @@ pub fn plan_target_build_acquisitions(
             cancel,
         );
     }
-    if matches!(target, Recipe::EMPACK_REFERENCES | Recipe::EMPACK_BUNDLED) {
-        ensure!(
-            matches!(optional, OptionalPolicy::Preserve),
-            "Native releases preserve optional choices"
-        );
-        return plan_acquisitions(
-            workspace,
-            external,
-            BuildMaterialization::AllContent,
-            None,
-            evidence,
-            cancel,
-        );
-    }
     let references = target == Recipe::CURSEFORGE;
     let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();

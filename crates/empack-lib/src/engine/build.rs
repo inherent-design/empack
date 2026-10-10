@@ -21,7 +21,7 @@ pub mod batch;
 pub mod client;
 pub mod curseforge;
 pub mod materialized;
-mod native;
+pub(crate) mod native;
 pub mod server;
 
 /// Acquisition is keyed by exact native dependency and file role.

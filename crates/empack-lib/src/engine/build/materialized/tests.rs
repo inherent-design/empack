@@ -305,6 +305,7 @@ fn native_reference_projection_keeps_selected_identity_and_omits_excluded_bytes(
         minimum_engine: ">=0.6.0-beta".into(),
         java_major: 17,
         delivery: Delivery::References,
+        environments: empack_core::requirements::Environments::Both,
         policies: BTreeMap::new(),
     };
     let cancel = Cancellation::default();

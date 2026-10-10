@@ -12,14 +12,14 @@ use crate::{
     },
 };
 use empack_core::{
-    distribution::{Delivery, Recipe},
+    distribution::{Consumer, Delivery, Recipe},
     identity::{PinSelector, ProviderProjectId},
     inventory::{BuildInventory, ContentOwner, InventoryInput, OptionalPolicy, Representation},
     model::{
         AcquisitionSpec, ContentKind, ContentLayer, DistributionArchive, ExpectedContent,
         LoaderKind, ResolvedPin, ResolvedProject,
     },
-    requirements::Requirement,
+    requirements::{Environments, Requirement},
 };
 use std::{collections::BTreeMap, fs::File};
 
@@ -29,6 +29,7 @@ pub struct NativeReleaseOptions {
     pub minimum_engine: String,
     pub java_major: u16,
     pub delivery: Delivery,
+    pub environments: Environments,
     /// Exact destination policies; unspecified configuration/world files are seeds.
     pub policies: BTreeMap<PortableRelPath, FilePolicy>,
 }
@@ -45,6 +46,7 @@ impl NativeReleaseOptions {
             minimum_engine: ">=0.6.0-beta".into(),
             java_major: native.java_major,
             delivery: Delivery::References,
+            environments: Environments::Both,
             policies: native
                 .policies
                 .iter()
@@ -86,8 +88,25 @@ impl NativeReleasePlan {
         project: &ResolvedProject,
         acquired: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
         sources: Vec<SourceFile>,
-        options: NativeReleaseOptions,
+        mut options: NativeReleaseOptions,
     ) -> Result<Self> {
+        let declared: BTreeSet<_> = project
+            .lock()
+            .dependencies
+            .values()
+            .flat_map(|dependency| dependency.files.as_slice())
+            .flat_map(|file| file.placements.as_slice())
+            .map(|place| place.destination.relative().clone())
+            .chain(
+                sources
+                    .iter()
+                    .map(|source| source.destination.relative().clone()),
+            )
+            .collect();
+        ensure!(
+            options.policies.keys().all(|path| declared.contains(path)),
+            "File policy names no declared destination"
+        );
         let mut inputs = Vec::new();
         let mut files = Vec::new();
         let mut choices = BTreeMap::new();
@@ -95,6 +114,21 @@ impl NativeReleasePlan {
         let mut used = BTreeSet::new();
         for (key, dependency) in &project.lock().dependencies {
             for file in dependency.files.as_slice() {
+                let placements: Vec<_> = file
+                    .placements
+                    .as_slice()
+                    .iter()
+                    .filter_map(|place| {
+                        let requirements =
+                            place.requirements.for_environments(options.environments)?;
+                        let mut place = place.clone();
+                        place.requirements = requirements;
+                        Some(place)
+                    })
+                    .collect();
+                if placements.is_empty() {
+                    continue;
+                }
                 let logical = LockedFileKey {
                     dependency: key.clone(),
                     slot: file.slot.clone(),
@@ -107,7 +141,7 @@ impl NativeReleasePlan {
                     )
                 })?;
                 used.insert(logical);
-                for placement in file.placements.as_slice() {
+                for placement in &placements {
                     inputs.push(InventoryInput {
                         owner: ContentOwner::Dependency {
                             key: key.clone(),
@@ -141,7 +175,7 @@ impl NativeReleasePlan {
                         asset_file(supplied),
                     );
                 }
-                for placement in file.placements.as_slice() {
+                for placement in &placements {
                     let destination = placement.destination.relative();
                     let policy = policy(&options, destination, dependency.kind)?;
                     let layer = layer(placement.layer);
@@ -177,7 +211,7 @@ impl NativeReleasePlan {
             used.len() == acquired.len(),
             "Native release contains an unrelated acquisition"
         );
-        for source in sources {
+        for mut source in sources {
             inputs.push(InventoryInput {
                 owner: ContentOwner::Source(source.label.clone()),
                 destination: source.destination.clone(),
@@ -189,6 +223,11 @@ impl NativeReleasePlan {
                     permissions: source.permissions,
                 },
             });
+            let Some(requirements) = source.requirements.for_environments(options.environments)
+            else {
+                continue;
+            };
+            source.requirements = requirements;
             let destination = source.destination.relative();
             let policy = policy(&options, destination, ContentKind::OtherFile)?;
             let address = hex_address(source.content.lease().id().bytes());
@@ -220,11 +259,10 @@ impl NativeReleasePlan {
                 asset: None,
             });
         }
-        let recipe = if options.delivery == Delivery::Bundled {
-            Recipe::EMPACK_BUNDLED
-        } else {
-            Recipe::EMPACK_REFERENCES
-        };
+        let recipe = Recipe::new(Consumer::Empack, options.delivery, options.environments)?;
+        options
+            .policies
+            .retain(|path, _| files.iter().any(|file| file.destination == path.as_str()));
         let inventory = BuildInventory::project(&inputs, recipe, &OptionalPolicy::Preserve)?;
         Self::finish(project, files, assets, choices, options, inventory)
     }
@@ -761,6 +799,7 @@ mod tests {
             minimum_engine: ">=0.6.0-beta".into(),
             java_major: 17,
             delivery,
+            environments: Environments::Both,
             policies: BTreeMap::new(),
         }
     }

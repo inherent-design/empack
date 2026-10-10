@@ -52,6 +52,11 @@ choices, construct the expected game inventory, project consumer requirements, t
 acquire only bytes needed by each recipe. Shared verified content uses leases;
 producing one consumer does not require publishing another consumer's artifact.
 
+Native release recipes accept client, server or both environments. Side selection
+retains applicable layers and optional choices, and excludes nonparticipating
+dependency roles before acquisition. Unknown destination policies fail validation;
+policies for an excluded environment do not become release mutation authority.
+
 Native reference consumers establish exact content addresses from the selected game
 inventory before emitting a release. They retain original provider selections and
 source assertions alongside those addresses. Excluded environments and disabled

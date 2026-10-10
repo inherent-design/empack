@@ -232,13 +232,15 @@ async fn execute(
                         limits: config.archive,
                     },
                 },
-                Recipe::EMPACK_REFERENCES | Recipe::EMPACK_BUNDLED => DistributionRequest::Native {
-                    artifact,
-                    recipe: output.target,
-                    archive: request.archive,
-                    evidence,
-                    limits: config.archive,
-                },
+                recipe if crate::engine::build::native::supports(recipe) => {
+                    DistributionRequest::Native {
+                        artifact,
+                        recipe: output.target,
+                        archive: request.archive,
+                        evidence,
+                        limits: config.archive,
+                    }
+                }
                 Recipe::MODRINTH => DistributionRequest::Mrpack {
                     artifact,
                     optional: request.mrpack_optional,

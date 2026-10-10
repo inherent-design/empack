@@ -254,17 +254,8 @@ impl BuildSelection {
                 entries: by_layer
                     .values()
                     .filter_map(|input| {
-                        let mut requirements = input.requirements.clone();
-                        match target.environments() {
-                            Environments::Client => requirements.server = Requirement::Unsupported,
-                            Environments::Server => requirements.client = Requirement::Unsupported,
-                            Environments::Both => {}
-                        }
-                        if requirements.client == Requirement::Unsupported
-                            && requirements.server == Requirement::Unsupported
-                        {
-                            return None;
-                        }
+                        let requirements =
+                            input.requirements.for_environments(target.environments())?;
                         Some(ProjectedEntry {
                             owner: input.owner.clone(),
                             destination: input.destination.clone(),

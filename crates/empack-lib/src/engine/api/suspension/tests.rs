@@ -908,3 +908,109 @@ async fn native_release_batches_resume_exact_downloads_and_publish_with_other_co
     owner.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn native_server_projection_does_not_require_client_downloads() {
+    use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
+    use empack_core::{
+        distribution::{Consumer, Delivery},
+        requirements::Environments,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let source = DocumentCodec
+        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let project = DocumentCodec
+        .decode_lock(
+            &fs::read(root.path().join("empack.lock")).unwrap(),
+            &source,
+            "test",
+        )
+        .unwrap();
+    let mut intent = project.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "server.projection".into(),
+        java_major: 17,
+        policies: BTreeMap::new(),
+    });
+    let project = explicitly_placed(intent, project.lock().clone());
+    fs::write(
+        root.path().join("empack.yml"),
+        DocumentCodec.encode_intent(project.intent()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&project).unwrap(),
+    )
+    .unwrap();
+    crate::engine::api::tests::put(
+        root.path(),
+        "overrides/server/config/server.txt",
+        b"server config",
+    );
+    crate::engine::api::tests::put(
+        root.path(),
+        "overrides/client/config/client.txt",
+        b"client config",
+    );
+    let (owner, governor) = engine(host.path().join("state"));
+    let mut selected = request();
+    let recipe = Recipe::new(Consumer::Empack, Delivery::References, Environments::Server).unwrap();
+    selected.outputs = NonEmpty::new(vec![BuildOutput {
+        target: recipe,
+        artifact: crate::engine::api::tests::path("server.empack"),
+    }])
+    .unwrap();
+    let Preparation::Ready(prepared) = owner
+        .prepare(root.path().to_path_buf(), selected)
+        .await
+        .unwrap()
+    else {
+        panic!("client-only restricted downloads are not needed")
+    };
+    assert!(prepared.view().build().unwrap().content.is_empty());
+    assert!(!prepared.view().needs_network());
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+    };
+    let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(receipt))) =
+        &*outcome
+    else {
+        panic!("server release did not complete")
+    };
+    assert_eq!(receipt.artifacts[0].content.target(), recipe);
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist/server.empack")).unwrap())
+            .unwrap();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes).unwrap();
+    let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+    assert_eq!(release.document().files.len(), 1);
+    assert_eq!(release.document().files[0].destination, "config/server.txt");
+    let files: Vec<_> = (0..archive.len())
+        .filter_map(|index| {
+            let member = archive.by_index(index).unwrap();
+            (!member.is_dir()).then(|| member.name().to_owned())
+        })
+        .collect();
+    assert_eq!(files.len(), 2, "only manifest and selected authored asset");
+    let asset = files
+        .iter()
+        .find(|name| name.starts_with("assets/"))
+        .unwrap();
+    let mut content = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name(asset).unwrap(), &mut content).unwrap();
+    assert_eq!(content, b"server config");
+    owner.release_completed(handle.id());
+    drop((outcome, handle));
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
