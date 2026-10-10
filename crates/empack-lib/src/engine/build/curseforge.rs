@@ -135,6 +135,15 @@ pub(super) fn prepare_archive(
                 bytes,
                 permissions,
             } => {
+                if let ContentOwner::Dependency { key, .. } = &entry.owner {
+                    ensure!(
+                        matches!(
+                            game.project().lock().dependencies[key].identity,
+                            empack_core::model::ResolvedIdentity::Local(_)
+                        ),
+                        "CurseForge overrides require authored local content; acquired provider bytes retain provider ownership"
+                    );
+                }
                 ensure!(
                     required,
                     "CurseForge overrides cannot preserve optional participation; resolve choices first"
@@ -509,5 +518,123 @@ mod tests {
         .err()
         .unwrap();
         assert!(format!("{error:#}").contains("renamed or relocated"));
+    }
+    #[test]
+    fn acquired_provider_content_does_not_become_an_authored_override() {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let project = fixture(false, false);
+        let mut lock = project.lock().clone();
+        let key = DependencyKey::parse("assets").unwrap();
+        let dependency = lock.dependencies.get_mut(&key).unwrap();
+        let mut file = dependency.files.as_slice()[0].clone();
+        file.acquisition = AcquisitionSpec::Manual {
+            pin: None,
+            instructions: "Supply the exact restricted provider file".into(),
+        };
+        dependency.files = NonEmpty::new(vec![file.clone()]).unwrap();
+        let project = explicitly_placed(project.intent().clone(), lock);
+        write(root.path(), &project);
+        let cancel = Cancellation::default();
+        let content = verify_stream(
+            &mut b"payload".as_slice(),
+            &file.expected,
+            100,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &cancel,
+        )
+        .unwrap();
+        let mut external = BuildAcquisitions::default();
+        external.locked.insert(
+            crate::engine::mrpack::LockedFileKey {
+                dependency: key,
+                slot: file.slot,
+            },
+            crate::engine::mrpack::AcquiredBuildFile {
+                content,
+                permissions: FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            },
+        );
+        let result = prepare_build_batch(
+            capture(root.path(), host.path()),
+            NonEmpty::new(vec![request(OptionalConversion::RejectMetadataLoss)]).unwrap(),
+            &external,
+            &cancel,
+        );
+        let error = result
+            .err()
+            .expect("Provider ownership must survive acquisition");
+        assert!(format!("{error:#}").contains("authored local"), "{error:#}");
+    }
+    #[test]
+    fn restricted_file_with_exact_pin_stays_a_reference_after_acquisition() {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let project = fixture(false, false);
+        let mut lock = project.lock().clone();
+        let key = DependencyKey::parse("assets").unwrap();
+        let dependency = lock.dependencies.get_mut(&key).unwrap();
+        let mut file = dependency.files.as_slice()[0].clone();
+        file.acquisition = AcquisitionSpec::Manual {
+            pin: dependency.selected.clone(),
+            instructions: "Supply the exact restricted provider file".into(),
+        };
+        dependency.files = NonEmpty::new(vec![file.clone()]).unwrap();
+        let project = explicitly_placed(project.intent().clone(), lock);
+        write(root.path(), &project);
+        let cancel = Cancellation::default();
+        let content = verify_stream(
+            &mut b"payload".as_slice(),
+            &file.expected,
+            100,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &cancel,
+        )
+        .unwrap();
+        let mut external = BuildAcquisitions::default();
+        external.locked.insert(
+            crate::engine::mrpack::LockedFileKey {
+                dependency: key,
+                slot: file.slot,
+            },
+            crate::engine::mrpack::AcquiredBuildFile {
+                content,
+                permissions: FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            },
+        );
+        let result = prepare_build_batch(
+            capture(root.path(), host.path()),
+            NonEmpty::new(vec![request(OptionalConversion::RejectMetadataLoss)]).unwrap(),
+            &external,
+            &cancel,
+        );
+        let batch = result.unwrap();
+        assert!(
+            batch.artifacts()[0]
+                .content
+                .entries()
+                .iter()
+                .any(|entry| matches!(
+                    entry.representation,
+                    Representation::Download {
+                        allowed: DownloadOrigins::Provider { .. },
+                        ..
+                    }
+                ))
+        );
+        assert!(
+            !batch.artifacts()[0]
+                .members
+                .keys()
+                .any(|path| path.as_str().starts_with("overrides/resourcepacks/"))
+        );
     }
 }

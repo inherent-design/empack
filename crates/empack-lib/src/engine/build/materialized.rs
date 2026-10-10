@@ -345,7 +345,12 @@ pub(super) fn reference_for_target(
     target: BuildTarget,
 ) -> Result<Option<Representation>> {
     if target == BuildTarget::CurseForge {
-        if let AcquisitionSpec::Provider { pin, slot, .. } = &file.acquisition {
+        let selection = match &file.acquisition {
+            AcquisitionSpec::Provider { pin, slot, .. } => Some((pin, slot)),
+            AcquisitionSpec::Manual { pin: Some(pin), .. } => Some((pin, &file.slot)),
+            _ => None,
+        };
+        if let Some((pin, slot)) = selection {
             return Ok(Some(Representation::Download {
                 expected: file.expected.clone(),
                 allowed: DownloadOrigins::Provider {
