@@ -325,6 +325,13 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         }
     };
     let a = make(b"A");
+    let Commands::Instance {
+        command: InstanceCommand::Install { sha256: first, .. },
+    } = &a
+    else {
+        panic!()
+    };
+    let first = first.clone();
     let before = snapshot(root.path());
     execute_command_with_session(a.clone(), &session(root.path(), true, true))
         .await
@@ -344,6 +351,53 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     assert_eq!(
         fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
         b"B"
+    );
+    let before = snapshot(root.path());
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Inspect,
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    fs::remove_file(root.path().join("project/game/mods/test.jar")).unwrap();
+    let repair = Commands::Instance {
+        command: InstanceCommand::Repair {
+            assets: Some(".".into()),
+            files: vec![],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(repair.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(repair, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        b"B"
+    );
+    fs::write(root.path().join("assets/mod"), b"A").unwrap();
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Rollback {
+                release: first,
+                assets: Some(".".into()),
+                files: vec![],
+                choices: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/test.jar")).unwrap(),
+        b"A"
     );
     let c = make(b"C");
     fs::write(root.path().join("assets/mod"), b"wrong").unwrap();

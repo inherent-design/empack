@@ -1,12 +1,15 @@
 //! Instance changes use the same plan grants, task ownership and publisher as author operations.
 use super::*;
-pub use crate::engine::instance::{ChoiceSelection, InstanceRecord, InstanceSide, SelectedRelease};
+pub use crate::engine::instance::{
+    ChoiceSelection, InstanceAction, InstanceRecord, InstanceSide, SelectedRelease,
+};
 use crate::engine::{
     content::AcquiredContent, instance, publication::Publisher, runtime::WorkScope,
 };
 use empack_core::files::{FileChange, FilePlan, ObservedPath};
 
 pub struct InstallInstanceRequest {
+    pub action: InstanceAction,
     pub release: SelectedRelease,
     pub side: InstanceSide,
     pub choices: Vec<ChoiceSelection>,
@@ -46,6 +49,7 @@ pub(super) async fn prepare(
     let state = config.state_root.clone();
     let limits = config.snapshot;
     let InstallInstanceRequest {
+        action,
         release,
         side,
         choices,
@@ -59,9 +63,12 @@ pub(super) async fn prepare(
         move |cancel| {
             instance::plan(
                 &root,
-                release,
-                side,
-                choices,
+                instance::InstanceSelection {
+                    release,
+                    side,
+                    choices,
+                    action,
+                },
                 RecoveryReader::new(state),
                 limits,
                 &cancel,

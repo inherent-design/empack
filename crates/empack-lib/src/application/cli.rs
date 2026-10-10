@@ -317,6 +317,30 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Show the completed release, saved choices and retained rollback releases
+    Inspect,
+    /// Restore the installed release without changing its choices or selecting newer content
+    Repair {
+        /// Directory containing the retained release's immutable asset paths
+        #[arg(long)]
+        assets: Option<std::path::PathBuf>,
+        /// Associate exact missing content with its release file key
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+    /// Restore a retained release's managed content while preserving edited user files
+    Rollback {
+        /// Exact SHA-256 of a retained completed release payload
+        release: String,
+        #[arg(long)]
+        assets: Option<std::path::PathBuf>,
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+        /// Resolve alternatives no longer present in the current saved choices
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+    },
+
     /// Install an exact local release, preserving seeds and rejecting edited managed files
     Install {
         /// Immutable JSON release payload, not an author manifest

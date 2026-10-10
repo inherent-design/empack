@@ -71,6 +71,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     )
     .unwrap();
     InstallInstanceRequest {
+        action: crate::engine::instance::InstanceAction::Apply,
         release: SelectedRelease::Snapshot(selected),
         side: InstanceSide::Client,
         choices: vec![],
@@ -133,11 +134,15 @@ async fn install_update_repair_and_rollback_preserve_seeds_and_unowned_data() {
     assert!(!root.path().join("game/mods/a.jar").exists());
     assert_eq!(fs::read(root.path().join("game/mods/b.jar")).unwrap(), b"B");
     assert!(second.history.contains(&first.release));
-    let rollback = apply(&engine, root.path(), a()).await;
+    let mut rollback_request = a();
+    rollback_request.action = InstanceAction::Rollback;
+    let rollback = apply(&engine, root.path(), rollback_request).await;
     assert_eq!(rollback.release, first.release);
     assert!(!root.path().join("game/mods/b.jar").exists());
     fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
-    apply(&engine, root.path(), a()).await;
+    let mut repair = a();
+    repair.action = InstanceAction::Repair;
+    apply(&engine, root.path(), repair).await;
     assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
     assert_eq!(
         fs::read(root.path().join("game/config/a")).unwrap(),
@@ -406,4 +411,48 @@ async fn same_layer_and_portable_alias_collisions_fail_before_publication() {
         assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     }
+}
+
+#[tokio::test]
+async fn maintenance_rejects_unretained_releases_and_changed_repair_intent() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let a = || request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+    let b = || request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]);
+    for action in [InstanceAction::Repair, InstanceAction::Rollback] {
+        let mut missing = a();
+        missing.action = action;
+        assert!(
+            engine
+                .prepare(root.path().to_owned(), missing)
+                .await
+                .is_err()
+        );
+    }
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    apply(&engine, root.path(), a()).await;
+    let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    for action in [InstanceAction::Repair, InstanceAction::Rollback] {
+        let mut other = b();
+        other.action = action;
+        assert!(engine.prepare(root.path().to_owned(), other).await.is_err());
+    }
+    let mut altered = a();
+    altered.action = InstanceAction::Repair;
+    altered.choices.push(ChoiceSelection {
+        key: "new".into(),
+        value: "on".into(),
+    });
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), altered)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        before,
+        fs::read(root.path().join(".empack/instance.json")).unwrap()
+    );
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
 }

@@ -34,6 +34,14 @@ impl SelectedRelease {
         }
     }
 }
+/// Explicit selection, repair and rollback have different durable preconditions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstanceAction {
+    Apply,
+    Repair,
+    Rollback,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InstanceSide {
@@ -198,24 +206,113 @@ fn read_optional(
         _ => anyhow::bail!("Instance control document is not a regular file"),
     }
 }
+fn document_limits(mut limits: SnapshotLimits) -> SnapshotLimits {
+    limits.file_bytes = limits
+        .file_bytes
+        .min(super::release::MAX_RELEASE_BYTES as u64);
+    limits.total_bytes = limits
+        .total_bytes
+        .min(super::release::MAX_RELEASE_BYTES as u64);
+    limits
+}
+/// Read a completed record and one retained descriptor without granting mutation authority.
+pub fn inspect(
+    selected_root: &Path,
+    release: Option<&str>,
+    recovery: RecoveryReader,
+    limits: SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<(InstanceRecord, DecodedRelease)> {
+    let root = ProjectReadRoot::open(selected_root)?;
+    let _guard = recovery.enter(&root)?;
+    let snapshot = root.capture(
+        &[ProjectLayout::path(&ManagedPath::InstanceRecord)?],
+        document_limits(limits),
+        cancel,
+    )?;
+    let record = InstanceRecord::decode(
+        &read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)?
+            .context("No completed instance exists")?,
+    )?;
+    ensure!(
+        record.root == super::publication::root_key(&root)?,
+        "Instance record belongs to another native root"
+    );
+    let id = release.unwrap_or(&record.release);
+    ensure!(
+        id == record.release || record.history.iter().any(|prior| prior == id),
+        "Release is not retained by this instance"
+    );
+    let target = descriptor(id)?;
+    let snapshot = snapshot.merge(root.capture(
+        &[ProjectLayout::path(&target)?],
+        document_limits(limits),
+        cancel,
+    )?)?;
+    let payload = read_optional(&root, &snapshot, &target, cancel)?
+        .context("Retained release descriptor is missing")?;
+    let decoded = DecodedRelease::decode(&payload)?;
+    ensure!(
+        decoded.id() == id && decoded.document().pack == record.pack,
+        "Retained release descriptor changed"
+    );
+    root.revalidate(&snapshot, cancel)?;
+    Ok((record, decoded))
+}
+
 /// Capture precisely the previous and incoming inventories. Unrelated game data is not read.
+pub(super) struct InstanceSelection {
+    pub release: SelectedRelease,
+    pub side: InstanceSide,
+    pub choices: Vec<ChoiceSelection>,
+    pub action: InstanceAction,
+}
 pub(super) fn plan(
     selected_root: &Path,
-    selected: SelectedRelease,
-    side: InstanceSide,
-    requested_choices: Vec<ChoiceSelection>,
+    selection: InstanceSelection,
     recovery: RecoveryReader,
     limits: SnapshotLimits,
     cancel: &Cancellation,
 ) -> Result<InstancePlan> {
+    let InstanceSelection {
+        release: selected,
+        side,
+        choices: requested_choices,
+        action,
+    } = selection;
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
     let record_path = ProjectLayout::path(&ManagedPath::InstanceRecord)?;
-    let mut snapshot = root.capture(&[record_path], limits, cancel)?;
+    let mut snapshot = root.capture(&[record_path], document_limits(limits), cancel)?;
     let previous = read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)?
         .map(|bytes| InstanceRecord::decode(&bytes))
         .transpose()?;
     let release = selected.release();
+    match action {
+        InstanceAction::Apply => {}
+        InstanceAction::Repair => {
+            let previous = previous
+                .as_ref()
+                .context("Repair requires a completed instance")?;
+            ensure!(
+                previous.release == release.id(),
+                "Repair cannot change the installed release"
+            );
+            ensure!(
+                requested_choices.is_empty(),
+                "Repair retains the installed choices"
+            );
+        }
+        InstanceAction::Rollback => {
+            let previous = previous
+                .as_ref()
+                .context("Rollback requires a completed instance")?;
+            ensure!(
+                previous.history.iter().any(|id| id == release.id()),
+                "Rollback requires a retained completed release"
+            );
+        }
+    }
     let root_identity = super::publication::root_key(&root)?;
     let mut old_files = BTreeMap::new();
     if let Some(previous) = &previous {
@@ -228,8 +325,11 @@ pub(super) fn plan(
             "Instance pack or side cannot change during an update"
         );
         let target = descriptor(&previous.release)?;
-        snapshot =
-            snapshot.merge(root.capture(&[ProjectLayout::path(&target)?], limits, cancel)?)?;
+        snapshot = snapshot.merge(root.capture(
+            &[ProjectLayout::path(&target)?],
+            document_limits(limits),
+            cancel,
+        )?)?;
         let bytes = read_optional(&root, &snapshot, &target, cancel)?
             .context("Installed release descriptor is missing")?;
         let old = DecodedRelease::decode(&bytes)?;
@@ -275,12 +375,16 @@ pub(super) fn plan(
     let incoming = project_files(release, side, &choices)?;
     let targets: BTreeSet<_> = old_files.keys().chain(incoming.keys()).cloned().collect();
     let release_target = descriptor(release.id())?;
-    let mut scopes: BTreeSet<_> = targets
+    let scopes: BTreeSet<_> = targets
         .iter()
         .map(ProjectLayout::path)
         .collect::<Result<_>>()?;
     if previous.as_ref().is_none_or(|p| p.release != release.id()) {
-        scopes.insert(ProjectLayout::path(&release_target)?);
+        snapshot = snapshot.merge(root.capture(
+            &[ProjectLayout::path(&release_target)?],
+            document_limits(limits),
+            cancel,
+        )?)?;
     }
     if !scopes.is_empty() {
         snapshot = snapshot.merge(root.capture(

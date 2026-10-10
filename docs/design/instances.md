@@ -121,3 +121,16 @@ staging checks selected addresses and original source assertions independently.
 Only actual changes enter the write set, while all captured observations remain
 publication preconditions. Payload installation alone does not authorize game launch;
 consumer/runtime preparation and launch coordination must also complete.
+
+`instance inspect` reads the root-bound completed record and validates its retained
+release descriptor. It does not inspect unrelated game bytes or mutate state.
+`instance repair` retains the exact installed release, side and choices;
+`instance rollback <release-id>` accepts only a retained completed release.
+Both accept `--assets <directory>` and `--file KEY=PATH` for exact reacquisition.
+Rollback can supply `--choice KEY=VALUE` when an older alternative needs a decision.
+Neither command advances a channel or reduces a subscription's sequence floor.
+
+Repair rejects a different release or changed choices even through the library API.
+Rollback history authorizes selecting a descriptor, not overwriting changed managed
+files. The same three-way comparison applies to all three commands. Previewing
+maintenance captures and verifies inputs without replacing instance or game files.
