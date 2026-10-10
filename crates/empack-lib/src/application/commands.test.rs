@@ -317,6 +317,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         fs::write(root.path().join("release.json"), payload.bytes()).unwrap();
         Commands::Instance {
             command: InstanceCommand::Install {
+                conflicts: Default::default(),
                 release: "release.json".into(),
                 sha256: payload.id().into(),
                 side: "client".into(),
@@ -367,6 +368,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     fs::remove_file(root.path().join("project/.minecraft/mods/test.jar")).unwrap();
     let repair = Commands::Instance {
         command: InstanceCommand::Repair {
+            conflicts: Default::default(),
             assets: Some(".".into()),
             files: vec![],
         },
@@ -383,10 +385,57 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
         b"B"
     );
+    fs::write(
+        root.path().join("project/.minecraft/mods/test.jar"),
+        b"edited",
+    )
+    .unwrap();
+    let preserve = Commands::Instance {
+        command: InstanceCommand::Repair {
+            conflicts: crate::application::cli::InstanceConflictArgs {
+                preserve: vec!["mods/test.jar".into()],
+                ..Default::default()
+            },
+            assets: None,
+            files: vec![],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(preserve.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(preserve, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"edited"
+    );
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Repair {
+                conflicts: crate::application::cli::InstanceConflictArgs {
+                    replace: vec!["mods/test.jar".into()],
+                    ..Default::default()
+                },
+                assets: Some(".".into()),
+                files: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"B"
+    );
     fs::write(root.path().join("assets/mod"), b"A").unwrap();
     execute_command_with_session(
         Commands::Instance {
             command: InstanceCommand::Rollback {
+                conflicts: Default::default(),
                 release: first,
                 assets: Some(".".into()),
                 files: vec![],
@@ -510,6 +559,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
         execute_command_with_session(
             Commands::Instance {
                 command: InstanceCommand::Install {
+                    conflicts: Default::default(),
                     release: export.join("release.json"),
                     sha256: decoded.id().into(),
                     side: side.into(),
@@ -568,6 +618,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     ));
     let prepare = Commands::Instance {
         command: InstanceCommand::Prepare {
+            conflicts: Default::default(),
             release: descriptor,
             sha256: release.id().into(),
             side: "client".into(),
@@ -645,6 +696,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         execute_command_with_session(
             Commands::Instance {
                 command: InstanceCommand::Install {
+                    conflicts: Default::default(),
                     release: "foreign.json".into(),
                     sha256: foreign.id().into(),
                     side: "client".into(),
@@ -707,6 +759,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
     let update = || Commands::Instance {
         command: InstanceCommand::Update {
+            conflicts: Default::default(),
             release: Some("signed-release.json".into()),
             side: "client".into(),
             layout: None,
@@ -774,6 +827,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     );
     let options = |value: Option<&str>| Commands::Instance {
         command: InstanceCommand::Options {
+            conflicts: Default::default(),
             choices: value
                 .map(|value| vec![format!("extra={value}")])
                 .unwrap_or_default(),
@@ -801,6 +855,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     execute_command_with_session(
         Commands::Instance {
             command: InstanceCommand::Repair {
+                conflicts: Default::default(),
                 assets: None,
                 files: vec![],
             },

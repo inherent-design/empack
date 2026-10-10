@@ -430,6 +430,7 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
                 crate::engine::instance::plan(
                     instance.path(),
                     InstanceSelection {
+                        conflicts: Vec::new(),
                         release: SelectedRelease::Snapshot(
                             SelectedSnapshot::select(
                                 release.bytes(),

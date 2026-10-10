@@ -97,6 +97,19 @@ There is no automatic text merge based only on filename extension. A conflict of
 preserve, replace or a separately verified merge result. Replacing requires exact
 observed-byte authorization.
 
+`--preserve PATH` and `--replace PATH` resolve named conflicts using paths relative
+to the game directory. Preparation captures the current bytes and permissions;
+publication rejects changes after that capture. A decision naming an unrelated file,
+a duplicate decision or a directory cannot authorize mutation. `--replace` also
+restores publisher content over a previously accepted local deviation.
+
+Preserving a managed file records a local override with both the selected publisher
+identity and the accepted local identity. Repair and launch accept that exact local
+baseline without claiming source authenticity for it. A later edit or a changed
+incoming publisher baseline requires a fresh decision. When a release retires the
+entry, the local file stays as user content and its override record retires.
+`instance inspect` reports these deviations. Preview never records a decision.
+
 Initial configuration and world templates are seeds. Existing worlds, saves,
 logs, player preferences and runtime-generated data are excluded from ordinary
 release replacement and rollback. New releases cannot change a seed to managed

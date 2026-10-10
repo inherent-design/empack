@@ -21,7 +21,9 @@ use std::{
     path::Path,
 };
 
+mod conflicts;
 pub mod subscription;
+pub use conflicts::{ConflictChoice, ConflictResolution, FileIdentity, LocalOverride};
 
 /// Snapshot selection and publisher verification both retain exact validated bytes.
 pub enum SelectedRelease {
@@ -100,6 +102,9 @@ pub struct InstanceRecord {
     /// Authenticated asset directories retained for exact repair and managed rollback.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub asset_bases: Vec<ReleaseAssetBase>,
+    /// Explicit local deviations, never represented as matching publisher content.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_overrides: Vec<LocalOverride>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +142,14 @@ impl InstanceRecord {
             ensure!(
                 url.query().is_none() && url.path().ends_with('/'),
                 "Invalid immutable asset directory"
+            );
+        }
+        let mut overrides = BTreeSet::new();
+        for local in &record.local_overrides {
+            local.validate()?;
+            ensure!(
+                overrides.insert(&local.destination),
+                "Duplicate local override"
             );
         }
         let mut choices = BTreeSet::new();
@@ -336,6 +349,7 @@ pub fn inspect(
 
 /// Capture precisely the previous and incoming inventories. Unrelated game data is not read.
 pub(super) struct InstanceSelection {
+    pub conflicts: Vec<ConflictResolution>,
     pub release: SelectedRelease,
     pub side: InstanceSide,
     pub layout: Option<InstanceLayout>,
@@ -350,6 +364,7 @@ pub(super) fn plan(
     cancel: &Cancellation,
 ) -> Result<InstancePlan> {
     let InstanceSelection {
+        conflicts: requested_conflicts,
         release: selected,
         side,
         layout,
@@ -623,6 +638,25 @@ pub(super) fn plan(
             .chain([release_target.clone(), ManagedPath::InstanceRecord])
             .chain([layout_marker.clone()]),
     )?;
+    let mut resolutions = conflicts::resolutions(requested_conflicts, layout)?;
+    let old_overrides: BTreeMap<_, _> = previous
+        .as_ref()
+        .map(|record| {
+            record
+                .local_overrides
+                .iter()
+                .map(|value| Ok((layout.target(path(&value.destination)?), value)))
+                .collect::<Result<_>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    ensure!(
+        old_overrides
+            .keys()
+            .all(|target| old_files.contains_key(target)),
+        "Local override is outside the retained inventory"
+    );
+    let mut local_overrides = Vec::new();
     let mut desired = BTreeMap::new();
     let mut removals = BTreeSet::new();
     let mut needed = BTreeMap::new();
@@ -649,12 +683,56 @@ pub(super) fn plan(
         let current = observed
             .get(&target)
             .context("Instance target lacks observation")?;
-        match plan_file(
+        let mut decision = plan_file(
             old.as_ref(),
             current,
             new.as_ref(),
             verification::native_capabilities(),
-        ) {
+        );
+        let mut retained_override = None;
+        if let Some(value) = old_overrides.get(&target)
+            && let Some(retained) = conflicts::retained(
+                value,
+                old.as_ref().context("Missing override baseline")?,
+                current,
+                new.as_ref(),
+            )?
+        {
+            decision = retained;
+            if new
+                .as_ref()
+                .is_some_and(|file| file.policy == empack_core::instance::FilePolicy::Managed)
+            {
+                retained_override = Some((*value).clone());
+            }
+        }
+        if let Some(choice) = resolutions.remove(&target) {
+            if choice == ConflictChoice::Replace && retained_override.is_some() {
+                decision = FileDecision::Conflict(
+                    empack_core::instance::FileConflict::ModifiedManagedFile,
+                );
+            }
+            let FileDecision::Conflict(conflict) = decision else {
+                anyhow::bail!(
+                    "Conflict decision does not name an unresolved file: {}",
+                    ProjectLayout::path(&target)?.as_str()
+                )
+            };
+            let destination = incoming
+                .get(&target)
+                .or_else(|| old_files.get(&target))
+                .context("Conflict has no file identity")?
+                .destination
+                .as_str();
+            let (resolved, local) =
+                conflicts::resolve(choice, conflict, destination, current, new.as_ref())?;
+            decision = resolved;
+            retained_override = local;
+        }
+        if let Some(local) = retained_override {
+            local_overrides.push(local);
+        }
+        match decision {
             FileDecision::Create(content) | FileDecision::Replace(content) => {
                 desired.insert(target.clone(), content);
                 needed.insert(target.clone(), incoming[&target].clone());
@@ -684,6 +762,10 @@ pub(super) fn plan(
             FileDecision::Preserve => {}
         }
     }
+    ensure!(
+        resolutions.is_empty(),
+        "Conflict decision names an unselected destination"
+    );
     ensure!(conflicts.is_empty(), InstanceConflicts { files: conflicts });
     let mut history = previous
         .as_ref()
@@ -708,6 +790,7 @@ pub(super) fn plan(
         asset_bases.sort_by(|a, b| a.release.cmp(&b.release));
     }
     let record = InstanceRecord {
+        local_overrides,
         asset_bases,
         schema: 1,
         layout,

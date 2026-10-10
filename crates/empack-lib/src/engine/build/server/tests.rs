@@ -205,6 +205,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                     let plan = crate::engine::instance::plan(
                         instance.path(),
                         InstanceSelection {
+                            conflicts: Vec::new(),
                             release: SelectedRelease::Snapshot(
                                 SelectedSnapshot::select(
                                     release.bytes(),

@@ -327,6 +327,16 @@ pub struct BuildArgs {
 pub struct CommandInputRequired(pub &'static str);
 
 /// Native instance commands are separate from author dependency updates.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct InstanceConflictArgs {
+    /// Keep edited bytes as an explicit local deviation (release-relative path)
+    #[arg(long = "preserve", value_name = "PATH")]
+    pub preserve: Vec<String>,
+    /// Replace an exact conflicting file with selected release content, or retire it
+    #[arg(long = "replace", value_name = "PATH")]
+    pub replace: Vec<String>,
+}
+
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
     /// Clear interrupted runtime evidence only after all remaining processes have stopped
@@ -342,6 +352,8 @@ pub enum InstanceCommand {
     },
     /// Apply the exact signed release selected by the saved authenticated channel observation
     Update {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
         /// Local signed release envelope; omit to fetch the saved channel's exact release
         release: Option<std::path::PathBuf>,
         #[arg(long, value_parser = ["client", "server"], default_value = "client")]
@@ -385,6 +397,8 @@ pub enum InstanceCommand {
 
     /// Inspect choices, or apply explicit alternatives within the installed release
     Options {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
         #[arg(long = "choice", value_name = "KEY=VALUE")]
         choices: Vec<String>,
         #[arg(long)]
@@ -396,6 +410,8 @@ pub enum InstanceCommand {
     Inspect,
     /// Restore the installed release without changing its choices or selecting newer content
     Repair {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
         /// Directory containing the retained release's immutable asset paths
         #[arg(long)]
         assets: Option<std::path::PathBuf>,
@@ -405,6 +421,8 @@ pub enum InstanceCommand {
     },
     /// Restore a retained release's managed content while preserving edited user files
     Rollback {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
         /// Exact SHA-256 of a retained completed release payload
         release: String,
         #[arg(long)]
@@ -418,6 +436,8 @@ pub enum InstanceCommand {
 
     /// Install the initial release or repair the active release without reverting updates
     Prepare {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
         /// Immutable JSON release payload, not an author manifest
         release: std::path::PathBuf,
         /// Expected SHA-256 of the exact release payload bytes
@@ -439,6 +459,8 @@ pub enum InstanceCommand {
 
     /// Install an exact local release, preserving seeds and rejecting edited managed files
     Install {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
         /// Immutable JSON release payload, not an author manifest
         release: std::path::PathBuf,
         /// Expected SHA-256 of the exact release payload bytes

@@ -15,8 +15,9 @@ use std::collections::BTreeMap;
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
     let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
     let subscribed = matches!(command, InstanceCommand::Update { .. });
-    let (release, sha256, side, layout, choices, files) = match command {
+    let (release, sha256, side, layout, choices, files, conflicts) = match command {
         InstanceCommand::Install {
+            conflicts,
             release,
             sha256,
             side,
@@ -25,20 +26,30 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             files,
         }
         | InstanceCommand::Prepare {
+            conflicts,
             release,
             sha256,
             side,
             layout,
             choices,
             files,
-        } => (Some(release), Some(sha256), side, layout, choices, files),
+        } => (
+            Some(release),
+            Some(sha256),
+            side,
+            layout,
+            choices,
+            files,
+            conflicts,
+        ),
         InstanceCommand::Update {
+            conflicts,
             release,
             side,
             layout,
             choices,
             files,
-        } => (release, None, side, layout, choices, files),
+        } => (release, None, side, layout, choices, files, conflicts),
         _ => anyhow::bail!("Expected an instance installation request"),
     };
     let (invocation, root) = project_path(session)?;
@@ -159,6 +170,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         }
     };
     let request = InstallInstanceRequest {
+        conflicts: conflict_resolutions(conflicts),
         action: if prepare_current {
             crate::engine::instance::InstanceAction::Prepare
         } else {
@@ -262,6 +274,12 @@ pub(in crate::application) async fn dispatch(
                     .status()
                     .info(&format!("{}={}", choice.key, choice.value));
             }
+            for local in &record.local_overrides {
+                session.display().status().info(&format!(
+                    "Local override: {} (accepted SHA-256 {})",
+                    local.destination, local.accepted.sha256
+                ));
+            }
             for release in &record.history {
                 session
                     .display()
@@ -271,13 +289,17 @@ pub(in crate::application) async fn dispatch(
             Ok(())
         }
         InstanceCommand::Options {
+            conflicts,
             choices,
             assets,
             files,
         } => {
             if choices.is_empty() {
                 ensure!(
-                    assets.is_none() && files.is_empty(),
+                    assets.is_none()
+                        && files.is_empty()
+                        && conflicts.preserve.is_empty()
+                        && conflicts.replace.is_empty(),
                     "Supply --choice to change instance options"
                 );
                 let (invocation, root) = project_path(session)?;
@@ -309,11 +331,16 @@ pub(in crate::application) async fn dispatch(
                     assets,
                     files,
                     choices,
+                    conflicts,
                 )
                 .await
             }
         }
-        InstanceCommand::Repair { assets, files } => {
+        InstanceCommand::Repair {
+            assets,
+            files,
+            conflicts,
+        } => {
             maintain(
                 session,
                 InstanceAction::Repair,
@@ -321,10 +348,12 @@ pub(in crate::application) async fn dispatch(
                 assets,
                 files,
                 Vec::new(),
+                conflicts,
             )
             .await
         }
         InstanceCommand::Rollback {
+            conflicts,
             release,
             assets,
             files,
@@ -337,6 +366,7 @@ pub(in crate::application) async fn dispatch(
                 assets,
                 files,
                 choices,
+                conflicts,
             )
             .await
         }
@@ -377,6 +407,7 @@ async fn maintain(
     assets: Option<PathBuf>,
     files: Vec<String>,
     choices: Vec<String>,
+    conflicts: crate::application::cli::InstanceConflictArgs,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
@@ -419,6 +450,7 @@ async fn maintain(
         })
         .collect::<Result<Vec<_>>>()?;
     let request = InstallInstanceRequest {
+        conflicts: conflict_resolutions(conflicts),
         action,
         layout: None,
         release: SelectedRelease::Snapshot(selected),
@@ -686,4 +718,25 @@ async fn launch(session: &dyn Session, command: Vec<std::ffi::OsString>) -> Resu
     .await;
     engine.shutdown().await;
     result
+}
+
+fn conflict_resolutions(
+    args: crate::application::cli::InstanceConflictArgs,
+) -> Vec<crate::engine::instance::ConflictResolution> {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    args.preserve
+        .into_iter()
+        .map(|destination| ConflictResolution {
+            destination,
+            choice: ConflictChoice::Preserve,
+        })
+        .chain(
+            args.replace
+                .into_iter()
+                .map(|destination| ConflictResolution {
+                    destination,
+                    choice: ConflictChoice::Replace,
+                }),
+        )
+        .collect()
 }

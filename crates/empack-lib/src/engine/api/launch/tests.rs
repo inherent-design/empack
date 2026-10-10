@@ -64,6 +64,7 @@ fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
     })
     .unwrap();
     InstallInstanceRequest {
+        conflicts: Vec::new(),
         action: InstanceAction::Apply,
         release: SelectedRelease::Snapshot(
             trust::SelectedSnapshot::select(

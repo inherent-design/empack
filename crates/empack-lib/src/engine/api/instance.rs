@@ -10,6 +10,7 @@ use empack_core::files::{FileChange, FilePlan, ObservedPath};
 mod acquisition;
 
 pub struct InstallInstanceRequest {
+    pub conflicts: Vec<crate::engine::instance::ConflictResolution>,
     pub action: InstanceAction,
     pub release: SelectedRelease,
     pub side: InstanceSide,
@@ -57,6 +58,7 @@ pub(super) async fn prepare(
     let state = config.state_root.clone();
     let limits = config.snapshot;
     let InstallInstanceRequest {
+        conflicts,
         action,
         release,
         side,
@@ -73,6 +75,7 @@ pub(super) async fn prepare(
             instance::plan(
                 &root,
                 instance::InstanceSelection {
+                    conflicts,
                     release,
                     side,
                     layout,

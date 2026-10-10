@@ -72,6 +72,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     )
     .unwrap();
     InstallInstanceRequest {
+        conflicts: Vec::new(),
         action: crate::engine::instance::InstanceAction::Apply,
         release: SelectedRelease::Snapshot(selected),
         side: InstanceSide::Client,
@@ -1061,4 +1062,172 @@ async fn approved_local_instance_content_is_reusable_but_cache_failure_is_nonfat
         engine.shutdown().await;
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
+}
+
+#[tokio::test]
+async fn conflict_preservation_is_durable_local_evidence_and_replace_restores_release() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let a = || {
+        request(&[(
+            "cfg",
+            "config/example.txt",
+            b"publisher-a",
+            FilePolicy::Managed,
+        )])
+    };
+    let b = || {
+        request(&[(
+            "cfg",
+            "config/example.txt",
+            b"publisher-b",
+            FilePolicy::Managed,
+        )])
+    };
+    apply(&engine, root.path(), a()).await;
+    fs::write(root.path().join("game/config/example.txt"), b"my settings").unwrap();
+    assert!(engine.prepare(root.path().to_owned(), b()).await.is_err());
+    let mut preserve = b();
+    preserve.conflicts.push(ConflictResolution {
+        destination: "config/example.txt".into(),
+        choice: ConflictChoice::Preserve,
+    });
+    let record = apply(&engine, root.path(), preserve).await;
+    assert_eq!(record.local_overrides.len(), 1);
+    assert_eq!(
+        record.local_overrides[0].accepted.sha256,
+        hash(b"my settings")
+    );
+    assert_eq!(
+        record.local_overrides[0].original.sha256,
+        hash(b"publisher-b")
+    );
+    for _ in 0..2 {
+        let mut repair = b();
+        repair.action = InstanceAction::Repair;
+        let record = apply(&engine, root.path(), repair).await;
+        assert_eq!(record.local_overrides.len(), 1);
+        assert_eq!(
+            fs::read(root.path().join("game/config/example.txt")).unwrap(),
+            b"my settings"
+        );
+    }
+    // A different incoming publisher baseline requires a new local decision.
+    assert!(engine.prepare(root.path().to_owned(), a()).await.is_err());
+    let mut replace = b();
+    replace.action = InstanceAction::Repair;
+    replace.conflicts.push(ConflictResolution {
+        destination: "config/example.txt".into(),
+        choice: ConflictChoice::Replace,
+    });
+    assert!(
+        apply(&engine, root.path(), replace)
+            .await
+            .local_overrides
+            .is_empty()
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/config/example.txt")).unwrap(),
+        b"publisher-b"
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn conflict_decisions_bind_exact_observations_and_never_authorize_directories() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let a = || request(&[("cfg", "config/a", b"original", FilePolicy::Managed)]);
+    apply(&engine, root.path(), a()).await;
+    let target = root.path().join("game/config/a");
+    fs::write(&target, b"edited").unwrap();
+    for choice in [ConflictChoice::Preserve, ConflictChoice::Replace] {
+        let mut input = a();
+        input.conflicts.push(ConflictResolution {
+            destination: "config/a".into(),
+            choice,
+        });
+        let Preparation::Ready(prepared) =
+            engine.prepare(root.path().to_owned(), input).await.unwrap()
+        else {
+            panic!()
+        };
+        fs::write(&target, b"changed after approval").unwrap();
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            replacement: prepared.view().replacement(),
+            network: NetworkPermission::Offline,
+            run_installer: false,
+            run_runtime: false,
+        };
+        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        assert!(matches!(
+            &*operation.wait().await,
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+        ));
+        engine.release_completed(operation.id());
+        assert_eq!(fs::read(&target).unwrap(), b"changed after approval");
+        fs::write(&target, b"edited").unwrap();
+    }
+    fs::remove_file(&target).unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("sentinel"), b"keep").unwrap();
+    for choice in [ConflictChoice::Preserve, ConflictChoice::Replace] {
+        let mut input = a();
+        input.conflicts.push(ConflictResolution {
+            destination: "config/a".into(),
+            choice,
+        });
+        assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
+        assert_eq!(fs::read(target.join("sentinel")).unwrap(), b"keep");
+    }
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn retired_local_override_preserves_user_content_and_unknown_decisions_fail() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    fs::create_dir_all(root.path().join("game/config")).unwrap();
+    fs::write(root.path().join("game/config/a"), b"preexisting").unwrap();
+    let mut input = request(&[("cfg", "config/a", b"publisher", FilePolicy::Managed)]);
+    input.conflicts.push(ConflictResolution {
+        destination: "config/a".into(),
+        choice: ConflictChoice::Preserve,
+    });
+    assert_eq!(
+        apply(&engine, root.path(), input)
+            .await
+            .local_overrides
+            .len(),
+        1
+    );
+    let mut unknown = request(&[]);
+    unknown.conflicts.push(ConflictResolution {
+        destination: "elsewhere".into(),
+        choice: ConflictChoice::Replace,
+    });
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), unknown)
+            .await
+            .is_err()
+    );
+    assert!(
+        apply(&engine, root.path(), request(&[]))
+            .await
+            .local_overrides
+            .is_empty()
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"preexisting"
+    );
+    engine.shutdown().await;
 }
