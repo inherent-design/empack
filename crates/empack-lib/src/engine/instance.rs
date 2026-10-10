@@ -977,7 +977,7 @@ impl InstancePlan {
     /// The persisted release and original source assertions remain unchanged.
     pub(super) fn download(&self, file: &ReleaseFile) -> Result<ReleaseFile> {
         let mut file = file.clone();
-        if let (Some(base), ReleaseSource::Asset { path }) = (&self.asset_base, &file.source) {
+        if let (Some(base), Some(path)) = (&self.asset_base, file.asset_path()) {
             file.source = ReleaseSource::Url {
                 alternatives: vec![subscription::asset_url(base, path)?],
             };

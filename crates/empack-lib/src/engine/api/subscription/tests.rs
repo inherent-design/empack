@@ -338,7 +338,49 @@ async fn subscribed_selection_binds_current_keys_floor_and_exact_signed_release(
 #[tokio::test]
 async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_after_approval() {
     use crate::engine::{instance::subscription, release::*, runtime::OperationRuntime};
-    for bad_asset in [false, true] {
+    // Bundling does not replace provenance with an Asset source. Hosted bytes
+    // must work for each retained source, including an extracted archive member.
+    let sources = [
+        ReleaseSource::Asset {
+            path: "assets/a%2fb".into(),
+        },
+        ReleaseSource::Url {
+            alternatives: vec!["https://unavailable.test/a".into()],
+        },
+        ReleaseSource::Provider {
+            provider: ReleaseProvider::Modrinth,
+            project: "AANobbMI".into(),
+            selection: "abcdefgh".into(),
+            slot: "primary".into(),
+            alternatives: vec![],
+        },
+        ReleaseSource::Manual {
+            instructions: "Download from the author".into(),
+            selection: None,
+        },
+        ReleaseSource::ProviderArchiveMember {
+            archive: ReleaseArchiveSource {
+                selection: ReleaseSelection {
+                    provider: ReleaseProvider::Modrinth,
+                    project: "AANobbMI".into(),
+                    selection: "abcdefgh".into(),
+                    slot: "primary".into(),
+                },
+                alternatives: vec![],
+                assertions: vec![SourceDigest {
+                    algorithm: "sha256".into(),
+                    value: hash(b"archive"),
+                }],
+                bytes: Some(100),
+                sha256: Some(hash(b"archive")),
+            },
+            member: "world/level.dat".into(),
+        },
+    ];
+    for (source, bad_asset) in sources
+        .into_iter()
+        .flat_map(|s| [(s.clone(), false), (s, true)])
+    {
         let mut server = mockito::Server::new_async().await;
         let root = tempfile::tempdir().unwrap();
         let host = tempfile::tempdir().unwrap();
@@ -354,18 +396,23 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             key: "mod".into(),
             destination: "mods/a.jar".into(),
             layer: ReleaseLayer::Common,
-            policy: FilePolicy::Managed,
+            policy: if matches!(&source, ReleaseSource::ProviderArchiveMember { .. }) {
+                FilePolicy::Seed
+            } else {
+                FilePolicy::Managed
+            },
             client: Participation::Required,
             server: Participation::Required,
             sha256: hash(b"exact bytes"),
             bytes: 11,
             readonly: false,
             executable: false,
-            assertions: vec![],
-            asset: None,
-            source: ReleaseSource::Asset {
-                path: "assets/a%2fb".into(),
-            },
+            assertions: vec![SourceDigest {
+                algorithm: "sha256".into(),
+                value: hash(b"exact bytes"),
+            }],
+            asset: (!matches!(&source, ReleaseSource::Asset { .. })).then(|| "assets/a%2fb".into()),
+            source,
         });
         let release = DecodedRelease::encode(document).unwrap();
         let signed = sign(EnvelopeKind::Release, release.bytes(), &[&key]).unwrap();

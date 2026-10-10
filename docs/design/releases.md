@@ -194,6 +194,9 @@ bound. It cannot advance a sequence floor or select a newer release by itself.
 Immutable remote asset paths resolve against the authenticated release envelope's
 directory. Components are encoded as literal path segments; query credentials from
 the envelope URL are not inherited. These locators are transient acquisition inputs.
+Bundled assets are selected independently of provenance: a provider, URL, manual
+file or archive member with an `asset` uses the publisher's hosted bytes. Files
+without bundled assets retain their original acquisition route.
 The saved release retains its signed relative asset identity and original assertions.
 Content transfer still requires the installation's explicit network grant and verifies
 exact bytes before publication.
