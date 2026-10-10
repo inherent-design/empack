@@ -101,6 +101,18 @@ impl fmt::Display for RequirementError {
 impl core::error::Error for RequirementError {}
 
 impl Requirements {
+    /// Preserve requirements for selected environments; omit a nonparticipating file.
+    pub fn for_environments(&self, environments: Environments) -> Option<Self> {
+        let mut selected = self.clone();
+        match environments {
+            Environments::Client => selected.server = Requirement::Unsupported,
+            Environments::Server => selected.client = Requirement::Unsupported,
+            Environments::Both => {}
+        }
+        (selected.client != Requirement::Unsupported || selected.server != Requirement::Unsupported)
+            .then_some(selected)
+    }
+
     /// Refuse lossy conversion into a format with one shared optional choice.
     pub fn uniform(&self) -> Result<UniformRequirements<'_>, RequirementError> {
         use Requirement::*;

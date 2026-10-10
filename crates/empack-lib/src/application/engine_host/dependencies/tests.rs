@@ -255,7 +255,7 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
     super::super::build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["mrpack".into()],
+            targets: vec!["modrinth".into()],
             ..Default::default()
         },
         super::super::BuildDecisions::default(),
@@ -293,7 +293,7 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
         );
     }
     drop(archive);
-    // Full-client output needs actual payloads. Supply verified fixture bytes rather than
+    // Bundled Prism output needs actual payloads. Supply verified fixture bytes rather than
     // allowing synthetic provider IDs to reach the live service during this offline test.
     let mut supplied = BuildAcquisitions::default();
     for (key, dependency) in &read(&project).lock().dependencies {
@@ -325,7 +325,7 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
     super::super::build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["client-full".into()],
+            targets: vec!["prism".into()],
             ..Default::default()
         },
         super::super::BuildDecisions::default(),
@@ -334,7 +334,7 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
     .await
     .unwrap();
     let mut archive = zip::ZipArchive::new(
-        fs::File::open(project.join("dist/Dependency Pack-1.0-client-full.zip")).unwrap(),
+        fs::File::open(project.join("dist/Dependency Pack-1.0-prism-bundled.zip")).unwrap(),
     )
     .unwrap();
     for file in ["Root0001.jar", "Need0001.jar"] {
@@ -552,7 +552,7 @@ async fn mixed_addition_uses_one_publication_and_converges_through_sync_and_expo
     build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["mrpack".into()],
+            targets: vec!["modrinth".into()],
             ..Default::default()
         },
         BuildDecisions::default(),
@@ -793,7 +793,7 @@ async fn native_update_preserves_authored_intent_and_converges_across_mixed_cont
     build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["mrpack".into()],
+            targets: vec!["modrinth".into()],
             ..Default::default()
         },
         BuildDecisions::default(),
@@ -1063,7 +1063,7 @@ async fn native_adoption_creates_a_lock_without_rewriting_payloads_then_sync_exp
     super::super::build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["mrpack".into()],
+            targets: vec!["modrinth".into()],
             ..Default::default()
         },
         super::super::BuildDecisions::default(),

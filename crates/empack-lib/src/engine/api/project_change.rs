@@ -142,16 +142,7 @@ pub(super) async fn prepare(
         },
     )?;
     let snapshot = scope.accept(work.wait().await?)?.transpose()?;
-    let policy_bytes = match &*snapshot {
-        CapturedProjectChange::Existing(value) => value
-            .preserved_policy()
-            .map_or(0, |(bytes, _)| bytes.len() as u64),
-        CapturedProjectChange::New(_) => 0,
-    };
-    let bytes = candidate
-        .publication_bytes()
-        .checked_add(policy_bytes)
-        .context("Project staging size overflow")?;
+    let bytes = candidate.publication_bytes();
     let (resources, retained) = resources(bytes, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
         let (snapshot, _reservation) = snapshot.into_parts();

@@ -190,10 +190,7 @@ pub(super) fn observed_mutation_for(
     ensure!(
         targets.iter().all(|target| matches!(
             target,
-            ManagedPath::IntentDocument
-                | ManagedPath::LockDocument
-                | ManagedPath::BackendDocument(_)
-                | ManagedPath::Content { .. }
+            ManagedPath::IntentDocument | ManagedPath::LockDocument | ManagedPath::Content { .. }
         )),
         "Mutation cannot own templates or distributions"
     );
@@ -265,6 +262,61 @@ pub struct VerifiedFileChange {
     base: NativeSnapshot,
 }
 impl VerifiedFileChange {
+    /// Only the subscription planner may mutate enrolled trust and sequence floors.
+    pub(super) fn verify_subscription(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+    ) -> Result<Self> {
+        ensure!(
+            plan.expected()
+                .keys()
+                .all(|target| *target == ManagedPath::InstanceSubscription)
+                && plan
+                    .changes()
+                    .iter()
+                    .all(|change| *change.target() == ManagedPath::InstanceSubscription),
+            "Subscription operation cannot mutate instance payloads"
+        );
+        let targets = plan
+            .expected()
+            .keys()
+            .cloned()
+            .chain(plan.changes().iter().map(|change| change.target().clone()));
+        let mut observed = BTreeMap::new();
+        extend_observations(&base, &mut observed, targets)?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
+
+    /// Instance semantics are established by the instance planner, not author metadata.
+    pub(super) fn verify_instance(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+    ) -> Result<Self> {
+        let targets: Vec<_> = plan
+            .expected()
+            .keys()
+            .cloned()
+            .chain(plan.changes().iter().map(|change| change.target().clone()))
+            .collect();
+        ensure!(
+            targets.iter().all(|target| matches!(
+                target,
+                ManagedPath::InstanceFile(_)
+                    | ManagedPath::PrismFile(_)
+                    | ManagedPath::PrismProfile
+                    | ManagedPath::PrismLayoutMarker
+                    | ManagedPath::InstanceLayoutMarker
+                    | ManagedPath::InstanceRecord
+                    | ManagedPath::InstanceRelease(_)
+            )),
+            "Instance operation cannot mutate authoring state"
+        );
+        let mut observed = BTreeMap::new();
+        extend_observations(&base, &mut observed, targets)?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
     pub(in crate::engine) fn stage_mut(&mut self) -> &mut FrozenStage {
         &mut self.stage
     }

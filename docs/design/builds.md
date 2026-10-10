@@ -1,301 +1,237 @@
-# Build projections and verification
+# Consumer outputs
 
-Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
-[build input and assembly](../../crates/empack-lib/src/engine/build.rs), [projections](../../crates/empack-core/src/projection.rs), [artifact verification](../../crates/empack-lib/src/engine/artifacts.rs) and [runtime preparation](../../crates/empack-lib/src/engine/server_runtime.rs). This page specifies their behavior and ownership.
+A distribution recipe identifies the consumer, dependency delivery and update
+authority. They are separate from archive compression and client/server selection.
 
-## Build inputs, projections, and artifact verification
+## Recipe model
 
-### One exact build input
+```rust
+pub enum Consumer { Modrinth, CurseForge, Prism, Server, Empack }
+pub enum Delivery { References, Bundled }
+pub enum UpdateAuthority { Snapshot, Platform, Empack }
+```
 
-Default build preflight requires every explicit provider identity/pin, URL expectation, local file, and environment requirement to be satisfied. It rejects unresolved or inconsistent inputs before modifying distribution outputs. Unlisted installed metadata remains an observed inventory obligation; it does not
-permit divergence from explicit intent. Adoption is the explicit workflow for accepting
-selected observed drift.
+The pure `distribution::Recipe` value validates policy combinations before acquisition. References
+can include authored assets; bundled pack content does not mean an offline Minecraft
+client or an unconditional right to redistribute dependency bytes.
 
-Do not silently call sync from build. A combined user command may submit sync then build as an explicit request sequence with defined failure behavior.
+| Consumer | Artifact | Dependency delivery | Update authority |
+| --- | --- | --- | --- |
+| Modrinth | `.mrpack` ZIP | Format references and permitted overrides | Snapshot or platform |
+| CurseForge | Manifest ZIP | Exact provider references and permitted overrides | Snapshot or platform |
+| Prism | Native instance ZIP | References through empack, or bundled pack content | Snapshot or empack |
+| Server | Directory or supported archive | References through empack, or bundled pack content | Snapshot or empack |
+| Empack | Native release manifest and assets | Exact references and optionally bundled assets | Snapshot or empack |
 
-### Pure projection and target capability checks
+CurseForge and Prism recipes select a client environment; dedicated server recipes
+select server. Modrinth and native release recipes can preserve both environments.
+Per-file environment requirements still participate in each projection.
 
-Selection may carry an `Unacquired` expectation while applying side, override and
-optional choices. `BuildSelection` is not a completed inventory: finishing it rejects
-any surviving unacquired item, and full targets also reject download references.
-This lets a disabled optional replacement retain its common fallback without first
-requiring the replacement's bytes. Missing work remains identified by the exact
-locked file slot or observed backend metadata path.
+Platform update authority requires platform project/version association; writing an
+archive does not create that association. Automatic marketplace upload is outside
+this contract. Platform-targeted exports retain their policy in the receipt and
+report the required external association. The receiving platform establishes that
+association when installing its hosted project/version; generic archive import
+remains a snapshot. Empack does not invent embedded project IDs or claim an upload
+occurred. Modrinth platform exports require allowed hosting download domains;
+snapshot mrpacks report domain ineligibility without rejecting a valid archive.
+Tar/7z output is permitted for directory distributions where supported;
+it must not be advertised as a launcher-importable ZIP.
 
-Download origins distinguish stable URL alternatives from an exact provider pin and
-file slot. Unknown size remains unknown; it never becomes a zero-byte assertion.
-Completed references require real digest or accepted-observation evidence. Each
-format then applies its own constraints: mrpack needs direct URLs, exact length,
-SHA-1 and SHA-512, while packwiz can express an exact CurseForge metadata reference.
-Full targets still require acquired bytes.
+Authored `distribution.recipes` is a nonempty ordered list of objects. Each object
+requires `consumer`, `delivery` and `environment`; `updates` defaults to `snapshot`.
+Unknown fields, old target strings and unsupported combinations fail decoding.
+The exact four-field recipe survives planning, build receipts and restart requests.
+Deduplication compares the complete recipe, so delivery or authority changes never
+collapse into the same request.
 
-Every included item in the completed inventory has an expected representation. Required provider files, unknown URL content, local files, embedded overrides, side-specific replacements, templates, runtime assets, and deliberately preserved observed content are accounted for. The inventory, not dependency source kind, decides verification.
+Initialization and imports default to Modrinth references, bundled Prism and bundled
+server snapshots. Native reference consumers require an explicit stable pack identity
+and Java requirement; those values are not inferred from display names. Selecting a
+valid policy does not establish a platform association or publisher trust. Consumer
+activation binds the relevant evidence. Empack-managed native, Prism and server exports require
+explicit local enrollment before their initial snapshot installation. Launcher wrappers
+check the enrolled channel before launch; exported keys never create trust. Reference
+and bundled delivery both use native ownership when `updates: empack`, with bundled
+bytes carried as verified release assets. Snapshot bundles remain independent of
+empack at runtime. Artifact names distinguish subscribed and snapshot recipes.
+Subscribed custom Prism configurations retain the generated command settings;
+subscribed server launch scripts retain the generated lifecycle. Incompatible
+replacements fail preparation instead of silently removing update checks. Other
+captured settings and content remain customizable.
 
-If exact hashes are unavailable for a required downloadable reference, acquire and verify sufficient evidence or stop for input; do not mark an unknown expectation satisfied. `RuntimeGenerated` obligations are discharged after the responsible runtime step, recording observed content and its semantic checks before final inventory verification.
+## Build data flow
 
-A representation check is target-specific. Reference-based packs need correct destinations, hashes, requirement metadata, and valid allowed locators; they need not download every remote byte again when adequate verified metadata already exists. Full distributions require the materialized bytes. A known failed download cannot be ignored just because another representation verified successfully.
+Capture intent, lock, source layers, templates and exact runtime once. Resolve saved
+choices, construct the expected game inventory, project consumer requirements, then
+acquire only bytes needed by each recipe. Shared verified content uses leases;
+producing one consumer does not require publishing another consumer's artifact.
 
-### Build prerequisites without a generic workflow framework
+Native release recipes accept client, server or both environments. Side selection
+retains applicable layers and optional choices, and excludes nonparticipating
+dependency roles before acquisition. Unknown destination policies fail validation;
+policies for an excluded environment do not become release mutation authority.
 
-Native build planning projects all requested targets from captured inputs and
-deduplicates shared acquisition. Lightweight client/server distributions use generated
-reference trees; they do not extract a stale intermediate mrpack. An existing artifact
-with the same name/version is never evidence of freshness.
+Native reference consumers establish exact content addresses from the selected game
+inventory before emitting a release. They retain original provider selections and
+source assertions alongside those addresses. Excluded environments and disabled
+choices do not require acquisition. Authored assets remain embedded; referenced
+dependencies retain acquisition instructions. Projecting a consumer never rewrites
+the author lock or adds invented source evidence.
 
-Saved build recipes bind semantic resolution, captured source/template content,
-selected runtime, targets and output-affecting options. They do not serialize approval
-or let absolute source paths and secret tokens become portable content identity.
+Prepare every requested output before combined publication. A later failed recipe
+leaves earlier published artifacts unchanged. Build does not silently sync, upgrade
+provider selections or infer dependencies from untracked metadata. Acquisition keys
+contain the logical dependency key and exact file role from the native lock.
 
-Requested artifacts form one publication group by default. Prepare and verify all
-candidates before publishing their combined file plan. Duplicate or portable-alias
-output paths fail before recipes run. If a later recipe fails, retain every previous
-artifact. Carry each target's source assurance, conversion choices and expected
-member inventory into the result; concatenating archives is not a completion proof.
+Untracked included source files contribute their captured bytes, without provider
+identity or download authority. `sources.exclude` applies to every source layer;
+archives have no implicit exemption. Explicit locked sources and placements remain
+observation obligations even when a broad exclusion matches them.
 
-Every build uses fresh staging; verified content caches can supply exact inputs. Byte reproducibility additionally requires deterministic archive ordering, timestamps, permissions, and installer behavior; a correct recipe key alone does not guarantee it.
+## Native release batches
 
-### Templates and runtime preparation
+The empack consumer uses the shared build request and acquisition pipeline. Reference
+and bundled recipes may appear together with platform and launcher outputs. A native
+release establishes exact content addresses before publication; source assertions
+remain separately recorded. Missing restricted bytes use the same saved build request
+and verified association mechanism as other consumers.
 
-Preserve common/client/server template precedence, user-owned templates, binary-file copying, build-time metadata interpolation, loader-specific bootstrap/full behavior, and accepted historical runtime variants. Renderer selection is based on intended output language, not filename guesses alone.
+`distribution.native` contains stable pack identity, Java requirements and destination
+ownership policies. Delivery belongs to each recipe. Reference and bundled artifacts
+have distinct names and payload identities. A receipt reports the exact release JSON
+identity separately from the surrounding archive inventory. Optional choices remain
+in the release for installation; native-only builds reject materialization choices.
 
-Template expressions choose their value syntax explicitly: `shell_quote` emits a
-POSIX shell literal, `ini_quote` emits a scalar QSettings string, and
-`properties_value` emits a Java properties value or value fragment. Raw text
-substitution remains available for user-authored text. Do not infer shell quoting
-from a filename or use HTML escaping for configuration files. The generated launcher
-command must retain its argument quotes after INI parsing.
+## Modrinth
 
-The launcher defaults follow [Prism's QSettings reader](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/settings/INIFile.cpp)
-and [Qt's scalar encoding](https://github.com/qt/qtbase/blob/dev/src/corelib/io/qsettings.cpp).
-Server values follow [Java Properties parsing](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/Properties.html#load(java.io.Reader)),
-including UTF-16 escapes for non-ASCII characters. Dynamic metadata belongs in
-encoded values, not unescaped generated comments.
+Write `modrinth.index.json`, exact SHA-1/SHA-512 assertions, sizes, HTTPS alternatives,
+runtime dependencies and common/client/server overrides. Keep side participation
+and optionality separate. Conditional fallback and grouped choices require an
+explicit representable selection when the format cannot preserve them.
 
-Embedded default templates remain templates until build time. User-authored scripts are explicit inputs; do not silently rewrite them. Runtime preparation uses exact resolved requirements and bounded tools, records its outputs, and never returns “complete” just because an installer process exited.
+Generic format validity and Modrinth hosting eligibility are separate results.
+Each mrpack build receipt includes a download-domain report. The CLI identifies
+blocked destinations and hosts while retaining the valid generic archive. The
+check uses exact domains: `cdn.modrinth.com`, `github.com`,
+`raw.githubusercontent.com` and `gitlab.com`. It does not establish redistribution
+rights, marketplace approval, upload, or a launcher association. URL paths and
+credentials are omitted from this report.
+Hosting validation uses the documented download-domain rules, not an assumption
+that all valid HTTPS URLs are accepted. Standalone archive import does not subscribe
+the instance to an arbitrary update URL.
 
-Full client output is a launcher instance: materialized game files under
-`.minecraft`, root-level templates/configuration and `mmc-pack.json` with the exact
-Minecraft and loader components. The launcher obtains its normal game binaries,
-libraries and assets; “full” describes pack content, not an offline Minecraft
-installation. ZIP is directly importable; TAR.GZ and 7z preserve the same tree for
-explicit extraction. The component format follows [Prism's reader](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/PackProfile.cpp).
-A user component manifest may add exact components but must retain the locked
-runtime without duplicate or disabled required entries. Captured custom launcher
-configuration remains user input, including its commands. Template/game path
-collisions require resolution before publication.
+References: [format](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack)
+and [sharing](https://support.modrinth.com/en/articles/8797522-sharing-modpacks).
 
-### Independent verification
+## CurseForge
 
-Parse the actual candidate archive/index and compare it against the expected inventory. Do not trust the exporter to enumerate what it should have produced. Check missing and unexpected destinations, correct side/optional metadata, content identity, duplicate/collision rules, and referenced-content requirements.
+Write `manifest.json` and an overrides directory in a ZIP. References identify
+exact CurseForge projects/files and required participation. Preserve exact loader
+selection, authored configuration and representable optional content. Reject lossy
+placement or environment conversion unless the author explicitly selects a supported
+projection. Content that cannot be represented is named in the diagnostic.
 
-Archive integrity is an additional check, not a completeness proof. A successful ZIP CRC says nothing about a required item that was never written.
+Project/file references retain the provider filename and standard content directory.
+A renamed file or custom destination cannot be encoded in this manifest. Reject it
+instead of exporting a reference that installs somewhere else. Multiple selections
+from one provider project are also rejected when the consumer cannot preserve them.
 
-Store a verification summary in the receipt, including inventory digest and artifact byte length from metadata. Distinguish pack semantics, byte integrity, and distribution-permission policy; successful byte verification alone is not evidence that redistribution is authorized.
+A required local override is embedded at its selected client destination. Client
+overrides take precedence over common content; server-only content is excluded.
+Optional overrides require an explicit selection before export. Reference optionality
+can become `required: false` only after explicit acceptance of lost choice keys,
+defaults and descriptions. An unresolved choice is not silently enabled.
 
-### Optional replacement with a fallback
+A Modrinth project name or slug cannot establish a CurseForge equivalent. A verified
+cross-provider file association or explicitly permitted embedding is required.
+Format validity is not hosting approval or redistribution permission. Report hosting
+eligibility separately and do not silently embed provider-restricted files.
 
-An optional client file replacing common bytes at the same path needs conditional
-fallback semantics: declining the optional file must retain common bytes, while
-accepting it must install the replacement. Mrpack has optional download entries
-and unconditional override directories, but no conditional override/fallback
-relationship in its [format](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack).
-Do not emit conflicting paths and assume installer ordering implements that choice.
-Require an explicit representable conversion or selected variant. Acknowledging
-loss of optional descriptions/defaults alone does not authorize making an optional
-file mandatory or deleting its fallback. Ordinary optional references remain
-supported.
+Verification reads the candidate manifest through a separate strict decoder and
+compares project/file IDs, participation, metadata and loader selection with the
+selected inventory and exact lock. ZIP byte verification alone does not establish
+these semantics. Check captured provider permissions for selected references after
+environment, precedence and optional-choice projection. Attributes on excluded files
+do not invalidate a recipe; selected references cannot discard observed attributes.
 
-### Bootstrap reference trees
+Reference: [CurseForge export contract](https://support.curseforge.com/support/solutions/articles/9000197908-exporting-a-modpack-for-curseforge-project-submission).
 
-Prepare the packwiz tree from selected game obligations. Its index hashes every
-metadata or embedded file; the pack document hashes the index. References preserve
-exact destinations, approved origins, side and representable optional settings.
-Keep original source evidence beside computed output hashes. Metadata-only references
-must not claim an acquired content address.
+## Prism
 
-Packwiz has one download locator per entry; select the first approved alternative
-and retain the complete origin list in the expected inventory. CurseForge metadata
-mode retains the canonical project and file ID. Paths for generated metadata must
-be deterministic and collision checked against both source files and installed
-payload destinations.
+Produce an importable instance ZIP with `instance.cfg`, exact `mmc-pack.json`
+components, selected icons/configuration and `.minecraft` content. The launcher
+obtains its normal game binaries, libraries and assets. Ordinary snapshots require
+no empack updater when pack content is bundled.
 
-The [pinned installer's headless UI](https://github.com/packwiz/packwiz-installer/tree/v0.5.14/src/main/kotlin/link/infra/packwiz/installer/ui)
-enables optional entries instead of honoring their defaults. Headless recipes must
-resolve optional choices before encoding the tree. Interactive recipes may retain
-independent optional references; grouped choices and optional embedded payloads
-require explicit selection. Do not infer these behaviors from `side = "server"`.
+Reference delivery carries an exact release and embedded authored assets under
+`.minecraft/.empack-consumer/`. This input directory also establishes Prism's game
+layout before its first prelaunch hook. It is reserved against selected game files
+and templates. Installed payloads are created by the instance engine, not preseeded
+as unowned archive members. Templates cannot occupy a future installed path.
 
-Lightweight client archives place the reference tree under `.minecraft/pack`,
-bundle installer tools under `.minecraft`, and include selected local bytes at
-their game destinations as well as in the reference tree. They use the same exact
-launcher component checks and all-requested publication group as full clients.
+The generated `instance.cfg` invokes `empack instance prepare` with an exact release
+hash, explicit instance root and Prism layout. The executable must be on the
+launcher's PATH and satisfy the descriptor's engine requirement. Failed preparation
+must stop launch. Subsequent preparation retains the active release and saved
+choices; it cannot reinstall the archive's original release over an update. The
+launcher profile must still match the active runtime.
 
-Bundle reviewed installer versions and their checked digests. The bootstrap's
-[`--bootstrap-no-update` and `--bootstrap-main-jar` options](https://github.com/packwiz/packwiz-installer-bootstrap/blob/v0.0.3/src/main/java/link/infra/packwiz/installer/bootstrap/Main.java)
-keep launch behavior tied to those exact assets. An empack-maintained digest pin
-must be attributed as such when upstream supplies no published checksum.
+Captured user configurations remain user input; their arbitrary commands are not
+certified as native prelaunch integration. Preserve argument boundaries, prelaunch
+exit status and runtime-component requirements. Do not allow platform and empack
+updaters to manage the same files without an explicit authority transfer. Real
+launcher import and execution tests establish compatibility, not only JSON parsing.
 
-### Exact server runtime contracts
+Reference: [Prism imports](https://prismlauncher.org/wiki/getting-started/download-modpacks/).
 
-Resolve the requested game and loader before preparing runtime files. Vanilla
-resolution selects the exact official catalog entry, verifies the version document
-against its catalog digest, and retains both observed document addresses. The
-server download must match the selected size and SHA-1 declaration. Compatibility
-evidence remains labeled; computed hashes do not strengthen that declaration.
+## Dedicated servers
 
-Inspect bounded launcher metadata before treating a runtime as prepared. Follow
-[JAR manifest continuation and section rules](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html#name-value-pairs-and-sections),
-reject ambiguous main attributes, and account for external class-path dependencies.
-Opaque JAR resources are not extracted as native paths: legitimate case-distinct
-resource names must remain usable. A runtime file set still needs to agree with the
-captured project's exact runtime, compose with game/template content without
-collisions, and pass artifact verification before publication.
+Prepare the exact vanilla, Fabric, Quilt, Forge or NeoForge server runtime and
+selected server content. Preserve historical supported loader variants, runtime
+asset evidence and generated start scripts. Java selection and EULA acceptance
+remain operator responsibilities. The installer never accepts the EULA automatically.
 
-Loader installer success requires additional contracts for selected loader identity,
-expected libraries, generated launchers and launch arguments. Merely finding a JAR
-or `run.sh` after exit zero does not establish that those obligations were satisfied.
+Both deliveries place runtime files and selected game content under `game/`. Root
+`start.sh` and `start.bat` scripts enter that directory and preserve separate Java
+arguments, including historical JAR and loader argument-file launch forms. Put
+server configuration templates under `templates/server/game/`; launcher scripts
+remain at the distribution root.
 
-### Server distribution contract
+Reference delivery packages `.empack-consumer/release.json` and authored assets.
+`install_pack.sh` and `install_pack.bat` invoke `empack instance prepare` with the
+exact descriptor hash and server environment. The generated start scripts run that
+step first and stop on failure. Bundled snapshot delivery needs no empack installer.
+Template files and runtime members cannot collide with future installed content.
 
-Both server recipes require a prepared runtime matching the captured exact Minecraft
-and loader resolution. Runtime bytes, selected game content, generated bootstrap
-metadata and templates occupy one collision-checked inventory. A template cannot
-replace a verified runtime file. Full servers contain selected pack bytes; lightweight
-servers include the exact installer pair and a server-side packwiz projection. Their
-installer command disables tool updates and selects `-s server` explicitly.
+Fabric/Quilt launcher layouts, Forge-family installer profiles, libraries and
+arguments are independently inspected after bounded installer execution. Exit zero
+or finding a JAR is insufficient. Snapshot bundles and reference distributions
+share one expected runtime; delivery changes acquisition, not runtime semantics.
 
-Default `start.sh` and `start.bat` invoke the prepared launcher from the distribution
-root, preserving separate user arguments. `JAVA_HOME` selects Java; lightweight
-`install_pack.sh` and `install_pack.bat` also accept a Java executable argument.
-Lightweight startup runs the corresponding installer first on both platforms and
-stops when installation fails. Windows installation does not require Bash. Full installation performs
-no download step. No recipe writes an accepted EULA. Captured user scripts and server
-properties remain user input and are reported as such; the verifier does not claim
-arbitrary user-authored commands are correct.
+Updates require a stopped/coordinated server. Worlds, player data and operator
+configuration use instance policies rather than archive overwrite behavior.
 
-Each archive format carries the same expected files and portable permissions. Server
-and client artifacts can share one AllRequested publication. Runtime mismatch, source
-conflict, missing content or any later recipe failure preserves previous outputs.
+## Native empack
 
-### Fabric and Quilt runtime preparation
+Generate the [release payload and signed envelope](releases.md) from verified exact
+content. A hosted channel is a separate publication artifact. Private authored paths,
+credentials and host-state directories never appear in the portable release.
 
-The official server profile must name the exact game, loader and intermediary.
-Every library has a validated Maven coordinate, safe destination and declared digest;
-missing profile hashes are resolved from repository checksum documents. Every
-published assertion is checked against acquired bytes. The Minecraft base remains
-bound to Mojang metadata, separately from loader metadata and generated launcher
-content. Computed addresses do not upgrade that source evidence.
+## Templates and verification
 
-The launcher follows [Fabric's installer layouts](https://github.com/FabricMC/fabric-installer/blob/master/src/main/java/net/fabricmc/installer/server/ServerInstaller.java):
-versions through 0.12.5 shade library entries and merge service definitions; later
-versions use a manifest classpath. Shading preserves first-entry precedence and
-removes signatures that cannot authenticate the assembled archive. Generation
-streams through a bounded writer, then reads every emitted member against the input
-inventory. The generated lease retains its resource reservation. Minecraft bytes
-are stored separately, and explicit launcher properties select that file.
+Preserve expressions until build-time inputs are known. Encode shell, INI and Java
+properties values for their output syntax. Treat binary templates as bytes. A template
+cannot silently replace a verified runtime file or collide with another placement.
 
-Quilt uses the same verified library pipeline with its own catalog and loader
-coordinate. Its [server profile](https://github.com/QuiltMC/quilt-installer/blob/master/src/main/java/org/quiltmc/installer/action/InstallServer.java)
-provides both the launch target and the wrapper main class; both must exist in the
-verified loader JAR. The generated manifest uses a classpath, and Quilt-specific
-properties select the exact Minecraft base. Fabric shading rules do not apply to
-Quilt. Conditional libraries or undeclared launch arguments require an explicit
-adapter extension rather than silently dropping runtime requirements.
+Independently inspect archive member names, duplicates, case/Unicode collisions,
+permissions, sizes, digests, unexpected entries and actual decoded-byte limits.
+Check exact provider identities and consumer semantics, not merely archive readability.
+Receipts record recipe, resolution, content evidence, conversions and runtime assets.
 
-`mise run smoke:runtime` checks official acquisition and actual Java launcher
-execution for vanilla, both Fabric layouts and Quilt. Unit fixtures separately exercise
-wrong bytes, metadata mismatch, missing classes, service merging, bounded output,
-cancellation and retained ownership. Forge-family checks are described below.
-
-### Forge-family installer contracts
-
-Installer selection binds an exact loader and game to an official Maven coordinate.
-Forge retains its late-1.7.10 repeated-game coordinate; NeoForge retains its early
-1.20.1 `forge` artifact family. Repository checksum evidence is checked before
-parsing an installer. The original algorithm and checksum document remain visible.
-
-The bounded profile reader checks both profile and version identities, library
-coordinates, declared paths and byte assertions. Historical executable JARs and
-modern Unix/Windows argument files are separate layouts. Duplicate library
-declarations must agree, and server processor output hashes remain obligations.
-Historical libraries lacking hashes remain unresolved evidence; reading a coordinate
-does not authenticate the installed bytes.
-
-An `InstallerServerPlan` is preparation input, not a completed runtime. Execution
-must retire its owned process, inspect confined regular files, verify declared
-libraries and generated outputs, and bind the actual launcher to those files before
-constructing `PreparedServerRuntime`. Process exit alone cannot discharge those
-obligations.
-
-`InstallerServerPlan::prepare` now executes this contract in private staging through
-an owned, deadline-bound process tree. It independently acquires the selected
-Minecraft server before execution. Only verified runtime files survive; installer
-executables and logs do not become distribution members. A typed `ServerLaunch`
-selects the historical executable JAR or the appropriate Unix/Windows argument file,
-so generated scripts preserve the launch contract instead of assuming `server.jar`.
-
-Historical checksum lists are alternatives, not simultaneous digest assertions.
-Verification records which declared SHA-1 matched. Missing historical declarations
-are resolved from repository checksum documents before execution. Computed hashes
-remain observations; neither SHA-1 nor MD5 becomes strong source evidence by copying
-it into a SHA-256-addressed store. Processor inputs are required only when the
-profile contains server processors, including intermediate executable-JAR layouts.
-
-The installer has a Java heap cap and an owned process deadline. Output entry and
-byte limits apply when staging is captured after the process exits. These are
-admission and verification limits, not kernel quotas or an OS sandbox: an external
-tool can consume disk before capture rejects its output. Captured output handles
-are retired as verified private leases replace them, avoiding duplicate retained
-handles for the same runtime tree. Large trees still require adequate host file
-limits; that resource boundary remains an implementation task.
-
-Live smoke verifies actual launch behavior for historical and modern Forge and both
-NeoForge artifact families. It checks Minecraft help where supported and the EULA
-refusal on old releases. It does not accept the EULA, start a playable world or
-establish that every loader release has an identical profile format.
-
-Declared downloadable installer libraries pass through empack's acquisition port
-before the tool starts. Source digests, alternative checksum sets and cumulative
-input limits are enforced there, then verified again against installed output.
-A later download failure returns no prepared subset. Input leases remain charged
-until their staging copies complete; host admission must allow those leases to
-coexist with the execution reservation. The installer may still acquire undeclared
-internal inputs, so this does not claim offline or fully mediated tool execution.
-
-Build capture applies pack ignore rules during native traversal. Ignored subtrees
-are pruned before their bytes or descendants are opened. Directory enumeration
-still has an entry limit. The rule document and backend control documents remain
-inputs; explicit locked local/archive sources remain required even under an ignored
-path. Eligible membership changes and rule edits invalidate preparation. Changes
-confined to ignored content do not. Journal capture groups retain the exact filter
-and input exceptions, so recovery does not silently broaden or reinterpret the read set.
-
-Installer output selection is an allowlist: declared profile libraries, processor
-outputs, exact launch files and Minecraft bundler libraries. Bundler declarations
-come from `META-INF/libraries.list` inside the independently verified Minecraft JAR;
-coordinates, relative destinations, embedded sizes and SHA-256 assertions must agree.
-Extra installer files do not enter the distribution merely because they appeared
-under `libraries/`. Output verification honors the requested evidence policy, and
-server assembly rechecks evidence when a caller supplies a previously prepared runtime.
-Strong-source mode rejects weak or undeclared output evidence; compatibility remains
-an explicit option rather than a silent fallback.
-
-Freezing a multi-file tree copies its verified members into one private backing file.
-Member readers are confined to their own ranges and recheck bytes on verified copy.
-The unpacked staging tree retires before further copies, keeping the peak at the
-input tree plus its frozen copy. A single-file lease retains its original object.
-Batch publication consumes each original archive after copying it into the candidate
-tree, before freezing that tree. Original archives do not coexist with both the
-unpacked publication tree and its packed backing.
-This avoids a descriptor per frozen member during packaging; separately acquired
-content leases still need bounded admission and further consolidation for very large
-packs. The live runtime suite publishes and starts extracted full server archives
-so preparation-only success cannot hide packaging failures.
-
-Acquisition planning uses the same environment, optional-choice and layer selection
-as game projection. `plan_target_build_acquisitions` reports only surviving missing
-files. A server target does not acquire client-only content; disabling a replacement
-retains its common fallback. Bootstrap targets can keep valid packwiz references,
-including explicitly permitted weak evidence, while mrpack still requires its export
-hashes. Selected local files must verify; excluded local or observed content does not
-become a byte obligation merely because it appears in the project.
+Modrinth recipes support client, server or both environments. Selection precedes
+acquisition, so an excluded role does not require download evidence. Selected
+references retain exact hashes and sizes; side-specific exports mark the other
+side unsupported. Common and side overlays resolve to the effective bytes for
+the selected environment before archive paths are assigned. The receipt retains
+the complete recipe used to produce the archive.

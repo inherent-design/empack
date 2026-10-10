@@ -20,6 +20,11 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
 pub(in crate::engine::build) fn fixture(root: &Path) -> BuildAcquisitions {
     let original = project(false, false);
     let mut intent = original.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "server.fixture".into(),
+        java_major: 21,
+        policies: BTreeMap::new(),
+    });
     intent.runtime.loader = LoaderKind::Vanilla;
     intent.runtime.loader_version = None;
     for dependency in intent.roots.values_mut() {
@@ -96,34 +101,32 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             put(root.path(), "templates/common/banner.bin", &[255, 0, 1]);
             put(root.path(), "templates/server/note.template", b"{{NAME}}");
             put(root.path(), "templates/client/excluded", b"excluded");
-            let bootstrap = lightweight.then(|| ServerBootstrap {
-                assets: InstallerAssets::fixture(),
-                interaction: InstallerInteraction::Headless,
-            });
-            let empty = BuildAcquisitions::default();
             let build = prepare_server_build(
                 capture(root.path(), host.path(), name),
                 path(name).unwrap(),
-                if lightweight { &empty } else { &external },
+                &external,
                 &options(format),
                 &prepared_fixture(),
-                bootstrap.as_ref(),
+                lightweight,
                 &cancel,
             )
             .unwrap();
             assert!(!root.path().join("dist").exists());
             assert!(!build.uses_user_configuration());
             let expected = build.inventory().clone();
-            assert!(expected.contains_key(&path("server.jar").unwrap()));
+            assert_eq!(
+                expected.contains_key(&path("game/server.jar").unwrap()),
+                !lightweight
+            );
             assert!(expected.contains_key(&path("install_pack.bat").unwrap()));
             assert!(!expected.contains_key(&path("eula.txt").unwrap()));
             assert!(!expected.contains_key(&path("excluded").unwrap()));
             assert_eq!(
-                expected.contains_key(&path("packwiz-installer.jar").unwrap()),
+                expected.contains_key(&path(".empack-consumer/release.json").unwrap()),
                 lightweight
             );
             assert_eq!(
-                expected.contains_key(&path("resourcepacks/a.zip").unwrap()),
+                expected.contains_key(&path("game/resourcepacks/a.zip").unwrap()),
                 !lightweight
             );
             build
@@ -144,18 +147,115 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             if format == DistributionArchive::Zip {
                 let mut zip = zip::ZipArchive::new(file).unwrap();
                 let mut value = String::new();
-                zip.by_name("config/example")
-                    .unwrap()
-                    .read_to_string(&mut value)
-                    .unwrap();
-                assert_eq!(value, "server");
+                if !lightweight {
+                    zip.by_name("game/config/example")
+                        .unwrap()
+                        .read_to_string(&mut value)
+                        .unwrap();
+                    assert_eq!(value, "server");
+                } else {
+                    let mut bytes = Vec::new();
+                    zip.by_name(".empack-consumer/release.json")
+                        .unwrap()
+                        .read_to_end(&mut bytes)
+                        .unwrap();
+                    let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+                    let file = release
+                        .document()
+                        .files
+                        .iter()
+                        .find(|f| f.destination == "config/example")
+                        .unwrap();
+                    let mut bytes = Vec::new();
+                    zip.by_name(&format!(".empack-consumer/{}", file.asset_path().unwrap()))
+                        .unwrap()
+                        .read_to_end(&mut bytes)
+                        .unwrap();
+                    assert_eq!(bytes, b"server");
+                    assert!(!zip.file_names().any(|p| p.contains("packwiz")));
+                }
                 value.clear();
                 zip.by_name("install_pack.sh")
                     .unwrap()
                     .read_to_string(&mut value)
                     .unwrap();
-                assert_eq!(value.contains("--bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar --no-gui -s server"),lightweight);
+                assert_eq!(value.contains("instance prepare"), lightweight);
                 assert!(!value.contains("eula=true"));
+                if lightweight {
+                    use crate::engine::{
+                        instance::*,
+                        release::{DecodedRelease, ReleaseSource, trust::SelectedSnapshot},
+                    };
+                    let instance = tempfile::tempdir().unwrap();
+                    zip.extract(instance.path()).unwrap();
+                    let assets = instance.path().join(".empack-consumer");
+                    let release =
+                        DecodedRelease::decode(&fs::read(assets.join("release.json")).unwrap())
+                            .unwrap();
+                    let supplied = release
+                        .document()
+                        .files
+                        .iter()
+                        .filter(|f| matches!(f.source, ReleaseSource::Url { .. }))
+                        .map(|f| {
+                            (
+                                f.key.clone(),
+                                external.locked.values().next().unwrap().content.clone(),
+                            )
+                        })
+                        .collect();
+                    assert!(!instance.path().join("game/server.jar").exists());
+                    let mut runtime_before = Vec::new();
+                    prepared_fixture().files()[&path("server.jar").unwrap()]
+                        .content
+                        .lease()
+                        .open()
+                        .read_to_end(&mut runtime_before)
+                        .unwrap();
+                    let plan = crate::engine::instance::plan(
+                        instance.path(),
+                        InstanceSelection {
+                            require_subscription: false,
+                            conflicts: Vec::new(),
+                            release: SelectedRelease::Snapshot(
+                                SelectedSnapshot::select(
+                                    release.bytes(),
+                                    release.id(),
+                                    &semver::Version::parse("0.6.0-beta").unwrap(),
+                                )
+                                .unwrap(),
+                            ),
+                            side: InstanceSide::Server,
+                            layout: Some(InstanceLayout::Game),
+                            choices: vec![],
+                            action: InstanceAction::Prepare,
+                        },
+                        RecoveryReader::new(host.path().join("instance-state")),
+                        SnapshotLimits::default(),
+                        &cancel,
+                    )
+                    .unwrap();
+                    plan.stage(&supplied, &BTreeMap::new(), Some(&assets), &cancel)
+                        .unwrap()
+                        .publish(
+                            &Publisher::open(&host.path().join("instance-state")).unwrap(),
+                            &cancel,
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        fs::read(instance.path().join("game/config/example")).unwrap(),
+                        b"server"
+                    );
+                    assert_eq!(
+                        fs::read(instance.path().join("game/resourcepacks/a.zip")).unwrap(),
+                        b"payload"
+                    );
+                    assert_eq!(
+                        fs::read(instance.path().join("game/server.jar")).unwrap(),
+                        runtime_before
+                    );
+                    assert!(!instance.path().join("game/eula.txt").exists());
+                }
             }
         }
     }
@@ -183,7 +283,7 @@ fn wrong_runtime_and_colliding_templates_preserve_previous_distribution() {
         &BuildAcquisitions::default(),
         &options(DistributionArchive::Zip),
         &prepared_fixture(),
-        None,
+        false,
         &cancel,
     );
     assert!(
@@ -194,7 +294,11 @@ fn wrong_runtime_and_colliding_templates_preserve_previous_distribution() {
             .contains("differs from captured lock")
     );
     let external = fixture(root.path());
-    put(root.path(), "templates/server/server.jar", b"replacement");
+    put(
+        root.path(),
+        "templates/server/game/server.jar",
+        b"replacement",
+    );
     assert!(
         prepare_server_build(
             capture(root.path(), host.path(), "server.zip"),
@@ -202,7 +306,7 @@ fn wrong_runtime_and_colliding_templates_preserve_previous_distribution() {
             &external,
             &options(DistributionArchive::Zip),
             &prepared_fixture(),
-            None,
+            false,
             &cancel
         )
         .is_err()
@@ -225,7 +329,7 @@ fn captured_user_scripts_are_preserved_and_reported() {
         &external,
         &options(DistributionArchive::Zip),
         &prepared_fixture(),
-        None,
+        false,
         &cancel,
     )
     .unwrap();
@@ -250,16 +354,8 @@ fn captured_user_scripts_are_preserved_and_reported() {
 fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("game")).unwrap();
     put(root.path(), "start.sh", START_SH.as_bytes());
-    put(
-        root.path(),
-        "install_pack.sh",
-        install_script(Some(&ServerBootstrap {
-            assets: InstallerAssets::fixture(),
-            interaction: InstallerInteraction::Headless,
-        }))
-        .as_bytes(),
-    );
     put(
         root.path(),
         "java space/bin/java",
@@ -270,30 +366,17 @@ fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
         fs::Permissions::from_mode(0o700),
     )
     .unwrap();
-    let java = root.path().join("java space");
     let status = std::process::Command::new("bash")
         .arg(root.path().join("start.sh"))
         .args(["nogui", "an argument"])
-        .env("JAVA_HOME", &java)
+        .env("JAVA_HOME", root.path().join("java space"))
         .status()
         .unwrap();
     assert!(status.success());
     assert_eq!(
-        fs::read_to_string(root.path().join("arguments")).unwrap(),
+        fs::read_to_string(root.path().join("game/arguments")).unwrap(),
         "-jar\nserver.jar\nnogui\nan argument\n"
     );
-    let status = std::process::Command::new("bash")
-        .arg(root.path().join("install_pack.sh"))
-        .arg(java.join("bin/java"))
-        .env_remove("JAVA_HOME")
-        .status()
-        .unwrap();
-    assert!(status.success());
-    assert_eq!(
-        fs::read_to_string(root.path().join("arguments")).unwrap(),
-        "-jar\npackwiz-installer-bootstrap.jar\n--bootstrap-no-update\n--bootstrap-main-jar\npackwiz-installer.jar\n--no-gui\n-s\nserver\npack/pack.toml\n"
-    );
-    fs::remove_file(root.path().join("arguments")).unwrap();
     put(
         root.path(),
         "install_pack.sh",
@@ -307,9 +390,7 @@ fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
             .unwrap()
             .success()
     );
-    assert!(!root.path().join("arguments").exists());
 }
-
 #[test]
 fn computed_runtime_hash_does_not_upgrade_original_source_assurance() {
     let root = tempfile::tempdir().unwrap();
@@ -323,7 +404,7 @@ fn computed_runtime_hash_does_not_upgrade_original_source_assurance() {
         &external,
         &options,
         &prepared_fixture(),
-        None,
+        false,
         &Cancellation::default(),
     );
     assert!(
@@ -338,78 +419,144 @@ fn computed_runtime_hash_does_not_upgrade_original_source_assurance() {
 
 #[cfg(unix)]
 #[test]
-fn lightweight_start_installs_first_and_failure_blocks_the_server() {
+fn native_start_prepares_first_and_failure_blocks_the_server() {
     use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    put(root.path(), "start.sh", start_script(true).as_bytes());
+    let root = tempfile::Builder::new()
+        .prefix("native server ")
+        .tempdir()
+        .unwrap();
+    fs::create_dir(root.path().join("game")).unwrap();
+    put(
+        root.path(),
+        "start.sh",
+        runtime_start(&ServerLaunch::Jar(path("server.jar").unwrap()), true, false).as_bytes(),
+    );
+    let id = "a".repeat(64);
     put(
         root.path(),
         "install_pack.sh",
-        install_script(Some(&ServerBootstrap {
-            assets: InstallerAssets::fixture(),
-            interaction: InstallerInteraction::Headless,
-        }))
-        .as_bytes(),
+        install_script(Some(&id)).as_bytes(),
     );
-    let java = root.path().join("java space");
-    put(root.path(),"java space/bin/java",b"#!/bin/sh\nprintf '%s\n' \"$*\" >> arguments\nif [ \"$2\" = packwiz-installer-bootstrap.jar ]; then exit \"$EMPACK_TEST_INSTALL_STATUS\"; fi\n");
-    fs::set_permissions(java.join("bin/java"), fs::Permissions::from_mode(0o700)).unwrap();
-    for (failure, count) in [(false, 2), (true, 1)] {
-        put(root.path(), "arguments", b"");
+    put(
+        root.path(),
+        "bin/empack",
+        br##"#!/bin/sh
+if [ "$5" = prepare ]; then
+  printf '%s\n' "$@" > "$EMPACK_TEST_ARGS"
+  exit "$EMPACK_TEST_INSTALL_STATUS"
+fi
+printf '%s\n' "$@" > "$EMPACK_TEST_ARGS.launch"
+[ "$5" = launch ] && [ "$6" = --server ] && [ "$7" = -- ] || exit 91
+root="$2"
+shift 7
+cd "$root/game" || exit 92
+program="$1"
+shift
+exec "$program" -jar server.jar "$@"
+"##,
+    );
+    put(
+        root.path(),
+        "java space/bin/java",
+        b"#!/bin/sh\nprintf '%s\n' \"$@\" > server-arguments\nexit \"$EMPACK_TEST_RUNTIME_STATUS\"\n",
+    );
+    for name in ["bin/empack", "java space/bin/java"] {
+        fs::set_permissions(root.path().join(name), fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let paths = std::env::join_paths(std::iter::once(root.path().join("bin")).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .unwrap();
+    for (code, runtime_code) in [(0, 0), (0, 9), (7, 0)] {
+        let arguments = root.path().join("game/server-arguments");
+        if arguments.exists() {
+            fs::remove_file(&arguments).unwrap();
+        }
         let status = std::process::Command::new("bash")
             .arg(root.path().join("start.sh"))
-            .arg("nogui")
-            .env("JAVA_HOME", &java)
-            .env(
-                "EMPACK_TEST_INSTALL_STATUS",
-                if failure { "7" } else { "0" },
-            )
+            .args(["nogui", "an argument"])
+            .env("JAVA_HOME", root.path().join("java space"))
+            .env("PATH", &paths)
+            .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
+            .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
+            .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
             .status()
             .unwrap();
-        assert_eq!(status.success(), !failure);
-        let arguments = fs::read_to_string(root.path().join("arguments")).unwrap();
-        let lines: Vec<_> = arguments.lines().collect();
-        assert_eq!(lines.len(), count);
-        assert!(lines[0].contains("--bootstrap-main-jar packwiz-installer.jar --no-gui -s server"));
-        if !failure {
-            assert_eq!(lines[1], "-jar server.jar nogui");
+        assert_eq!(
+            status.code(),
+            Some(if code == 0 { runtime_code } else { code })
+        );
+        assert_eq!(arguments.exists(), code == 0);
+        let selected = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
+        let expected = format!(
+            "--workdir\n{}\n--yes\ninstance\nprepare\n{}/.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n",
+            root.path().display(),
+            root.path().display()
+        );
+        assert_eq!(selected, expected);
+        if code == 0 {
+            let launch = fs::read_to_string(root.path().join("instance-arguments.launch")).unwrap();
+            assert_eq!(
+                launch,
+                format!(
+                    "--workdir\n{}\n--yes\ninstance\nlaunch\n--server\n--\n{}\nnogui\nan argument\n",
+                    root.path().display(),
+                    root.path().join("java space/bin/java").display()
+                )
+            );
+            assert_eq!(
+                fs::read_to_string(arguments).unwrap(),
+                "-jar\nserver.jar\nnogui\nan argument\n"
+            );
         }
     }
 }
 #[cfg(windows)]
 #[test]
-fn native_windows_start_installs_first_and_propagates_failure_without_bash() {
+fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     let root = tempfile::tempdir().unwrap();
-    put(root.path(), "start.bat", start_batch(true).as_bytes());
+    fs::create_dir(root.path().join("game")).unwrap();
     put(
         root.path(),
-        "install_pack.bat",
-        install_batch(Some(&ServerBootstrap {
-            assets: InstallerAssets::fixture(),
-            interaction: InstallerInteraction::Headless,
-        }))
-        .as_bytes(),
+        "start.bat",
+        start_batch(true)
+            .replace("empack --workdir", "call fake-empack.cmd --workdir")
+            .as_bytes(),
     );
-    put(root.path(),"java.cmd",b"@echo off\r\necho %*>>arguments\r\nif \"%~2\"==\"packwiz-installer-bootstrap.jar\" exit /b %EMPACK_TEST_INSTALL_STATUS%\r\nexit /b 0\r\n");
-    for (failure, count) in [(false, 2), (true, 1)] {
-        put(root.path(), "arguments", b"");
+    // CALL lets a batch fixture return like the empack executable it replaces.
+    let install = install_batch(Some(&"a".repeat(64)))
+        .replace("empack --workdir", "call fake-empack.cmd --workdir");
+    put(root.path(), "install_pack.bat", install.as_bytes());
+    put(
+        root.path(),
+        "fake-empack.cmd",
+        b"@echo off\r\nif %5==launch goto launch\r\necho %* > instance-arguments\r\nexit /b %EMPACK_TEST_INSTALL_STATUS%\r\n:launch\r\necho %* > launch-arguments\r\ncd game || exit /b 92\r\ncall java.cmd nogui\r\nexit /b %errorlevel%\r\n",
+    );
+    put(
+        root.path(),
+        "game/java.cmd",
+        b"@echo off\r\necho %* > server-arguments\r\nexit /b 0\r\n",
+    );
+    for code in [0, 7] {
+        let args = root.path().join("game/server-arguments");
+        if args.exists() {
+            fs::remove_file(&args).unwrap();
+        }
         let status = std::process::Command::new("cmd")
             .args(["/d", "/c", "start.bat", "nogui"])
             .current_dir(root.path())
             .env_remove("JAVA_HOME")
-            .env(
-                "EMPACK_TEST_INSTALL_STATUS",
-                if failure { "7" } else { "0" },
-            )
+            .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
             .status()
             .unwrap();
-        assert_eq!(status.success(), !failure);
-        let arguments = fs::read_to_string(root.path().join("arguments")).unwrap();
-        let lines: Vec<_> = arguments.lines().collect();
-        assert_eq!(lines.len(), count);
-        assert!(lines[0].contains("--bootstrap-main-jar packwiz-installer.jar --no-gui -s server"));
-        if !failure {
-            assert_eq!(lines[1], "-jar server.jar nogui");
+        assert_eq!(status.code(), Some(code));
+        assert_eq!(args.exists(), code == 0);
+        let arguments = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
+        assert!(arguments.contains("instance prepare"));
+        assert!(arguments.contains("--layout game --side server"));
+        if code == 0 {
+            let launch = fs::read_to_string(root.path().join("launch-arguments")).unwrap();
+            assert!(launch.contains("instance launch -- java -jar server.jar nogui"));
         }
     }
 }
@@ -419,6 +566,7 @@ fn native_windows_start_installs_first_and_propagates_failure_without_bash() {
 fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("game")).unwrap();
     put(
         root.path(),
         "java/bin/java",
@@ -455,7 +603,7 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
             .unwrap();
         assert!(status.success());
         assert_eq!(
-            std::fs::read_to_string(root.path().join("arguments.txt")).unwrap(),
+            std::fs::read_to_string(root.path().join("game/arguments.txt")).unwrap(),
             expected
         );
         let windows = runtime_start(&launch, false, true);
@@ -464,5 +612,32 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
             assert!(windows.contains("@libraries/loader/win_args.txt"));
             assert!(!windows.contains("unix_args.txt"));
         }
+    }
+}
+
+#[test]
+fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
+    let recipe = Recipe::SERVER_BUNDLED
+        .with_update_authority(empack_core::distribution::UpdateAuthority::Empack)
+        .unwrap();
+    for windows in [false, true] {
+        let launch = consumer_script(
+            runtime_start(
+                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                true,
+                windows,
+            ),
+            recipe,
+        );
+        assert!(launch.contains("instance launch --server --check-updates --"));
+        let install = consumer_script(
+            if windows {
+                install_batch(Some("digest"))
+            } else {
+                install_script(Some("digest"))
+            },
+            recipe,
+        );
+        assert!(install.contains("--side server --require-subscription"));
     }
 }

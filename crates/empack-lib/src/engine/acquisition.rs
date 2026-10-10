@@ -20,6 +20,7 @@ use tokio::{sync::mpsc, time::Instant};
 mod cache;
 pub mod discovery;
 mod local;
+mod metadata;
 pub use local::{LocalFileRequest, acquire_local_file};
 
 const CHUNK_BYTES: usize = 64 * 1024;
@@ -166,6 +167,8 @@ pub struct HttpAcquisition {
     cache: Option<cache::AcquisitionCache>,
     #[cfg(test)]
     allow_loopback_http: bool,
+    #[cfg(test)]
+    test_origin: Option<(Url, Url)>,
 }
 impl HttpAcquisition {
     pub fn new() -> Result<Self> {
@@ -175,6 +178,8 @@ impl HttpAcquisition {
             cache: None,
             #[cfg(test)]
             allow_loopback_http: false,
+            #[cfg(test)]
+            test_origin: None,
         })
     }
     #[cfg(test)]
@@ -188,7 +193,22 @@ impl HttpAcquisition {
             curseforge_key: None,
             cache: None,
             allow_loopback_http: true,
+            test_origin: None,
         }
+    }
+    /// Map a validated HTTPS fixture origin to a local HTTP server without relaxing wire codecs.
+    #[cfg(test)]
+    pub(crate) fn with_test_origin(mut self, from: &str, to: &str) -> Self {
+        let to = Url::parse(to).unwrap();
+        assert!(
+            to.host_str()
+                .unwrap()
+                .parse::<std::net::IpAddr>()
+                .unwrap()
+                .is_loopback()
+        );
+        self.test_origin = Some((Url::parse(from).unwrap(), to));
+        self
     }
     pub(in crate::engine) fn with_curseforge_key(mut self, key: Option<HeaderValue>) -> Self {
         self.curseforge_key = key.map(|mut key| {
@@ -198,7 +218,21 @@ impl HttpAcquisition {
         self
     }
     fn request(&self, url: &Url) -> reqwest::RequestBuilder {
-        let mut request = self.client.get(url.clone());
+        let target = url.clone();
+        #[cfg(test)]
+        let target = if let Some((from, to)) = &self.test_origin {
+            if url.origin() == from.origin() {
+                let mut target = to.clone();
+                target.set_path(url.path());
+                target.set_query(url.query());
+                target
+            } else {
+                target
+            }
+        } else {
+            target
+        };
+        let mut request = self.client.get(target);
         if url.scheme() == "https"
             && url.host_str() == Some("edge.forgecdn.net")
             && url.port_or_known_default() == Some(443)

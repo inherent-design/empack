@@ -2,12 +2,11 @@
 use super::*;
 use crate::engine::{
     acquisition::{DownloadRequest, HttpAcquisition, TransferLimits},
-    backend::BackendDownload,
     content::{ContentPool, InitialObservation},
     runtime::WorkScope,
 };
 use empack_core::{
-    digest::{DigestAlgorithm, DigestSet},
+    digest::DigestAlgorithm,
     files::FilePermissions,
     model::{ExpectedContent, NonEmpty, ResolvedFile, ResolvedPin},
     path::PortableRelPath,
@@ -19,7 +18,6 @@ mod cache;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AcquisitionKey {
     Locked(LockedFileKey),
-    Observed(PortableRelPath),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildMaterialization {
@@ -31,7 +29,6 @@ pub enum AcquisitionReason {
     ReferenceEvidence,
     LayeredReplacement,
     MaterializedTarget,
-    RetainedBackendContent,
 }
 /// Missing manual/provider/archive acquisition remains typed input, never a guessed filename.
 /// This type is not Debug/serializable: transient observed download URLs may contain secrets.
@@ -113,7 +110,6 @@ impl BuildAcquisitionPlan {
         for need in self.needs {
             let input = match &need.key {
                 AcquisitionKey::Locked(key) => supplied.locked.remove(key),
-                AcquisitionKey::Observed(path) => supplied.observed.remove(path),
             };
             if let Some(file) = input {
                 let member_policy = match &need.source {
@@ -145,7 +141,7 @@ impl BuildAcquisitionPlan {
             }
         }
         ensure!(
-            supplied.locked.is_empty() && supplied.observed.is_empty(),
+            supplied.locked.is_empty(),
             "Supplied content does not match a pending build obligation"
         );
         Ok(BuildAcquisitionResult { acquired, pending })
@@ -455,7 +451,6 @@ fn insert_acquired(
 ) -> Result<()> {
     let previous = match key {
         AcquisitionKey::Locked(key) => acquired.locked.insert(key, file),
-        AcquisitionKey::Observed(path) => acquired.observed.insert(path, file),
     };
     ensure!(previous.is_none(), "Duplicate acquisition obligation");
     Ok(())
@@ -487,13 +482,6 @@ fn plan_acquisitions(
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
     let project = workspace.require_resolved()?;
-    let records = workspace.backend_files(cancel)?;
-    let available = external
-        .locked
-        .iter()
-        .map(|(key, value)| (key.clone(), value))
-        .collect();
-    let backend = check_backend(&project, &records, &available)?;
     let mut occupied = BTreeSet::new();
     let mut destinations = BTreeMap::<PortableRelPath, usize>::new();
     for dependency in project.lock().dependencies.values() {
@@ -513,17 +501,6 @@ fn plan_acquisitions(
                     path: placement.destination.relative().clone(),
                 })?);
             }
-        }
-    }
-    for record in &records {
-        if backend.unlisted.contains(&record.metadata_path) {
-            *destinations
-                .entry(record.destination.relative().clone())
-                .or_default() += 1;
-            occupied.insert(ProjectLayout::path(&ManagedPath::Content {
-                layer: ContentLayer::Common,
-                path: record.destination.relative().clone(),
-            })?);
         }
     }
     for source in workspace.source_entries(cancel)? {
@@ -627,45 +604,6 @@ fn plan_acquisitions(
                 source,
             });
         }
-    }
-    for record in records {
-        if selected.is_some_and(|keys| {
-            !keys.contains(&AcquisitionKey::Observed(record.metadata_path.clone()))
-        }) || !backend.unlisted.contains(&record.metadata_path)
-            || external.observed.contains_key(&record.metadata_path)
-        {
-            continue;
-        }
-        if captured_file(
-            workspace,
-            &ProjectLayout::path(&ManagedPath::Content {
-                layer: ContentLayer::Common,
-                path: record.destination.relative().clone(),
-            })?,
-        )? {
-            continue;
-        }
-        let source = match record.download {
-            BackendDownload::Url(url) => BuildContentSource::Download(NonEmpty::new(vec![url])?),
-            BackendDownload::CurseForgeMetadata => BuildContentSource::Manual {
-                pin: record.provider.and_then(|provider| {
-                    provider.selection.map(|selection| ResolvedPin {
-                        project: provider.project,
-                        selection,
-                    })
-                }),
-            },
-        };
-        needs.push(AcquisitionNeed {
-            key: AcquisitionKey::Observed(record.metadata_path),
-            reason: AcquisitionReason::RetainedBackendContent,
-            expected: ExpectedContent {
-                digests: Some(DigestSet::new(vec![record.digest])?),
-                size: None,
-                accepted_observation: None,
-            },
-            source,
-        });
     }
     Ok(BuildAcquisitionPlan { needs })
 }

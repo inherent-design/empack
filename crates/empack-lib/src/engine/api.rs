@@ -14,7 +14,6 @@ use super::{
     content::SourceEvidencePolicy,
     layout::CollisionIndex,
     mrpack::OptionalConversion,
-    packwiz::InstallerInteraction,
     project::{ProjectReader, WorkspaceSnapshot},
     providers::{CatalogLimits, ProviderAvailability, ProviderCatalog},
     publication::{PublicationReceipt, RecoveryReader},
@@ -29,13 +28,13 @@ use super::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     inventory::OptionalPolicy,
     model::{
         DistributionArchive, ExpectedContent, LoaderKind, NonEmpty, RuntimeResolution,
         SemanticRevision,
     },
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::{
     collections::BTreeMap,
@@ -68,6 +67,26 @@ pub use recovery::{
     RecoverPreview, RecoverRequest, RecoveryAction, RecoveryKind, RecoveryReceipt, RecoveryStatus,
 };
 mod execution;
+mod instance;
+mod launch;
+pub(super) use launch::RuntimeRecoveryRequired;
+pub use launch::{
+    AcknowledgeStoppedRuntime, LaunchInstancePreview, LaunchInstanceReceipt, LaunchInstanceRequest,
+    RuntimeRecoveryPreview, RuntimeRecoveryReceipt,
+};
+mod release_publication;
+mod subscription;
+pub use instance::{
+    InstallInstanceRequest, InstanceInputRequirement, InstancePreview, InstanceReceipt,
+    PendingInstanceCleanup, ResumedInstance, SavedInstanceRecord, SuspendedInstanceReceipt,
+};
+pub use release_publication::{
+    PublishChannelRequest, ReleasePublicationPreview, ReleasePublicationReceipt,
+    StageReleaseRequest,
+};
+pub use subscription::{
+    SubscriptionPreview, SubscriptionReceipt, SubscriptionRecord, SubscriptionRequest,
+};
 mod project_change;
 mod removal;
 mod synchronization;
@@ -75,10 +94,7 @@ pub use project_change::{
     ImportRequest, InitializeRequest, ProjectChangePreview, ProjectChangeReceipt,
     ReplacementSummary,
 };
-pub use removal::{
-    ObservedRemovalSelection, RemovalSelection, RemovalSelector, RemovePreview, RemoveReceipt,
-    RemoveRequest,
-};
+pub use removal::{RemovalSelection, RemovalSelector, RemovePreview, RemoveReceipt, RemoveRequest};
 pub use synchronization::{SyncPreview, SyncReceipt, SyncRequest};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
@@ -87,7 +103,7 @@ static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 pub struct PlanId(u64);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildOutput {
-    pub target: BuildTarget,
+    pub target: Recipe,
     pub artifact: PortableRelPath,
 }
 #[derive(Clone)]
@@ -100,7 +116,6 @@ pub struct BuildRequest {
     pub mrpack_optional: OptionalConversion,
     pub templates: TemplateOptions,
     pub evidence: SourceEvidencePolicy,
-    pub interaction: InstallerInteraction,
 }
 /// Explicitly supplied bytes stay private to preparation, never in a display-only preview.
 pub struct BuildPreparationRequest {
@@ -216,6 +231,12 @@ struct PreparedBuild {
     acquired_permit: Option<super::resources::AdmissionPermit>,
 }
 pub enum Request {
+    AcknowledgeStoppedRuntime,
+    LaunchInstance(LaunchInstanceRequest),
+    Subscription(SubscriptionRequest),
+    StageRelease(StageReleaseRequest),
+    PublishChannel(PublishChannelRequest),
+    InstallInstance(Box<InstallInstanceRequest>),
     Clean(CleanRequest),
     Recover(RecoverRequest),
     Build(Box<BuildPreparationRequest>),
@@ -237,6 +258,36 @@ pub enum ProjectTarget {
 impl From<PathBuf> for ProjectTarget {
     fn from(path: PathBuf) -> Self {
         Self::Existing(path)
+    }
+}
+impl From<PublishChannelRequest> for Request {
+    fn from(request: PublishChannelRequest) -> Self {
+        Self::PublishChannel(request)
+    }
+}
+impl From<StageReleaseRequest> for Request {
+    fn from(request: StageReleaseRequest) -> Self {
+        Self::StageRelease(request)
+    }
+}
+impl From<SubscriptionRequest> for Request {
+    fn from(request: SubscriptionRequest) -> Self {
+        Self::Subscription(request)
+    }
+}
+impl From<AcknowledgeStoppedRuntime> for Request {
+    fn from(_: AcknowledgeStoppedRuntime) -> Self {
+        Self::AcknowledgeStoppedRuntime
+    }
+}
+impl From<LaunchInstanceRequest> for Request {
+    fn from(request: LaunchInstanceRequest) -> Self {
+        Self::LaunchInstance(request)
+    }
+}
+impl From<InstallInstanceRequest> for Request {
+    fn from(request: InstallInstanceRequest) -> Self {
+        Self::InstallInstance(Box::new(request))
     }
 }
 impl From<CleanRequest> for Request {
@@ -301,6 +352,11 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    RuntimeRecovery(RuntimeRecoveryPreview),
+    Launch(LaunchInstancePreview),
+    Subscription(SubscriptionPreview),
+    ReleasePublication(ReleasePublicationPreview),
+    Instance(InstancePreview),
     CacheClean(CacheCleanPreview),
     Clean(CleanPreview),
     Recovery(RecoverPreview),
@@ -316,6 +372,11 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::RuntimeRecovery(view) => view.plan,
+            Self::Launch(view) => view.plan,
+            Self::Subscription(view) => view.plan,
+            Self::ReleasePublication(view) => view.plan,
+            Self::Instance(view) => view.plan,
             Self::CacheClean(view) => view.plan,
             Self::Clean(view) => view.plan,
             Self::Recovery(view) => view.plan,
@@ -397,6 +458,10 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::Launch(_) | Self::RuntimeRecovery(_) => None,
+            Self::Subscription(view) => Some(view.replacement),
+            Self::ReleasePublication(view) => Some(view.replacement),
+            Self::Instance(view) => Some(view.replacement),
             Self::CacheClean(view) => Some(view.replacement),
             Self::Clean(view) => Some(view.replacement),
             Self::Recovery(view) => Some(view.replacement),
@@ -410,12 +475,19 @@ impl OperationPreview {
     }
     pub fn needs_network(&self) -> bool {
         self.build().is_some_and(|view| view.needs_network)
+            || matches!(self, Self::Instance(view) if !view.downloads.is_empty())
+            || matches!(self, Self::ReleasePublication(view) if view.channel.is_some())
     }
     pub fn runs_installer(&self) -> bool {
         self.build().is_some_and(|view| view.runs_installer)
     }
 }
 enum PreparedKind {
+    RuntimeRecovery(Box<launch::PreparedRuntimeRecovery>),
+    Launch(Box<launch::PreparedLaunch>),
+    Subscription(Box<subscription::PreparedSubscription>),
+    ReleasePublication(Box<release_publication::PreparedReleasePublication>),
+    Instance(Box<instance::PreparedInstanceOperation>),
     CacheClean(Box<cache_cleanup::PreparedCacheCleanup>),
     Clean(Box<cleanup::PreparedCleanup>),
     Recovery(Box<recovery::PreparedRecoveryOperation>),
@@ -430,6 +502,13 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::RuntimeRecovery(value) => OperationPreview::RuntimeRecovery(value.view.clone()),
+            Self::Launch(value) => OperationPreview::Launch(value.view.clone()),
+            Self::Subscription(value) => OperationPreview::Subscription(value.view.clone()),
+            Self::ReleasePublication(value) => {
+                OperationPreview::ReleasePublication(value.view.clone())
+            }
+            Self::Instance(value) => OperationPreview::Instance(value.view.clone()),
             Self::CacheClean(value) => OperationPreview::CacheClean(value.view.clone()),
             Self::Clean(value) => OperationPreview::Clean(value.view.clone()),
             Self::Recovery(value) => OperationPreview::Recovery(value.view.clone()),
@@ -481,10 +560,24 @@ pub struct ExecutionGrant {
     pub plan: PlanId,
     pub network: NetworkPermission,
     pub run_installer: bool,
+    /// Permit a local host-selected runtime; release metadata cannot choose this command.
+    pub run_runtime: bool,
     /// Exact managed replacement footprint displayed by a project-change preview.
     pub replacement: Option<ReplacementSummary>,
 }
 impl PreparedOperation {
+    fn classify(self) -> Preparation {
+        let needs_input = match self.view() {
+            OperationPreview::Build(view) => !view.unresolved.is_empty(),
+            OperationPreview::Instance(view) => !view.manual.is_empty(),
+            _ => false,
+        };
+        if needs_input {
+            Preparation::NeedsInput(Box::new(PreparationContinuation { prepared: self }))
+        } else {
+            Preparation::Ready(self)
+        }
+    }
     pub fn view(&self) -> &OperationPreview {
         &self.view
     }
@@ -513,6 +606,10 @@ impl PreparedOperation {
             ))
             .context("Operation requires trusted installer authorization")
         );
+        ensure!(
+            !matches!(&*self.view, OperationPreview::Launch(_)) || grant.run_runtime,
+            "Instance launch requires explicit runtime execution authorization"
+        );
         let replacement = self.view.replacement();
         ensure!(
             grant.replacement == replacement,
@@ -526,6 +623,11 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    RuntimeRecovered(Box<RetainedOutput<RuntimeRecoveryReceipt>>),
+    Launch(Box<RetainedOutput<LaunchInstanceReceipt>>),
+    Subscription(Box<RetainedOutput<SubscriptionReceipt>>),
+    ReleasePublication(Box<RetainedOutput<ReleasePublicationReceipt>>),
+    Instance(Box<RetainedOutput<InstanceReceipt>>),
     CacheClean(Box<CacheCleanReceipt>),
     Clean(Box<RetainedOutput<CleanReceipt>>),
     Recovery(Box<RetainedOutput<RecoveryReceipt>>),
@@ -565,7 +667,9 @@ impl ExecutionOutcome {
                 operation: recovery.operation.clone(),
                 cause: error,
             }
-        } else if error.is::<PublicationWorkerFailed>() {
+        } else if error.is::<PublicationWorkerFailed>()
+            || error.is::<launch::RuntimeRecoveryRequired>()
+        {
             Self::ExecutionUncertain(error)
         } else if error.is::<crate::application::process_runtime::Interrupted>()
             || matches!(
@@ -597,9 +701,13 @@ impl ExecutionOutcome {
 /// Taking the continuation is single-consumer and grants no execution or durable-write authority.
 pub struct ExecutionInput {
     requirements: Vec<ContentRequirement>,
+    instance_requirements: Vec<InstanceInputRequirement>,
     continuation: std::sync::Mutex<Option<PreparationContinuation>>,
 }
 impl ExecutionInput {
+    pub fn instance_requirements(&self) -> &[InstanceInputRequirement] {
+        &self.instance_requirements
+    }
     pub fn requirements(&self) -> &[ContentRequirement] {
         &self.requirements
     }
@@ -638,6 +746,7 @@ pub struct BuildReceipt {
 ///     plan: prepared.view().plan(),
 ///     network: NetworkPermission::Allow,
 ///     run_installer: true,
+///     run_runtime: false,
 ///     replacement: None,
 /// };
 /// let mut operation = engine.start(prepared.authorize(grant)?)?;
@@ -715,6 +824,43 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::AcknowledgeStoppedRuntime => {
+                            Ok(launch::prepare_recovery(project, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::RuntimeRecovery(Box::new(value))))
+                        }
+                        Request::LaunchInstance(request) => {
+                            Ok(launch::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Launch(Box::new(value))))
+                        }
+                        Request::PublishChannel(request) => {
+                            Ok(release_publication::prepare_channel(
+                                project, request, &config, &mut scope,
+                            )
+                            .await?
+                            .map(|value| PreparedKind::ReleasePublication(Box::new(value))))
+                        }
+                        Request::StageRelease(request) => Ok(release_publication::prepare(
+                            project, request, &config, &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::ReleasePublication(Box::new(value)))),
+                        Request::Subscription(request) => {
+                            Ok(subscription::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Subscription(Box::new(value))))
+                        }
+                        Request::InstallInstance(request) => Ok(instance::prepare(
+                            project,
+                            *request,
+                            &config,
+                            provider_access,
+                            content_cache.as_ref(),
+                            &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::Instance(Box::new(value)))),
                         Request::Clean(request) => {
                             Ok(cleanup::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -821,17 +967,7 @@ impl Engine {
         let prepared = receiver
             .await
             .context("Preparation result was not retained")??;
-        if prepared
-            .view()
-            .build()
-            .is_none_or(|view| view.unresolved.is_empty())
-        {
-            Ok(Preparation::Ready(prepared))
-        } else {
-            Ok(Preparation::NeedsInput(Box::new(PreparationContinuation {
-                prepared,
-            })))
-        }
+        Ok(prepared.classify())
     }
     /// Revalidate a suspended build and merge additional explicit inputs before making a new plan.
     pub async fn resume(
@@ -902,6 +1038,54 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::RuntimeRecovery(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::RuntimeRecovery(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    launch::recover(prepared, config, scope).await
+                }
+                PreparedKind::Launch(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::Launch(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    launch::run(prepared, config, scope).await
+                }
+                PreparedKind::ReleasePublication(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::ReleasePublication(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    release_publication::run(prepared, config, transport, scope).await
+                }
+                PreparedKind::Subscription(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::Subscription(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    subscription::run(prepared, config, scope).await
+                }
+                PreparedKind::Instance(_) => {
+                    let prepared = data.map(|value| match value {
+                        PreparedKind::Instance(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    let transport = match content_cache {
+                        Some(ref cache) => transport.with_cache_lookup(cache.clone()),
+                        None => transport,
+                    };
+                    instance::run(
+                        prepared,
+                        config,
+                        transport,
+                        catalog,
+                        content_cache,
+                        owner,
+                        scope,
+                    )
+                    .await
+                }
                 PreparedKind::CacheClean(_) => {
                     let prepared = data.map(|kind| match kind {
                         PreparedKind::CacheClean(value) => *value,
@@ -1125,19 +1309,37 @@ fn capture(
                 "Continuation repeats a supplied locked file"
             );
         }
-        for (path, file) in prior.acquisition.acquired.observed {
-            ensure!(
-                supplied.observed.insert(path, file).is_none(),
-                "Continuation repeats a supplied observed file"
-            );
-        }
     }
     ensure!(project.is_absolute(), "Project selection must be absolute");
+    if request
+        .outputs
+        .as_slice()
+        .iter()
+        .all(|output| crate::engine::build::native::supports(output.target))
+    {
+        ensure!(
+            matches!(request.optional, OptionalPolicy::Preserve),
+            "Native releases retain installation choices; select options when installing"
+        );
+    }
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
+        ensure!(
+            (crate::engine::build::curseforge::supports(output.target)
+                || crate::engine::build::launcher_recipe(output.target))
+                || crate::engine::build::native::supports(output.target)
+                || crate::engine::mrpack::supports(output.target),
+            "Consumer recipe has no executable adapter; no acquisition was started"
+        );
         PortableRelPath::parse(output.artifact.as_str(), PathSyntax::ArtifactName)?;
         collisions.insert_file(&output.artifact)?;
-        if output.target == BuildTarget::Mrpack {
+        if crate::engine::build::native::supports(output.target) {
+            ensure!(
+                output.artifact.as_str().ends_with(".empack"),
+                "Native release output requires an .empack filename"
+            );
+        }
+        if crate::engine::mrpack::supports(output.target) {
             ensure!(
                 output.artifact.as_str().ends_with(".mrpack"),
                 "Mrpack output requires a .mrpack filename"
@@ -1179,10 +1381,19 @@ fn capture(
         prior_root.is_none_or(|binding| workspace.root().binding == binding),
         "Continuation project selection changed during capture"
     );
-    let runtime = workspace.require_resolved()?.lock().runtime.clone();
+    let resolved = workspace.require_resolved()?;
+    if request.outputs.as_slice().iter().any(|output| {
+        crate::engine::build::instance_managed(output.target)
+            || crate::engine::build::native::supports(output.target)
+    }) {
+        super::release::producer::NativeReleaseOptions::from_project(&resolved)?;
+    }
+    let runtime = resolved.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
-        let optional = if output.target == BuildTarget::Mrpack {
+        let optional = if crate::engine::mrpack::supports(output.target)
+            || crate::engine::build::native::supports(output.target)
+        {
             &OptionalPolicy::Preserve
         } else {
             &request.optional
@@ -1221,14 +1432,8 @@ fn capture(
         .outputs
         .as_slice()
         .iter()
-        .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::ServerFull));
-    let bootstrap = request
-        .outputs
-        .as_slice()
-        .iter()
-        .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::Client));
+        .any(|output| output.target.consumer() == empack_core::distribution::Consumer::Server);
     let resolved = workspace.require_resolved()?;
-    let records = workspace.backend_files(cancel)?;
     let mut file_names = BTreeMap::new();
     for need in &acquisition.pending {
         let names = match &need.key {
@@ -1258,17 +1463,6 @@ fn capture(
                         .to_owned()
                 })
                 .collect(),
-            AcquisitionKey::Observed(path) => std::collections::BTreeSet::from([records
-                .iter()
-                .find(|record| &record.metadata_path == path)
-                .context("Build obligation has no observed metadata")?
-                .destination
-                .relative()
-                .as_str()
-                .rsplit('/')
-                .next()
-                .unwrap()
-                .to_owned()]),
         };
         file_names.insert(need.key.clone(), names);
     }
@@ -1282,7 +1476,6 @@ fn capture(
         runtime: runtime.clone(),
         content: acquisition.pending.iter().map(describe).collect(),
         needs_network: server
-            || bootstrap
             || acquisition.pending.iter().any(|need| {
                 matches!(
                     need.source,

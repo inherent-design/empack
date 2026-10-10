@@ -62,7 +62,7 @@ fn e2e_parse_error_exits_two() {
 #[test]
 fn e2e_uninitialized_build_exits_two() {
     check(
-        &output(&TestProject::new(), &["build", "mrpack"]),
+        &output(&TestProject::new(), &["build", "modrinth"]),
         EmpackExitCode::Usage,
         "empack.yml",
     );
@@ -80,7 +80,7 @@ fn e2e_unattended_build_requires_explicit_approval() {
     let project = fixture();
     let before = fs::read(project.dir().join("empack.lock")).unwrap();
     check(
-        &output(&project, &["build", "mrpack"]),
+        &output(&project, &["build", "modrinth"]),
         EmpackExitCode::Usage,
         "--yes",
     );
@@ -100,7 +100,7 @@ fn e2e_malformed_intent_and_lock_exit_two() {
             .unwrap();
         let before = fs::read(&path).unwrap();
         check(
-            &output(&project, &["build", "--yes", "mrpack"]),
+            &output(&project, &["build", "--yes", "modrinth"]),
             EmpackExitCode::Usage,
             "Invalid",
         );
@@ -113,7 +113,7 @@ fn e2e_missing_tracked_file_cannot_report_success() {
     let project = fixture();
     add_local(&project);
     fs::remove_file(project.dir().join("pack/mods/fixture.jar")).unwrap();
-    let result = output(&project, &["build", "--yes", "mrpack"]);
+    let result = output(&project, &["build", "--yes", "modrinth"]);
     assert!(
         !result.status.success(),
         "Missing locked content must not build successfully"
@@ -140,7 +140,7 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
     ));
     fs::write(&path, serde_saphyr::to_string(&intent).unwrap()).unwrap();
     check(
-        &output(&project, &["build", "--yes", "mrpack"]),
+        &output(&project, &["build", "--yes", "modrinth"]),
         EmpackExitCode::Usage,
         "component",
     );
@@ -152,7 +152,7 @@ fn e2e_occupied_artifact_directory_fails_without_deletion() {
     let artifact = project.dir().join("dist/exit-contract-1.0.0.mrpack");
     fs::create_dir_all(&artifact).unwrap();
     fs::write(artifact.join("sentinel"), b"retain").unwrap();
-    let result = output(&project, &["build", "--yes", "mrpack"]);
+    let result = output(&project, &["build", "--yes", "modrinth"]);
     assert!(!result.status.success());
     assert_eq!(fs::read(artifact.join("sentinel")).unwrap(), b"retain");
 }
@@ -245,7 +245,7 @@ fn e2e_unknown_native_build_target_exits_two() {
     check(
         &output(&fixture(), &["build", "not-a-target", "--yes"]),
         EmpackExitCode::Usage,
-        "Unknown build target",
+        "invalid value 'not-a-target'",
     );
 }
 
@@ -278,4 +278,25 @@ fn e2e_native_download_transport_failure_exits_three() {
             .roots
             .is_empty()
     );
+}
+
+#[test]
+fn e2e_invalid_consumer_delivery_exits_two_without_publication() {
+    let project = fixture();
+    let manifest = fs::read(project.dir().join("empack.yml")).unwrap();
+    let lock = fs::read(project.dir().join("empack.lock")).unwrap();
+    check(
+        &output(
+            &project,
+            &["build", "modrinth", "--delivery", "bundled", "--yes"],
+        ),
+        EmpackExitCode::Usage,
+        "dependency delivery",
+    );
+    assert_eq!(
+        fs::read(project.dir().join("empack.yml")).unwrap(),
+        manifest
+    );
+    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
+    assert!(!project.dir().join("dist").exists());
 }

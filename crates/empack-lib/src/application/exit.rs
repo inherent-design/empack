@@ -37,6 +37,7 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         || find_chain_error::<crate::engine::documents::InvalidDocument>(error).is_some()
         || find_chain_error::<crate::engine::project::ProjectDocumentsError>(error).is_some()
         || find_chain_error::<empack_core::model::ModelError>(error).is_some()
+        || find_chain_error::<empack_core::distribution::RecipeError>(error).is_some()
         || find_chain_error::<empack_core::path::PathError>(error).is_some()
         || find_chain_error::<empack_core::identity::IdentityError>(error).is_some()
     {
@@ -221,5 +222,15 @@ mod native_transfers {
                 expected
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod recipe_errors {
+    #[test]
+    fn invalid_recipe_policy_is_a_usage_failure_with_context() {
+        let error = anyhow::Error::new(empack_core::distribution::RecipeError::Delivery)
+            .context("Requested consumer recipe");
+        assert_eq!(super::classify_error(&error), super::EmpackExitCode::Usage);
     }
 }

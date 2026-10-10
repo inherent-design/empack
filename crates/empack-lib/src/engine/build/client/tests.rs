@@ -6,7 +6,8 @@ use crate::engine::{
     project::ProjectReader,
     publication::{Publisher, RecoveryReader},
 };
-use empack_core::model::{GameVersion, LoaderVersion};
+use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
+use serde_json::{Value, json};
 use std::{fs, path::Path};
 fn put(root: &Path, name: &str, bytes: &[u8]) {
     let path = root.join(name);
@@ -14,7 +15,14 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 fn fixture(root: &Path) -> BuildAcquisitions {
-    let project = project(false, false);
+    let initial = project(false, false);
+    let mut intent = initial.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "test.pack".into(),
+        java_major: 21,
+        policies: BTreeMap::new(),
+    });
+    let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     put(
         root,
         "empack.yml",
@@ -135,6 +143,7 @@ fn full_client_archives_include_game_templates_and_exact_launcher_profile() {
                 .unwrap();
             assert!(cfg.contains("InstanceType=OneSix"));
             assert!(cfg.lines().any(|line| line == "PreLaunchCommand="));
+            assert!(cfg.lines().any(|line| line == "WrapperCommand="));
             assert!(!cfg.contains("packwiz-installer-bootstrap.jar"));
             let profile: Value =
                 serde_json::from_reader(zip.by_name("mmc-pack.json").unwrap()).unwrap();
@@ -318,7 +327,11 @@ fn client_preparation_preserves_user_templates_and_old_artifacts_on_failure() {
 }
 
 #[test]
-fn lightweight_clients_bundle_reference_tree_exact_tools_and_selected_local_bytes() {
+fn native_clients_preserve_exact_releases_and_install_into_prism() {
+    use crate::engine::{
+        instance::*,
+        release::{DecodedRelease, ReleaseSource, trust::SelectedSnapshot},
+    };
     for (format, name) in [
         (DistributionArchive::Zip, "light.zip"),
         (DistributionArchive::TarGz, "light.tar.gz"),
@@ -326,41 +339,42 @@ fn lightweight_clients_bundle_reference_tree_exact_tools_and_selected_local_byte
     ] {
         let root = tempfile::tempdir().unwrap();
         let host = tempfile::tempdir().unwrap();
-        fixture(root.path());
+        let acquired = fixture(root.path());
         put(root.path(), "pack/config/example.txt", b"common");
         put(
             root.path(),
             "overrides/client/config/example.txt",
             b"selected",
         );
-        let bootstrap = ClientBootstrap {
-            assets: InstallerAssets::fixture(),
-            interaction: InstallerInteraction::Headless,
-        };
         let cancel = Cancellation::default();
         let plan = prepare_client_build(
             capture(root.path(), host.path(), name),
             path(name).unwrap(),
-            &BuildAcquisitions::default(),
+            &acquired,
             &options(format),
-            &bootstrap,
             &cancel,
         )
         .unwrap();
-        assert_eq!(plan.game().inventory().target(), BuildTarget::Client);
-        assert_eq!(plan.toolchain().len(), 2);
+        assert_eq!(plan.game().inventory().target(), Recipe::PRISM_REFERENCES);
         assert!(
             !plan
                 .inventory()
                 .contains_key(&path(".minecraft/resourcepacks/a.zip").unwrap())
         );
         assert!(
-            plan.inventory()
-                .contains_key(&path(".minecraft/pack/pack.toml").unwrap())
+            !plan
+                .inventory()
+                .contains_key(&path(".minecraft/config/example.txt").unwrap())
         );
         assert!(
             plan.inventory()
-                .contains_key(&path(".minecraft/packwiz-installer.jar").unwrap())
+                .contains_key(&path(".minecraft/.empack-consumer/release.json").unwrap())
+        );
+        assert!(
+            !plan
+                .inventory()
+                .keys()
+                .any(|p| p.as_str().contains("packwiz"))
         );
         let expected = plan.inventory().clone();
         plan.publish(
@@ -378,50 +392,146 @@ fn lightweight_clients_bundle_reference_tree_exact_tools_and_selected_local_byte
         )
         .unwrap();
         if format == DistributionArchive::Zip {
+            let instance = tempfile::tempdir().unwrap();
             let mut zip = zip::ZipArchive::new(file).unwrap();
-            let mut ini = String::new();
-            zip.by_name("instance.cfg")
-                .unwrap()
-                .read_to_string(&mut ini)
+            zip.extract(instance.path()).unwrap();
+            let assets = instance.path().join(".minecraft/.empack-consumer");
+            let release =
+                DecodedRelease::decode(&fs::read(assets.join("release.json")).unwrap()).unwrap();
+            let ini = fs::read_to_string(instance.path().join("instance.cfg")).unwrap();
+            assert!(ini.contains("instance prepare"));
+            assert!(
+                ini.lines().any(|line| line.starts_with("WrapperCommand=")
+                    && line.contains("instance launch --"))
+            );
+            assert!(ini.contains(release.id()));
+            assert!(ini.contains("--layout prism --side client"));
+            let provider = release
+                .document()
+                .files
+                .iter()
+                .find(|f| f.destination == "resourcepacks/a.zip")
                 .unwrap();
-            assert!(ini.contains("--bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar --no-gui -s client pack/pack.toml"));
-            for destination in [
-                ".minecraft/config/example.txt",
-                ".minecraft/pack/config/example.txt",
-            ] {
-                let mut bytes = Vec::new();
-                zip.by_name(destination)
-                    .unwrap()
-                    .read_to_end(&mut bytes)
-                    .unwrap();
-                assert_eq!(bytes, b"selected");
-            }
+            assert!(matches!(provider.source, ReleaseSource::Url { .. }));
+            assert!(provider.asset_path().is_none());
+            // Acquisition supplies exactly the bytes named by the exported release.
+            let supplied = release
+                .document()
+                .files
+                .iter()
+                .filter(|file| matches!(file.source, ReleaseSource::Url { .. }))
+                .map(|file| {
+                    (
+                        file.key.clone(),
+                        acquired.locked.values().next().unwrap().content.clone(),
+                    )
+                })
+                .collect();
+            let prepare = || {
+                crate::engine::instance::plan(
+                    instance.path(),
+                    InstanceSelection {
+                        require_subscription: false,
+                        conflicts: Vec::new(),
+                        release: SelectedRelease::Snapshot(
+                            SelectedSnapshot::select(
+                                release.bytes(),
+                                release.id(),
+                                &semver::Version::parse("0.6.0-beta").unwrap(),
+                            )
+                            .unwrap(),
+                        ),
+                        side: InstanceSide::Client,
+                        layout: Some(InstanceLayout::Prism),
+                        choices: vec![],
+                        action: InstanceAction::Prepare,
+                    },
+                    RecoveryReader::new(host.path().join("instance-state")),
+                    SnapshotLimits::default(),
+                    &cancel,
+                )
+                .unwrap()
+            };
+            prepare()
+                .stage(&supplied, &BTreeMap::new(), Some(&assets), &cancel)
+                .unwrap()
+                .publish(
+                    &Publisher::open(&host.path().join("instance-state")).unwrap(),
+                    &cancel,
+                )
+                .unwrap();
+            assert_eq!(
+                fs::read(instance.path().join(".minecraft/resourcepacks/a.zip")).unwrap(),
+                b"payload"
+            );
+            assert_eq!(
+                fs::read(instance.path().join(".minecraft/config/example.txt")).unwrap(),
+                b"selected"
+            );
+            fs::write(
+                instance.path().join(".minecraft/config/example.txt"),
+                b"user configuration",
+            )
+            .unwrap();
+            prepare()
+                .stage(&BTreeMap::new(), &BTreeMap::new(), None, &cancel)
+                .unwrap()
+                .publish(
+                    &Publisher::open(&host.path().join("instance-state")).unwrap(),
+                    &cancel,
+                )
+                .unwrap();
+            assert_eq!(
+                fs::read(instance.path().join(".minecraft/config/example.txt")).unwrap(),
+                b"user configuration"
+            );
         }
     }
 }
 #[test]
-fn bootstrap_tool_and_tree_collisions_preserve_existing_distribution() {
-    for destination in ["pack/packwiz-installer.jar", "pack/pack/pack.toml"] {
+fn native_input_and_future_installed_collisions_preserve_existing_distribution() {
+    for destination in [
+        "pack/.empack-consumer/release.json",
+        "pack/.empack-layout",
+        "pack/.EMPACK-CONSUMER/unrelated",
+        "templates/client/.minecraft/resourcepacks/a.zip",
+        "templates/client/.minecraft/resourcepacks",
+        "templates/client/.minecraft/.empack-consumer/release.json",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let host = tempfile::tempdir().unwrap();
-        fixture(root.path());
+        let acquired = fixture(root.path());
         put(root.path(), destination, b"user input");
         put(root.path(), "dist/client.zip", b"prior");
         let result = prepare_client_build(
             capture(root.path(), host.path(), "client.zip"),
             path("client.zip").unwrap(),
-            &BuildAcquisitions::default(),
+            &acquired,
             &options(DistributionArchive::Zip),
-            &ClientBootstrap {
-                assets: InstallerAssets::fixture(),
-                interaction: InstallerInteraction::Interactive,
-            },
             &Cancellation::default(),
         );
-        assert!(result.is_err());
+        assert!(result.is_err(), "collision accepted: {destination}");
         assert_eq!(
             fs::read(root.path().join("dist/client.zip")).unwrap(),
             b"prior"
         );
+    }
+}
+
+#[test]
+fn subscribed_custom_settings_cannot_disable_or_shadow_update_commands() {
+    let expected =
+        b"[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
+    verify_subscription_commands(expected, expected).unwrap();
+    let custom = b"[General]\nname=Custom name\nMaxMemAlloc=4096\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
+    verify_subscription_commands(custom, expected).unwrap();
+    for bad in [
+        "[General]\nOverrideCommands=false\nPreLaunchCommand=prepare\nWrapperCommand=launch\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\nWrapperCommand=other\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n[General]\nWrapperCommand=other\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n%57rapperCommand=other\n",
+        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=other\n",
+    ] {
+        assert!(verify_subscription_commands(bad.as_bytes(), expected).is_err());
     }
 }

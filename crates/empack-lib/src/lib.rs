@@ -190,7 +190,7 @@ mod tests {
                 ..AppConfig::default()
             },
             command: Some(Commands::Build(application::BuildArgs {
-                targets: vec!["mrpack".to_string()],
+                targets: vec!["modrinth".to_string()],
                 ..Default::default()
             })),
         })

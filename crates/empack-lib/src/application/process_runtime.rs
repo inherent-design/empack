@@ -14,6 +14,12 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 #[error("Operation interrupted")]
 pub struct Interrupted;
 
+/// Only CreateProcess failure proves that no Windows child needs retirement.
+#[cfg(windows)]
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to spawn command")]
+struct SpawnNotStarted;
+
 #[derive(Clone, Default)]
 pub struct Cancellation(Arc<CancellationState>);
 
@@ -64,6 +70,7 @@ async fn read_stream(
     mut pipe: impl AsyncRead + Unpin,
     stream: ProcessStream,
     sender: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
+    limit: usize,
 ) -> Result<Vec<u8>> {
     let mut all = Vec::new();
     let mut pending = Vec::new();
@@ -73,8 +80,8 @@ async fn read_stream(
         if count == 0 {
             break;
         }
-        if all.len() + count > OUTPUT_LIMIT {
-            anyhow::bail!("Subprocess output exceeds 16 MiB per stream");
+        if all.len() + count > limit {
+            anyhow::bail!("Subprocess output exceeds {limit} bytes per stream");
         }
         all.extend_from_slice(&buffer[..count]);
         pending.extend_from_slice(&buffer[..count]);
@@ -104,7 +111,23 @@ pub async fn execute_async(
     cancellation: Cancellation,
     progress: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
 ) -> Result<ProcessOutput> {
-    cancellation.check()?;
+    execute_captured(command, timeout, cancellation, progress, OUTPUT_LIMIT)
+        .await?
+        .0
+}
+
+/// Outer failure means retirement is unconfirmed; the inner result preserves process failure.
+pub(crate) struct RetiredCapture(pub Result<ProcessOutput>);
+pub(crate) async fn execute_captured(
+    command: std::process::Command,
+    timeout: Duration,
+    cancellation: Cancellation,
+    progress: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
+    limit: usize,
+) -> Result<RetiredCapture> {
+    if let Err(error) = cancellation.check() {
+        return Ok(RetiredCapture(Err(error)));
+    }
     let program = command.get_program().to_string_lossy().into_owned();
     let sender = progress;
     let mut command = tokio::process::Command::from(command);
@@ -115,19 +138,30 @@ pub async fn execute_async(
     #[cfg(unix)]
     command.process_group(0);
     #[cfg(unix)]
-    let mut child = command.spawn().context("Failed to spawn command")?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return Ok(RetiredCapture(Err(
+                anyhow::Error::from(error).context("Failed to spawn command")
+            )));
+        }
+    };
     #[cfg(unix)]
     let tree = ProcessTree::new(&child)?;
     #[cfg(windows)]
-    let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new)?;
+    let (mut child, tree) = match spawn_windows_child(&mut command, ProcessTree::new) {
+        Ok(owned) => owned,
+        Err(error) if error.is::<SpawnNotStarted>() => return Ok(RetiredCapture(Err(error))),
+        Err(error) => return Err(error),
+    };
     let stdout = child.stdout.take().context("Failed to capture stdout")?;
     let stderr = child.stderr.take().context("Failed to capture stderr")?;
     let result = {
         let collect = async {
             let (status, stdout, stderr) = tokio::try_join!(
                 async { child.wait().await.map_err(anyhow::Error::from) },
-                read_stream(stdout, ProcessStream::Stdout, sender.clone()),
-                read_stream(stderr, ProcessStream::Stderr, sender),
+                read_stream(stdout, ProcessStream::Stdout, sender.clone(), limit),
+                read_stream(stderr, ProcessStream::Stderr, sender, limit),
             )?;
             Ok(ProcessOutput {
                 success: status.success(),
@@ -142,12 +176,71 @@ pub async fn execute_async(
         }
     };
     // Drop pipe futures before shutdown so descendants cannot keep readers blocked.
-    drop(tree);
+    let termination = tree.terminate();
     if result.is_err() {
         let _ = child.start_kill();
-        let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+        tokio::time::timeout(Duration::from_secs(2), child.wait())
+            .await
+            .context("Subprocess reaping timed out; retirement is unconfirmed")?
+            .context("Failed to retire subprocess")?;
     }
-    result
+    termination?;
+    tree.wait_retired().await?;
+    Ok(RetiredCapture(result))
+}
+
+/// Supervise a long-running caller-selected runtime with inherited console streams.
+/// There is no build-tool deadline or accumulated-output limit. The owning engine scope
+/// must retain this future and its instance lease until process-tree retirement.
+pub(crate) struct RetiredRuntime(pub Result<std::process::ExitStatus>);
+pub(crate) async fn execute_inherited(
+    command: std::process::Command,
+    cancellation: Cancellation,
+) -> Result<RetiredRuntime> {
+    if let Err(error) = cancellation.check() {
+        return Ok(RetiredRuntime(Err(error)));
+    }
+    let mut command = tokio::process::Command::from(command);
+    command
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(unix)]
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return Ok(RetiredRuntime(Err(
+                anyhow::Error::from(error).context("Failed to start instance runtime")
+            )));
+        }
+    };
+    #[cfg(unix)]
+    let tree = ProcessTree::new(&child)?;
+    #[cfg(windows)]
+    let (mut child, tree) = match spawn_windows_child(&mut command, ProcessTree::new) {
+        Ok(owned) => owned,
+        Err(error) if error.is::<SpawnNotStarted>() => return Ok(RetiredRuntime(Err(error))),
+        Err(error) => return Err(error),
+    };
+    let result = tokio::select! {
+        result = child.wait() => result.map_err(anyhow::Error::from),
+        _ = cancellation.cancelled() => Err(Interrupted.into()),
+    };
+    let termination = tree.terminate();
+    if result.is_err() {
+        let _ = child.start_kill();
+        // Keep the caller's lease until the immediate child is actually reaped.
+        tokio::time::timeout(Duration::from_secs(2), child.wait())
+            .await
+            .context("Instance runtime reaping timed out; retirement is unconfirmed")?
+            .context("Failed to retire instance runtime")?;
+    }
+    termination?;
+    tree.wait_retired().await?;
+    Ok(RetiredRuntime(result))
 }
 
 #[cfg(unix)]
@@ -160,12 +253,94 @@ impl ProcessTree {
         )?))
     }
 }
+impl ProcessTree {
+    async fn wait_retired(self) -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while self.has_processes()? {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .context("Runtime descendants have not retired; recovery acknowledgment is required")??;
+        self.disarm();
+        Ok(())
+    }
+    #[cfg(unix)]
+    fn disarm(mut self) {
+        self.0 = 0;
+    }
+    #[cfg(windows)]
+    fn disarm(self) {}
+    #[cfg(unix)]
+    fn terminate(&self) -> Result<()> {
+        if unsafe { libc::kill(-(self.0 as i32), libc::SIGKILL) } == 0 {
+            return Ok(());
+        }
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(anyhow::Error::from(error).context("Cannot terminate runtime process group"))
+        }
+    }
+    #[cfg(unix)]
+    fn has_processes(&self) -> Result<bool> {
+        if unsafe { libc::kill(-(self.0 as i32), 0) } == 0 {
+            return Ok(true);
+        }
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            Some(libc::ESRCH) => Ok(false),
+            // EPERM does not establish absence. Keep the lease and poll within the
+            // retirement deadline: macOS can return it while a killed orphan group
+            // is being reaped. Persistent denial still requires recovery.
+            Some(libc::EPERM) => Ok(true),
+            _ => Err(anyhow::Error::from(error)
+                .context("Cannot establish runtime process-group retirement")),
+        }
+    }
+    #[cfg(windows)]
+    fn terminate(&self) -> Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        if unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.0.as_raw_handle(), 130)
+        } == 0
+        {
+            return Err(anyhow::Error::from(std::io::Error::last_os_error())
+                .context("Cannot terminate runtime job"));
+        }
+        Ok(())
+    }
+    #[cfg(windows)]
+    fn has_processes(&self) -> Result<bool> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::*;
+        let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+        if unsafe {
+            QueryInformationJobObject(
+                self.0.as_raw_handle(),
+                JobObjectBasicAccountingInformation,
+                &mut info as *mut _ as *mut _,
+                std::mem::size_of_val(&info) as u32,
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(anyhow::Error::from(std::io::Error::last_os_error())
+                .context("Cannot establish runtime job retirement"));
+        }
+        Ok(info.ActiveProcesses != 0)
+    }
+}
 #[cfg(unix)]
 impl Drop for ProcessTree {
     fn drop(&mut self) {
         // The child was spawned as its own process group leader.
-        unsafe {
-            libc::kill(-(self.0 as i32), libc::SIGKILL);
+        if self.0 != 0 {
+            unsafe {
+                libc::kill(-(self.0 as i32), libc::SIGKILL);
+            }
         }
     }
 }
@@ -177,7 +352,7 @@ fn spawn_windows_child(
 ) -> Result<(tokio::process::Child, ProcessTree)> {
     use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
     command.kill_on_drop(true).creation_flags(CREATE_SUSPENDED);
-    let child = command.spawn().context("Failed to spawn command")?;
+    let child = command.spawn().context(SpawnNotStarted)?;
     let tree = register(&child).context(
         "Cannot establish Windows subprocess ownership: the host must permit nested job registration; the child was not started",
     )?;
@@ -268,6 +443,38 @@ impl ProcessTree {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn missing_program_has_no_retirement_obligation_in_either_capture_mode() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing.exe");
+        let captured = execute_captured(
+            std::process::Command::new(&missing),
+            Duration::from_secs(1),
+            Cancellation::default(),
+            None,
+            1024,
+        )
+        .await
+        .expect("a child that never spawned is already retired")
+        .0
+        .unwrap_err();
+        let inherited = execute_inherited(
+            std::process::Command::new(&missing),
+            Cancellation::default(),
+        )
+        .await
+        .expect("a child that never spawned is already retired")
+        .0
+        .unwrap_err();
+        for error in [captured, inherited] {
+            assert!(error.is::<SpawnNotStarted>());
+            assert_eq!(
+                error.downcast_ref::<std::io::Error>().unwrap().kind(),
+                std::io::ErrorKind::NotFound
+            );
+        }
+    }
 
     #[tokio::test]
     async fn rejected_job_registration_prevents_child_side_effects() {
@@ -419,7 +626,11 @@ mod async_tests {
         };
         let began = std::time::Instant::now();
         let (output, ()) = tokio::join!(process, interrupt);
-        assert!(output.unwrap_err().is::<Interrupted>());
+        let error = output.unwrap_err();
+        assert!(
+            error.is::<Interrupted>(),
+            "unexpected cancellation failure: {error:#}"
+        );
         assert!(began.elapsed() < Duration::from_secs(3));
     }
 }

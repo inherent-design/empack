@@ -58,13 +58,13 @@ fn e2e_restricted_mrpack_preserves_preview_and_resumes_only_verified_content() {
     let state = host.path().join("state");
     let before = snapshot(project.dir());
     command(&project, &state)
-        .args(["--dry-run", "build", "mrpack"])
+        .args(["--dry-run", "build", "modrinth"])
         .assert()
         .success();
     assert_eq!(snapshot(project.dir()), before);
     assert!(!state.exists());
     command(&project, &state)
-        .args(["build", "mrpack"])
+        .args(["build", "modrinth"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
@@ -116,7 +116,7 @@ fn e2e_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_c
     fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
     let before = snapshot(project.dir());
     command(&project, &state)
-        .args(["build", "all", "--clean"])
+        .args(["build", "modrinth", "prism", "server", "--clean"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
@@ -146,9 +146,9 @@ fn e2e_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
     fs::create_dir(&downloads).unwrap();
     let before = snapshot(project.dir());
     for args in [
-        vec!["build", "mrpack", "--wait-downloads", "0"],
-        vec!["build", "mrpack", "--wait-downloads", "3601"],
-        vec!["build", "mrpack", "--wait-downloads", "5"],
+        vec!["build", "modrinth", "--wait-downloads", "0"],
+        vec!["build", "modrinth", "--wait-downloads", "3601"],
+        vec!["build", "modrinth", "--wait-downloads", "5"],
     ] {
         command(&project, &state).args(args).assert().failure();
         assert_eq!(snapshot(project.dir()), before);
@@ -158,7 +158,7 @@ fn e2e_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
         .args([
             "--dry-run",
             "build",
-            "mrpack",
+            "modrinth",
             "--wait-downloads",
             "60",
             "--downloads-dir",
@@ -198,7 +198,7 @@ fn e2e_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
     command(&project, &state)
         .args([
             "build",
-            "mrpack",
+            "modrinth",
             "--wait-downloads",
             "10",
             "--downloads-dir",
@@ -243,7 +243,7 @@ fn e2e_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
     command(&project, &state)
         .args([
             "build",
-            "mrpack",
+            "modrinth",
             "--wait-downloads",
             "1",
             "--downloads-dir",
@@ -308,7 +308,7 @@ fn e2e_restricted_wait_refuses_a_replaced_recipe() {
     command(&project, &state)
         .args([
             "build",
-            "mrpack",
+            "modrinth",
             "--wait-downloads",
             "10",
             "--downloads-dir",
@@ -337,7 +337,7 @@ fn e2e_restricted_wait_interrupt_retains_recovery_state() {
         .args([
             "--yes",
             "build",
-            "mrpack",
+            "modrinth",
             "--wait-downloads",
             "60",
             "--downloads-dir",

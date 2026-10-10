@@ -21,10 +21,10 @@ use super::{
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     files::FilePermissions,
     model::{ContentLayer, ExpectedContent, LoaderKind},
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::{
     collections::BTreeMap,
@@ -120,14 +120,20 @@ pub(super) fn template_address(
 /// Call from an admitted worker: parsing and local file verification are synchronous.
 pub fn prepare_templates(
     workspace: &WorkspaceSnapshot,
-    target: BuildTarget,
+    target: Recipe,
     options: &TemplateOptions,
     cancel: &Cancellation,
 ) -> Result<RenderedTemplates> {
     let side = match target {
-        BuildTarget::Client | BuildTarget::ClientFull => ContentLayer::Client,
-        BuildTarget::Server | BuildTarget::ServerFull => ContentLayer::Server,
-        BuildTarget::Mrpack => anyhow::bail!("Mrpack has no standalone template projection"),
+        recipe if recipe.consumer() == empack_core::distribution::Consumer::Prism => {
+            ContentLayer::Client
+        }
+        recipe if recipe.consumer() == empack_core::distribution::Consumer::Server => {
+            ContentLayer::Server
+        }
+        _ => {
+            anyhow::bail!("Reference archives have no standalone template projection")
+        }
     };
     cancel.check()?;
     let project = workspace.require_resolved()?;
@@ -195,7 +201,7 @@ pub fn prepare_templates(
     for path in selected.keys() {
         collisions.insert_file(path)?;
     }
-    let mut values = template_values(&project, target);
+    let mut values = template_values(&project);
     values.extend(options.values.clone());
     let mut renderer = handlebars::Handlebars::new();
     renderer.set_strict_mode(true);
@@ -289,10 +295,7 @@ pub fn prepare_templates(
     Ok(RenderedTemplates { files })
 }
 /// Metadata has one interpretation for user templates and embedded defaults.
-fn template_values(
-    project: &empack_core::model::ResolvedProject,
-    target: BuildTarget,
-) -> BTreeMap<String, String> {
+fn template_values(project: &empack_core::model::ResolvedProject) -> BTreeMap<String, String> {
     let metadata = &project.intent().metadata;
     let runtime = &project.lock().runtime;
     let loader = match runtime.loader {
@@ -309,16 +312,7 @@ fn template_values(
         .map(|ch| if ch.is_alphanumeric() { ch } else { '-' })
         .collect();
     let values: BTreeMap<String, String> = [
-        (
-            "BOOTSTRAP",
-            if matches!(target, BuildTarget::Client | BuildTarget::Server) {
-                "true"
-            } else {
-                ""
-            }
-            .into(),
-        ),
-        ("BOOTSTRAP_COMMAND", "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar -s client pack/pack.toml".into()),
+        ("INSTANCE_PREPARE_COMMAND", String::new()),
         ("NAME", metadata.name.clone()),
         ("VERSION", metadata.version.clone()),
         ("AUTHOR", metadata.author.clone().unwrap_or_default()),
@@ -346,14 +340,13 @@ fn template_values(
 
 pub(super) fn render_default(
     project: &empack_core::model::ResolvedProject,
-    target: BuildTarget,
     source: &str,
     overrides: impl IntoIterator<Item = (String, String)>,
     maximum: u64,
     cancel: &Cancellation,
 ) -> Result<Vec<u8>> {
     cancel.check()?;
-    let mut values = template_values(project, target);
+    let mut values = template_values(project);
     values.extend(overrides);
     let mut renderer = handlebars::Handlebars::new();
     renderer.set_strict_mode(true);

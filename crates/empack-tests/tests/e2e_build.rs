@@ -7,7 +7,7 @@ fn e2e_build_relative_workdir_exports_valid_mrpack() {
     cmd.current_dir(project.dir().parent().unwrap())
         .arg("--workdir")
         .arg(project.dir().file_name().unwrap())
-        .args(["--yes", "build", "mrpack"]);
+        .args(["--yes", "build", "modrinth"]);
     assert_cmd::Command::from_std(cmd)
         .timeout(std::time::Duration::from_secs(60))
         .assert()
@@ -23,12 +23,13 @@ fn e2e_build_relative_workdir_exports_valid_mrpack() {
 #[test]
 fn e2e_build_mrpack() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
-        .args(["--yes", "build", "mrpack"])
+        .args(["--yes", "build", "modrinth"])
         .status()
         .expect("failed to spawn");
-    assert!(status.success(), "empack build mrpack failed");
+    assert!(status.success(), "empack build modrinth failed");
 
     let artifact = assert_dist_artifact_suffix(project.dir(), ".mrpack");
     assert!(
@@ -44,9 +45,18 @@ fn e2e_build_mrpack() {
 #[test]
 fn e2e_build_client_tar_gz() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
-        .args(["--yes", "build", "--format", "tar.gz", "client"])
+        .args([
+            "--yes",
+            "build",
+            "--format",
+            "tar.gz",
+            "prism",
+            "--delivery",
+            "references",
+        ])
         .status()
         .expect("failed to spawn");
     assert!(
@@ -54,7 +64,7 @@ fn e2e_build_client_tar_gz() {
         "empack build client --format tar.gz failed"
     );
 
-    assert_dist_artifact_suffix(project.dir(), "-client.tar.gz");
+    assert_dist_artifact_suffix(project.dir(), "-prism-references.tar.gz");
 }
 
 #[test]
@@ -62,25 +72,35 @@ fn e2e_build_server_sevenz() {
     empack_tests::skip_if_no_java!();
 
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
-        .args(["--yes", "build", "--format", "7z", "server"])
+        .args([
+            "--yes",
+            "build",
+            "--format",
+            "7z",
+            "server",
+            "--delivery",
+            "references",
+        ])
         .status()
         .expect("failed to spawn");
     assert!(status.success(), "empack build server --format 7z failed");
 
-    assert_dist_artifact_suffix(project.dir(), "-server.7z");
+    assert_dist_artifact_suffix(project.dir(), "-server-references.7z");
 }
 
 #[test]
 fn e2e_clean_removes_artifacts() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
-        .args(["--yes", "build", "mrpack"])
+        .args(["--yes", "build", "modrinth"])
         .status()
         .expect("failed to spawn");
-    assert!(status.success(), "empack build mrpack failed");
+    assert!(status.success(), "empack build modrinth failed");
 
     let dist = project.dir().join("dist");
     assert!(dist.is_dir(), "dist/ should exist after build");
@@ -108,6 +128,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     use std::io::Write;
     empack_tests::skip_if_no_java!();
     let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
+    project.configure_native_distribution("local.content", 21);
     let source = project.dir().join("local.zip");
     let mut archive = zip::ZipWriter::new(std::fs::File::create(&source).unwrap());
     archive
@@ -150,26 +171,58 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         .args(["--yes", "sync"])
         .assert()
         .success();
-    for target in ["mrpack", "client", "server"] {
+    for target in ["modrinth", "prism", "server"] {
         assert_cmd::Command::from_std(project.cmd())
-            .args(["--yes", "build", target])
+            .args(["--yes", "build", target, "--delivery", "references"])
             .timeout(std::time::Duration::from_secs(240))
             .assert()
             .success();
-        let suffix = if target == "mrpack" {
+        let suffix = if target == "modrinth" {
             ".mrpack".to_string()
         } else {
-            format!("-{target}.zip")
+            format!("-{target}-references.zip")
         };
         let artifact = assert_dist_artifact_suffix(project.dir(), &suffix);
-        let relative = if target == "mrpack" {
-            "overrides/resourcepacks/local.zip"
-        } else if target == "client" {
-            ".minecraft/resourcepacks/local.zip"
+        if target == "modrinth" {
+            assert_eq!(
+                zip_bytes(&artifact, "overrides/resourcepacks/local.zip"),
+                bytes
+            );
         } else {
-            "resourcepacks/local.zip"
-        };
-        assert_eq!(zip_bytes(&artifact, relative), bytes, "{target}");
+            let instance = tempfile::tempdir().unwrap();
+            zip::ZipArchive::new(std::fs::File::open(&artifact).unwrap())
+                .unwrap()
+                .extract(instance.path())
+                .unwrap();
+            let (descriptor, layout, side, game) = if target == "prism" {
+                (
+                    ".minecraft/.empack-consumer/release.json",
+                    "prism",
+                    "client",
+                    ".minecraft",
+                )
+            } else {
+                (".empack-consumer/release.json", "game", "server", "game")
+            };
+            let descriptor = instance.path().join(descriptor);
+            let release = empack_lib::engine::release::DecodedRelease::decode(
+                &std::fs::read(&descriptor).unwrap(),
+            )
+            .unwrap();
+            assert_cmd::Command::from_std(project.cmd())
+                .arg("--workdir")
+                .arg(instance.path())
+                .args(["--yes", "instance", "prepare"])
+                .arg(&descriptor)
+                .args(["--sha256", release.id(), "--layout", layout, "--side", side])
+                .assert()
+                .success();
+            assert_eq!(
+                std::fs::read(instance.path().join(game).join("resourcepacks/local.zip")).unwrap(),
+                bytes,
+                "{target}"
+            );
+        }
     }
     std::fs::write(project.dir().join("local.zip"), &bytes).unwrap();
     let original = std::fs::read_to_string(&manifest).unwrap();
@@ -179,7 +232,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     )
     .unwrap();
     assert_cmd::Command::from_std(project.cmd())
-        .args(["--dry-run", "build", "client"])
+        .args(["--dry-run", "build", "prism", "--delivery", "references"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("intent"));
@@ -193,7 +246,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         bytes
     );
     assert_cmd::Command::from_std(project.cmd())
-        .args(["--yes", "build", "mrpack"])
+        .args(["--yes", "build", "modrinth"])
         .assert()
         .success();
     assert_eq!(

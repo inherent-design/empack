@@ -1,173 +1,114 @@
-# Semantic model and documents
+# Semantic values and documents
 
-Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
-[core model](../../crates/empack-core/src/model.rs), [identities](../../crates/empack-core/src/identity.rs), [paths](../../crates/empack-core/src/path.rs) and [document codec](../../crates/empack-lib/src/engine/documents.rs). This page specifies their behavior and ownership.
+The model separates author requests, exact selections, portable releases and the
+state of one installation.
 
-## Identity, paths, hashes, and versions
+## Identity
 
-### Use newtypes where confusion would change behavior
+| Value | Meaning | Not interchangeable with |
+| --- | --- | --- |
+| `PackId` | Stable identity established when authoring begins | Display name, URL or version label |
+| `DependencyKey` | Author-facing logical dependency label | Provider slug or metadata filename |
+| `ProviderProjectId` | Provider-qualified canonical project | Search selector or exact file |
+| `ResolvedPin` | Exact provider version/file selection | Follow-compatible policy |
+| `FileRole` | Stable role within a resolved dependency | Filename |
+| `ReleaseId` | Digest of exact portable release payload bytes | Human-readable release version |
+| `ChoiceKey` | Stable optional decision identity | Position in a list |
+| `InstallDestination` | Portable root-relative file placement | Host path or deletion grant |
+| `ContentId` | Observed SHA-256 byte address | Authenticity of downloaded content |
+| `InstanceId` | Native installation binding | Pack identity or author root |
 
-Parsing a user string returns a selector. Provider resolution returns a canonical identity. A URL or slug is never assigned directly to a canonical ID field.
+Do not normalize provider case, Unicode spelling or filenames into a different
+identity. A separate portable collision key rejects conflicting paths. Canonical
+selectors are resolved before persistence; a slug never becomes an ID by assignment.
 
-An input `PinSelector` does not require the caller to know a canonical project ID before resolving a slug. Resolution checks project ownership and content kind, then produces a project-bound `ResolvedPin` and exact selected provider file IDs. One pinned provider version may select multiple files. Provider strings have provider-specific parsers; generic trimming or case conversion must not silently change identity.
+## Document roles
 
-`DependencyKey` is not a path. Preserve a user's alias when updating an existing record. A command that deliberately renames a key produces a key change, not a reinstall.
+| Document | Owner | Contents |
+| --- | --- | --- |
+| `empack.yml` | Author | Pack/runtime intent, dependencies, source inclusion, consumer recipes |
+| `empack.lock` | Resolver | Exact runtime and files, original assertions, placements, required closure evidence |
+| Release manifest | Release builder | Portable exact inventory, runtime, choices, acquisition and installation policies |
+| Channel envelope | Publisher | Pack/channel identity, sequence, expiry and authenticated release reference |
+| Instance record | Instance engine | Last completed release, owned files, side, choices, authority and source binding |
+| Recovery journal | Publisher | Approved operation, native root, before/after evidence and durable progress |
 
-### Content identity versus provenance
+Author intent uses schema 3; exact resolution uses schema 1. Release, channel and
+instance schemas have their own explicit versions. Unknown intent fields and invalid explicit
+variants fail; they cannot silently become search input. Original author bytes are
+preserved when no semantic edit is required. Canonical semantic identity and raw
+file revision serve different purposes.
 
-`DigestSet::parse` rejects malformed widths, duplicates with conflicting values, and unsupported algorithm declarations. Verify every supported declared digest, not just whichever one happens to match first. A policy may reject a source whose only digest is weak; compatibility mode must say what evidence it accepted. Internal SHA-256 addressing does not upgrade the trustworthiness of an upstream MD5 assertion.
+## Author intent and resolution
 
-Murmur2-style provider lookup fingerprints are not interchangeable with collision-resistant content identities. The packwiz format supports several hash and optional-file representations; retain compatible metadata without treating every algorithm as equally strong verification evidence. [F2](https://packwiz.infra.link/reference/pack-format/mod-toml/)
+Dependency sources include provider selection, verified URL files, local files and
+interpreted archive members. Mods, resource packs, shaders, datapacks and worlds
+retain their content kind. Exact pins and follow-compatible selection are explicit.
+Sync retains valid exact selections; update deliberately resolves eligible changes.
+Unknown dependency coverage is not an empty required-dependency set.
 
-`ObservedOnly` is permitted for a newly added, explicitly accepted unknown local/direct file. It means “these are the bytes obtained,” not “these bytes matched an independent source declaration.” Reusing that observation later can detect change; it cannot retroactively authenticate the initial content.
+A resolved dependency can contain multiple named file roles and placements. Source
+path and destination are independent. Provider-owned world archives retain the
+provider/exact archive identity and verified interpreted member ownership. A local
+source change is observed drift, not automatic authorization to overwrite a project.
 
-### Paths are values; roots are authority
+Source inclusion uses `sources.exclude` in `empack.yml`: ordered, layer-relative
+ignore patterns applied independently to `pack/` and each `overrides/` layer.
+Patterns are single lines; parent exclusions apply before leaf traversal. Explicit
+locked source files and placements remain required observations even when a rule
+excludes the same path from incidental content. Rules are captured with the author
+document and never inherited from host-global ignore files. Native source capture
+has no package-manager control filenames; exclusions are authored policy.
 
-Reject absolute paths, `..`, empty file paths, NUL, drive/prefix syntax, and target-platform-invalid components. Define separator handling once; do not accidentally interpret a backslash as a harmless character during validation and as a separator during extraction.
+`distribution.native` defines `pack-id`, `java-major` and `policies`, an exact
+destination-to-`managed|seed` map. Delivery, environment and update authority belong
+to each entry in `distribution.recipes`. The stable
+pack ID is a bounded portable identifier and must survive display-name/version
+changes. Java major is an explicit requirement; runtime activation checks it against
+the selected game/loader. Unknown policy destinations are errors. Configuration
+and world content default to seeds. World content cannot become managed replacement
+content, including worlds placed under an authored custom directory.
 
-Do **not** copy a lowercase-only package path policy into Minecraft content. Valid pack filenames may contain spaces, Unicode, or brackets. Preserve spelling; compute a separate conservative collision key for portability checks. Case-folding or Unicode normalization for collision detection must not silently rename a user's content. [F2](https://packwiz.infra.link/reference/pack-format/mod-toml/)
+## Environments and optionality
 
-A `PortableRelPath` proves syntax only. Resolving or deleting it requires a root-relative filesystem capability and an operation-specific expected file kind. Symbolic links, junctions/reparse points, hardlink aliasing, and filesystem races require native implementation tests.
+Requirements retain client/server participation independently from optional choice.
+Common, client and server layers have explicit precedence. Conditional replacement
+and fallback relationships survive native releases. A consumer unable to represent
+them requires selected choices or an explicit conversion; it cannot silently flatten
+files or turn optional content into required content.
 
-### Portable identity versus host identity
+Choices have stable keys, allowed alternatives and defaults. Installed selections
+are instance data. New constraints trigger a decision rather than resetting all
+choices. Content disabled by a choice may retire only its unchanged owned files.
 
-Reproducible recipe hashes never include an absolute home directory. Publication authorization always includes the actual local project instance/root binding. A copied manifest does not copy the authority to write the original project.
+## Installed files
 
-## The semantic project model
+```rust
+pub enum FilePolicy {
+    Managed,
+    Seed,
+}
 
-Automatic placement is part of satisfaction, not merely an initial folder hint.
-Mods, resource packs and shaders default to `mods`, `resourcepacks` and
-`shaderpacks`; an authored layout overrides those directories. Other kinds require
-an authored directory or explicit placements. An automatic file belongs directly
-in that directory in the common layer. Custom subdirectories, multiple side layers
-and member layouts use explicit placements.
+pub struct InstalledFile {
+    pub baseline: FileContent,
+    pub policy: FilePolicy,
+}
 
-Changing a directory invalidates affected automatic roots without invalidating
-explicit placements. Sync resolves those placement changes, retains valid provider
-pins and original source assertions, and publishes the move through the ordinary
-file plan. An old lock cannot silently claim to satisfy a new automatic directory.
-
-The lock also records the ordered additional accepted game versions used to resolve
-roots (`acceptable-versions` in its document). This is resolution context, not proof
-that unrelated retained installations support every listed version. A changed policy
-requires provider-root revalidation. Keep an existing pin when it still satisfies the
-new environment; choose a new compatible selection only for an unpinned root whose
-old selection no longer qualifies. An incompatible explicit pin fails without
-publication. Lookup failures are errors, not evidence of incompatibility.
-
-### Four independent state objects
-
-Intent answers what is wanted. The lock records exact selections. Observation records what exists. The journal records unfinished or completed effects. None substitutes for the others.
-
-### Dependency sources and version policy
-
-A typed ZIP, a direct JAR, a provider project, and an archive entry are input routes, not four independent add implementations. A provider may not support every `ContentKind`; the provider adapter returns a capability error instead of coercing a world into a mod.
-
-`Search` is explicit and cannot be a fallback after a malformed `Provider` or `Url` record fails to deserialize. Unresolved authoring intent is allowed; a strict build refuses an unresolved lock.
-
-`sync` retains a valid exact locked selection unless intent changed or required resolution is absent. `update` deliberately refreshes eligible selections. `build` does not silently install, upgrade, or rewrite intent.
-
-### Exact files and placements
-
-One dependency can have multiple files; identical bytes can have multiple placements.
-Named placement intent retains each file role and its destinations. Multi-file roots
-use `ByFile`; a flat destination list describes copies of one file and cannot authorize
-reassigning destinations between members. Local member source keys must exactly match
-placement role keys. Source paths and installation paths remain distinct. Do not deduplicate placements by `ContentId`. Cache bytes by content identity, but validate ownership and destination separately.
-
-A download alternative describes an allowed origin and locator without serializing credentials. Ephemeral signed URLs belong in the execution context and redacted diagnostics, not a reproducible lock fingerprint. A provider locator can be refreshed while preserving expected file identity.
-
-`Provenance` includes source format, source record location, provider/file IDs where applicable, imported digest evidence, acquisition origin, and accepted conversion decisions. It is useful diagnosis and policy data, not a legal assertion about redistribution rights.
-
-`ResolvedProject::validate` checks lock/intent correspondence, canonical-identity uniqueness under the chosen multi-file model, pin ownership, file placement requirements, and resolution completeness. It establishes a coherent resolved model, **not** that installed files already satisfy it. Snapshot/preflight verification establishes that separate fact.
-
-`ContentOwner` is semantic provenance, not deletion authority. A planner derives managed ownership from trusted layout rules, prior receipts, and explicit user decisions; importing a record labeled as a template or runtime file cannot grant permission to overwrite user-owned content.
-
-### Requirements and override precedence
-
-For a selected environment, common content is the base, common overrides replace that
-base, and the matching side layer takes precedence over both. Common overrides live
-under `overrides/common/`; this retains a declared download and an overriding file
-without flattening either into the other's source identity. Same-layer destination collisions fail unless the source format explicitly defines an ordering that is represented in the model. Case-collision checks run on the final projected namespace as well as each layer.
-
-An explicitly unsupported side remains unsupported. Required-closure expansion may
-combine participation for a generated transitive record, but it cannot broaden an
-explicit root or change its optional choice. A conflict needs a revised, explicit
-request before publication; automatic conversion to both sides would change intent.
-
-A file being client-only does not say whether it is optional. The internal model retains both dimensions. Mrpack and packwiz encode these dimensions differently; adapters must establish representability before execution. [F1](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack), [F2](https://packwiz.infra.link/reference/pack-format/mod-toml/)
-
-A common file and an environment-specific replacement are two placements with documented precedence, not an accidental “last copy wins.” Optional omission follows the target's explicit choice policy. Optional metadata that a target can preserve stays in the output rather than being silently resolved away.
-
-### Dependency evidence is not execution scheduling
-
-Provider dependencies are version- and environment-specific. Missing edges do not establish an empty dependency set. Retain unlisted installed content when closure evidence is incomplete.
-
-Dependency graphs may contain legitimate mutually dependent groups. Analyze strongly connected components when necessary; do not impose an acyclic dependency rule on every package graph. Execution prerequisites, by contrast, must admit a valid execution order. Cache reachability is a third graph with different roots.
-
-Removing an explicit root that remains required by another root may demote its explicit-root status while retaining installation. A request to uninstall it physically must identify dependent removals or report a conflict. Never silently expand one removal into removal of unrelated roots.
-
-## Documents and lockfiles
-
-### DTOs are not domain values
-
-Decode with an explicit schema/tag. Validate required fields before constructing domain types. Unknown intent fields fail unless contained in a documented extension namespace. A newer unsupported schema is read-only or rejected, never rewritten through an older partial model.
-
-Retain user comments and unrelated supported fields where the editing library can do so. If lossless editing is unavailable, make full reformatting an explicit document-edit outcome. Backend-owned TOML fields outside empack's semantic subset remain preserved opaque document nodes with their original revision; do not drop them during normalization.
-
-Document parsing errors must stay parsing errors. Only an actual missing file can trigger an explicitly supported absent-project flow. An invalid existing manifest must never be treated as permission to install with defaults.
-
-### Authoring document
-
-Intent schema 2 and lock schema 1 are versioned separately from the program and APIs. The compiled codec accepts this authoring form:
-
-```yaml
-schema: 2
-pack:
-  name: Example Pack
-  version: 1.0.0
-runtime:
-  minecraft: "1.21.1"
-  loader:
-    kind: fabric
-    version: "0.16.0"
-distribution:
-  targets: [mrpack, client, server]
-  archive: zip
-layout:
-  data-pack: world/datapacks
-dependencies:
-  renderer-alias:
-    source:
-      kind: provider
-      identity:
-        provider: modrinth
-        project: AANobbMI
-    content: mod
-    version:
-      mode: follow-compatible
-    placement: automatic
-    environment:
-      client: required
-      server: unsupported
-extensions: {}
+pub struct ReleaseFile {
+    pub content: FileContent,
+    pub policy: FilePolicy,
+}
 ```
 
-This is a schema illustration, not a recommendation that the example runtime versions are current. The lock records the selected provider release/file IDs, destination, source hashes, expected size, and resolution evidence. Literal IDs are strings even where they look numeric in another provider.
+`Managed` files participate in three-way reconciliation. `Seed` supplies initial
+bytes only; existing bytes belong to the user. The completed record selects a retained release inventory and choices as the
+installation baseline; explicit local deviations retain their own accepted content
+identities. Preserving a seed never claims its current bytes match publisher assertions. Worlds are seeded only by explicit initial installation and subsequently
+excluded from ordinary update ownership. Runtime-generated files are user data.
 
-Human versions, schema versions, resolver versions, recipe versions, and artifact content hashes are separate fields. Do not make an archive contain a required hash of its own final bytes; put that digest in an external receipt or index.
+## Integrity and provenance
 
-### Document replacement and observed drift
-
-Use one normalized, explicitly versioned authoring schema and one lock schema.
-Unsupported schemas fail with a clear message; they are never partially rewritten.
-
-Preserve comments and unrelated valid fields during ordinary edits when the codec
-can do so. If an edit must reformat a document, report that fact as part of the
-planned document replacement. Unknown semantic fields remain errors outside the
-extension namespace.
-
-External packwiz edits are observed drift. Adoption incorporates selected drift
-into intent and lock after review; sync restores recorded resolution. Neither
-operation deletes unrelated files. Every document replacement binds to its raw
-revision, including comment-only edits.
+Retain provider/source assertions alongside computed content IDs. MD5 compatibility
+is weaker evidence; computing SHA-256 after downloading does not authenticate the
+source. Signed release identity establishes publisher approval of exact descriptors,
+not a new claim about the upstream author's signature or redistribution license.

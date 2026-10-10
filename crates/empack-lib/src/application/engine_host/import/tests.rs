@@ -12,9 +12,9 @@ use crate::{
     },
 };
 use empack_core::{
+    distribution::Recipe,
     inventory::OptionalPolicy,
     model::{ContentKind, DependencyKey, DistributionArchive, DistributionIntent, PackMetadata},
-    projection::BuildTarget,
     requirements::{ChoiceKey, OptionalChoice, Requirement, Requirements},
 };
 use serde_json::{Value, json};
@@ -144,7 +144,8 @@ fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> 
         acceptable_versions: vec![],
         layout: BTreeMap::new(),
         distribution: DistributionIntent {
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+            native: None,
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
             archive: DistributionArchive::Zip,
         },
         files,
@@ -263,7 +264,7 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
     super::super::build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["client-full".into()],
+            targets: vec!["prism".into()],
             ..Default::default()
         },
         decisions,
@@ -272,7 +273,7 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
     .await
     .unwrap();
     let mut client = zip::ZipArchive::new(
-        fs::File::open(project.join("dist/Imported-1-client-full.zip")).unwrap(),
+        fs::File::open(project.join("dist/Imported-1-prism-bundled.zip")).unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -286,7 +287,7 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
     super::super::build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["mrpack".into()],
+            targets: vec!["modrinth".into()],
             ..Default::default()
         },
         super::super::BuildDecisions {
@@ -700,7 +701,8 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
                 acceptable_versions: vec![],
                 layout: BTreeMap::new(),
                 distribution: DistributionIntent {
-                    targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                    native: None,
+                    recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
                     archive: DistributionArchive::Zip,
                 },
                 files: BTreeMap::new(),

@@ -14,6 +14,9 @@ use crate::engine::{
 };
 use std::{fs, io::Read, sync::Arc};
 
+fn author_exclusions(root: &std::path::Path) {
+    fs::write(root.join("empack.yml"), "schema: 3\npack: {name: Example, version: alpha}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {recipes: [{consumer: modrinth, delivery: references, environment: both, updates: snapshot}], archive: zip}\ndependencies: {}\nsources: {exclude: [private/, '*.zip']}\nlayout: {}\nextensions: {}\n").unwrap();
+}
 async fn candidate() -> ImportCandidate {
     let archive = source(
         "modrinth.index.json",
@@ -236,7 +239,7 @@ fn replacement_capture_rejects_symlink_ancestors_without_touching_outside_files(
 }
 
 #[tokio::test]
-async fn ignored_pack_files_and_policy_are_not_owned_by_managed_replacement() {
+async fn author_excluded_files_are_not_owned_by_managed_replacement() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     let host = temp.path().join("state");
@@ -244,7 +247,7 @@ async fn ignored_pack_files_and_policy_are_not_owned_by_managed_replacement() {
     fs::write(project.join("empack.yml"), "old").unwrap();
     fs::write(project.join("pack/backup.zip"), "personal backup").unwrap();
     fs::write(project.join("pack/private/notes"), "private notes").unwrap();
-    fs::write(project.join("pack/.packwizignore"), "private/\n").unwrap();
+    author_exclusions(&project);
     fs::write(project.join("pack/stale.jar"), "managed").unwrap();
     let cancel = Cancellation::default();
     let reader = ProjectReader::new(RecoveryReader::new(host.clone()));
@@ -269,10 +272,6 @@ async fn ignored_pack_files_and_policy_are_not_owned_by_managed_replacement() {
         fs::read_to_string(project.join("pack/private/notes")).unwrap(),
         "private notes"
     );
-    assert_eq!(
-        fs::read_to_string(project.join("pack/.packwizignore")).unwrap(),
-        "private/\n"
-    );
     assert!(!project.join("pack/stale.jar").exists());
 }
 #[cfg(unix)]
@@ -281,7 +280,7 @@ fn ignored_payloads_are_skipped_before_opening_or_rejecting_links() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(project.join("pack/private")).unwrap();
-    fs::write(project.join("pack/.packwizignore"), "private/\n").unwrap();
+    author_exclusions(&project);
     fs::write(project.join("pack/private/large"), vec![0; 4096]).unwrap();
     std::os::unix::fs::symlink(
         temp.path().join("missing-outside"),
@@ -307,6 +306,7 @@ fn ignored_nonportable_names_do_not_block_replacement_capture() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path().join("project");
     fs::create_dir_all(project.join("pack")).unwrap();
+    author_exclusions(&project);
     fs::write(project.join("pack/backup?.zip"), "private backup").unwrap();
     // APFS rejects invalid Unicode at creation; Linux filesystems admit these native names.
     #[cfg(target_os = "linux")]
@@ -362,6 +362,8 @@ async fn incoming_ignored_destination_needs_actual_absence_and_cannot_replace_un
         let project = temp.path().join("project");
         let host = temp.path().join("state");
         fs::create_dir_all(project.join("pack")).unwrap();
+        author_exclusions(&project);
+        let prior_intent = fs::read(project.join("empack.yml")).unwrap();
         if existing {
             fs::write(project.join("pack/backup.zip"), "personal backup").unwrap();
         }
@@ -383,7 +385,7 @@ async fn incoming_ignored_destination_needs_actual_absence_and_cannot_replace_un
                 fs::read_to_string(project.join("pack/backup.zip")).unwrap(),
                 "personal backup"
             );
-            assert!(!project.join("empack.yml").exists());
+            assert_eq!(fs::read(project.join("empack.yml")).unwrap(), prior_intent);
         } else {
             prepared
                 .unwrap()

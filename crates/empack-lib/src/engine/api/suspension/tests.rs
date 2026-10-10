@@ -85,6 +85,7 @@ async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;
@@ -235,11 +236,11 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         selected.archive = archive;
         selected.outputs = NonEmpty::new(
             [
-                BuildTarget::Mrpack,
-                BuildTarget::Client,
-                BuildTarget::Server,
-                BuildTarget::ClientFull,
-                BuildTarget::ServerFull,
+                Recipe::MODRINTH,
+                Recipe::PRISM_REFERENCES,
+                Recipe::SERVER_REFERENCES,
+                Recipe::PRISM_BUNDLED,
+                Recipe::SERVER_BUNDLED,
             ]
             .into_iter()
             .enumerate()
@@ -260,7 +261,6 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         };
         selected.mrpack_optional = OptionalConversion::AcknowledgedMetadataLoss;
         selected.evidence = SourceEvidencePolicy::StrongSourceRequired;
-        selected.interaction = InstallerInteraction::Interactive;
         selected
             .templates
             .values
@@ -279,12 +279,12 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
                 mode,
             );
         }
-        let recipe = record::Recipe::from(&selected);
+        let recipe = record::SavedRecipe::from(&selected);
         let wire = serde_json::to_value(recipe).unwrap();
-        let decoded: record::Recipe = serde_json::from_value(wire.clone()).unwrap();
+        let decoded: record::SavedRecipe = serde_json::from_value(wire.clone()).unwrap();
         let restored = decoded.parse().unwrap();
         assert_eq!(
-            serde_json::to_value(record::Recipe::from(&restored)).unwrap(),
+            serde_json::to_value(record::SavedRecipe::from(&restored)).unwrap(),
             wire
         );
         assert_eq!(restored.outputs.as_slice(), selected.outputs.as_slice());
@@ -292,7 +292,7 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         assert_eq!(restored.templates.values, selected.templates.values);
         let mut unexpected = wire;
         unexpected["run_command"] = "never execute me".into();
-        assert!(serde_json::from_value::<record::Recipe>(unexpected).is_err());
+        assert!(serde_json::from_value::<record::SavedRecipe>(unexpected).is_err());
     }
 }
 #[tokio::test]
@@ -773,6 +773,276 @@ async fn retaining_new_input_requires_the_exact_saved_recipe_observation() {
             .unwrap()
     );
     assert!(retained.replaced);
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn native_release_batches_resume_exact_downloads_and_publish_with_other_consumers() {
+    use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let source = DocumentCodec
+        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let project = DocumentCodec
+        .decode_lock(
+            &fs::read(root.path().join("empack.lock")).unwrap(),
+            &source,
+            "test",
+        )
+        .unwrap();
+    let mut intent = project.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "resume.native".into(),
+        java_major: 17,
+        policies: BTreeMap::new(),
+    });
+    let project = explicitly_placed(intent, project.lock().clone());
+    fs::write(
+        root.path().join("empack.yml"),
+        DocumentCodec.encode_intent(project.intent()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&project).unwrap(),
+    )
+    .unwrap();
+    let mut selected = request();
+    selected.outputs = NonEmpty::new(vec![
+        BuildOutput {
+            target: Recipe::EMPACK_REFERENCES,
+            artifact: crate::engine::api::tests::path("references.empack"),
+        },
+        BuildOutput {
+            target: Recipe::EMPACK_BUNDLED,
+            artifact: crate::engine::api::tests::path("bundled.empack"),
+        },
+        BuildOutput {
+            target: Recipe::PRISM_BUNDLED,
+            artifact: crate::engine::api::tests::path("prism.zip"),
+        },
+    ])
+    .unwrap();
+    let (owner, _) = engine(host.path().join("state"));
+    let Preparation::NeedsInput(pending) = owner
+        .prepare(
+            root.path().to_path_buf(),
+            selected.clone().with_content(supplied("first", b"payload")),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("second exact file is missing")
+    };
+    owner.suspend_build(*pending).await.unwrap();
+    owner.shutdown().await;
+    assert!(!root.path().join("dist").exists());
+    let (owner, governor) = engine(host.path().join("state"));
+    let SavedBuildResume::Prepared(resumed) = owner
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+    else {
+        panic!("missing continuation")
+    };
+    let Preparation::NeedsInput(pending) = resumed.preparation else {
+        panic!("second file remains missing")
+    };
+    assert_eq!(
+        pending.build().unwrap().outputs,
+        selected.outputs.as_slice()
+    );
+    let Preparation::Ready(prepared) = owner
+        .resume(*pending, supplied("second", b"payload"))
+        .await
+        .unwrap()
+    else {
+        panic!("exact bytes supplied")
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(receipt))) =
+        &*outcome
+    else {
+        match &*outcome {
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+                panic!("{error:#}")
+            }
+            OperationOutcome::Failed(error) => panic!("{error}"),
+            _ => panic!("native batch did not complete"),
+        }
+    };
+    assert_eq!(receipt.artifacts.len(), 3);
+    for (name, bundled) in [("references.empack", false), ("bundled.empack", true)] {
+        let mut archive =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist").join(name)).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+        assert_eq!(release.document().pack, "resume.native");
+        assert!(
+            release
+                .document()
+                .files
+                .iter()
+                .all(|file| file.asset.is_some() == bundled)
+        );
+        assert!(release.document().files.iter().all(|file| {
+            file.assertions
+                .iter()
+                .any(|digest| digest.algorithm == "md5")
+        }));
+    }
+    owner.release_completed(handle.id());
+    drop((outcome, handle));
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn native_server_projection_does_not_require_client_downloads() {
+    server_projection_without_client_downloads(empack_core::distribution::Consumer::Empack).await;
+}
+
+#[tokio::test]
+async fn modrinth_server_projection_does_not_require_client_downloads() {
+    server_projection_without_client_downloads(empack_core::distribution::Consumer::Modrinth).await;
+}
+
+async fn server_projection_without_client_downloads(consumer: empack_core::distribution::Consumer) {
+    use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
+    use empack_core::{
+        distribution::{Consumer, Delivery},
+        requirements::Environments,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let source = DocumentCodec
+        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let project = DocumentCodec
+        .decode_lock(
+            &fs::read(root.path().join("empack.lock")).unwrap(),
+            &source,
+            "test",
+        )
+        .unwrap();
+    let mut intent = project.intent().clone();
+    if consumer == Consumer::Empack {
+        intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+            pack_id: "server.projection".into(),
+            java_major: 17,
+            policies: BTreeMap::new(),
+        });
+    }
+    let project = explicitly_placed(intent, project.lock().clone());
+    fs::write(
+        root.path().join("empack.yml"),
+        DocumentCodec.encode_intent(project.intent()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&project).unwrap(),
+    )
+    .unwrap();
+    crate::engine::api::tests::put(
+        root.path(),
+        "overrides/server/config/server.txt",
+        b"server config",
+    );
+    crate::engine::api::tests::put(
+        root.path(),
+        "overrides/client/config/client.txt",
+        b"client config",
+    );
+    let (owner, governor) = engine(host.path().join("state"));
+    let mut selected = request();
+    let recipe = Recipe::new(consumer, Delivery::References, Environments::Server).unwrap();
+    let artifact = if consumer == Consumer::Empack {
+        "server.empack"
+    } else {
+        "server.mrpack"
+    };
+    selected.outputs = NonEmpty::new(vec![BuildOutput {
+        target: recipe,
+        artifact: crate::engine::api::tests::path(artifact),
+    }])
+    .unwrap();
+    let Preparation::Ready(prepared) = owner
+        .prepare(root.path().to_path_buf(), selected)
+        .await
+        .unwrap()
+    else {
+        panic!("client-only restricted downloads are not needed")
+    };
+    assert!(prepared.view().build().unwrap().content.is_empty());
+    assert!(!prepared.view().needs_network());
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+    };
+    let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(receipt))) =
+        &*outcome
+    else {
+        panic!("server release did not complete")
+    };
+    assert_eq!(receipt.artifacts[0].content.target(), recipe);
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist").join(artifact)).unwrap())
+            .unwrap();
+    if consumer == Consumer::Empack {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+        assert_eq!(release.document().files.len(), 1);
+        assert_eq!(release.document().files[0].destination, "config/server.txt");
+    } else {
+        let index: serde_json::Value =
+            serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+        assert!(index["files"].as_array().unwrap().is_empty());
+    }
+    let files: Vec<_> = (0..archive.len())
+        .filter_map(|index| {
+            let member = archive.by_index(index).unwrap();
+            (!member.is_dir()).then(|| member.name().to_owned())
+        })
+        .collect();
+    assert_eq!(files.len(), 2, "only manifest and selected authored asset");
+    let asset = files
+        .iter()
+        .find(|name| {
+            if consumer == Consumer::Empack {
+                name.starts_with("assets/")
+            } else {
+                name.as_str() == "server-overrides/config/server.txt"
+            }
+        })
+        .unwrap();
+    let mut content = Vec::new();
+    std::io::Read::read_to_end(&mut archive.by_name(asset).unwrap(), &mut content).unwrap();
+    assert_eq!(content, b"server config");
+    owner.release_completed(handle.id());
+    drop((outcome, handle));
     owner.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }

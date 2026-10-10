@@ -8,9 +8,15 @@ use crate::engine::{
     runtime::{OperationOutcome, OperationRuntime},
     snapshot::SnapshotLimits,
 };
-use empack_core::path::PathSyntax;
+use empack_core::{digest::DigestSet, path::PathSyntax};
 use std::fs;
 
+fn locked_key(name: &str) -> LockedFileKey {
+    LockedFileKey {
+        dependency: empack_core::model::DependencyKey::parse(name).unwrap(),
+        slot: empack_core::model::FileSlot::parse("main").unwrap(),
+    }
+}
 fn path(value: &str) -> PortableRelPath {
     PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap()
 }
@@ -39,7 +45,7 @@ fn capture(root: &std::path::Path, host: &std::path::Path) -> WorkspaceSnapshot 
 
 #[test]
 fn acquisition_selection_matches_materialized_missing_content_and_optional_choices() {
-    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let cancel = Cancellation::default();
@@ -49,13 +55,10 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
     let workspace = capture(root.path(), host.path());
     for enabled in [false, true] {
         let optional = OptionalPolicy::Resolve {
-            choices: BTreeMap::from([
-                ("extra".into(), enabled),
-                ("observed:mods/extra.pw.toml".into(), enabled),
-            ]),
+            choices: BTreeMap::from([("extra".into(), enabled)]),
             use_defaults: false,
         };
-        for target in [BuildTarget::ClientFull, BuildTarget::ServerFull] {
+        for target in [Recipe::PRISM_BUNDLED, Recipe::SERVER_BUNDLED] {
             let plan = plan_target_build_acquisitions(
                 &workspace,
                 &BuildAcquisitions::default(),
@@ -73,7 +76,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
                 SourceEvidencePolicy::Compatibility,
                 &cancel,
             );
-            if enabled && target == BuildTarget::ClientFull {
+            if enabled && target == Recipe::PRISM_BUNDLED {
                 let error = actual.err().unwrap();
                 let missing = error
                     .downcast_ref::<super::super::materialized::MissingGameContent>()
@@ -83,13 +86,6 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
                     .iter()
                     .cloned()
                     .map(AcquisitionKey::Locked)
-                    .chain(
-                        missing
-                            .observed
-                            .iter()
-                            .cloned()
-                            .map(AcquisitionKey::Observed),
-                    )
                     .collect();
                 assert_eq!(
                     plan.needs()
@@ -98,7 +94,7 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
                         .collect::<BTreeSet<_>>(),
                     expected
                 );
-                assert_eq!(plan.needs().len(), 3);
+                assert_eq!(plan.needs().len(), 2);
             } else {
                 assert!(plan.needs().is_empty());
                 assert!(actual.is_ok());
@@ -110,8 +106,8 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
 }
 
 #[test]
-fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
-    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+fn native_references_acquire_addresses_and_retain_source_evidence() {
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let cancel = Cancellation::default();
@@ -129,22 +125,26 @@ fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
             &cancel,
         )
     };
-    assert!(
-        plan(BuildTarget::Client, SourceEvidencePolicy::Compatibility)
-            .unwrap()
-            .needs()
-            .is_empty()
+    assert_eq!(
+        plan(
+            Recipe::PRISM_REFERENCES,
+            SourceEvidencePolicy::Compatibility
+        )
+        .unwrap()
+        .needs()
+        .len(),
+        2
     );
     assert!(
         plan(
-            BuildTarget::Client,
+            Recipe::PRISM_REFERENCES,
             SourceEvidencePolicy::StrongSourceRequired
         )
         .is_err()
     );
     assert!(
         plan(
-            BuildTarget::ServerFull,
+            Recipe::SERVER_BUNDLED,
             SourceEvidencePolicy::StrongSourceRequired
         )
         .unwrap()
@@ -155,26 +155,26 @@ fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
         super::super::materialized::prepare_game_content(
             &workspace,
             &BuildAcquisitions::default(),
-            BuildTarget::ServerFull,
+            Recipe::SERVER_BUNDLED,
             &OptionalPolicy::Preserve,
             SourceEvidencePolicy::StrongSourceRequired,
             &cancel,
         )
         .is_ok()
     );
-    // Mrpack requires export hashes, unlike a packwiz bootstrap reference.
+    // Both native releases and mrpack establish their required content hashes.
     assert_eq!(
-        plan(BuildTarget::Mrpack, SourceEvidencePolicy::Compatibility)
+        plan(Recipe::MODRINTH, SourceEvidencePolicy::Compatibility)
             .unwrap()
             .needs()
             .len(),
-        3
+        2
     );
 }
 
 #[test]
 fn full_target_acquires_only_surviving_overlay_owners() {
-    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     write_project(root.path(), &project(false, false));
@@ -192,7 +192,7 @@ fn full_target_acquires_only_surviving_overlay_owners() {
     let plan = plan_target_build_acquisitions(
         &workspace,
         &BuildAcquisitions::default(),
-        BuildTarget::ClientFull,
+        Recipe::PRISM_BUNDLED,
         &OptionalPolicy::Preserve,
         SourceEvidencePolicy::Compatibility,
         &Cancellation::default(),
@@ -207,9 +207,9 @@ fn full_target_acquires_only_surviving_overlay_owners() {
 #[test]
 fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
     use empack_core::{
+        distribution::Recipe,
         inventory::OptionalPolicy,
         model::{ResolvedIdentity, SourceIntent},
-        projection::BuildTarget,
     };
     let base = project(true, true);
     let mut intent = base.intent().clone();
@@ -245,7 +245,7 @@ fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
             let actual = super::super::materialized::prepare_game_content(
                 &workspace,
                 &BuildAcquisitions::default(),
-                BuildTarget::ClientFull,
+                Recipe::PRISM_BUNDLED,
                 &optional,
                 SourceEvidencePolicy::Compatibility,
                 &Cancellation::default(),
@@ -260,7 +260,7 @@ fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
                     plan_target_build_acquisitions(
                         &workspace,
                         &BuildAcquisitions::default(),
-                        BuildTarget::ClientFull,
+                        Recipe::PRISM_BUNDLED,
                         &optional,
                         SourceEvidencePolicy::Compatibility,
                         &Cancellation::default()
@@ -827,7 +827,7 @@ async fn build_downloads_share_the_batch_budget_and_validate_all_declarations_fi
                     expected.size = Some(100);
                 }
                 AcquisitionNeed {
-                    key: AcquisitionKey::Observed(path(name)),
+                    key: AcquisitionKey::Locked(locked_key(name)),
                     reason: AcquisitionReason::MaterializedTarget,
                     expected,
                     source: BuildContentSource::Download(
@@ -1037,8 +1037,8 @@ async fn retained_build_inputs_reduce_the_http_batch_allowance() {
         .unwrap();
         let result = BuildAcquisitionResult {
             acquired: BuildAcquisitions {
-                observed: BTreeMap::from([(
-                    path("first"),
+                locked: BTreeMap::from([(
+                    locked_key("first"),
                     AcquiredBuildFile {
                         content,
                         permissions: FilePermissions {
@@ -1047,10 +1047,9 @@ async fn retained_build_inputs_reduce_the_http_batch_allowance() {
                         },
                     },
                 )]),
-                locked: BTreeMap::new(),
             },
             pending: vec![AcquisitionNeed {
-                key: AcquisitionKey::Observed(path("second")),
+                key: AcquisitionKey::Locked(locked_key("second")),
                 reason: AcquisitionReason::MaterializedTarget,
                 expected,
                 source: BuildContentSource::Download(
@@ -1247,7 +1246,7 @@ fn verify_world_build(
     acquired: &BuildAcquisitions,
 ) {
     use empack_core::{
-        inventory::OptionalPolicy, model::*, path::InstallDestination, projection::BuildTarget,
+        distribution::Recipe, inventory::OptionalPolicy, model::*, path::InstallDestination,
     };
     let base = project(false, false);
     let mut intent = base.intent().clone();
@@ -1331,7 +1330,7 @@ fn verify_world_build(
     }
     let cancel = Cancellation::default();
     let workspace = capture(root.path(), host.path());
-    for target in [BuildTarget::Mrpack, BuildTarget::ClientFull] {
+    for target in [Recipe::MODRINTH, Recipe::PRISM_BUNDLED] {
         assert_eq!(
             plan_target_build_acquisitions(
                 &workspace,

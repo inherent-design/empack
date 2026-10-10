@@ -125,13 +125,18 @@ fn e2e_import_modrinth_and_build_mrpack() {
             "EMPACK_PROCESS_TIMEOUT_SECS",
             LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
         )
-        .args(["--yes", "build", "mrpack", "--allow-optional-metadata-loss"])
+        .args([
+            "--yes",
+            "build",
+            "modrinth",
+            "--allow-optional-metadata-loss",
+        ])
         .output()
-        .expect("failed to spawn empack build mrpack");
+        .expect("failed to spawn empack build modrinth");
 
     assert!(
         build_output.status.success(),
-        "empack build mrpack failed:\nstdout: {}\nstderr: {}",
+        "empack build modrinth failed:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&build_output.stdout),
         String::from_utf8_lossy(&build_output.stderr),
     );
@@ -212,13 +217,18 @@ fn e2e_import_local_mrpack_and_build_mrpack() {
     );
 
     let build_output = empack_cmd(&pack_dir)
-        .args(["--yes", "build", "mrpack", "--allow-optional-metadata-loss"])
+        .args([
+            "--yes",
+            "build",
+            "modrinth",
+            "--allow-optional-metadata-loss",
+        ])
         .output()
-        .expect("failed to spawn empack build mrpack");
+        .expect("failed to spawn empack build modrinth");
 
     assert!(
         build_output.status.success(),
-        "empack build mrpack failed:\nstdout: {}\nstderr: {}",
+        "empack build modrinth failed:\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&build_output.stdout),
         String::from_utf8_lossy(&build_output.stderr),
     );
@@ -325,9 +335,9 @@ fn e2e_import_curseforge_and_check_restricted() {
 
     let build_output = empack_cmd(&pack_dir)
         .env("EMPACK_STATE_DIR", &state)
-        .args(["--yes", "build", "client-full", "--optional-defaults"])
+        .args(["--yes", "build", "prism", "--optional-defaults"])
         .output()
-        .expect("failed to spawn empack build client-full");
+        .expect("failed to spawn empack build prism");
 
     let stdout = String::from_utf8_lossy(&build_output.stdout);
     let stderr = String::from_utf8_lossy(&build_output.stderr);
@@ -342,7 +352,7 @@ fn e2e_import_curseforge_and_check_restricted() {
         );
     }
     if build_output.status.success() {
-        empack_tests::e2e::assert_dist_artifact_suffix(&pack_dir, "-client-full.zip");
+        empack_tests::e2e::assert_dist_artifact_suffix(&pack_dir, "-prism-bundled.zip");
     } else {
         assert!(combined.contains("continuation was saved"));
         let records = std::fs::read_dir(state.join("pending-builds"))

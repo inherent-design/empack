@@ -1,6 +1,5 @@
 //! Adoption verifies observed payloads and publishes descriptions; it never rewrites game bytes.
 use super::*;
-use empack_core::{digest::ExpectedDigest, model::ContentLayer};
 
 pub(in crate::engine) fn plan_adoption(
     workspace: MutationSnapshot,
@@ -15,9 +14,7 @@ pub(in crate::engine) fn plan_adoption(
         .transpose()?;
     let candidate =
         AdditionCandidate::prepare_adoption(workspace.intent(), workspace.prior_lock(), group)?;
-    let mut observed = BTreeMap::new();
-    let mut updates = BTreeMap::new();
-    let mut metadata_updates = BTreeMap::new();
+    let mut placements = BTreeSet::new();
     for key in candidate.plan().bindings().values() {
         for file in candidate.project().lock().dependencies[key]
             .files
@@ -29,49 +26,13 @@ pub(in crate::engine) fn plan_adoption(
                     path: placement.destination.relative().clone(),
                 };
                 let path = ProjectLayout::path(&target)?;
-                let digests = workspace.verify_file(&path, &file.expected, cancel)?;
-                let sha256 = digests
-                    .values()
-                    .iter()
-                    .find(|value| matches!(value, ExpectedDigest::Sha256(_)))
-                    .context("Observed adoption lacks a content address")?
-                    .clone();
-                if placement.layer == ContentLayer::Common {
-                    updates.insert(placement.destination.relative().clone(), sha256);
-                }
+                workspace.verify_file(&path, &file.expected, cancel)?;
                 ensure!(
-                    observed.insert(target, digests).is_none(),
+                    placements.insert(target),
                     "Adoption has duplicate placements"
                 );
             }
         }
-    }
-    for record in workspace.backend_files(cancel)? {
-        let target = ManagedPath::Content {
-            layer: ContentLayer::Common,
-            path: record.destination.relative().clone(),
-        };
-        let Some(digests) = observed.get(&target) else {
-            continue;
-        };
-        ensure!(
-            record.locked_owner(candidate.project())?.is_some(),
-            "Observed backend metadata disagrees with adoption"
-        );
-        ensure!(
-            digests.values().contains(&record.digest),
-            "Observed backend metadata has a different content digest"
-        );
-        let metadata = PortableRelPath::parse(
-            &format!("pack/{}", record.metadata_path.as_str()),
-            PathSyntax::ProjectContent,
-        )?;
-        let Some(crate::engine::snapshot::Observation::File(file)) =
-            workspace.observations().entries().get(&metadata)
-        else {
-            anyhow::bail!("Adoption metadata is not a captured regular file")
-        };
-        metadata_updates.insert(record.metadata_path, ExpectedDigest::Sha256(file.content));
     }
     let mut documents = BTreeMap::from([
         (
@@ -97,14 +58,6 @@ pub(in crate::engine) fn plan_adoption(
                 .context("Captured adoption lock disappeared")?,
         );
     }
-    crate::engine::backend::index::refresh_index_with_metadata_updates(
-        &workspace,
-        &BTreeSet::new(),
-        &updates,
-        &metadata_updates,
-        &mut documents,
-        cancel,
-    )?;
     let observed =
         verification::observed_mutation_for(workspace.observations(), documents.keys().cloned())?;
     let mut desired = BTreeMap::new();
@@ -148,10 +101,11 @@ mod tests {
         documents::DocumentCodec, mrpack::tests::project, project::ProjectReader,
         publication::RecoveryReader, snapshot::SnapshotLimits,
     };
+    use empack_core::digest::ExpectedDigest;
     use std::fs;
 
     #[test]
-    fn adoption_refreshes_metadata_index_entries_without_changing_their_role() {
+    fn adoption_preserves_foreign_metadata_without_observing_it() {
         let root = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
         let project = project(false, false);
@@ -207,21 +161,9 @@ mod tests {
                 &cancel,
             )
             .unwrap();
-        let index: toml::Value =
-            toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
-                .unwrap();
-        let entry = &index["files"][0];
-        assert_eq!(entry["metafile"].as_bool(), Some(true));
-        assert_eq!(entry["alias"].as_str(), Some("retained"));
-        assert_eq!(entry["custom"].as_str(), Some("kept"));
-        assert_eq!(entry["hash-format"].as_str(), Some("sha256"));
         assert_eq!(
-            entry["hash"].as_str(),
-            Some(
-                ExpectedDigest::Sha256(Sha256::digest(metadata.as_bytes()).into())
-                    .hex()
-                    .as_str()
-            )
+            fs::read(root.path().join("pack/index.toml")).unwrap(),
+            index.as_bytes()
         );
         assert_eq!(
             fs::read(root.path().join("pack/resourcepacks/a.pw.toml")).unwrap(),
@@ -237,19 +179,16 @@ mod tests {
                 .changes()
                 .is_empty()
         );
-        let mut index = index;
-        index["files"][0]["metafile"] = toml::Value::Boolean(false);
-        fs::write(
-            root.path().join("pack/index.toml"),
-            toml::to_string(&index).unwrap(),
-        )
-        .unwrap();
+        fs::write(root.path().join("pack/index.toml"), b"invalid = [").unwrap();
         let snapshot = reader
             .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
             .unwrap();
         assert!(
-            plan_adoption(snapshot, &group, &cancel).is_err(),
-            "a metadata update must not reinterpret a direct-file entry"
+            plan_adoption(snapshot, &group, &cancel)
+                .unwrap()
+                .plan
+                .changes()
+                .is_empty()
         );
     }
 }

@@ -1,6 +1,6 @@
 # Publication and recovery
 
-Contract for v0.5.0-alpha.1. Callable types and signatures are defined in the
+Contract for v0.6.0-beta. Callable types and signatures are defined in the
 [publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
 
 ## Journaled publication and recovery
@@ -92,3 +92,15 @@ Source and artifact read sets retain separate limits. Verification checks the
 resulting files against every applicable capture group's budget before publication.
 The journal records those groups so recovery applies the same limits to prior and
 replacement bytes. A larger artifact allowance cannot widen source-file limits.
+
+## Instance activation and rollback
+
+The instance record participates in the verified publication footprint. A release
+is not activated until its selected inventory and instance state agree. Launch
+checks pending recovery before trusting a completed instance record. Preserve
+root identity and expected-old checks for client and server installations.
+
+Committed publication copies are short-lived recovery storage. Retained release
+records and content needed for operator rollback have separate ownership and leases;
+reclaiming a journal must not evict them. Rollback is a new verified operation with
+current-file conflicts, not blind restoration of every historical byte.

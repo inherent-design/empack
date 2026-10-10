@@ -68,21 +68,25 @@ pub(in crate::engine) trait BoundRecord: Serialize + DeserializeOwned {
 pub(in crate::engine) enum Kind {
     Import,
     Synchronization,
+    Instance,
 }
 impl Kind {
     fn directory(self) -> &'static str {
         match self {
             Self::Import => "pending-imports",
             Self::Synchronization => "pending-sync",
+            Self::Instance => "pending-instances",
         }
     }
     pub(in crate::engine) fn maximum(self) -> u64 {
         match self {
             Self::Import => MAX_RECORD,
+            Self::Instance => 4 * crate::engine::release::MAX_RELEASE_BYTES as u64,
             Self::Synchronization => 4 * crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
         }
     }
 }
+#[derive(Clone)]
 pub(in crate::engine) struct SavedRecord {
     pub state: std::path::PathBuf,
     pub name: String,
@@ -128,6 +132,13 @@ fn location(target: &Path) -> Result<(ProjectReadRoot, String, String)> {
     Ok((parent, leaf.to_owned(), name))
 }
 pub(in crate::engine) fn bind(target: &Path, cancel: &Cancellation) -> Result<(String, Binding)> {
+    bind_for(Kind::Import, target, cancel)
+}
+pub(in crate::engine) fn bind_for(
+    kind: Kind,
+    target: &Path,
+    cancel: &Cancellation,
+) -> Result<(String, Binding)> {
     let (parent, leaf, name) = location(target)?;
     let parent_key = root_key(&parent)?;
     let project = match parent.directory.symlink_metadata(&leaf) {
@@ -143,13 +154,16 @@ pub(in crate::engine) fn bind(target: &Path, cancel: &Cancellation) -> Result<(S
     };
     let mut documents = [None, None];
     if let Some(project) = &project {
-        let paths = ["empack.yml", "empack.lock"]
-            .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent).unwrap());
+        let paths = match kind {
+            Kind::Instance => [".empack/instance.json", ".empack/subscription.json"],
+            _ => ["empack.yml", "empack.lock"],
+        }
+        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent).unwrap());
         let snapshot = project.capture(
             &paths,
             SnapshotLimits {
                 entries: 4,
-                depth: 1,
+                depth: 2,
                 file_bytes: crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
                 total_bytes: 2 * crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
             },
@@ -235,7 +249,7 @@ pub(in crate::engine) fn read<R: BoundRecord>(
     maximum: u64,
     cancel: &Cancellation,
 ) -> Result<Option<(SavedRecord, R)>> {
-    let (name, binding) = bind(target, cancel)?;
+    let (name, binding) = bind_for(kind, target, cancel)?;
     let directory = match open_private_directory(&state.join(kind.directory()), false) {
         Ok(directory) => directory,
         Err(error) if missing(&error) => return Ok(None),
@@ -263,7 +277,7 @@ pub(in crate::engine) fn read<R: BoundRecord>(
         "Saved operation is stale: target identity or documents changed"
     );
     ensure!(
-        bind(target, cancel)?.1 == binding,
+        bind_for(kind, target, cancel)?.1 == binding,
         "Operation target changed during inspection"
     );
     Ok(Some((
@@ -285,7 +299,7 @@ pub(in crate::engine) fn save<R: BoundRecord>(
     prior: Option<&SavedRecord>,
     cancel: &Cancellation,
 ) -> Result<SavedRecord> {
-    let (name, binding) = bind(target, cancel)?;
+    let (name, binding) = bind_for(kind, target, cancel)?;
     ensure!(
         record.binding() == &binding,
         "Operation target changed before suspension"
@@ -331,7 +345,7 @@ pub(in crate::engine) fn save<R: BoundRecord>(
         drop(file);
         cancel.check()?;
         ensure!(
-            bind(target, cancel)?.1 == binding,
+            bind_for(kind, target, cancel)?.1 == binding,
             "Operation target changed before suspension"
         );
         directory.rename(&temporary, &directory, &name)?;

@@ -151,15 +151,15 @@ async fn publish_with_refreshed_locator(
     game: &str,
 ) -> anyhow::Result<()> {
     use empack_core::{
+        distribution::Recipe,
         inventory::OptionalPolicy,
         model::*,
         path::{InstallDestination, PathSyntax, PortableRelPath},
-        projection::BuildTarget,
     };
     use empack_lib::engine::{
         api::*, artifacts::ArchiveLimits, documents::DocumentCodec, mrpack::OptionalConversion,
-        packwiz::InstallerInteraction, server_runtime::installer::InstallerExecution,
-        snapshot::SnapshotLimits, templates::TemplateOptions,
+        server_runtime::installer::InstallerExecution, snapshot::SnapshotLimits,
+        templates::TemplateOptions,
     };
     use serde_json::json;
     use sha2::Digest;
@@ -171,7 +171,7 @@ async fn publish_with_refreshed_locator(
         _ => anyhow::bail!("Resource fixture must use Modrinth"),
     };
     let intent_bytes = serde_json::to_vec(
-        &json!({"schema":2,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"targets":["client-full"],"archive":"zip"},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
+        &json!({"schema":3,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"recipes":[{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"}],"archive":"zip"},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
     )?;
     let intent = DocumentCodec.decode_intent(&intent_bytes, "provider-smoke")?;
     let key = DependencyKey::parse("resources")?;
@@ -273,7 +273,7 @@ async fn publish_with_refreshed_locator(
     let request = BuildRequest {
         clean: false,
         outputs: NonEmpty::new(vec![BuildOutput {
-            target: BuildTarget::ClientFull,
+            target: Recipe::PRISM_BUNDLED,
             artifact: PortableRelPath::parse("client.zip", PathSyntax::ArtifactName)?,
         }])?,
         archive: DistributionArchive::Zip,
@@ -281,7 +281,6 @@ async fn publish_with_refreshed_locator(
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     };
     let prepared = match engine.prepare(root.path().to_owned(), request).await? {
         Preparation::Ready(value) => value,
@@ -295,6 +294,7 @@ async fn publish_with_refreshed_locator(
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        run_runtime: false,
         replacement: None,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;

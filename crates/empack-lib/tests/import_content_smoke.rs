@@ -1,5 +1,5 @@
 //! Live import acquisition, semantic assembly and publication into temporary projects.
-use empack_core::{model::*, path::InstallDestination, projection::BuildTarget, requirements::*};
+use empack_core::{distribution::Recipe, model::*, path::InstallDestination, requirements::*};
 use empack_lib::{
     application::process_runtime::Cancellation,
     engine::{
@@ -240,7 +240,8 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         layout: BTreeMap::new(),
         files,
         distribution: DistributionIntent {
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+            native: None,
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
             archive: DistributionArchive::Zip,
         },
         // The known generated CurseForge report is not game content. Reject any additional
@@ -335,6 +336,7 @@ async fn publish_fixture(
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().import().and_then(|view| view.replacement),
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;

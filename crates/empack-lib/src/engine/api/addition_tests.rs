@@ -112,7 +112,7 @@ async fn reference_add_sync_export_and_materialization_keep_distinct_byte_obliga
     assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
     let mut build = super::tests::request();
     build.outputs = NonEmpty::new(vec![BuildOutput {
-        target: BuildTarget::Mrpack,
+        target: Recipe::MODRINTH,
         artifact: empack_core::path::PortableRelPath::parse(
             "result.mrpack",
             empack_core::path::PathSyntax::ProjectContent,
@@ -278,6 +278,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().replacement(),
     }
 }

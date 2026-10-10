@@ -177,13 +177,13 @@ fn e2e_init_scaffolds_templates() {
         let bytes = std::fs::read_to_string(pack_dir.join(format!(".github/workflows/{name}.yml")))
             .unwrap();
         let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
-        assert_eq!(workflow["env"]["EMPACK_VERSION"], "v0.5.0-alpha.1");
-        assert!(bytes.contains("empack build --yes mrpack"));
+        assert_eq!(workflow["env"]["EMPACK_VERSION"], "v0.6.0-beta");
+        assert!(bytes.contains("empack build --yes modrinth"));
         assert!(!bytes.contains("packwiz"));
     }
     assert!(
-        pack_dir.join("pack").join(".packwizignore").exists(),
-        "pack/.packwizignore not found"
+        !pack_dir.join("pack").join(".packwizignore").exists(),
+        "initialization must not create foreign control files"
     );
     assert!(
         pack_dir.join("templates").join("server").is_dir(),

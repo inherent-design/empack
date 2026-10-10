@@ -226,7 +226,7 @@ async fn direct_files_publish_one_batch_preserve_provenance_and_build_current_by
     build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["client-full".into()],
+            targets: vec!["prism".into()],
             ..Default::default()
         },
         BuildDecisions::default(),
@@ -350,7 +350,7 @@ async fn transient_download_as_local_preserves_evidence_without_persisting_locat
     build(
         &session(root.path(), true, false),
         &BuildArgs {
-            targets: vec!["mrpack".into(), "client-full".into()],
+            targets: vec!["modrinth".into(), "prism".into()],
             ..Default::default()
         },
         BuildDecisions::default(),
@@ -364,7 +364,7 @@ async fn transient_download_as_local_preserves_evidence_without_persisting_locat
             "client-overrides/resourcepacks/chosen.zip",
         ),
         (
-            "File Pack-1.0-client-full.zip",
+            "File Pack-1.0-prism-bundled.zip",
             ".minecraft/resourcepacks/chosen.zip",
         ),
     ] {

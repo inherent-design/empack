@@ -1,9 +1,9 @@
 //! AllRequested publication across independently verified distribution candidates.
 use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
-    client::{ClientBootstrap, ClientOptions, prepare_client_archive, prepare_client_full_archive},
-    prepare_archives_publication, prepare_mrpack,
-    server::{ServerBootstrap, ServerOptions, prepare_server_archive},
+    client::{ClientOptions, prepare_client_archive},
+    prepare_archives_publication, prepare_mrpack_recipe,
+    server::{ServerOptions, prepare_server_archive},
 };
 use crate::{
     application::process_runtime::Cancellation,
@@ -14,74 +14,104 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use empack_core::{
-    files::ManagedPath, inventory::BuildInventory, model::NonEmpty, path::PortableRelPath,
-    projection::BuildTarget,
+    distribution::{Consumer, Recipe},
+    files::ManagedPath,
+    inventory::BuildInventory,
+    model::NonEmpty,
+    path::PortableRelPath,
 };
 
 /// An implemented distribution recipe and its explicit output. Further targets add recipes here;
 /// runtime recipes remain limited to independently verified runtime preparations.
 pub enum DistributionRequest {
+    Native {
+        artifact: PortableRelPath,
+        recipe: Recipe,
+        archive: empack_core::model::DistributionArchive,
+        evidence: SourceEvidencePolicy,
+        limits: crate::engine::artifacts::ArchiveLimits,
+    },
+    CurseForge {
+        recipe: Recipe,
+        artifact: PortableRelPath,
+        options: super::curseforge::CurseForgeOptions,
+    },
     Mrpack {
+        recipe: Recipe,
         artifact: PortableRelPath,
         optional: OptionalConversion,
         evidence: SourceEvidencePolicy,
     },
-    Client {
+    Prism {
+        recipe: Recipe,
         artifact: PortableRelPath,
         options: ClientOptions,
-        bootstrap: ClientBootstrap,
     },
     Server {
+        recipe: Recipe,
         artifact: PortableRelPath,
         options: ServerOptions,
-        runtime: crate::engine::server_runtime::PreparedServerRuntime,
-        bootstrap: ServerBootstrap,
-    },
-    ServerFull {
-        artifact: PortableRelPath,
-        options: ServerOptions,
-        runtime: crate::engine::server_runtime::PreparedServerRuntime,
-    },
-    ClientFull {
-        artifact: PortableRelPath,
-        options: ClientOptions,
+        runtime: Box<crate::engine::server_runtime::PreparedServerRuntime>,
     },
 }
 impl DistributionRequest {
     fn artifact(&self) -> &PortableRelPath {
         match self {
-            Self::Mrpack { artifact, .. }
-            | Self::Client { artifact, .. }
-            | Self::ClientFull { artifact, .. }
-            | Self::Server { artifact, .. }
-            | Self::ServerFull { artifact, .. } => artifact,
+            Self::Native { artifact, .. }
+            | Self::CurseForge { artifact, .. }
+            | Self::Mrpack { artifact, .. }
+            | Self::Prism { artifact, .. }
+            | Self::Server { artifact, .. } => artifact,
         }
     }
-    fn target(&self) -> BuildTarget {
+    fn target(&self) -> Recipe {
         match self {
-            Self::Mrpack { .. } => BuildTarget::Mrpack,
-            Self::Client { .. } => BuildTarget::Client,
-            Self::ClientFull { .. } => BuildTarget::ClientFull,
-            Self::Server { .. } => BuildTarget::Server,
-            Self::ServerFull { .. } => BuildTarget::ServerFull,
+            Self::Native { recipe, .. }
+            | Self::CurseForge { recipe, .. }
+            | Self::Mrpack { recipe, .. }
+            | Self::Prism { recipe, .. }
+            | Self::Server { recipe, .. } => *recipe,
         }
+    }
+    fn validate(&self) -> Result<()> {
+        let recipe = self.target();
+        let expected = match self {
+            Self::Native { .. } => Consumer::Empack,
+            Self::CurseForge { .. } => Consumer::CurseForge,
+            Self::Mrpack { .. } => Consumer::Modrinth,
+            Self::Prism { .. } => Consumer::Prism,
+            Self::Server { .. } => Consumer::Server,
+        };
+        ensure!(
+            recipe.consumer() == expected,
+            "Recipe belongs to another consumer adapter"
+        );
+        Ok(())
     }
 }
+
 pub struct BuiltDistribution {
-    pub target: BuildTarget,
+    /// Exact portable payload identity; archive hashes are a separate namespace.
+    pub native_release: Option<String>,
+    pub modrinth_hosting: Option<crate::engine::mrpack::HostingEligibility>,
+    pub target: Recipe,
     pub artifact: PortableRelPath,
     pub bytes: u64,
-    /// Pack-content inventory: full-client launcher/template files are verified by its recipe too.
+    /// Pack-content inventory: bundled Prism launcher/template files are verified by its recipe too.
     pub content: BuildInventory,
     pub members: std::collections::BTreeMap<PortableRelPath, empack_core::files::FileContent>,
     pub resolution: empack_core::model::ResolutionLock,
-    pub observed: Vec<crate::engine::mrpack::ObservedFileEvidence>,
-    pub backend_comparisons: Vec<crate::engine::backend::BackendDigestComparison>,
     pub conversions: Vec<String>,
     pub user_configuration: Option<bool>,
-    pub toolchain: Vec<crate::engine::bootstrap_tools::InstallerRelease>,
     pub server_runtime: Option<crate::engine::server_runtime::ServerRuntimeEvidence>,
 }
+impl BuiltDistribution {
+    /// Export does not establish a marketplace project/version association for the recipient.
+    pub fn requires_platform_association(&self) -> bool {
+        self.target.update_authority() == empack_core::distribution::UpdateAuthority::Platform
+    }
+}
+
 pub struct PreparedBuildBatch {
     publication: PreparedArtifact,
     artifacts: Vec<BuiltDistribution>,
@@ -136,6 +166,7 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
 ) -> Result<PreparedBuildBatch> {
     let mut collisions = CollisionIndex::default();
     for request in requests.as_slice() {
+        request.validate()?;
         collisions.insert_file(request.artifact())?;
     }
     observed_artifacts_for(
@@ -150,7 +181,38 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
     for request in requests.as_slice() {
         cancel.check()?;
         let (candidate, evidence) = match request {
+            DistributionRequest::Native {
+                artifact,
+                recipe,
+                archive,
+                evidence,
+                limits,
+            } => super::native::prepare_archive(
+                &workspace,
+                artifact.clone(),
+                external,
+                &super::native::NativeArchiveOptions {
+                    recipe: *recipe,
+                    archive: *archive,
+                    evidence: *evidence,
+                    limits: *limits,
+                },
+                cancel,
+            )?,
+            DistributionRequest::CurseForge {
+                artifact,
+                recipe,
+                options,
+            } => super::curseforge::prepare_archive(
+                &workspace,
+                artifact.clone(),
+                *recipe,
+                external,
+                options,
+                cancel,
+            )?,
             DistributionRequest::Mrpack {
+                recipe,
                 artifact,
                 optional,
                 evidence,
@@ -159,21 +221,22 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     artifact.as_str().ends_with(".mrpack"),
                     "Mrpack output requires a .mrpack filename"
                 );
-                let plan = prepare_mrpack(&workspace, external, *evidence, *optional, cancel)?;
+                let plan = prepare_mrpack_recipe(
+                    &workspace, external, *evidence, *optional, *recipe, cancel,
+                )?;
                 let mut archive = PrivateFile::new()?;
                 let verified = plan.write(archive.file(), cancel)?;
                 let evidence = BuiltDistribution {
+                    native_release: None,
+                    modrinth_hosting: Some(plan.hosting_eligibility().clone()),
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: verified.len(),
                     content: plan.inventory().clone(),
                     members: plan.archive_inventory().clone(),
                     resolution: plan.resolution().clone(),
-                    observed: plan.observed().to_vec(),
-                    backend_comparisons: plan.backend_comparisons().to_vec(),
                     conversions: plan.conversions().to_vec(),
                     user_configuration: None,
-                    toolchain: Vec::new(),
                     server_runtime: None,
                 };
                 (
@@ -185,81 +248,60 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     evidence,
                 )
             }
-            DistributionRequest::ServerFull {
+            DistributionRequest::Server {
+                recipe,
                 artifact,
                 options,
                 runtime,
-            }
-            | DistributionRequest::Server {
-                artifact,
-                options,
-                runtime,
-                ..
             } => {
-                let bootstrap = if let DistributionRequest::Server { bootstrap, .. } = request {
-                    Some(bootstrap)
-                } else {
-                    None
-                };
                 let (archive, built) = prepare_server_archive(
                     &workspace,
                     artifact.clone(),
                     external,
                     options,
                     runtime,
-                    bootstrap,
+                    *recipe,
                     cancel,
                 )?;
                 let evidence = BuiltDistribution {
+                    native_release: None,
+                    modrinth_hosting: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: archive.verified.len(),
                     content: built.game.inventory().clone(),
                     members: built.inventory,
                     resolution: built.game.project().lock().clone(),
-                    observed: built.game.observed().to_vec(),
-                    backend_comparisons: built.game.backend_comparisons().to_vec(),
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
-                    toolchain: built.toolchain,
                     server_runtime: Some(built.runtime),
                 };
                 (archive, evidence)
             }
-            DistributionRequest::ClientFull { artifact, options }
-            | DistributionRequest::Client {
-                artifact, options, ..
+            DistributionRequest::Prism {
+                recipe,
+                artifact,
+                options,
             } => {
-                let built = if let DistributionRequest::Client { bootstrap, .. } = request {
-                    prepare_client_archive(
-                        &workspace,
-                        artifact.clone(),
-                        external,
-                        options,
-                        Some(bootstrap),
-                        cancel,
-                    )?
-                } else {
-                    prepare_client_full_archive(
-                        &workspace,
-                        artifact.clone(),
-                        external,
-                        options,
-                        cancel,
-                    )?
-                };
+                let built = prepare_client_archive(
+                    &workspace,
+                    artifact.clone(),
+                    external,
+                    options,
+                    *recipe,
+                    cancel,
+                )?;
                 let evidence = BuiltDistribution {
+                    native_release: None,
+                    modrinth_hosting: None,
                     target: request.target(),
                     artifact: artifact.clone(),
                     bytes: built.archive.verified.len(),
                     content: built.game.inventory().clone(),
                     members: built.inventory,
                     resolution: built.game.project().lock().clone(),
-                    observed: built.game.observed().to_vec(),
-                    backend_comparisons: built.game.backend_comparisons().to_vec(),
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
-                    toolchain: built.toolchain,
                     server_runtime: None,
                 };
                 (built.archive, evidence)

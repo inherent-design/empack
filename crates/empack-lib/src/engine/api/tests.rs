@@ -100,11 +100,11 @@ pub(super) fn request() -> BuildRequest {
         clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
-                target: BuildTarget::Mrpack,
+                target: Recipe::MODRINTH,
                 artifact: path("result.mrpack"),
             },
             BuildOutput {
-                target: BuildTarget::ClientFull,
+                target: Recipe::PRISM_BUNDLED,
                 artifact: path("client.zip"),
             },
         ])
@@ -114,7 +114,6 @@ pub(super) fn request() -> BuildRequest {
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     }
 }
 async fn ready(engine: &Engine, root: &Path, request: BuildRequest) -> PreparedOperation {
@@ -128,6 +127,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: None,
     }
 }
@@ -273,7 +273,7 @@ async fn cross_engine_and_missing_network_grants_are_rejected_before_effects() {
     );
     let mut server = request();
     server.outputs = NonEmpty::new(vec![BuildOutput {
-        target: BuildTarget::ServerFull,
+        target: Recipe::SERVER_BUNDLED,
         artifact: path("server.zip"),
     }])
     .unwrap();
@@ -358,7 +358,7 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
     }
     let mut server = request();
     server.outputs = NonEmpty::new(vec![BuildOutput {
-        target: BuildTarget::ServerFull,
+        target: Recipe::SERVER_BUNDLED,
         artifact: path("server.zip"),
     }])
     .unwrap();
@@ -369,6 +369,7 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        run_runtime: false,
         replacement: None,
     };
     assert!(prepared.authorize(permission).is_err());
@@ -495,7 +496,7 @@ async fn saved_provider_origins_remain_downloadable_without_catalog_credentials(
         };
         let mut request = request();
         request.outputs = NonEmpty::new(vec![BuildOutput {
-            target: BuildTarget::ClientFull,
+            target: Recipe::PRISM_BUNDLED,
             artifact: path("client.zip"),
         }])
         .unwrap();
@@ -533,7 +534,7 @@ async fn provider_build_case(changed_digest: bool, unavailable: bool, saved_orig
     );
     let mut request = request();
     request.outputs = NonEmpty::new(vec![BuildOutput {
-        target: BuildTarget::ClientFull,
+        target: Recipe::PRISM_BUNDLED,
         artifact: path("client.zip"),
     }])
     .unwrap();
@@ -686,7 +687,7 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     );
     let mut request = request();
     request.outputs = NonEmpty::new(vec![BuildOutput {
-        target: BuildTarget::ClientFull,
+        target: Recipe::PRISM_BUNDLED,
         artifact: path("client.zip"),
     }])
     .unwrap();
@@ -1039,7 +1040,8 @@ async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCa
                             layout: BTreeMap::new(),
                             exclude_auxiliary_members: false,
                             distribution: DistributionIntent {
-                                targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                                native: None,
+                                recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
                                 archive: DistributionArchive::Zip,
                             },
                             files: BTreeMap::from([(
@@ -1092,6 +1094,7 @@ fn import_grant(prepared: &PreparedOperation) -> ExecutionGrant {
         plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
         replacement: prepared.view().import().unwrap().replacement,
     }
 }
@@ -1144,8 +1147,7 @@ async fn owned_import_publishes_complete_content_and_retains_a_typed_receipt() {
     let host = tempfile::tempdir().unwrap();
     let (engine, governor) = engine(host.path().join("state"));
     put(root.path(), "README", b"unrelated");
-    put(root.path(), "pack/backup.zip", b"private");
-    put(root.path(), "pack/.packwizignore", b"private/\n");
+    put(root.path(), "backups/backup.zip", b"private");
     let prepared = ready_import(&engine, &governor, root.path()).await;
     assert!(prepared.view().import().unwrap().replacement.is_none());
     let expected_bytes: u64 = prepared
@@ -1180,7 +1182,7 @@ async fn owned_import_publishes_complete_content_and_retains_a_typed_receipt() {
         b"new config"
     );
     assert_eq!(
-        fs::read(root.path().join("pack/backup.zip")).unwrap(),
+        fs::read(root.path().join("backups/backup.zip")).unwrap(),
         b"private"
     );
     assert_eq!(fs::read(root.path().join("README")).unwrap(), b"unrelated");

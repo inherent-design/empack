@@ -94,7 +94,7 @@ macro_rules! e2e_bad_flag_value {
 
 e2e_bad_flag_value!(
     e2e_matrix_bad_archive_format,
-    args: ["build", "--format", "csv", "mrpack"],
+    args: ["build", "--format", "csv", "modrinth"],
     stderr_contains: "invalid value 'csv'"
 );
 
@@ -131,7 +131,7 @@ macro_rules! e2e_requires_modpack {
 e2e_requires_modpack!(e2e_matrix_add_requires_modpack, args: ["add", "sodium"]);
 e2e_requires_modpack!(e2e_matrix_remove_requires_modpack, args: ["remove", "sodium"]);
 e2e_requires_modpack!(e2e_matrix_sync_requires_modpack, args: ["sync"]);
-e2e_requires_modpack!(e2e_matrix_build_requires_modpack, args: ["build", "mrpack"]);
+e2e_requires_modpack!(e2e_matrix_build_requires_modpack, args: ["build", "modrinth"]);
 // clean in an empty directory exits 0 ("nothing to clean" is valid)
 
 macro_rules! e2e_build_target {
@@ -141,9 +141,10 @@ macro_rules! e2e_build_target {
             empack_tests::skip_if_no_java!();
 
             let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+            project.configure_native_distribution("matrix.pack", 21);
             let output = project
                 .cmd()
-                .args(["--yes", "build", $target])
+                .args(["--yes", "build", $target, "--delivery", "references"])
                 .output()
                 .expect("failed to spawn");
             assert!(
@@ -155,44 +156,40 @@ macro_rules! e2e_build_target {
 
             let dist = project.dir().join("dist");
             assert!(dist.exists(), "dist/ should exist after build {}", $target);
-            let suffix = if $target == "mrpack" {
+            let suffix = if $target == "modrinth" {
                 ".mrpack".to_owned()
             } else {
-                format!("-{}.zip", $target)
+                format!("-{}-references.zip", $target)
             };
             let artifact = assert_dist_artifact_suffix(project.dir(), &suffix);
             let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact).unwrap()).unwrap();
-            if $target == "mrpack" {
+            if $target == "modrinth" {
                 let manifest: serde_json::Value =
                     serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap())
                         .unwrap();
                 assert_eq!(manifest["dependencies"]["minecraft"], "1.21.1");
                 assert_eq!(manifest["name"], "test-pack");
             } else {
-                for member in [
-                    "pack/pack.toml",
-                    "packwiz-installer.jar",
-                    "packwiz-installer-bootstrap.jar",
-                ] {
-                    let destination = if $target == "client" {
-                        format!(".minecraft/{member}")
-                    } else {
-                        member.to_owned()
-                    };
-                    assert!(
-                        archive.by_name(&destination).unwrap().size() > 0,
-                        "missing output bytes for {}",
-                        member
-                    );
-                }
+                let descriptor = if $target == "prism" {
+                    ".minecraft/.empack-consumer/release.json"
+                } else {
+                    ".empack-consumer/release.json"
+                };
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut archive.by_name(descriptor).unwrap(), &mut bytes)
+                    .unwrap();
+                let release = empack_lib::engine::release::DecodedRelease::decode(&bytes).unwrap();
+                assert_eq!(release.document().pack, "matrix.pack");
+                assert_eq!(release.document().runtime.minecraft, "1.21.1");
+                assert!(!archive.file_names().any(|p| p.contains("packwiz")));
             }
         }
     };
 }
 
-e2e_build_target!(e2e_matrix_build_mrpack, "mrpack");
+e2e_build_target!(e2e_matrix_build_mrpack, "modrinth");
 e2e_build_target!(e2e_matrix_build_server, "server");
-e2e_build_target!(e2e_matrix_build_client, "client");
+e2e_build_target!(e2e_matrix_build_client, "prism");
 
 macro_rules! e2e_no_args_succeeds {
     ($name:ident, args: [$($arg:expr),+]) => {

@@ -1,17 +1,21 @@
 use super::*;
+use crate::engine::mrpack::LockedFileKey;
 use crate::engine::{
     resources::ResourceGovernor,
     runtime::{OperationOutcome, OperationRuntime},
 };
 use empack_core::{
     digest::{DigestSet, ExpectedDigest},
-    path::{PathSyntax, PortableRelPath},
+    model::{DependencyKey, FileSlot},
 };
 use sha2::Digest;
 use std::fs;
 
 fn key(name: &str) -> AcquisitionKey {
-    AcquisitionKey::Observed(PortableRelPath::parse(name, PathSyntax::ProjectContent).unwrap())
+    AcquisitionKey::Locked(LockedFileKey {
+        dependency: DependencyKey::parse(name).unwrap(),
+        slot: FileSlot::parse("main").unwrap(),
+    })
 }
 fn expected(bytes: &[u8]) -> ExpectedContent {
     ExpectedContent {

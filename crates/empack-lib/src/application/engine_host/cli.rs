@@ -484,7 +484,10 @@ mod tests;
 pub async fn build(session: &dyn Session, args: &crate::application::BuildArgs) -> Result<()> {
     if args.continue_build {
         ensure!(
-            !args.optional_defaults
+            args.delivery.is_none()
+                && args.environment.is_none()
+                && args.updates.is_none()
+                && !args.optional_defaults
                 && args.optional_choices.is_empty()
                 && !args.allow_optional_metadata_loss,
             "Continuation uses saved optional choices; prepare a new build to change them"

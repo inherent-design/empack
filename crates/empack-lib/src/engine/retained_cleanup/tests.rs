@@ -93,10 +93,10 @@ async fn retained_cleanup_preserves_pending_categories_live_leases_and_unowned_s
                 let before = snapshot(&state);
                 let plan = prepare(&mut scope, state.clone()).await?.unwrap();
                 assert_eq!(plan.preserved(), ["pending-import-content"]);
-                assert_eq!(plan.selected()?.len(), 2);
+                assert_eq!(plan.selected()?.len(), CATEGORIES.len() - 1);
                 assert_eq!(snapshot(&state), before);
                 let result = execute(&mut scope, plan).await?;
-                assert_eq!(result.len(), 2);
+                assert_eq!(result.len(), CATEGORIES.len() - 1);
                 for (_, category) in CATEGORIES {
                     assert_eq!(fs::read(state.join(category).join("neighbor"))?, b"keep");
                     let blobs = fs::read_dir(state.join(category))?

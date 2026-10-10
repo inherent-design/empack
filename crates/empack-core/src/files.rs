@@ -13,8 +13,6 @@ pub enum ManagedPath {
     IntentDocument,
     /// Exact selection document.
     LockDocument,
-    /// Backend metadata relative to its managed root.
-    BackendDocument(PortableRelPath),
     /// Content in an explicit environment layer.
     Content {
         /// Environment layer.
@@ -28,6 +26,22 @@ pub enum ManagedPath {
     Scaffold(ProjectScaffold),
     /// Generated distribution output.
     Artifact(PortableRelPath),
+    /// Native installed game content, separate from author sources.
+    InstanceFile(PortableRelPath),
+    /// Native instance content inside Prism's fixed game directory.
+    PrismFile(PortableRelPath),
+    /// Fixed layout marker keeps an empty Prism game directory present.
+    PrismLayoutMarker,
+    /// Exact game and loader profile for a native Prism instance.
+    PrismProfile,
+    /// Keeps an empty native game directory present without claiming user content.
+    InstanceLayoutMarker,
+    /// Completed native installation ownership and choices.
+    InstanceRecord,
+    /// Enrolled publisher keys and channel anti-replay state.
+    InstanceSubscription,
+    /// Retained immutable native release descriptor.
+    InstanceRelease(PortableRelPath),
 }
 /// The bounded set of authoring helpers outside the content and template roots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

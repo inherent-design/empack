@@ -283,7 +283,8 @@ fn filtered_membership_cannot_prove_an_excluded_file_is_absent() {
     .unwrap();
     let root = ProjectReadRoot::open(project.path()).unwrap();
     let filter =
-        crate::engine::source::CaptureFilter::mutation(&[path("pack/selected.jar")]).unwrap();
+        crate::engine::source::CaptureFilter::native_mutation(&[path("pack/selected.jar")])
+            .unwrap();
     let captured = root
         .capture_filtered(
             &[path("pack")],

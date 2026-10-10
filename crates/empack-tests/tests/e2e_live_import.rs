@@ -131,7 +131,12 @@ fn e2e_import_and_build_fabulously_optimized() {
             "EMPACK_PROCESS_TIMEOUT_SECS",
             LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
         )
-        .args(["--yes", "build", "mrpack", "--allow-optional-metadata-loss"])
+        .args([
+            "--yes",
+            "build",
+            "modrinth",
+            "--allow-optional-metadata-loss",
+        ])
         .output()
         .expect("spawn failed");
     assert!(

@@ -201,10 +201,10 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
         initialize::{InitializeCandidate, default_templates},
     };
     use empack_core::{
+        distribution::Recipe,
         model::{
             DistributionArchive, DistributionIntent, PackMetadata, ProjectIntent, RuntimeIntent,
         },
-        projection::BuildTarget,
     };
     let choices = parse_loaders(
         content(serde_json::json!([
@@ -217,6 +217,7 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
     .unwrap();
     let runtime = choices.resolve(None).unwrap();
     let intent = ProjectIntent {
+        source_excludes: Vec::new(),
         metadata: PackMetadata {
             name: "Catalog selection".into(),
             version: "1.0.0".into(),
@@ -233,7 +234,8 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
         layout: BTreeMap::new(),
         extensions: BTreeMap::new(),
         distribution: DistributionIntent {
-            targets: NonEmpty::new(vec![BuildTarget::Mrpack]).unwrap(),
+            native: None,
+            recipes: NonEmpty::new(vec![Recipe::MODRINTH]).unwrap(),
             archive: DistributionArchive::Zip,
         },
     };

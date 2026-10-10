@@ -1,9 +1,9 @@
 use super::*;
 
 fn source() -> Value {
-    json!({"schema":2,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
+    json!({"schema":3,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
         "runtime":{"minecraft":"1.20.1","loader":{"kind":"neoforge","version":"47.1.106"}},
-        "distribution":{"targets":["mrpack","client","server","client-full","server-full"],"archive":"7z"},
+        "distribution":{"recipes":[{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot"},{"consumer":"prism","delivery":"references","environment":"client","updates":"snapshot"},{"consumer":"server","delivery":"references","environment":"server","updates":"snapshot"},{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"},{"consumer":"server","delivery":"bundled","environment":"server","updates":"snapshot"}],"archive":"7z"},
         "layout":{"data-pack":"world/datapacks"},
         "dependencies":{"renderer alias":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":"AANobbMI"}},"content":"mod","version":{"mode":"exact","pin":{"provider":"modrinth","id":"Version1"}},"placement":"automatic","environment":{"client":{"optional":"renderer","default-enabled":false,"description":"Rendering support"},"server":"unsupported"}}},
         "extensions":{"authoring":{"note":"retain this","values":[1,true,null]}}})
@@ -205,7 +205,7 @@ fn comment_edits_have_same_semantics_but_distinct_raw_revisions() {
 #[test]
 fn invalid_explicit_intent_never_becomes_a_search_or_default() {
     let paths = [
-        ("/schema", json!(3)),
+        ("/schema", json!(2)),
         (
             "/dependencies/renderer alias/source/identity/project",
             json!("sodium"),
@@ -237,7 +237,7 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
     let raw = serde_saphyr::to_string(&source()).unwrap();
     assert!(
         DocumentCodec
-            .decode_intent(format!("schema: 2\n{raw}").as_bytes(), "duplicate")
+            .decode_intent(format!("schema: 3\n{raw}").as_bytes(), "duplicate")
             .is_err()
     );
     assert!(
@@ -744,4 +744,103 @@ fn encoding_admission_scales_with_variable_intent_and_lock_data() {
     let encoded = DocumentCodec.encode_intent(large.intent()).unwrap().len()
         + DocumentCodec.encode_lock(&large).unwrap().len();
     assert!(estimate > encoded as u64 * 8);
+}
+
+#[test]
+fn native_publication_and_source_rules_are_strict_author_intent() {
+    let project = crate::engine::mrpack::tests::project(false, false);
+    let mut intent = project.intent().clone();
+    intent.source_excludes = vec!["private/**".into(), "!private/shared.txt".into()];
+    intent.distribution.native = Some(NativeDistributionIntent {
+        pack_id: "stable.pack".into(),
+        java_major: 17,
+        policies: std::collections::BTreeMap::from([(
+            PortableRelPath::parse("config/options.txt", PathSyntax::ProjectContent).unwrap(),
+            empack_core::instance::FilePolicy::Seed,
+        )]),
+    });
+    let codec = DocumentCodec;
+    let encoded = codec.encode_intent(&intent).unwrap();
+    let decoded = codec.decode_intent(&encoded, "native").unwrap();
+    assert_eq!(decoded.intent(), &intent);
+    let old = codec
+        .decode_intent(&codec.encode_intent(project.intent()).unwrap(), "old")
+        .unwrap();
+    assert_ne!(decoded.semantic_revision(), old.semantic_revision());
+    intent.source_excludes.push("bad\npattern".into());
+    assert!(codec.encode_intent(&intent).is_err());
+    let mut value: serde_json::Value = serde_saphyr::from_slice(&encoded).unwrap();
+    value["distribution"]["native"]["extra"] = serde_json::json!(true);
+    assert!(
+        codec
+            .decode_intent(&serde_json::to_vec(&value).unwrap(), "unknown")
+            .is_err()
+    );
+}
+
+#[test]
+fn recipes_preserve_all_policy_dimensions_and_reject_old_targets() {
+    use empack_core::{
+        distribution::{Consumer, Delivery, Recipe, UpdateAuthority},
+        requirements::Environments,
+    };
+    let recipes = [
+        Recipe::MODRINTH
+            .with_update_authority(UpdateAuthority::Platform)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::new(Consumer::Empack, Delivery::References, Environments::Server).unwrap(),
+    ];
+    for recipe in recipes {
+        let value = super::recipe::encode(&recipe);
+        assert_eq!(super::recipe::decode(&value).unwrap(), recipe);
+        for (key, value) in [
+            ("consumer", json!("unknown")),
+            ("delivery", json!("zip")),
+            ("environment", json!("universal")),
+            ("updates", json!("automatic")),
+            ("command", json!("execute")),
+        ] {
+            let mut invalid = super::recipe::encode(&recipe);
+            invalid[key] = value;
+            assert!(super::recipe::decode(&invalid).is_err());
+        }
+    }
+    for invalid in [
+        json!({"consumer":"prism","delivery":"bundled","environment":"server"}),
+        json!({"consumer":"modrinth","delivery":"bundled","environment":"both"}),
+        json!("client-full"),
+    ] {
+        assert!(super::recipe::decode(&invalid).is_err());
+    }
+    assert_eq!(
+        super::recipe::decode(
+            &json!({"consumer":"prism","delivery":"bundled","environment":"client"})
+        )
+        .unwrap(),
+        Recipe::PRISM_BUNDLED
+    );
+}
+
+#[test]
+fn intent_rejects_target_strings_and_retains_recipe_identity() {
+    let mut input = source();
+    input["distribution"]["targets"] = json!(["mrpack"]);
+    assert!(
+        DocumentCodec
+            .decode_intent(&serde_json::to_vec(&input).unwrap(), "old-targets")
+            .is_err()
+    );
+    input = source();
+    input["distribution"]["recipes"][0]["updates"] = json!("platform");
+    let parsed = DocumentCodec
+        .decode_intent(&serde_json::to_vec(&input).unwrap(), "recipes")
+        .unwrap();
+    assert_eq!(
+        parsed.intent().distribution.recipes.as_slice()[0].update_authority(),
+        empack_core::distribution::UpdateAuthority::Platform
+    );
+    assert_ne!(parsed.semantic_revision(), decoded().semantic_revision());
 }

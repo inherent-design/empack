@@ -114,7 +114,7 @@ fn e2e_requirements_describes_native_capabilities_without_bootstrap() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("native engine; no packwiz executable required"),
+        stdout.contains("native engine; no external dependency manager required"),
         "{stdout}"
     );
     assert!(stdout.contains("ZIP, TAR.GZ and 7z"), "{stdout}");

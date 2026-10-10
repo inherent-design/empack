@@ -7,12 +7,13 @@ extern crate alloc;
 
 pub mod addition;
 pub mod digest;
+pub mod distribution;
 pub mod files;
 pub mod identity;
+pub mod instance;
 pub mod inventory;
 pub mod model;
 pub mod path;
-pub mod projection;
 pub mod removal;
 pub mod synchronization;
 

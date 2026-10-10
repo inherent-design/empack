@@ -9,7 +9,6 @@ use crate::{
         build::BuildAcquisitions,
         content::SourceEvidencePolicy,
         mrpack::OptionalConversion,
-        packwiz::InstallerInteraction,
         project::ProjectReader,
         providers::{CatalogLimits, ProviderCatalog},
         publication::RecoveryReader,
@@ -18,10 +17,11 @@ use crate::{
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::{
+    distribution::{Consumer, Delivery, Recipe, UpdateAuthority},
     inventory::OptionalPolicy,
     model::{DistributionArchive, NonEmpty, ProjectIntent},
     path::{ArtifactStem, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
+    requirements::Environments,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -33,7 +33,6 @@ pub struct BuildDecisions {
     pub mrpack_optional: OptionalConversion,
     pub templates: TemplateOptions,
     pub evidence: SourceEvidencePolicy,
-    pub interaction: InstallerInteraction,
 }
 impl Default for BuildDecisions {
     fn default() -> Self {
@@ -42,7 +41,6 @@ impl Default for BuildDecisions {
             mrpack_optional: OptionalConversion::RejectMetadataLoss,
             templates: TemplateOptions::default(),
             evidence: SourceEvidencePolicy::Compatibility,
-            interaction: InstallerInteraction::Headless,
         }
     }
 }
@@ -250,7 +248,6 @@ fn input_selector(key: &AcquisitionKey) -> String {
             encode(key.dependency.as_str()),
             encode(key.slot.as_str())
         ),
-        AcquisitionKey::Observed(path) => format!("observed:{}", encode(path.as_str())),
     }
 }
 fn associations(
@@ -278,7 +275,7 @@ fn associations(
             .collect();
         ensure!(
             matches.len() == 1,
-            "Download selector must match exactly one pending obligation; use its displayed locked: or observed: selector when filenames are ambiguous"
+            "Download selector must match exactly one pending obligation; use its displayed locked: selector when filenames are ambiguous"
         );
         ensure!(
             files
@@ -295,39 +292,50 @@ fn request(
     args: &BuildArgs,
     decisions: BuildDecisions,
 ) -> Result<BuildRequest> {
-    const ALL: [BuildTarget; 5] = [
-        BuildTarget::Mrpack,
-        BuildTarget::Client,
-        BuildTarget::Server,
-        BuildTarget::ClientFull,
-        BuildTarget::ServerFull,
-    ];
     let mut targets = Vec::new();
-    // Validate every spelling, including values after `all`, before expanding the selection.
     for name in &args.targets {
-        let selected: &[BuildTarget] = match name.as_str() {
-            "all" => &ALL,
-            "mrpack" => &[BuildTarget::Mrpack],
-            "client" => &[BuildTarget::Client],
-            "server" => &[BuildTarget::Server],
-            "client-full" => &[BuildTarget::ClientFull],
-            "server-full" => &[BuildTarget::ServerFull],
+        targets.push(match name.as_str() {
+            "modrinth" => Recipe::MODRINTH,
+            "empack" => Recipe::EMPACK_REFERENCES,
+            "curseforge" => Recipe::CURSEFORGE,
+            "prism" => Recipe::PRISM_BUNDLED,
+            "server" => Recipe::SERVER_BUNDLED,
             _ => {
                 return Err(empack_core::model::ModelError(format!(
-                    "Unknown build target: {name}"
+                    "Unknown build consumer: {name}"
                 ))
                 .into());
             }
-        };
-        for target in selected {
-            if !targets.contains(target) {
-                targets.push(*target);
-            }
-        }
+        });
     }
     if targets.is_empty() {
-        targets.extend(intent.distribution.targets.as_slice());
+        targets.extend(intent.distribution.recipes.as_slice());
     }
+    for recipe in &mut targets {
+        let delivery = match args.delivery.as_deref() {
+            None => recipe.delivery(),
+            Some("references") => Delivery::References,
+            Some("bundled") => Delivery::Bundled,
+            Some(_) => anyhow::bail!("Unknown dependency delivery"),
+        };
+        let environment = match args.environment.as_deref() {
+            None => recipe.environments(),
+            Some("client") => Environments::Client,
+            Some("server") => Environments::Server,
+            Some("both") => Environments::Both,
+            Some(_) => anyhow::bail!("Unknown distribution environment"),
+        };
+        let authority = match args.updates.as_deref() {
+            None => recipe.update_authority(),
+            Some("snapshot") => UpdateAuthority::Snapshot,
+            Some("platform") => UpdateAuthority::Platform,
+            Some("empack") => UpdateAuthority::Empack,
+            Some(_) => anyhow::bail!("Unknown update authority"),
+        };
+        *recipe = Recipe::new(recipe.consumer(), delivery, environment)?
+            .with_update_authority(authority)?;
+    }
+    let targets = empack_core::distribution::plan_recipes(&targets);
     let name = ArtifactStem::parse(&intent.metadata.name)
         .context("Pack name cannot form a portable artifact name")?;
     let version = ArtifactStem::parse(&intent.metadata.version)
@@ -347,16 +355,55 @@ fn request(
         .into_iter()
         .map(|target| {
             let (suffix, extension) = match target {
-                BuildTarget::Mrpack => ("", "mrpack"),
-                BuildTarget::Client => ("-client", extension),
-                BuildTarget::Server => ("-server", extension),
-                BuildTarget::ClientFull => ("-client-full", extension),
-                BuildTarget::ServerFull => ("-server-full", extension),
+                recipe if crate::engine::mrpack::supports(recipe) => (
+                    match recipe.environments() {
+                        Environments::Both => "",
+                        Environments::Client => "-client",
+                        Environments::Server => "-server",
+                    },
+                    "mrpack",
+                ),
+                recipe if crate::engine::build::curseforge::supports(recipe) => {
+                    ("-curseforge", "zip")
+                }
+                recipe if crate::engine::build::native::supports(recipe) => {
+                    let suffix = match (recipe.delivery(), recipe.environments()) {
+                        (Delivery::References, Environments::Both) => "-empack-references",
+                        (Delivery::Bundled, Environments::Both) => "-empack-bundled",
+                        (Delivery::References, Environments::Client) => "-empack-references-client",
+                        (Delivery::References, Environments::Server) => "-empack-references-server",
+                        (Delivery::Bundled, Environments::Client) => "-empack-bundled-client",
+                        (Delivery::Bundled, Environments::Server) => "-empack-bundled-server",
+                    };
+                    (suffix, "empack")
+                }
+                recipe if crate::engine::build::launcher_recipe(recipe) => (
+                    match (recipe.consumer(), recipe.delivery()) {
+                        (Consumer::Prism, Delivery::References) => "-prism-references",
+                        (Consumer::Prism, Delivery::Bundled) => "-prism-bundled",
+                        (Consumer::Server, Delivery::References) => "-server-references",
+                        (Consumer::Server, Delivery::Bundled) => "-server-bundled",
+                        _ => unreachable!(),
+                    },
+                    extension,
+                ),
+                _ => anyhow::bail!("Consumer recipe is not available through this build adapter"),
             };
             Ok(BuildOutput {
                 target,
                 artifact: PortableRelPath::parse(
-                    &format!("{}-{}{suffix}.{extension}", name.as_str(), version.as_str()),
+                    &format!(
+                        "{}-{}{suffix}{}.{extension}",
+                        name.as_str(),
+                        version.as_str(),
+                        if target.update_authority() == UpdateAuthority::Empack {
+                            "-subscribed"
+                        } else if target.update_authority() == UpdateAuthority::Platform {
+                            "-platform"
+                        } else {
+                            ""
+                        }
+                    ),
                     PathSyntax::ArtifactName,
                 )?,
             })
@@ -370,7 +417,6 @@ fn request(
         mrpack_optional: decisions.mrpack_optional,
         templates: decisions.templates,
         evidence: decisions.evidence,
-        interaction: decisions.interaction,
     })
 }
 
@@ -421,9 +467,10 @@ async fn finish_once(
         view.runtime.loader,
     ));
     session.display().status().info(&format!(
-        "Optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}; installer UI: {:?}",
-        view.request().optional, view.request().mrpack_optional, view.request().evidence,
-        view.request().interaction,
+        "Optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}",
+        view.request().optional,
+        view.request().mrpack_optional,
+        view.request().evidence,
     ));
     for output in &view.outputs {
         session.display().status().info(&format!(
@@ -448,7 +495,7 @@ async fn finish_once(
             .info("This build executes the selected runtime installer in private staging");
     }
     for input in &view.content {
-        // AcquisitionKey contains only logical dependency/slot or observed metadata names.
+        // AcquisitionKey contains only logical dependency and slot names.
         session.display().status().info(&format!(
             "content {}: {:?} {:?}",
             input_selector(&input.key),
@@ -487,6 +534,23 @@ async fn finish_once(
         };
         published = true;
         for artifact in &receipt.artifacts {
+            if artifact.requires_platform_association() {
+                session.display().status().warning("Platform export requires upload to a platform project and installation through its project/version interface for updates. Direct archive import remains a snapshot; no platform association was created");
+            }
+            if let Some(hosting) = &artifact.modrinth_hosting {
+                for blocked in &hosting.blocked_downloads {
+                    session.display().status().warning(&format!(
+                        "Valid mrpack download for {} uses {}; Modrinth hosting does not allow this domain",
+                        blocked.destination.as_str(), blocked.host
+                    ));
+                }
+            }
+            if let Some(release) = &artifact.native_release {
+                session
+                    .display()
+                    .status()
+                    .info(&format!("Release SHA-256 {release}"));
+            }
             session.display().status().info(&format!(
                 "built dist/{} ({} bytes)",
                 artifact.artifact.as_str(),
@@ -513,6 +577,20 @@ pub(super) async fn save_execution_input(
     engine: &Engine,
     input: &crate::engine::api::ExecutionInput,
 ) -> Result<()> {
+    if !input.instance_requirements().is_empty() {
+        super::instance::report_requirements(session, input.instance_requirements());
+        if !approve(session, "Save pending instance")? {
+            anyhow::bail!("Instance was not applied; pending input was not saved");
+        }
+        return super::instance::save_pending(
+            session,
+            engine,
+            input
+                .take_continuation()
+                .context("Instance continuation was already taken")?,
+        )
+        .await;
+    }
     for need in input.requirements() {
         session.display().status().warning(&format!(
             "Missing content {}: {:?}",

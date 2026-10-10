@@ -112,10 +112,10 @@ fn test_status_display_variants() {
 
     let status = display.status();
     status.checking("tool dependencies");
-    status.success("packwiz", "v0.16.1");
-    status.success("packwiz", "");
-    status.error("packwiz", "not found");
-    status.error("packwiz", "");
+    status.success("java", "21.0.1");
+    status.success("java", "");
+    status.error("java", "not found");
+    status.error("java", "");
     status.warning("experimental feature enabled");
     status.info("using default configuration");
     status.message("plain message");
@@ -123,8 +123,8 @@ fn test_status_display_variants() {
     status.subtle("run empack --help");
     status.list(&["first", "second"]);
     status.complete("dependencies checked");
-    status.tool_check("packwiz", true, "v0.16.1");
-    status.tool_check("packwiz", false, "");
+    status.tool_check("java", true, "21.0.1");
+    status.tool_check("java", false, "");
     status.section("Dependency Check");
     status.step(1, 3, "Loading configuration");
 }
@@ -202,7 +202,7 @@ fn test_structured_display_rendering_paths() {
     structured
         .table()
         .header(&["Name", "Version", "Notes"])
-        .row(&["packwiz", "v0.16.1", "stable"])
+        .row(&["java", "21.0.1", "stable"])
         .row(&["very-long-tool-name", "v1", "this row will be truncated"])
         .max_width(24)
         .render();
@@ -230,7 +230,7 @@ fn test_live_display_provider_delegation() {
         .finish("done");
     provider
         .table()
-        .table(&["Name"], &[vec!["packwiz"], vec!["empack"]]);
+        .table(&["Name"], &[vec!["java"], vec!["empack"]]);
     provider.table().list(&["one", "two"]);
     provider.table().properties(&[("key", "value")]);
 

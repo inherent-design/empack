@@ -12,7 +12,6 @@ use empack_core::{
     identity::{ModrinthProjectId, ProviderProjectId},
     model::*,
 };
-use sha2::Digest;
 use std::{collections::BTreeMap, fs, io::Read, path::Path};
 
 pub(super) fn fixture(root: &Path, weak: bool) {
@@ -86,7 +85,6 @@ pub(super) fn supplied(slot: &str, bytes: &[u8]) -> BuildAcquisitions {
                 },
             },
         )]),
-        observed: BTreeMap::new(),
     }
 }
 async fn pending(engine: &Engine, root: &Path) -> Box<PreparationContinuation> {
@@ -137,6 +135,7 @@ async fn supplied_manual_files_survive_repeated_input_decisions_and_publish_veri
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = engine.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;
@@ -368,20 +367,14 @@ async fn local_build_inputs_resume_with_verified_private_bytes_and_publish_offli
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     fixture(root.path(), false);
-    tests::put(root.path(), "pack/mods/extra.pw.toml", b"filename='extra.jar'\nside='client'\n[download]\nurl='https://example.invalid/extra.jar'\nhash-format='md5'\nhash='321c3cf486ed509164edec1e1981fec8'\n");
     let authored = fs::read(root.path().join("empack.yml")).unwrap();
     let locked = fs::read(root.path().join("empack.lock")).unwrap();
     let source = host.path().join("selected.bin");
     fs::write(&source, b"payload").unwrap();
     let (engine, governor) = tests::engine(host.path().join("state"));
-    let mut files = local_selection("first", &source);
-    files.insert(
-        AcquisitionKey::Observed(tests::path("mods/extra.pw.toml")),
-        source.clone(),
-    );
     let request = tests::request()
         .with_content(BuildAcquisitions::default())
-        .with_local_files(files);
+        .with_local_files(local_selection("first", &source));
     let pending = match engine
         .prepare(root.path().to_path_buf(), request)
         .await
@@ -413,6 +406,7 @@ async fn local_build_inputs_resume_with_verified_private_bytes_and_publish_offli
         replacement: ready.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut handle = engine.start(ready.authorize(grant).unwrap()).unwrap();
     let outcome = handle.wait().await;
@@ -437,41 +431,6 @@ async fn local_build_inputs_resume_with_verified_private_bytes_and_publish_offli
                 .read_to_end(&mut bytes)
                 .unwrap();
             assert_eq!(bytes, b"payload");
-        }
-        if archive == "client.zip" {
-            let mut bytes = Vec::new();
-            zip.by_name(".minecraft/mods/extra.jar")
-                .unwrap()
-                .read_to_end(&mut bytes)
-                .unwrap();
-            assert_eq!(bytes, b"payload");
-        } else {
-            // Verified observed bytes provide the missing export hashes; the durable origin
-            // remains a download reference with its original environment participation.
-            let index: serde_json::Value =
-                serde_json::from_reader(zip.by_name("modrinth.index.json").unwrap()).unwrap();
-            let file = index["files"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|file| file["path"] == "mods/extra.jar")
-                .unwrap();
-            assert_eq!(
-                file["downloads"],
-                serde_json::json!(["https://example.invalid/extra.jar"])
-            );
-            assert_eq!(
-                file["env"],
-                serde_json::json!({"client":"required", "server":"unsupported"})
-            );
-            assert_eq!(file["fileSize"], 7);
-            assert_eq!(
-                file["hashes"]["sha512"],
-                empack_core::digest::ExpectedDigest::Sha512(
-                    sha2::Sha512::digest(b"payload").into()
-                )
-                .hex()
-            );
         }
     }
     assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), authored);

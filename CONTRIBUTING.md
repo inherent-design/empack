@@ -7,9 +7,7 @@ preserve feature contracts and their negative-case tests.
 ## Development
 
 Use the pinned Rust toolchain, cargo-nextest and mise. Strict live tests additionally
-require Java, provider access and any documented credentials. The packwiz executable
-is not required. Never commit
-credentials or include them in diagnostics.
+require Java, provider access and any documented credentials. Never commit credentials or include them in diagnostics.
 
 ```bash
 mise run check
@@ -45,7 +43,9 @@ code. Use structured, redacted diagnostics and remove temporary debugging output
 
 Keep normative requirements in `docs/design/` and commands in `docs/usage.md`.
 Update contracts with behavior changes; keep run-specific evidence in CI and PRs.
-Do not add delivery ledgers, historical status reports or duplicate API sketches.
+Keep implementation tasks in `TODO.md`; do not add historical delivery ledgers.
+Design contracts describe the target and must not claim unimplemented commands are
+available in a released executable.
 
 Write complete, direct sentences. Avoid hype, em dashes and fragment-heavy prose.
 CLI flags and code retain their literal spelling. The brand reference is

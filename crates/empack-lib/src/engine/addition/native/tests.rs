@@ -106,7 +106,7 @@ fn references(value: &ResolvedProject) -> DependencyContents {
 }
 
 #[test]
-fn reference_updates_retire_only_verified_old_materializations_and_index_entries() {
+fn reference_updates_retire_only_verified_old_materializations() {
     for (edited, missing) in [(false, false), (false, true), (true, false)] {
         let root = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
@@ -189,7 +189,7 @@ fn reference_updates_retire_only_verified_old_materializations_and_index_entries
         let index: toml::Value =
             toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
                 .unwrap();
-        assert!(index["files"].as_array().unwrap().is_empty());
+        assert_eq!(index["files"].as_array().unwrap().len(), 1);
         assert_eq!(
             fs::read(root.path().join("pack/unrelated.bin")).unwrap(),
             b"unrelated"
@@ -402,12 +402,7 @@ fn selected_links_fail_but_unrelated_links_remain_outside_the_read_set() {
     );
 }
 #[test]
-fn updated_bytes_retire_only_owned_derivatives_and_rebind_the_index() {
-    for no_hashes in [false, true] {
-        updated_index_case(no_hashes);
-    }
-}
-fn updated_index_case(no_hashes: bool) {
+fn updated_bytes_preserve_foreign_documents_without_reading_them() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     let current = project(false, false);
@@ -430,14 +425,8 @@ fn updated_index_case(no_hashes: bool) {
     );
     put(root.path(), "pack/index.toml", b"hash-format = 'sha1'\nuser-field = 'keep'\n[[files]]\nfile = 'resourcepacks/assets.pw.toml'\nmetafile = true\n[[files]]\nfile = 'resourcepacks/b.zip'\npreserve = true\nuser-entry-field = 'keep entry'\n[[files]]\nfile = 'resourcepacks/b.zip'\nalias = 'resourcepacks/aliased.zip'\npreserve = true\nuser-entry-field = 'keep entry'\n[[files]]\nfile = 'unrelated.bin'\n");
     let index = fs::read(root.path().join("pack/index.toml")).unwrap();
-    let mut pack = format!(
-        "name = 'test'\n[index]\nfile = 'index.toml'\nhash-format = 'sha256'\nhash = '{}'\n",
-        empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&index).into()).hex()
-    );
-    if no_hashes {
-        pack.push_str("\n[options]\nno-internal-hashes = true\n");
-    }
-    put(root.path(), "pack/pack.toml", pack.as_bytes());
+    let pack = b"foreign invalid metadata [";
+    put(root.path(), "pack/pack.toml", pack);
     let mut lock = current.lock().clone();
     for dependency in lock.dependencies.values_mut() {
         let mut updated = dependency.files.as_slice().to_vec();
@@ -467,52 +456,15 @@ fn updated_index_case(no_hashes: bool) {
             &Cancellation::default(),
         )
         .unwrap();
-    assert!(
-        !root
-            .path()
-            .join("pack/resourcepacks/assets.pw.toml")
-            .exists()
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap(),
+        metadata.as_bytes()
     );
-    let bytes = fs::read(root.path().join("pack/index.toml")).unwrap();
-    let index: toml::Value = toml::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();
-    let entries = index["files"].as_array().unwrap();
-    assert_eq!(entries.len(), 3);
-    let direct: Vec<_> = entries
-        .iter()
-        .filter(|entry| entry["file"].as_str() == Some("resourcepacks/b.zip"))
-        .collect();
-    assert_eq!(direct.len(), 2, "both index aliases must remain");
-    for direct in direct {
-        assert_eq!(index["hash-format"].as_str(), Some("sha1"));
-        assert_eq!(direct["hash-format"].as_str(), Some("sha256"));
-        assert_eq!(direct["preserve"].as_bool(), Some(true));
-        assert_eq!(direct["user-entry-field"].as_str(), Some("keep entry"));
-        if no_hashes {
-            assert!(direct.get("hash").is_none());
-        } else {
-            assert_eq!(
-                direct["hash"].as_str().unwrap(),
-                empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"updated").into())
-                    .hex()
-            );
-        }
-    }
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry["file"].as_str() == Some("unrelated.bin"))
+    assert_eq!(
+        fs::read(root.path().join("pack/index.toml")).unwrap(),
+        index
     );
-    assert_eq!(index["user-field"].as_str(), Some("keep"));
-    let pack: toml::Value =
-        toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap()).unwrap();
-    if no_hashes {
-        assert!(pack["index"].get("hash").is_none());
-    } else {
-        assert_eq!(
-            pack["index"]["hash"].as_str().unwrap(),
-            empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&bytes).into()).hex()
-        );
-    }
+    assert_eq!(fs::read(root.path().join("pack/pack.toml")).unwrap(), pack);
     assert_eq!(
         fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
         b"updated"
@@ -769,7 +721,7 @@ fn adoption_of_changed_bytes_requires_complete_evidence_and_current_observations
     }
 }
 #[test]
-fn adoption_checks_observed_provider_metadata_against_the_proposed_pin() {
+fn adoption_uses_verified_native_bytes_without_foreign_pin_authority() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     let previous = crate::engine::addition::tests::fixture(
@@ -794,12 +746,6 @@ fn adoption_checks_observed_provider_metadata_against_the_proposed_pin() {
         root.path(),
         "pack/Project1/resourcepacks/a.pw.toml",
         metadata.as_bytes(),
-    );
-    assert!(adopt(root.path(), state.path(), &proposed).is_err());
-    put(
-        root.path(),
-        "pack/Project1/resourcepacks/a.pw.toml",
-        metadata.replace("Version1", "Version2").as_bytes(),
     );
     let receipt = adopt(root.path(), state.path(), &proposed)
         .unwrap()

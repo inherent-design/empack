@@ -21,6 +21,7 @@ fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
         .with_config(MockConfigProvider::new(crate::application::AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
+            cache_dir: Some("cache".into()),
             yes,
             dry_run: dry,
             curseforge_api_client_key: None,
@@ -121,7 +122,7 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
     )
     .unwrap();
     let build = Commands::Build(BuildArgs {
-        targets: vec!["mrpack".into()],
+        targets: vec!["modrinth".into()],
         ..Default::default()
     });
     execute_command_with_session(build.clone(), &selected)
@@ -269,4 +270,758 @@ async fn inspection_commands_need_no_project_or_backend_bootstrap() {
         .await
         .unwrap();
     assert_eq!(snapshot(root.path()), before);
+}
+
+#[tokio::test]
+async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tampering() {
+    use crate::application::cli::InstanceCommand;
+    use crate::engine::release::*;
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    fs::create_dir(root.path().join("assets")).unwrap();
+    let make = |bytes: &[u8]| {
+        fs::write(root.path().join("assets/mod"), bytes).unwrap();
+        let payload = DecodedRelease::encode(ReleaseDocument {
+            require_subscription: false,
+            server_launch: None,
+            schema: 1,
+            pack: "dispatch".into(),
+            version: "1".into(),
+            minimum_engine: ">=0.6.0-beta".into(),
+            runtime: ReleaseRuntime {
+                minecraft: "1.21.1".into(),
+                loader: ReleaseLoader::Vanilla,
+                java_major: 21,
+            },
+            choices: vec![],
+            files: vec![ReleaseFile {
+                key: "mod".into(),
+                destination: "mods/test.jar".into(),
+                layer: ReleaseLayer::Common,
+                policy: FilePolicy::Managed,
+                client: Participation::Required,
+                server: Participation::Unsupported,
+                sha256: Sha256::digest(bytes)
+                    .iter()
+                    .map(|v| format!("{v:02x}"))
+                    .collect(),
+                bytes: bytes.len() as u64,
+                readonly: false,
+                executable: false,
+                assertions: vec![],
+                asset: None,
+                source: ReleaseSource::Asset {
+                    path: "assets/mod".into(),
+                },
+            }],
+        })
+        .unwrap();
+        fs::write(root.path().join("release.json"), payload.bytes()).unwrap();
+        Commands::Instance {
+            command: InstanceCommand::Install {
+                conflicts: Default::default(),
+                release: "release.json".into(),
+                sha256: payload.id().into(),
+                side: "client".into(),
+                layout: Some("prism".into()),
+                choices: vec![],
+                files: vec![],
+            },
+        }
+    };
+    let a = make(b"A");
+    let Commands::Instance {
+        command: InstanceCommand::Install { sha256: first, .. },
+    } = &a
+    else {
+        panic!()
+    };
+    let first = first.clone();
+    let before = snapshot(root.path());
+    execute_command_with_session(a.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(a, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"A"
+    );
+    let b = make(b"B");
+    execute_command_with_session(b.clone(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"B"
+    );
+    let before = snapshot(root.path());
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Inspect,
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    fs::remove_file(root.path().join("project/.minecraft/mods/test.jar")).unwrap();
+    let repair = Commands::Instance {
+        command: InstanceCommand::Repair {
+            conflicts: Default::default(),
+            assets: Some(".".into()),
+            files: vec![],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(repair.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(repair, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"B"
+    );
+    fs::write(
+        root.path().join("project/.minecraft/mods/test.jar"),
+        b"edited",
+    )
+    .unwrap();
+    let preserve = Commands::Instance {
+        command: InstanceCommand::Repair {
+            conflicts: crate::application::cli::InstanceConflictArgs {
+                preserve: vec!["mods/test.jar".into()],
+                ..Default::default()
+            },
+            assets: None,
+            files: vec![],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(preserve.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(preserve, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"edited"
+    );
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Repair {
+                conflicts: crate::application::cli::InstanceConflictArgs {
+                    replace: vec!["mods/test.jar".into()],
+                    ..Default::default()
+                },
+                assets: Some(".".into()),
+                files: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"B"
+    );
+    fs::write(
+        root.path().join("project/.minecraft/mods/test.jar"),
+        b"needs merge",
+    )
+    .unwrap();
+    fs::write(root.path().join("merged.jar"), b"merged").unwrap();
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Repair {
+                conflicts: crate::application::cli::InstanceConflictArgs {
+                    merge: vec!["mods/test.jar=merged.jar".into()],
+                    ..Default::default()
+                },
+                assets: None,
+                files: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"merged"
+    );
+    // The next incoming baseline differs, so rollback explicitly restores publisher bytes.
+    fs::write(root.path().join("assets/mod"), b"A").unwrap();
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Rollback {
+                conflicts: crate::application::cli::InstanceConflictArgs {
+                    replace: vec!["mods/test.jar".into()],
+                    ..Default::default()
+                },
+                release: first,
+                assets: Some(".".into()),
+                files: vec![],
+                choices: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/.minecraft/mods/test.jar")).unwrap(),
+        b"A"
+    );
+    let c = make(b"C");
+    fs::write(root.path().join("assets/mod"), b"wrong").unwrap();
+    let before = snapshot(&root.path().join("project"));
+    assert!(
+        execute_command_with_session(c, &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(before, snapshot(&root.path().join("project")));
+    assert!(!root.path().join("project/empack.yml").exists());
+    assert!(!root.path().join("project/pack").exists());
+}
+
+#[tokio::test]
+async fn native_export_to_install_preserves_layers_and_uses_author_source_policy() {
+    use crate::{application::cli::InstanceCommand, engine::release::DecodedRelease};
+    use empack_core::model::{NativeDistributionIntent, ResolvedProject};
+    let root = tempfile::tempdir().unwrap();
+    let selected = session(root.path(), true, false);
+    let mod_bytes = jar(root.path());
+    execute_command_with_session(init(), &selected)
+        .await
+        .unwrap();
+    execute_command_with_session(add("fixture.jar"), &selected)
+        .await
+        .unwrap();
+    let project = resolved(root.path());
+    let mut intent = project.intent().clone();
+    intent.distribution.native = Some(NativeDistributionIntent {
+        pack_id: "native-dispatch".into(),
+        java_major: 21,
+        policies: Default::default(),
+    });
+    intent.source_excludes = vec![
+        "*.pw.toml".into(),
+        "pack.toml".into(),
+        "index.toml".into(),
+        ".packwizignore".into(),
+        "private/**".into(),
+        "mods/**".into(),
+    ];
+    let encoded = DocumentCodec.encode_intent(&intent).unwrap();
+    let decoded = DocumentCodec
+        .decode_intent(&encoded, "native fixture")
+        .unwrap();
+    let mut lock = project.lock().clone();
+    lock.intent_revision = decoded.semantic_revision();
+    let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+    fs::write(root.path().join("project/empack.yml"), encoded).unwrap();
+    fs::write(
+        root.path().join("project/empack.lock"),
+        DocumentCodec.encode_lock(&project).unwrap(),
+    )
+    .unwrap();
+    for (path, bytes) in [
+        ("pack/config/value", "common"),
+        ("overrides/client/config/value", "client"),
+        ("overrides/server/config/value", "server"),
+        ("pack/private/secret", "exclude me"),
+        // Invalid foreign controls are not parsed, and cannot exclude native source input.
+        ("pack/pack.toml", "invalid"),
+        ("pack/.packwizignore", "config/"),
+    ] {
+        let path = root.path().join("project").join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    let build = Commands::Build(BuildArgs {
+        targets: vec!["empack".into()],
+        delivery: Some("bundled".into()),
+        ..Default::default()
+    });
+    let before = snapshot(root.path());
+    execute_command_with_session(build.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(root.path()));
+    execute_command_with_session(build, &selected)
+        .await
+        .unwrap();
+    let export = root.path().join("export");
+    fs::create_dir(&export).unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(
+            root.path()
+                .join("project/dist/Native Pack-1-empack-bundled.empack"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    archive.extract(&export).unwrap();
+    let decoded = DecodedRelease::decode(&fs::read(export.join("release.json")).unwrap()).unwrap();
+    assert_eq!(decoded.document().files.len(), 4);
+    assert!(!String::from_utf8_lossy(decoded.bytes()).contains("private/secret"));
+    for side in ["client", "server"] {
+        let instance = root.path().join(side);
+        fs::create_dir(&instance).unwrap();
+        let host = session(root.path(), true, false).with_config(MockConfigProvider::new(
+            crate::application::AppConfig {
+                workdir: Some(side.into()),
+                state_dir: Some("state".into()),
+                yes: true,
+                curseforge_api_client_key: None,
+                ..Default::default()
+            },
+        ));
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Install {
+                    conflicts: Default::default(),
+                    release: export.join("release.json"),
+                    sha256: decoded.id().into(),
+                    side: side.into(),
+                    layout: None,
+                    choices: vec![],
+                    files: vec![],
+                },
+            },
+            &host,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read(instance.join("game/config/value")).unwrap(),
+            side.as_bytes()
+        );
+        assert_eq!(
+            fs::read(instance.join("game/mods/fixture.jar")).unwrap(),
+            mod_bytes
+        );
+        assert!(!instance.join("game/private").exists());
+        assert!(!instance.join("game/pack.toml").exists());
+    }
+    // The actual client build dispatch uses native preparation without acquiring installer JARs.
+    execute_command_with_session(
+        Commands::Build(BuildArgs {
+            targets: vec!["prism".into()],
+            delivery: Some("references".into()),
+            ..Default::default()
+        }),
+        &selected,
+    )
+    .await
+    .unwrap();
+    let prism = root.path().join("prism");
+    fs::create_dir(&prism).unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(
+            root.path()
+                .join("project/dist/Native Pack-1-prism-references.zip"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    archive.extract(&prism).unwrap();
+    let descriptor = prism.join(".minecraft/.empack-consumer/release.json");
+    let release = DecodedRelease::decode(&fs::read(&descriptor).unwrap()).unwrap();
+    let host = session(root.path(), true, false).with_config(MockConfigProvider::new(
+        crate::application::AppConfig {
+            workdir: Some("prism".into()),
+            state_dir: Some("state".into()),
+            yes: true,
+            curseforge_api_client_key: None,
+            ..Default::default()
+        },
+    ));
+    let prepare = Commands::Instance {
+        command: InstanceCommand::Prepare {
+            require_subscription: false,
+            conflicts: Default::default(),
+            release: descriptor,
+            sha256: release.id().into(),
+            side: "client".into(),
+            layout: Some("prism".into()),
+            choices: vec![],
+            files: vec![],
+        },
+    };
+    for _ in 0..2 {
+        execute_command_with_session(prepare.clone(), &host)
+            .await
+            .unwrap();
+        assert_eq!(
+            fs::read(prism.join(".minecraft/mods/fixture.jar")).unwrap(),
+            mod_bytes
+        );
+        assert_eq!(
+            fs::read(prism.join(".minecraft/config/value")).unwrap(),
+            b"client"
+        );
+    }
+}
+
+#[tokio::test]
+async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() {
+    use crate::application::cli::InstanceCommand;
+    use crate::engine::{
+        api::SubscriptionRecord,
+        release::trust::{ChannelDocument, ChannelRelease, EnvelopeKind, sign},
+    };
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[27; 32]);
+    let encoded: String = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let enroll = || Commands::Instance {
+        command: InstanceCommand::Subscribe {
+            pack: "fixture".into(),
+            channel: "stable".into(),
+            url: "https://publisher.test/channel.json".into(),
+            keys: vec![encoded.clone()],
+        },
+    };
+    execute_command_with_session(enroll(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read_dir(root.path().join("project")).unwrap().count(),
+        0
+    );
+    execute_command_with_session(enroll(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    let foreign =
+        crate::engine::release::DecodedRelease::encode(crate::engine::release::ReleaseDocument {
+            require_subscription: false,
+            server_launch: None,
+            schema: 1,
+            pack: "another-pack".into(),
+            version: "1".into(),
+            minimum_engine: ">=0.6.0-beta".into(),
+            runtime: crate::engine::release::ReleaseRuntime {
+                minecraft: "1.21.1".into(),
+                loader: crate::engine::release::ReleaseLoader::Vanilla,
+                java_major: 21,
+            },
+            choices: vec![],
+            files: vec![],
+        })
+        .unwrap();
+    fs::write(root.path().join("foreign.json"), foreign.bytes()).unwrap();
+    assert!(
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Install {
+                    conflicts: Default::default(),
+                    release: "foreign.json".into(),
+                    sha256: foreign.id().into(),
+                    side: "client".into(),
+                    layout: None,
+                    choices: vec![],
+                    files: vec![],
+                }
+            },
+            &session(root.path(), true, false)
+        )
+        .await
+        .is_err()
+    );
+    use crate::engine::release::*;
+    use sha2::{Digest, Sha256};
+    fs::create_dir(root.path().join("assets")).unwrap();
+    fs::write(root.path().join("assets/config"), b"signed bytes").unwrap();
+    let release = DecodedRelease::encode(ReleaseDocument {
+        require_subscription: false,
+        server_launch: None,
+        schema: 1,
+        pack: "fixture".into(),
+        version: "1".into(),
+        minimum_engine: ">=0.6.0-beta".into(),
+        runtime: ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java_major: 21,
+        },
+        choices: vec![ReleaseChoice {
+            key: "extra".into(),
+            alternatives: vec!["on".into(), "off".into()],
+            default: "on".into(),
+            description: Some("Optional configuration".into()),
+        }],
+        files: vec![ReleaseFile {
+            key: "config".into(),
+            destination: "config/example.txt".into(),
+            layer: ReleaseLayer::Common,
+            policy: FilePolicy::Managed,
+            client: Participation::Choice {
+                key: "extra".into(),
+                value: "on".into(),
+            },
+            server: Participation::Required,
+            sha256: Sha256::digest(b"signed bytes")
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+            bytes: 12,
+            readonly: false,
+            executable: false,
+            assertions: vec![],
+            asset: None,
+            source: ReleaseSource::Asset {
+                path: "assets/config".into(),
+            },
+        }],
+    })
+    .unwrap();
+    let envelope = sign(EnvelopeKind::Release, release.bytes(), &[&key]).unwrap();
+    fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
+    let update = || Commands::Instance {
+        command: InstanceCommand::Update {
+            conflicts: Default::default(),
+            release: Some("signed-release.json".into()),
+            side: "client".into(),
+            layout: None,
+            choices: vec![],
+            files: vec![],
+        },
+    };
+    assert!(
+        execute_command_with_session(update(), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    let channel = ChannelDocument {
+        schema: 1,
+        pack: "fixture".into(),
+        channel: "stable".into(),
+        sequence: 3,
+        expires: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+            + 60,
+        minimum_engine: ">=0.6.0-beta".into(),
+        release: ChannelRelease {
+            id: release.id().into(),
+            url: "https://publisher.test/release.json".into(),
+            maximum_bytes: envelope.len() as u64,
+        },
+    };
+    fs::write(
+        root.path().join("channel.json"),
+        sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap(),
+    )
+    .unwrap();
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::ObserveChannel {
+                envelope: Some("channel.json".into()),
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    let saved = root.path().join("project/.empack/subscription.json");
+    assert_eq!(
+        SubscriptionRecord::decode(&fs::read(&saved).unwrap())
+            .unwrap()
+            .floor
+            .unwrap()
+            .sequence,
+        3
+    );
+    let before = snapshot(&root.path().join("project"));
+    execute_command_with_session(update(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(&root.path().join("project")));
+    execute_command_with_session(update(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/config/example.txt")).unwrap(),
+        b"signed bytes"
+    );
+    let options = |value: Option<&str>| Commands::Instance {
+        command: InstanceCommand::Options {
+            conflicts: Default::default(),
+            choices: value
+                .map(|value| vec![format!("extra={value}")])
+                .unwrap_or_default(),
+            assets: value.map(|_| ".".into()),
+            files: vec![],
+        },
+    };
+    let before = snapshot(&root.path().join("project"));
+    execute_command_with_session(options(None), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    execute_command_with_session(options(Some("off")), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert!(
+        execute_command_with_session(options(Some("invalid")), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(before, snapshot(&root.path().join("project")));
+    execute_command_with_session(options(Some("off")), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert!(!root.path().join("project/game/config/example.txt").exists());
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Repair {
+                conflicts: Default::default(),
+                assets: None,
+                files: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert!(!root.path().join("project/game/config/example.txt").exists());
+    execute_command_with_session(options(Some("on")), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/config/example.txt")).unwrap(),
+        b"signed bytes"
+    );
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Trust {
+                keys: vec![],
+                revoke_all: true,
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    let record = SubscriptionRecord::decode(&fs::read(saved).unwrap()).unwrap();
+    assert!(record.keys.is_empty());
+    assert_eq!(record.floor.unwrap().sequence, 3);
+    let before = snapshot(&root.path().join("project"));
+    assert!(
+        execute_command_with_session(update(), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(before, snapshot(&root.path().join("project")));
+}
+
+#[tokio::test]
+async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart() {
+    use crate::{application::cli::InstanceCommand, engine::release::*};
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    let payload = DecodedRelease::encode(ReleaseDocument {
+        require_subscription: false,
+        server_launch: None,
+        schema: 1,
+        pack: "manual".into(),
+        version: "1".into(),
+        minimum_engine: ">=0.6.0-beta".into(),
+        runtime: ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java_major: 21,
+        },
+        choices: vec![],
+        files: vec![ReleaseFile {
+            key: "mod".into(),
+            destination: "mods/a.jar".into(),
+            layer: ReleaseLayer::Common,
+            policy: FilePolicy::Managed,
+            client: Participation::Required,
+            server: Participation::Required,
+            sha256: Sha256::digest(b"A")
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            bytes: 1,
+            readonly: false,
+            executable: false,
+            assertions: vec![],
+            asset: None,
+            source: ReleaseSource::Manual {
+                instructions: "Supply a.jar".into(),
+                selection: None,
+            },
+        }],
+    })
+    .unwrap();
+    fs::write(root.path().join("release.json"), payload.bytes()).unwrap();
+    let install = Commands::Instance {
+        command: InstanceCommand::Install {
+            conflicts: Default::default(),
+            release: "release.json".into(),
+            sha256: payload.id().into(),
+            side: "client".into(),
+            layout: None,
+            choices: vec![],
+            files: vec![],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(install.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    let error = execute_command_with_session(install, &session(root.path(), true, false))
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("manual inputs remain pending"));
+    fs::remove_file(root.path().join("release.json")).unwrap();
+    fs::write(root.path().join("a.jar"), b"A").unwrap();
+    let continuation = Commands::Instance {
+        command: InstanceCommand::Continue {
+            files: vec!["mod=a.jar".into()],
+        },
+    };
+    let before = snapshot(root.path());
+    execute_command_with_session(continuation.clone(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    execute_command_with_session(continuation, &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    assert!(
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Continue { files: vec![] }
+            },
+            &session(root.path(), true, false)
+        )
+        .await
+        .is_err()
+    );
 }

@@ -512,6 +512,14 @@ impl WorkScope {
         Ok(result.output)
     }
 
+    /// Runtime retirement evidence must survive cancellation of its owning caller.
+    pub(super) fn accept_retirement<T>(
+        &self,
+        result: WorkResult<T>,
+    ) -> Result<RetainedOutput<T>, RuntimeError> {
+        self.accept_publication(result)
+    }
+
     /// Once publication has been admitted, cancellation cannot erase a receipt describing
     /// durable effects. Only the owning engine driver can collect this terminal worker result.
     pub(super) fn accept_publication<T>(

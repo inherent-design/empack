@@ -11,6 +11,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
             "layout",
             "distribution",
             "extensions",
+            "sources",
         ],
     )?;
     ensure!(
@@ -24,8 +25,55 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
     let load = required(runtime, "loader")?;
     fields(load, &["kind", "version"])?;
     let distribution = required(value, "distribution")?;
-    fields(distribution, &["targets", "archive"])?;
+    fields(distribution, &["recipes", "archive", "native"])?;
+    let source_excludes = if let Some(sources) = value.get("sources") {
+        fields(sources, &["exclude"])?;
+        sources
+            .get("exclude")
+            .map(string_list)
+            .transpose()?
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let native = distribution
+        .get("native")
+        .filter(|v| !v.is_null())
+        .map(|native| -> Result<NativeDistributionIntent> {
+            fields(native, &["pack-id", "java-major", "policies"])?;
+            let policies = native
+                .get("policies")
+                .map(|v| {
+                    object(v)?
+                        .iter()
+                        .map(|(k, v)| {
+                            let policy = match text(v)? {
+                                "managed" => empack_core::instance::FilePolicy::Managed,
+                                "seed" => empack_core::instance::FilePolicy::Seed,
+                                _ => bail!("Unknown native file policy"),
+                            };
+                            Ok((
+                                PortableRelPath::parse(k, PathSyntax::ProjectContent)?,
+                                policy,
+                            ))
+                        })
+                        .collect::<Result<BTreeMap<_, _>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(NativeDistributionIntent {
+                pack_id: text(required(native, "pack-id")?)?.into(),
+                java_major: u16::try_from(
+                    required(native, "java-major")?
+                        .as_u64()
+                        .context("Java major must be an integer")?,
+                )?,
+                policies,
+            })
+        })
+        .transpose()?;
     let intent = ProjectIntent {
+        source_excludes,
         metadata: PackMetadata {
             name: text(required(pack, "name")?)?.into(),
             version: text(required(pack, "version")?)?.into(),
@@ -69,17 +117,11 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
             .transpose()?
             .unwrap_or_default(),
         distribution: DistributionIntent {
-            targets: NonEmpty::new(
-                array(required(distribution, "targets")?)?
+            native,
+            recipes: NonEmpty::new(
+                array(required(distribution, "recipes")?)?
                     .iter()
-                    .map(|v| match text(v)? {
-                        "mrpack" => Ok(BuildTarget::Mrpack),
-                        "client" => Ok(BuildTarget::Client),
-                        "server" => Ok(BuildTarget::Server),
-                        "client-full" => Ok(BuildTarget::ClientFull),
-                        "server-full" => Ok(BuildTarget::ServerFull),
-                        _ => bail!("Unknown build target"),
-                    })
+                    .map(recipe::decode)
                     .collect::<Result<_>>()?,
             )?,
             archive: match text(required(distribution, "archive")?)? {
@@ -222,7 +264,8 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
         "pack":{"name":intent.metadata.name,"version":intent.metadata.version,"author":intent.metadata.author,"description":intent.metadata.description},
         "runtime":{"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
         "dependencies":roots,
+        "sources":{"exclude":intent.source_excludes},
         "layout":intent.layout.iter().map(|(k,v)| (kind_name(*k),v.as_str())).collect::<BTreeMap<_,_>>(),
-        "distribution":{"targets":intent.distribution.targets.as_slice().iter().map(|v| match v { BuildTarget::Mrpack=>"mrpack",BuildTarget::Client=>"client",BuildTarget::Server=>"server",BuildTarget::ClientFull=>"client-full",BuildTarget::ServerFull=>"server-full" }).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
+        "distribution":{"native":intent.distribution.native.as_ref().map(|native| json!({"pack-id":native.pack_id,"java-major":native.java_major,"policies":native.policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>() })),"recipes":intent.distribution.recipes.as_slice().iter().map(recipe::encode).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
         "extensions":intent.extensions.iter().map(|(k,v)| (k,extension_value(v))).collect::<BTreeMap<_,_>>()})
 }

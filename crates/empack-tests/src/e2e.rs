@@ -186,6 +186,36 @@ impl TestProject {
         project
     }
 
+    /// Supply explicit publisher/runtime policy for native-consumer fixtures.
+    pub fn configure_native_distribution(&self, pack_id: &str, java_major: u16) {
+        use empack_core::model::{NativeDistributionIntent, ResolvedProject};
+        use empack_lib::engine::documents::DocumentCodec;
+        let manifest = self.root.join("empack.yml");
+        let lock_path = self.root.join("empack.lock");
+        let decoded = DocumentCodec
+            .decode_intent(&std::fs::read(&manifest).unwrap(), "test")
+            .unwrap();
+        let prior = DocumentCodec
+            .decode_lock(&std::fs::read(&lock_path).unwrap(), &decoded, "test")
+            .unwrap();
+        let mut intent = prior.intent().clone();
+        intent.distribution.native = Some(NativeDistributionIntent {
+            pack_id: pack_id.into(),
+            java_major,
+            policies: Default::default(),
+        });
+        let bytes = DocumentCodec.encode_intent(&intent).unwrap();
+        let revision = DocumentCodec
+            .decode_intent(&bytes, "test")
+            .unwrap()
+            .semantic_revision();
+        let mut lock = prior.lock().clone();
+        lock.intent_revision = revision;
+        let project = ResolvedProject::validate(intent, lock, revision).unwrap();
+        std::fs::write(manifest, bytes).unwrap();
+        std::fs::write(lock_path, DocumentCodec.encode_lock(&project).unwrap()).unwrap();
+    }
+
     /// Working directory for this project.
     pub fn dir(&self) -> &Path {
         &self.root

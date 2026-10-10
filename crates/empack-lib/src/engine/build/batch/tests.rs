@@ -9,6 +9,7 @@ use crate::engine::{
     snapshot::SnapshotLimits,
     templates::TemplateOptions,
 };
+use empack_core::distribution::UpdateAuthority;
 use empack_core::{
     files::FilePermissions,
     inventory::OptionalPolicy,
@@ -20,7 +21,14 @@ fn path(value: &str) -> PortableRelPath {
     PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap()
 }
 fn fixture(root: &Path) -> BuildAcquisitions {
-    let project = project(false, false);
+    let initial = project(false, false);
+    let mut intent = initial.intent().clone();
+    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+        pack_id: "test.pack".into(),
+        java_major: 21,
+        policies: std::collections::BTreeMap::new(),
+    });
+    let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     fs::write(
         root.join("empack.yml"),
         DocumentCodec.encode_intent(project.intent()).unwrap(),
@@ -80,11 +88,13 @@ fn capture(root: &Path, host: &Path) -> WorkspaceSnapshot {
 fn requests() -> NonEmpty<DistributionRequest> {
     NonEmpty::new(vec![
         DistributionRequest::Mrpack {
+            recipe: Recipe::MODRINTH,
             artifact: path("pack.mrpack"),
             optional: OptionalConversion::RejectMetadataLoss,
             evidence: SourceEvidencePolicy::Compatibility,
         },
-        DistributionRequest::ClientFull {
+        DistributionRequest::Prism {
+            recipe: Recipe::PRISM_BUNDLED,
             artifact: path("client.zip"),
             options: ClientOptions {
                 archive: DistributionArchive::Zip,
@@ -199,6 +209,7 @@ fn duplicate_output_ownership_is_rejected_before_preparation() {
     let host = tempfile::tempdir().unwrap();
     let external = fixture(root.path());
     let request = || DistributionRequest::Mrpack {
+        recipe: Recipe::MODRINTH,
         artifact: path("pack.mrpack"),
         optional: OptionalConversion::RejectMetadataLoss,
         evidence: SourceEvidencePolicy::Compatibility,
@@ -220,19 +231,20 @@ fn duplicate_output_ownership_is_rejected_before_preparation() {
 }
 
 #[test]
-fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
-    use crate::engine::{bootstrap_tools::InstallerAssets, packwiz::InstallerInteraction};
+fn native_client_joins_requested_publication_without_installer_tools() {
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let external = fixture(root.path());
     let cancel = Cancellation::default();
     let requests = NonEmpty::new(vec![
         DistributionRequest::Mrpack {
+            recipe: Recipe::MODRINTH,
             artifact: path("pack.mrpack"),
             optional: OptionalConversion::RejectMetadataLoss,
             evidence: SourceEvidencePolicy::Compatibility,
         },
-        DistributionRequest::Client {
+        DistributionRequest::Prism {
+            recipe: Recipe::PRISM_REFERENCES,
             artifact: path("client.zip"),
             options: ClientOptions {
                 archive: DistributionArchive::Zip,
@@ -240,10 +252,6 @@ fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
                 templates: TemplateOptions::default(),
                 evidence: SourceEvidencePolicy::Compatibility,
                 limits: ArchiveLimits::default(),
-            },
-            bootstrap: ClientBootstrap {
-                assets: InstallerAssets::fixture(),
-                interaction: InstallerInteraction::Headless,
             },
         },
     ])
@@ -255,8 +263,7 @@ fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
         &cancel,
     )
     .unwrap();
-    assert_eq!(plan.artifacts()[1].toolchain.len(), 2);
-    assert_eq!(plan.artifacts()[1].target, BuildTarget::Client);
+    assert_eq!(plan.artifacts()[1].target, Recipe::PRISM_REFERENCES);
     plan.publish(
         &Publisher::open(&host.path().join("private")).unwrap(),
         &cancel,
@@ -294,7 +301,8 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
     };
     let requests = || {
         NonEmpty::new(vec![
-            DistributionRequest::ClientFull {
+            DistributionRequest::Prism {
+                recipe: Recipe::PRISM_BUNDLED,
                 artifact: path("client.zip"),
                 options: ClientOptions {
                     archive: DistributionArchive::Zip,
@@ -304,7 +312,8 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
                     limits: ArchiveLimits::default(),
                 },
             },
-            DistributionRequest::ServerFull {
+            DistributionRequest::Server {
+                recipe: Recipe::SERVER_BUNDLED,
                 artifact: path("server.zip"),
                 options: server::ServerOptions {
                     archive: DistributionArchive::Zip,
@@ -313,14 +322,14 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
                     evidence: SourceEvidencePolicy::Compatibility,
                     limits: ArchiveLimits::default(),
                 },
-                runtime: prepared_fixture(),
+                runtime: Box::new(prepared_fixture()),
             },
         ])
         .unwrap()
     };
-    fs::create_dir_all(root.path().join("templates/server")).unwrap();
+    fs::create_dir_all(root.path().join("templates/server/game")).unwrap();
     fs::write(
-        root.path().join("templates/server/server.jar"),
+        root.path().join("templates/server/game/server.jar"),
         b"bad runtime",
     )
     .unwrap();
@@ -333,7 +342,7 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
         fs::read(root.path().join("dist/server.zip")).unwrap(),
         b"previous server"
     );
-    fs::remove_file(root.path().join("templates/server/server.jar")).unwrap();
+    fs::remove_file(root.path().join("templates/server/game/server.jar")).unwrap();
     let batch = prepare_build_batch(capture(), requests(), &external, &cancel).unwrap();
     assert!(batch.artifacts()[1].server_runtime.is_some());
     batch
@@ -416,5 +425,206 @@ fn interrupted_clean_build_finishes_or_restores_the_same_publication() {
             }
         }
         assert!(!publisher.recovery_required(&prepared.root).unwrap());
+    }
+}
+
+#[test]
+fn native_and_platform_exports_share_publication_and_preserve_prior_outputs_on_failure() {
+    for authority in [UpdateAuthority::Snapshot, UpdateAuthority::Empack] {
+        let recipe = Recipe::EMPACK_BUNDLED
+            .with_update_authority(authority)
+            .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        fs::write(root.path().join("dist/native.empack"), b"prior native").unwrap();
+        let cancel = Cancellation::default();
+        let capture = || {
+            ProjectReader::new(RecoveryReader::new(host.path().join("state")))
+                .capture_build(
+                    root.path(),
+                    &[path("pack.mrpack"), path("native.empack")],
+                    SnapshotLimits::default(),
+                    &cancel,
+                )
+                .unwrap()
+        };
+        let requests = || {
+            NonEmpty::new(vec![
+                DistributionRequest::Mrpack {
+                    recipe: Recipe::MODRINTH,
+                    artifact: path("pack.mrpack"),
+                    optional: OptionalConversion::RejectMetadataLoss,
+                    evidence: SourceEvidencePolicy::Compatibility,
+                },
+                DistributionRequest::Native {
+                    artifact: path("native.empack"),
+                    recipe,
+                    archive: DistributionArchive::Zip,
+                    evidence: SourceEvidencePolicy::Compatibility,
+                    limits: ArchiveLimits::default(),
+                },
+            ])
+            .unwrap()
+        };
+        assert!(
+            prepare_build_batch(
+                capture(),
+                requests(),
+                &BuildAcquisitions::default(),
+                &cancel
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/pack.mrpack")).unwrap(),
+            b"old mrpack"
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/native.empack")).unwrap(),
+            b"prior native"
+        );
+        let batch = prepare_build_batch(capture(), requests(), &external, &cancel).unwrap();
+        let release_id = batch.artifacts()[1].native_release.clone().unwrap();
+        assert_eq!(batch.artifacts()[1].content.target(), recipe);
+        assert_eq!(
+            batch.artifacts()[1]
+                .content
+                .entries()
+                .iter()
+                .map(|file| file.destination.relative().as_str())
+                .collect::<Vec<_>>(),
+            [
+                "resourcepacks/a.zip",
+                "resourcepacks/b.zip",
+                "resourcepacks/copy.zip"
+            ]
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/native.empack")).unwrap(),
+            b"prior native"
+        );
+        batch
+            .publish(
+                &Publisher::open(&host.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        let mut archive =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist/native.empack")).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name("release.json").unwrap(), &mut bytes)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&bytes).unwrap();
+        assert_eq!(release.id(), release_id);
+        assert_eq!(
+            release.document().require_subscription,
+            authority == UpdateAuthority::Empack
+        );
+        assert_eq!(release.document().files.len(), 3);
+        assert!(
+            release
+                .document()
+                .files
+                .iter()
+                .all(|file| file.asset.is_some())
+        );
+    }
+}
+
+#[test]
+fn recipe_identity_cannot_be_reinterpreted_by_another_adapter() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let acquired = fixture(root.path());
+    for recipe in [Recipe::MODRINTH, Recipe::SERVER_BUNDLED] {
+        let request = DistributionRequest::Prism {
+            recipe,
+            artifact: path("client.zip"),
+            options: ClientOptions {
+                archive: DistributionArchive::Zip,
+                optional: OptionalPolicy::Preserve,
+                templates: TemplateOptions::default(),
+                evidence: SourceEvidencePolicy::Compatibility,
+                limits: ArchiveLimits::default(),
+            },
+        };
+        assert!(
+            prepare_build_batch(
+                capture(root.path(), host.path()),
+                NonEmpty::new(vec![request]).unwrap(),
+                &acquired,
+                &Cancellation::default()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/client.zip")).unwrap(),
+            b"old client"
+        );
+    }
+}
+
+#[test]
+fn subscribed_prism_recipes_preserve_delivery_and_require_local_enrollment() {
+    use std::io::Read;
+    for base in [Recipe::PRISM_REFERENCES, Recipe::PRISM_BUNDLED] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        let recipe = base.with_update_authority(UpdateAuthority::Empack).unwrap();
+        let request = DistributionRequest::Prism {
+            recipe,
+            artifact: path("client.zip"),
+            options: ClientOptions {
+                archive: DistributionArchive::Zip,
+                optional: OptionalPolicy::Preserve,
+                templates: TemplateOptions::default(),
+                evidence: SourceEvidencePolicy::Compatibility,
+                limits: ArchiveLimits::default(),
+            },
+        };
+        let batch = prepare_build_batch(
+            capture(root.path(), host.path()),
+            NonEmpty::new(vec![request]).unwrap(),
+            &external,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert_eq!(batch.artifacts()[0].target, recipe);
+        assert_eq!(batch.artifacts()[0].content.target(), recipe);
+        batch
+            .publish(
+                &Publisher::open(&host.path().join("private")).unwrap(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+        let mut zip =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist/client.zip")).unwrap())
+                .unwrap();
+        let mut ini = String::new();
+        zip.by_name("instance.cfg")
+            .unwrap()
+            .read_to_string(&mut ini)
+            .unwrap();
+        assert!(ini.contains("--require-subscription"));
+        assert!(ini.contains("instance launch --check-updates --"));
+        let mut payload = Vec::new();
+        zip.by_name(".minecraft/.empack-consumer/release.json")
+            .unwrap()
+            .read_to_end(&mut payload)
+            .unwrap();
+        let release = crate::engine::release::DecodedRelease::decode(&payload).unwrap();
+        for file in &release.document().files {
+            assert_eq!(
+                file.asset_path().is_some(),
+                base.delivery() == empack_core::distribution::Delivery::Bundled
+            );
+        }
+        assert!(
+            !zip.file_names()
+                .any(|name| name.ends_with("subscription.json"))
+        );
     }
 }

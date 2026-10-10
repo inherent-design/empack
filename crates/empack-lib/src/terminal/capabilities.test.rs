@@ -1,10 +1,12 @@
 use super::*;
 use crate::display::test_utils::clean_test_env;
 use std::env;
+#[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+#[cfg(unix)]
 fn clear_locale_env() {
     unsafe {
         env::remove_var("LC_ALL");

@@ -1,4 +1,4 @@
-//! Executable dispatch to the v0.5 engine. Publication owns its project lock.
+//! Executable dispatch to native engine operations. Publication owns its root lock.
 use super::engine_host;
 use crate::Result;
 use crate::application::session::{CommandSession, Session};
@@ -54,6 +54,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
 }
 fn command_name(command: &Commands) -> &'static str {
     match command {
+        Commands::Instance { .. } => "instance",
+        Commands::Release { .. } => "release",
         Commands::Init(_) => "init",
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
@@ -72,6 +74,8 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     // Preparation captures its own generation. The publisher acquires mutation ownership;
     // a legacy outer lock would deadlock it and make preview unnecessarily mutating.
     match command {
+        Commands::Instance { command } => engine_host::instance::dispatch(session, command).await,
+        Commands::Release { command } => engine_host::release::dispatch(session, command).await,
         Commands::Recover { action, operation } => {
             engine_host::recover(session, action, operation).await
         }
@@ -206,7 +210,7 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
     session.display().status().section("Runtime capabilities");
     session.display().status().success(
         "project operations",
-        "native engine; no packwiz executable required",
+        "native engine; no external dependency manager required",
     );
     session.display().status().success(
         "archive support",

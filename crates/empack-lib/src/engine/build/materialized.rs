@@ -3,31 +3,29 @@ use super::{BuildAcquisitions, capture_build_content};
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
-        backend::BackendDigestComparison,
         content::SourceEvidencePolicy,
         layout::CollisionIndex,
-        mrpack::{AcquiredBuildFile, LockedFileKey, ObservedFileEvidence},
+        mrpack::{AcquiredBuildFile, LockedFileKey},
         project::WorkspaceSnapshot,
     },
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     inventory::{
         BuildInventory, BuildSelection, ContentOwner, DownloadOrigins, InventoryInput,
         OptionalPolicy, Representation,
     },
     model::{AcquisitionSpec, ExpectedContent, NonEmpty, ResolvedFile},
     path::PortableRelPath,
-    projection::BuildTarget,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Exact logical files still needed after side, override and optional selection.
 #[derive(Debug, thiserror::Error)]
-#[error("Acquire selected game content before full build: {files:?}; observed: {observed:?}")]
+#[error("Acquire selected game content before full build: {files:?}")]
 pub struct MissingGameContent {
     pub files: Vec<LockedFileKey>,
-    pub observed: Vec<PortableRelPath>,
 }
 
 /// Complete game projection and retained embedded bytes, not launcher/server runtime completeness.
@@ -35,37 +33,8 @@ pub struct PreparedGameContent {
     project: empack_core::model::ResolvedProject,
     inventory: BuildInventory,
     files: BTreeMap<PortableRelPath, AcquiredBuildFile>,
-    observed: Vec<ObservedFileEvidence>,
-    comparisons: Vec<BackendDigestComparison>,
 }
 impl PreparedGameContent {
-    /// Encode the selected reference view; the returned tree still needs runtime assembly.
-    pub fn packwiz(
-        &self,
-        interaction: crate::engine::packwiz::InstallerInteraction,
-        cancel: &Cancellation,
-    ) -> Result<crate::engine::packwiz::PackwizPlan> {
-        let mut embedded = BTreeMap::new();
-        for entry in self.inventory.entries() {
-            if matches!(entry.representation, Representation::Embedded { .. }) {
-                embedded.insert(
-                    entry.owner.clone(),
-                    self.files
-                        .get(entry.destination.relative())
-                        .context("Missing selected embedded bytes")?
-                        .clone(),
-                );
-            }
-        }
-        crate::engine::packwiz::PackwizPlan::prepare(
-            self.inventory.clone(),
-            &self.project.intent().metadata,
-            &self.project.lock().runtime,
-            &embedded,
-            interaction,
-            cancel,
-        )
-    }
     pub fn project(&self) -> &empack_core::model::ResolvedProject {
         &self.project
     }
@@ -74,12 +43,6 @@ impl PreparedGameContent {
     }
     pub fn files(&self) -> &BTreeMap<PortableRelPath, AcquiredBuildFile> {
         &self.files
-    }
-    pub fn observed(&self) -> &[ObservedFileEvidence] {
-        &self.observed
-    }
-    pub fn backend_comparisons(&self) -> &[BackendDigestComparison] {
-        &self.comparisons
     }
 }
 fn representation(file: &AcquiredBuildFile) -> Representation {
@@ -113,43 +76,65 @@ fn check_expected(file: &AcquiredBuildFile, expected: &ExpectedContent) -> Resul
 pub fn prepare_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull),
+        matches!(target, Recipe::PRISM_BUNDLED | Recipe::SERVER_BUNDLED),
         "Game materialization requires a full target"
     );
-    prepare_selected_content(workspace, external, target, optional, evidence, cancel)
+    prepare_selected_content(
+        workspace, external, target, optional, evidence, false, cancel,
+    )
 }
-/// Preserve representable references for a selected bootstrap environment.
-pub fn prepare_bootstrap_game_content(
+/// Preserve references representable by the selected platform consumer.
+pub fn prepare_reference_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(target, BuildTarget::Client | BuildTarget::Server),
-        "Bootstrap content needs a reference target"
+        super::curseforge::supports(target),
+        "Reference content needs a platform consumer"
     );
-    prepare_selected_content(workspace, external, target, optional, evidence, cancel)
+    prepare_selected_content(
+        workspace, external, target, optional, evidence, true, cancel,
+    )
+}
+/// Select native reference content with exact bytes while preserving representable choices.
+/// Delivery is applied by the release producer, after content identity has been established.
+pub fn prepare_native_game_content(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    target: Recipe,
+    optional: &OptionalPolicy,
+    evidence: SourceEvidencePolicy,
+    cancel: &Cancellation,
+) -> Result<PreparedGameContent> {
+    ensure!(
+        super::instance_managed(target),
+        "Native consumer requires a client or server environment"
+    );
+    prepare_selected_content(
+        workspace, external, target, optional, evidence, false, cancel,
+    )
 }
 fn prepare_selected_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
+    references: bool,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
-    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
     let (selection, _) =
-        super::acquisition::select_game_inputs(workspace, external, target, optional, cancel)?;
+        super::acquisition::select_game_inputs(workspace, target, optional, cancel)?;
     let selected: BTreeSet<_> = selection
         .entries()
         .iter()
@@ -184,7 +169,7 @@ fn prepare_selected_content(
                 }
             };
             let representation = if references {
-                reference_for(file, supplied)?.unwrap_or(representation)
+                reference_for_target(file, supplied, target)?.unwrap_or(representation)
             } else {
                 representation
             };
@@ -221,47 +206,8 @@ fn prepare_selected_content(
             representation,
         });
     }
-    let mut observed = Vec::new();
-    let mut observed_labels = BTreeMap::new();
-    for file in captured.observed {
-        match file {
-            super::ObservedBuildContent::Verified(file) => {
-                let (input, acquired, evidence) = if references {
-                    file.into_reference()
-                } else {
-                    file.into_materialized()
-                };
-                leases.insert(input.owner.clone(), acquired);
-                inputs.push(input);
-                observed.push(evidence);
-            }
-            super::ObservedBuildContent::Unacquired { record, choice } => {
-                if references
-                    && selected.contains(&ContentOwner::Source(format!(
-                        "backend:{}",
-                        record.metadata_path.as_str()
-                    )))
-                    && let Some((input, evidence)) =
-                        crate::engine::mrpack::ObservedFile::reference_input(
-                            &record, &choice, evidence,
-                        )?
-                {
-                    inputs.push(input);
-                    observed.push(evidence);
-                    continue;
-                }
-                let input = crate::engine::mrpack::ObservedFile::pending_input(&record, &choice)?;
-                let ContentOwner::Source(label) = &input.owner else {
-                    unreachable!()
-                };
-                observed_labels.insert(label.clone(), record.metadata_path);
-                inputs.push(input);
-            }
-        }
-    }
     let selection = BuildSelection::select(&inputs, target, optional)?;
     let mut missing = BTreeSet::new();
-    let mut missing_observed = BTreeSet::new();
     for entry in selection.entries() {
         if matches!(entry.representation, Representation::Unacquired { .. }) {
             match &entry.owner {
@@ -271,24 +217,16 @@ fn prepare_selected_content(
                         slot: slot.clone(),
                     });
                 }
-                ContentOwner::Source(label) => {
-                    missing_observed.insert(
-                        observed_labels
-                            .get(label)
-                            .context("Unacquired observed content has no owner")?
-                            .clone(),
-                    );
-                }
+                ContentOwner::Source(_) => anyhow::bail!("Captured source has no acquired bytes"),
                 ContentOwner::Runtime(_) => {
                     anyhow::bail!("Game selection unexpectedly requires runtime content")
                 }
             }
         }
     }
-    if !missing.is_empty() || !missing_observed.is_empty() {
+    if !missing.is_empty() {
         return Err(MissingGameContent {
             files: missing.into_iter().collect(),
-            observed: missing_observed.into_iter().collect(),
         }
         .into());
     }
@@ -307,6 +245,16 @@ fn prepare_selected_content(
                 references && matches!(entry.representation, Representation::Download { .. }),
                 "Full game inventory contains a reference"
             );
+            if super::curseforge::supports(target) {
+                // The shared acquisition map also contains files for other recipes. Check
+                // attributes only after side, precedence and optional participation selection.
+                ensure!(
+                    leases.get(&entry.owner).is_none_or(
+                        |file| !file.permissions.readonly && !file.permissions.executable
+                    ),
+                    "CurseForge references cannot preserve custom file permissions"
+                );
+            }
             collisions.insert_file(entry.destination.relative())?;
             continue;
         };
@@ -328,9 +276,38 @@ fn prepare_selected_content(
         project: captured.project,
         inventory,
         files,
-        observed,
-        comparisons: captured.comparisons,
     })
+}
+
+pub(super) fn reference_for_target(
+    file: &empack_core::model::ResolvedFile,
+    acquired: Option<&AcquiredBuildFile>,
+    target: Recipe,
+) -> Result<Option<Representation>> {
+    if super::curseforge::supports(target) {
+        let selection = match &file.acquisition {
+            AcquisitionSpec::Provider { pin, slot, .. } => Some((pin, slot)),
+            AcquisitionSpec::Manual { pin: Some(pin), .. } => Some((pin, &file.slot)),
+            _ => None,
+        };
+        if let Some((pin, slot)) = selection {
+            return Ok(Some(Representation::Download {
+                expected: file.expected.clone(),
+                allowed: DownloadOrigins::Provider {
+                    pin: pin.clone(),
+                    slot: slot.clone(),
+                },
+            }));
+        }
+        if let AcquisitionSpec::Url(urls) = &file.acquisition {
+            return Ok(Some(Representation::Download {
+                expected: file.expected.clone(),
+                allowed: DownloadOrigins::Urls(urls.clone()),
+            }));
+        }
+        return Ok(None);
+    }
+    reference_for(file, acquired)
 }
 
 pub(super) fn reference_for(

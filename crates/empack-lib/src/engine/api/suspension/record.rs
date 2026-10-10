@@ -1,9 +1,6 @@
 //! Strict saved request data. No plan ID, native source path or execution grant is encoded.
 use super::*;
-use crate::engine::{
-    packwiz::InstallerInteraction,
-    templates::{TemplateLimits, TemplateMode, TemplateOptions},
-};
+use crate::engine::templates::{TemplateLimits, TemplateMode, TemplateOptions};
 use empack_core::{
     digest::{ContentId, ExpectedDigest},
     model::{DependencyKey, FileSlot},
@@ -18,7 +15,7 @@ pub(super) struct Record {
     pub schema: u32,
     pub fingerprint: [u8; 32],
     pub documents: [Option<[u8; 32]>; 2],
-    pub recipe: Recipe,
+    pub recipe: SavedRecipe,
     pub files: Vec<SavedFile>,
 }
 #[derive(Serialize, Deserialize)]
@@ -33,7 +30,6 @@ pub(super) struct SavedFile {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum Key {
     Locked { dependency: String, slot: String },
-    Observed { metadata: String },
 }
 impl From<&AcquisitionKey> for Key {
     fn from(key: &AcquisitionKey) -> Self {
@@ -41,9 +37,6 @@ impl From<&AcquisitionKey> for Key {
             AcquisitionKey::Locked(key) => Self::Locked {
                 dependency: key.dependency.as_str().into(),
                 slot: key.slot.as_str().into(),
-            },
-            AcquisitionKey::Observed(path) => Self::Observed {
-                metadata: path.as_str().into(),
             },
         }
     }
@@ -57,10 +50,6 @@ impl Key {
                     slot: FileSlot::parse(slot)?,
                 })
             }
-            Self::Observed { metadata } => AcquisitionKey::Observed(PortableRelPath::parse(
-                metadata,
-                PathSyntax::ProjectContent,
-            )?),
         })
     }
 }
@@ -74,15 +63,14 @@ impl SavedFile {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Recipe {
+pub(super) struct SavedRecipe {
     clean: bool,
-    outputs: Vec<(String, String)>,
+    outputs: Vec<(serde_json::Value, String)>,
     archive: String,
     optional: Optional,
     allow_optional_metadata_loss: bool,
     templates: Templates,
     strong_source_required: bool,
-    interactive_installer: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "kebab-case", deny_unknown_fields)]
@@ -103,7 +91,7 @@ struct Templates {
     total_bytes: u64,
     entries: usize,
 }
-impl From<&BuildRequest> for Recipe {
+impl From<&BuildRequest> for SavedRecipe {
     fn from(request: &BuildRequest) -> Self {
         Self {
             clean: request.clean,
@@ -113,14 +101,7 @@ impl From<&BuildRequest> for Recipe {
                 .iter()
                 .map(|output| {
                     (
-                        match output.target {
-                            BuildTarget::Mrpack => "mrpack",
-                            BuildTarget::Client => "client",
-                            BuildTarget::Server => "server",
-                            BuildTarget::ClientFull => "client-full",
-                            BuildTarget::ServerFull => "server-full",
-                        }
-                        .into(),
+                        crate::engine::documents::recipe::encode(&output.target),
                         output.artifact.as_str().into(),
                     )
                 })
@@ -167,11 +148,10 @@ impl From<&BuildRequest> for Recipe {
                 entries: request.templates.limits.entries,
             },
             strong_source_required: request.evidence == SourceEvidencePolicy::StrongSourceRequired,
-            interactive_installer: request.interaction == InstallerInteraction::Interactive,
         }
     }
 }
-impl Recipe {
+impl SavedRecipe {
     pub fn parse(&self) -> Result<BuildRequest> {
         Ok(BuildRequest {
             clean: self.clean,
@@ -180,14 +160,7 @@ impl Recipe {
                     .iter()
                     .map(|(target, path)| {
                         Ok(BuildOutput {
-                            target: match target.as_str() {
-                                "mrpack" => BuildTarget::Mrpack,
-                                "client" => BuildTarget::Client,
-                                "server" => BuildTarget::Server,
-                                "client-full" => BuildTarget::ClientFull,
-                                "server-full" => BuildTarget::ServerFull,
-                                _ => anyhow::bail!("Unsupported saved build target"),
-                            },
+                            target: crate::engine::documents::recipe::decode(target)?,
                             artifact: PortableRelPath::parse(path, PathSyntax::ArtifactName)?,
                         })
                     })
@@ -244,11 +217,6 @@ impl Recipe {
             } else {
                 SourceEvidencePolicy::Compatibility
             },
-            interaction: if self.interactive_installer {
-                InstallerInteraction::Interactive
-            } else {
-                InstallerInteraction::Headless
-            },
         })
     }
 }
@@ -289,9 +257,6 @@ pub(super) fn estimated_bytes(request: &BuildRequest, content: &BuildAcquisition
     }
     for key in content.locked.keys() {
         add(text(key.dependency.as_str()) + text(key.slot.as_str()) + 256)?;
-    }
-    for path in content.observed.keys() {
-        add(text(path.as_str()) + 256)?;
     }
     Ok(total)
 }

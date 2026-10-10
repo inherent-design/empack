@@ -5,7 +5,6 @@ use empack_core::{
     identity::*,
     model::*,
     path::{InstallDestination, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
     requirements::*,
 };
 use serde_json::{Value, json};
@@ -14,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod intent;
 mod lock;
+pub(crate) mod recipe;
 mod sizing;
 
 /// Malformed authored documents are usage failures, distinct from filesystem failures.
@@ -27,7 +27,7 @@ pub struct InvalidDocument {
 /// Maximum encoded document length, before YAML allocation.
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
-pub const INTENT_SCHEMA: u64 = 2;
+pub const INTENT_SCHEMA: u64 = 3;
 /// Exact selection schema.
 pub const LOCK_SCHEMA: u64 = 1;
 

@@ -12,12 +12,12 @@ use crate::{
     },
 };
 use empack_core::{
+    distribution::Recipe,
     model::{
         ContentKind, DistributionArchive, DistributionIntent, GameVersion, LoaderKind,
         LoaderVersion, NonEmpty, PackMetadata, ProjectIntent, RuntimeIntent, RuntimeResolution,
     },
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
 use std::collections::BTreeMap;
 
@@ -197,6 +197,7 @@ async fn initialize_with_catalog(
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
     let intent = ProjectIntent {
+        source_excludes: Vec::new(),
         metadata,
         runtime: RuntimeIntent {
             minecraft: game,
@@ -207,12 +208,11 @@ async fn initialize_with_catalog(
         roots: BTreeMap::new(),
         layout,
         distribution: DistributionIntent {
-            targets: NonEmpty::new(vec![
-                BuildTarget::Mrpack,
-                BuildTarget::Client,
-                BuildTarget::Server,
-                BuildTarget::ClientFull,
-                BuildTarget::ServerFull,
+            native: None,
+            recipes: NonEmpty::new(vec![
+                Recipe::MODRINTH,
+                Recipe::PRISM_BUNDLED,
+                Recipe::SERVER_BUNDLED,
             ])?,
             archive: DistributionArchive::Zip,
         },

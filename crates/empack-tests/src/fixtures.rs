@@ -49,7 +49,7 @@ impl WorkflowProjectFixture {
     }
 
     pub fn write_to(&self, workdir: &Path) -> Result<WorkflowProjectPaths> {
-        use empack_core::{model::*, projection::BuildTarget};
+        use empack_core::{distribution::Recipe, model::*};
         use empack_lib::engine::{
             documents::DocumentCodec,
             initialize::{InitializeCandidate, default_templates},
@@ -72,6 +72,7 @@ impl WorkflowProjectFixture {
         };
         let candidate = InitializeCandidate::new(
             ProjectIntent {
+                source_excludes: Vec::new(),
                 metadata: PackMetadata {
                     name: self.pack_name.clone(),
                     author: Some(self.author.clone()),
@@ -88,7 +89,8 @@ impl WorkflowProjectFixture {
                 layout: BTreeMap::new(),
                 extensions: BTreeMap::new(),
                 distribution: DistributionIntent {
-                    targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                    native: None,
+                    recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
                     archive: DistributionArchive::Zip,
                 },
             },
@@ -129,16 +131,16 @@ impl WorkflowProjectFixture {
         match artifact {
             WorkflowArtifact::Mrpack => format!("{}-{}.mrpack", self.pack_name, self.version),
             WorkflowArtifact::Client => {
-                format!("{}-{}-client.zip", self.pack_name, self.version)
+                format!("{}-{}-prism-references.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::Server => {
-                format!("{}-{}-server.zip", self.pack_name, self.version)
+                format!("{}-{}-server-references.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::ClientFull => {
-                format!("{}-{}-client-full.zip", self.pack_name, self.version)
+                format!("{}-{}-prism-bundled.zip", self.pack_name, self.version)
             }
             WorkflowArtifact::ServerFull => {
-                format!("{}-{}-server-full.zip", self.pack_name, self.version)
+                format!("{}-{}-server-bundled.zip", self.pack_name, self.version)
             }
         }
     }
@@ -203,7 +205,7 @@ mod tests {
         assert_eq!(
             fixture.artifact_path(&root, WorkflowArtifact::ServerFull),
             root.join("dist")
-                .join("workflow-fixture-pack-1.0.0-server-full.zip")
+                .join("workflow-fixture-pack-1.0.0-server-bundled.zip")
         );
     }
 }

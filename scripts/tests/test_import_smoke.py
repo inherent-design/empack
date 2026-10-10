@@ -79,7 +79,7 @@ class NativeSmokeContracts(unittest.TestCase):
                 self.assertFalse(result.success)
                 self.assertEqual(command.call_count, 3)
                 self.assertIn("not verified", result.output_tail)
-                self.assertEqual(command.call_args.args[1], ["--yes", "build", "client-full"])
+                self.assertEqual(command.call_args.args[1], ["--yes", "build", "prism"])
 
     def test_sync_document_drift_fails_before_build(self):
         with tempfile.TemporaryDirectory() as root:

@@ -163,10 +163,10 @@ async fn all_loader_families_keep_exact_runtime_and_generate_mrpack() -> Result<
         assert!(
             project
                 .path()
-                .join("templates/server/server.properties.template")
+                .join("templates/server/game/server.properties.template")
                 .exists()
         );
-        project.run(build("mrpack")).await?;
+        project.run(build("modrinth")).await?;
         let mut archive =
             zip::ZipArchive::new(fs::File::open(project.path().join("dist/Native-1.mrpack"))?)?;
         let manifest: serde_json::Value =
@@ -249,7 +249,7 @@ async fn preview_matrix_never_mutates_project_or_runs_backend() -> Result<()> {
             continue_sync: false,
             files: vec![],
         },
-        build("mrpack"),
+        build("modrinth"),
         Commands::Clean {
             targets: vec!["builds".into()],
         },
@@ -319,7 +319,7 @@ async fn client_full_archives_contain_current_content_for_every_format() -> Resu
         fs::write(project.path().join("pack/config/value.toml"), b"current")?;
         project
             .run(Commands::Build(BuildArgs {
-                targets: vec!["client-full".into()],
+                targets: vec!["prism".into()],
                 format: Some(format),
                 ..Default::default()
             }))
@@ -333,7 +333,7 @@ async fn client_full_archives_contain_current_content_for_every_format() -> Resu
             fs::metadata(
                 project
                     .path()
-                    .join(format!("dist/Native-1-client-full.{extension}"))
+                    .join(format!("dist/Native-1-prism-bundled.{extension}"))
             )?
             .len()
                 > 0

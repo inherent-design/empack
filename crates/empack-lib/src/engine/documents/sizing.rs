@@ -79,6 +79,17 @@ pub(super) fn encoding_memory(project: &ResolvedProject) -> Result<u64> {
     let mut size = Size::default();
     size.nodes(32)?;
     let intent = project.intent();
+    for rule in &intent.source_excludes {
+        size.text(rule)?;
+    }
+    if let Some(native) = &intent.distribution.native {
+        size.nodes(4)?;
+        size.text(&native.pack_id)?;
+        for path in native.policies.keys() {
+            size.text(path.as_str())?;
+            size.nodes(1)?;
+        }
+    }
     size.text(&intent.metadata.name)?;
     size.text(&intent.metadata.version)?;
     size.optional(intent.metadata.author.as_deref())?;
@@ -133,7 +144,7 @@ pub(super) fn encoding_memory(project: &ResolvedProject) -> Result<u64> {
     for path in intent.layout.values() {
         size.text(path.as_str())?;
     }
-    size.nodes(intent.distribution.targets.as_slice().len())?;
+    size.nodes(intent.distribution.recipes.as_slice().len())?;
     for (key, value) in &intent.extensions {
         size.text(key)?;
         size.extension(value)?;

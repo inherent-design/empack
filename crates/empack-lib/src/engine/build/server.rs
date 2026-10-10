@@ -1,18 +1,17 @@
 //! Server distributions compose verified runtime files with selected server content.
 use super::{
     BuildAcquisitions, PreparedArtifact,
-    materialized::{PreparedGameContent, prepare_bootstrap_game_content, prepare_game_content},
+    materialized::{PreparedGameContent, prepare_game_content, prepare_native_game_content},
 };
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
         artifacts::{ArchiveLimits, write_archive},
-        bootstrap_tools::{InstallerArtifact, InstallerAssets, InstallerRelease},
         content::{InitialObservation, SourceEvidencePolicy, verify_stream},
         layout::CollisionIndex,
         mrpack::AcquiredBuildFile,
-        packwiz::InstallerInteraction,
         project::WorkspaceSnapshot,
+        release::producer::{NativeReleaseOptions, NativeReleasePlan},
         server_runtime::{PreparedServerRuntime, ServerLaunch, ServerRuntimeEvidence},
         snapshot::SnapshotLimits,
         staging::{MutableStage, PrivateFile},
@@ -21,13 +20,13 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use empack_core::{
+    distribution::Recipe,
     files::{FileContent, FilePermissions},
     inventory::OptionalPolicy,
     model::{DistributionArchive, ExpectedContent},
     path::{PathSyntax, PortableRelPath},
-    projection::BuildTarget,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read};
 
 pub struct ServerOptions {
     pub archive: DistributionArchive,
@@ -35,10 +34,6 @@ pub struct ServerOptions {
     pub templates: TemplateOptions,
     pub evidence: SourceEvidencePolicy,
     pub limits: ArchiveLimits,
-}
-pub struct ServerBootstrap {
-    pub assets: InstallerAssets,
-    pub interaction: InstallerInteraction,
 }
 pub struct PreparedServerBuild {
     publication: PreparedArtifact,
@@ -48,7 +43,6 @@ pub(super) struct ServerEvidence {
     pub(super) game: PreparedGameContent,
     pub(super) inventory: BTreeMap<PortableRelPath, FileContent>,
     pub(super) user_configuration: bool,
-    pub(super) toolchain: Vec<InstallerRelease>,
     pub(super) runtime: ServerRuntimeEvidence,
 }
 impl PreparedServerBuild {
@@ -60,9 +54,6 @@ impl PreparedServerBuild {
     }
     pub fn runtime(&self) -> &ServerRuntimeEvidence {
         &self.candidate.runtime
-    }
-    pub fn toolchain(&self) -> &[InstallerRelease] {
-        &self.candidate.toolchain
     }
     /// Captured configuration or scripts are retained as user input, not certified executable behavior.
     pub fn uses_user_configuration(&self) -> bool {
@@ -81,18 +72,28 @@ impl PreparedServerBuild {
     }
 }
 /// Both recipes require an independently prepared runtime matching the captured resolution.
-/// `None` selects a full pack; `Some` selects a bootstrap pack with exact bundled tools.
+/// Reference delivery carries a native release; bundled delivery includes selected pack bytes.
 pub fn prepare_server_build(
     workspace: WorkspaceSnapshot,
     artifact: PortableRelPath,
     external: &BuildAcquisitions,
     options: &ServerOptions,
     runtime: &PreparedServerRuntime,
-    bootstrap: Option<&ServerBootstrap>,
+    references: bool,
     cancel: &Cancellation,
 ) -> Result<PreparedServerBuild> {
     let (archive, candidate) = prepare_server_archive(
-        &workspace, artifact, external, options, runtime, bootstrap, cancel,
+        &workspace,
+        artifact,
+        external,
+        options,
+        runtime,
+        if references {
+            Recipe::SERVER_REFERENCES
+        } else {
+            Recipe::SERVER_BUNDLED
+        },
+        cancel,
     )?;
     let publication = super::prepare_archives_publication(
         workspace,
@@ -133,36 +134,53 @@ const START_SH: &str = r#"#!/usr/bin/env bash
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 JAVA_PATH="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+cd -- game
 exec "$JAVA_PATH" -jar server.jar "$@"
 "#;
-const START_BAT: &str = "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\"\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
-fn start_script(bootstrap: bool) -> String {
-    if bootstrap {
-        START_SH.replace(
-            "exec \"$JAVA_PATH\"",
-            "bash ./install_pack.sh \"$JAVA_PATH\"\nexec \"$JAVA_PATH\"",
-        )
+const START_BAT: &str = "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || exit /b 1\r\ncd game || exit /b 1\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
+fn start_script(references: bool) -> String {
+    if references {
+        START_SH
+            .replace("cd -- game\n", "bash ./install_pack.sh\n")
+            .replace(
+                "exec \"$JAVA_PATH\"",
+                "exec empack --workdir \"$PWD\" --yes instance launch -- \"$JAVA_PATH\"",
+            )
     } else {
         START_SH.into()
     }
 }
-fn start_batch(bootstrap: bool) -> String {
-    let command = if bootstrap {
-        "call install_pack.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n"
+fn start_batch(references: bool) -> String {
+    if references {
+        START_BAT
+            .replace(
+                "cd game || exit /b 1\r\n",
+                "call install_pack.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n",
+            )
+            .replace(
+                "  \"%JAVA_HOME%",
+                "  empack --workdir \"%cd%\" --yes instance launch -- \"%JAVA_HOME%",
+            )
+            .replace(
+                "  java -jar",
+                "  empack --workdir \"%cd%\" --yes instance launch -- java -jar",
+            )
+            + "exit /b %errorlevel%\r\n"
     } else {
-        ""
-    };
-    START_BAT.replace(
-        "if defined JAVA_HOME",
-        &format!("{command}if defined JAVA_HOME"),
-    )
+        START_BAT.into()
+    }
 }
-fn runtime_start(launch: &ServerLaunch, bootstrap: bool, windows: bool) -> String {
+fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> String {
     let script = if windows {
-        start_batch(bootstrap)
+        start_batch(references)
     } else {
-        start_script(bootstrap)
+        start_script(references)
     };
+    if references {
+        return script
+            .replace("instance launch --", "instance launch --server --")
+            .replace(" -jar server.jar", "");
+    }
     let quote = |value: &str| {
         if windows {
             format!("\"{}\"", value.replace('%', "%%"))
@@ -184,26 +202,27 @@ fn runtime_start(launch: &ServerLaunch, bootstrap: bool, windows: bool) -> Strin
     script.replace("-jar server.jar", &arguments)
 }
 
-fn install_batch(bootstrap: Option<&ServerBootstrap>) -> String {
-    let command=bootstrap.map(|bootstrap| {
-        let headless=if bootstrap.interaction==InstallerInteraction::Headless { " --no-gui" } else { "" };
-        format!("set \"JAVA_PATH=java\"\r\nif defined JAVA_HOME set \"JAVA_PATH=%JAVA_HOME%\\bin\\java.exe\"\r\nif not \"%~1\"==\"\" set \"JAVA_PATH=%~1\"\r\n\"%JAVA_PATH%\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar{headless} -s server pack/pack.toml\r\nif errorlevel 1 exit /b %errorlevel%\r\n")
-    }).unwrap_or_default();
+fn consumer_script(script: String, target: Recipe) -> String {
+    if target.update_authority() == empack_core::distribution::UpdateAuthority::Empack {
+        script
+            .replace(
+                "instance launch --server --",
+                "instance launch --server --check-updates --",
+            )
+            .replace("--side server", "--side server --require-subscription")
+    } else {
+        script
+    }
+}
+
+fn install_batch(release: Option<&str>) -> String {
+    let command = release.map(|id| format!("empack --workdir \"%cd%\" --yes instance prepare \"%cd%\\.empack-consumer\\release.json\" --sha256 {id} --layout game --side server\r\nif errorlevel 1 exit /b %errorlevel%\r\n")).unwrap_or_default();
     format!(
         "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || exit /b 1\r\n{command}echo Server pack ready. Run start.bat to start it.\r\necho Review and accept the Minecraft EULA yourself before playing.\r\nexit /b 0\r\n"
     )
 }
-fn install_script(bootstrap: Option<&ServerBootstrap>) -> String {
-    let command = bootstrap.map(|bootstrap| {
-        let headless = if bootstrap.interaction == InstallerInteraction::Headless {
-            " --no-gui"
-        } else {
-            ""
-        };
-        format!(r#"JAVA_PATH="${{1:-${{JAVA_HOME:+$JAVA_HOME/bin/}}java}}"
-"$JAVA_PATH" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar{headless} -s server pack/pack.toml
-"#)
-    }).unwrap_or_default();
+fn install_script(release: Option<&str>) -> String {
+    let command = release.map(|id| format!("empack --workdir \"$PWD\" --yes instance prepare \"$PWD/.empack-consumer/release.json\" --sha256 {id} --layout game --side server\n")).unwrap_or_default();
     format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
@@ -218,7 +237,7 @@ pub(super) fn prepare_server_archive(
     external: &BuildAcquisitions,
     options: &ServerOptions,
     runtime: &PreparedServerRuntime,
-    bootstrap: Option<&ServerBootstrap>,
+    target: Recipe,
     cancel: &Cancellation,
 ) -> Result<(super::ArchiveCandidate, ServerEvidence)> {
     ensure!(
@@ -253,13 +272,13 @@ pub(super) fn prepare_server_archive(
         artifact.as_str().ends_with(suffix),
         "Server artifact extension differs from selected format"
     );
-    let target = if bootstrap.is_some() {
-        BuildTarget::Server
-    } else {
-        BuildTarget::ServerFull
-    };
-    let game = if bootstrap.is_some() {
-        prepare_bootstrap_game_content(
+    ensure!(
+        target.consumer() == empack_core::distribution::Consumer::Server,
+        "Server adapter requires an executable consumer recipe"
+    );
+    let references = super::instance_managed(target);
+    let game = if references {
+        prepare_native_game_content(
             workspace,
             external,
             target,
@@ -278,7 +297,28 @@ pub(super) fn prepare_server_archive(
         )?
     };
     let templates = prepare_templates(workspace, target, &options.templates, cancel)?;
-    let mut files = game.files().clone();
+    let mut files = BTreeMap::new();
+    let release = if references {
+        let mut release_options = NativeReleaseOptions::from_project(game.project())?;
+        release_options.require_subscription =
+            target.update_authority() == empack_core::distribution::UpdateAuthority::Empack;
+        release_options.delivery = target.delivery();
+        release_options
+            .policies
+            .retain(|destination, _| game.files().contains_key(destination));
+        Some(
+            NativeReleasePlan::prepare_selected(&game, release_options)?
+                .with_server_runtime(runtime)?,
+        )
+    } else {
+        for (destination, file) in game.files() {
+            files.insert(
+                path(&format!("game/{}", destination.as_str()))?,
+                file.clone(),
+            );
+        }
+        None
+    };
     let mut insert = |destination: PortableRelPath, file: AcquiredBuildFile| -> Result<()> {
         ensure!(
             !files.contains_key(&destination),
@@ -288,27 +328,21 @@ pub(super) fn prepare_server_archive(
         files.insert(destination, file);
         Ok(())
     };
-    for (destination, file) in runtime.files() {
-        insert(destination.clone(), file.clone())?;
+    for (destination, file) in runtime.files().iter().filter(|_| !references) {
+        insert(
+            path(&format!("game/{}", destination.as_str()))?,
+            file.clone(),
+        )?;
     }
-    if let Some(bootstrap) = bootstrap {
-        let tree = game.packwiz(bootstrap.interaction, cancel)?;
-        for (destination, file) in tree.files() {
+    if let Some(release) = &release {
+        insert(
+            path(".empack-consumer/release.json")?,
+            generated(release.release().bytes(), false, cancel)?,
+        )?;
+        for (destination, file) in release.assets() {
             insert(
-                path(&format!("pack/{}", destination.as_str()))?,
+                path(&format!(".empack-consumer/{}", destination.as_str()))?,
                 file.clone(),
-            )?;
-        }
-        for artifact in [InstallerArtifact::Bootstrap, InstallerArtifact::Installer] {
-            insert(
-                path(artifact.release().filename)?,
-                AcquiredBuildFile {
-                    content: bootstrap.assets.content(artifact).clone(),
-                    permissions: FilePermissions {
-                        readonly: false,
-                        executable: false,
-                    },
-                },
             )?;
         }
     }
@@ -326,46 +360,75 @@ pub(super) fn prepare_server_archive(
         "start.bat",
         "install_pack.sh",
         "install_pack.bat",
-        "server.properties",
+        "game/server.properties",
     ]
     .into_iter()
     .any(|name| files.contains_key(&path(name).expect("static path")));
     for (name, bytes, executable) in [
         (
             "start.sh",
-            runtime_start(runtime.launch(), bootstrap.is_some(), false).into_bytes(),
+            consumer_script(runtime_start(runtime.launch(), references, false), target)
+                .into_bytes(),
             true,
         ),
         (
             "start.bat",
-            runtime_start(runtime.launch(), bootstrap.is_some(), true).into_bytes(),
+            consumer_script(runtime_start(runtime.launch(), references, true), target).into_bytes(),
             false,
         ),
         (
             "install_pack.bat",
-            install_batch(bootstrap).into_bytes(),
+            consumer_script(
+                install_batch(release.as_ref().map(|release| release.release().id())),
+                target,
+            )
+            .into_bytes(),
             false,
         ),
         (
             "install_pack.sh",
-            install_script(bootstrap).into_bytes(),
+            consumer_script(
+                install_script(release.as_ref().map(|release| release.release().id())),
+                target,
+            )
+            .into_bytes(),
             true,
         ),
     ] {
         let destination = path(name)?;
-        if let std::collections::btree_map::Entry::Vacant(entry) = files.entry(destination) {
-            entry.insert(generated(&bytes, executable, cancel)?);
+        match files.entry(destination) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(generated(&bytes, executable, cancel)?);
+            }
+            std::collections::btree_map::Entry::Occupied(entry)
+                if target.update_authority()
+                    == empack_core::distribution::UpdateAuthority::Empack =>
+            {
+                ensure!(
+                    entry.get().content.lease().len() == bytes.len() as u64,
+                    "Subscribed server templates must retain generated scripts"
+                );
+                let mut actual = Vec::new();
+                entry
+                    .get()
+                    .content
+                    .lease()
+                    .open()
+                    .read_to_end(&mut actual)?;
+                ensure!(
+                    actual == bytes,
+                    "Subscribed server templates must retain the generated preparation and launch scripts"
+                );
+            }
+            _ => {}
         }
     }
-    let properties = path("server.properties")?;
-    if let std::collections::btree_map::Entry::Vacant(entry) = files.entry(properties) {
+    let properties = path("game/server.properties")?;
+    if !game.files().contains_key(&path("server.properties")?)
+        && let std::collections::btree_map::Entry::Vacant(entry) = files.entry(properties)
+    {
         let bytes = crate::engine::templates::render_default(
             game.project(),
-            if bootstrap.is_some() {
-                BuildTarget::Server
-            } else {
-                BuildTarget::ServerFull
-            },
             include_str!("../../../templates/server/server.properties.template"),
             [],
             options.limits.file_bytes,
@@ -374,6 +437,11 @@ pub(super) fn prepare_server_archive(
         entry.insert(generated(&bytes, false, cancel)?);
     }
     let mut collisions = CollisionIndex::default();
+    if references {
+        for destination in game.files().keys().chain(runtime.files().keys()) {
+            collisions.insert_file(&path(&format!("game/{}", destination.as_str()))?)?;
+        }
+    }
     let mut inventory = BTreeMap::new();
     for (destination, file) in &files {
         collisions.insert_file(destination)?;
@@ -423,14 +491,6 @@ pub(super) fn prepare_server_archive(
             game,
             inventory,
             user_configuration,
-            toolchain: if bootstrap.is_some() {
-                vec![
-                    InstallerArtifact::Bootstrap.release(),
-                    InstallerArtifact::Installer.release(),
-                ]
-            } else {
-                vec![]
-            },
             runtime: runtime.evidence().clone(),
         },
     ))

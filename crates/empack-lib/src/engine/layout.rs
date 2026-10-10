@@ -15,7 +15,6 @@ impl ProjectLayout {
         let value = match target {
             ManagedPath::IntentDocument => "empack.yml".to_owned(),
             ManagedPath::LockDocument => "empack.lock".to_owned(),
-            ManagedPath::BackendDocument(path) => format!("pack/{}", path.as_str()),
             ManagedPath::Content { layer, path } => format!(
                 "{}/{}",
                 match layer {
@@ -34,14 +33,27 @@ impl ProjectLayout {
             }
             .to_owned(),
             ManagedPath::Artifact(path) => format!("dist/{}", path.as_str()),
+            ManagedPath::InstanceFile(path) => format!("game/{}", path.as_str()),
+            ManagedPath::InstanceLayoutMarker => "game/.empack-layout".to_owned(),
+            ManagedPath::PrismProfile => "mmc-pack.json".to_owned(),
+            ManagedPath::PrismLayoutMarker => ".minecraft/.empack-layout".to_owned(),
+            ManagedPath::PrismFile(path) => format!(".minecraft/{}", path.as_str()),
+            ManagedPath::InstanceSubscription => ".empack/subscription.json".to_owned(),
+            ManagedPath::InstanceRecord => ".empack/instance.json".to_owned(),
+            ManagedPath::InstanceRelease(path) => format!(".empack/releases/{}", path.as_str()),
         };
         Ok(PortableRelPath::parse(&value, PathSyntax::ProjectContent)?)
     }
 
-    /// Observation assigns backend documents their own role; unrelated root files are not managed.
+    /// Classify native managed namespaces; unrelated root files are not managed.
     pub fn classify(path: &PortableRelPath) -> Result<ManagedPath> {
         let value = path.as_str();
         match value {
+            "mmc-pack.json" => return Ok(ManagedPath::PrismProfile),
+            "game/.empack-layout" => return Ok(ManagedPath::InstanceLayoutMarker),
+            ".minecraft/.empack-layout" => return Ok(ManagedPath::PrismLayoutMarker),
+            ".empack/subscription.json" => return Ok(ManagedPath::InstanceSubscription),
+            ".empack/instance.json" => return Ok(ManagedPath::InstanceRecord),
             "empack.yml" => return Ok(ManagedPath::IntentDocument),
             "empack.lock" => return Ok(ManagedPath::LockDocument),
             ".gitignore" => return Ok(ManagedPath::Scaffold(ProjectScaffold::GitIgnore)),
@@ -56,18 +68,21 @@ impl ProjectLayout {
         let relative = |value: &str| {
             PortableRelPath::parse(value, PathSyntax::ProjectContent).map_err(anyhow::Error::from)
         };
+        if let Some(value) = value.strip_prefix(".minecraft/") {
+            return Ok(ManagedPath::PrismFile(relative(value)?));
+        }
+        if let Some(value) = value.strip_prefix("game/") {
+            return Ok(ManagedPath::InstanceFile(relative(value)?));
+        }
+        if let Some(value) = value.strip_prefix(".empack/releases/") {
+            return Ok(ManagedPath::InstanceRelease(relative(value)?));
+        }
         if let Some(value) = value.strip_prefix("pack/") {
             let path = relative(value)?;
-            return Ok(
-                if matches!(value, "pack.toml" | "index.toml") || value.ends_with(".pw.toml") {
-                    ManagedPath::BackendDocument(path)
-                } else {
-                    ManagedPath::Content {
-                        layer: ContentLayer::Common,
-                        path,
-                    }
-                },
-            );
+            return Ok(ManagedPath::Content {
+                layer: ContentLayer::Common,
+                path,
+            });
         }
         for (prefix, layer) in [
             ("overrides/common/", ContentLayer::CommonOverride),

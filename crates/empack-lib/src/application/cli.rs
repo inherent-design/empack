@@ -27,7 +27,15 @@ pub struct AdoptionSourceArgs {
 /// empack CLI - Minecraft modpack management
 #[derive(Debug, Clone, Parser, Default)]
 #[command(name = "empack")]
-#[command(about = "Minecraft modpack manager")]
+#[command(about = "Author, distribute and update Minecraft packs")]
+#[command(after_help = "Start a pack: empack init my-pack
+Author changes: empack --workdir my-pack sync
+Export for a launcher: empack --workdir my-pack build modrinth
+
+Author commands use empack.yml and empack.lock.
+Instance commands manage a separate installed game directory.
+Use --dry-run before a command to preview changes.
+Run empack <command> --help for its options.")]
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
@@ -224,30 +232,46 @@ pub struct InitArgs {
 
 /// Arguments for the `build` subcommand.
 #[derive(Args, Debug, Clone, Default)]
-#[command(after_help = "Targets:
-  mrpack       Importable modpack archive with download references
-  client       Lightweight client distribution with a Java bootstrap
-  server       Lightweight server distribution with a prepared runtime
-  client-full  Prism-compatible instance with pack content
-  server-full  Server distribution with runtime and pack content
-  all          Build all five targets
+#[command(after_help = "Consumers:
+  modrinth    Modrinth archive with exact references and overrides
+  curseforge  CurseForge client ZIP with exact references and overrides
+  prism       Launcher instance; bundled pack content by default
+  server      Prepared server runtime; bundled pack content by default
+  empack      Exact native release and immutable assets
 
-Without TARGETS, use distribution.targets from empack.yml.
-Client-full leaves Minecraft and game-asset downloads to the launcher.
-Forge/NeoForge server targets run the selected Java installer during preparation.
-All requested targets are prepared and verified before publication.
+Without CONSUMERS, use distribution.recipes from empack.yml.
+Use --delivery references for a Prism/server snapshot installed by empack.
+Prism/server reference exports and native empack exports need
+distribution.native identity and Java settings.
+Bundled content does not include client game binaries or imply offline launch.
+Update authority is independent of dependency delivery; snapshots are the default.
+All requested outputs are verified before combined publication.
 
 Examples:
-  empack build --dry-run all
-  empack build mrpack client-full
+  empack build --dry-run modrinth prism
+  empack build prism server --delivery references
   empack build --continue")]
 pub struct BuildArgs {
-    /// Build targets to execute
+    /// Consumers to build with explicit policy overrides
     #[arg(
-        help = "Targets to build (default: distribution.targets in empack.yml)",
+        help = "Consumers to build (default: distribution.recipes in empack.yml)",
+        value_name = "CONSUMERS",
+        value_parser = ["modrinth", "curseforge", "prism", "server", "empack"],
         conflicts_with = "continue_build"
     )]
     pub targets: Vec<String>,
+
+    /// How dependency bytes reach the consumer; independent of update authority
+    #[arg(long, value_parser = ["references", "bundled"], conflicts_with = "continue_build")]
+    pub delivery: Option<String>,
+
+    /// Environment to project; each consumer validates the selected side
+    #[arg(long, value_parser = ["client", "server", "both"], conflicts_with = "continue_build")]
+    pub environment: Option<String>,
+
+    /// Who may select future releases; requires a bound platform or publisher association
+    #[arg(long, value_parser = ["snapshot", "platform", "empack"], conflicts_with = "continue_build")]
+    pub updates: Option<String>,
 
     /// Continue a previously blocked restricted-mod build
     #[arg(
@@ -265,7 +289,7 @@ pub struct BuildArgs {
     )]
     pub clean: bool,
 
-    /// Archive format override for distributions; mrpack always uses ZIP
+    /// Archive format override for distributions; mrpack and curseforge always use ZIP
     #[arg(long, value_enum, conflicts_with = "continue_build")]
     pub format: Option<CliArchiveFormat>,
 
@@ -301,7 +325,7 @@ pub struct BuildArgs {
     )]
     pub optional_choices: Vec<String>,
 
-    /// Allow mrpack to omit optional choice keys, defaults and descriptions.
+    /// Allow reference archives to omit optional choice keys, defaults and descriptions.
     #[arg(long, conflicts_with = "continue_build")]
     pub allow_optional_metadata_loss: bool,
 }
@@ -311,9 +335,252 @@ pub struct BuildArgs {
 #[error("{0}")]
 pub struct CommandInputRequired(pub &'static str);
 
+/// Native instance commands are separate from author dependency updates.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct InstanceConflictArgs {
+    /// Keep edited bytes as an explicit local deviation (release-relative path)
+    #[arg(long = "preserve", value_name = "PATH")]
+    pub preserve: Vec<String>,
+    /// Replace an exact conflicting file with selected release content, or retire it
+    #[arg(long = "replace", value_name = "PATH")]
+    pub replace: Vec<String>,
+    /// Apply a separately prepared merge result as a local deviation
+    #[arg(long = "merge", value_name = "PATH=FILE")]
+    pub merge: Vec<String>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum ReleaseCommand {
+    /// Verify hosted immutable content, then publish a signed channel pointer
+    PublishChannel {
+        /// Exact release ID printed by release stage
+        release: String,
+        /// Channel name used by subscribers
+        #[arg(long)]
+        channel: String,
+        /// HTTPS directory serving the publisher's dist/ output
+        #[arg(long)]
+        base_url: String,
+        /// Increasing sequence number; changing metadata requires a higher value
+        #[arg(long)]
+        sequence: u64,
+        /// UTC Unix seconds; must be future-dated by at most 31 days
+        #[arg(long)]
+        expires: i64,
+        /// External Ed25519 seed file, encoded as 64 lowercase hexadecimal characters
+        #[arg(long = "key-file", required = true)]
+        keys: Vec<PathBuf>,
+        /// Previously enrolled public key, used only to authenticate the old pointer
+        #[arg(long = "previous-key")]
+        previous_keys: Vec<String>,
+    },
+    /// Stage signed immutable release files under `dist/releases/<release-id>/`
+    Stage {
+        /// Extracted native export containing release.json and its selected assets
+        source: PathBuf,
+        /// External file containing a 32-byte Ed25519 seed as 64 hexadecimal characters
+        #[arg(long = "key-file", required = true)]
+        keys: Vec<PathBuf>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum InstanceCommand {
+    /// Resume an exact pending release with verified manual file associations.
+    Continue {
+        /// Associate exact missing content with its release file key
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+    /// Discard a selected pending instance recipe; keep the completed installation.
+    DiscardPending,
+    /// Clear interrupted runtime evidence only after all remaining processes have stopped
+    RecoverRuntime {
+        #[arg(long, required = true)]
+        acknowledge_stopped: bool,
+    },
+    /// Run a locally selected runtime while preventing concurrent managed updates
+    Launch {
+        /// Use the completed release's server entry point; PROGRAM is locally selected Java
+        #[arg(long)]
+        server: bool,
+        /// Check the explicitly enrolled channel and apply a verified update before launch
+        #[arg(long)]
+        check_updates: bool,
+        /// On channel connection failure only, use the verified completed installation
+        #[arg(long, requires = "check_updates")]
+        allow_offline: bool,
+        /// Runtime program and arguments after --; no shell expansion or remote commands
+        #[arg(last = true, required = true, num_args = 1..)]
+        command: Vec<std::ffi::OsString>,
+    },
+    /// Apply the exact signed release selected by the saved authenticated channel observation
+    Update {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
+        /// Local signed release envelope; omit to fetch the saved channel's exact release
+        release: Option<std::path::PathBuf>,
+        /// Match the installed environment; use --side server for server instances
+        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
+        side: String,
+        /// Retain the installed layout; new instances default to game
+        #[arg(long, value_parser = ["game", "prism"])]
+        layout: Option<String>,
+        /// Select a named alternative; omitted choices retain their saved values
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        /// Associate exact missing content with its release file key
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+
+    /// Enroll an explicit publisher and HTTPS channel; does not install or update content
+    Subscribe {
+        /// Stable pack ID from the native release, not its display name
+        #[arg(long)]
+        pack: String,
+        /// Channel name signed by the publisher
+        #[arg(long)]
+        channel: String,
+        /// HTTPS URL of the signed channel document
+        url: String,
+        /// Trusted Ed25519 public key as 64 lowercase hexadecimal characters
+        #[arg(long = "key", required = true)]
+        keys: Vec<String>,
+    },
+    /// Replace enrolled publisher keys locally, preserving the saved anti-replay floor
+    Trust {
+        /// Trusted Ed25519 public key as 64 lowercase hexadecimal characters
+        #[arg(
+            long = "key",
+            required_unless_present = "revoke_all",
+            conflicts_with = "revoke_all"
+        )]
+        keys: Vec<String>,
+        /// Disable updates without discarding the subscription or sequence floor
+        #[arg(long)]
+        revoke_all: bool,
+    },
+    /// Verify a signed channel envelope and save its anti-replay floor without installing content
+    ObserveChannel {
+        /// Local signed envelope; omit to fetch the enrolled HTTPS channel
+        envelope: Option<std::path::PathBuf>,
+    },
+
+    /// Inspect choices, or apply explicit alternatives within the installed release
+    Options {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
+        /// Select a named alternative; omitted choices retain their saved values
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        /// Directory containing the selected release's immutable asset paths
+        #[arg(long)]
+        assets: Option<std::path::PathBuf>,
+        /// Associate exact missing content with its release file key
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+    /// Show the completed release, saved choices and retained rollback releases
+    Inspect,
+    /// Restore the installed release without changing its choices or selecting newer content
+    Repair {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
+        /// Directory containing the retained release's immutable asset paths
+        #[arg(long)]
+        assets: Option<std::path::PathBuf>,
+        /// Associate exact missing content with its release file key
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+    /// Restore a retained release's managed content while preserving edited user files
+    Rollback {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
+        /// Exact SHA-256 of a retained completed release payload
+        release: String,
+        /// Directory containing the selected release's immutable asset paths
+        #[arg(long)]
+        assets: Option<std::path::PathBuf>,
+        /// Associate exact missing content with its release file key
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+        /// Resolve alternatives no longer present in the current saved choices
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+    },
+
+    /// Install the initial release or repair the active release without reverting updates
+    Prepare {
+        /// Require an explicitly enrolled, non-revoked publisher for this pack
+        #[arg(long)]
+        require_subscription: bool,
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
+        /// Immutable JSON release payload, not an author manifest
+        release: std::path::PathBuf,
+        /// Expected SHA-256 of the exact release payload bytes
+        #[arg(long)]
+        sha256: String,
+        /// Environment to install; an existing instance cannot switch sides
+        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
+        side: String,
+        /// Fixed content directory; retained on updates (new instances default to game)
+        #[arg(long, value_parser = ["game", "prism"])]
+        layout: Option<String>,
+        /// Stable release choice and selected alternative
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        /// Associate exact content with a release file key, including manual downloads
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+
+    /// Install an exact local release, preserving seeds and rejecting edited managed files
+    Install {
+        #[command(flatten)]
+        conflicts: InstanceConflictArgs,
+        /// Immutable JSON release payload, not an author manifest
+        release: std::path::PathBuf,
+        /// Expected SHA-256 of the exact release payload bytes
+        #[arg(long)]
+        sha256: String,
+        /// Environment to install; an existing instance cannot switch sides
+        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
+        side: String,
+        /// Fixed content directory; retained on updates (new instances default to game)
+        #[arg(long, value_parser = ["game", "prism"])]
+        layout: Option<String>,
+        /// Stable release choice and selected alternative
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        /// Associate exact content with a release file key, including manual downloads
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Sign and publish native releases for static HTTPS hosting
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
+    /// Manage exact releases in a separate installed game instance
+    #[command(
+        after_help = "Select an existing directory with empack --workdir INSTANCE instance <command>.
+Create an empty directory before the first installation.
+Use install for a local snapshot; subscribe, observe-channel and update for a signed channel.
+Server installations and updates require --side server."
+    )]
+    Instance {
+        #[command(subcommand)]
+        command: InstanceCommand,
+    },
+
     /// Check tool dependencies and show setup guidance
     Requirements,
 
@@ -415,7 +682,7 @@ pub enum Commands {
     #[command(alias = "rm")]
     Remove {
         /// Mod names to remove
-        #[arg(help = "Dependency keys, titles, or installed metadata names")]
+        #[arg(help = "Dependency keys, titles, or provider-qualified IDs")]
         mods: Vec<String>,
 
         /// Remove dependencies as well
@@ -517,6 +784,7 @@ impl Commands {
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
+            Commands::Instance { .. } | Commands::Release { .. } => false,
             Commands::Recover { .. } => false,
             Commands::Requirements => false,
             Commands::Version => false,
@@ -532,6 +800,7 @@ impl Commands {
     /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
+            Commands::Instance { .. } | Commands::Release { .. } => 1,
             Commands::Recover { .. } => 0,
             Commands::Requirements => 0,
             Commands::Version => 0,
@@ -548,6 +817,123 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn documented_beta_workflows_parse() {
+        for command in [
+            "empack init my-pack --modloader fabric --mc-version 1.21.1",
+            "empack --workdir my-pack add --platform modrinth sodium",
+            "empack --workdir my-pack build modrinth",
+            "empack build prism --optional-defaults",
+            "empack build server --optional CHOICE=true",
+            "empack build --continue --associate-download FILENAME=/tmp/download.jar",
+            "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
+            "empack --workdir ./instance instance update --side server",
+            "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --expires 2000000000 --key-file /tmp/publisher.key",
+        ] {
+            Cli::try_parse_from(command.split_whitespace())
+                .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));
+        }
+    }
+
+    #[test]
+    fn instance_launch_preserves_native_argument_boundaries() {
+        assert!(Cli::try_parse_from(["empack", "instance", "launch"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "launch",
+                "--allow-offline",
+                "--",
+                "java"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "launch",
+                "--check-updates",
+                "--allow-offline",
+                "--",
+                "java"
+            ])
+            .is_ok()
+        );
+        assert!(Cli::try_parse_from(["empack", "instance", "recover-runtime"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "recover-runtime",
+                "--acknowledge-stopped"
+            ])
+            .is_ok()
+        );
+        let cli = Cli::try_parse_from([
+            "empack",
+            "instance",
+            "launch",
+            "--",
+            "/path with spaces/java",
+            "-Xmx2G",
+            "literal $value",
+        ])
+        .unwrap();
+        let Some(Commands::Instance {
+            command: InstanceCommand::Launch { command, .. },
+        }) = cli.command
+        else {
+            panic!()
+        };
+        assert_eq!(
+            command,
+            vec![
+                std::ffi::OsString::from("/path with spaces/java"),
+                "-Xmx2G".into(),
+                "literal $value".into()
+            ]
+        );
+    }
+
+    #[test]
+    fn instance_install_requires_a_digest_and_keeps_exact_input_associations() {
+        assert!(Cli::try_parse_from(["empack", "instance", "install", "release.json"]).is_err());
+        let cli = Cli::try_parse_from([
+            "empack",
+            "instance",
+            "install",
+            "release.json",
+            "--sha256",
+            &"00".repeat(32),
+            "--side",
+            "server",
+            "--choice",
+            "extra=yes",
+            "--file",
+            "one=some=file.jar",
+        ])
+        .unwrap();
+        let Some(Commands::Instance {
+            command:
+                InstanceCommand::Install {
+                    side,
+                    choices,
+                    files,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("not instance install")
+        };
+        assert_eq!(side, "server");
+        assert_eq!(choices, ["extra=yes"]);
+        assert_eq!(files, ["one=some=file.jar"]);
+    }
+
     use clap::CommandFactory;
     use std::str::FromStr;
 
@@ -729,17 +1115,17 @@ mod tests {
     #[test]
     fn build_archive_override_distinguishes_absence_from_explicit_zip() {
         for (arguments, expected) in [
-            (vec!["empack", "build", "client-full"], None),
+            (vec!["empack", "build", "prism"], None),
             (
-                vec!["empack", "build", "client-full", "--format", "zip"],
+                vec!["empack", "build", "prism", "--format", "zip"],
                 Some(CliArchiveFormat::Zip),
             ),
             (
-                vec!["empack", "build", "client-full", "--format", "tar.gz"],
+                vec!["empack", "build", "prism", "--format", "tar.gz"],
                 Some(CliArchiveFormat::TarGz),
             ),
             (
-                vec!["empack", "build", "client-full", "--format", "7z"],
+                vec!["empack", "build", "prism", "--format", "7z"],
                 Some(CliArchiveFormat::SevenZ),
             ),
         ] {
@@ -794,7 +1180,7 @@ mod tests {
 
         match result {
             CliLoad::Display(message) => {
-                assert!(message.contains("Minecraft modpack manager"));
+                assert!(message.contains("Author, distribute and update Minecraft packs"));
                 assert!(message.contains("Usage:"));
             }
             CliLoad::Ready(_) => panic!("help should return a display payload"),
@@ -864,7 +1250,7 @@ mod tests {
 
     #[test]
     fn cli_config_load_from_rejects_build_continue_with_targets() {
-        let result = CliConfig::load_from(["empack", "build", "--continue", "client-full"]);
+        let result = CliConfig::load_from(["empack", "build", "--continue", "prism"]);
 
         let err = match result {
             Ok(_) => panic!("continue build with targets should fail at parse time"),
@@ -967,13 +1353,13 @@ mod tests {
             std::env::set_var("EMPACK_DOWNLOADS_DIR", "/tmp/from-env");
         }
 
-        let config = CliConfig::load_from(["empack", "build", "client-full"]).expect("parse build");
+        let config = CliConfig::load_from(["empack", "build", "prism"]).expect("parse build");
 
         let Some(Commands::Build(args)) = config.command else {
             panic!("expected build command");
         };
 
-        assert_eq!(args.targets, vec!["client-full"]);
+        assert_eq!(args.targets, vec!["prism"]);
         assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/from-env"));
     }
 }
@@ -1032,5 +1418,33 @@ fn adoption_source_choices_are_explicit_and_cannot_mix_with_tracked_keys() {
         ],
     ] {
         assert!(Cli::try_parse_from(&args).is_err(), "accepted {args:?}");
+    }
+}
+
+#[cfg(test)]
+mod consumer_cli_tests {
+    use super::*;
+    #[test]
+    fn consumer_delivery_is_explicit_and_cannot_change_a_continuation() {
+        let config = CliConfig::load_from([
+            "empack",
+            "build",
+            "prism",
+            "server",
+            "--delivery",
+            "references",
+        ])
+        .unwrap();
+        let Commands::Build(args) = config.command.unwrap() else {
+            panic!("expected build")
+        };
+        assert_eq!(args.targets, ["prism", "server"]);
+        assert_eq!(args.delivery.as_deref(), Some("references"));
+        for args in [
+            vec!["empack", "build", "client-full"],
+            vec!["empack", "build", "--continue", "--delivery", "bundled"],
+        ] {
+            assert!(CliConfig::load_from(args).is_err());
+        }
     }
 }

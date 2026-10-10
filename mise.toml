@@ -98,6 +98,7 @@ run = "cargo nextest run -p empack-tests --test smoke"
 run_windows = "cargo nextest run -p empack-tests --test smoke"
 
 [tasks."smoke:runtime"]
+depends = ["build:bin"]
 description = "Verify CLI build budgets, official runtime bytes and Java server launchers"
 run = [
     "cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E 'test(cli_neoforge_build_all_targets_with_default_resource_budget)'",

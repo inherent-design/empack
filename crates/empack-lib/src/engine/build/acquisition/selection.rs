@@ -1,8 +1,8 @@
 //! Select exact obligations without acquiring bytes or running a backend.
 use super::*;
 use empack_core::{
+    distribution::Recipe,
     inventory::{BuildSelection, ContentOwner, InventoryInput, OptionalPolicy, Representation},
-    projection::BuildTarget,
 };
 
 /// Plan one target with its actual environment and optional choices. In a build batch, callers
@@ -10,27 +10,33 @@ use empack_core::{
 pub fn plan_target_build_acquisitions(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
-    if target == BuildTarget::Mrpack {
+    if crate::engine::mrpack::supports(target) {
         ensure!(
             matches!(optional, OptionalPolicy::Preserve),
             "Mrpack preserves optional choices"
         );
+        let (selection, keys) = select_game_inputs(workspace, target, optional, cancel)?;
+        let selected = selection
+            .entries()
+            .iter()
+            .filter_map(|entry| keys.get(&entry.owner).cloned())
+            .collect();
         return plan_acquisitions(
             workspace,
             external,
             BuildMaterialization::ReferenceArchive,
-            None,
+            Some(&selected),
             evidence,
             cancel,
         );
     }
-    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
-    let (selected, keys) = select_game_inputs(workspace, external, target, optional, cancel)?;
+    let references = crate::engine::build::curseforge::supports(target);
+    let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
     for entry in selected.entries() {
@@ -40,7 +46,8 @@ pub fn plan_target_build_acquisitions(
                 | Representation::Download { expected, .. } => expected,
                 Representation::Embedded { .. } => continue,
             };
-            let expected = if let AcquisitionKey::Locked(key) = key {
+            let expected = {
+                let AcquisitionKey::Locked(key) = key;
                 let file = project.lock().dependencies[&key.dependency]
                     .files
                     .as_slice()
@@ -51,8 +58,6 @@ pub fn plan_target_build_acquisitions(
                     AcquisitionSpec::ProviderArchiveMember { archive, .. } => &archive.expected,
                     _ => expected,
                 }
-            } else {
-                expected
             };
             if evidence == SourceEvidencePolicy::StrongSourceRequired {
                 ensure!(
@@ -66,7 +71,10 @@ pub fn plan_target_build_acquisitions(
                     "Selected build content has only weaker source evidence"
                 );
             }
-            if matches!(entry.representation, Representation::Unacquired { .. }) {
+            if matches!(entry.representation, Representation::Unacquired { .. })
+                || (crate::engine::build::instance_managed(target)
+                    && matches!(entry.representation, Representation::Download { .. }))
+            {
                 needed.insert(key.clone());
             }
         }
@@ -91,20 +99,13 @@ pub fn plan_target_build_acquisitions(
 
 pub(in crate::engine::build) fn select_game_inputs(
     workspace: &WorkspaceSnapshot,
-    external: &BuildAcquisitions,
-    target: BuildTarget,
+    target: Recipe,
     optional: &OptionalPolicy,
     cancel: &Cancellation,
 ) -> Result<(BuildSelection, BTreeMap<ContentOwner, AcquisitionKey>)> {
     let project = workspace.require_resolved()?;
-    let records = workspace.backend_files(cancel)?;
-    let available = external
-        .locked
-        .iter()
-        .map(|(key, file)| (key.clone(), file))
-        .collect();
-    let backend = check_backend(&project, &records, &available)?;
-    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
+    let references = crate::engine::build::instance_managed(target)
+        || crate::engine::build::curseforge::supports(target);
     let mut inputs = Vec::new();
     let mut occupied = BTreeSet::new();
     let mut keys = BTreeMap::new();
@@ -129,7 +130,7 @@ pub(in crate::engine::build) fn select_game_inputs(
                 _ => {}
             }
             let representation = if references {
-                super::super::materialized::reference_for(file, None)?
+                super::super::materialized::reference_for_target(file, None, target)?
             } else {
                 None
             }
@@ -150,37 +151,6 @@ pub(in crate::engine::build) fn select_game_inputs(
                 });
             }
         }
-    }
-    let mut choices = super::super::declared_choices(&project);
-    for record in records
-        .iter()
-        .filter(|record| backend.unlisted.contains(&record.metadata_path))
-    {
-        cancel.check()?;
-        let choice = super::super::next_observed_choice(record, &mut choices)?;
-        // Policy is checked after selection so another environment cannot require acquisition.
-        let input = if references {
-            crate::engine::mrpack::ObservedFile::reference_input(
-                record,
-                &choice,
-                SourceEvidencePolicy::Compatibility,
-            )?
-            .map(|(input, _)| input)
-        } else {
-            None
-        }
-        .unwrap_or(crate::engine::mrpack::ObservedFile::pending_input(
-            record, &choice,
-        )?);
-        keys.insert(
-            input.owner.clone(),
-            AcquisitionKey::Observed(record.metadata_path.clone()),
-        );
-        occupied.insert(ProjectLayout::path(&ManagedPath::Content {
-            layer: ContentLayer::Common,
-            path: record.destination.relative().clone(),
-        })?);
-        inputs.push(input);
     }
     for source in workspace.source_entries(cancel)? {
         if occupied.contains(&source.path) {

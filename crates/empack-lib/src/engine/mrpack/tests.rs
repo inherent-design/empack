@@ -61,7 +61,7 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
     } else {
         json!({"client":"required","server":"unsupported"})
     };
-    let intent = DocumentCodec.decode_intent(&serde_json::to_vec(&json!({"schema":2,"pack":{"name":"Test","version":"alpha"},"runtime":{"minecraft":"1.20.1","loader":{"kind":"fabric","version":"0.16.0"}},"distribution":{"targets":["mrpack"],"archive":"zip"},"dependencies":{
+    let intent = DocumentCodec.decode_intent(&serde_json::to_vec(&json!({"schema":3,"pack":{"name":"Test","version":"alpha"},"runtime":{"minecraft":"1.20.1","loader":{"kind":"fabric","version":"0.16.0"}},"distribution":{"recipes":[{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot"}],"archive":"zip"},"dependencies":{
         "assets":{"source":{"kind":"url","downloads":[url]},"content":"resource-pack","version":{"mode":"follow-compatible"},"placement":"automatic","environment":environment}
     }})).unwrap(), "test.yml").unwrap();
     let key = DependencyKey::parse("assets").unwrap();
@@ -510,7 +510,7 @@ fn optional_layered_fallback_requires_a_representable_conversion() {
 }
 
 #[test]
-fn independent_reference_digests_do_not_require_the_backends_algorithm() {
+fn native_references_ignore_foreign_identity_and_digest_claims() {
     use crate::engine::{
         build::{BuildAcquisitions, prepare_mrpack_build},
         project::ProjectReader,
@@ -599,12 +599,7 @@ hash = "321c3cf486ed509164edec1e1981fec8"
             &cancel,
         )
     };
-    use crate::engine::backend::DigestComparisonBasis;
     let prepared = prepare(&BuildAcquisitions::default()).unwrap();
-    assert_eq!(
-        prepared.backend_comparisons()[0].basis,
-        DigestComparisonBasis::IndependentLockedReference
-    );
     let publisher =
         crate::engine::publication::Publisher::open(&host.path().join("state")).unwrap();
     prepared.publish(&publisher, &cancel).unwrap();
@@ -618,64 +613,13 @@ hash = "321c3cf486ed509164edec1e1981fec8"
         "https://example.com/unrelated-name.jar"
     );
     assert!(index["files"][0]["hashes"]["sha512"].is_string());
-    let record = std::fs::read_to_string(&metadata).unwrap();
-    let digest = resolved
-        .lock()
-        .dependencies
-        .values()
-        .next()
-        .unwrap()
-        .files
-        .as_slice()[0]
-        .expected
-        .digests
-        .as_ref()
-        .unwrap()
-        .values()
-        .iter()
-        .find(|hash| hash.algorithm() == DigestAlgorithm::Sha1)
-        .unwrap();
-    let sha1 = digest
-        .bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let matching = record
-        .replace("md5", "sha1")
-        .replace("321c3cf486ed509164edec1e1981fec8", &sha1);
-    std::fs::write(&metadata, &matching).unwrap();
-    assert_eq!(
-        prepare(&BuildAcquisitions::default())
-            .unwrap()
-            .backend_comparisons()[0]
-            .basis,
-        DigestComparisonBasis::SameAlgorithmDeclaration
-    );
-    std::fs::write(&metadata, matching.replace(&sha1, &"00".repeat(20))).unwrap();
-    assert!(prepare(&BuildAcquisitions::default()).is_err());
-    assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
-    std::fs::write(&metadata, &record).unwrap();
-    let external = BuildAcquisitions {
-        locked: BTreeMap::from([(
-            LockedFileKey {
-                dependency: DependencyKey::parse("assets").unwrap(),
-                slot: FileSlot::parse("first").unwrap(),
-            },
-            build_file(b"payload"),
-        )]),
-        ..BuildAcquisitions::default()
-    };
-    assert_eq!(
-        prepare(&external).unwrap().backend_comparisons()[0].basis,
-        DigestComparisonBasis::AcquiredBytes
-    );
-    std::fs::write(
-        &metadata,
-        record.replace("321c3cf486ed509164edec1e1981fec8", &"00".repeat(16)),
-    )
-    .unwrap();
-    assert!(prepare(&external).is_err());
-    assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
+    std::fs::write(&metadata, b"invalid foreign metadata").unwrap();
+    let prepared = prepare(&BuildAcquisitions::default()).unwrap();
+    prepared.publish(&publisher, &cancel).unwrap();
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact_path).unwrap()).unwrap();
+    let updated: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index, updated);
 }
 
 #[test]
@@ -711,4 +655,169 @@ fn common_override_and_side_replacements_reexport_the_effective_bytes() {
         assert_eq!(actual, expected);
     }
     assert!(archive.by_name("overrides/config/value.bin").is_err());
+}
+
+#[test]
+fn environment_export_preserves_selected_layers_without_excluded_evidence() {
+    // Both restricted roles belong to the client; a server projection needs neither.
+    let project = project(true, false);
+    let recipe = Recipe::new(
+        Consumer::Modrinth,
+        empack_core::distribution::Delivery::References,
+        Environments::Server,
+    )
+    .unwrap();
+    let plan = MrpackPlan::prepare_recipe(
+        &project,
+        &BTreeMap::new(),
+        vec![
+            source(ContentLayer::Common, b"common"),
+            source(ContentLayer::Client, b"client"),
+            source(ContentLayer::Server, b"server"),
+        ],
+        OptionalConversion::RejectMetadataLoss,
+        recipe,
+    )
+    .unwrap();
+    assert_eq!(plan.inventory().target(), recipe);
+    let mut output = tempfile::tempfile().unwrap();
+    plan.write(&mut output, &Cancellation::default()).unwrap();
+    let mut archive = zip::ZipArchive::new(output).unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert!(index["files"].as_array().unwrap().is_empty());
+    let files: Vec<_> = (0..archive.len())
+        .filter_map(|index| {
+            let file = archive.by_index(index).unwrap();
+            (!file.is_dir()).then(|| file.name().to_owned())
+        })
+        .collect();
+    assert_eq!(files.len(), 2);
+    assert!(files.contains(&"server-overrides/config/value.bin".into()));
+    let mut bytes = Vec::new();
+    archive
+        .by_name("server-overrides/config/value.bin")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"server");
+    // Selecting the client still demands the missing strong mrpack evidence.
+    assert!(
+        MrpackPlan::prepare_recipe(
+            &project,
+            &BTreeMap::new(),
+            Vec::new(),
+            OptionalConversion::RejectMetadataLoss,
+            Recipe::new(
+                Consumer::Modrinth,
+                empack_core::distribution::Delivery::References,
+                Environments::Client
+            )
+            .unwrap()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn hosting_domains_are_exact_and_generic_exports_remain_valid() {
+    let destination =
+        PortableRelPath::parse("mods/example.jar", PathSyntax::ArchiveMember).unwrap();
+    let mut report = HostingEligibility::default();
+    for host in [
+        "cdn.modrinth.com",
+        "github.com",
+        "raw.githubusercontent.com",
+        "gitlab.com",
+    ] {
+        report
+            .observe(&destination, &format!("https://{host}/file.jar"))
+            .unwrap();
+    }
+    assert!(report.download_domains_allowed());
+    for host in [
+        "cdn.modrinth.com.example.org",
+        "downloads.github.com",
+        "example.org",
+    ] {
+        report
+            .observe(
+                &destination,
+                &format!("https://{host}/secret-path?token=secret"),
+            )
+            .unwrap();
+    }
+    assert_eq!(report.blocked_downloads.len(), 3);
+    assert!(!format!("{report:?}").contains("secret"));
+    assert!(
+        report
+            .observe(&destination, "http://github.com/file.jar")
+            .is_err()
+    );
+    let project = project(false, false);
+    let plan = MrpackPlan::prepare(
+        &project,
+        &BTreeMap::new(),
+        vec![],
+        OptionalConversion::RejectMetadataLoss,
+    )
+    .unwrap();
+    assert_eq!(plan.hosting_eligibility().blocked_downloads.len(), 3);
+    assert!(
+        plan.hosting_eligibility()
+            .blocked_downloads
+            .iter()
+            .all(|entry| entry.host == "example.com")
+    );
+    let mut archive = tempfile::tempfile().unwrap();
+    plan.write(&mut archive, &Cancellation::default()).unwrap();
+}
+
+#[test]
+fn platform_recipe_requires_hosting_domains_without_inventing_an_association() {
+    let original = project(false, false);
+    let recipe = Recipe::MODRINTH
+        .with_update_authority(UpdateAuthority::Platform)
+        .unwrap();
+    assert!(
+        MrpackPlan::prepare_recipe(
+            &original,
+            &BTreeMap::new(),
+            vec![],
+            OptionalConversion::RejectMetadataLoss,
+            recipe
+        )
+        .is_err()
+    );
+    let mut lock = original.lock().clone();
+    for dependency in lock.dependencies.values_mut() {
+        let mut files = dependency.files.as_slice().to_vec();
+        for file in &mut files {
+            let AcquisitionSpec::Url(alternatives) = &mut file.acquisition else {
+                panic!()
+            };
+            *alternatives =
+                NonEmpty::new(vec!["https://cdn.modrinth.com/fixture.jar".into()]).unwrap();
+        }
+        dependency.files = NonEmpty::new(files).unwrap();
+    }
+    let mut intent = original.intent().clone();
+    for root in intent.roots.values_mut() {
+        root.source = SourceIntent::Url(
+            NonEmpty::new(vec!["https://cdn.modrinth.com/fixture.jar".into()]).unwrap(),
+        );
+    }
+    let resolved = explicitly_placed(intent, lock);
+    let plan = MrpackPlan::prepare_recipe(
+        &resolved,
+        &BTreeMap::new(),
+        vec![],
+        OptionalConversion::RejectMetadataLoss,
+        recipe,
+    )
+    .unwrap();
+    assert_eq!(plan.inventory().target(), recipe);
+    assert!(plan.hosting_eligibility().download_domains_allowed());
+    let index: serde_json::Value = serde_json::from_slice(&plan.index).unwrap();
+    assert!(index.get("project_id").is_none());
 }

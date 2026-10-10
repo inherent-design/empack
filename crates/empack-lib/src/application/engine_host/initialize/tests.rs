@@ -8,7 +8,6 @@ use crate::{
         content::SourceEvidencePolicy,
         documents::DocumentCodec,
         mrpack::OptionalConversion,
-        packwiz::InstallerInteraction,
         templates::TemplateOptions,
     },
 };
@@ -79,7 +78,7 @@ async fn initialization_host_preserves_preview_decline_and_exact_replacement_foo
     fs::write(project.join("pack/config/old.cfg"), b"old managed bytes").unwrap();
     fs::write(project.join("notes.txt"), b"retain unrelated notes").unwrap();
     fs::write(
-        project.join("templates/server/server.properties.template"),
+        project.join("templates/server/game/server.properties.template"),
         b"user-owned template",
     )
     .unwrap();
@@ -107,7 +106,7 @@ async fn initialization_host_preserves_preview_decline_and_exact_replacement_foo
         b"retain unrelated notes"
     );
     assert_eq!(
-        fs::read(project.join("templates/server/server.properties.template")).unwrap(),
+        fs::read(project.join("templates/server/game/server.properties.template")).unwrap(),
         b"user-owned template"
     );
     assert_eq!(read(&project).intent().metadata.name, "Replacement");
@@ -155,7 +154,14 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
         "saves"
     );
     assert_eq!(project.intent().metadata.author.as_deref(), Some("Tester"));
-    assert_eq!(project.intent().distribution.targets.as_slice().len(), 5);
+    assert_eq!(
+        project.intent().distribution.recipes.as_slice(),
+        [
+            Recipe::MODRINTH,
+            Recipe::PRISM_BUNDLED,
+            Recipe::SERVER_BUNDLED
+        ]
+    );
 }
 
 #[tokio::test]
@@ -229,6 +235,7 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
             replacement: prepared.view().replacement(),
             network: NetworkPermission::Offline,
             run_installer: false,
+            run_runtime: false,
         };
         let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
         assert!(matches!(
@@ -242,12 +249,12 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
-                target: BuildTarget::Mrpack,
+                target: Recipe::MODRINTH,
                 artifact: PortableRelPath::parse("pack.mrpack", PathSyntax::ProjectContent)
                     .unwrap(),
             },
             BuildOutput {
-                target: BuildTarget::ClientFull,
+                target: Recipe::PRISM_BUNDLED,
                 artifact: PortableRelPath::parse("client.zip", PathSyntax::ProjectContent).unwrap(),
             },
         ])
@@ -257,7 +264,6 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     };
     let prepared = match engine
         .prepare(ProjectTarget::Existing(project.clone()), request)
@@ -272,6 +278,7 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         replacement: prepared.view().replacement(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        run_runtime: false,
     };
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
     let outcome = operation.wait().await;

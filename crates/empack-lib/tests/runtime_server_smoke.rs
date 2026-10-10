@@ -14,6 +14,13 @@ use empack_lib::{
 };
 use std::{fs, path::PathBuf, time::Duration};
 async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> anyhow::Result<()> {
+    verify_live_distribution(game, loader, false).await
+}
+async fn verify_live_distribution(
+    game: &str,
+    loader: Option<(&str, LoaderKind)>,
+    managed: bool,
+) -> anyhow::Result<()> {
     let runtime = RuntimeResolution {
         minecraft: GameVersion::parse(game)?,
         loader: loader.map_or(LoaderKind::Vanilla, |(_, kind)| kind),
@@ -35,7 +42,7 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
         .map(|home| PathBuf::from(home).join("bin").join(executable))
         .unwrap_or_else(|| executable.into());
     let root = tempfile::tempdir()?;
-    package_runtime(runtime, java.clone(), root.path()).await?;
+    package_runtime(runtime, java.clone(), root.path(), managed).await?;
     let mut command = if cfg!(windows) {
         let mut command = std::process::Command::new("cmd.exe");
         command.args(["/D", "/C", "start.bat"]);
@@ -50,6 +57,37 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
             "JAVA_HOME",
             java.parent().and_then(std::path::Path::parent).unwrap(),
         );
+    }
+    let state = tempfile::tempdir()?;
+    if managed {
+        let name = if cfg!(windows) {
+            "empack.exe"
+        } else {
+            "empack"
+        };
+        let binary = std::env::var_os("EMPACK_E2E_BIN")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../target/debug")
+                    .join(name)
+            });
+        anyhow::ensure!(
+            binary.file_name().is_some_and(|value| value == name),
+            "Managed launcher needs the normal empack executable name"
+        );
+        anyhow::ensure!(
+            binary.is_absolute() && binary.is_file(),
+            "Invalid EMPACK_E2E_BIN"
+        );
+        let paths =
+            std::env::join_paths(std::iter::once(binary.parent().unwrap().to_owned()).chain(
+                std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+            ))?;
+        command
+            .env("PATH", paths)
+            .env("EMPACK_STATE_DIR", state.path().join("state"))
+            .env("EMPACK_CACHE_DIR", state.path().join("cache"));
     }
     let historical = matches!(game, "1.12.2" | "1.7.10");
     command
@@ -67,8 +105,18 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
         "Actual server launcher failed: {}",
         output.error_output()
     );
+    anyhow::ensure!(
+        fs::read(root.path().join("game/config/runtime-check.txt"))? == b"current content",
+        "Distribution omitted current game content"
+    );
+    if managed {
+        anyhow::ensure!(
+            root.path().join(".empack/instance.json").is_file(),
+            "Managed launch omitted completed ownership"
+        );
+    }
     if historical {
-        let eula = fs::read_to_string(root.path().join("eula.txt"))?;
+        let eula = fs::read_to_string(root.path().join("game/eula.txt"))?;
         anyhow::ensure!(
             eula.lines().any(|line| line.trim() == "eula=false"),
             "Historical startup did not preserve EULA refusal"
@@ -80,7 +128,7 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
         );
     } else {
         anyhow::ensure!(
-            !root.path().join("eula.txt").exists(),
+            !root.path().join("game/eula.txt").exists(),
             "Help probe unexpectedly created an EULA file"
         );
         anyhow::ensure!(
@@ -97,13 +145,14 @@ async fn package_runtime(
     runtime: RuntimeResolution,
     java: PathBuf,
     destination: &std::path::Path,
+    managed: bool,
 ) -> anyhow::Result<()> {
+    use empack_core::{distribution::Recipe, model::NonEmpty};
     use empack_core::{
         inventory::OptionalPolicy,
         model::{DistributionArchive, ResolutionLock, ResolvedProject},
         path::{PathSyntax, PortableRelPath},
     };
-    use empack_core::{model::NonEmpty, projection::BuildTarget};
     use empack_lib::engine::{
         api::{
             BuildOutput, BuildRequest, Engine, EngineConfig, ExecutionGrant, ExecutionOutcome,
@@ -111,16 +160,22 @@ async fn package_runtime(
         },
         documents::DocumentCodec,
         mrpack::OptionalConversion,
-        packwiz::InstallerInteraction,
         templates::TemplateOptions,
     };
     let project = tempfile::tempdir()?;
     let host = tempfile::tempdir()?;
     let codec = DocumentCodec;
-    let mut intent = codec.decode_intent(b"schema: 2\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {targets: [server-full], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
+    let mut intent = codec.decode_intent(b"schema: 3\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {recipes: [{consumer: server, delivery: bundled, environment: server, updates: snapshot}], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
     intent.runtime.minecraft = runtime.minecraft.clone();
     intent.runtime.loader = runtime.loader;
     intent.runtime.loader_version = runtime.loader_version.clone();
+    if managed {
+        intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
+            pack_id: "runtime.smoke".into(),
+            java_major: 21,
+            policies: Default::default(),
+        });
+    }
     let bytes = codec.encode_intent(&intent)?;
     let revision = codec
         .decode_intent(&bytes, "runtime-smoke")?
@@ -222,7 +277,11 @@ async fn package_runtime(
     let request = BuildRequest {
         clean: false,
         outputs: NonEmpty::new(vec![BuildOutput {
-            target: BuildTarget::ServerFull,
+            target: if managed {
+                Recipe::SERVER_REFERENCES
+            } else {
+                Recipe::SERVER_BUNDLED
+            },
             artifact,
         }])?,
         archive: DistributionArchive::Zip,
@@ -230,7 +289,6 @@ async fn package_runtime(
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     };
     let prepared = match engine.prepare(project.path().to_owned(), request).await? {
         Preparation::Ready(value) => value,
@@ -246,6 +304,7 @@ async fn package_runtime(
         plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: true,
+        run_runtime: false,
         replacement: None,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
@@ -271,10 +330,12 @@ async fn package_runtime(
     }
     zip::ZipArchive::new(fs::File::open(project.path().join("dist/server.zip"))?)?
         .extract(destination)?;
-    anyhow::ensure!(
-        fs::read(destination.join("config/runtime-check.txt"))? == b"current content",
-        "Distribution omitted current game content"
-    );
+    if managed {
+        anyhow::ensure!(
+            !destination.join("game/config/runtime-check.txt").exists(),
+            "Managed content must be activated through the engine"
+        );
+    }
     Ok(())
 }
 
@@ -409,6 +470,21 @@ async fn runtime_server_forge_1710() {
 #[ignore = "live historical Forge and EMPACK_TEST_JAVA8_HOME; run mise run smoke:runtime"]
 async fn runtime_server_forge_116() {
     verify_live_runtime("1.16.5", Some(("36.2.39", LoaderKind::Forge)))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "live official runtime, Java 21 and a fresh EMPACK_E2E_BIN"]
+async fn runtime_managed_server_vanilla() {
+    verify_live_distribution("1.20.1", None, true)
+        .await
+        .unwrap();
+}
+#[tokio::test]
+#[ignore = "live official NeoForge installer, Java 21 and a fresh EMPACK_E2E_BIN"]
+async fn runtime_managed_server_neoforge() {
+    verify_live_distribution("1.21.1", Some(("21.1.209", LoaderKind::NeoForge)), true)
         .await
         .unwrap();
 }

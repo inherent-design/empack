@@ -51,7 +51,7 @@ mod default_fns {
 
 #[derive(Debug, Clone, Parser, Deserialize)]
 pub struct AppConfig {
-    /// Working directory for modpack operations
+    /// Authoring project, publisher directory or installed instance root
     #[arg(short, long, env = "EMPACK_WORKDIR")]
     #[serde(default)]
     pub workdir: Option<PathBuf>,
@@ -124,12 +124,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub yes: bool,
 
-    /// Preview changes without modifying the project (global dry-run mode)
+    /// Preview changes without publishing project, instance or durable state (global dry-run mode)
     #[arg(
         long,
         global = true,
         env = "EMPACK_DRY_RUN",
-        help = "Preview changes without modifying the project"
+        help = "Preview changes without publishing project, instance or durable state"
     )]
     #[serde(default)]
     pub dry_run: bool,

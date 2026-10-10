@@ -11,6 +11,7 @@ use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::{ContentId, DigestAlgorithm},
+    distribution::{Consumer, Recipe, UpdateAuthority},
     files::{FileContent, FilePermissions},
     inventory::{
         BuildInventory, ContentOwner, DownloadOrigins, InventoryInput, OptionalPolicy,
@@ -21,7 +22,6 @@ use empack_core::{
         FileSlot, LoaderKind, NonEmpty, ResolutionLock, ResolvedProject,
     },
     path::{InstallDestination, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
     requirements::{Requirement, Requirements},
 };
 use serde_json::{Value, json};
@@ -31,8 +31,10 @@ use std::{
     fs::File,
 };
 
-mod observed;
-pub use observed::{ObservedFile, ObservedFileEvidence};
+/// Archive exports support side projection; platform installation binds the later update association.
+pub(crate) fn supports(recipe: Recipe) -> bool {
+    recipe.consumer() == Consumer::Modrinth
+}
 
 /// Acquisition is associated with an exact logical file, never a guessed filename.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -62,16 +64,48 @@ pub enum OptionalConversion {
     /// Host explicitly accepted loss of choice metadata; participation remains optional.
     AcknowledgedMetadataLoss,
 }
+/// Download-domain eligibility only; this does not establish redistribution rights,
+/// marketplace acceptance, upload, or a launcher-owned platform association.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HostingEligibility {
+    pub blocked_downloads: BTreeSet<HostingDownload>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HostingDownload {
+    pub destination: PortableRelPath,
+    /// Host only: credentials and URL paths are never included in this report.
+    pub host: String,
+}
+impl HostingEligibility {
+    pub fn download_domains_allowed(&self) -> bool {
+        self.blocked_downloads.is_empty()
+    }
+    fn observe(&mut self, destination: &PortableRelPath, locator: &str) -> Result<()> {
+        let url = reqwest::Url::parse(locator)?;
+        ensure!(url.scheme() == "https", "Mrpack requires HTTPS downloads");
+        let host = url.host_str().context("Mrpack download has no host")?;
+        // Exact domains from Modrinth's format policy, not suffix or substring matches.
+        if !matches!(
+            host,
+            "cdn.modrinth.com" | "github.com" | "raw.githubusercontent.com" | "gitlab.com"
+        ) {
+            self.blocked_downloads.insert(HostingDownload {
+                destination: destination.clone(),
+                host: host.to_owned(),
+            });
+        }
+        Ok(())
+    }
+}
 /// Immutable format plan retains all embedded bytes until the candidate is written.
 pub struct MrpackPlan {
     resolution: ResolutionLock,
-    pub(super) backend_comparisons: Vec<super::backend::BackendDigestComparison>,
-    observed: Vec<ObservedFileEvidence>,
     inventory: BuildInventory,
     index: Vec<u8>,
     embedded: BTreeMap<PortableRelPath, ContentLease>,
     expected: BTreeMap<PortableRelPath, FileContent>,
     conversions: Vec<String>,
+    hosting: HostingEligibility,
 }
 impl MrpackPlan {
     /// Every locked file and placement contributes an obligation. Missing acquisition fails before writing.
@@ -81,16 +115,17 @@ impl MrpackPlan {
         sources: Vec<SourceFile>,
         optional: OptionalConversion,
     ) -> Result<Self> {
-        Self::prepare_with_observed(project, acquired, sources, Vec::new(), optional)
+        Self::prepare_recipe(project, acquired, sources, optional, Recipe::MODRINTH)
     }
-    /// Include verified observed content without manufacturing roots or replacing locked intent.
-    pub fn prepare_with_observed(
+
+    pub fn prepare_recipe(
         project: &ResolvedProject,
         acquired: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
         sources: Vec<SourceFile>,
-        observed: Vec<ObservedFile>,
         optional: OptionalConversion,
+        recipe: Recipe,
     ) -> Result<Self> {
+        ensure!(supports(recipe), "Unsupported Modrinth recipe");
         // Apply the wire boundary's stable-locator rules even for programmatically built values.
         DocumentCodec.encode_lock(project)?;
         let mut inputs = Vec::new();
@@ -98,6 +133,14 @@ impl MrpackPlan {
         let mut used = BTreeSet::new();
         for (key, dependency) in &project.lock().dependencies {
             for file in dependency.files.as_slice() {
+                if !file.placements.as_slice().iter().any(|place| {
+                    place
+                        .requirements
+                        .for_environments(recipe.environments())
+                        .is_some()
+                }) {
+                    continue;
+                }
                 let file_key = LockedFileKey {
                     dependency: key.clone(),
                     slot: file.slot.clone(),
@@ -225,24 +268,22 @@ impl MrpackPlan {
                 },
             });
         }
-        let mut observed_acquired = BTreeMap::new();
-        let mut observed_evidence = Vec::new();
-        for file in observed {
-            let ContentOwner::Source(label) = &file.input.owner else {
-                unreachable!("observed constructor assigns source ownership");
-            };
-            ensure!(
-                observed_acquired
-                    .insert(label.clone(), file.acquired)
-                    .is_none(),
-                "Duplicate observed backend record"
-            );
-            inputs.push(file.input);
-            observed_evidence.push(file.evidence);
-        }
-        for file in observed_acquired.values() {
-            leases.insert(file.content.lease().id(), file.content.lease().clone());
-        }
+        let selection = empack_core::inventory::BuildSelection::select(
+            &inputs,
+            recipe,
+            &OptionalPolicy::Preserve,
+        )?;
+        let mut inputs: Vec<_> = selection
+            .entries()
+            .iter()
+            .map(|entry| InventoryInput {
+                owner: entry.owner.clone(),
+                destination: entry.destination.clone(),
+                layer: entry.layer,
+                requirements: entry.requirements.clone(),
+                representation: entry.representation.clone(),
+            })
+            .collect();
         // The index has one path namespace and no overlay precedence. Materialize downloads
         // that share a destination across layers, then project the effective bytes for each side.
         // A duplicate reference must never be delegated to installer-specific overwrite ordering.
@@ -257,13 +298,14 @@ impl MrpackPlan {
             .iter()
             .filter_map(|(path, indices)| {
                 (indices.len() > 1
-                    && indices.iter().any(|index| {
-                        inputs[*index].layer == ContentLayer::CommonOverride
-                            || matches!(
-                                inputs[*index].representation,
-                                Representation::Download { .. }
-                            )
-                    }))
+                    && (recipe.environments() != empack_core::requirements::Environments::Both
+                        || indices.iter().any(|index| {
+                            inputs[*index].layer == ContentLayer::CommonOverride
+                                || matches!(
+                                    inputs[*index].representation,
+                                    Representation::Download { .. }
+                                )
+                        })))
                 .then_some(path.clone())
             })
             .collect();
@@ -276,7 +318,7 @@ impl MrpackPlan {
                         dependency: key.clone(),
                         slot: slot.clone(),
                     }),
-                    ContentOwner::Source(label) => observed_acquired.get(label),
+                    ContentOwner::Source(_) => None,
                     ContentOwner::Runtime(_) => None,
                 }
                 .context("Acquire exact bytes to preserve layered mrpack content")?;
@@ -289,8 +331,7 @@ impl MrpackPlan {
                 };
             }
         }
-        let inventory =
-            BuildInventory::project(&inputs, BuildTarget::Mrpack, &OptionalPolicy::Preserve)?;
+        let inventory = BuildInventory::project(&inputs, recipe, &OptionalPolicy::Preserve)?;
         let mut archive_entries: Vec<_> = inventory
             .entries()
             .iter()
@@ -302,7 +343,7 @@ impl MrpackPlan {
                 .iter()
                 .map(|index| inputs[*index].clone())
                 .collect();
-            for target in [BuildTarget::Client, BuildTarget::Server] {
+            for target in [Recipe::PRISM_REFERENCES, Recipe::SERVER_REFERENCES] {
                 let view = BuildInventory::project(&group, target, &OptionalPolicy::Preserve)?;
                 archive_entries.extend_from_slice(view.entries());
             }
@@ -310,6 +351,7 @@ impl MrpackPlan {
         let mut embedded = BTreeMap::new();
         let mut expected = BTreeMap::new();
         let mut references = Vec::new();
+        let mut hosting = HostingEligibility::default();
         let mut reference_paths = CollisionIndex::default();
         let mut member_paths = CollisionIndex::default();
         let mut installation_paths = CollisionIndex::default();
@@ -345,6 +387,9 @@ impl MrpackPlan {
                         );
                     }
                     reference_paths.insert_file(entry.destination.relative())?;
+                    for url in urls.as_slice() {
+                        hosting.observe(entry.destination.relative(), url)?;
+                    }
                     let mut hashes = BTreeMap::new();
                     for digest in digests.values() {
                         if matches!(
@@ -429,15 +474,19 @@ impl MrpackPlan {
                 },
             },
         );
+        ensure!(
+            recipe.update_authority() != UpdateAuthority::Platform
+                || hosting.download_domains_allowed(),
+            "Platform-managed Modrinth export contains download domains that Modrinth hosting does not allow; use snapshot export or supported download locations"
+        );
         Ok(Self {
             resolution: project.lock().clone(),
-            backend_comparisons: Vec::new(),
-            observed: observed_evidence,
             inventory,
             index,
             embedded,
             expected,
             conversions: conversions.into_iter().collect(),
+            hosting,
         })
     }
     pub fn archive_inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
@@ -450,11 +499,9 @@ impl MrpackPlan {
     pub fn resolution(&self) -> &ResolutionLock {
         &self.resolution
     }
-    pub fn backend_comparisons(&self) -> &[super::backend::BackendDigestComparison] {
-        &self.backend_comparisons
-    }
-    pub fn observed(&self) -> &[ObservedFileEvidence] {
-        &self.observed
+
+    pub fn hosting_eligibility(&self) -> &HostingEligibility {
+        &self.hosting
     }
     pub fn conversions(&self) -> &[String] {
         &self.conversions

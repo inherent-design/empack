@@ -624,7 +624,7 @@ fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
         fs::write(project.path().join("pack/.packwizignore"), b"ignored/\n").unwrap();
         fs::write(project.path().join("pack/ignored/huge"), vec![0; 1024]).unwrap();
         let filter =
-            crate::engine::source::CaptureFilter::new(b"ignored/\n".to_vec(), &[]).unwrap();
+            crate::engine::source::CaptureFilter::author(&["ignored/".into()], &[]).unwrap();
         let state = tempfile::tempdir().unwrap();
         let publisher = Publisher::open(&state.path().join("private")).unwrap();
         let root = ProjectReadRoot::open(project.path()).unwrap();
@@ -1006,4 +1006,72 @@ fn unexpected_retained_object_blocks_superseding_its_descriptor() {
     publisher
         .publish(&root, prepare(&root), &Cancellation::default())
         .unwrap();
+}
+
+#[test]
+fn runtime_crash_worker() {
+    let Some(project) = std::env::var_os("EMPACK_RUNTIME_CRASH_PROJECT") else {
+        return;
+    };
+    let state = std::env::var_os("EMPACK_RUNTIME_CRASH_STATE").unwrap();
+    let root = ProjectReadRoot::open(Path::new(&project)).unwrap();
+    let publisher = Publisher::open(Path::new(&state)).unwrap();
+    let mut lease = publisher.lease_instance(&root).unwrap();
+    lease.begin().unwrap();
+    std::process::exit(87);
+}
+
+#[test]
+fn abrupt_runtime_owner_exit_blocks_publication_until_exact_acknowledgment() {
+    let project = tempfile::tempdir().unwrap();
+    fixture(project.path());
+    let state = tempfile::tempdir().unwrap();
+    let selected = state.path().join("private");
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "engine::publication::tests::runtime_crash_worker",
+            "--nocapture",
+        ])
+        .env("EMPACK_RUNTIME_CRASH_PROJECT", project.path())
+        .env("EMPACK_RUNTIME_CRASH_STATE", &selected)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(87));
+    let publisher = Publisher::open(&selected).unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    assert!(
+        publisher
+            .publish(&root, prepare(&root), &Cancellation::default())
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(project.path().join("empack.yml")).unwrap(),
+        b"old intent"
+    );
+    let pending = publisher.observe_runtime(&root).unwrap().unwrap();
+    let stale = publisher.observe_runtime(&root).unwrap().unwrap();
+    publisher.acknowledge_stopped(&root, pending).unwrap();
+    let mut running = publisher.lease_instance(&root).unwrap();
+    running.begin().unwrap();
+    assert!(
+        publisher
+            .acknowledge_stopped(&root, publisher.observe_runtime(&root).unwrap().unwrap())
+            .is_err()
+    );
+    drop(running); // Simulate unconfirmed retirement; Drop must retain evidence.
+    assert!(publisher.acknowledge_stopped(&root, stale).is_err());
+    let pending = publisher.observe_runtime(&root).unwrap().unwrap();
+    let neighbor = selected.join(root_key(&root).unwrap()).join("unowned-note");
+    fs::write(&neighbor, b"keep").unwrap();
+    publisher.acknowledge_stopped(&root, pending).unwrap();
+    publisher
+        .publish(&root, prepare(&root), &Cancellation::default())
+        .unwrap();
+    assert_eq!(
+        fs::read(project.path().join("empack.yml")).unwrap(),
+        b"new intent"
+    );
+    assert_eq!(fs::read(&neighbor).unwrap(), b"keep");
 }

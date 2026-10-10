@@ -130,13 +130,13 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$VERSION" == *"-alpha."* ]]; then
+          if [[ "$VERSION" == *"-alpha" || "$VERSION" == *"-alpha."* ]]; then
             echo "level=alpha" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$VERSION" == *"-beta."* ]]; then
+          elif [[ "$VERSION" == *"-beta" || "$VERSION" == *"-beta."* ]]; then
             echo "level=beta" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$VERSION" == *"-rc."* ]]; then
+          elif [[ "$VERSION" == *"-rc" || "$VERSION" == *"-rc."* ]]; then
             echo "level=rc" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else

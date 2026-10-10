@@ -13,12 +13,12 @@ use crate::{
     },
 };
 use empack_core::{
+    distribution::Recipe,
     model::{
         DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent, GameVersion,
         LoaderKind, PackMetadata,
     },
     path::{InstallDestination, PathSyntax, PortableRelPath},
-    projection::BuildTarget,
     requirements::{ChoiceKey, OptionalChoice},
 };
 use std::collections::BTreeMap;
@@ -437,12 +437,11 @@ fn decisions(
         acceptable_versions,
         layout,
         distribution: DistributionIntent {
-            targets: NonEmpty::new(vec![
-                BuildTarget::Mrpack,
-                BuildTarget::Client,
-                BuildTarget::Server,
-                BuildTarget::ClientFull,
-                BuildTarget::ServerFull,
+            native: None,
+            recipes: NonEmpty::new(vec![
+                Recipe::MODRINTH,
+                Recipe::PRISM_BUNDLED,
+                Recipe::SERVER_BUNDLED,
             ])?,
             archive: DistributionArchive::Zip,
         },
@@ -531,7 +530,7 @@ mod tests {
         super::super::super::build(
             &session(root.path(), false),
             &BuildArgs {
-                targets: vec!["mrpack".into()],
+                targets: vec!["modrinth".into()],
                 ..Default::default()
             },
             BuildDecisions::default(),
@@ -735,7 +734,7 @@ mod tests {
         build(
             &session,
             &crate::application::BuildArgs {
-                targets: vec!["mrpack".into()],
+                targets: vec!["modrinth".into()],
                 ..Default::default()
             },
             BuildDecisions {
@@ -914,7 +913,7 @@ mod tests {
             build(
                 &session,
                 &crate::application::BuildArgs {
-                    targets: vec!["mrpack".into()],
+                    targets: vec!["modrinth".into()],
                     ..Default::default()
                 },
                 BuildDecisions::default(),

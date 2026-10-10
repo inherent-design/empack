@@ -116,12 +116,12 @@ fn browser_command(project: &TestProject, host: &Path) -> std::process::Command 
 fn e2e_build_browser_preview_and_decline_have_no_desktop_effects() {
     let (project, host) = browser_fixture();
     let mut cmd = browser_command(&project, host.path());
-    cmd.args(["--dry-run", "build", "mrpack", "--open-downloads"]);
+    cmd.args(["--dry-run", "build", "modrinth", "--open-downloads"]);
     assert_cmd::Command::from_std(cmd).assert().success();
     assert!(!host.path().join("state").exists());
     assert!(!host.path().join("opened").exists());
     let mut cmd = browser_command(&project, host.path());
-    cmd.args(["build", "mrpack", "--open-downloads"]);
+    cmd.args(["build", "modrinth", "--open-downloads"]);
     let mut terminal = terminal::spawn(cmd);
     terminal.set_expect_timeout(Some(Duration::from_secs(20)));
     terminal
@@ -142,7 +142,7 @@ fn e2e_live_browser_opens_exact_provider_page_then_resumes_verified_content() {
     cmd.args([
         "--yes",
         "build",
-        "mrpack",
+        "modrinth",
         "--open-downloads",
         "--wait-downloads",
         "10",

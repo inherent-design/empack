@@ -17,10 +17,11 @@ use std::{
 };
 
 const LOCK: &str = "continuation-content.lock";
-const CATEGORIES: [(&str, &str); 3] = [
+const CATEGORIES: [(&str, &str); 4] = [
     ("pending-builds", "pending-content"),
     ("pending-imports", "pending-import-content"),
     ("pending-sync", "pending-sync-content"),
+    ("pending-instances", "pending-instance-content"),
 ];
 fn resources() -> ResourceRequest {
     ResourceRequest {

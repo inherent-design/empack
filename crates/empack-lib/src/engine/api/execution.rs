@@ -1,10 +1,9 @@
 use super::*;
 use crate::engine::{
-    bootstrap_tools::InstallerAssets,
     build::{
         batch::{DistributionRequest, prepare_build_batch_with_cleanup},
-        client::{ClientBootstrap, ClientOptions},
-        server::{ServerBootstrap, ServerOptions},
+        client::ClientOptions,
+        server::ServerOptions,
     },
     publication::Publisher,
     runtime::WorkScope,
@@ -62,6 +61,7 @@ fn pending(
         },
     };
     ExecutionOutcome::NeedsInput(ExecutionInput {
+        instance_requirements: Vec::new(),
         requirements,
         continuation: std::sync::Mutex::new(Some(continuation)),
     })
@@ -174,7 +174,6 @@ async fn execute(
             .acquired
             .locked
             .values()
-            .chain(acquired.acquired.observed.values())
             .map(|file| file.content.clone())
             .collect();
         cache.publish(scope, files).await?;
@@ -183,19 +182,12 @@ async fn execute(
         Some(cache) => transport.with_execution_cache(cache),
         None => transport,
     };
-    let has = |target| {
-        request
-            .outputs
-            .as_slice()
-            .iter()
-            .any(|output| output.target == target)
-    };
-    let assets = if has(BuildTarget::Client) || has(BuildTarget::Server) {
-        Some(InstallerAssets::acquire(&transport, scope, config.transfer).await?)
-    } else {
-        None
-    };
-    let runtime = if has(BuildTarget::Server) || has(BuildTarget::ServerFull) {
+    let runtime = if request
+        .outputs
+        .as_slice()
+        .iter()
+        .any(|output| output.target.consumer() == empack_core::distribution::Consumer::Server)
+    {
         Some(prepare_runtime(&transport, scope, view.runtime.clone(), evidence, &config).await?)
     } else {
         None
@@ -230,49 +222,53 @@ async fn execute(
                 limits: config.archive,
             };
             requests.push(match output.target {
-                BuildTarget::Mrpack => DistributionRequest::Mrpack {
+                recipe if crate::engine::build::curseforge::supports(recipe) => {
+                    DistributionRequest::CurseForge {
+                        recipe,
+                        artifact,
+                        options: crate::engine::build::curseforge::CurseForgeOptions {
+                            optional: request.optional.clone(),
+                            conversion: request.mrpack_optional,
+                            evidence,
+                            limits: config.archive,
+                        },
+                    }
+                }
+                recipe if crate::engine::build::native::supports(recipe) => {
+                    DistributionRequest::Native {
+                        artifact,
+                        recipe: output.target,
+                        archive: request.archive,
+                        evidence,
+                        limits: config.archive,
+                    }
+                }
+                recipe if crate::engine::mrpack::supports(recipe) => DistributionRequest::Mrpack {
+                    recipe,
                     artifact,
                     optional: request.mrpack_optional,
                     evidence,
                 },
-                BuildTarget::ClientFull => DistributionRequest::ClientFull {
-                    artifact,
-                    options: client_options(),
-                },
-                BuildTarget::Client => DistributionRequest::Client {
-                    artifact,
-                    options: client_options(),
-                    bootstrap: ClientBootstrap {
-                        assets: assets
+                recipe if recipe.consumer() == empack_core::distribution::Consumer::Prism => {
+                    DistributionRequest::Prism {
+                        recipe,
+                        artifact,
+                        options: client_options(),
+                    }
+                }
+                recipe if recipe.consumer() == empack_core::distribution::Consumer::Server => {
+                    DistributionRequest::Server {
+                        recipe,
+                        artifact,
+                        options: server_options(),
+                        runtime: runtime
                             .as_ref()
-                            .context("Missing acquired installer assets")?
-                            .clone(),
-                        interaction: request.interaction,
-                    },
-                },
-                BuildTarget::ServerFull => DistributionRequest::ServerFull {
-                    artifact,
-                    options: server_options(),
-                    runtime: runtime
-                        .as_ref()
-                        .context("Missing prepared server runtime")?
-                        .clone(),
-                },
-                BuildTarget::Server => DistributionRequest::Server {
-                    artifact,
-                    options: server_options(),
-                    runtime: runtime
-                        .as_ref()
-                        .context("Missing prepared server runtime")?
-                        .clone(),
-                    bootstrap: ServerBootstrap {
-                        assets: assets
-                            .as_ref()
-                            .context("Missing acquired installer assets")?
-                            .clone(),
-                        interaction: request.interaction,
-                    },
-                },
+                            .context("Missing prepared server runtime")?
+                            .clone()
+                            .into(),
+                    }
+                }
+                _ => anyhow::bail!("Consumer recipe has no prepared adapter"),
             });
         }
         let removals = view

@@ -351,6 +351,10 @@ async fn execute_approved(
             NetworkPermission::Offline
         },
         run_installer: prepared.view().runs_installer(),
+        run_runtime: matches!(
+            prepared.view(),
+            crate::engine::api::OperationPreview::Launch(_)
+        ),
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
@@ -512,3 +516,6 @@ mod files;
 pub use files::add_files;
 
 pub mod cli;
+
+pub(super) mod instance;
+pub(super) mod release;
