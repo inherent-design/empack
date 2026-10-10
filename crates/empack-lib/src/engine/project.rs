@@ -891,6 +891,15 @@ pub(super) fn read_document(
     name: &str,
     cancel: &Cancellation,
 ) -> Result<Option<Vec<u8>>> {
+    read_document_limited(root, snapshot, name, MAX_DOCUMENT_BYTES as u64, cancel)
+}
+pub(super) fn read_document_limited(
+    root: &ProjectReadRoot,
+    snapshot: &NativeSnapshot,
+    name: &str,
+    maximum: u64,
+    cancel: &Cancellation,
+) -> Result<Option<Vec<u8>>> {
     let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
     let expected = match snapshot.entries().get(&path) {
         Some(Observation::Absent) => return Ok(None),
@@ -898,7 +907,7 @@ pub(super) fn read_document(
         _ => anyhow::bail!("Project document is not a regular file: {name}"),
     };
     ensure!(
-        expected.bytes <= MAX_DOCUMENT_BYTES as u64,
+        expected.bytes <= maximum,
         "Project document exceeds size limit: {name}"
     );
     let (parent, leaf) = native::parent(&root.directory, &path)?;

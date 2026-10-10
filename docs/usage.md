@@ -131,10 +131,16 @@ Publisher enrollment is explicit and separate from snapshot installation:
 ```sh
 empack --workdir instance instance subscribe --pack example --channel stable https://example.org/stable.json --key PUBLIC_KEY_HEX
 empack --workdir instance instance observe-channel signed-channel.json
+empack --workdir instance instance update signed-release.json
 empack --workdir instance instance trust --key REPLACEMENT_PUBLIC_KEY_HEX
 empack --workdir instance instance trust --revoke-all
 ```
 
-These commands save trust and authenticated sequence observations. They do not
-install the release selected by the channel. Key replacement and revocation retain
-the highest observed sequence, including across restart and managed rollback.
+Enrollment and observation save trust and authenticated sequence observations.
+`instance update` applies a local signed release envelope selected by that saved
+channel. It checks current trust, expiry and exact release identity before applying
+content. Assets beside the envelope, verified cache entries and the release's exact
+download sources supply its files. `--file KEY=PATH` supplies restricted content.
+Content application does not install Java or establish runtime launch readiness.
+Key replacement and revocation retain the highest observed sequence, including
+across restart and managed rollback.

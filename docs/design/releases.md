@@ -167,3 +167,12 @@ payload can be retried; a lower sequence or different payload at the saved seque
 fails. A late trust edit invalidates the prepared operation. These control-document
 changes use the same exact grants, native observations and recoverable publication
 as other engine operations; they cannot write game files or installation history.
+
+`instance update ENVELOPE` selects the exact release named by the retained,
+authenticated channel. Selection verifies the envelope signature, payload identity,
+size, pack and minimum engine version. The selected proof binds the native instance
+root and exact subscription bytes; it cannot survive key rotation or a newer channel
+observation. Preparation captures that subscription as part of the publication read
+set. Expiry is checked again before publication, after acquisition and verification.
+A valid signature from another trust context cannot bypass the enrolled keys.
+Explicit snapshots remain separately selected by their expected payload digest.

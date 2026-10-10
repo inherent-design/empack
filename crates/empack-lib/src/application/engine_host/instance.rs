@@ -1,4 +1,4 @@
-//! Explicit snapshot installation, with no implicit subscription or author resolution.
+//! Explicit snapshot and enrolled-release installation without author resolution.
 use super::*;
 use crate::{
     application::cli::InstanceCommand,
@@ -12,24 +12,32 @@ use std::collections::BTreeMap;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
     let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
-    let (InstanceCommand::Install {
-        release,
-        sha256,
-        side,
-        layout,
-        choices,
-        files,
-    }
-    | InstanceCommand::Prepare {
-        release,
-        sha256,
-        side,
-        layout,
-        choices,
-        files,
-    }) = command
-    else {
-        anyhow::bail!("Expected a snapshot installation request");
+    let subscribed = matches!(command, InstanceCommand::Update { .. });
+    let (release, sha256, side, layout, choices, files) = match command {
+        InstanceCommand::Install {
+            release,
+            sha256,
+            side,
+            layout,
+            choices,
+            files,
+        }
+        | InstanceCommand::Prepare {
+            release,
+            sha256,
+            side,
+            layout,
+            choices,
+            files,
+        } => (release, Some(sha256), side, layout, choices, files),
+        InstanceCommand::Update {
+            release,
+            side,
+            layout,
+            choices,
+            files,
+        } => (release, None, side, layout, choices, files),
+        _ => anyhow::bail!("Expected an instance installation request"),
     };
     let (invocation, root) = project_path(session)?;
     let selected = absolute(&invocation, &release);
@@ -63,24 +71,80 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let decoded = initialize::discover(session, move |mut scope| async move {
-        let mut resources = operation_resources().capture;
-        resources.scratch_bytes = 0; // Bounded document reads create no temporary content.
-        let work =
-            scope.spawn_blocking(resources, operation_resources().prepared, move |cancel| {
-                DecodedRelease::read(&selected, &cancel)
-            })?;
-        scope.accept(work.wait().await?)?.transpose()
-    })
-    .await?;
-    // Development builds implement this protocol version without pretending to be a tagged binary.
     let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
         "0.6.0-beta"
     } else {
         env!("CARGO_PKG_VERSION")
     };
-    let snapshot =
-        SelectedSnapshot::select(decoded.bytes(), &sha256, &semver::Version::parse(version)?)?;
+    let version = semver::Version::parse(version)?;
+    enum ReleaseInput {
+        Snapshot(Box<crate::engine::runtime::RetainedOutput<DecodedRelease>>),
+        Subscribed(
+            crate::engine::runtime::RetainedOutput<
+                std::sync::Arc<crate::engine::instance::subscription::SubscribedRelease>,
+            >,
+        ),
+    }
+    let input = if subscribed {
+        let version = version.clone();
+        let selected_root = root.clone();
+        let state = state_root(session.config().app_config(), &invocation)?;
+        let proof = initialize::discover(session, move |mut scope| async move {
+            let work = scope.spawn_blocking(
+                ResourceRequest {
+                    jobs: 1,
+                    memory_bytes: 128 << 20,
+                    open_files: 16,
+                    ..Default::default()
+                },
+                ResourceRequest {
+                    memory_bytes: 64 << 20,
+                    ..Default::default()
+                },
+                move |cancel| {
+                    let bytes =
+                        crate::engine::release::trust::read_release_envelope(&selected, &cancel)?;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)?
+                        .as_secs()
+                        .try_into()?;
+                    crate::engine::instance::subscription::select_release(
+                        &selected_root,
+                        &bytes,
+                        now,
+                        &version,
+                        crate::engine::publication::RecoveryReader::new(state),
+                        &cancel,
+                    )
+                },
+            )?;
+            scope.accept(work.wait().await?)?.transpose()
+        })
+        .await?;
+        ReleaseInput::Subscribed(proof.map(std::sync::Arc::new))
+    } else {
+        let decoded = initialize::discover(session, move |mut scope| async move {
+            let mut resources = operation_resources().capture;
+            resources.scratch_bytes = 0;
+            let work =
+                scope.spawn_blocking(resources, operation_resources().prepared, move |cancel| {
+                    DecodedRelease::read(&selected, &cancel)
+                })?;
+            scope.accept(work.wait().await?)?.transpose()
+        })
+        .await?;
+        ReleaseInput::Snapshot(Box::new(decoded))
+    };
+    let release = match &input {
+        ReleaseInput::Snapshot(decoded) => SelectedRelease::Snapshot(SelectedSnapshot::select(
+            decoded.bytes(),
+            &sha256.context("Snapshot requires an expected digest")?,
+            &version,
+        )?),
+        ReleaseInput::Subscribed(proof) => {
+            SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
+        }
+    };
     let request = InstallInstanceRequest {
         action: if prepare_current {
             crate::engine::instance::InstanceAction::Prepare
@@ -94,7 +158,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
                 _ => anyhow::bail!("Instance layout must be game or prism"),
             })
             .transpose()?,
-        release: SelectedRelease::Snapshot(snapshot),
+        release,
         side: match side.as_str() {
             "server" => InstanceSide::Server,
             "client" => InstanceSide::Client,
@@ -146,9 +210,9 @@ pub(in crate::application) async fn dispatch(
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
         | InstanceCommand::ObserveChannel { .. }) => subscription(session, command).await,
-        command @ (InstanceCommand::Install { .. } | InstanceCommand::Prepare { .. }) => {
-            install(session, command).await
-        }
+        command @ (InstanceCommand::Install { .. }
+        | InstanceCommand::Prepare { .. }
+        | InstanceCommand::Update { .. }) => install(session, command).await,
         InstanceCommand::Inspect => {
             let (invocation, root) = project_path(session)?;
             let state = state_root(session.config().app_config(), &invocation)?;

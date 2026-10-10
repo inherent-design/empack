@@ -184,3 +184,147 @@ async fn subscription_rejects_copied_roots_and_late_trust_edits() {
     assert_eq!(fs::read(&path).unwrap(), b"changed locally");
     engine.shutdown().await;
 }
+
+fn native_release(key: &SigningKey, version: &str) -> (release::DecodedRelease, Vec<u8>) {
+    let document = release::DecodedRelease::encode(release::ReleaseDocument {
+        schema: 1,
+        pack: "fixture".into(),
+        version: version.into(),
+        minimum_engine: ">=0.6.0-beta".into(),
+        runtime: release::ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: release::ReleaseLoader::Vanilla,
+            java_major: 21,
+        },
+        choices: vec![],
+        files: vec![],
+    })
+    .unwrap();
+    let envelope = sign(EnvelopeKind::Release, document.bytes(), &[key]).unwrap();
+    (document, envelope)
+}
+fn install(
+    selected: crate::engine::instance::subscription::SubscribedRelease,
+) -> InstallInstanceRequest {
+    InstallInstanceRequest {
+        action: crate::engine::instance::InstanceAction::Apply,
+        release: crate::engine::instance::SelectedRelease::Subscribed(std::sync::Arc::new(
+            selected,
+        )),
+        side: crate::engine::instance::InstanceSide::Client,
+        layout: None,
+        choices: vec![],
+        supplied: BTreeMap::new(),
+        local_files: BTreeMap::new(),
+        assets: None,
+    }
+}
+#[tokio::test]
+async fn subscribed_selection_binds_current_keys_floor_and_exact_signed_release() {
+    use crate::engine::{instance::subscription::select_release, publication::RecoveryReader};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let key = SigningKey::from_bytes(&[11; 32]);
+    let other = SigningKey::from_bytes(&[12; 32]);
+    let (a, signed_a) = native_release(&key, "a");
+    let (b, signed_b) = native_release(&key, "b");
+    let version = semver::Version::parse("0.6.0-beta").unwrap();
+    let select = |bytes: &[u8]| {
+        select_release(
+            root.path(),
+            bytes,
+            2_000_000_000,
+            &version,
+            RecoveryReader::new(state.clone()),
+            &Default::default(),
+        )
+    };
+    let (engine, governor) = super::super::tests::engine(state.clone());
+    apply(&engine, root.path(), enroll(&key)).await;
+    assert!(
+        select(&signed_a).is_err(),
+        "a signature alone cannot replace durable channel observation"
+    );
+    apply(&engine, root.path(), observe(&key, 1, a.id())).await;
+    assert!(
+        select(&signed_b).is_err(),
+        "channel requires its exact selected payload"
+    );
+    let prior = select(&signed_a).unwrap();
+    apply(
+        &engine,
+        root.path(),
+        SubscriptionRequest::ReplaceKeys {
+            keys: vec![other.verifying_key()],
+        },
+    )
+    .await;
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), install(prior))
+            .await
+            .is_err()
+    );
+    assert!(
+        select(&signed_a).is_err(),
+        "revoked keys cannot reuse a retained observation"
+    );
+    apply(
+        &engine,
+        root.path(),
+        SubscriptionRequest::ReplaceKeys {
+            keys: vec![key.verifying_key()],
+        },
+    )
+    .await;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), install(select(&signed_a).unwrap()))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().replacement(),
+    };
+    apply(&engine, root.path(), observe(&key, 2, b.id())).await;
+    let mut stale = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    assert!(matches!(
+        &*stale.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    engine.release_completed(stale.id());
+    drop(stale);
+    assert!(!root.path().join(".empack/instance.json").exists());
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), install(select(&signed_b).unwrap()))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().replacement(),
+    };
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(
+        receipt,
+    ))) = &*outcome
+    else {
+        panic!("signed installation did not complete")
+    };
+    assert_eq!(receipt.record.release, b.id());
+    drop(outcome);
+    engine.release_completed(operation.id());
+    drop(operation);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

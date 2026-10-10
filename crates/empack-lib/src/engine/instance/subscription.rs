@@ -92,3 +92,87 @@ impl SubscriptionRecord {
         PublisherTrust::enroll(self.pack.clone(), &self.url, self.verifying_keys()?)
     }
 }
+
+/// Release authentication bound to the current durable enrollment and observed channel.
+/// Fields are private; a decoded subscription cannot manufacture this proof.
+pub struct SubscribedRelease {
+    release: release::trust::AuthenticatedRelease,
+    root: String,
+    subscription: String,
+    expires: i64,
+}
+impl SubscribedRelease {
+    pub fn release(&self) -> &release::DecodedRelease {
+        self.release.release()
+    }
+    pub(super) fn validate_current(&self, root: &str, bytes: &[u8]) -> Result<()> {
+        ensure!(
+            root == self.root && release::hash(bytes) == self.subscription,
+            "Publisher enrollment or observed channel changed; select the release again"
+        );
+        ensure_fresh(self.expires)
+    }
+    pub(super) fn expires(&self) -> i64 {
+        self.expires
+    }
+}
+pub(super) fn ensure_fresh(expires: i64) -> Result<()> {
+    let now: i64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs()
+        .try_into()?;
+    ensure!(
+        now >= 1_577_836_800 && now < expires,
+        "Channel observation is no longer fresh"
+    );
+    Ok(())
+}
+/// Read and authenticate only. The returned proof does not authorize writes or acquisition.
+pub fn select_release(
+    selected_root: &std::path::Path,
+    envelope: &[u8],
+    now: i64,
+    version: &semver::Version,
+    recovery: crate::engine::publication::RecoveryReader,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<SubscribedRelease> {
+    use crate::engine::{
+        layout::ProjectLayout,
+        publication::root_key,
+        snapshot::{ProjectReadRoot, SnapshotLimits},
+    };
+    use empack_core::files::ManagedPath;
+    ensure!(
+        selected_root.is_absolute(),
+        "Instance selection must be absolute"
+    );
+    let root = ProjectReadRoot::open(selected_root)?;
+    let _guard = recovery.enter(&root)?;
+    let target = ManagedPath::InstanceSubscription;
+    let snapshot = root.capture(
+        &[ProjectLayout::path(&target)?],
+        SnapshotLimits {
+            file_bytes: 128 << 10,
+            total_bytes: 128 << 10,
+            ..Default::default()
+        },
+        cancel,
+    )?;
+    let bytes = super::read_optional(&root, &snapshot, &target, cancel)?
+        .context("Instance has no enrolled subscription")?;
+    let record = SubscriptionRecord::decode(&bytes)?;
+    let binding = root_key(&root)?;
+    ensure!(
+        record.root == binding,
+        "Subscription belongs to another instance root"
+    );
+    let channel = record.authenticated_channel(now, version)?;
+    let selected = channel.release(&record.trust()?, envelope, version)?;
+    root.revalidate(&snapshot, cancel)?;
+    Ok(SubscribedRelease {
+        release: selected,
+        root: binding,
+        subscription: release::hash(&bytes),
+        expires: channel.document().expires,
+    })
+}

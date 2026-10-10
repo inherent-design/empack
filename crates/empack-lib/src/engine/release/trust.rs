@@ -395,18 +395,34 @@ pub fn read_channel_envelope(
     selected: &std::path::Path,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<Vec<u8>> {
-    ensure!(selected.is_absolute(), "Channel selection must be absolute");
+    read_envelope(selected, (MAX_CHANNEL_BYTES * 2 + 16 * 1024) as u64, cancel)
+}
+/// Bounded local signed release input. The caller must authenticate against its enrolled channel.
+pub fn read_release_envelope(
+    selected: &std::path::Path,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<Vec<u8>> {
+    read_envelope(selected, MAX_ENVELOPE_BYTES as u64, cancel)
+}
+fn read_envelope(
+    selected: &std::path::Path,
+    maximum: u64,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<Vec<u8>> {
+    ensure!(
+        selected.is_absolute(),
+        "Envelope selection must be absolute"
+    );
     let root = crate::engine::snapshot::ProjectReadRoot::open(
         selected
             .parent()
-            .context("Channel selection needs a parent")?,
+            .context("Envelope selection needs a parent")?,
     )?;
     let leaf = selected
         .file_name()
         .and_then(|name| name.to_str())
-        .context("Invalid channel filename")?;
+        .context("Invalid envelope filename")?;
     let relative = PortableRelPath::parse(leaf, PathSyntax::ProjectContent)?;
-    let maximum = (MAX_CHANNEL_BYTES * 2 + 16 * 1024) as u64;
     let snapshot = root.capture(
         &[relative],
         crate::engine::snapshot::SnapshotLimits {
@@ -416,8 +432,9 @@ pub fn read_channel_envelope(
         },
         cancel,
     )?;
-    let bytes = crate::engine::project::read_document(&root, &snapshot, leaf, cancel)?
-        .context("Selected channel envelope does not exist")?;
+    let bytes =
+        crate::engine::project::read_document_limited(&root, &snapshot, leaf, maximum, cancel)?
+            .context("Selected envelope does not exist")?;
     root.revalidate(&snapshot, cancel)?;
     Ok(bytes)
 }

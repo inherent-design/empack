@@ -27,12 +27,14 @@ pub mod subscription;
 pub enum SelectedRelease {
     Snapshot(super::release::trust::SelectedSnapshot),
     Publisher(super::release::trust::AuthenticatedRelease),
+    Subscribed(std::sync::Arc<subscription::SubscribedRelease>),
 }
 impl SelectedRelease {
     pub fn release(&self) -> &DecodedRelease {
         match self {
             Self::Snapshot(v) => v.release(),
             Self::Publisher(v) => v.release(),
+            Self::Subscribed(v) => v.release(),
         }
     }
 }
@@ -133,8 +135,10 @@ pub(super) struct InstancePlan {
     pub(super) files: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     needed: BTreeMap<ManagedPath, ReleaseFile>,
+    subscription_expires: Option<i64>,
 }
 pub(super) struct PreparedInstance {
+    subscription_expires: Option<i64>,
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     pub(super) record: InstanceRecord,
@@ -145,6 +149,9 @@ impl PreparedInstance {
         publisher: &Publisher,
         cancel: &Cancellation,
     ) -> Result<(PublicationReceipt, InstanceRecord)> {
+        if let Some(expires) = self.subscription_expires {
+            subscription::ensure_fresh(expires)?;
+        }
         let receipt = publisher.publish(&self.root, self.change, cancel)?;
         Ok((receipt, self.record))
     }
@@ -324,6 +331,10 @@ pub(super) fn plan(
         choices: requested_choices,
         action,
     } = selection;
+    let subscription_expires = match &selected {
+        SelectedRelease::Subscribed(proof) => Some(proof.expires()),
+        _ => None,
+    };
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
     let record_path = ProjectLayout::path(&ManagedPath::InstanceRecord)?;
@@ -337,10 +348,24 @@ pub(super) fn plan(
         read_optional(&root, &snapshot, &ManagedPath::InstanceSubscription, cancel)?
     {
         let subscription = subscription::SubscriptionRecord::decode(&bytes)?;
+        match &selected {
+            SelectedRelease::Subscribed(proof) => {
+                proof.validate_current(&super::publication::root_key(&root)?, &bytes)?
+            }
+            SelectedRelease::Publisher(_) => {
+                anyhow::bail!("Select the release against the instance's enrolled subscription")
+            }
+            SelectedRelease::Snapshot(_) => {}
+        }
         ensure!(
             subscription.root == super::publication::root_key(&root)?
                 && subscription.pack == selected.release().document().pack,
             "Selected release belongs to another instance subscription"
+        );
+    } else {
+        ensure!(
+            !matches!(selected, SelectedRelease::Subscribed(_)),
+            "Enrolled subscription was removed"
         );
     }
     let previous = read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)?
@@ -679,6 +704,7 @@ pub(super) fn plan(
     documents.retain(|target, _| files.expected().contains_key(target));
     root.revalidate(&snapshot, cancel)?;
     Ok(InstancePlan {
+        subscription_expires,
         root,
         snapshot,
         record,
@@ -812,6 +838,7 @@ impl InstancePlan {
         let stage = stage.freeze(limits, cancel)?;
         let change = VerifiedFileChange::verify_instance(self.snapshot, self.files, stage)?;
         Ok(PreparedInstance {
+            subscription_expires: self.subscription_expires,
             root: self.root,
             change,
             record: self.record,

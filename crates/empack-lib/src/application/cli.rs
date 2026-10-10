@@ -329,6 +329,20 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Apply the exact signed release selected by the saved authenticated channel observation
+    Update {
+        /// Signed release envelope; its payload must match the observed channel
+        release: std::path::PathBuf,
+        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
+        side: String,
+        #[arg(long, value_parser = ["game", "prism"])]
+        layout: Option<String>,
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
+
     /// Enroll an explicit publisher and HTTPS channel; does not install or update content
     Subscribe {
         #[arg(long)]

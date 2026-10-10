@@ -658,6 +658,59 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         .await
         .is_err()
     );
+    use crate::engine::release::*;
+    use sha2::{Digest, Sha256};
+    fs::create_dir(root.path().join("assets")).unwrap();
+    fs::write(root.path().join("assets/config"), b"signed bytes").unwrap();
+    let release = DecodedRelease::encode(ReleaseDocument {
+        schema: 1,
+        pack: "fixture".into(),
+        version: "1".into(),
+        minimum_engine: ">=0.6.0-beta".into(),
+        runtime: ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java_major: 21,
+        },
+        choices: vec![],
+        files: vec![ReleaseFile {
+            key: "config".into(),
+            destination: "config/example.txt".into(),
+            layer: ReleaseLayer::Common,
+            policy: FilePolicy::Managed,
+            client: Participation::Required,
+            server: Participation::Required,
+            sha256: Sha256::digest(b"signed bytes")
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+            bytes: 12,
+            readonly: false,
+            executable: false,
+            assertions: vec![],
+            asset: None,
+            source: ReleaseSource::Asset {
+                path: "assets/config".into(),
+            },
+        }],
+    })
+    .unwrap();
+    let envelope = sign(EnvelopeKind::Release, release.bytes(), &[&key]).unwrap();
+    fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
+    let update = || Commands::Instance {
+        command: InstanceCommand::Update {
+            release: "signed-release.json".into(),
+            side: "client".into(),
+            layout: None,
+            choices: vec![],
+            files: vec![],
+        },
+    };
+    assert!(
+        execute_command_with_session(update(), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
     let channel = ChannelDocument {
         schema: 1,
         pack: "fixture".into(),
@@ -670,9 +723,9 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             + 60,
         minimum_engine: ">=0.6.0-beta".into(),
         release: ChannelRelease {
-            id: "a".repeat(64),
+            id: release.id().into(),
             url: "https://publisher.test/release.json".into(),
-            maximum_bytes: 1024,
+            maximum_bytes: envelope.len() as u64,
         },
     };
     fs::write(
@@ -699,6 +752,18 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             .sequence,
         3
     );
+    let before = snapshot(&root.path().join("project"));
+    execute_command_with_session(update(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(before, snapshot(&root.path().join("project")));
+    execute_command_with_session(update(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/config/example.txt")).unwrap(),
+        b"signed bytes"
+    );
     execute_command_with_session(
         Commands::Instance {
             command: InstanceCommand::Trust {
@@ -713,5 +778,11 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     let record = SubscriptionRecord::decode(&fs::read(saved).unwrap()).unwrap();
     assert!(record.keys.is_empty());
     assert_eq!(record.floor.unwrap().sequence, 3);
-    assert!(!root.path().join("project/game").exists());
+    let before = snapshot(&root.path().join("project"));
+    assert!(
+        execute_command_with_session(update(), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(before, snapshot(&root.path().join("project")));
 }
