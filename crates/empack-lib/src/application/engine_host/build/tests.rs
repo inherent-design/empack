@@ -641,3 +641,50 @@ async fn derived_build_choices_allow_comment_edits_without_changing_the_output_p
         b"first"
     );
 }
+
+/// Exercise production CLI allowances; engine-only smoke tests supply their own budgets.
+#[tokio::test]
+#[ignore = "live official NeoForge installer and Java 21"]
+async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
+    let root = tempfile::tempdir().unwrap();
+    initialize(
+        &session(root.path(), true, false),
+        &InitArgs {
+            mc_version: Some("1.21.1".into()),
+            modloader: Some("neoforge".into()),
+            loader_version: Some("21.1.209".into()),
+            pack_name: Some("Budget Probe".into()),
+            pack_version: Some("1.0".into()),
+            author: Some("Tester".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    run(
+        root.path(),
+        &BuildArgs {
+            targets: vec!["all".into()],
+            ..Default::default()
+        },
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let dist = root.path().join("project/dist");
+    for suffix in [
+        ".mrpack",
+        "-client.zip",
+        "-server.zip",
+        "-client-full.zip",
+        "-server-full.zip",
+    ] {
+        let path = dist.join(format!("Budget Probe-1.0{suffix}"));
+        let mut archive = zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+        assert!(!archive.is_empty(), "empty artifact: {}", path.display());
+        if suffix == "-server-full.zip" {
+            assert!(archive.by_name("start.sh").is_ok());
+        }
+    }
+}

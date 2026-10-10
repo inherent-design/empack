@@ -98,9 +98,15 @@ run = "cargo nextest run -p empack-tests --test smoke"
 run_windows = "cargo nextest run -p empack-tests --test smoke"
 
 [tasks."smoke:runtime"]
-description = "Verify official runtime bytes and actual Java server launchers"
-run = "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2"
-run_windows = "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2"
+description = "Verify CLI build budgets, official runtime bytes and Java server launchers"
+run = [
+    "cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E 'test(cli_neoforge_build_all_targets_with_default_resource_budget)'",
+    "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2",
+]
+run_windows = [
+    'cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E "test(cli_neoforge_build_all_targets_with_default_resource_budget)"',
+    'cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2',
+]
 
 [tasks."smoke:catalog"]
 description = "Verify official game and loader discovery catalogs"

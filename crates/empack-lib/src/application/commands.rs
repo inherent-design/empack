@@ -214,11 +214,13 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
     );
     match session.process().find_program("java") {
         Some(path) => session.display().status().success("java", &path),
-        None => session
-            .display()
-            .status()
-            .warning("Java is unavailable; installer and executable server preparation require it"),
+        None => session.display().status().warning(
+            "Java was not found; Forge/NeoForge server builds and generated launchers need it",
+        ),
     }
+    session.display().status().info(
+        "Java discovery checks the executable path, not version compatibility with the selected runtime",
+    );
     session
         .display()
         .status()

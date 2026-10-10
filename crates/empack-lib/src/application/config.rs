@@ -66,7 +66,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub cache_dir: Option<PathBuf>,
 
-    /// Maximum admitted engine workers
+    /// Maximum concurrent engine workers
     #[arg(short = 'j', long, env = "EMPACK_CPU_JOBS", default_value = defaults::CPU_PARALLELS)]
     #[serde(default = "default_fns::cpu_parallels")]
     pub cpu_jobs: usize,
@@ -113,23 +113,23 @@ pub struct AppConfig {
     #[serde(default = "default_fns::tty_caps_detect_intent")]
     pub color: TerminalCapsDetectIntent,
 
-    /// Skip prompts and use defaults (global non-interactive mode)
+    /// Run without prompts; unresolved content choices still fail (global non-interactive mode)
     #[arg(
         short = 'y',
         long,
         global = true,
         env = "EMPACK_YES",
-        help = "Skip prompts and use defaults"
+        help = "Run without prompts; unresolved content choices still fail"
     )]
     #[serde(default)]
     pub yes: bool,
 
-    /// Preview operations without executing (global dry-run mode)
+    /// Preview changes without modifying the project (global dry-run mode)
     #[arg(
         long,
         global = true,
         env = "EMPACK_DRY_RUN",
-        help = "Preview operations without executing"
+        help = "Preview changes without modifying the project"
     )]
     #[serde(default)]
     pub dry_run: bool,
