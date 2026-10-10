@@ -15,6 +15,32 @@ pub struct InstallerExecution {
     pub heap_megabytes: u32,
     pub output: SnapshotLimits,
 }
+impl InstallerExecution {
+    /// Reserve installer work and its retained output together with the host's live inputs.
+    pub(crate) fn reservations(&self) -> Result<(ResourceRequest, ResourceRequest)> {
+        let retained = ResourceRequest {
+            scratch_bytes: self.output.total_bytes,
+            open_files: self.output.entries as u64,
+            ..ResourceRequest::default()
+        };
+        let request = ResourceRequest {
+            jobs: 1,
+            memory_bytes: (u64::from(self.heap_megabytes) + 128)
+                .checked_mul(1 << 20)
+                .context("Installer memory allowance overflow")?,
+            scratch_bytes: self
+                .output
+                .total_bytes
+                .checked_mul(2)
+                .context("Installer scratch allowance overflow")?,
+            open_files: retained
+                .open_files
+                .checked_add(16)
+                .context("Installer file allowance overflow")?,
+        };
+        Ok((request, retained))
+    }
+}
 #[derive(Debug, Clone)]
 pub struct InstallerRuntimeEvidence {
     pub installer: ContentId,
@@ -76,26 +102,7 @@ impl InstallerServerPlan {
         let libraries = self
             .acquire_libraries(transport, scope, transfer, policy, execution.output)
             .await?;
-        let retained = ResourceRequest {
-            scratch_bytes: execution.output.total_bytes,
-            open_files: execution.output.entries as u64,
-            ..ResourceRequest::default()
-        };
-        let request = ResourceRequest {
-            jobs: 1,
-            memory_bytes: (u64::from(execution.heap_megabytes) + 128)
-                .checked_mul(1 << 20)
-                .context("Installer memory allowance overflow")?,
-            scratch_bytes: execution
-                .output
-                .total_bytes
-                .checked_mul(2)
-                .context("Installer scratch allowance overflow")?,
-            open_files: retained
-                .open_files
-                .checked_add(16)
-                .context("Installer file allowance overflow")?,
-        };
+        let (request, retained) = execution.reservations()?;
         let worker = scope.spawn(request, retained, move |cancel| async move {
             let stage_cancel = cancel.clone();
             let staged = tokio::task::spawn_blocking(move || -> Result<_> {

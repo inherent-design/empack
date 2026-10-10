@@ -253,3 +253,19 @@ fn reported_execution_failure_retains_typed_source_after_registry_release() {
     );
     assert!(format!("{error:#}").contains("Addition was not applied"));
 }
+
+#[test]
+fn cli_budget_admits_installer_with_retained_build_inputs() {
+    let governor = governor(&AppConfig::default());
+    let resources = operation_resources();
+    let prepared = governor.try_admit(resources.prepared).unwrap();
+    let acquired = governor.try_admit(resources.acquired).unwrap();
+    let (work, retained) = installer_execution().reservations().unwrap();
+    let mut installer = governor.try_admit(work).unwrap();
+    // The successful installer retains its captured runtime while assembly runs.
+    let output = installer.split(retained).unwrap();
+    drop(installer);
+    let assembly = governor.try_admit(resources.assembly).unwrap();
+    drop((assembly, output, acquired, prepared));
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

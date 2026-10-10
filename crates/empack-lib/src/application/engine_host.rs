@@ -67,19 +67,13 @@ fn acquisition_with_cache_lookup(
 fn governor(config: &AppConfig) -> ResourceGovernor {
     ResourceGovernor::new(ResourceRequest {
         jobs: config.cpu_jobs.max(1) as u64,
-        memory_bytes: 512 << 20,
+        // Includes the installer JVM (1 GiB heap plus overhead) and retained build inputs.
+        memory_bytes: 2 << 30,
         scratch_bytes: 128 << 30,
-        open_files: 512,
+        open_files: 2048,
     })
 }
-fn engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
-    engine_with_governor(config, invocation, governor(config))
-}
-fn engine_with_governor(
-    config: &AppConfig,
-    invocation: &Path,
-    governor: ResourceGovernor,
-) -> Result<Engine> {
+fn operation_resources() -> OperationResources {
     let work = ResourceRequest {
         jobs: 1,
         memory_bytes: 64 << 20,
@@ -91,6 +85,41 @@ fn engine_with_governor(
         open_files: 8,
         ..Default::default()
     };
+    OperationResources {
+        capture: work,
+        prepared: held,
+        local_acquisition: work,
+        acquired: ResourceRequest {
+            scratch_bytes: 64 << 20,
+            ..held
+        },
+        assembly: work,
+        receipt: held,
+    }
+}
+fn installer_execution() -> InstallerExecution {
+    InstallerExecution {
+        java: "java".into(),
+        deadline: Duration::from_secs(1800),
+        heap_megabytes: 1024,
+        // Runtime output is bounded separately from the full project snapshot.
+        // Its worst-case staging and retained leases must fit the host budget together.
+        output: SnapshotLimits {
+            entries: 1024,
+            depth: 128,
+            file_bytes: 2 << 30,
+            total_bytes: 4 << 30,
+        },
+    }
+}
+fn engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
+    engine_with_governor(config, invocation, governor(config))
+}
+fn engine_with_governor(
+    config: &AppConfig,
+    invocation: &Path,
+    governor: ResourceGovernor,
+) -> Result<Engine> {
     let cache = crate::engine::content::cache::ContentCache::new(
         content_cache_root(config, invocation)?,
         Default::default(),
@@ -99,29 +128,14 @@ fn engine_with_governor(
         EngineConfig {
             state_root: state_root(config, invocation)?,
             retained_operations: 4,
-            resources: OperationResources {
-                capture: work,
-                prepared: held,
-                local_acquisition: work,
-                acquired: ResourceRequest {
-                    scratch_bytes: 64 << 20,
-                    ..held
-                },
-                assembly: work,
-                receipt: held,
-            },
+            resources: operation_resources(),
             snapshot: SnapshotLimits::default(),
             archive: ArchiveLimits::default(),
             transfer: TransferLimits {
                 deadline: Duration::from_secs(config.net_timeout),
                 ..Default::default()
             },
-            installer: InstallerExecution {
-                java: "java".into(),
-                deadline: Duration::from_secs(1800),
-                heap_megabytes: 1024,
-                output: SnapshotLimits::default(),
-            },
+            installer: installer_execution(),
         },
         governor,
     )?
