@@ -82,7 +82,7 @@ readiness or replace executable evidence.
   do not rely on the publication journal's short-lived preimages for release history.
 - [x] Coordinate prelaunch/server execution and updates with an instance lease.
   Document the limit for programs started outside empack's coordination.
-- [ ] Allow explicitly configured offline launch only from a completed installation;
+- [x] Allow explicitly configured offline launch only from a completed installation;
   distinguish update-check failure from failed or uncertain publication.
 
 ## Release distribution and trust

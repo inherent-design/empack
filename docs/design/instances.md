@@ -161,6 +161,14 @@ Snapshot is the default update policy. Prelaunch channel checks require explicit
 subscription and trust. Offline launch is an explicit setting permitting the last
 completed installation when a network update check fails. It cannot bypass a failed
 signature, known incompatible runtime, unresolved conflict or pending recovery.
+The CLI opts into the check with `instance launch --check-updates`; `--allow-offline`
+requires that flag. Only the channel-fetch result can report transport unavailability.
+Authentication, sequence publication, release acquisition and content activation are
+outside the fallback boundary. HTTP refusals, size limits, cancellation and invalid
+redirects remain errors. The expected completed release is bound into launch
+preparation, preventing a concurrent replacement from changing the selected runtime's
+input after the prelaunch decision. A channel runtime change requires consumer runtime
+preparation before activation; a caller-selected program is not proof of compatibility.
 Launch errors distinguish update availability, acquisition, publication and game
 process failures. Updating empack itself requires independent tool policy.
 

@@ -387,6 +387,12 @@ pub enum InstanceCommand {
     },
     /// Run a locally selected runtime while preventing concurrent managed updates
     Launch {
+        /// Check the explicitly enrolled channel and apply a verified update before launch
+        #[arg(long)]
+        check_updates: bool,
+        /// On channel connection failure only, use the verified completed installation
+        #[arg(long, requires = "check_updates")]
+        allow_offline: bool,
         /// Runtime program and arguments after --; no shell expansion or remote commands
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
@@ -776,6 +782,29 @@ mod tests {
     #[test]
     fn instance_launch_preserves_native_argument_boundaries() {
         assert!(Cli::try_parse_from(["empack", "instance", "launch"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "launch",
+                "--allow-offline",
+                "--",
+                "java"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "empack",
+                "instance",
+                "launch",
+                "--check-updates",
+                "--allow-offline",
+                "--",
+                "java"
+            ])
+            .is_ok()
+        );
         assert!(Cli::try_parse_from(["empack", "instance", "recover-runtime"]).is_err());
         assert!(
             Cli::try_parse_from([
@@ -797,7 +826,7 @@ mod tests {
         ])
         .unwrap();
         let Some(Commands::Instance {
-            command: InstanceCommand::Launch { command },
+            command: InstanceCommand::Launch { command, .. },
         }) = cli.command
         else {
             panic!()

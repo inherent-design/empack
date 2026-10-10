@@ -8,6 +8,9 @@ use std::ffi::OsString;
 
 /// A local runtime chosen by the host, never a command supplied by a release payload.
 pub struct LaunchInstanceRequest {
+    /// Bind prelaunch/update decisions to the release the runtime will actually run.
+    /// None explicitly selects whichever completed release is captured during preparation.
+    pub expected_release: Option<String>,
     pub program: PathBuf,
     pub arguments: Vec<OsString>,
 }
@@ -56,6 +59,13 @@ pub(super) async fn prepare(
             let recovery = RecoveryReader::new(state);
             let (record, release) =
                 instance::inspect(&root, None, recovery.clone(), limits, &cancel)?;
+            ensure!(
+                request
+                    .expected_release
+                    .as_ref()
+                    .is_none_or(|expected| *expected == record.release),
+                "Completed release changed after the prelaunch decision; prepare launch again"
+            );
             let version = semver::Version::parse(if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
                 "0.6.0-beta"
             } else {

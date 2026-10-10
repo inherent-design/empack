@@ -205,6 +205,67 @@ fn read_current(
     Ok((record, release::hash(&bytes)))
 }
 
+/// A transport-only failure before channel authentication or publication. Only this
+/// result is eligible for an explicitly selected offline-launch policy.
+pub enum ChannelFetch {
+    Available(crate::engine::runtime::RetainedOutput<Vec<u8>>),
+    Unavailable(anyhow::Error),
+}
+fn classify_channel_fetch(
+    result: Result<crate::engine::runtime::RetainedOutput<Vec<u8>>>,
+) -> Result<ChannelFetch> {
+    match result {
+        Ok(bytes) => Ok(ChannelFetch::Available(bytes)),
+        Err(error)
+            if matches!(
+                error.downcast_ref::<crate::engine::acquisition::TransferError>(),
+                Some(
+                    crate::engine::acquisition::TransferError::Network
+                        | crate::engine::acquisition::TransferError::Deadline
+                )
+            ) =>
+        {
+            Ok(ChannelFetch::Unavailable(error))
+        }
+        Err(error) => Err(error),
+    }
+}
+/// Fetch the enrolled channel without authenticating its contents or updating the floor.
+/// Missing/revoked enrollment, invalid transport policy and resource failures stay errors.
+pub async fn fetch_channel(
+    scope: &mut crate::engine::runtime::WorkScope,
+    root: std::path::PathBuf,
+    state: std::path::PathBuf,
+    transport: &crate::engine::acquisition::HttpAcquisition,
+) -> Result<ChannelFetch> {
+    use crate::engine::{publication::RecoveryReader, resources::ResourceRequest};
+    let work = scope.spawn_blocking(
+        ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            open_files: 8,
+            ..Default::default()
+        },
+        ResourceRequest {
+            memory_bytes: 128 << 10,
+            ..Default::default()
+        },
+        move |cancel| inspect(&root, RecoveryReader::new(state), &cancel),
+    )?;
+    let record = scope.accept(work.wait().await?)?.transpose()?;
+    record.trust()?;
+    classify_channel_fetch(
+        transport
+            .publisher_metadata(
+                scope,
+                &record.url,
+                48 << 10,
+                std::time::Duration::from_secs(30),
+            )
+            .await,
+    )
+}
+
 /// Fetch only the release selected by an already durable authenticated observation.
 /// The channel floor must have been published before this acquisition is called.
 pub async fn fetch_release(
@@ -303,6 +364,34 @@ pub(super) fn asset_url(base: &reqwest::Url, path: &str) -> Result<String> {
 #[cfg(test)]
 mod locator_tests {
     use super::*;
+    #[test]
+    fn offline_fallback_is_limited_to_channel_transport_failures() {
+        use crate::engine::acquisition::TransferError;
+        for error in [TransferError::Network, TransferError::Deadline] {
+            assert!(matches!(
+                classify_channel_fetch(Err(anyhow::Error::new(error).context("channel fetch")))
+                    .unwrap(),
+                ChannelFetch::Unavailable(_)
+            ));
+        }
+        for error in [
+            TransferError::InvalidLocator,
+            TransferError::Unauthorized,
+            TransferError::NotFound,
+            TransferError::ByteLimit,
+            TransferError::RateLimited,
+            TransferError::Server(503),
+            TransferError::Status(400),
+            TransferError::RedirectLimit,
+        ] {
+            assert!(classify_channel_fetch(Err(error.into())).is_err());
+        }
+        assert!(classify_channel_fetch(Err(anyhow::anyhow!("invalid signature"))).is_err());
+        assert!(
+            classify_channel_fetch(Err(crate::engine::runtime::RuntimeError::Cancelled.into()))
+                .is_err()
+        );
+    }
     #[test]
     fn asset_paths_are_literal_relative_components_without_release_credentials() {
         let base = asset_base("https://publisher.test/releases/v1.json?token=private").unwrap();

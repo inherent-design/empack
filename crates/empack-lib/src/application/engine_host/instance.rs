@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use std::collections::BTreeMap;
+mod prelaunch;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
     let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
@@ -258,7 +259,21 @@ pub(in crate::application) async fn dispatch(
             engine.shutdown().await;
             result
         }
-        InstanceCommand::Launch { command } => launch(session, command).await,
+        InstanceCommand::Launch {
+            command,
+            check_updates,
+            allow_offline,
+        } => {
+            let expected_release = if check_updates {
+                let Some(release) = prelaunch::update(session, allow_offline).await? else {
+                    return Ok(());
+                };
+                Some(release)
+            } else {
+                None
+            };
+            launch(session, command, expected_release).await
+        }
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
         | InstanceCommand::ObserveChannel { .. }) => subscription(session, command).await,
@@ -669,7 +684,11 @@ async fn read_subscription(
     scope.accept(work.wait().await?)?.transpose()
 }
 
-async fn launch(session: &dyn Session, command: Vec<std::ffi::OsString>) -> Result<()> {
+async fn launch(
+    session: &dyn Session,
+    command: Vec<std::ffi::OsString>,
+    expected_release: Option<String>,
+) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut args = command.into_iter();
     let program = PathBuf::from(
@@ -696,6 +715,7 @@ async fn launch(session: &dyn Session, command: Vec<std::ffi::OsString>) -> Resu
             engine.prepare(
                 root,
                 crate::engine::api::LaunchInstanceRequest {
+                    expected_release,
                     program,
                     arguments: args.collect(),
                 },

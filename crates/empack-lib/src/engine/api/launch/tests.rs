@@ -110,6 +110,7 @@ fn grant(prepared: &PreparedOperation, runtime: bool) -> ExecutionGrant {
 }
 fn request() -> LaunchInstanceRequest {
     LaunchInstanceRequest {
+        expected_release: None,
         program: std::env::current_exe().unwrap(),
         arguments: vec![
             "--exact".into(),
@@ -439,5 +440,18 @@ async fn cancellation_cannot_discard_failed_runtime_evidence_cleanup() {
     assert_eq!(fs::read(marker).unwrap(), b"changed recovery evidence");
     drop(outcome);
     engine.release_completed(running.id());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn launch_binds_the_release_selected_by_prelaunch() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    install(&engine, root.path()).await;
+    let mut input = request();
+    input.expected_release = Some("00".repeat(32));
+    assert!(engine.prepare(root.path().to_owned(), input).await.is_err());
+    assert!(!root.path().join("game/launch-started").exists());
     engine.shutdown().await;
 }
