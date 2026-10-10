@@ -67,6 +67,8 @@ pub enum InstanceAction {
     Prepare,
     Apply,
     Repair,
+    /// Change persistent choices within the completed release, without selecting an update.
+    ChangeChoices,
     Rollback,
 }
 
@@ -95,6 +97,15 @@ pub struct InstanceRecord {
     pub choices: Vec<ChoiceSelection>,
     /// Completed descriptor identities, separate from short-lived publication preimages.
     pub history: Vec<String>,
+    /// Authenticated asset directories retained for exact repair and managed rollback.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asset_bases: Vec<ReleaseAssetBase>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseAssetBase {
+    pub release: String,
+    pub url: String,
 }
 impl InstanceRecord {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
@@ -113,6 +124,20 @@ impl InstanceRecord {
         for id in &record.history {
             super::release::decode_hex::<32>(id)?;
             ensure!(history.insert(id), "Duplicate instance history entry");
+        }
+        let mut bases = BTreeSet::new();
+        for base in &record.asset_bases {
+            super::release::decode_hex::<32>(&base.release)?;
+            ensure!(bases.insert(&base.release), "Duplicate retained asset base");
+            ensure!(
+                base.release == record.release || history.contains(&base.release),
+                "Asset base names an unretained release"
+            );
+            let url = super::release::https(&base.url)?;
+            ensure!(
+                url.query().is_none() && url.path().ends_with('/'),
+                "Invalid immutable asset directory"
+            );
         }
         let mut choices = BTreeSet::new();
         for choice in &record.choices {
@@ -332,7 +357,7 @@ pub(super) fn plan(
         choices: requested_choices,
         action,
     } = selection;
-    let asset_base = match &selected {
+    let mut asset_base = match &selected {
         SelectedRelease::Subscribed(proof) => Some(proof.assets()),
         _ => None,
     };
@@ -464,19 +489,34 @@ pub(super) fn plan(
         .as_ref()
         .map(|current| current.release())
         .unwrap_or_else(|| selected.release());
+    if active.is_some() {
+        asset_base = None;
+    }
+    if asset_base.is_none() {
+        asset_base = previous
+            .as_ref()
+            .and_then(|record| {
+                record
+                    .asset_bases
+                    .iter()
+                    .find(|base| base.release == release.id())
+            })
+            .map(|base| super::release::https(&base.url))
+            .transpose()?;
+    }
     match action {
         InstanceAction::Prepare => {}
         InstanceAction::Apply => {}
-        InstanceAction::Repair => {
+        InstanceAction::Repair | InstanceAction::ChangeChoices => {
             let previous = previous
                 .as_ref()
                 .context("Repair requires a completed instance")?;
             ensure!(
                 previous.release == release.id(),
-                "Repair cannot change the installed release"
+                "Maintenance cannot change the installed release"
             );
             ensure!(
-                requested_choices.is_empty(),
+                action == InstanceAction::ChangeChoices || requested_choices.is_empty(),
                 "Repair retains the installed choices"
             );
         }
@@ -652,7 +692,20 @@ pub(super) fn plan(
     {
         history.push(previous.release.clone());
     }
+    let mut asset_bases = previous
+        .as_ref()
+        .map(|record| record.asset_bases.clone())
+        .unwrap_or_default();
+    if let Some(base) = &asset_base {
+        asset_bases.retain(|old| old.release != release.id());
+        asset_bases.push(ReleaseAssetBase {
+            release: release.id().into(),
+            url: base.to_string(),
+        });
+        asset_bases.sort_by(|a, b| a.release.cmp(&b.release));
+    }
     let record = InstanceRecord {
+        asset_bases,
         schema: 1,
         layout,
         root: root_identity,

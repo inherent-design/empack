@@ -426,7 +426,11 @@ async fn maintenance_rejects_unretained_releases_and_changed_repair_intent() {
     let (engine, _) = super::super::tests::engine(state.path().join("state"));
     let a = || request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
     let b = || request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]);
-    for action in [InstanceAction::Repair, InstanceAction::Rollback] {
+    for action in [
+        InstanceAction::Repair,
+        InstanceAction::ChangeChoices,
+        InstanceAction::Rollback,
+    ] {
         let mut missing = a();
         missing.action = action;
         assert!(
@@ -439,7 +443,11 @@ async fn maintenance_rejects_unretained_releases_and_changed_repair_intent() {
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     apply(&engine, root.path(), a()).await;
     let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
-    for action in [InstanceAction::Repair, InstanceAction::Rollback] {
+    for action in [
+        InstanceAction::Repair,
+        InstanceAction::ChangeChoices,
+        InstanceAction::Rollback,
+    ] {
         let mut other = b();
         other.action = action;
         assert!(engine.prepare(root.path().to_owned(), other).await.is_err());

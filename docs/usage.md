@@ -39,6 +39,12 @@ fails. Explicit independent batches preserve failed groups and report partial ef
 | `instance launch` | Coordinate checks, installation state and runtime launch |
 | `instance inspect` | Explain release, ownership, choices, conflicts and update authority |
 
+`instance options` lists the completed release's saved values and alternatives.
+Use `instance options --choice KEY=VALUE` to change them. Newly enabled content
+uses retained asset locations, verified cache entries, explicit `--assets` or
+`--file` inputs, and exact provider sources. This command does not select a newer
+release; repair keeps the chosen values.
+
 Instances default to snapshots. Channel following, publisher trust and offline launch
 policy require explicit configuration. Platform-managed packs remain under the
 platform updater; switching authority is deliberate. Empack tool updates are separate

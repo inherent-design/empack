@@ -4,7 +4,9 @@ use crate::{
     application::cli::InstanceCommand,
     engine::{
         api::{InstallInstanceRequest, OperationPreview},
-        instance::{ChoiceSelection, InstanceLayout, InstanceSide, SelectedRelease},
+        instance::{
+            ChoiceSelection, InstanceAction, InstanceLayout, InstanceSide, SelectedRelease,
+        },
         release::{DecodedRelease, trust::SelectedSnapshot},
     },
 };
@@ -247,15 +249,76 @@ pub(in crate::application) async fn dispatch(
             }
             Ok(())
         }
+        InstanceCommand::Options {
+            choices,
+            assets,
+            files,
+        } => {
+            if choices.is_empty() {
+                ensure!(
+                    assets.is_none() && files.is_empty(),
+                    "Supply --choice to change instance options"
+                );
+                let (invocation, root) = project_path(session)?;
+                let state = state_root(session.config().app_config(), &invocation)?;
+                let inspected = inspect(session, root, None, state).await?;
+                let (record, release) = &*inspected;
+                for definition in &release.document().choices {
+                    let selected = record
+                        .choices
+                        .iter()
+                        .find(|choice| choice.key == definition.key)
+                        .context("Installed choice is missing")?;
+                    session.display().status().info(&format!(
+                        "{}={} (available: {})",
+                        definition.key,
+                        selected.value,
+                        definition.alternatives.join(", ")
+                    ));
+                    if let Some(description) = &definition.description {
+                        session.display().status().info(description);
+                    }
+                }
+                Ok(())
+            } else {
+                maintain(
+                    session,
+                    InstanceAction::ChangeChoices,
+                    None,
+                    assets,
+                    files,
+                    choices,
+                )
+                .await
+            }
+        }
         InstanceCommand::Repair { assets, files } => {
-            maintain(session, None, assets, files, Vec::new()).await
+            maintain(
+                session,
+                InstanceAction::Repair,
+                None,
+                assets,
+                files,
+                Vec::new(),
+            )
+            .await
         }
         InstanceCommand::Rollback {
             release,
             assets,
             files,
             choices,
-        } => maintain(session, Some(release), assets, files, choices).await,
+        } => {
+            maintain(
+                session,
+                InstanceAction::Rollback,
+                Some(release),
+                assets,
+                files,
+                choices,
+            )
+            .await
+        }
     }
 }
 async fn inspect(
@@ -288,6 +351,7 @@ async fn inspect(
 }
 async fn maintain(
     session: &dyn Session,
+    action: InstanceAction,
     release: Option<String>,
     assets: Option<PathBuf>,
     files: Vec<String>,
@@ -295,11 +359,6 @@ async fn maintain(
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
-    let action = if release.is_some() {
-        crate::engine::instance::InstanceAction::Rollback
-    } else {
-        crate::engine::instance::InstanceAction::Repair
-    };
     let inspected = inspect(session, root.clone(), release, state).await?;
     let (record, decoded) = &*inspected;
     let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {

@@ -672,13 +672,21 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             loader: ReleaseLoader::Vanilla,
             java_major: 21,
         },
-        choices: vec![],
+        choices: vec![ReleaseChoice {
+            key: "extra".into(),
+            alternatives: vec!["on".into(), "off".into()],
+            default: "on".into(),
+            description: Some("Optional configuration".into()),
+        }],
         files: vec![ReleaseFile {
             key: "config".into(),
             destination: "config/example.txt".into(),
             layer: ReleaseLayer::Common,
             policy: FilePolicy::Managed,
-            client: Participation::Required,
+            client: Participation::Choice {
+                key: "extra".into(),
+                value: "on".into(),
+            },
             server: Participation::Required,
             sha256: Sha256::digest(b"signed bytes")
                 .iter()
@@ -758,6 +766,51 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         .unwrap();
     assert_eq!(before, snapshot(&root.path().join("project")));
     execute_command_with_session(update(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/game/config/example.txt")).unwrap(),
+        b"signed bytes"
+    );
+    let options = |value: Option<&str>| Commands::Instance {
+        command: InstanceCommand::Options {
+            choices: value
+                .map(|value| vec![format!("extra={value}")])
+                .unwrap_or_default(),
+            assets: value.map(|_| ".".into()),
+            files: vec![],
+        },
+    };
+    let before = snapshot(&root.path().join("project"));
+    execute_command_with_session(options(None), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    execute_command_with_session(options(Some("off")), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert!(
+        execute_command_with_session(options(Some("invalid")), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(before, snapshot(&root.path().join("project")));
+    execute_command_with_session(options(Some("off")), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    assert!(!root.path().join("project/game/config/example.txt").exists());
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Repair {
+                assets: None,
+                files: vec![],
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    assert!(!root.path().join("project/game/config/example.txt").exists());
+    execute_command_with_session(options(Some("on")), &session(root.path(), true, false))
         .await
         .unwrap();
     assert_eq!(

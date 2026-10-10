@@ -489,6 +489,65 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         asset.assert_async().await;
         drop(result);
         engine.release_completed(operation.id());
+        if !bad_asset {
+            fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+            asset.remove_async().await;
+            let repair_asset = server
+                .mock("GET", "/assets/a%252fb")
+                .with_body("exact bytes")
+                .expect(1)
+                .create_async()
+                .await;
+            // Repair uses the completed locator after trust revocation, without selecting an update.
+            apply(
+                &engine,
+                root.path(),
+                SubscriptionRequest::ReplaceKeys { keys: vec![] },
+            )
+            .await;
+            let snapshot = crate::engine::release::trust::SelectedSnapshot::select(
+                release.bytes(),
+                release.id(),
+                &semver::Version::parse("0.6.0-beta").unwrap(),
+            )
+            .unwrap();
+            let input = InstallInstanceRequest {
+                action: crate::engine::instance::InstanceAction::Repair,
+                release: crate::engine::instance::SelectedRelease::Snapshot(snapshot),
+                side: crate::engine::instance::InstanceSide::Client,
+                layout: None,
+                choices: vec![],
+                supplied: BTreeMap::new(),
+                local_files: BTreeMap::new(),
+                assets: None,
+            };
+            let Preparation::Ready(prepared) =
+                engine.prepare(root.path().to_owned(), input).await.unwrap()
+            else {
+                panic!()
+            };
+            let grant = ExecutionGrant {
+                plan: prepared.view().plan(),
+                network: NetworkPermission::Allow,
+                run_installer: false,
+                replacement: prepared.view().replacement(),
+            };
+            let mut repair = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+            let repaired = repair.wait().await;
+            assert!(matches!(
+                &*repaired,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(
+                    ExecutionReceipt::Instance(_)
+                ))
+            ));
+            assert_eq!(
+                fs::read(root.path().join("game/mods/a.jar")).unwrap(),
+                b"exact bytes"
+            );
+            repair_asset.assert_async().await;
+            drop(repaired);
+            engine.release_completed(repair.id());
+        }
         engine.shutdown().await;
         drop(output);
         runtime.release_completed(handle.id());

@@ -372,6 +372,15 @@ pub enum InstanceCommand {
         envelope: Option<std::path::PathBuf>,
     },
 
+    /// Inspect choices, or apply explicit alternatives within the installed release
+    Options {
+        #[arg(long = "choice", value_name = "KEY=VALUE")]
+        choices: Vec<String>,
+        #[arg(long)]
+        assets: Option<std::path::PathBuf>,
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+    },
     /// Show the completed release, saved choices and retained rollback releases
     Inspect,
     /// Restore the installed release without changing its choices or selecting newer content

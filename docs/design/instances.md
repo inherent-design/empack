@@ -101,7 +101,11 @@ Resuming revalidates all bindings and prepares a new operation for authorization
 Managed rollback selects a previously completed release and uses the same conflict
 checks. It never rewinds played-world data. Previous release descriptors and any
 required rollback content have explicit retention leases; a short-lived publication
-journal is not the release history store. Unavailable retained content is a reported
+journal is not the release history store. Completed records retain authenticated
+asset directories keyed by release identity. Repair and rollback use those locations
+even when a channel changes or its keys are revoked, while still verifying the exact
+retained descriptor and original content assertions. A saved location cannot select
+a newer release or regain revoked update authority. Unavailable retained content is a reported
 acquisition obligation, not permission to guess or reuse different bytes.
 
 ## Launch and offline policy
@@ -153,7 +157,12 @@ verified-content cache; cached bytes remain subject to the same assertions.
 
 A new instance uses declared choice defaults. Updates retain choices by stable key.
 A newly introduced choice or an unavailable prior alternative requires a decision;
-a changed publisher default does not overwrite a saved selection. Projection
+a changed publisher default does not overwrite a saved selection.
+`instance options` lists saved values and available alternatives without mutation.
+`instance options --choice KEY=VALUE` changes choices within the completed release;
+it cannot select another release or create an uninstalled instance. Its preview,
+acquisition, conflict checks and publication use the same instance operation. Repair
+retains the new choices. Projection
 rejects colliding paths before content staging, including case and Unicode aliases.
 
 Preparation captures the prior record, retained descriptor, and the union of old
