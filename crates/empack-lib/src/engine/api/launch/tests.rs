@@ -313,7 +313,6 @@ async fn failed_spawn_does_not_leave_runtime_recovery_evidence() {
         OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
     ));
     engine.release_completed(operation.id());
-    #[cfg(unix)]
     assert!(
         engine
             .prepare(root.path().to_owned(), AcknowledgeStoppedRuntime)

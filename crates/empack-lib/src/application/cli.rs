@@ -361,7 +361,7 @@ pub enum ReleaseCommand {
         #[arg(long = "previous-key")]
         previous_keys: Vec<String>,
     },
-    /// Stage signed immutable release files under dist/releases/<release-id>/
+    /// Stage signed immutable release files under `dist/releases/<release-id>/`
     Stage {
         /// Extracted native export containing release.json and its selected assets
         source: PathBuf,

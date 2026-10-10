@@ -14,6 +14,12 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 #[error("Operation interrupted")]
 pub struct Interrupted;
 
+/// Only CreateProcess failure proves that no Windows child needs retirement.
+#[cfg(windows)]
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to spawn command")]
+struct SpawnNotStarted;
+
 #[derive(Clone, Default)]
 pub struct Cancellation(Arc<CancellationState>);
 
@@ -143,7 +149,11 @@ pub(crate) async fn execute_captured(
     #[cfg(unix)]
     let tree = ProcessTree::new(&child)?;
     #[cfg(windows)]
-    let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new)?;
+    let (mut child, tree) = match spawn_windows_child(&mut command, ProcessTree::new) {
+        Ok(owned) => owned,
+        Err(error) if error.is::<SpawnNotStarted>() => return Ok(RetiredCapture(Err(error))),
+        Err(error) => return Err(error),
+    };
     let stdout = child.stdout.take().context("Failed to capture stdout")?;
     let stderr = child.stderr.take().context("Failed to capture stderr")?;
     let result = {
@@ -210,7 +220,11 @@ pub(crate) async fn execute_inherited(
     #[cfg(unix)]
     let tree = ProcessTree::new(&child)?;
     #[cfg(windows)]
-    let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new)?;
+    let (mut child, tree) = match spawn_windows_child(&mut command, ProcessTree::new) {
+        Ok(owned) => owned,
+        Err(error) if error.is::<SpawnNotStarted>() => return Ok(RetiredRuntime(Err(error))),
+        Err(error) => return Err(error),
+    };
     let result = tokio::select! {
         result = child.wait() => result.map_err(anyhow::Error::from),
         _ = cancellation.cancelled() => Err(Interrupted.into()),
@@ -338,7 +352,7 @@ fn spawn_windows_child(
 ) -> Result<(tokio::process::Child, ProcessTree)> {
     use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
     command.kill_on_drop(true).creation_flags(CREATE_SUSPENDED);
-    let child = command.spawn().context("Failed to spawn command")?;
+    let child = command.spawn().context(SpawnNotStarted)?;
     let tree = register(&child).context(
         "Cannot establish Windows subprocess ownership: the host must permit nested job registration; the child was not started",
     )?;
@@ -429,6 +443,38 @@ impl ProcessTree {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn missing_program_has_no_retirement_obligation_in_either_capture_mode() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing.exe");
+        let captured = execute_captured(
+            std::process::Command::new(&missing),
+            Duration::from_secs(1),
+            Cancellation::default(),
+            None,
+            1024,
+        )
+        .await
+        .expect("a child that never spawned is already retired")
+        .0
+        .unwrap_err();
+        let inherited = execute_inherited(
+            std::process::Command::new(&missing),
+            Cancellation::default(),
+        )
+        .await
+        .expect("a child that never spawned is already retired")
+        .0
+        .unwrap_err();
+        for error in [captured, inherited] {
+            assert!(error.is::<SpawnNotStarted>());
+            assert_eq!(
+                error.downcast_ref::<std::io::Error>().unwrap().kind(),
+                std::io::ErrorKind::NotFound
+            );
+        }
+    }
 
     #[tokio::test]
     async fn rejected_job_registration_prevents_child_side_effects() {
