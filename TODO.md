@@ -45,7 +45,7 @@ readiness or replace executable evidence.
 
 ## Contracts and documents
 
-- [ ] Replace author/backend descriptions with the consumer and instance contracts.
+- [x] Replace author/backend descriptions with the consumer and instance contracts.
 - [ ] Define strict, independently versioned author, lock, release, channel and
   instance schemas. DTO parsing never constructs trusted or approved proof values.
 - [ ] Specify author source inclusion in `empack.yml`, not `.packwizignore`.
@@ -58,7 +58,7 @@ readiness or replace executable evidence.
 
 ## Instance engine
 
-- [ ] Implement pure three-way file decisions, including wrong-kind, missing-file,
+- [x] Implement pure three-way file decisions, including wrong-kind, missing-file,
   unowned collision, changed-content and permission-change cases.
 - [ ] Construct complete plans with collision checks, root bindings, read sets,
   exact acquisition obligations and instance-record postconditions.

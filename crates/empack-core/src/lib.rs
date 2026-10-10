@@ -9,6 +9,7 @@ pub mod addition;
 pub mod digest;
 pub mod files;
 pub mod identity;
+pub mod instance;
 pub mod inventory;
 pub mod model;
 pub mod path;
