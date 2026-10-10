@@ -101,9 +101,10 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             anyhow::bail!("Unexpected instance preview");
         };
         session.display().status().info(&format!(
-            "Release {}: {} exact file changes",
+            "Release {}: {} exact file changes, {} downloads",
             view.record.release,
-            view.files.changes().len()
+            view.files.changes().len(),
+            view.downloads.len()
         ));
         apply(session, &engine, prepared, "Instance content", |receipt| {
             let ExecutionReceipt::Instance(receipt) = receipt else {
@@ -261,9 +262,10 @@ async fn maintain(
             anyhow::bail!("Unexpected instance preview");
         };
         session.display().status().info(&format!(
-            "Release {}: {} exact file changes",
+            "Release {}: {} exact file changes, {} downloads",
             view.record.release,
-            view.files.changes().len()
+            view.files.changes().len(),
+            view.downloads.len()
         ));
         apply(
             session,

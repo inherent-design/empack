@@ -26,6 +26,7 @@ pub struct InstancePreview {
     pub record: InstanceRecord,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
+    pub downloads: Vec<String>,
 }
 pub struct InstanceReceipt {
     pub plan: PlanId,
@@ -34,7 +35,15 @@ pub struct InstanceReceipt {
 }
 pub(super) struct PreparedInstanceOperation {
     pub(super) view: InstancePreview,
-    instance: instance::PreparedInstance,
+    instance: InstanceCandidate,
+}
+enum InstanceCandidate {
+    Staged(instance::PreparedInstance),
+    Acquire {
+        plan: instance::InstancePlan,
+        content: BTreeMap<String, AcquiredContent>,
+        downloads: Vec<crate::engine::release::ReleaseFile>,
+    },
 }
 pub(super) async fn prepare(
     target: ProjectTarget,
@@ -79,7 +88,23 @@ pub(super) async fn prepare(
     let (resources, retained) = project_change::resources(planned.bytes()?, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
         let (planned, _reservation) = planned.into_parts();
+        let content =
+            planned.acquire_available(&supplied, &local_files, assets.as_deref(), &cancel)?;
+        let downloads: Vec<_> = planned
+            .needed()
+            .filter(|file| !content.contains_key(&file.key))
+            .cloned()
+            .collect();
+        for file in &downloads {
+            ensure!(
+                !locators(file).is_empty(),
+                "Instance requires exact content for {}; supply --file {}=PATH",
+                file.key,
+                file.key
+            );
+        }
         let view = InstancePreview {
+            downloads: downloads.iter().map(|file| file.key.clone()).collect(),
             plan: PlanId(
                 NEXT_PLAN
                     .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -91,7 +116,20 @@ pub(super) async fn prepare(
         };
         Ok::<_, anyhow::Error>(PreparedInstanceOperation {
             view,
-            instance: planned.stage(&supplied, &local_files, assets.as_deref(), &cancel)?,
+            instance: if downloads.is_empty() {
+                InstanceCandidate::Staged(planned.stage(
+                    &content,
+                    &BTreeMap::new(),
+                    None,
+                    &cancel,
+                )?)
+            } else {
+                InstanceCandidate::Acquire {
+                    plan: planned,
+                    content,
+                    downloads,
+                }
+            },
         })
     })?;
     scope.accept(work.wait().await?)?.transpose()
@@ -99,10 +137,11 @@ pub(super) async fn prepare(
 pub(super) async fn run(
     prepared: RetainedOutput<PreparedInstanceOperation>,
     config: EngineConfig,
+    transport: HttpAcquisition,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, &mut scope).await;
+    let result = execute(prepared, config, transport, &mut scope).await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Instance(Box::new(receipt))),
         Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
@@ -111,6 +150,7 @@ pub(super) async fn run(
 async fn execute(
     prepared: RetainedOutput<PreparedInstanceOperation>,
     config: EngineConfig,
+    transport: HttpAcquisition,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<InstanceReceipt>> {
     let bytes = prepared
@@ -132,13 +172,46 @@ async fn execute(
             sum.checked_add(bytes)
                 .context("Instance publication size overflow")
         })?;
+    let (mut prepared, reservation) = prepared.into_parts();
+    if let InstanceCandidate::Acquire {
+        content, downloads, ..
+    } = &mut prepared.instance
+    {
+        use crate::engine::{
+            acquisition::DownloadRequest,
+            content::{InitialObservation, SourceEvidencePolicy},
+        };
+        let requests = downloads
+            .iter()
+            .map(|file| {
+                Ok(DownloadRequest {
+                    alternatives: NonEmpty::new(locators(file).to_vec())?,
+                    expected: file.expected()?,
+                    limits: config.transfer,
+                    evidence: SourceEvidencePolicy::Compatibility,
+                    initial: InitialObservation::RequireEvidence,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let acquired = transport
+            .acquire_batch(scope, requests, config.transfer)
+            .await?;
+        for (file, bytes) in downloads.iter().zip(acquired) {
+            content.insert(file.key.clone(), bytes);
+        }
+    }
     let mut resources = config.resources.assembly;
     resources.scratch_bytes = resources.scratch_bytes.max(bytes);
     let work = scope.spawn_blocking(resources, config.resources.receipt, move |cancel| {
-        let (prepared, _reservation) = prepared.into_parts();
-        let (publication, record) = prepared
-            .instance
-            .publish(&Publisher::open(&config.state_root)?, &cancel)?;
+        let _reservation = reservation;
+        let instance = match prepared.instance {
+            InstanceCandidate::Staged(instance) => instance,
+            InstanceCandidate::Acquire { plan, content, .. } => {
+                plan.stage(&content, &BTreeMap::new(), None, &cancel)?
+            }
+        };
+        let (publication, record) =
+            instance.publish(&Publisher::open(&config.state_root)?, &cancel)?;
         Ok::<_, anyhow::Error>(InstanceReceipt {
             plan: prepared.view.plan,
             publication,
@@ -150,5 +223,14 @@ async fn execute(
         .transpose()
 }
 
+fn locators(file: &crate::engine::release::ReleaseFile) -> &[String] {
+    use crate::engine::release::ReleaseSource;
+    match &file.source {
+        ReleaseSource::Url { alternatives } | ReleaseSource::Provider { alternatives, .. } => {
+            alternatives
+        }
+        _ => &[],
+    }
+}
 #[cfg(test)]
 mod tests;

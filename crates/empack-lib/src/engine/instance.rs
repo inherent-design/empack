@@ -531,6 +531,79 @@ impl InstancePlan {
                 .context("Instance staging size overflow")
         })
     }
+    fn acquire_one(
+        file: &ReleaseFile,
+        supplied: &BTreeMap<String, AcquiredContent>,
+        local_files: &BTreeMap<String, std::path::PathBuf>,
+        assets: Option<&Path>,
+        cancel: &Cancellation,
+    ) -> Result<Option<AcquiredContent>> {
+        let expected = file.expected()?;
+        let acquired;
+        let content = if let Some(content) = supplied.get(&file.key) {
+            content
+        } else {
+            let (root, relative) = if let Some(selected) = local_files.get(&file.key) {
+                ensure!(
+                    selected.is_absolute(),
+                    "Explicit instance inputs must be absolute"
+                );
+                let parent = selected.parent().context("Instance input has no parent")?;
+                let name = selected
+                    .file_name()
+                    .and_then(|v| v.to_str())
+                    .context("Invalid instance input filename")?;
+                (ProjectReadRoot::open(parent)?, path(name)?)
+            } else if let (Some(root), Some(member)) = (assets, file.asset_path()) {
+                ensure!(root.is_absolute(), "Instance asset root must be absolute");
+                (ProjectReadRoot::open(root)?, path(member)?)
+            } else {
+                return Ok(None);
+            };
+            let (parent, leaf) = super::native::parent(&root.directory, &relative)?;
+            let mut input = super::native::open_file(&parent, &leaf)?;
+            acquired = super::content::verify_stream(
+                &mut input,
+                &expected,
+                file.bytes,
+                super::content::SourceEvidencePolicy::Compatibility,
+                super::content::InitialObservation::RequireEvidence,
+                cancel,
+            )?;
+            &acquired
+        };
+        if let Some(digests) = &expected.digests {
+            digests.check(content.observed_digests().values())?;
+        }
+        ensure!(
+            Some(content.lease().id()) == expected.accepted_observation,
+            "Instance content address mismatch"
+        );
+        ensure!(
+            content.lease().len() == file.bytes,
+            "Instance content byte count mismatch"
+        );
+        Ok(Some(content.clone()))
+    }
+    pub(super) fn needed(&self) -> impl Iterator<Item = &ReleaseFile> {
+        self.needed.values()
+    }
+    pub(super) fn acquire_available(
+        &self,
+        supplied: &BTreeMap<String, AcquiredContent>,
+        local_files: &BTreeMap<String, std::path::PathBuf>,
+        assets: Option<&Path>,
+        cancel: &Cancellation,
+    ) -> Result<BTreeMap<String, AcquiredContent>> {
+        let mut result = BTreeMap::new();
+        let mut pool = super::content::ContentPool::new(self.bytes()?)?;
+        for file in self.needed.values() {
+            if let Some(content) = Self::acquire_one(file, supplied, local_files, assets, cancel)? {
+                result.insert(file.key.clone(), pool.insert(content, cancel)?);
+            }
+        }
+        Ok(result)
+    }
     pub(super) fn stage(
         self,
         supplied: &BTreeMap<String, AcquiredContent>,
@@ -550,54 +623,7 @@ impl InstancePlan {
             )?;
         }
         for (target, file) in &self.needed {
-            let expected = file.expected()?;
-            let acquired;
-            let content = if let Some(content) = supplied.get(&file.key) {
-                content
-            } else {
-                let (root, relative) = if let Some(selected) = local_files.get(&file.key) {
-                    ensure!(
-                        selected.is_absolute(),
-                        "Explicit instance inputs must be absolute"
-                    );
-                    let parent = selected.parent().context("Instance input has no parent")?;
-                    let name = selected
-                        .file_name()
-                        .and_then(|v| v.to_str())
-                        .context("Invalid instance input filename")?;
-                    (ProjectReadRoot::open(parent)?, path(name)?)
-                } else if let (Some(root), Some(member)) = (assets, file.asset_path()) {
-                    ensure!(root.is_absolute(), "Instance asset root must be absolute");
-                    (ProjectReadRoot::open(root)?, path(member)?)
-                } else {
-                    anyhow::bail!(
-                        "Instance requires exact content for {}; supply a verified file association",
-                        file.key
-                    );
-                };
-                let (parent, leaf) = super::native::parent(&root.directory, &relative)?;
-                let mut input = super::native::open_file(&parent, &leaf)?;
-                acquired = super::content::verify_stream(
-                    &mut input,
-                    &expected,
-                    file.bytes,
-                    super::content::SourceEvidencePolicy::Compatibility,
-                    super::content::InitialObservation::RequireEvidence,
-                    cancel,
-                )?;
-                &acquired
-            };
-            if let Some(digests) = &expected.digests {
-                digests.check(content.observed_digests().values())?;
-            }
-            ensure!(
-                Some(content.lease().id()) == expected.accepted_observation,
-                "Instance content address mismatch"
-            );
-            ensure!(
-                content.lease().len() == file.bytes,
-                "Instance content byte count mismatch"
-            );
+            let content = Self::acquire_one(file, supplied, local_files, assets, cancel)?.with_context(|| format!("Instance requires exact content for {}; supply a verified file association", file.key))?;
             stage.write_attributed(
                 &ProjectLayout::path(target)?,
                 &mut content.lease().open(),

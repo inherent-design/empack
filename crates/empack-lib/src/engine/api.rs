@@ -432,6 +432,7 @@ impl OperationPreview {
     }
     pub fn needs_network(&self) -> bool {
         self.build().is_some_and(|view| view.needs_network)
+            || matches!(self, Self::Instance(view) if !view.downloads.is_empty())
     }
     pub fn runs_installer(&self) -> bool {
         self.build().is_some_and(|view| view.runs_installer)
@@ -952,7 +953,7 @@ impl Engine {
                         PreparedKind::Instance(value) => *value,
                         _ => unreachable!(),
                     });
-                    instance::run(prepared, config, scope).await
+                    instance::run(prepared, config, transport, scope).await
                 }
                 PreparedKind::CacheClean(_) => {
                     let prepared = data.map(|kind| match kind {

@@ -457,3 +457,102 @@ async fn maintenance_rejects_unretained_releases_and_changed_repair_intent() {
     );
     assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
 }
+
+#[tokio::test]
+async fn referenced_instance_content_requires_approval_and_whole_batch_verification() {
+    for bad_second in [false, true] {
+        let mut server = mockito::Server::new_async().await;
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (mut engine, governor) = super::super::tests::engine(state.path().join("state"));
+        engine.transport = HttpAcquisition::for_loopback_tests()
+            .with_test_origin("https://release.test", &server.url());
+        let mut input = request(&[
+            ("a", "mods/a.jar", b"A", FilePolicy::Managed),
+            ("b", "mods/b.jar", b"B", FilePolicy::Managed),
+        ]);
+        let mut document = input.release.release().document().clone();
+        for file in &mut document.files {
+            file.source = ReleaseSource::Url {
+                alternatives: vec![format!("https://release.test/{}", file.key)],
+            };
+        }
+        input = replace_document(input, document);
+        input.supplied.clear();
+        let Preparation::Ready(prepared) =
+            engine.prepare(root.path().to_owned(), input).await.unwrap()
+        else {
+            panic!()
+        };
+        assert!(prepared.view().needs_network());
+        let denied = ExecutionGrant {
+            plan: prepared.view().plan(),
+            network: NetworkPermission::Offline,
+            run_installer: false,
+            replacement: prepared.view().replacement(),
+        };
+        assert!(prepared.authorize(denied).is_err());
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        // Reprepare because a rejected grant consumes its plan. Neither preparation performs HTTP.
+        let mut input = request(&[
+            ("a", "mods/a.jar", b"A", FilePolicy::Managed),
+            ("b", "mods/b.jar", b"B", FilePolicy::Managed),
+        ]);
+        let mut document = input.release.release().document().clone();
+        for file in &mut document.files {
+            file.source = ReleaseSource::Url {
+                alternatives: vec![format!("https://release.test/{}", file.key)],
+            };
+        }
+        input = replace_document(input, document);
+        input.supplied.clear();
+        let Preparation::Ready(prepared) =
+            engine.prepare(root.path().to_owned(), input).await.unwrap()
+        else {
+            panic!()
+        };
+        let first = server
+            .mock("GET", "/a")
+            .with_body("A")
+            .expect(1)
+            .create_async()
+            .await;
+        let second = server
+            .mock("GET", "/b")
+            .with_body(if bad_second { "X" } else { "B" })
+            .expect(1)
+            .create_async()
+            .await;
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            network: NetworkPermission::Allow,
+            run_installer: false,
+            replacement: prepared.view().replacement(),
+        };
+        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        let outcome = operation.wait().await;
+        first.assert_async().await;
+        second.assert_async().await;
+        if bad_second {
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+            ));
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        } else {
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(
+                    ExecutionReceipt::Instance(_)
+                ))
+            ));
+            assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+            assert_eq!(fs::read(root.path().join("game/mods/b.jar")).unwrap(), b"B");
+        }
+        drop(outcome);
+        engine.release_completed(operation.id());
+        drop(operation);
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}

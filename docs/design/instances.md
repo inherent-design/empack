@@ -110,6 +110,14 @@ associates a separately supplied file with its exact release identity; `--choice
 KEY=VALUE` selects a stable alternative. Applying a snapshot never subscribes to
 a channel or establishes publisher trust.
 
+Preparation verifies supplied files and bundled assets without network access.
+Missing referenced files appear as exact acquisition obligations in the preview.
+Execution requires a network grant before using their HTTPS alternatives. Downloads
+share the engine's transfer limits and resource admission; every selected file must
+match both its original assertions and the release's content address before any
+instance change is published. A failed transfer or verification preserves the
+previous installation. A download URL never changes the selected file identity.
+
 A new instance uses declared choice defaults. Updates retain choices by stable key.
 A newly introduced choice or an unavailable prior alternative requires a decision;
 a changed publisher default does not overwrite a saved selection. Projection
