@@ -991,7 +991,7 @@ impl ProjectReader {
         })
     }
 }
-fn read_document(
+pub(super) fn read_document(
     root: &ProjectReadRoot,
     snapshot: &NativeSnapshot,
     name: &str,

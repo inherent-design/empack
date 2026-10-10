@@ -41,6 +41,7 @@ pub mod project;
 pub mod project_change;
 pub mod providers;
 pub mod publication;
+pub mod release;
 pub mod removal;
 pub mod resources;
 pub mod retained_cleanup;

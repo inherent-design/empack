@@ -83,3 +83,33 @@ A thin helper selects and verifies an executable, then delegates instance work t
 it. It contains no independent resolver, downloader policy or publication algorithm.
 A release's minimum-version requirement reports incompatibility; it cannot authorize
 installing or executing an arbitrary binary.
+
+## Wire encoding
+
+Release and channel payloads use independent schema `1` JSON structs. Fields have
+one prescribed writer order. Release files sort by logical key, choices by key,
+choice alternatives lexically and assertions by algorithm. Download alternatives
+retain priority order. Readers reject duplicate or unknown fields; they hash the
+received bytes without reserialization. The release payload limit is 16 MiB and
+the channel payload limit is 16 KiB.
+
+The envelope fields are `schema`, `kind`, `payload` and `signatures`. Payload bytes,
+key fingerprints and signatures use lowercase hexadecimal without whitespace or
+prefixes. Each signature has `algorithm: ed25519`, a SHA-256 public-key fingerprint
+in `key`, and a 64-byte `signature`. At most sixteen distinct keys may sign an
+envelope. A release signature covers `empack.release.v1` followed by a zero byte
+and the exact payload; a channel uses `empack.channel.v1` with the same separator.
+Verification uses strict Ed25519 verification and rejects weak enrolled keys.
+
+Channel expiry is Unix UTC seconds. A verifier accepts at most 31 days of remaining
+validity and refuses clocks earlier than 2020. Release envelope URLs remain within
+the explicitly enrolled HTTPS origin. Content-provider downloads have their own
+acquisition policy; a publisher origin is not a restriction to one content provider.
+An authenticated channel proposes a sequence floor. Durable subscription handling
+must save that floor before acquisition and keep it across rollback and retries.
+
+Release file records distinguish SHA-256 selected-byte identity from `assertions`,
+which retain original provider digests. Acquisition checks both. Sources are
+immutable relative assets, HTTPS alternatives, exact provider selections or manual
+instructions. They cannot encode workspace paths. File destinations cannot select
+instance control files. World content is restricted to initial-only seeds.
