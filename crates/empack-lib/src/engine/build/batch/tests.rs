@@ -258,7 +258,6 @@ fn native_client_joins_requested_publication_without_installer_tools() {
         &cancel,
     )
     .unwrap();
-    assert!(plan.artifacts()[1].toolchain.is_empty());
     assert_eq!(plan.artifacts()[1].target, BuildTarget::Client);
     plan.publish(
         &Publisher::open(&host.path().join("private")).unwrap(),
@@ -321,9 +320,9 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
         ])
         .unwrap()
     };
-    fs::create_dir_all(root.path().join("templates/server")).unwrap();
+    fs::create_dir_all(root.path().join("templates/server/game")).unwrap();
     fs::write(
-        root.path().join("templates/server/server.jar"),
+        root.path().join("templates/server/game/server.jar"),
         b"bad runtime",
     )
     .unwrap();
@@ -336,7 +335,7 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
         fs::read(root.path().join("dist/server.zip")).unwrap(),
         b"previous server"
     );
-    fs::remove_file(root.path().join("templates/server/server.jar")).unwrap();
+    fs::remove_file(root.path().join("templates/server/game/server.jar")).unwrap();
     let batch = prepare_build_batch(capture(), requests(), &external, &cancel).unwrap();
     assert!(batch.artifacts()[1].server_runtime.is_some());
     batch

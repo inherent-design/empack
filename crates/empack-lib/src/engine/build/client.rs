@@ -355,11 +355,6 @@ pub(super) fn prepare_client_archive(
         )]);
         let bytes = crate::engine::templates::render_default(
             game.project(),
-            if references {
-                BuildTarget::Client
-            } else {
-                BuildTarget::ClientFull
-            },
             include_str!("../../../templates/client/instance.cfg.template"),
             values,
             options.limits.file_bytes,

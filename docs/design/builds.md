@@ -139,6 +139,18 @@ selected server content. Preserve historical supported loader variants, runtime
 asset evidence and generated start scripts. Java selection and EULA acceptance
 remain operator responsibilities. The installer never accepts the EULA automatically.
 
+Both deliveries place runtime files and selected game content under `game/`. Root
+`start.sh` and `start.bat` scripts enter that directory and preserve separate Java
+arguments, including historical JAR and loader argument-file launch forms. Put
+server configuration templates under `templates/server/game/`; launcher scripts
+remain at the distribution root.
+
+Reference delivery packages `.empack-consumer/release.json` and authored assets.
+`install_pack.sh` and `install_pack.bat` invoke `empack instance prepare` with the
+exact descriptor hash and server environment. The generated start scripts run that
+step first and stop on failure. Bundled snapshot delivery needs no empack installer.
+Template files and runtime members cannot collide with future installed content.
+
 Fabric/Quilt launcher layouts, Forge-family installer profiles, libraries and
 arguments are independently inspected after bounded installer execution. Exit zero
 or finding a JAR is insufficient. Snapshot bundles and reference distributions

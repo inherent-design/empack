@@ -9,7 +9,6 @@ use crate::{
         build::BuildAcquisitions,
         content::SourceEvidencePolicy,
         mrpack::OptionalConversion,
-        packwiz::InstallerInteraction,
         project::ProjectReader,
         providers::{CatalogLimits, ProviderCatalog},
         publication::RecoveryReader,
@@ -33,7 +32,6 @@ pub struct BuildDecisions {
     pub mrpack_optional: OptionalConversion,
     pub templates: TemplateOptions,
     pub evidence: SourceEvidencePolicy,
-    pub interaction: InstallerInteraction,
 }
 impl Default for BuildDecisions {
     fn default() -> Self {
@@ -42,7 +40,6 @@ impl Default for BuildDecisions {
             mrpack_optional: OptionalConversion::RejectMetadataLoss,
             templates: TemplateOptions::default(),
             evidence: SourceEvidencePolicy::Compatibility,
-            interaction: InstallerInteraction::Headless,
         }
     }
 }
@@ -369,7 +366,6 @@ fn request(
         mrpack_optional: decisions.mrpack_optional,
         templates: decisions.templates,
         evidence: decisions.evidence,
-        interaction: decisions.interaction,
     })
 }
 
@@ -420,9 +416,10 @@ async fn finish_once(
         view.runtime.loader,
     ));
     session.display().status().info(&format!(
-        "Optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}; installer UI: {:?}",
-        view.request().optional, view.request().mrpack_optional, view.request().evidence,
-        view.request().interaction,
+        "Optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}",
+        view.request().optional,
+        view.request().mrpack_optional,
+        view.request().evidence,
     ));
     for output in &view.outputs {
         session.display().status().info(&format!(

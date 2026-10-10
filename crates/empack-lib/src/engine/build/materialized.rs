@@ -35,33 +35,6 @@ pub struct PreparedGameContent {
     files: BTreeMap<PortableRelPath, AcquiredBuildFile>,
 }
 impl PreparedGameContent {
-    /// Encode the selected reference view; the returned tree still needs runtime assembly.
-    pub fn packwiz(
-        &self,
-        interaction: crate::engine::packwiz::InstallerInteraction,
-        cancel: &Cancellation,
-    ) -> Result<crate::engine::packwiz::PackwizPlan> {
-        let mut embedded = BTreeMap::new();
-        for entry in self.inventory.entries() {
-            if matches!(entry.representation, Representation::Embedded { .. }) {
-                embedded.insert(
-                    entry.owner.clone(),
-                    self.files
-                        .get(entry.destination.relative())
-                        .context("Missing selected embedded bytes")?
-                        .clone(),
-                );
-            }
-        }
-        crate::engine::packwiz::PackwizPlan::prepare(
-            self.inventory.clone(),
-            &self.project.intent().metadata,
-            &self.project.lock().runtime,
-            &embedded,
-            interaction,
-            cancel,
-        )
-    }
     pub fn project(&self) -> &empack_core::model::ResolvedProject {
         &self.project
     }
@@ -116,8 +89,8 @@ pub fn prepare_game_content(
         workspace, external, target, optional, evidence, false, cancel,
     )
 }
-/// Preserve representable references for a selected bootstrap environment.
-pub fn prepare_bootstrap_game_content(
+/// Preserve references representable by the selected platform consumer.
+pub fn prepare_reference_game_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
     target: BuildTarget,
@@ -126,11 +99,8 @@ pub fn prepare_bootstrap_game_content(
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(
-            target,
-            BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
-        ),
-        "Bootstrap content needs a reference target"
+        target == BuildTarget::CurseForge,
+        "Reference content needs a platform consumer"
     );
     prepare_selected_content(
         workspace, external, target, optional, evidence, true, cancel,

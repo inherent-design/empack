@@ -1,9 +1,6 @@
 //! Strict saved request data. No plan ID, native source path or execution grant is encoded.
 use super::*;
-use crate::engine::{
-    packwiz::InstallerInteraction,
-    templates::{TemplateLimits, TemplateMode, TemplateOptions},
-};
+use crate::engine::templates::{TemplateLimits, TemplateMode, TemplateOptions};
 use empack_core::{
     digest::{ContentId, ExpectedDigest},
     model::{DependencyKey, FileSlot},
@@ -74,7 +71,6 @@ pub(super) struct Recipe {
     allow_optional_metadata_loss: bool,
     templates: Templates,
     strong_source_required: bool,
-    interactive_installer: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "kebab-case", deny_unknown_fields)]
@@ -160,7 +156,6 @@ impl From<&BuildRequest> for Recipe {
                 entries: request.templates.limits.entries,
             },
             strong_source_required: request.evidence == SourceEvidencePolicy::StrongSourceRequired,
-            interactive_installer: request.interaction == InstallerInteraction::Interactive,
         }
     }
 }
@@ -237,11 +232,6 @@ impl Recipe {
                 SourceEvidencePolicy::StrongSourceRequired
             } else {
                 SourceEvidencePolicy::Compatibility
-            },
-            interaction: if self.interactive_installer {
-                InstallerInteraction::Interactive
-            } else {
-                InstallerInteraction::Headless
             },
         })
     }

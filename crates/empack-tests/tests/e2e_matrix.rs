@@ -141,6 +141,7 @@ macro_rules! e2e_build_target {
             empack_tests::skip_if_no_java!();
 
             let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+            project.configure_native_distribution("matrix.pack", 21);
             let output = project
                 .cmd()
                 .args(["--yes", "build", $target])
@@ -169,22 +170,18 @@ macro_rules! e2e_build_target {
                 assert_eq!(manifest["dependencies"]["minecraft"], "1.21.1");
                 assert_eq!(manifest["name"], "test-pack");
             } else {
-                for member in [
-                    "pack/pack.toml",
-                    "packwiz-installer.jar",
-                    "packwiz-installer-bootstrap.jar",
-                ] {
-                    let destination = if $target == "client" {
-                        format!(".minecraft/{member}")
-                    } else {
-                        member.to_owned()
-                    };
-                    assert!(
-                        archive.by_name(&destination).unwrap().size() > 0,
-                        "missing output bytes for {}",
-                        member
-                    );
-                }
+                let descriptor = if $target == "client" {
+                    ".minecraft/.empack-consumer/release.json"
+                } else {
+                    ".empack-consumer/release.json"
+                };
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut archive.by_name(descriptor).unwrap(), &mut bytes)
+                    .unwrap();
+                let release = empack_lib::engine::release::DecodedRelease::decode(&bytes).unwrap();
+                assert_eq!(release.document().pack, "matrix.pack");
+                assert_eq!(release.document().runtime.minecraft, "1.21.1");
+                assert!(!archive.file_names().any(|p| p.contains("packwiz")));
             }
         }
     };

@@ -29,7 +29,7 @@ pub fn plan_target_build_acquisitions(
             cancel,
         );
     }
-    let references = matches!(target, BuildTarget::Server | BuildTarget::CurseForge);
+    let references = target == BuildTarget::CurseForge;
     let (selected, keys) = select_game_inputs(workspace, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
@@ -66,7 +66,7 @@ pub fn plan_target_build_acquisitions(
                 );
             }
             if matches!(entry.representation, Representation::Unacquired { .. })
-                || (target == BuildTarget::Client
+                || (matches!(target, BuildTarget::Client | BuildTarget::Server)
                     && matches!(entry.representation, Representation::Download { .. }))
             {
                 needed.insert(key.clone());

@@ -246,9 +246,6 @@ fn inspect(
     let (format, manifest) = match (has_mr, has_cf) {
         (true, false) => (ImportFormat::Modrinth, "modrinth.index.json"),
         (false, true) => (ImportFormat::CurseForge, "manifest.json"),
-        _ if names.contains(&path("pack.toml")?) => {
-            anyhow::bail!("Packwiz import is recognized but not implemented")
-        }
         _ => anyhow::bail!("Archive has no supported import manifest"),
     };
     let member = path(manifest)?;

@@ -291,7 +291,6 @@ fn embedded_defaults_share_escaping_and_enforce_output_budget() {
     for source in [lf.clone(), lf.replace('\n', "\r\n")] {
         let rendered = render_default(
             &project,
-            BuildTarget::ServerFull,
             &source,
             [("NAME".to_owned(), name.to_owned())],
             4096,
@@ -303,15 +302,5 @@ fn embedded_defaults_share_escaping_and_enforce_output_budget() {
         assert_eq!(rendered.lines().filter(|line| *line == expected).count(), 1);
         assert!(!rendered.contains("\nkey=value"));
     }
-    assert!(
-        render_default(
-            &project,
-            BuildTarget::ServerFull,
-            source,
-            [],
-            4,
-            &Cancellation::default(),
-        )
-        .is_err()
-    );
+    assert!(render_default(&project, source, [], 4, &Cancellation::default(),).is_err());
 }

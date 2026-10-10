@@ -260,7 +260,6 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         };
         selected.mrpack_optional = OptionalConversion::AcknowledgedMetadataLoss;
         selected.evidence = SourceEvidencePolicy::StrongSourceRequired;
-        selected.interaction = InstallerInteraction::Interactive;
         selected
             .templates
             .values

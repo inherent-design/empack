@@ -158,8 +158,8 @@ async fn publish_with_refreshed_locator(
     };
     use empack_lib::engine::{
         api::*, artifacts::ArchiveLimits, documents::DocumentCodec, mrpack::OptionalConversion,
-        packwiz::InstallerInteraction, server_runtime::installer::InstallerExecution,
-        snapshot::SnapshotLimits, templates::TemplateOptions,
+        server_runtime::installer::InstallerExecution, snapshot::SnapshotLimits,
+        templates::TemplateOptions,
     };
     use serde_json::json;
     use sha2::Digest;
@@ -281,7 +281,6 @@ async fn publish_with_refreshed_locator(
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     };
     let prepared = match engine.prepare(root.path().to_owned(), request).await? {
         Preparation::Ready(value) => value,

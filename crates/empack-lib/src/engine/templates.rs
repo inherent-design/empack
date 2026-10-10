@@ -197,7 +197,7 @@ pub fn prepare_templates(
     for path in selected.keys() {
         collisions.insert_file(path)?;
     }
-    let mut values = template_values(&project, target);
+    let mut values = template_values(&project);
     values.extend(options.values.clone());
     let mut renderer = handlebars::Handlebars::new();
     renderer.set_strict_mode(true);
@@ -291,10 +291,7 @@ pub fn prepare_templates(
     Ok(RenderedTemplates { files })
 }
 /// Metadata has one interpretation for user templates and embedded defaults.
-fn template_values(
-    project: &empack_core::model::ResolvedProject,
-    target: BuildTarget,
-) -> BTreeMap<String, String> {
+fn template_values(project: &empack_core::model::ResolvedProject) -> BTreeMap<String, String> {
     let metadata = &project.intent().metadata;
     let runtime = &project.lock().runtime;
     let loader = match runtime.loader {
@@ -311,15 +308,6 @@ fn template_values(
         .map(|ch| if ch.is_alphanumeric() { ch } else { '-' })
         .collect();
     let values: BTreeMap<String, String> = [
-        (
-            "BOOTSTRAP",
-            if matches!(target, BuildTarget::Client | BuildTarget::Server) {
-                "true"
-            } else {
-                ""
-            }
-            .into(),
-        ),
         ("INSTANCE_PREPARE_COMMAND", String::new()),
         ("NAME", metadata.name.clone()),
         ("VERSION", metadata.version.clone()),
@@ -348,14 +336,13 @@ fn template_values(
 
 pub(super) fn render_default(
     project: &empack_core::model::ResolvedProject,
-    target: BuildTarget,
     source: &str,
     overrides: impl IntoIterator<Item = (String, String)>,
     maximum: u64,
     cancel: &Cancellation,
 ) -> Result<Vec<u8>> {
     cancel.check()?;
-    let mut values = template_values(project, target);
+    let mut values = template_values(project);
     values.extend(overrides);
     let mut renderer = handlebars::Handlebars::new();
     renderer.set_strict_mode(true);

@@ -3,7 +3,7 @@ use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
     client::{ClientOptions, prepare_client_archive, prepare_client_full_archive},
     prepare_archives_publication, prepare_mrpack,
-    server::{ServerBootstrap, ServerOptions, prepare_server_archive},
+    server::{ServerOptions, prepare_server_archive},
 };
 use crate::{
     application::process_runtime::Cancellation,
@@ -38,7 +38,6 @@ pub enum DistributionRequest {
         artifact: PortableRelPath,
         options: ServerOptions,
         runtime: crate::engine::server_runtime::PreparedServerRuntime,
-        bootstrap: ServerBootstrap,
     },
     ServerFull {
         artifact: PortableRelPath,
@@ -82,7 +81,6 @@ pub struct BuiltDistribution {
     pub resolution: empack_core::model::ResolutionLock,
     pub conversions: Vec<String>,
     pub user_configuration: Option<bool>,
-    pub toolchain: Vec<crate::engine::bootstrap_tools::InstallerRelease>,
     pub server_runtime: Option<crate::engine::server_runtime::ServerRuntimeEvidence>,
 }
 pub struct PreparedBuildBatch {
@@ -183,7 +181,6 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     resolution: plan.resolution().clone(),
                     conversions: plan.conversions().to_vec(),
                     user_configuration: None,
-                    toolchain: Vec::new(),
                     server_runtime: None,
                 };
                 (
@@ -206,18 +203,14 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                 runtime,
                 ..
             } => {
-                let bootstrap = if let DistributionRequest::Server { bootstrap, .. } = request {
-                    Some(bootstrap)
-                } else {
-                    None
-                };
+                let references = matches!(request, DistributionRequest::Server { .. });
                 let (archive, built) = prepare_server_archive(
                     &workspace,
                     artifact.clone(),
                     external,
                     options,
                     runtime,
-                    bootstrap,
+                    references,
                     cancel,
                 )?;
                 let evidence = BuiltDistribution {
@@ -229,7 +222,6 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     resolution: built.game.project().lock().clone(),
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
-                    toolchain: built.toolchain,
                     server_runtime: Some(built.runtime),
                 };
                 (archive, evidence)
@@ -265,7 +257,6 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
                     resolution: built.game.project().lock().clone(),
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
-                    toolchain: Vec::new(),
                     server_runtime: None,
                 };
                 (built.archive, evidence)

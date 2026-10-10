@@ -1,10 +1,9 @@
 use super::*;
 use crate::engine::{
-    bootstrap_tools::InstallerAssets,
     build::{
         batch::{DistributionRequest, prepare_build_batch_with_cleanup},
         client::ClientOptions,
-        server::{ServerBootstrap, ServerOptions},
+        server::ServerOptions,
     },
     publication::Publisher,
     runtime::WorkScope,
@@ -189,11 +188,6 @@ async fn execute(
             .iter()
             .any(|output| output.target == target)
     };
-    let assets = if has(BuildTarget::Server) {
-        Some(InstallerAssets::acquire(&transport, scope, config.transfer).await?)
-    } else {
-        None
-    };
     let runtime = if has(BuildTarget::Server) || has(BuildTarget::ServerFull) {
         Some(prepare_runtime(&transport, scope, view.runtime.clone(), evidence, &config).await?)
     } else {
@@ -266,13 +260,6 @@ async fn execute(
                         .as_ref()
                         .context("Missing prepared server runtime")?
                         .clone(),
-                    bootstrap: ServerBootstrap {
-                        assets: assets
-                            .as_ref()
-                            .context("Missing acquired installer assets")?
-                            .clone(),
-                        interaction: request.interaction,
-                    },
                 },
             });
         }

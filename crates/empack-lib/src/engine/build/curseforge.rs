@@ -2,7 +2,7 @@
 mod verification;
 use super::{
     ArchiveCandidate, BuildAcquisitions, batch::BuiltDistribution,
-    materialized::prepare_bootstrap_game_content,
+    materialized::prepare_reference_game_content,
 };
 use crate::{
     application::process_runtime::Cancellation,
@@ -47,7 +47,7 @@ pub(super) fn prepare_archive(
         artifact.as_str().ends_with(".zip"),
         "CurseForge output requires a .zip filename"
     );
-    let game = prepare_bootstrap_game_content(
+    let game = prepare_reference_game_content(
         workspace,
         external,
         BuildTarget::CurseForge,
@@ -258,7 +258,6 @@ pub(super) fn prepare_archive(
         resolution: game.project().lock().clone(),
         conversions: conversions.into_iter().collect(),
         user_configuration: None,
-        toolchain: Vec::new(),
         server_runtime: None,
     };
     Ok((
@@ -391,7 +390,6 @@ mod tests {
             &cancel,
         )
         .unwrap();
-        assert!(batch.artifacts()[0].toolchain.is_empty());
         assert_eq!(batch.artifacts()[0].members.len(), 2);
         batch
             .publish(
@@ -665,7 +663,7 @@ mod tests {
         write(root.path(), &fixture(false, false));
         let cancel = Cancellation::default();
         let workspace = capture(root.path(), host.path());
-        let game = prepare_bootstrap_game_content(
+        let game = prepare_reference_game_content(
             &workspace,
             &BuildAcquisitions::default(),
             BuildTarget::CurseForge,
@@ -839,7 +837,7 @@ mod tests {
                 .any(|entry| matches!(entry.owner, ContentOwner::Dependency { .. }))
         );
         assert!(
-            batch.artifacts()[1].members[&path("resourcepacks/assets.zip")]
+            batch.artifacts()[1].members[&path("game/resourcepacks/assets.zip")]
                 .permissions
                 .readonly
         );

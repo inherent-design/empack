@@ -33,6 +33,12 @@ pub fn with_provider(name: &str, pin: ResolvedPin) -> TestProject {
         )
         .unwrap();
     let mut intent = prior.intent().clone();
+    intent.distribution.native = Some(NativeDistributionIntent {
+        pack_id: "restricted.fixture".into(),
+        java_major: 21,
+        delivery: empack_core::distribution::Delivery::References,
+        policies: Default::default(),
+    });
     let mut lock = prior.lock().clone();
     let key = DependencyKey::parse("manual-assets").unwrap();
     let identity = pin.project.clone();

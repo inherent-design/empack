@@ -171,7 +171,6 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
         },
         mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
         evidence: SourceEvidencePolicy::StrongSourceRequired,
-        interaction: InstallerInteraction::Interactive,
         ..Default::default()
     };
     for (format, extension, archive) in [
@@ -206,7 +205,6 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
         assert_eq!(built.optional, choices.optional);
         assert_eq!(built.mrpack_optional, choices.mrpack_optional);
         assert_eq!(built.evidence, choices.evidence);
-        assert_eq!(built.interaction, choices.interaction);
     }
     assert_eq!(
         request(

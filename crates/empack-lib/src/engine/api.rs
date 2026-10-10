@@ -14,7 +14,6 @@ use super::{
     content::SourceEvidencePolicy,
     layout::CollisionIndex,
     mrpack::OptionalConversion,
-    packwiz::InstallerInteraction,
     project::{ProjectReader, WorkspaceSnapshot},
     providers::{CatalogLimits, ProviderAvailability, ProviderCatalog},
     publication::{PublicationReceipt, RecoveryReader},
@@ -101,7 +100,6 @@ pub struct BuildRequest {
     pub mrpack_optional: OptionalConversion,
     pub templates: TemplateOptions,
     pub evidence: SourceEvidencePolicy,
-    pub interaction: InstallerInteraction,
 }
 /// Explicitly supplied bytes stay private to preparation, never in a display-only preview.
 pub struct BuildPreparationRequest {
@@ -1236,7 +1234,7 @@ fn capture(
         .outputs
         .as_slice()
         .iter()
-        .any(|output| output.target == BuildTarget::Client)
+        .any(|output| matches!(output.target, BuildTarget::Client | BuildTarget::Server))
     {
         super::release::producer::NativeReleaseOptions::from_project(&resolved)?;
     }
@@ -1283,11 +1281,6 @@ fn capture(
         .as_slice()
         .iter()
         .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::ServerFull));
-    let bootstrap = request
-        .outputs
-        .as_slice()
-        .iter()
-        .any(|output| output.target == BuildTarget::Server);
     let resolved = workspace.require_resolved()?;
     let mut file_names = BTreeMap::new();
     for need in &acquisition.pending {
@@ -1331,7 +1324,6 @@ fn capture(
         runtime: runtime.clone(),
         content: acquisition.pending.iter().map(describe).collect(),
         needs_network: server
-            || bootstrap
             || acquisition.pending.iter().any(|need| {
                 matches!(
                     need.source,

@@ -114,7 +114,6 @@ pub(super) fn request() -> BuildRequest {
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     }
 }
 async fn ready(engine: &Engine, root: &Path, request: BuildRequest) -> PreparedOperation {

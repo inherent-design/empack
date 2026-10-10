@@ -182,8 +182,8 @@ fn e2e_init_scaffolds_templates() {
         assert!(!bytes.contains("packwiz"));
     }
     assert!(
-        pack_dir.join("pack").join(".packwizignore").exists(),
-        "pack/.packwizignore not found"
+        !pack_dir.join("pack").join(".packwizignore").exists(),
+        "initialization must not create foreign control files"
     );
     assert!(
         pack_dir.join("templates").join("server").is_dir(),

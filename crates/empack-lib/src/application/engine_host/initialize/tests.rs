@@ -8,7 +8,6 @@ use crate::{
         content::SourceEvidencePolicy,
         documents::DocumentCodec,
         mrpack::OptionalConversion,
-        packwiz::InstallerInteraction,
         templates::TemplateOptions,
     },
 };
@@ -79,7 +78,7 @@ async fn initialization_host_preserves_preview_decline_and_exact_replacement_foo
     fs::write(project.join("pack/config/old.cfg"), b"old managed bytes").unwrap();
     fs::write(project.join("notes.txt"), b"retain unrelated notes").unwrap();
     fs::write(
-        project.join("templates/server/server.properties.template"),
+        project.join("templates/server/game/server.properties.template"),
         b"user-owned template",
     )
     .unwrap();
@@ -107,7 +106,7 @@ async fn initialization_host_preserves_preview_decline_and_exact_replacement_foo
         b"retain unrelated notes"
     );
     assert_eq!(
-        fs::read(project.join("templates/server/server.properties.template")).unwrap(),
+        fs::read(project.join("templates/server/game/server.properties.template")).unwrap(),
         b"user-owned template"
     );
     assert_eq!(read(&project).intent().metadata.name, "Replacement");
@@ -257,7 +256,6 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     };
     let prepared = match engine
         .prepare(ProjectTarget::Existing(project.clone()), request)

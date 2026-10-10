@@ -163,7 +163,7 @@ async fn all_loader_families_keep_exact_runtime_and_generate_mrpack() -> Result<
         assert!(
             project
                 .path()
-                .join("templates/server/server.properties.template")
+                .join("templates/server/game/server.properties.template")
                 .exists()
         );
         project.run(build("mrpack")).await?;

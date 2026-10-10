@@ -318,11 +318,7 @@ fn format_roots_versions_and_unselected_archive_members_are_validated() {
     assert!(inspect_json("modrinth.index.json", &mr(), &[("../unused", b"bad")]).is_err());
     assert!(inspect_json("modrinth.index.json", &mr(), &[("manifest.json", b"{}")]).is_err());
     let unknown = inspect_json("pack.toml", &json!({}), &[]).err().unwrap();
-    assert!(
-        unknown
-            .to_string()
-            .contains("recognized but not implemented")
-    );
+    assert!(unknown.to_string().contains("no supported import manifest"));
     let mut value = cf();
     let duplicate = value["files"][0].clone();
     value["files"].as_array_mut().unwrap().push(duplicate);

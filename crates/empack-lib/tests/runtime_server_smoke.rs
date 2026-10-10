@@ -68,7 +68,7 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
         output.error_output()
     );
     if historical {
-        let eula = fs::read_to_string(root.path().join("eula.txt"))?;
+        let eula = fs::read_to_string(root.path().join("game/eula.txt"))?;
         anyhow::ensure!(
             eula.lines().any(|line| line.trim() == "eula=false"),
             "Historical startup did not preserve EULA refusal"
@@ -80,7 +80,7 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
         );
     } else {
         anyhow::ensure!(
-            !root.path().join("eula.txt").exists(),
+            !root.path().join("game/eula.txt").exists(),
             "Help probe unexpectedly created an EULA file"
         );
         anyhow::ensure!(
@@ -111,7 +111,6 @@ async fn package_runtime(
         },
         documents::DocumentCodec,
         mrpack::OptionalConversion,
-        packwiz::InstallerInteraction,
         templates::TemplateOptions,
     };
     let project = tempfile::tempdir()?;
@@ -230,7 +229,6 @@ async fn package_runtime(
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
         evidence: SourceEvidencePolicy::Compatibility,
-        interaction: InstallerInteraction::Headless,
     };
     let prepared = match engine.prepare(project.path().to_owned(), request).await? {
         Preparation::Ready(value) => value,
@@ -272,7 +270,7 @@ async fn package_runtime(
     zip::ZipArchive::new(fs::File::open(project.path().join("dist/server.zip"))?)?
         .extract(destination)?;
     anyhow::ensure!(
-        fs::read(destination.join("config/runtime-check.txt"))? == b"current content",
+        fs::read(destination.join("game/config/runtime-check.txt"))? == b"current content",
         "Distribution omitted current game content"
     );
     Ok(())

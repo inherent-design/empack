@@ -23,6 +23,7 @@ fn e2e_build_relative_workdir_exports_valid_mrpack() {
 #[test]
 fn e2e_build_mrpack() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
         .args(["--yes", "build", "mrpack"])
@@ -44,6 +45,7 @@ fn e2e_build_mrpack() {
 #[test]
 fn e2e_build_client_tar_gz() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
         .args(["--yes", "build", "--format", "tar.gz", "client"])
@@ -62,6 +64,7 @@ fn e2e_build_server_sevenz() {
     empack_tests::skip_if_no_java!();
 
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
         .args(["--yes", "build", "--format", "7z", "server"])
@@ -75,6 +78,7 @@ fn e2e_build_server_sevenz() {
 #[test]
 fn e2e_clean_removes_artifacts() {
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+    project.configure_native_distribution("test.pack", 21);
     let status = project
         .cmd()
         .args(["--yes", "build", "mrpack"])
@@ -108,6 +112,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     use std::io::Write;
     empack_tests::skip_if_no_java!();
     let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
+    project.configure_native_distribution("local.content", 21);
     let source = project.dir().join("local.zip");
     let mut archive = zip::ZipWriter::new(std::fs::File::create(&source).unwrap());
     archive
@@ -162,14 +167,46 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
             format!("-{target}.zip")
         };
         let artifact = assert_dist_artifact_suffix(project.dir(), &suffix);
-        let relative = if target == "mrpack" {
-            "overrides/resourcepacks/local.zip"
-        } else if target == "client" {
-            ".minecraft/resourcepacks/local.zip"
+        if target == "mrpack" {
+            assert_eq!(
+                zip_bytes(&artifact, "overrides/resourcepacks/local.zip"),
+                bytes
+            );
         } else {
-            "resourcepacks/local.zip"
-        };
-        assert_eq!(zip_bytes(&artifact, relative), bytes, "{target}");
+            let instance = tempfile::tempdir().unwrap();
+            zip::ZipArchive::new(std::fs::File::open(&artifact).unwrap())
+                .unwrap()
+                .extract(instance.path())
+                .unwrap();
+            let (descriptor, layout, side, game) = if target == "client" {
+                (
+                    ".minecraft/.empack-consumer/release.json",
+                    "prism",
+                    "client",
+                    ".minecraft",
+                )
+            } else {
+                (".empack-consumer/release.json", "game", "server", "game")
+            };
+            let descriptor = instance.path().join(descriptor);
+            let release = empack_lib::engine::release::DecodedRelease::decode(
+                &std::fs::read(&descriptor).unwrap(),
+            )
+            .unwrap();
+            assert_cmd::Command::from_std(project.cmd())
+                .arg("--workdir")
+                .arg(instance.path())
+                .args(["--yes", "instance", "prepare"])
+                .arg(&descriptor)
+                .args(["--sha256", release.id(), "--layout", layout, "--side", side])
+                .assert()
+                .success();
+            assert_eq!(
+                std::fs::read(instance.path().join(game).join("resourcepacks/local.zip")).unwrap(),
+                bytes,
+                "{target}"
+            );
+        }
     }
     std::fs::write(project.dir().join("local.zip"), &bytes).unwrap();
     let original = std::fs::read_to_string(&manifest).unwrap();

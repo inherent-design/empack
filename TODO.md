@@ -133,12 +133,12 @@ readiness or replace executable evidence.
 - [x] Apply native `sources.exclude` capture to the remaining author commands.
 - [x] Remove `BackendDocument`, foreign discovery, index refresh, metadata
   adoption and metadata-based ownership from project commands.
-- [ ] Remove the remaining packwiz serializer/parser with the light consumer recipes.
+- [x] Remove the remaining packwiz serializer/parser with the light consumer recipes.
 - [ ] Preserve explicit adoption of verified local/provider/URL content through
   native identity and observation, without consulting foreign metadata.
 - [ ] Replace old target selectors, templates, source filters, diagnostics,
   release recipes and fixture assumptions as their native consumers are wired.
-- [ ] Remove packwiz runtime assets, dependency pins, installer interaction options,
+- [x] Remove packwiz runtime assets, dependency pins, installer interaction options,
   archive projection/verifier branches and obsolete exclusive tests.
 - [ ] Route author and instance operations through one engine facade; retire
   replaced implementation paths rather than keeping compatibility dispatch.

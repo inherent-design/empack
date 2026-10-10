@@ -199,7 +199,7 @@ async fn initialize_rejects_changed_templates_before_any_publication() {
     let (engine, _) = engine(state.path().join("state"));
     put(
         root.path(),
-        "templates/server/server.properties.template",
+        "templates/server/game/server.properties.template",
         b"original",
     );
     let prepared = prepare(
@@ -210,7 +210,7 @@ async fn initialize_rejects_changed_templates_before_any_publication() {
     .await;
     put(
         root.path(),
-        "templates/server/server.properties.template",
+        "templates/server/game/server.properties.template",
         b"edited",
     );
     let permission = grant(&prepared);
@@ -225,7 +225,7 @@ async fn initialize_rejects_changed_templates_before_any_publication() {
     assert_eq!(
         fs::read(
             root.path()
-                .join("templates/server/server.properties.template")
+                .join("templates/server/game/server.properties.template")
         )
         .unwrap(),
         b"edited"
