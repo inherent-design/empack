@@ -688,3 +688,45 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
         }
     }
 }
+
+#[tokio::test]
+async fn curseforge_cli_recipe_uses_zip_and_only_publishes_requested_output() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let args = BuildArgs {
+        targets: vec!["curseforge".into()],
+        format: Some(CliArchiveFormat::TarGz),
+        ..Default::default()
+    };
+    let before = snapshot(root.path());
+    run(root.path(), &args, true, true).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    run(root.path(), &args, true, false).await.unwrap();
+    let artifacts: Vec<_> = fs::read_dir(root.path().join("project/dist"))
+        .unwrap()
+        .map(|file| file.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        artifacts,
+        vec![std::ffi::OsString::from("Native Pack-1.0-curseforge.zip")]
+    );
+    let mut zip = zip::ZipArchive::new(
+        fs::File::open(
+            root.path()
+                .join("project/dist/Native Pack-1.0-curseforge.zip"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_reader(zip.by_name("manifest.json").unwrap()).unwrap();
+    assert_eq!(manifest["name"], "Native Pack");
+    assert_eq!(manifest["minecraft"]["version"], "1.21.1");
+    assert_eq!(manifest["files"], serde_json::json!([]));
+    let mut bytes = String::new();
+    zip.by_name("overrides/config/example.txt")
+        .unwrap()
+        .read_to_string(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, "first");
+}

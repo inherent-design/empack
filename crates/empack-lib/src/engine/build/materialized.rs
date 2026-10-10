@@ -134,7 +134,10 @@ pub fn prepare_bootstrap_game_content(
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     ensure!(
-        matches!(target, BuildTarget::Client | BuildTarget::Server),
+        matches!(
+            target,
+            BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
+        ),
         "Bootstrap content needs a reference target"
     );
     prepare_selected_content(workspace, external, target, optional, evidence, cancel)
@@ -147,7 +150,10 @@ fn prepare_selected_content(
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
-    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
+    let references = matches!(
+        target,
+        BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
+    );
     let (selection, _) =
         super::acquisition::select_game_inputs(workspace, external, target, optional, cancel)?;
     let selected: BTreeSet<_> = selection
@@ -184,7 +190,7 @@ fn prepare_selected_content(
                 }
             };
             let representation = if references {
-                reference_for(file, supplied)?.unwrap_or(representation)
+                reference_for_target(file, supplied, target)?.unwrap_or(representation)
             } else {
                 representation
             };
@@ -331,6 +337,32 @@ fn prepare_selected_content(
         observed,
         comparisons: captured.comparisons,
     })
+}
+
+pub(super) fn reference_for_target(
+    file: &empack_core::model::ResolvedFile,
+    acquired: Option<&AcquiredBuildFile>,
+    target: BuildTarget,
+) -> Result<Option<Representation>> {
+    if target == BuildTarget::CurseForge {
+        if let AcquisitionSpec::Provider { pin, slot, .. } = &file.acquisition {
+            return Ok(Some(Representation::Download {
+                expected: file.expected.clone(),
+                allowed: DownloadOrigins::Provider {
+                    pin: pin.clone(),
+                    slot: slot.clone(),
+                },
+            }));
+        }
+        if let AcquisitionSpec::Url(urls) = &file.acquisition {
+            return Ok(Some(Representation::Download {
+                expected: file.expected.clone(),
+                allowed: DownloadOrigins::Urls(urls.clone()),
+            }));
+        }
+        return Ok(None);
+    }
+    reference_for(file, acquired)
 }
 
 pub(super) fn reference_for(

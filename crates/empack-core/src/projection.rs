@@ -1,4 +1,4 @@
-//! Deterministic build prerequisites, independent of tool execution and codecs.
+//! Deterministic build selection, independent of tool execution and codecs.
 use alloc::vec::Vec;
 
 /// A semantic distribution target; CLI and document spellings belong to adapters.
@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 pub enum BuildTarget {
     /// Reference-based Modrinth archive.
     Mrpack,
+    /// CurseForge manifest with exact provider references and authored overrides.
+    CurseForge,
     /// Client bootstrap distribution.
     Client,
     /// Server bootstrap distribution.
@@ -16,16 +18,11 @@ pub enum BuildTarget {
     ServerFull,
 }
 
-/// Expand fresh prerequisites once, preserving requested target order where possible.
+/// Deduplicate recipes while preserving requested order. Recipes own their inputs.
 /// This plan describes ordering only; it does not prove input or artifact integrity.
 pub fn plan_build_targets(targets: &[BuildTarget]) -> Vec<BuildTarget> {
     let mut ordered = Vec::new();
     for target in targets {
-        if matches!(target, BuildTarget::Client | BuildTarget::Server)
-            && !ordered.contains(&BuildTarget::Mrpack)
-        {
-            ordered.push(BuildTarget::Mrpack);
-        }
         if !ordered.contains(target) {
             ordered.push(*target);
         }

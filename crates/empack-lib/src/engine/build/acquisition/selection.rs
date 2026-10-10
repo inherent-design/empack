@@ -29,7 +29,10 @@ pub fn plan_target_build_acquisitions(
             cancel,
         );
     }
-    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
+    let references = matches!(
+        target,
+        BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
+    );
     let (selected, keys) = select_game_inputs(workspace, external, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
     let project = workspace.require_resolved()?;
@@ -104,7 +107,10 @@ pub(in crate::engine::build) fn select_game_inputs(
         .map(|(key, file)| (key.clone(), file))
         .collect();
     let backend = check_backend(&project, &records, &available)?;
-    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
+    let references = matches!(
+        target,
+        BuildTarget::Client | BuildTarget::Server | BuildTarget::CurseForge
+    );
     let mut inputs = Vec::new();
     let mut occupied = BTreeSet::new();
     let mut keys = BTreeMap::new();
@@ -129,7 +135,7 @@ pub(in crate::engine::build) fn select_game_inputs(
                 _ => {}
             }
             let representation = if references {
-                super::super::materialized::reference_for(file, None)?
+                super::super::materialized::reference_for_target(file, None, target)?
             } else {
                 None
             }

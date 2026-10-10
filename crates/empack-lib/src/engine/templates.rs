@@ -127,7 +127,9 @@ pub fn prepare_templates(
     let side = match target {
         BuildTarget::Client | BuildTarget::ClientFull => ContentLayer::Client,
         BuildTarget::Server | BuildTarget::ServerFull => ContentLayer::Server,
-        BuildTarget::Mrpack => anyhow::bail!("Mrpack has no standalone template projection"),
+        BuildTarget::Mrpack | BuildTarget::CurseForge => {
+            anyhow::bail!("Reference archives have no standalone template projection")
+        }
     };
     cancel.check()?;
     let project = workspace.require_resolved()?;

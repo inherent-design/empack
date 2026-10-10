@@ -115,6 +115,7 @@ impl From<&BuildRequest> for Recipe {
                     (
                         match output.target {
                             BuildTarget::Mrpack => "mrpack",
+                            BuildTarget::CurseForge => "curseforge",
                             BuildTarget::Client => "client",
                             BuildTarget::Server => "server",
                             BuildTarget::ClientFull => "client-full",
@@ -182,6 +183,7 @@ impl Recipe {
                         Ok(BuildOutput {
                             target: match target.as_str() {
                                 "mrpack" => BuildTarget::Mrpack,
+                                "curseforge" => BuildTarget::CurseForge,
                                 "client" => BuildTarget::Client,
                                 "server" => BuildTarget::Server,
                                 "client-full" => BuildTarget::ClientFull,

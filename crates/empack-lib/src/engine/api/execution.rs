@@ -230,6 +230,15 @@ async fn execute(
                 limits: config.archive,
             };
             requests.push(match output.target {
+                BuildTarget::CurseForge => DistributionRequest::CurseForge {
+                    artifact,
+                    options: crate::engine::build::curseforge::CurseForgeOptions {
+                        optional: request.optional.clone(),
+                        conversion: request.mrpack_optional,
+                        evidence,
+                        limits: config.archive,
+                    },
+                },
                 BuildTarget::Mrpack => DistributionRequest::Mrpack {
                     artifact,
                     optional: request.mrpack_optional,

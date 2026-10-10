@@ -66,6 +66,17 @@ selection, authored configuration and representable optional content. Reject los
 placement or environment conversion unless the author explicitly selects a supported
 projection. Content that cannot be represented is named in the diagnostic.
 
+Project/file references retain the provider filename and standard content directory.
+A renamed file or custom destination cannot be encoded in this manifest. Reject it
+instead of exporting a reference that installs somewhere else. Multiple selections
+from one provider project are also rejected when the consumer cannot preserve them.
+
+A required local override is embedded at its selected client destination. Client
+overrides take precedence over common content; server-only content is excluded.
+Optional overrides require an explicit selection before export. Reference optionality
+can become `required: false` only after explicit acceptance of lost choice keys,
+defaults and descriptions. An unresolved choice is not silently enabled.
+
 A Modrinth project name or slug cannot establish a CurseForge equivalent. A verified
 cross-provider file association or explicitly permitted embedding is required.
 Format validity is not hosting approval or redistribution permission. Report hosting

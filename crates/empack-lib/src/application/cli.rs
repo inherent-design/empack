@@ -226,13 +226,16 @@ pub struct InitArgs {
 #[derive(Args, Debug, Clone, Default)]
 #[command(after_help = "Targets:
   mrpack       Importable modpack archive with download references
+  curseforge   CurseForge client ZIP with exact references and overrides
   client       Lightweight client distribution with a Java bootstrap
   server       Lightweight server distribution with a prepared runtime
   client-full  Prism-compatible instance with pack content
   server-full  Server distribution with runtime and pack content
-  all          Build all five targets
+  all          Build all six targets
 
 Without TARGETS, use distribution.targets from empack.yml.
+CurseForge requires exact CurseForge references or authored local overrides.
+Selecting all requires every recipe to represent the selected content.
 Client-full leaves Minecraft and game-asset downloads to the launcher.
 Forge/NeoForge server targets run the selected Java installer during preparation.
 All requested targets are prepared and verified before publication.
@@ -265,7 +268,7 @@ pub struct BuildArgs {
     )]
     pub clean: bool,
 
-    /// Archive format override for distributions; mrpack always uses ZIP
+    /// Archive format override for distributions; mrpack and curseforge always use ZIP
     #[arg(long, value_enum, conflicts_with = "continue_build")]
     pub format: Option<CliArchiveFormat>,
 
@@ -301,7 +304,7 @@ pub struct BuildArgs {
     )]
     pub optional_choices: Vec<String>,
 
-    /// Allow mrpack to omit optional choice keys, defaults and descriptions.
+    /// Allow reference archives to omit optional choice keys, defaults and descriptions.
     #[arg(long, conflicts_with = "continue_build")]
     pub allow_optional_metadata_loss: bool,
 }

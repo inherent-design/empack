@@ -103,7 +103,7 @@ readiness or replace executable evidence.
   delivery, environment and update-policy recipes; reject invalid combinations.
 - [ ] Preserve mrpack hashes, sizes, URLs, side layers and requirements. Separate
   generic format validation from Modrinth hosting-domain eligibility.
-- [ ] Implement CurseForge manifest ZIP export and independently inspect its
+- [x] Implement CurseForge manifest ZIP export and independently inspect its
   referenced project/file identities and overrides. Reject unverifiable cross-provider
   substitutions and report content that cannot be represented or distributed.
 - [ ] Replace lightweight Prism JAR commands with native instance integration;

@@ -295,8 +295,9 @@ fn request(
     args: &BuildArgs,
     decisions: BuildDecisions,
 ) -> Result<BuildRequest> {
-    const ALL: [BuildTarget; 5] = [
+    const ALL: [BuildTarget; 6] = [
         BuildTarget::Mrpack,
+        BuildTarget::CurseForge,
         BuildTarget::Client,
         BuildTarget::Server,
         BuildTarget::ClientFull,
@@ -308,6 +309,7 @@ fn request(
         let selected: &[BuildTarget] = match name.as_str() {
             "all" => &ALL,
             "mrpack" => &[BuildTarget::Mrpack],
+            "curseforge" => &[BuildTarget::CurseForge],
             "client" => &[BuildTarget::Client],
             "server" => &[BuildTarget::Server],
             "client-full" => &[BuildTarget::ClientFull],
@@ -319,15 +321,12 @@ fn request(
                 .into());
             }
         };
-        for target in selected {
-            if !targets.contains(target) {
-                targets.push(*target);
-            }
-        }
+        targets.extend_from_slice(selected);
     }
     if targets.is_empty() {
         targets.extend(intent.distribution.targets.as_slice());
     }
+    let targets = empack_core::projection::plan_build_targets(&targets);
     let name = ArtifactStem::parse(&intent.metadata.name)
         .context("Pack name cannot form a portable artifact name")?;
     let version = ArtifactStem::parse(&intent.metadata.version)
@@ -348,6 +347,7 @@ fn request(
         .map(|target| {
             let (suffix, extension) = match target {
                 BuildTarget::Mrpack => ("", "mrpack"),
+                BuildTarget::CurseForge => ("-curseforge", "zip"),
                 BuildTarget::Client => ("-client", extension),
                 BuildTarget::Server => ("-server", extension),
                 BuildTarget::ClientFull => ("-client-full", extension),

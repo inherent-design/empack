@@ -265,7 +265,10 @@ impl BuildSelection {
                 choices: Vec::new(),
             }));
         }
-        let client = matches!(target, BuildTarget::Client | BuildTarget::ClientFull);
+        let client = matches!(
+            target,
+            BuildTarget::Client | BuildTarget::ClientFull | BuildTarget::CurseForge
+        );
         let full = matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull);
         let side = if client {
             ContentLayer::Client

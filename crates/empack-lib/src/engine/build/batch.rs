@@ -21,6 +21,10 @@ use empack_core::{
 /// An implemented distribution recipe and its explicit output. Further targets add recipes here;
 /// runtime recipes remain limited to independently verified runtime preparations.
 pub enum DistributionRequest {
+    CurseForge {
+        artifact: PortableRelPath,
+        options: super::curseforge::CurseForgeOptions,
+    },
     Mrpack {
         artifact: PortableRelPath,
         optional: OptionalConversion,
@@ -50,7 +54,8 @@ pub enum DistributionRequest {
 impl DistributionRequest {
     fn artifact(&self) -> &PortableRelPath {
         match self {
-            Self::Mrpack { artifact, .. }
+            Self::CurseForge { artifact, .. }
+            | Self::Mrpack { artifact, .. }
             | Self::Client { artifact, .. }
             | Self::ClientFull { artifact, .. }
             | Self::Server { artifact, .. }
@@ -59,6 +64,7 @@ impl DistributionRequest {
     }
     fn target(&self) -> BuildTarget {
         match self {
+            Self::CurseForge { .. } => BuildTarget::CurseForge,
             Self::Mrpack { .. } => BuildTarget::Mrpack,
             Self::Client { .. } => BuildTarget::Client,
             Self::ClientFull { .. } => BuildTarget::ClientFull,
@@ -150,6 +156,15 @@ pub(in crate::engine) fn prepare_build_batch_with_cleanup(
     for request in requests.as_slice() {
         cancel.check()?;
         let (candidate, evidence) = match request {
+            DistributionRequest::CurseForge { artifact, options } => {
+                super::curseforge::prepare_archive(
+                    &workspace,
+                    artifact.clone(),
+                    external,
+                    options,
+                    cancel,
+                )?
+            }
             DistributionRequest::Mrpack {
                 artifact,
                 optional,

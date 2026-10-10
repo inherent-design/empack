@@ -74,6 +74,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
                     .iter()
                     .map(|v| match text(v)? {
                         "mrpack" => Ok(BuildTarget::Mrpack),
+                        "curseforge" => Ok(BuildTarget::CurseForge),
                         "client" => Ok(BuildTarget::Client),
                         "server" => Ok(BuildTarget::Server),
                         "client-full" => Ok(BuildTarget::ClientFull),
@@ -223,6 +224,6 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
         "runtime":{"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
         "dependencies":roots,
         "layout":intent.layout.iter().map(|(k,v)| (kind_name(*k),v.as_str())).collect::<BTreeMap<_,_>>(),
-        "distribution":{"targets":intent.distribution.targets.as_slice().iter().map(|v| match v { BuildTarget::Mrpack=>"mrpack",BuildTarget::Client=>"client",BuildTarget::Server=>"server",BuildTarget::ClientFull=>"client-full",BuildTarget::ServerFull=>"server-full" }).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
+        "distribution":{"targets":intent.distribution.targets.as_slice().iter().map(|v| match v { BuildTarget::Mrpack=>"mrpack",BuildTarget::CurseForge=>"curseforge",BuildTarget::Client=>"client",BuildTarget::Server=>"server",BuildTarget::ClientFull=>"client-full",BuildTarget::ServerFull=>"server-full" }).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
         "extensions":intent.extensions.iter().map(|(k,v)| (k,extension_value(v))).collect::<BTreeMap<_,_>>()})
 }

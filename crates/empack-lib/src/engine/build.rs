@@ -20,6 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod acquisition;
 pub mod batch;
 pub mod client;
+pub mod curseforge;
 pub mod materialized;
 pub mod server;
 
