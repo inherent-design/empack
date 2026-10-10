@@ -96,6 +96,9 @@ readiness or replace executable evidence.
 
 ## Consumer adapters
 
+- [x] Implement validated consumer/delivery/update-authority recipe values, with
+  snapshot defaults and explicit environment/authority capability errors.
+
 - [ ] Replace `BuildTarget` and persisted target strings with validated consumer,
   delivery, environment and update-policy recipes; reject invalid combinations.
 - [ ] Preserve mrpack hashes, sizes, URLs, side layers and requirements. Separate

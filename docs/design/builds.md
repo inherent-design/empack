@@ -11,7 +11,7 @@ pub enum Delivery { References, Bundled }
 pub enum UpdateAuthority { Snapshot, Platform, Empack }
 ```
 
-Validated recipes reject unsupported combinations before acquisition. References
+The pure `distribution::Recipe` value validates policy combinations before acquisition. References
 can include authored assets; bundled pack content does not mean an offline Minecraft
 client or an unconditional right to redistribute dependency bytes.
 
@@ -22,6 +22,10 @@ client or an unconditional right to redistribute dependency bytes.
 | Prism | Native instance ZIP | References through empack, or bundled pack content | Snapshot or empack |
 | Server | Directory or supported archive | References through empack, or bundled pack content | Snapshot or empack |
 | Empack | Native release manifest and assets | Exact references and optionally bundled assets | Snapshot or empack |
+
+CurseForge and Prism recipes select a client environment; dedicated server recipes
+select server. Modrinth and native release recipes can preserve both environments.
+Per-file environment requirements still participate in each projection.
 
 Platform update authority requires platform project/version association; writing an
 archive does not create that association. Automatic marketplace upload is outside
