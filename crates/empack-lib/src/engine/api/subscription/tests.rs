@@ -189,6 +189,7 @@ async fn subscription_rejects_copied_roots_and_late_trust_edits() {
 
 fn native_release(key: &SigningKey, version: &str) -> (release::DecodedRelease, Vec<u8>) {
     let document = release::DecodedRelease::encode(release::ReleaseDocument {
+        require_subscription: false,
         server_launch: None,
         schema: 1,
         pack: "fixture".into(),

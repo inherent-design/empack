@@ -283,6 +283,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     let make = |bytes: &[u8]| {
         fs::write(root.path().join("assets/mod"), bytes).unwrap();
         let payload = DecodedRelease::encode(ReleaseDocument {
+            require_subscription: false,
             server_launch: None,
             schema: 1,
             pack: "dispatch".into(),
@@ -710,6 +711,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         .unwrap();
     let foreign =
         crate::engine::release::DecodedRelease::encode(crate::engine::release::ReleaseDocument {
+            require_subscription: false,
             server_launch: None,
             schema: 1,
             pack: "another-pack".into(),
@@ -748,6 +750,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::create_dir(root.path().join("assets")).unwrap();
     fs::write(root.path().join("assets/config"), b"signed bytes").unwrap();
     let release = DecodedRelease::encode(ReleaseDocument {
+        require_subscription: false,
         server_launch: None,
         schema: 1,
         pack: "fixture".into(),
@@ -936,6 +939,7 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("project")).unwrap();
     let payload = DecodedRelease::encode(ReleaseDocument {
+        require_subscription: false,
         server_launch: None,
         schema: 1,
         pack: "manual".into(),

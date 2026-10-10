@@ -301,6 +301,7 @@ fn native_reference_projection_keeps_selected_identity_and_omits_excluded_bytes(
     put(root.path(), "overrides/client/config/settings", b"client");
     let workspace = capture(root.path(), state.path());
     let options = || NativeReleaseOptions {
+        require_subscription: false,
         pack: "consumer-fixture".into(),
         minimum_engine: ">=0.6.0-beta".into(),
         java_major: 17,

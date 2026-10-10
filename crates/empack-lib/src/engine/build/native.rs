@@ -6,13 +6,13 @@ use crate::engine::{
     staging::PrivateFile,
 };
 use empack_core::{
-    distribution::{Consumer, Recipe, UpdateAuthority},
+    distribution::{Consumer, Recipe},
     model::DistributionArchive,
     path::PortableRelPath,
 };
 
 pub(crate) fn supports(recipe: Recipe) -> bool {
-    recipe.consumer() == Consumer::Empack && recipe.update_authority() == UpdateAuthority::Snapshot
+    recipe.consumer() == Consumer::Empack
 }
 
 pub(super) struct NativeArchiveOptions {
@@ -55,6 +55,8 @@ pub(super) fn prepare_archive(
         })
     });
     let mut release_options = NativeReleaseOptions::from_project(&content.project)?;
+    release_options.require_subscription =
+        recipe.update_authority() == empack_core::distribution::UpdateAuthority::Empack;
     release_options.delivery = recipe.delivery();
     release_options.environments = recipe.environments();
     let plan = NativeReleasePlan::prepare(

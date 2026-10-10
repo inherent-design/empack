@@ -31,6 +31,7 @@ fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
 }
 fn release(version: &str) -> DecodedRelease {
     DecodedRelease::encode(ReleaseDocument {
+        require_subscription: false,
         server_launch: None,
         schema: 1,
         pack: "prelaunch".into(),

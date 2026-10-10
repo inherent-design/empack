@@ -88,7 +88,8 @@ impl DistributionRequest {
         );
         ensure!(
             recipe.update_authority() == UpdateAuthority::Snapshot
-                || super::launcher_recipe(recipe),
+                || super::launcher_recipe(recipe)
+                || recipe.consumer() == Consumer::Empack,
             "Consumer update authority requires a bound association or subscription"
         );
         Ok(())

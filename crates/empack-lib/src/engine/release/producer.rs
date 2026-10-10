@@ -25,6 +25,7 @@ use std::{collections::BTreeMap, fs::File};
 
 /// Publisher identity and runtime requirements are explicit inputs, never derived from display text.
 pub struct NativeReleaseOptions {
+    pub require_subscription: bool,
     pub pack: String,
     pub minimum_engine: String,
     pub java_major: u16,
@@ -42,6 +43,7 @@ impl NativeReleaseOptions {
             .as_ref()
             .context("Native distribution requires distribution.native settings")?;
         Ok(Self {
+            require_subscription: false,
             pack: native.pack_id.clone(),
             minimum_engine: ">=0.6.0-beta".into(),
             java_major: native.java_major,
@@ -365,7 +367,12 @@ impl NativeReleasePlan {
                 asset: None,
             });
         }
-        let recipe = Recipe::new(Consumer::Empack, options.delivery, options.environments)?;
+        let recipe = Recipe::new(Consumer::Empack, options.delivery, options.environments)?
+            .with_update_authority(if options.require_subscription {
+                empack_core::distribution::UpdateAuthority::Empack
+            } else {
+                empack_core::distribution::UpdateAuthority::Snapshot
+            })?;
         options
             .policies
             .retain(|path, _| files.iter().any(|file| file.destination == path.as_str()));
@@ -548,6 +555,7 @@ impl NativeReleasePlan {
                 )?)?;
         }
         let release = DecodedRelease::encode(ReleaseDocument {
+            require_subscription: options.require_subscription,
             server_launch: None,
             schema: RELEASE_SCHEMA,
             pack: options.pack,
@@ -902,6 +910,7 @@ mod tests {
     }
     fn options(delivery: Delivery) -> NativeReleaseOptions {
         NativeReleaseOptions {
+            require_subscription: false,
             pack: "stable-id".into(),
             minimum_engine: ">=0.6.0-beta".into(),
             java_major: 17,

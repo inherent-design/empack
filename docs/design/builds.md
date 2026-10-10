@@ -43,8 +43,8 @@ Initialization and imports default to Modrinth references, bundled Prism and bun
 server snapshots. Native reference consumers require an explicit stable pack identity
 and Java requirement; those values are not inferred from display names. Selecting a
 valid policy does not establish a platform association or publisher trust. Consumer
-activation binds the relevant evidence. Empack-managed Prism/server exports require
-explicit local enrollment before their initial snapshot installation. Their wrappers
+activation binds the relevant evidence. Empack-managed native, Prism and server exports require
+explicit local enrollment before their initial snapshot installation. Launcher wrappers
 check the enrolled channel before launch; exported keys never create trust. Reference
 and bundled delivery both use native ownership when `updates: empack`, with bundled
 bytes carried as verified release assets. Snapshot bundles remain independent of

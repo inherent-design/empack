@@ -4,6 +4,7 @@ use ed25519_dalek::SigningKey;
 
 pub(super) fn document() -> ReleaseDocument {
     ReleaseDocument {
+        require_subscription: false,
         server_launch: None,
         schema: 1,
         pack: "test-pack".into(),

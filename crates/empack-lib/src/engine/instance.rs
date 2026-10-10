@@ -375,6 +375,8 @@ pub(super) fn plan(
         choices: requested_choices,
         action,
     } = selection;
+    let require_subscription =
+        require_subscription || selected.release().document().require_subscription;
     let mut asset_base = match &selected {
         SelectedRelease::Subscribed(proof) => Some(proof.assets()),
         _ => None,
@@ -521,6 +523,11 @@ pub(super) fn plan(
         .as_ref()
         .map(|current| current.release())
         .unwrap_or_else(|| selected.release());
+    if release.document().require_subscription {
+        let bytes = read_optional(&root, &snapshot, &ManagedPath::InstanceSubscription, cancel)?
+            .context("Release requires explicit publisher enrollment; run instance subscribe")?;
+        subscription::SubscriptionRecord::decode(&bytes)?.trust()?;
+    }
     if active.is_some() {
         asset_base = None;
     }

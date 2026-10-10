@@ -21,6 +21,9 @@ pub const MAX_RELEASE_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseDocument {
+    /// Activation requires explicit root-bound publisher enrollment; this field supplies no keys.
+    #[serde(default)]
+    pub require_subscription: bool,
     /// Typed Java entry point into required, verified server files; never a host executable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_launch: Option<ReleaseServerLaunch>,

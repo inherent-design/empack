@@ -67,6 +67,7 @@ fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
     )
     .unwrap();
     let payload = DecodedRelease::encode(ReleaseDocument {
+        require_subscription: false,
         server_launch: None,
         schema: 1,
         pack: "launch".into(),

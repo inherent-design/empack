@@ -300,6 +300,8 @@ pub(super) fn prepare_server_archive(
     let mut files = BTreeMap::new();
     let release = if references {
         let mut release_options = NativeReleaseOptions::from_project(game.project())?;
+        release_options.require_subscription =
+            target.update_authority() == empack_core::distribution::UpdateAuthority::Empack;
         release_options.delivery = target.delivery();
         release_options
             .policies

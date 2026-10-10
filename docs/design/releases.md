@@ -246,3 +246,14 @@ program, shell command or arbitrary executable-selection policy. Argument-file
 launches use the local `user_jvm_args.txt` seed before the verified loader arguments.
 The same exact release binds runtime requirements, executable content, launch paths
 and game files, so managed update and rollback cannot keep an older entry point.
+
+## Enrollment-bound activation
+
+A release's `require_subscription` flag binds native update policy to the exact
+payload identity. Empack-managed native, Prism and server recipes set it. Activation,
+repair and launch require a non-revoked, root-bound enrollment for the same pack,
+even when a caller omits the CLI enrollment flag. Preparation captures that record;
+revocation or replacement before publication invalidates the prepared operation.
+An initial snapshot digest still authorizes only the selected bytes. Neither the
+release nor an exported archive can enroll a key or pick a trusted origin for its
+recipient. Snapshot recipes leave enrollment optional.
