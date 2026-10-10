@@ -852,3 +852,34 @@ async fn subscribed_recipe_selection_retains_policy_and_distinct_output_names() 
         }
     }
 }
+
+#[tokio::test]
+async fn native_and_platform_cli_policies_select_distinct_outputs() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let parsed = DocumentCodec
+        .decode_intent(
+            &fs::read(root.path().join("project/empack.yml")).unwrap(),
+            "fixture",
+        )
+        .unwrap();
+    for (consumer, authority, suffix) in [
+        ("empack", "empack", "-subscribed.empack"),
+        ("modrinth", "platform", "-platform.mrpack"),
+        ("curseforge", "platform", "-platform.zip"),
+    ] {
+        let selected = request(
+            parsed.intent(),
+            &BuildArgs {
+                targets: vec![consumer.into()],
+                updates: Some(authority.into()),
+                ..Default::default()
+            },
+            BuildDecisions::default(),
+        )
+        .unwrap();
+        let output = &selected.outputs.as_slice()[0];
+        assert!(output.artifact.as_str().ends_with(suffix));
+        assert_ne!(output.target.update_authority(), UpdateAuthority::Snapshot);
+    }
+}

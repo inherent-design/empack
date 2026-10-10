@@ -60,8 +60,9 @@ excludes the same path from incidental content. Rules are captured with the auth
 document and never inherited from host-global ignore files. Native source capture
 has no package-manager control filenames; exclusions are authored policy.
 
-`distribution.native` defines `pack-id`, `java-major`, `delivery` (`references` or
-`bundled`) and `policies`, an exact destination-to-`managed|seed` map. The stable
+`distribution.native` defines `pack-id`, `java-major` and `policies`, an exact
+destination-to-`managed|seed` map. Delivery, environment and update authority belong
+to each entry in `distribution.recipes`. The stable
 pack ID is a bounded portable identifier and must survive display-name/version
 changes. Java major is an explicit requirement; runtime activation checks it against
 the selected game/loader. Unknown policy destinations are errors. Configuration
@@ -100,9 +101,9 @@ pub struct ReleaseFile {
 ```
 
 `Managed` files participate in three-way reconciliation. `Seed` supplies initial
-bytes only; existing bytes belong to the user. The instance record keeps the actual
-installation baseline and records preserved seeds separately from incoming release
-assertions. Worlds are seeded only by explicit initial installation and subsequently
+bytes only; existing bytes belong to the user. The completed record selects a retained release inventory and choices as the
+installation baseline; explicit local deviations retain their own accepted content
+identities. Preserving a seed never claims its current bytes match publisher assertions. Worlds are seeded only by explicit initial installation and subsequently
 excluded from ordinary update ownership. Runtime-generated files are user data.
 
 ## Integrity and provenance

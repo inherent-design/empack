@@ -9,32 +9,38 @@ clients cannot directly publish caller-constructed file changes.
 | --- | --- | --- |
 | Initialize / Import | Authored values or normalized archive | Complete verified project, no early reset |
 | Add / Remove | Logical selectors, sources and explicit policy | Exact ownership changes and coherent intent/lock |
-| Synchronize | Intent and retained exact resolution | Satisfied intent without implicit upgrades |
-| UpdateDependencies | Selected author roots | Deliberately refreshed compatible resolution |
-| Adopt | Explicit observed content and identity evidence | Verified document changes without hidden installation |
+| Sync | Intent and retained exact resolution | Satisfied intent without implicit upgrades |
+| Update | Selected author roots | Deliberately refreshed compatible resolution |
+| AdoptObserved | Explicit observed content and identity evidence | Verified document changes without hidden installation |
 | Build | Consumer recipes and choices | Verified artifacts from one captured resolution |
 | InstallInstance | Exact release, destination, side and choices | Completed instance and durable ownership record |
-| UpdateInstance | Instance and explicit release/subscription | Complete verified transition and retained previous release |
-| RepairInstance | Last completed release and choices | Restored required content without advancing release |
-| RollbackInstance | Retained completed release | Managed rollback with user-change conflicts preserved |
+| InstallInstance (`Apply`) | Instance and explicit release/subscription | Complete verified transition and retained previous release |
+| InstallInstance (`Repair`) | Last completed release and choices | Restored required content without advancing release |
+| InstallInstance (`Rollback`) | Retained completed release | Managed rollback with user-change conflicts preserved |
 | Inspect / Recover | Native root and operation identity | Read-only classification or approved finish/restore |
 | Clean | Explicit owned storage category | Scoped retirement preserving active leases and recovery |
 
 CLI normalization produces these requests. Launcher integration uses the instance
-requests; it never executes an alternate mutation path. Author `update` and instance
-`update` have separate input types and do not share implicit version-selection policy.
+requests; it never executes an alternate mutation path. Author `UpdateRequest` and `InstallInstanceRequest` do not share implicit
+version-selection policy. Instance installation, preparation, repair, choices and
+rollback use explicit `InstanceAction` values. `LaunchInstanceRequest` selects a local
+executable; its optional server mode uses the completed release's typed entry point.
+`SubscriptionRequest` enrolls or replaces trusted keys and records authenticated
+channel observations. `StageReleaseRequest` and `PublishChannelRequest` publish
+verified publisher artifacts. `AcknowledgeStoppedRuntime` clears captured runtime
+recovery evidence only after the operator's explicit stopped-process assertion.
 
 ## Lifecycle
 
 ```text
 Engine.prepare(Request)
-  -> DecisionRequired | NeedsInput | PreparedOperation
+  -> Result<Preparation::Ready(PreparedOperation) | Preparation::NeedsInput(PreparationContinuation)>
 PreparedOperation.authorize(ExecutionGrant)
   -> ApprovedOperation
 Engine.start(ApprovedOperation)
   -> OperationHandle
 OperationHandle.wait()
-  -> ExecutionOutcome
+  -> Arc<OperationOutcome<ExecutionOutcome>>
 ```
 
 The request, prepared plan, grant and execution carry operation and attempt identity.
@@ -43,23 +49,24 @@ public fields. Replanning after changed inputs invalidates the previous grant.
 The owning runtime survives a dropped UI handle until work retires or reaches a
 durable recoverable boundary.
 
-## Narrow ports
+## Capability boundaries
 
-| Port | Capability |
+| Implementation | Capability |
 | --- | --- |
-| ProviderCatalog | Resolve selectors, exact pins, file roles and required evidence |
-| ReleaseCatalog | Acquire bounded channel/release bytes; no local mutation |
-| TrustVerifier | Authenticate exact envelopes against enrolled trust and sequence state |
-| RootReader | Capture root-bound observations and immutable content leases |
-| ContentAcquirer | Verify exact requested bytes through shared transport policy |
-| ConsumerProjector | Normalize a complete inventory into a representable recipe |
-| RuntimePreparer | Verify official assets and bounded installer outcomes |
-| InstanceCoordinator | Bind launch/update ownership to one native instance |
-| Publisher | Internal verified publication and recovery |
-| DecisionHost | Present typed choices and return revision-bound answers |
+| `ProviderCatalog` | Resolve selectors, exact pins, file roles and required evidence |
+| `HttpAcquisition` | Bounded content and publisher-metadata transfer through transport policy |
+| `PublisherTrust` | Authenticate exact envelopes against explicitly enrolled keys |
+| Subscription operations | Bind trust, channel identity, expiry and durable sequence observations |
+| `ProjectReadRoot` and `NativeSnapshot` (internal) | Capture root-bound observations and immutable read sets |
+| `AcquiredContent` | Retain verified bytes and their original source evidence |
+| Consumer adapters | Project a complete inventory into a representable artifact |
+| `PreparedServerRuntime` | Retain official runtime/installer outcomes and typed launch requirements |
+| Instance planning and launch leases (internal) | Bind launch/update ownership to one native instance |
+| `Publisher` (internal) | Publish verified changes and recover interrupted operations |
+| Application hosts | Present decisions and construct exact operation grants |
 
-Services do not expose unrestricted raw HTTP or mutable documents to command
-handlers. A test adapter must declare weakened guarantees rather than inheriting
+Internal file plans, snapshots and publishers are not alternate public mutation
+entry points. A test adapter must declare weakened guarantees rather than inheriting
 success defaults for locking, verification or root confinement.
 
 ## Decisions and continuation

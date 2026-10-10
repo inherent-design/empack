@@ -210,7 +210,7 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
     session.display().status().section("Runtime capabilities");
     session.display().status().success(
         "project operations",
-        "native engine; no packwiz executable required",
+        "native engine; no external dependency manager required",
     );
     session.display().status().success(
         "archive support",

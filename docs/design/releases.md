@@ -13,13 +13,16 @@ one immutable release without granting arbitrary code execution or tool updates.
 | `runtime` | Exact runtime requirements | Minecraft, loader and supported launch requirements |
 | `files` | Logical file records | Roles, original assertions, destinations, side and choice requirements |
 | `choices` | Stable choice definitions | Defaults, alternatives and constraints |
-| `assets` | Immutable asset references | Authored content, templates already rendered for installation |
+| `require_subscription` | Boolean | Require explicit live local publisher enrollment before activation |
+| `server_launch` | Optional typed entry point | Required managed JAR or platform argument-file paths |
 | `minimum_engine` | Version requirement | Compatibility gate checked before effects |
 
 Host paths, signing keys, credentials, cache entries and operation journals are
 excluded. References retain provider-qualified exact identities or approved URLs
 with expected digests and sizes. A complete release can use several providers.
-Computed export hashes do not replace original source assertions.
+Computed export hashes do not replace original source assertions. Immutable asset
+references belong to individual files through `source` or the optional `asset` field;
+there is no top-level asset map.
 
 `ReleaseId` is SHA-256 of the exact UTF-8 payload bytes. Serialization is deterministic:
 map keys have a prescribed order, sets are sorted, integers use canonical decimal
@@ -79,10 +82,13 @@ create a subscription as a side effect.
 
 Pack updates and tool updates have separate trust roots, version policies and
 execution grants. Native empack binaries are distributed for supported platforms.
-A thin helper selects and verifies an executable, then delegates instance work to
-it. It contains no independent resolver, downloader policy or publication algorithm.
-A release's minimum-version requirement reports incompatibility; it cannot authorize
-installing or executing an arbitrary binary.
+The operator installs a released binary separately and selects it through PATH or
+an explicit local path. Generated launcher scripts invoke that local empack; they do
+not download a replacement, select an OS binary from pack metadata, or implement a
+second installer. A release's minimum-version requirement reports incompatibility;
+it cannot authorize installing or executing an arbitrary binary. There is no
+self-updater. An optional host-provided acquisition helper must use a separate trust
+root and delegate instance work to empack.
 
 ## Wire encoding
 

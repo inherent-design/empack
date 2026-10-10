@@ -1,6 +1,6 @@
 //! Shared Prism component contract for exports and installed runtime transitions.
 use anyhow::{Context, Result, ensure};
-use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
+use empack_core::model::{LoaderKind, RuntimeResolution};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
@@ -101,23 +101,6 @@ pub(super) fn verify_profile(bytes: &[u8], runtime: &RuntimeResolution) -> Resul
     Ok(())
 }
 
-pub(super) fn runtime(requirements: &super::release::ReleaseRuntime) -> Result<RuntimeResolution> {
-    use super::release::ReleaseLoader;
-    let (loader, version) = match &requirements.loader {
-        ReleaseLoader::Vanilla => (LoaderKind::Vanilla, None),
-        ReleaseLoader::Fabric { version } => (LoaderKind::Fabric, Some(version)),
-        ReleaseLoader::Quilt { version } => (LoaderKind::Quilt, Some(version)),
-        ReleaseLoader::Forge { version } => (LoaderKind::Forge, Some(version)),
-        ReleaseLoader::NeoForge { version } => (LoaderKind::NeoForge, Some(version)),
-    };
-    Ok(RuntimeResolution {
-        minecraft: GameVersion::parse(&requirements.minecraft)?,
-        loader,
-        loader_version: version
-            .map(|value| LoaderVersion::parse(value))
-            .transpose()?,
-    })
-}
 /// Preserve user components and attributes; only the known game/loader components change.
 /// Existing core components must still match the previously completed release.
 pub(super) fn transition(
@@ -125,11 +108,11 @@ pub(super) fn transition(
     old: &super::release::ReleaseRuntime,
     new: &super::release::ReleaseRuntime,
 ) -> Result<Vec<u8>> {
-    let new = runtime(new)?;
+    let new = new.resolution()?;
     let Some(bytes) = previous else {
         return profile(&new);
     };
-    verify_profile(bytes, &runtime(old)?)?;
+    verify_profile(bytes, &old.resolution()?)?;
     let mut value: Value = serde_json::from_slice(bytes)?;
     let components = value["components"]
         .as_array_mut()

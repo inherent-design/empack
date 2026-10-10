@@ -66,6 +66,27 @@ pub struct ReleaseRuntime {
     pub loader: ReleaseLoader,
     pub java_major: u16,
 }
+impl ReleaseRuntime {
+    pub(crate) fn resolution(&self) -> Result<empack_core::model::RuntimeResolution> {
+        use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
+        let requirements = self;
+
+        let (loader, version) = match &requirements.loader {
+            ReleaseLoader::Vanilla => (LoaderKind::Vanilla, None),
+            ReleaseLoader::Fabric { version } => (LoaderKind::Fabric, Some(version)),
+            ReleaseLoader::Quilt { version } => (LoaderKind::Quilt, Some(version)),
+            ReleaseLoader::Forge { version } => (LoaderKind::Forge, Some(version)),
+            ReleaseLoader::NeoForge { version } => (LoaderKind::NeoForge, Some(version)),
+        };
+        Ok(RuntimeResolution {
+            minecraft: GameVersion::parse(&requirements.minecraft)?,
+            loader,
+            loader_version: version
+                .map(|value| LoaderVersion::parse(value))
+                .transpose()?,
+        })
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ReleaseLoader {

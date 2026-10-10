@@ -94,7 +94,7 @@ impl NativeReleasePlan {
     ) -> Result<Self> {
         use crate::engine::server_runtime::ServerLaunch;
         ensure!(
-            crate::engine::prism::runtime(&self.release.document().runtime)? == *runtime.runtime(),
+            self.release.document().runtime.resolution()? == *runtime.runtime(),
             "Server runtime differs from release requirements"
         );
         ensure!(

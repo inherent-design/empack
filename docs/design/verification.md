@@ -11,7 +11,7 @@ Utilities should be cohesive modules with narrow purposes, not a large `utils.rs
 |---|---|---|
 | Selector parsing | Parse user syntax without claiming canonical resolution. | CLI, import URL normalization. |
 | Canonical identity lookup | Index logical records and observed files by canonical identity; return ambiguity rather than first match. | Add, sync, remove, adopt. |
-| Document replacement | Apply exact logical changes against expected raw document revision; preserve unrelated syntax/fields. | Manifest/backend publication. |
+| Document replacement | Apply exact logical changes against expected raw document revision; preserve unrelated syntax/fields. | Author and instance document publication. |
 | Canonical encoding | Domain-separated, versioned, stable encoding; sort unordered maps, preserve meaningful sequence order. | Semantic revisions, recipes, plan grants. |
 | Digest verification | Incremental algorithms and expected-size checks; report all declared supported digest mismatches. | Acquisition, manual association, artifact verification. |
 | Content inspection | Bounded type/header/archive inspection with observed digest and provenance. | Direct JAR/ZIP and local file add. |

@@ -40,6 +40,12 @@ Forge cases use `EMPACK_TEST_JAVA8_HOME`. Provider checks use declared credentia
 `EMPACK_KEY_CURSEFORGE` supplies the explicit live CurseForge suite. Never record
 credentials, signed locators or downloaded third-party bytes in committed reports.
 
+The runtime task builds the CLI before running. Managed-server probes use
+`EMPACK_E2E_BIN` when supplied, otherwise the workspace debug executable. They
+extract a reference distribution, run its generated installer and launcher, require
+a completed native instance record, and reach Minecraft help through local Java.
+Host state and caches remain in temporary directories.
+
 The runtime matrix covers vanilla, Fabric launcher layouts, Quilt, historical and
 modern Forge, and early/current NeoForge families. Validate official installer
 profiles, expected libraries and launch arguments. Help output or EULA refusal

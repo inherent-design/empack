@@ -58,8 +58,8 @@ readiness or replace executable evidence.
   rotation, revocation, expiry and monotonic channel sequence handling.
 - [ ] Distinguish expected source assertions, computed content addresses, publisher
   authentication and user authorization in every diagnostic and receipt.
-- [ ] Specify the public request/decision/outcome API and the CLI command groups.
-- [ ] Preserve the feature surface in consumer capability and acceptance tables.
+- [x] Specify the public request/decision/outcome API and the CLI command groups.
+- [x] Preserve the feature surface in consumer capability and acceptance tables.
 
 ## Instance engine
 
@@ -108,7 +108,7 @@ readiness or replace executable evidence.
 
 - [x] Replace `BuildTarget` and persisted target strings with validated consumer,
   delivery, environment and update-policy recipes; reject invalid combinations.
-- [ ] Wire complete recipes into CLI selection and every executable consumer adapter;
+- [x] Wire complete recipes into CLI selection and every executable consumer adapter;
   bind platform associations and native subscriptions before activation.
 - [x] Preserve mrpack hashes, sizes, URLs, side layers and requirements. Separate
   generic format validation from Modrinth hosting-domain eligibility.
@@ -144,7 +144,7 @@ readiness or replace executable evidence.
   archive projection/verifier branches and obsolete exclusive tests.
 - [x] Route author and instance operations through one engine facade; retire
   replaced implementation paths rather than keeping compatibility dispatch.
-- [ ] Search the complete repository for residual packwiz authority and obsolete
+- [x] Search the complete repository for residual packwiz authority and obsolete
   target/schema claims. Keep third-party format names where semantically required.
 
 ## Acceptance
