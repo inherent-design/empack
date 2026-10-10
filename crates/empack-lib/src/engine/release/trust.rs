@@ -389,3 +389,35 @@ impl AuthenticatedChannel {
         trust.release(bytes, &self.document.release.id, engine)
     }
 }
+
+/// Bounded, no-follow local input. Reading does not authenticate or enroll the publisher.
+pub fn read_channel_envelope(
+    selected: &std::path::Path,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<Vec<u8>> {
+    ensure!(selected.is_absolute(), "Channel selection must be absolute");
+    let root = crate::engine::snapshot::ProjectReadRoot::open(
+        selected
+            .parent()
+            .context("Channel selection needs a parent")?,
+    )?;
+    let leaf = selected
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("Invalid channel filename")?;
+    let relative = PortableRelPath::parse(leaf, PathSyntax::ProjectContent)?;
+    let maximum = (MAX_CHANNEL_BYTES * 2 + 16 * 1024) as u64;
+    let snapshot = root.capture(
+        &[relative],
+        crate::engine::snapshot::SnapshotLimits {
+            file_bytes: maximum,
+            total_bytes: maximum,
+            ..Default::default()
+        },
+        cancel,
+    )?;
+    let bytes = crate::engine::project::read_document(&root, &snapshot, leaf, cancel)?
+        .context("Selected channel envelope does not exist")?;
+    root.revalidate(&snapshot, cancel)?;
+    Ok(bytes)
+}

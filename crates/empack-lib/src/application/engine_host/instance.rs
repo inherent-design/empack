@@ -143,6 +143,9 @@ pub(in crate::application) async fn dispatch(
     command: InstanceCommand,
 ) -> Result<()> {
     match command {
+        command @ (InstanceCommand::Subscribe { .. }
+        | InstanceCommand::Trust { .. }
+        | InstanceCommand::ObserveChannel { .. }) => subscription(session, command).await,
         command @ (InstanceCommand::Install { .. } | InstanceCommand::Prepare { .. }) => {
             install(session, command).await
         }
@@ -302,6 +305,123 @@ async fn maintain(
                 ))
             },
         )
+        .await
+    }
+    .await;
+    engine.shutdown().await;
+    result
+}
+
+async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result<()> {
+    use crate::engine::api::SubscriptionRequest;
+    use ed25519_dalek::VerifyingKey;
+    let keys = |values: Vec<String>| -> Result<Vec<VerifyingKey>> {
+        values
+            .into_iter()
+            .map(|value| {
+                ensure!(
+                    value.len() == 64
+                        && value
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+                    "Publisher public keys require 64 lowercase hexadecimal characters"
+                );
+                let mut bytes = [0; 32];
+                for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
+                    bytes[index] = u8::from_str_radix(std::str::from_utf8(pair)?, 16)?;
+                }
+                Ok(VerifyingKey::from_bytes(&bytes)?)
+            })
+            .collect()
+    };
+    let (invocation, root) = project_path(session)?;
+    let request = match command {
+        InstanceCommand::Subscribe {
+            pack,
+            channel,
+            url,
+            keys: values,
+        } => SubscriptionRequest::Enroll {
+            pack,
+            channel,
+            url,
+            keys: keys(values)?,
+        },
+        InstanceCommand::Trust { keys: values, .. } => SubscriptionRequest::ReplaceKeys {
+            keys: keys(values)?,
+        },
+        InstanceCommand::ObserveChannel { envelope } => {
+            let path = absolute(&invocation, &envelope);
+            let bytes = initialize::discover(session, move |mut scope| async move {
+                let work = scope.spawn_blocking(
+                    ResourceRequest {
+                        jobs: 1,
+                        memory_bytes: 1 << 20,
+                        open_files: 8,
+                        ..Default::default()
+                    },
+                    ResourceRequest {
+                        memory_bytes: 128 << 10,
+                        ..Default::default()
+                    },
+                    move |cancel| {
+                        crate::engine::release::trust::read_channel_envelope(&path, &cancel)
+                    },
+                )?;
+                scope.accept(work.wait().await?)?.transpose()
+            })
+            .await?;
+            let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
+                "0.6.0-beta"
+            } else {
+                env!("CARGO_PKG_VERSION")
+            };
+            SubscriptionRequest::Observe {
+                envelope: bytes.iter().copied().collect(),
+                now: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs()
+                    .try_into()?,
+                engine: semver::Version::parse(version)?,
+            }
+        }
+        _ => anyhow::bail!("Expected a subscription command"),
+    };
+    let engine = engine(session.config().app_config(), &invocation)?;
+    let result = async {
+        let Preparation::Ready(prepared) =
+            cancellable(session, engine.prepare(root, request)).await?
+        else {
+            anyhow::bail!("Unexpected subscription input request")
+        };
+        let OperationPreview::Subscription(view) = prepared.view() else {
+            anyhow::bail!("Unexpected subscription preview")
+        };
+        session.display().status().info(&format!(
+            "Publisher for {} / {} at {}: {} enrolled keys; sequence {}",
+            view.record.pack,
+            view.record.channel,
+            reqwest::Url::parse(&view.record.url)?
+                .origin()
+                .ascii_serialization(),
+            view.record.keys.len(),
+            view.record.floor.as_ref().map_or(0, |floor| floor.sequence)
+        ));
+        for key in keys(view.record.keys.clone())? {
+            session.display().status().info(&format!(
+                "Publisher key fingerprint: {}",
+                crate::engine::release::trust::key_id(&key)
+            ));
+        }
+        apply(session, &engine, prepared, "Publisher trust", |receipt| {
+            let ExecutionReceipt::Subscription(receipt) = receipt else {
+                anyhow::bail!("Unexpected subscription receipt")
+            };
+            Ok(format!(
+                "Saved subscription for {} / {}",
+                receipt.record.pack, receipt.record.channel
+            ))
+        })
         .await
     }
     .await;

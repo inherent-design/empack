@@ -36,6 +36,7 @@ impl ProjectLayout {
             ManagedPath::InstanceFile(path) => format!("game/{}", path.as_str()),
             ManagedPath::PrismLayoutMarker => ".minecraft/.empack-layout".to_owned(),
             ManagedPath::PrismFile(path) => format!(".minecraft/{}", path.as_str()),
+            ManagedPath::InstanceSubscription => ".empack/subscription.json".to_owned(),
             ManagedPath::InstanceRecord => ".empack/instance.json".to_owned(),
             ManagedPath::InstanceRelease(path) => format!(".empack/releases/{}", path.as_str()),
         };
@@ -47,6 +48,7 @@ impl ProjectLayout {
         let value = path.as_str();
         match value {
             ".minecraft/.empack-layout" => return Ok(ManagedPath::PrismLayoutMarker),
+            ".empack/subscription.json" => return Ok(ManagedPath::InstanceSubscription),
             ".empack/instance.json" => return Ok(ManagedPath::InstanceRecord),
             "empack.yml" => return Ok(ManagedPath::IntentDocument),
             "empack.lock" => return Ok(ManagedPath::LockDocument),

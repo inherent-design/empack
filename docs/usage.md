@@ -125,3 +125,16 @@ consumers. They preserve optional choices for installation. Extract the archive,
 `instance install` and the payload SHA-256 printed by the build. The digest names
 the JSON payload, not the surrounding archive. Side selection applies the matching
 override layer. Local snapshot selection does not enroll a publisher.
+
+Publisher enrollment is explicit and separate from snapshot installation:
+
+```sh
+empack --workdir instance instance subscribe --pack example --channel stable https://example.org/stable.json --key PUBLIC_KEY_HEX
+empack --workdir instance instance observe-channel signed-channel.json
+empack --workdir instance instance trust --key REPLACEMENT_PUBLIC_KEY_HEX
+empack --workdir instance instance trust --revoke-all
+```
+
+These commands save trust and authenticated sequence observations. They do not
+install the release selected by the channel. Key replacement and revocation retain
+the highest observed sequence, including across restart and managed rollback.

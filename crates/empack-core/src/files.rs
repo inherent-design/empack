@@ -34,6 +34,8 @@ pub enum ManagedPath {
     PrismLayoutMarker,
     /// Completed native installation ownership and choices.
     InstanceRecord,
+    /// Enrolled publisher keys and channel anti-replay state.
+    InstanceSubscription,
     /// Retained immutable native release descriptor.
     InstanceRelease(PortableRelPath),
 }

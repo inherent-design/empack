@@ -141,3 +141,29 @@ writer checks the complete expected inventory independently after encoding ZIP,
 TAR.GZ or 7z. Capture, candidate preparation and publication retain their resource
 reservations and exact input read set. A changed author file invalidates a prepared
 export. Export does not create a subscription or sign with an implicit key.
+
+## Durable enrollment and observation
+
+`instance subscribe --pack PACK --channel NAME URL --key PUBLIC_KEY` enrolls
+explicit Ed25519 public keys for one channel. Public keys use 64 lowercase
+hexadecimal characters. The approval preview shows the origin, channel and key
+fingerprints. Enrollment does not install content or implicitly trust a downloaded
+key. The root-bound schema `1` document at `.empack/subscription.json` holds the
+channel URL, enrolled keys, exact observed envelope and authenticated sequence
+floor. Retained envelopes must be reverified against current keys and time before
+they select release content. Key revocation cannot be bypassed by an old proof.
+
+`instance trust --key PUBLIC_KEY` replaces the enrolled key set after local
+approval. `instance trust --revoke-all` disables channel authentication while
+retaining its sequence floor. Reenrollment and revocation therefore cannot make
+old channel metadata fresh again. Rotation through explicit local reenrollment
+does not require a remote key-transition protocol.
+
+`instance observe-channel ENVELOPE` verifies a bounded local signed envelope
+against the current enrollment and persists its sequence and exact payload identity.
+It does not acquire or install release content. Channel acquisition must complete
+this publication before admitting content instructions. A same-sequence identical
+payload can be retried; a lower sequence or different payload at the saved sequence
+fails. A late trust edit invalidates the prepared operation. These control-document
+changes use the same exact grants, native observations and recoverable publication
+as other engine operations; they cannot write game files or installation history.

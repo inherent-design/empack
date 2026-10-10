@@ -329,6 +329,35 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Enroll an explicit publisher and HTTPS channel; does not install or update content
+    Subscribe {
+        #[arg(long)]
+        pack: String,
+        #[arg(long)]
+        channel: String,
+        url: String,
+        /// Trusted Ed25519 public key as 64 lowercase hexadecimal characters
+        #[arg(long = "key", required = true)]
+        keys: Vec<String>,
+    },
+    /// Replace enrolled publisher keys locally, preserving the saved anti-replay floor
+    Trust {
+        #[arg(
+            long = "key",
+            required_unless_present = "revoke_all",
+            conflicts_with = "revoke_all"
+        )]
+        keys: Vec<String>,
+        /// Disable updates without discarding the subscription or sequence floor
+        #[arg(long)]
+        revoke_all: bool,
+    },
+    /// Verify a signed channel envelope and save its anti-replay floor without installing content
+    ObserveChannel {
+        /// Signed channel envelope obtained from the enrolled publisher
+        envelope: std::path::PathBuf,
+    },
+
     /// Show the completed release, saved choices and retained rollback releases
     Inspect,
     /// Restore the installed release without changing its choices or selecting newer content

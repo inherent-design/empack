@@ -262,6 +262,32 @@ pub struct VerifiedFileChange {
     base: NativeSnapshot,
 }
 impl VerifiedFileChange {
+    /// Only the subscription planner may mutate enrolled trust and sequence floors.
+    pub(super) fn verify_subscription(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+    ) -> Result<Self> {
+        ensure!(
+            plan.expected()
+                .keys()
+                .all(|target| *target == ManagedPath::InstanceSubscription)
+                && plan
+                    .changes()
+                    .iter()
+                    .all(|change| *change.target() == ManagedPath::InstanceSubscription),
+            "Subscription operation cannot mutate instance payloads"
+        );
+        let targets = plan
+            .expected()
+            .keys()
+            .cloned()
+            .chain(plan.changes().iter().map(|change| change.target().clone()));
+        let mut observed = BTreeMap::new();
+        extend_observations(&base, &mut observed, targets)?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
+
     /// Instance semantics are established by the instance planner, not author metadata.
     pub(super) fn verify_instance(
         base: NativeSnapshot,

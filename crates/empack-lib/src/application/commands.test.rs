@@ -590,3 +590,128 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
         );
     }
 }
+
+#[tokio::test]
+async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() {
+    use crate::application::cli::InstanceCommand;
+    use crate::engine::{
+        api::SubscriptionRecord,
+        release::trust::{ChannelDocument, ChannelRelease, EnvelopeKind, sign},
+    };
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[27; 32]);
+    let encoded: String = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let enroll = || Commands::Instance {
+        command: InstanceCommand::Subscribe {
+            pack: "fixture".into(),
+            channel: "stable".into(),
+            url: "https://publisher.test/channel.json".into(),
+            keys: vec![encoded.clone()],
+        },
+    };
+    execute_command_with_session(enroll(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read_dir(root.path().join("project")).unwrap().count(),
+        0
+    );
+    execute_command_with_session(enroll(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    let foreign =
+        crate::engine::release::DecodedRelease::encode(crate::engine::release::ReleaseDocument {
+            schema: 1,
+            pack: "another-pack".into(),
+            version: "1".into(),
+            minimum_engine: ">=0.6.0-beta".into(),
+            runtime: crate::engine::release::ReleaseRuntime {
+                minecraft: "1.21.1".into(),
+                loader: crate::engine::release::ReleaseLoader::Vanilla,
+                java_major: 21,
+            },
+            choices: vec![],
+            files: vec![],
+        })
+        .unwrap();
+    fs::write(root.path().join("foreign.json"), foreign.bytes()).unwrap();
+    assert!(
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Install {
+                    release: "foreign.json".into(),
+                    sha256: foreign.id().into(),
+                    side: "client".into(),
+                    layout: None,
+                    choices: vec![],
+                    files: vec![],
+                }
+            },
+            &session(root.path(), true, false)
+        )
+        .await
+        .is_err()
+    );
+    let channel = ChannelDocument {
+        schema: 1,
+        pack: "fixture".into(),
+        channel: "stable".into(),
+        sequence: 3,
+        expires: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+            + 60,
+        minimum_engine: ">=0.6.0-beta".into(),
+        release: ChannelRelease {
+            id: "a".repeat(64),
+            url: "https://publisher.test/release.json".into(),
+            maximum_bytes: 1024,
+        },
+    };
+    fs::write(
+        root.path().join("channel.json"),
+        sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap(),
+    )
+    .unwrap();
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::ObserveChannel {
+                envelope: "channel.json".into(),
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    let saved = root.path().join("project/.empack/subscription.json");
+    assert_eq!(
+        SubscriptionRecord::decode(&fs::read(&saved).unwrap())
+            .unwrap()
+            .floor
+            .unwrap()
+            .sequence,
+        3
+    );
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::Trust {
+                keys: vec![],
+                revoke_all: true,
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
+    let record = SubscriptionRecord::decode(&fs::read(saved).unwrap()).unwrap();
+    assert!(record.keys.is_empty());
+    assert_eq!(record.floor.unwrap().sequence, 3);
+    assert!(!root.path().join("project/game").exists());
+}

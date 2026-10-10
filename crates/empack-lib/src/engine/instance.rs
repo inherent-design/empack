@@ -21,6 +21,8 @@ use std::{
     path::Path,
 };
 
+pub mod subscription;
+
 /// Snapshot selection and publisher verification both retain exact validated bytes.
 pub enum SelectedRelease {
     Snapshot(super::release::trust::SelectedSnapshot),
@@ -228,7 +230,7 @@ fn project_files(
     }
     Ok(files)
 }
-fn read_optional(
+pub(super) fn read_optional(
     root: &ProjectReadRoot,
     snapshot: &NativeSnapshot,
     target: &ManagedPath,
@@ -325,7 +327,22 @@ pub(super) fn plan(
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
     let record_path = ProjectLayout::path(&ManagedPath::InstanceRecord)?;
-    let mut snapshot = root.capture(&[record_path], document_limits(limits), cancel)?;
+    let subscription_path = ProjectLayout::path(&ManagedPath::InstanceSubscription)?;
+    let mut snapshot = root.capture(
+        &[record_path, subscription_path],
+        document_limits(limits),
+        cancel,
+    )?;
+    if let Some(bytes) =
+        read_optional(&root, &snapshot, &ManagedPath::InstanceSubscription, cancel)?
+    {
+        let subscription = subscription::SubscriptionRecord::decode(&bytes)?;
+        ensure!(
+            subscription.root == super::publication::root_key(&root)?
+                && subscription.pack == selected.release().document().pack,
+            "Selected release belongs to another instance subscription"
+        );
+    }
     let previous = read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)?
         .map(|bytes| InstanceRecord::decode(&bytes))
         .transpose()?;
