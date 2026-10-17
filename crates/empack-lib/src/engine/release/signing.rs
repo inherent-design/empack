@@ -118,7 +118,7 @@ impl PublisherSetup {
         let key = SigningKey::from_bytes(&seed);
         seed.fill(0);
         let (candidate, mut file) = crate::engine::staging::create_temporary(&self.directory)?;
-        let result = (|| {
+        let result: Result<(String, String)> = (|| {
             writeln!(file, "{}", super::hex(key.as_bytes()))?;
             file.sync_all()?;
             cancel.check()?;
@@ -128,7 +128,10 @@ impl PublisherSetup {
                     "Cannot create signing key exclusively; existing paths are never replaced",
                 )?;
             #[cfg(unix)]
-            self.directory.try_clone()?.into_std_file().sync_all()?;
+            self.directory
+                .try_clone()
+                .and_then(|directory| directory.into_std_file().sync_all())
+                .context("Signing key was created, but its directory could not be synchronized")?;
             Ok((
                 super::hex(key.verifying_key().as_bytes()),
                 super::trust::key_id(&key.verifying_key()),
@@ -136,8 +139,17 @@ impl PublisherSetup {
         })();
         drop(file);
         // Only the owned candidate is retired, never the destination (including on failure).
-        self.directory.remove_file(candidate)?;
-        result
+        let cleanup = self.directory.remove_file(candidate);
+        match (result, cleanup) {
+            (Ok(keys), Ok(())) => Ok(keys),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(_), Err(error)) => Err(anyhow::Error::from(error).context(
+                "Signing key was created, but its private temporary link could not be removed",
+            )),
+            (Err(error), Err(cleanup)) => Err(error.context(format!(
+                "Private signing-key temporary link also could not be removed: {cleanup}",
+            ))),
+        }
     }
 }
 
