@@ -644,9 +644,7 @@ fn first_resolution_creates_a_lock_without_adopting_untracked_files() {
                 &cancel,
             )
             .unwrap();
-        let intent = DocumentCodec
-            .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "intent")
-            .unwrap();
+        let intent = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
         let locked = DocumentCodec
             .decode_lock(
                 &fs::read(root.path().join("empack.lock")).unwrap(),

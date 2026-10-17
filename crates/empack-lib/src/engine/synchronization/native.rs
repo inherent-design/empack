@@ -252,16 +252,9 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
         &mut removals,
         content.keys().chain(referenced.keys()),
     )?;
-    let mut documents = BTreeMap::from([
-        (
-            ManagedPath::IntentDocument,
-            candidate.intent_document().bytes.clone(),
-        ),
-        (
-            ManagedPath::LockDocument,
-            candidate.lock_document().to_vec(),
-        ),
-    ]);
+    let mut documents = candidate
+        .intent_document()
+        .documents(candidate.lock_document());
     if candidate.preserves_lock_document() {
         documents.insert(
             ManagedPath::LockDocument,
@@ -286,7 +279,12 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
     for (target, bytes) in &documents {
         let permissions = match &observed[target] {
             ObservedPath::File(before) => before.permissions,
-            ObservedPath::Absent if *target == ManagedPath::LockDocument => {
+            ObservedPath::Absent
+                if matches!(
+                    target,
+                    ManagedPath::LockDocument | ManagedPath::BindingsDocument
+                ) =>
+            {
                 empack_core::files::FilePermissions {
                     readonly: false,
                     executable: false,

@@ -44,7 +44,10 @@ impl SyncInputContext {
             binding.project.as_ref() == Some(&root_key(workspace.root())?),
             "Synchronization target changed"
         );
-        for (index, name) in ["empack.yml", "empack.lock"].iter().enumerate() {
+        for (index, name) in ["empack.yml", "empack.bindings.yml", "empack.lock"]
+            .iter()
+            .enumerate()
+        {
             let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
             let content = match workspace.observations().entries().get(&path) {
                 Some(Observation::File(file)) => Some(file.content),

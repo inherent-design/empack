@@ -447,9 +447,7 @@ async fn saved_provider_origin_does_not_disable_exact_refresh_for_materialized_b
 }
 fn saved_provider_origin(root: &Path) {
     use empack_core::model::{AcquisitionSpec, DependencyKey, ResolvedProject};
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "fixture")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.join("empack.yml")).unwrap();
     let current = DocumentCodec
         .decode_lock(
             &fs::read(root.join("empack.lock")).unwrap(),
@@ -638,12 +636,7 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     // Its failure must not hide the provider file's manual-input requirement.
     {
         use empack_core::model::{AcquisitionSpec, DependencyKey, FileSlot, ResolvedProject};
-        let intent = DocumentCodec
-            .decode_intent(
-                &fs::read(root.path().join("empack.yml")).unwrap(),
-                "fixture",
-            )
-            .unwrap();
+        let intent = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
         let resolved = DocumentCodec
             .decode_lock(
                 &fs::read(root.path().join("empack.lock")).unwrap(),
@@ -1478,9 +1471,7 @@ async fn clean_build_uses_configured_archive_limits_and_rejects_source_overlap()
             .is_err()
     );
     engine.config.archive.compressed_bytes = 2 << 20;
-    let source = DocumentCodec
-        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let source = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
     let current = DocumentCodec
         .decode_lock(
             &fs::read(root.path().join("empack.lock")).unwrap(),

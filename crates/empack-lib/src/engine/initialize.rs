@@ -30,8 +30,13 @@ impl InitializeCandidate {
             intent.roots.is_empty(),
             "Initialization cannot omit dependency resolution"
         );
-        let bytes = DocumentCodec.encode_intent(&intent)?;
-        let decoded = DocumentCodec.decode_intent(&bytes, "initialization")?;
+        let authoring = DocumentCodec.encode_authoring(&intent)?;
+        let bytes = &authoring.intent;
+        let decoded = DocumentCodec.decode_authoring(
+            bytes,
+            authoring.bindings.as_deref(),
+            "initialization",
+        )?;
         let revision = decoded.semantic_revision();
         let project = ResolvedProject::validate(
             intent,
@@ -48,8 +53,12 @@ impl InitializeCandidate {
         )?;
         let mut collisions = super::layout::CollisionIndex::default();
         let mut outputs = BTreeMap::<_, super::layout::CollisionIndex>::new();
-        let mut publication_bytes =
-            bytes.len() as u64 + DocumentCodec.encode_lock(&project)?.len() as u64;
+        let mut publication_bytes = bytes.len() as u64
+            + authoring
+                .bindings
+                .as_ref()
+                .map_or(0, |bytes| bytes.len() as u64)
+            + DocumentCodec.encode_lock(&project)?.len() as u64;
         for (path, bytes) in &templates {
             ensure!(
                 path.as_str()

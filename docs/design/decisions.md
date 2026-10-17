@@ -6,7 +6,7 @@ explicit projections of the same exact resolution.
 | Decision | Contract |
 | --- | --- |
 | Release | `v0.6.0-beta`; development package versions remain tag-derived |
-| Authoring | One editable `empack.yml` and generated exact `empack.lock` |
+| Authoring | Compact `empack.yml`, optional portable `empack.bindings.yml`, and generated exact `empack.lock` |
 | Identity | Provider project, exact file, logical role, destination and ownership are distinct |
 | Foreign backend | No packwiz observation, metadata maintenance, import/export or JAR runtime |
 | Consumers | Modrinth, CurseForge, Prism, dedicated server and native empack |

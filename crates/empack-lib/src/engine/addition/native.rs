@@ -311,16 +311,9 @@ fn plan_change(
         &mut removals,
         content.keys().chain(referenced.keys()),
     )?;
-    let mut documents = BTreeMap::from([
-        (
-            ManagedPath::IntentDocument,
-            candidate.intent_document().bytes.clone(),
-        ),
-        (
-            ManagedPath::LockDocument,
-            candidate.lock_document().to_vec(),
-        ),
-    ]);
+    let mut documents = candidate
+        .intent_document()
+        .documents(candidate.lock_document());
     if candidate.project().lock() == current.lock() {
         documents.insert(
             ManagedPath::LockDocument,
@@ -343,15 +336,22 @@ fn plan_change(
     )?;
     let mut desired = retained;
     for (target, bytes) in &documents {
-        let ObservedPath::File(before) = &observed[target] else {
-            anyhow::bail!("Addition document is not an existing regular file")
+        let permissions = match &observed[target] {
+            ObservedPath::File(before) => before.permissions,
+            ObservedPath::Absent if *target == ManagedPath::BindingsDocument => {
+                empack_core::files::FilePermissions {
+                    readonly: false,
+                    executable: false,
+                }
+            }
+            _ => anyhow::bail!("Authoring document is not a regular file"),
         };
         desired.insert(
             target.clone(),
             FileContent {
                 content: ContentId::from_sha256(Sha256::digest(bytes).into()),
                 bytes: bytes.len() as u64,
-                permissions: before.permissions,
+                permissions,
             },
         );
     }

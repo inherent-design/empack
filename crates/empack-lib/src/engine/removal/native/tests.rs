@@ -84,9 +84,7 @@ fn exact_removal_publishes_documents_and_files_without_collecting_unrequested_co
         );
     }
     kept(root.path());
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "result")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.path().join("empack.lock")).unwrap(),

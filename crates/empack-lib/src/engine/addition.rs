@@ -90,7 +90,7 @@ impl AdditionCandidate {
     }
     fn from_plan(source: &DecodedIntent, plan: AdditionPlan) -> Result<Self> {
         let intent = DocumentCodec.replace_intent(source, plan.intent())?;
-        let next = DocumentCodec.decode_intent(&intent.bytes, "addition candidate")?;
+        let next = intent.decode("addition candidate")?;
         let project = plan.clone().resolve(next.semantic_revision())?;
         let lock = DocumentCodec.encode_lock(&project)?;
         Ok(Self {

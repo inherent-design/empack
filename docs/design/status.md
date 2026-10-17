@@ -8,7 +8,7 @@ and next-command arguments. `content_verified` is false: no game content is scan
 
 | Context | Inspected input | Meaning |
 | --- | --- | --- |
-| Author | `empack.yml`, `empack.lock` | Validated intent and lock agreement; the exact value is the raw lock document SHA-256 |
+| Author | `empack.yml`, optional `empack.bindings.yml`, `empack.lock` | Validated intent and lock agreement; the exact value is the raw lock document SHA-256 |
 | Instance | Root-bound instance record, exact retained release, optional subscription | Completed pack version, release ID, runtime, game directory and enrolled update owner |
 | Publisher | Native `dist/releases` and `dist/channels` directories | Recognized storage only; release validity and authentication remain unavailable |
 

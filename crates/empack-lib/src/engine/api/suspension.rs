@@ -367,7 +367,7 @@ async fn suspend(
         ..Default::default()
     })?;
     let mut record = record::Record {
-        schema: 2,
+        schema: 3,
         fingerprint: build.workspace.observations().fingerprint(),
         documents: store::documents(build.workspace.observations())?,
         recipe: record::SavedRecipe::from(&build.request),

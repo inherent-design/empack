@@ -190,7 +190,10 @@ pub(super) fn observed_mutation_for(
     ensure!(
         targets.iter().all(|target| matches!(
             target,
-            ManagedPath::IntentDocument | ManagedPath::LockDocument | ManagedPath::Content { .. }
+            ManagedPath::IntentDocument
+                | ManagedPath::BindingsDocument
+                | ManagedPath::LockDocument
+                | ManagedPath::Content { .. }
         )),
         "Mutation cannot own templates or distributions"
     );

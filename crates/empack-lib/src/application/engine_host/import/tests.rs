@@ -169,9 +169,7 @@ fn observed(mut bytes: &[u8]) -> AcquiredContent {
     .unwrap()
 }
 fn read(root: &Path) -> empack_core::model::ResolvedProject {
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.join("empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.join("empack.lock")).unwrap(),

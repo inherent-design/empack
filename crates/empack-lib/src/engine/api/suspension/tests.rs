@@ -7,10 +7,14 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-fn documents(root: &Path) -> Vec<Vec<u8>> {
-    ["empack.yml", "empack.lock"]
+fn documents(root: &Path) -> Vec<Option<Vec<u8>>> {
+    ["empack.yml", "empack.bindings.yml", "empack.lock"]
         .iter()
-        .map(|name| fs::read(root.join(name)).unwrap())
+        .map(|name| match fs::read(root.join(name)) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => panic!("Cannot inspect fixture document: {error}"),
+        })
         .collect()
 }
 fn records(state: &Path) -> Vec<PathBuf> {
@@ -104,7 +108,7 @@ async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
 }
 #[tokio::test]
 async fn stale_and_missing_saved_build_inspection_is_read_only() {
-    for changed in ["intent", "lock", "source"] {
+    for changed in ["intent", "bindings", "lock", "source"] {
         let root = tempfile::tempdir().unwrap();
         let host = tempfile::tempdir().unwrap();
         fixture(root.path(), false);
@@ -125,6 +129,11 @@ async fn stale_and_missing_saved_build_inspection_is_read_only() {
             "intent" => {
                 fs::write(root.path().join("empack.yml"), b"deliberately invalid: [").unwrap()
             }
+            "bindings" => fs::write(
+                root.path().join("empack.bindings.yml"),
+                b"schema: 1\nbindings: {}\n",
+            )
+            .unwrap(),
             "lock" => fs::write(root.path().join("empack.lock"), b"changed").unwrap(),
             _ => {
                 fs::create_dir_all(root.path().join("pack/config")).unwrap();
@@ -783,9 +792,7 @@ async fn native_release_batches_resume_exact_downloads_and_publish_with_other_co
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     fixture(root.path(), true);
-    let source = DocumentCodec
-        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let source = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
     let project = DocumentCodec
         .decode_lock(
             &fs::read(root.path().join("empack.lock")).unwrap(),
@@ -930,9 +937,7 @@ async fn server_projection_without_client_downloads(consumer: empack_core::distr
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     fixture(root.path(), true);
-    let source = DocumentCodec
-        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let source = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
     let project = DocumentCodec
         .decode_lock(
             &fs::read(root.path().join("empack.lock")).unwrap(),

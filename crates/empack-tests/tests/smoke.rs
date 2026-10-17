@@ -50,12 +50,10 @@ fn initialized() -> TestProject {
 #[test]
 fn smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches() {
     use empack_core::{model::*, path::*, requirements::*};
-    use empack_lib::engine::documents::DocumentCodec;
     for missing_lock in [false, true] {
         let project = initialized();
         let intent_path = project.dir().join("empack.yml");
-        let mut intent = DocumentCodec
-            .decode_intent(&fs::read(&intent_path).unwrap(), "fixture")
+        let mut intent = empack_lib::testing::read_authoring(&intent_path)
             .unwrap()
             .intent()
             .clone();
@@ -86,7 +84,7 @@ fn smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches() {
             dependency.clone(),
         );
         fs::write(project.dir().join("settings.toml"), b"enabled = true").unwrap();
-        fs::write(&intent_path, DocumentCodec.encode_intent(&intent).unwrap()).unwrap();
+        empack_lib::testing::write_authoring(&intent_path, &intent).unwrap();
         if missing_lock {
             fs::remove_file(project.dir().join("empack.lock")).unwrap();
         }
@@ -121,7 +119,7 @@ fn smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches() {
         intent
             .roots
             .insert(DependencyKey::parse("missing").unwrap(), missing);
-        fs::write(intent_path, DocumentCodec.encode_intent(&intent).unwrap()).unwrap();
+        empack_lib::testing::write_authoring(&intent_path, &intent).unwrap();
         let before = snapshot(&project);
         command(&project).args(["sync", "--yes"]).assert().failure();
         assert_eq!(snapshot(&project), before);
@@ -170,12 +168,7 @@ fn jar(project: &TestProject, name: &str) {
     fs::write(project.dir().join(name), zip.finish().unwrap().into_inner()).unwrap();
 }
 fn read_project(project: &TestProject) -> empack_lib::engine::documents::DecodedIntent {
-    empack_lib::engine::documents::DocumentCodec
-        .decode_intent(
-            &fs::read(project.dir().join("empack.yml")).unwrap(),
-            "smoke",
-        )
-        .unwrap()
+    empack_lib::testing::read_authoring(&project.dir().join("empack.yml")).unwrap()
 }
 #[test]
 fn smoke_native_lifecycle_preserves_exact_files_across_sync_build_remove() {
@@ -685,12 +678,7 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
         DocumentCodec.encode_intent(&intent).unwrap(),
     )
     .unwrap();
-    let source = DocumentCodec
-        .decode_intent(
-            &fs::read(project.dir().join("empack.yml")).unwrap(),
-            "fixture",
-        )
-        .unwrap();
+    let source = empack_lib::testing::read_authoring(&project.dir().join("empack.yml")).unwrap();
     lock.intent_revision = source.semantic_revision();
     let resolved = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
     fs::write(

@@ -1380,7 +1380,7 @@ async fn approved_addition_caches_staged_bytes_and_unavailable_cache_does_not_bl
 
 mod independent_batch {
     use super::*;
-    use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
+    use crate::engine::mrpack::tests::explicitly_placed;
     use empack_core::{model::*, path::InstallDestination};
     fn named(name: &str) -> ResolvedProject {
         let source = project(false, false);
@@ -1535,11 +1535,7 @@ mod independent_batch {
                     }
                 }
                 assert_eq!(
-                    DocumentCodec
-                        .decode_intent(
-                            &fs::read(root.path().join("empack.yml")).unwrap(),
-                            "published"
-                        )
+                    crate::testing::read_authoring(&root.path().join("empack.yml"))
                         .unwrap()
                         .intent()
                         .roots

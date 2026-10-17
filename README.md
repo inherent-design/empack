@@ -38,7 +38,7 @@ empack --workdir my-pack build modrinth
 Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism.
 Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run
 `empack --workdir my-pack sync`; use `update` when you deliberately want newer
-compatible dependencies. Commit both `empack.yml` and `empack.lock` with your sources.
+compatible dependencies. Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
 
 For an existing pack archive, use `empack init my-pack --from ./pack.mrpack` or a
 CurseForge manifest ZIP. Preview changes with `--dry-run`. See [usage](docs/usage.md)

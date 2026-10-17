@@ -265,10 +265,148 @@ fn crash_worker() {
         publisher.restore_with_hook(&root, &mut hook).unwrap();
     } else {
         publisher
-            .publish_with_hook(&root, prepare(&root), &Cancellation::default(), &mut hook)
+            .publish_with_hook(
+                &root,
+                if std::env::var_os("EMPACK_PUBLICATION_AUTHORING").is_some() {
+                    prepare_authoring(&root)
+                } else {
+                    prepare(&root)
+                },
+                &Cancellation::default(),
+                &mut hook,
+            )
             .unwrap();
     }
     panic!("crash point not reached");
+}
+
+fn authoring_documents(next: bool) -> BTreeMap<ManagedPath, Vec<u8>> {
+    use crate::engine::{
+        documents::DocumentCodec,
+        mrpack::tests::{explicitly_placed, project},
+    };
+    let base = project(false, false);
+    let mut intent = base.intent().clone();
+    if next {
+        intent.metadata.name = "Updated pack".into();
+    }
+    let mut lock = base.lock().clone();
+    if next {
+        let dependency = lock.dependencies.values_mut().next().unwrap();
+        let mut files = dependency.files.as_slice().to_vec();
+        let mut placements = files[0].placements.as_slice().to_vec();
+        placements[0].destination =
+            empack_core::path::InstallDestination::parse("resourcepacks/moved.zip").unwrap();
+        files[0].placements = empack_core::model::NonEmpty::new(placements).unwrap();
+        dependency.files = empack_core::model::NonEmpty::new(files).unwrap();
+    }
+    let value = explicitly_placed(intent, lock);
+    let author = DocumentCodec.encode_authoring(value.intent()).unwrap();
+    BTreeMap::from([
+        (ManagedPath::IntentDocument, author.intent),
+        (ManagedPath::BindingsDocument, author.bindings.unwrap()),
+        (
+            ManagedPath::LockDocument,
+            DocumentCodec.encode_lock(&value).unwrap(),
+        ),
+    ])
+}
+fn prepare_authoring(root: &ProjectReadRoot) -> VerifiedFileChange {
+    let cancel = Cancellation::default();
+    let documents = authoring_documents(true);
+    let paths: Vec<_> = documents
+        .keys()
+        .map(|key| ProjectLayout::path(key).unwrap())
+        .collect();
+    let snapshot = root
+        .capture(&paths, SnapshotLimits::default(), &cancel)
+        .unwrap();
+    let desired = documents
+        .iter()
+        .map(|(key, bytes)| (key.clone(), expected(bytes)))
+        .collect();
+    let observed = observed_files_for(&snapshot, documents.keys().cloned()).unwrap();
+    let plan = plan_files(&observed, &desired, &BTreeSet::new()).unwrap();
+    let mut stage = MutableStage::from_snapshot(root, &snapshot, &cancel).unwrap();
+    for (key, bytes) in documents {
+        stage
+            .write(
+                &ProjectLayout::path(&key).unwrap(),
+                &mut bytes.as_slice(),
+                bytes.len() as u64,
+                &cancel,
+            )
+            .unwrap();
+    }
+    VerifiedFileChange::verify(
+        snapshot,
+        plan,
+        stage.freeze(SnapshotLimits::default(), &cancel).unwrap(),
+    )
+    .unwrap()
+}
+#[test]
+fn interrupted_author_bindings_and_lock_publication_recovers_one_composed_revision() {
+    use crate::engine::documents::DocumentCodec;
+    for occurrence in 1..=3 {
+        let project = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        for (key, bytes) in authoring_documents(false) {
+            fs::write(
+                project
+                    .path()
+                    .join(ProjectLayout::path(&key).unwrap().as_str()),
+                bytes,
+            )
+            .unwrap();
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engine::publication::tests::crash_worker",
+                "--nocapture",
+            ])
+            .env("EMPACK_PUBLICATION_CRASH_PROJECT", project.path())
+            .env(
+                "EMPACK_PUBLICATION_CRASH_STATE",
+                state.path().join("private"),
+            )
+            .env("EMPACK_PUBLICATION_CRASH_POINT", "TargetChanged")
+            .env(
+                "EMPACK_PUBLICATION_CRASH_OCCURRENCE",
+                occurrence.to_string(),
+            )
+            .env("EMPACK_PUBLICATION_AUTHORING", "1")
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(86));
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        let publisher = Publisher::open(&state.path().join("private")).unwrap();
+        assert!(publisher.recovery_required(&root).unwrap());
+        publisher.recover(&root).unwrap();
+        assert!(!publisher.recovery_required(&root).unwrap());
+        for (key, bytes) in authoring_documents(true) {
+            assert_eq!(
+                fs::read(
+                    project
+                        .path()
+                        .join(ProjectLayout::path(&key).unwrap().as_str())
+                )
+                .unwrap(),
+                bytes
+            );
+        }
+        let author = crate::testing::read_authoring(&project.path().join("empack.yml")).unwrap();
+        let resolved = DocumentCodec
+            .decode_lock(
+                &fs::read(project.path().join("empack.lock")).unwrap(),
+                &author,
+                "recovered",
+            )
+            .unwrap();
+        assert_eq!(resolved.intent().metadata.name, "Updated pack");
+    }
 }
 
 #[test]

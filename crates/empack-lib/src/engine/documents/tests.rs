@@ -1,7 +1,7 @@
 use super::*;
 
 fn source() -> Value {
-    json!({"schema":3,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
+    json!({"schema":4,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
         "runtime":{"minecraft":"1.20.1","loader":{"kind":"neoforge","version":"47.1.106"}},
         "distribution":{"recipes":[{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot"},{"consumer":"prism","delivery":"references","environment":"client","updates":"snapshot"},{"consumer":"server","delivery":"references","environment":"server","updates":"snapshot"},{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"},{"consumer":"server","delivery":"bundled","environment":"server","updates":"snapshot"}],"archive":"7z"},
         "layout":{"data-pack":"world/datapacks"},
@@ -237,7 +237,7 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
     let raw = serde_saphyr::to_string(&source()).unwrap();
     assert!(
         DocumentCodec
-            .decode_intent(format!("schema: 3\n{raw}").as_bytes(), "duplicate")
+            .decode_intent(format!("schema: 4\n{raw}").as_bytes(), "duplicate")
             .is_err()
     );
     assert!(
@@ -843,4 +843,146 @@ fn intent_rejects_target_strings_and_retains_recipe_identity() {
         empack_core::distribution::UpdateAuthority::Platform
     );
     assert_ne!(parsed.semantic_revision(), decoded().semantic_revision());
+}
+
+#[test]
+fn authoring_composition_keeps_common_dependencies_compact_and_advanced_intent_lossless() {
+    let original = decoded();
+    let mut intent = original.intent().clone();
+    let key = intent.roots.keys().next().unwrap().clone();
+    let root = intent.roots.get_mut(&key).unwrap();
+    root.version = VersionIntent::FollowCompatible;
+    root.requirements = Requirements {
+        client: Requirement::Required,
+        server: Requirement::Required,
+    };
+    let compact = DocumentCodec.encode_authoring(&intent).unwrap();
+    assert!(compact.bindings.is_none());
+    let wire: Value =
+        serde_saphyr::from_str(std::str::from_utf8(&compact.intent).unwrap()).unwrap();
+    assert_eq!(wire["dependencies"][key.as_str()], "modrinth:AANobbMI");
+    for mode in ["provider", "curseforge", "url", "local", "members", "world"] {
+        let mut intent = intent.clone();
+        let root = intent.roots.get_mut(&key).unwrap();
+        let place = Placement {
+            destination: InstallDestination::parse("mods/custom.jar").unwrap(),
+            layer: ContentLayer::Common,
+            requirements: root.requirements.clone(),
+        };
+        root.placement = PlacementIntent::ByFile(BTreeMap::from([(
+            FileSlot::parse("primary").unwrap(),
+            NonEmpty::new(vec![place]).unwrap(),
+        )]));
+        match mode {
+            "curseforge" => {
+                root.source = SourceIntent::Provider(ProviderProjectId::CurseForge(
+                    CurseForgeProjectId::parse("12345").unwrap(),
+                ))
+            }
+            "url" => {
+                root.source = SourceIntent::Url(
+                    NonEmpty::new(vec!["https://example.org/content.jar".into()]).unwrap(),
+                )
+            }
+            "local" => {
+                root.source = SourceIntent::Local(
+                    PortableRelPath::parse("sources/mod.jar", PathSyntax::ProjectContent).unwrap(),
+                )
+            }
+            "members" => {
+                root.source = SourceIntent::LocalFiles(BTreeMap::from([(
+                    FileSlot::parse("primary").unwrap(),
+                    PortableRelPath::parse("sources/mod.jar", PathSyntax::ProjectContent).unwrap(),
+                )]))
+            }
+            "world" => {
+                root.kind = ContentKind::World;
+                root.placement = PlacementIntent::ArchiveRoot(
+                    NonEmpty::new(vec![Placement {
+                        destination: InstallDestination::parse("saves/My World").unwrap(),
+                        layer: ContentLayer::Common,
+                        requirements: root.requirements.clone(),
+                    }])
+                    .unwrap(),
+                );
+            }
+            _ => {}
+        }
+        let split = DocumentCodec.encode_authoring(&intent).unwrap();
+        assert!(split.bindings.is_some(), "{mode}");
+        let joined = DocumentCodec
+            .decode_authoring(&split.intent, split.bindings.as_deref(), mode)
+            .unwrap();
+        let explicit = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), mode)
+            .unwrap();
+        assert_eq!(joined.intent(), &intent, "{mode}");
+        assert_eq!(
+            joined.semantic_revision(),
+            explicit.semantic_revision(),
+            "{mode}"
+        );
+        let unchanged = DocumentCodec.replace_intent(&joined, &intent).unwrap();
+        assert_eq!(unchanged.bytes, split.intent);
+        assert_eq!(unchanged.bindings, split.bindings);
+        let mut next = intent.clone();
+        next.roots.remove(&key);
+        let removed = DocumentCodec
+            .replace_intent(&joined, &next)
+            .unwrap()
+            .decode("removed")
+            .unwrap();
+        assert!(removed.intent().roots.is_empty());
+        assert!(
+            removed.bindings_original().is_some(),
+            "existing binding document is retained empty"
+        );
+    }
+}
+
+#[test]
+fn binding_semantics_raw_edits_conflicts_and_dangling_roles_remain_distinct() {
+    let source = decoded();
+    let mut intent = source.intent().clone();
+    let file = resolution(&source)
+        .dependencies
+        .values()
+        .next()
+        .unwrap()
+        .files
+        .as_slice()[0]
+        .clone();
+    intent.roots.values_mut().next().unwrap().placement =
+        PlacementIntent::ByFile(BTreeMap::from([(file.slot, file.placements)]));
+    let split = DocumentCodec.encode_authoring(&intent).unwrap();
+    let bindings = split.bindings.as_ref().unwrap();
+    let source = DocumentCodec
+        .decode_authoring(&split.intent, Some(bindings), "both")
+        .unwrap();
+    let commented = [b"# integration intent\n".as_slice(), bindings].concat();
+    let changed = DocumentCodec
+        .decode_authoring(&split.intent, Some(&commented), "comment")
+        .unwrap();
+    assert_eq!(source.semantic_revision(), changed.semantic_revision());
+    assert_ne!(source.bindings_revision(), changed.bindings_revision());
+    for invalid in [
+        b"schema: 1\nbindings: {missing: {placement: automatic}}".as_slice(),
+        b"schema: 1\nbindings: {renderer alias: {placement: [{destination: ../outside, layer: common, environment: {client: required, server: required}}]}}".as_slice(),
+        b"schema: 1\nbindings: {renderer alias: {unknown: true}}".as_slice(),
+    ] {
+        assert!(DocumentCodec.decode_authoring(&split.intent, Some(invalid), "invalid").is_err());
+    }
+    let explicit = DocumentCodec.encode_intent(&intent).unwrap();
+    assert!(
+        DocumentCodec
+            .decode_authoring(&explicit, Some(bindings), "competing authorities")
+            .is_err()
+    );
+    let mut old: Value = serde_saphyr::from_str(std::str::from_utf8(&explicit).unwrap()).unwrap();
+    old["schema"] = json!(3);
+    assert!(
+        DocumentCodec
+            .decode_intent(&serde_json::to_vec(&old).unwrap(), "old schema")
+            .is_err()
+    );
 }

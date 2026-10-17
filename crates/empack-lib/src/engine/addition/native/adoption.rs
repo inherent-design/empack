@@ -34,16 +34,9 @@ pub(in crate::engine) fn plan_adoption(
             }
         }
     }
-    let mut documents = BTreeMap::from([
-        (
-            ManagedPath::IntentDocument,
-            candidate.intent_document().bytes.clone(),
-        ),
-        (
-            ManagedPath::LockDocument,
-            candidate.lock_document().to_vec(),
-        ),
-    ]);
+    let mut documents = candidate
+        .intent_document()
+        .documents(candidate.lock_document());
     if current
         .as_ref()
         .is_some_and(|current| candidate.project().lock() == current.lock())
@@ -64,7 +57,12 @@ pub(in crate::engine) fn plan_adoption(
     for (target, bytes) in &documents {
         let permissions = match &observed[target] {
             ObservedPath::File(before) => before.permissions,
-            ObservedPath::Absent if *target == ManagedPath::LockDocument => {
+            ObservedPath::Absent
+                if matches!(
+                    target,
+                    ManagedPath::LockDocument | ManagedPath::BindingsDocument
+                ) =>
+            {
                 empack_core::files::FilePermissions {
                     readonly: false,
                     executable: false,

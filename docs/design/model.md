@@ -27,17 +27,20 @@ selectors are resolved before persistence; a slug never becomes an ID by assignm
 | Document | Owner | Contents |
 | --- | --- | --- |
 | `empack.yml` | Author | Pack/runtime intent, dependencies, source inclusion, consumer recipes |
+| `empack.bindings.yml` | Author/integration tools | Non-default placements, stable file-role assignments and source-member mappings |
 | `empack.lock` | Resolver | Exact runtime and files, original assertions, placements, required closure evidence |
 | Release manifest | Release builder | Portable exact inventory, runtime, choices, acquisition and installation policies |
 | Channel envelope | Publisher | Pack/channel identity, sequence, expiry and authenticated release reference |
 | Instance record | Instance engine | Last completed release, owned files, side, choices, authority and source binding |
 | Recovery journal | Publisher | Approved operation, native root, before/after evidence and durable progress |
 
-Author intent uses schema 3; exact resolution uses schema 1. Release, channel and
+Author intent uses schema 4, optional bindings use schema 1, and exact resolution uses schema 1. Release, channel and
 instance schemas have their own explicit versions. Unknown intent fields and invalid explicit
 variants fail; they cannot silently become search input. Original author bytes are
 preserved when no semantic edit is required. Canonical semantic identity and raw
-file revision serve different purposes.
+file revision serve different purposes. Both author documents contribute to normalized
+intent, and both raw revisions (including absence) are captured before approval.
+Schema 3 author inputs are rejected; there is no automatic or general-purpose migration path.
 
 ## Author intent and resolution
 
@@ -68,6 +71,59 @@ changes. Java major is an explicit requirement; runtime activation checks it aga
 the selected game/loader. Unknown policy destinations are errors. Configuration
 and world content default to seeds. World content cannot become managed replacement
 content, including worlds placed under an authored custom directory.
+
+## Compact dependencies and integration bindings
+
+A provider dependency with the ordinary mod, both-sides and follow-compatible
+policy can be one line:
+
+```yaml
+dependencies:
+  sodium: modrinth:AANobbMI
+  menu:
+    source: modrinth:9s6osm5g
+    side: client
+```
+
+Compact sources name canonical provider IDs. They do not resolve slugs or search
+implicitly. A mapping can specify `content`, `version` or full `environment`
+requirements, including optional groups. `side` is shorthand for required client,
+server or both; it conflicts with an explicit `environment` rather than overriding
+it. URL, local and search sources retain their explicit source variants.
+
+Non-default placements and local multi-file source mappings live in an optional,
+version-controlled `empack.bindings.yml`:
+
+```yaml
+schema: 1
+bindings:
+  menu:
+    placement:
+      files:
+        primary:
+          - destination: mods/menu.jar
+            layer: client
+            environment: {client: required, server: unsupported}
+```
+
+Bindings refer to dependency keys and exact logical roles. Archive-root mappings
+use `placement.archive-root`; local multi-file sources use `source-members`.
+No filename heuristic chooses a replacement role after an update. Missing or
+ambiguous roles must be resolved before a candidate is valid. Conflicting inline
+and separate placements, dangling keys, unsafe paths and unknown fields fail.
+Ordinary inferred placements remain derived lock data.
+
+`DocumentCodec::decode_authoring` composes both inputs into the existing
+`ProjectIntent`. `encode_authoring` splits the same meaning into compact author
+and optional binding bytes. Resolver and planner APIs use the composed model.
+Formatting-only edits preserve semantic identity; changed binding meaning
+invalidates the prior lock. Raw edits or a newly created/deleted binding file
+invalidate prepared publication and retained continuation context.
+
+Mutating commands publish authoring, bindings and lock changes together through
+the existing recovery journal. Removing the last bound dependency retains an
+existing empty bindings document rather than treating it as disposable storage.
+No-op operations preserve both original documents, including comments.
 
 ## Environments and optionality
 

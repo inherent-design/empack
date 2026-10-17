@@ -55,9 +55,7 @@ async fn fixture(root: &Path) {
     .unwrap();
 }
 fn read(root: &Path) -> ResolvedProject {
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.join("empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.join("empack.lock")).unwrap(),

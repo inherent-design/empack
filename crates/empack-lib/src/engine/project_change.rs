@@ -188,16 +188,30 @@ pub fn prepare_project_replacement(
         readonly: false,
         executable: false,
     };
+    let authoring = DocumentCodec.encode_authoring(project.intent())?;
     let mut documents = BTreeMap::from([
-        (
-            ManagedPath::IntentDocument,
-            DocumentCodec.encode_intent(project.intent())?,
-        ),
+        (ManagedPath::IntentDocument, authoring.intent),
         (
             ManagedPath::LockDocument,
             DocumentCodec.encode_lock(project)?,
         ),
     ]);
+    // An explicit replacement clears obsolete bindings in the same publication.
+    if let Some(bytes) = authoring.bindings {
+        documents.insert(ManagedPath::BindingsDocument, bytes);
+    } else if matches!(
+        workspace
+            .observations()
+            .entries()
+            .get(&ProjectLayout::path(&ManagedPath::BindingsDocument)?),
+        Some(crate::engine::snapshot::Observation::File(_))
+    ) {
+        documents.insert(
+            ManagedPath::BindingsDocument,
+            b"schema: 1\nbindings: {}\n".to_vec(),
+        );
+    }
+
     if let ProjectCandidate::Initialize(value) = &candidate {
         for (target, bytes) in value.scaffolds() {
             if workspace.seed_file_is_missing(&ProjectLayout::path(target)?) {

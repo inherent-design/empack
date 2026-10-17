@@ -1,6 +1,6 @@
 use super::*;
 use std::fs;
-const DOCUMENT: &str = r#"schema: 3
+const DOCUMENT: &str = r#"schema: 4
 pack: {name: Example, version: alpha}
 runtime: {minecraft: '1.20.1', loader: {kind: vanilla}}
 distribution: {recipes: [{consumer: modrinth, delivery: references, environment: both, updates: snapshot}], archive: zip}
@@ -447,4 +447,52 @@ fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_r
         .capture(temp.path(), &[], SnapshotLimits::default(), &cancel)
         .unwrap();
     assert!(documents_only.source_entries(&cancel).is_err());
+}
+
+#[test]
+fn bindings_presence_and_raw_edits_bind_captured_project_decisions() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("empack.yml"), DOCUMENT).unwrap();
+    let state = root.path().join("absent-state");
+    let reader = ProjectReader::new(RecoveryReader::new(state.clone()));
+    let cancel = Cancellation::default();
+    let before = reader
+        .capture(root.path(), &[], SnapshotLimits::default(), &cancel)
+        .unwrap();
+    fs::write(
+        root.path().join("empack.bindings.yml"),
+        "schema: 1\nbindings: {}\n",
+    )
+    .unwrap();
+    assert!(before.root.revalidate(&before.native, &cancel).is_err());
+    let present = reader
+        .capture(root.path(), &[], SnapshotLimits::default(), &cancel)
+        .unwrap();
+    assert_eq!(
+        before.intent.semantic_revision(),
+        present.intent.semantic_revision()
+    );
+    assert_ne!(before.revision(), present.revision());
+    fs::write(
+        root.path().join("empack.bindings.yml"),
+        "# changed comment\nschema: 1\nbindings: {}\n",
+    )
+    .unwrap();
+    assert!(present.root.revalidate(&present.native, &cancel).is_err());
+    let commented = reader
+        .capture(root.path(), &[], SnapshotLimits::default(), &cancel)
+        .unwrap();
+    assert_eq!(
+        present.intent.semantic_revision(),
+        commented.intent.semantic_revision()
+    );
+    assert_ne!(present.revision(), commented.revision());
+    fs::remove_file(root.path().join("empack.bindings.yml")).unwrap();
+    assert!(
+        commented
+            .root
+            .revalidate(&commented.native, &cancel)
+            .is_err()
+    );
+    assert!(!state.exists());
 }

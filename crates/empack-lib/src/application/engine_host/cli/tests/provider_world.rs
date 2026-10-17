@@ -152,11 +152,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     // Unpin through authored intent, reconcile without upgrading, then explicitly update.
     let mut intent = project(root.path()).intent().clone();
     intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
-    fs::write(
-        root.path().join("project/empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronization::synchronize_with_services(
         &session(root.path(), false),
         false,
@@ -465,11 +461,7 @@ async fn fresh_provider_world_sync_retains_interpreted_bytes_and_previews_withou
             },
         },
     );
-    fs::write(
-        root.path().join("project/empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     let before = super::super::super::tests::snapshot(root.path());
     for materialize in [false, true] {
         synchronization::synchronize_with_services(

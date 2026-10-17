@@ -2,7 +2,7 @@
 mod native;
 pub(in crate::engine) mod recorded;
 pub mod suspension;
-use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, DocumentEdit, PreparedDocument};
+use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::{Result, ensure};
 use empack_core::model::ResolvedProject;
 pub(in crate::engine) use native::plan_synchronization_with_resolution;
@@ -46,11 +46,7 @@ impl SynchronizationCandidate {
         let lock = DocumentCodec.encode_lock(&project)?;
         Ok(Self {
             project,
-            intent: PreparedDocument {
-                expected: source.raw_revision(),
-                bytes: source.original().to_vec(),
-                edit: DocumentEdit::Unchanged,
-            },
+            intent: DocumentCodec.replace_intent(source, source.intent())?,
             lock,
             preserve_lock,
         })
@@ -72,11 +68,7 @@ impl SynchronizationCandidate {
         )?;
         Ok(Self {
             project: proposed.clone(),
-            intent: PreparedDocument {
-                expected: source.raw_revision(),
-                bytes: source.original().to_vec(),
-                edit: DocumentEdit::Unchanged,
-            },
+            intent: DocumentCodec.replace_intent(source, source.intent())?,
             lock: DocumentCodec.encode_lock(proposed)?,
             preserve_lock: proposed.lock() == prior.lock(),
         })
@@ -98,11 +90,7 @@ impl SynchronizationCandidate {
         )?;
         Ok(Self {
             project: proposed.clone(),
-            intent: PreparedDocument {
-                expected: source.raw_revision(),
-                bytes: source.original().to_vec(),
-                edit: DocumentEdit::Unchanged,
-            },
+            intent: DocumentCodec.replace_intent(source, source.intent())?,
             lock: DocumentCodec.encode_lock(proposed)?,
             preserve_lock: false,
         })
@@ -139,6 +127,7 @@ impl SynchronizationCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::documents::DocumentEdit;
     use crate::engine::{addition::tests::fixture, mrpack::tests::project};
     use empack_core::{identity::PinSelector, model::*};
     fn candidate(

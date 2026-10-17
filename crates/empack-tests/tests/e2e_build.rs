@@ -124,7 +124,6 @@ fn e2e_clean_removes_artifacts() {
 #[test]
 fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     use empack_core::{model::PlacementIntent, requirements::Requirement};
-    use empack_lib::engine::documents::DocumentCodec;
     use std::io::Write;
     empack_tests::skip_if_no_java!();
     let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
@@ -152,8 +151,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         .success();
     // This fixture deliberately distributes the resource file to both environments.
     let manifest = project.dir().join("empack.yml");
-    let mut intent = DocumentCodec
-        .decode_intent(&std::fs::read(&manifest).unwrap(), "test")
+    let mut intent = empack_lib::testing::read_authoring(&manifest)
         .unwrap()
         .intent()
         .clone();
@@ -166,7 +164,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         }
         *placements = empack_core::model::NonEmpty::new(values).unwrap();
     }
-    std::fs::write(&manifest, DocumentCodec.encode_intent(&intent).unwrap()).unwrap();
+    empack_lib::testing::write_authoring(&manifest, &intent).unwrap();
     assert_cmd::Command::from_std(project.cmd())
         .args(["--yes", "sync"])
         .assert()

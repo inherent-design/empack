@@ -409,7 +409,10 @@ impl ReleaseDocument {
             let path = PortableRelPath::parse(&file.destination, PathSyntax::ProjectContent)?;
             let first = path.components().next().unwrap().to_ascii_lowercase();
             ensure!(
-                !matches!(first.as_str(), ".empack" | "empack.yml" | "empack.lock"),
+                !matches!(
+                    first.as_str(),
+                    ".empack" | "empack.yml" | "empack.bindings.yml" | "empack.lock"
+                ),
                 "Release cannot own instance control files"
             );
             ensure!(

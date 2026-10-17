@@ -41,9 +41,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     super::super::tests::snapshot(root)
 }
 fn read(root: &Path) -> empack_core::model::ResolvedProject {
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.join("empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.join("empack.lock")).unwrap(),

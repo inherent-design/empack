@@ -74,9 +74,7 @@ fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
     crate::application::engine_host::tests::snapshot(root)
 }
 fn resolved(root: &Path) -> empack_core::model::ResolvedProject {
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("project/empack.yml")).unwrap(), "test")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.join("project/empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.join("project/empack.lock")).unwrap(),
@@ -575,7 +573,8 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     let mut lock = project.lock().clone();
     lock.intent_revision = decoded.semantic_revision();
     let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
-    fs::write(root.path().join("project/empack.yml"), encoded).unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), project.intent())
+        .unwrap();
     fs::write(
         root.path().join("project/empack.lock"),
         DocumentCodec.encode_lock(&project).unwrap(),
