@@ -116,7 +116,9 @@ fn e2e_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_c
     fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
     let before = snapshot(project.dir());
     command(&project, &state)
-        .args(["build", "modrinth", "prism", "server", "--clean"])
+        .args([
+            "build", "--ad-hoc", "modrinth", "prism", "server", "--clean",
+        ])
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
@@ -299,7 +301,7 @@ fn e2e_restricted_wait_refuses_a_replaced_recipe() {
         };
         let mut value: serde_json::Value =
             serde_json::from_slice(&fs::read(&record).unwrap()).unwrap();
-        value["recipe"]["archive"] = "tar-gz".into();
+        value["recipe"]["allow_optional_metadata_loss"] = true.into();
         let replacement = serde_json::to_vec(&value).unwrap();
         fs::write(&record, &replacement).unwrap();
         fs::write(destination, b"payload").unwrap();

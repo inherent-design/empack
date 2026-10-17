@@ -51,6 +51,7 @@ fn e2e_build_client_tar_gz() {
         .args([
             "--yes",
             "build",
+            "--ad-hoc",
             "--format",
             "tar.gz",
             "prism",
@@ -78,6 +79,7 @@ fn e2e_build_server_sevenz() {
         .args([
             "--yes",
             "build",
+            "--ad-hoc",
             "--format",
             "7z",
             "server",
@@ -171,7 +173,14 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         .success();
     for target in ["modrinth", "prism", "server"] {
         assert_cmd::Command::from_std(project.cmd())
-            .args(["--yes", "build", target, "--delivery", "references"])
+            .args([
+                "--yes",
+                "build",
+                "--ad-hoc",
+                target,
+                "--delivery",
+                "references",
+            ])
             .timeout(std::time::Duration::from_secs(240))
             .assert()
             .success();
@@ -230,7 +239,14 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     )
     .unwrap();
     assert_cmd::Command::from_std(project.cmd())
-        .args(["--dry-run", "build", "prism", "--delivery", "references"])
+        .args([
+            "--dry-run",
+            "build",
+            "--ad-hoc",
+            "prism",
+            "--delivery",
+            "references",
+        ])
         .assert()
         .failure()
         .stderr(predicates::str::contains("intent"));
