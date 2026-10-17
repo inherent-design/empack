@@ -184,7 +184,18 @@ fn tree(path: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
             if entry.file_type().unwrap().is_dir() {
                 walk(&entry.path(), result);
             } else {
-                result.insert(entry.path(), fs::read(entry.path()).unwrap());
+                // Windows mandatory byte-range locks forbid reading active coordination
+                // files. Their content is empty by contract; verify that through metadata.
+                let bytes = if matches!(
+                    entry.file_name().to_str(),
+                    Some("instance-run.lock" | "operation.lock")
+                ) {
+                    assert_eq!(entry.metadata().unwrap().len(), 0);
+                    Vec::new()
+                } else {
+                    fs::read(entry.path()).unwrap()
+                };
+                result.insert(entry.path(), bytes);
             }
         }
     }
