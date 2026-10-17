@@ -88,12 +88,39 @@ impl ProviderResolution {
     }
 }
 
+/// A catalog observation, not a file acquisition or an executable update plan.
+#[derive(Debug, Clone)]
+pub struct SelectionObservation {
+    pub pin: ResolvedPin,
+    pub version: Option<String>,
+    pub published_at: String,
+    pub channel: ReleaseChannel,
+}
+/// Complete bounded scan of the provider's available version catalog.
+/// Retained pages keep their resource reservations until the assessment is dropped.
+pub struct CatalogAssessment {
+    pub permitted: Option<SelectionObservation>,
+    pub compatible: Option<SelectionObservation>,
+    pub upstream: Option<SelectionObservation>,
+    pub observed_records: usize,
+    _pages: Vec<RetainedOutput<Page>>,
+}
+struct CatalogScan {
+    pages: Vec<RetainedOutput<Page>>,
+    best: Option<(usize, usize)>,
+    count: usize,
+    budget: transport::RequestBudget,
+}
+type ObservationRank = (usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin);
 struct Candidate {
     selected: CompatibleSelection,
     rank: (u8, usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin),
 }
 struct Page {
     candidates: Vec<Candidate>,
+    policy_observation: Option<SelectionObservation>,
+    compatible: Option<(ObservationRank, SelectionObservation)>,
+    upstream: Option<(ObservationRank, SelectionObservation)>,
     /// All record identities, including filtered records, to detect conflicting observations.
     seen: Vec<(ResolvedPin, [u8; 32])>,
     count: usize,
@@ -137,6 +164,78 @@ impl ProviderCatalog {
         RetainedOutput<CompatibleSelection>,
         transport::RequestBudget,
     )> {
+        let mut scan = self
+            .scan_catalog(scope, request, limits, budget, false)
+            .await?;
+        let (page, candidate) = scan.best.ok_or(CatalogError::NoCompatibleSelection)?;
+        Ok((
+            scan.pages
+                .swap_remove(page)
+                .map(|mut page| page.candidates.swap_remove(candidate).selected),
+            scan.budget,
+        ))
+    }
+    /// Observe policy-permitted, compatible and upstream selections without changing a project.
+    /// A failed or truncated scan returns an error rather than a partial latest-version claim.
+    pub async fn assess_versions(
+        &self,
+        scope: &mut WorkScope,
+        request: CompatibleRequest,
+        limits: SelectionLimits,
+    ) -> Result<CatalogAssessment> {
+        self.assess_versions_budget(
+            scope,
+            request,
+            limits,
+            transport::RequestBudget::new(limits.catalog)?,
+        )
+        .await
+        .map(|value| value.0)
+    }
+    pub(super) async fn assess_versions_budget(
+        &self,
+        scope: &mut WorkScope,
+        request: CompatibleRequest,
+        limits: SelectionLimits,
+        budget: transport::RequestBudget,
+    ) -> Result<(CatalogAssessment, transport::RequestBudget)> {
+        let scan = self
+            .scan_catalog(scope, request, limits, budget, true)
+            .await?;
+        let permitted = scan
+            .best
+            .and_then(|(page, _)| scan.pages[page].policy_observation.clone());
+        let compatible = scan
+            .pages
+            .iter()
+            .filter_map(|page| page.compatible.as_ref())
+            .min_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, value)| value.clone());
+        let upstream = scan
+            .pages
+            .iter()
+            .filter_map(|page| page.upstream.as_ref())
+            .min_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, value)| value.clone());
+        Ok((
+            CatalogAssessment {
+                permitted,
+                compatible,
+                upstream,
+                observed_records: scan.count,
+                _pages: scan.pages,
+            },
+            scan.budget,
+        ))
+    }
+    async fn scan_catalog(
+        &self,
+        scope: &mut WorkScope,
+        request: CompatibleRequest,
+        limits: SelectionLimits,
+        budget: transport::RequestBudget,
+        all_versions: bool,
+    ) -> Result<CatalogScan> {
         ensure!(
             limits.candidates > 0 && limits.pages > 0,
             CatalogError::Limit
@@ -180,9 +279,15 @@ impl ProviderCatalog {
             .filter(|value| unique_games.insert(value.clone()))
             .collect();
         // CurseForge accepts one gameVersion filter. Modrinth accepts the whole explicit list.
-        let queries = match &request.project {
-            ProviderProjectId::Modrinth(_) => vec![games],
-            ProviderProjectId::CurseForge(_) => games.into_iter().map(|game| vec![game]).collect(),
+        let queries = if all_versions {
+            vec![Vec::new()]
+        } else {
+            match &request.project {
+                ProviderProjectId::Modrinth(_) => vec![games],
+                ProviderProjectId::CurseForge(_) => {
+                    games.into_iter().map(|game| vec![game]).collect()
+                }
+            }
         };
         let mut pages: Vec<RetainedOutput<Page>> = Vec::new();
         let mut seen = BTreeMap::new();
@@ -263,13 +368,12 @@ impl ProviderCatalog {
         }
         scope.cancellation().check()?;
         budget.check_deadline()?;
-        let (page, candidate) = best.ok_or(CatalogError::NoCompatibleSelection)?;
-        Ok((
-            pages
-                .swap_remove(page)
-                .map(|mut page| page.candidates.swap_remove(candidate).selected),
+        Ok(CatalogScan {
+            pages,
+            best,
+            count,
             budget,
-        ))
+        })
     }
 }
 
@@ -304,12 +408,17 @@ async fn fetch(
                     index,
                 } => match project {
                     ProviderProjectId::Modrinth(project) => {
+                        let all = games.is_empty();
                         let games = serde_json::to_string(&games)?;
+                        let mut query = vec![("include_changelog", "false")];
+                        if !all {
+                            query.push(("game_versions", games.as_str()));
+                        }
                         transport
                             .get(
                                 ProviderKind::Modrinth,
                                 &["project", project.as_str(), "version"],
-                                &[("game_versions", &games), ("include_changelog", "false")],
+                                &query,
                                 &mut budget,
                                 &cancel,
                             )
@@ -317,15 +426,15 @@ async fn fetch(
                     }
                     ProviderProjectId::CurseForge(project) => {
                         let index = index.to_string();
+                        let mut query = vec![("index", index.as_str()), ("pageSize", "50")];
+                        if let Some(game) = games.first() {
+                            query.push(("gameVersion", game.as_str()));
+                        }
                         transport
                             .get(
                                 ProviderKind::CurseForge,
                                 &["mods", &project.to_string(), "files"],
-                                &[
-                                    ("gameVersion", &games[0]),
-                                    ("index", &index),
-                                    ("pageSize", "50"),
-                                ],
+                                &query,
                                 &mut budget,
                                 &cancel,
                             )
@@ -390,6 +499,9 @@ fn parse_page(
     ensure!(values.len() <= maximum, CatalogError::Limit);
     let count = values.len();
     let mut candidates = Vec::new();
+    let mut policy_observation = None;
+    let mut compatible: Option<(ObservationRank, SelectionObservation)> = None;
+    let mut upstream: Option<(ObservationRank, SelectionObservation)> = None;
     let mut seen = Vec::new();
     for value in values {
         cancel.check()?;
@@ -463,6 +575,16 @@ fn parse_page(
         if !available {
             continue;
         }
+        let observation = SelectionObservation {
+            pin: pin.clone(),
+            published_at: published.clone(),
+            channel,
+            version: value
+                .get("version_number")
+                .or_else(|| value.get("displayName"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        };
         let resolution = match &project.id {
             ProviderProjectId::Modrinth(_) => {
                 modrinth::selection(project.clone(), &pin, &serde_json::to_vec(&value)?)?
@@ -473,11 +595,10 @@ fn parse_page(
                 &serde_json::to_vec(&serde_json::json!({"data":value}))?,
             )?,
         };
-        let channel_rank = match (request.releases, channel) {
-            (ReleasePolicy::StableOnly, ReleaseChannel::Beta | ReleaseChannel::Alpha) => continue,
-            (ReleasePolicy::PreferStable, ReleaseChannel::Beta | ReleaseChannel::Alpha) => 1,
-            _ => 0,
-        };
+        let rank = (0, std::cmp::Reverse(date), pin.clone());
+        if upstream.as_ref().is_none_or(|previous| rank < previous.0) {
+            upstream = Some((rank, observation.clone()));
+        }
         let Some(game) = request
             .game_versions
             .as_slice()
@@ -491,6 +612,15 @@ fn parse_page(
         {
             continue;
         }
+        let rank = (game, std::cmp::Reverse(date), pin.clone());
+        if compatible.as_ref().is_none_or(|previous| rank < previous.0) {
+            compatible = Some((rank, observation.clone()));
+        }
+        let channel_rank = match (request.releases, channel) {
+            (ReleasePolicy::StableOnly, ReleaseChannel::Beta | ReleaseChannel::Alpha) => continue,
+            (ReleasePolicy::PreferStable, ReleaseChannel::Beta | ReleaseChannel::Alpha) => 1,
+            _ => 0,
+        };
         let candidate = Candidate {
             rank: (channel_rank, game, std::cmp::Reverse(date), pin),
             selected: CompatibleSelection {
@@ -507,10 +637,14 @@ fn parse_page(
         {
             candidates.clear();
             candidates.push(candidate);
+            policy_observation = Some(observation);
         }
     }
     Ok(Page {
         candidates,
+        policy_observation,
+        compatible,
+        upstream,
         seen,
         count,
         next,
