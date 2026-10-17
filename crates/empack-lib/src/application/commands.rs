@@ -62,6 +62,8 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
         Commands::Update { .. } => "update",
+        Commands::Outdated { .. } => "outdated",
+        Commands::Migrate(_) => "migrate",
         Commands::Adopt { .. } => "adopt",
         Commands::Build(_) => "build",
         Commands::Clean { .. } => "clean",
@@ -113,13 +115,20 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             )
             .await
         }
+        Commands::Migrate(options) => engine_host::cli::migrate(session, options).await,
+        Commands::Outdated {
+            json,
+            release_policy,
+        } => engine_host::cli::outdated(session, json, release_policy.into()).await,
         Commands::Update {
+            release_policy,
             dependencies,
             continue_independent,
         } => {
             engine_host::cli::update_with_policy(
                 session,
                 dependencies,
+                release_policy.into(),
                 if continue_independent {
                     crate::engine::api::BatchPolicy::ContinueIndependent
                 } else {

@@ -13,14 +13,20 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
+        self.capture_recorded_synchronization_mode(selected, proposed, false, limits, cancel)
+    }
+    pub(in crate::engine) fn capture_recorded_synchronization_mode(
+        &self,
+        selected: &Path,
+        proposed: Option<&ResolvedProject>,
+        migration: bool,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
         let captured =
-            self.capture_synchronization_with_resolution(selected, proposed, limits, cancel)?;
+            self.capture_synchronization_mode(selected, proposed, migration, limits, cancel)?;
+        let candidate = captured.synchronization_candidate(proposed)?;
         let mut workspace = captured.into_workspace();
-        let candidate = crate::engine::synchronization::SynchronizationCandidate::prepare_input(
-            workspace.intent(),
-            workspace.prior_lock(),
-            proposed,
-        )?;
         let sources = candidate
             .project()
             .lock()
@@ -75,7 +81,10 @@ impl ProjectReader {
             "Recorded synchronization exceeds byte limit"
         );
         workspace.root.revalidate(&workspace.native, cancel)?;
-        Ok(MutationSnapshot { workspace })
+        Ok(MutationSnapshot {
+            workspace,
+            migration,
+        })
     }
 
     /// Bind only recorded placements for exact native ownership.
@@ -95,12 +104,22 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        let documents = self.capture(selected, &[], limits, cancel)?;
-        let candidate = crate::engine::synchronization::SynchronizationCandidate::prepare_input(
-            documents.intent(),
-            documents.prior_lock(),
-            proposed,
-        )?;
+        self.capture_synchronization_mode(selected, proposed, false, limits, cancel)
+    }
+    fn capture_synchronization_mode(
+        &self,
+        selected: &Path,
+        proposed: Option<&ResolvedProject>,
+        migration: bool,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let captured = MutationSnapshot {
+            workspace: self.capture(selected, &[], limits, cancel)?,
+            migration,
+        };
+        let candidate = captured.synchronization_candidate(proposed)?;
+        let documents = captured.into_workspace();
         let mut required = Vec::new();
         for dependency in candidate.project().lock().dependencies.values().chain(
             documents
@@ -117,7 +136,10 @@ impl ProjectReader {
                 }
             }
         }
-        self.capture_dependency_paths(selected, documents, required, limits, cancel)
+        let mut captured =
+            self.capture_dependency_paths(selected, documents, required, limits, cancel)?;
+        captured.migration = migration;
+        Ok(captured)
     }
     /// Share exact destination discovery across restoration, addition and explicit updates.
     pub(super) fn capture_dependency_paths(

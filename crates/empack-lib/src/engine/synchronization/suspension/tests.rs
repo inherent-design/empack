@@ -8,7 +8,7 @@ use crate::engine::{
     snapshot::SnapshotLimits,
 };
 
-async fn small_record_roundtrip(preseed: bool) {
+async fn small_record_roundtrip(preseed: bool, migration: bool) {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("project");
     let state = root.path().join("state");
@@ -28,6 +28,20 @@ async fn small_record_roundtrip(preseed: bool) {
         .unwrap();
     let context =
         SyncInputContext::capture(target.clone(), &workspace, &Cancellation::default()).unwrap();
+    let project = if migration {
+        let mut intent = project.intent().clone();
+        intent.runtime.minecraft = empack_core::model::GameVersion::parse("1.20.2").unwrap();
+        let revision = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "candidate")
+            .unwrap()
+            .semantic_revision();
+        let mut lock = project.lock().clone();
+        lock.intent_revision = revision;
+        lock.runtime.minecraft = intent.runtime.minecraft.clone();
+        ResolvedProject::validate(intent, lock, revision).unwrap()
+    } else {
+        project
+    };
     if preseed {
         FileContentStore::open(
             &state.join("pending-sync-content"),
@@ -39,7 +53,8 @@ async fn small_record_roundtrip(preseed: bool) {
             Kind::Synchronization,
             &target,
             &Record {
-                schema: 1,
+                schema: 2,
+                migration,
                 binding: context.binding.clone(),
                 intent: String::from_utf8(intent.clone()).unwrap(),
                 lock: String::from_utf8(lock.clone()).unwrap(),
@@ -71,6 +86,7 @@ async fn small_record_roundtrip(preseed: bool) {
                     save_pending_sync(
                         &mut scope,
                         SyncRetentionRequest {
+                            migration,
                             state: state.clone(),
                             context: context.clone(),
                             project: project.clone(),
@@ -91,6 +107,7 @@ async fn small_record_roundtrip(preseed: bool) {
                 )
                 .await?
                 .context("missing record")?;
+                assert_eq!(resumed.migration, migration);
                 assert_eq!(resumed.project.intent(), project.intent());
                 assert_eq!(resumed.project.lock(), project.lock());
                 assert!(resumed.acquired.is_empty());
@@ -115,9 +132,14 @@ async fn small_record_roundtrip(preseed: bool) {
 
 #[tokio::test]
 async fn small_pending_sync_saves_and_resumes_under_eight_mib() {
-    small_record_roundtrip(false).await;
+    small_record_roundtrip(false, false).await;
 }
 #[tokio::test]
 async fn existing_small_sync_resumes_under_eight_mib() {
-    small_record_roundtrip(true).await;
+    small_record_roundtrip(true, false).await;
+}
+
+#[tokio::test]
+async fn pending_migration_retains_candidate_and_original_author_binding() {
+    small_record_roundtrip(false, true).await;
 }

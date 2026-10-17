@@ -17,6 +17,7 @@ use crate::engine::{
 };
 
 pub(super) struct SyncInputs {
+    pub migration: bool,
     pub context: SyncInputContext,
     pub resumed: Option<ResumedSync>,
     pub files: Vec<String>,
@@ -25,6 +26,7 @@ pub(super) struct SyncInputs {
 impl SyncInputs {
     pub fn initial(context: SyncInputContext) -> Self {
         Self {
+            migration: false,
             context,
             resumed: None,
             files: Vec::new(),
@@ -41,6 +43,7 @@ pub(super) async fn publish(
     services: dependencies::AdditionServices,
     mut inputs: SyncInputs,
 ) -> Result<()> {
+    let migration = inputs.migration;
     let evidence = SourceEvidencePolicy::Compatibility;
     let source_revision = inputs.context.revision();
     let (invocation, _) = project_path(session)?;
@@ -235,6 +238,7 @@ pub(super) async fn publish(
                                 state,
                                 context,
                                 project,
+                                migration,
                                 acquired: acquired.acquired.locked,
                                 policy: evidence,
                                 prior,
@@ -270,6 +274,29 @@ pub(super) async fn publish(
             resolution,
             evidence,
         }
+    };
+    let request = if migration {
+        let (resolution, evidence, content) = match request {
+            SyncRequest::Recorded {
+                resolution,
+                evidence,
+            } => (resolution, evidence, BTreeMap::new()),
+            SyncRequest::AcquiredReferences {
+                resolution,
+                evidence,
+                content,
+                ..
+            } => (resolution, evidence, content),
+            _ => unreachable!("materialization prepares only recorded inputs"),
+        };
+        SyncRequest::Migration {
+            source_revision,
+            resolution: resolution.context("Migration requires its resolved candidate")?,
+            evidence,
+            content,
+        }
+    } else {
+        request
     };
     let published = dependencies::synchronize_with_outcome(session, request).await?;
     if published && let Some(saved) = resumed.take().map(|value| value.saved) {

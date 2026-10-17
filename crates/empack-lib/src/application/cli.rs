@@ -4,6 +4,56 @@ use std::{ffi::OsString, path::PathBuf};
 
 use super::config::AppConfig;
 
+/// Provider version stability policy, independent of a published pack channel.
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub enum CliReleasePolicy {
+    StableOnly,
+    #[default]
+    PreferStable,
+    Any,
+}
+impl From<CliReleasePolicy> for crate::engine::providers::ReleasePolicy {
+    fn from(value: CliReleasePolicy) -> Self {
+        match value {
+            CliReleasePolicy::StableOnly => Self::StableOnly,
+            CliReleasePolicy::PreferStable => Self::PreferStable,
+            CliReleasePolicy::Any => Self::Any,
+        }
+    }
+}
+
+/// Propose runtime changes without editing the live author documents first.
+#[derive(Debug, Clone, Args)]
+pub struct MigrationArgs {
+    /// Requested Minecraft version
+    #[arg(long)]
+    pub minecraft: String,
+    /// Requested loader family
+    #[arg(long, value_parser = ["vanilla", "fabric", "quilt", "forge", "neoforge"])]
+    pub loader: String,
+    /// Exact loader version; otherwise retain a valid version or resolve a compatible one
+    #[arg(long)]
+    pub loader_version: Option<String>,
+    /// Explicit alternative Minecraft versions accepted for provider compatibility
+    #[arg(long = "accept-version")]
+    pub acceptable_versions: Vec<String>,
+    /// Replace a provider root: KEY=modrinth:PROJECT_ID or KEY=curseforge:PROJECT_ID
+    #[arg(long = "replace", value_name = "KEY=PROVIDER:ID")]
+    pub replacements: Vec<String>,
+    /// Resolve and show the candidate without publishing or saving pending work
+    #[arg(long)]
+    pub plan: bool,
+    /// Print a structured candidate report (requires --plan)
+    #[arg(long, requires = "plan")]
+    pub json: bool,
+    /// Acquire referenced content; missing files can be resumed through pending
+    #[arg(long)]
+    pub materialize: bool,
+    /// Stability preference for newly selected provider versions
+    #[arg(long, value_enum, default_value = "prefer-stable")]
+    pub release_policy: CliReleasePolicy,
+}
+
 /// Explicit source decisions for adopting previously untracked installed content.
 #[derive(Debug, Clone, Args, Default)]
 pub struct AdoptionSourceArgs {
@@ -695,8 +745,24 @@ Updates infer the installed side/layout. update --check checks before applying."
         files: Vec<String>,
     },
 
-    /// Refresh selected installed dependencies while retaining intent and pins
+    /// Plan or apply a runtime migration without editing live intent first
+    Migrate(MigrationArgs),
+
+    /// Assess provider versions without changing the author workspace
+    Outdated {
+        /// Emit versioned evidence and joint dependency assessment as JSON
+        #[arg(long)]
+        json: bool,
+        /// Provider version policy; independent of pack subscription channels
+        #[arg(long, value_enum, default_value = "prefer-stable")]
+        release_policy: CliReleasePolicy,
+    },
+
+    /// Deliberately refresh selected author dependency resolutions
     Update {
+        /// Provider version policy; exact author pins remain exact
+        #[arg(long, value_enum, default_value = "prefer-stable")]
+        release_policy: CliReleasePolicy,
         /// Publish verified independent groups and report failures without discarding prior content
         #[arg(long)]
         continue_independent: bool,
@@ -881,7 +947,11 @@ impl Commands {
             Commands::Init(..) => false,
             Commands::Sync { .. } => true,
             Commands::Build(..) => true,
-            Commands::Add { .. } | Commands::Update { .. } | Commands::Adopt { .. } => true,
+            Commands::Add { .. }
+            | Commands::Update { .. }
+            | Commands::Adopt { .. }
+            | Commands::Outdated { .. }
+            | Commands::Migrate(_) => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
         }
@@ -897,7 +967,11 @@ impl Commands {
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. } => 5,
-            Commands::Add { .. } | Commands::Update { .. } | Commands::Adopt { .. } => 6,
+            Commands::Add { .. }
+            | Commands::Update { .. }
+            | Commands::Adopt { .. }
+            | Commands::Outdated { .. }
+            | Commands::Migrate(_) => 6,
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,
         }

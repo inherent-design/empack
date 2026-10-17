@@ -96,6 +96,7 @@ async fn resume_with_services_selected(
         "Selected pending synchronization changed; inspect its new identity"
     );
     let context = resumed.context.clone();
+    let migrating = resumed.migration;
     let project = resumed.project.clone();
     publish(
         session,
@@ -104,6 +105,7 @@ async fn resume_with_services_selected(
         true,
         services,
         materialization::SyncInputs {
+            migration: migrating,
             context,
             resumed: Some(resumed),
             files,
@@ -118,6 +120,15 @@ pub(super) async fn synchronize_with_services(
     materialize: bool,
     services: dependencies::AdditionServices,
     runtime_catalog: RuntimeCatalog,
+) -> Result<()> {
+    synchronize_mode(session, materialize, services, runtime_catalog, None).await
+}
+pub(super) async fn synchronize_mode(
+    session: &dyn Session,
+    materialize: bool,
+    services: dependencies::AdditionServices,
+    runtime_catalog: RuntimeCatalog,
+    migration: Option<super::migration::MigrationOptions>,
 ) -> Result<()> {
     let (invocation, project) = project_path(session)?;
     let selected = project.clone();
@@ -171,8 +182,15 @@ pub(super) async fn synchronize_with_services(
         scope.accept(work.wait().await?)?.transpose()
     })
     .await?;
-    let (source, prior, context) = &*captured;
-    if let Some(prior) = prior {
+    let (original, prior, context) = &*captured;
+    let effective = migration
+        .as_ref()
+        .map(|options| options.compose(original, prior.as_ref()))
+        .transpose()?;
+    let source = effective.as_ref().unwrap_or(original);
+    if migration.is_none()
+        && let Some(prior) = prior
+    {
         match SynchronizationCandidate::prepare(source, prior) {
             Ok(candidate) => {
                 return publish(
@@ -202,6 +220,32 @@ pub(super) async fn synchronize_with_services(
     let runtime =
         if let Some(runtime) = old_runtime.filter(|old| runtime_satisfies(&runtime_intent, old)) {
             runtime
+        } else if migration.is_some() {
+            initialize::discover(session, move |mut scope| async move {
+                let games = runtime_catalog.games(&mut scope, runtime_limits).await?;
+                games.resolve(Some(&runtime_intent.minecraft))?;
+                for alternative in &runtime_intent.acceptable_versions {
+                    games.resolve(Some(alternative))?;
+                }
+                if runtime_intent.loader == LoaderKind::Vanilla {
+                    Ok(RuntimeResolution {
+                        minecraft: runtime_intent.minecraft,
+                        loader: LoaderKind::Vanilla,
+                        loader_version: None,
+                    })
+                } else {
+                    let choices = runtime_catalog
+                        .loaders(
+                            &mut scope,
+                            runtime_intent.minecraft,
+                            runtime_intent.loader,
+                            runtime_limits,
+                        )
+                        .await?;
+                    choices.resolve(runtime_intent.loader_version.as_ref())
+                }
+            })
+            .await?
         } else if runtime_intent.loader == LoaderKind::Vanilla
             || runtime_intent.loader_version.is_some()
         {
@@ -310,6 +354,11 @@ pub(super) async fn synchronize_with_services(
         Duration::from_secs(session.config().app_config().net_timeout);
     let source = source.clone();
     let prior = prior.clone();
+    let releases = migration
+        .as_ref()
+        .map_or(ReleasePolicy::PreferStable, |options| options.releases);
+    let original_source = original.clone();
+    let migrating = migration.is_some();
     let acquisition_services = dependencies::AdditionServices {
         catalog: services.catalog.clone(),
         transport: services.transport.clone(),
@@ -317,7 +366,7 @@ pub(super) async fn synchronize_with_services(
     };
     let resolved = scoped(session, governor(session.config().app_config()), move |mut scope| async move {
         let provider = if providers.is_empty() { None } else {
-            match services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, ReleasePolicy::PreferStable, limits).await? {
+            match services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, releases, limits).await? {
                 ProviderAdditionOutcome::Ready(value) => Some(value),
                 ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire(&mut scope, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?),
                 ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!("Synchronization was not published: dependency evidence requires a decision: {:?}", closure.issues),
@@ -350,14 +399,28 @@ pub(super) async fn synchronize_with_services(
             }
         }
         let proposed = ResolvedProject::validate(source.intent().clone(), lock, source.semantic_revision())?;
-        if let Some(prior) = &prior { SynchronizationCandidate::prepare_resolved(&source, prior, &proposed)?; }
+        if migrating {
+            SynchronizationCandidate::prepare_migration(&original_source, prior.as_ref().context("Migration needs a prior lock")?, &proposed)?;
+        } else if let Some(prior) = &prior { SynchronizationCandidate::prepare_resolved(&source, prior, &proposed)?; }
         else { SynchronizationCandidate::prepare_initial(&source, &proposed)?; }
         Ok::<_, anyhow::Error>(proposed)
         })?;
         Ok((scope.accept(worker.wait().await?)?.transpose()?, acquired))
     }).await?;
     let (resolved, acquired) = resolved;
+    if let Some(options) = &migration {
+        options.present(
+            session,
+            original,
+            captured.1.as_ref().expect("migration requires a lock"),
+            &resolved,
+        )?;
+        if options.plan {
+            return Ok(());
+        }
+    }
     let mut inputs = materialization::SyncInputs::initial(context.clone());
+    inputs.migration = migrating;
     inputs.resolved = acquired;
     publish(
         session,

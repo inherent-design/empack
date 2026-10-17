@@ -984,6 +984,13 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
 
 #[tokio::test]
 async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
+    restricted_roundtrip(false).await;
+}
+#[tokio::test]
+async fn restricted_migration_resumes_candidate_through_shared_pending_commands() {
+    restricted_roundtrip(true).await;
+}
+async fn restricted_roundtrip(migration: bool) {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let current = project(root.path());
@@ -1065,13 +1072,42 @@ async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
         .expect(0)
         .create_async()
         .await;
-    let result = synchronize_with_services(
-        &session(root.path(), false),
-        true,
-        services(&server.url()),
-        RuntimeCatalog::for_loopback_tests(&server.url()),
-    )
-    .await;
+    let result = if migration {
+        let target = root.path().join("project");
+        let workspace = ProjectReader::new(RecoveryReader::new(root.path().join("state")))
+            .capture(&target, &[], SnapshotLimits::default(), &Default::default())
+            .unwrap();
+        let context = SyncInputContext::capture(target, &workspace, &Default::default()).unwrap();
+        let mut intent = resolved.intent().clone();
+        intent.runtime.minecraft = GameVersion::parse("1.21.2").unwrap();
+        let revision = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "candidate")
+            .unwrap()
+            .semantic_revision();
+        let mut lock = resolved.lock().clone();
+        lock.intent_revision = revision;
+        lock.runtime.minecraft = intent.runtime.minecraft.clone();
+        let candidate = ResolvedProject::validate(intent, lock, revision).unwrap();
+        let mut inputs = materialization::SyncInputs::initial(context);
+        inputs.migration = true;
+        materialization::publish(
+            &session(root.path(), false),
+            candidate.clone(),
+            Some(candidate),
+            true,
+            services(&server.url()),
+            inputs,
+        )
+        .await
+    } else {
+        synchronize_with_services(
+            &session(root.path(), false),
+            true,
+            services(&server.url()),
+            RuntimeCatalog::for_loopback_tests(&server.url()),
+        )
+        .await
+    };
     assert!(format!("{:#}", result.unwrap_err()).contains("continuation was saved"));
     assert_eq!(snapshot(&root.path().join("project")), original);
     let records = || {
@@ -1177,6 +1213,10 @@ async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
     .unwrap();
     assert_eq!(snapshot(root.path()), before);
     // Two paths with identical verified bytes represent one candidate content identity.
+    assert_eq!(operation.state, "unverified");
+    if migration {
+        assert!(operation.diagnostic.as_ref().unwrap().contains("migration"));
+    }
     crate::application::engine_host::pending::dispatch(
         &session(root.path(), false),
         crate::application::cli::PendingCommand::Resume {
@@ -1210,6 +1250,10 @@ async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
     assert_eq!(
         project(root.path()).lock().dependencies,
         resolved.lock().dependencies
+    );
+    assert_eq!(
+        project(root.path()).intent().runtime.minecraft.as_str(),
+        if migration { "1.21.2" } else { "1.21.1" }
     );
     let after = snapshot(&root.path().join("project"));
     for _ in 0..2 {

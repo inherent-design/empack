@@ -12,6 +12,7 @@ No export or backend removal may silently discard a supported content obligation
 | Content kinds | Mods, resources, shaders, datapacks and interpreted worlds |
 | Named files | Multiple provider roles, explicit placements, source/destination separation |
 | Author sync | Retain compatible exact selections and required content; materialize explicitly |
+| Assessment/migration | Read-only update evidence; approved runtime candidates retain valid pins and original input bindings |
 | Author update/adopt | Deliberate refresh or verified observed acceptance; no foreign metadata authority |
 | Remove | Exact native ownership, alias ambiguity rejection and no directory deletion |
 | Requirements | Common/client/server layers, optional groups and conditional fallback |
