@@ -23,11 +23,34 @@ pub enum PendingKind {
     Sync,
     Instance,
 }
+/// Exact provider identity for presentation; it does not authorize acquisition.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PendingProviderSelection {
+    pub provider: &'static str,
+    pub project: String,
+    pub selection: String,
+}
+impl From<&ResolvedPin> for PendingProviderSelection {
+    fn from(pin: &ResolvedPin) -> Self {
+        use empack_core::identity::{PinSelector, ProviderProjectId};
+        Self {
+            provider: match pin.project {
+                ProviderProjectId::Modrinth(_) => "modrinth",
+                ProviderProjectId::CurseForge(_) => "curseforge",
+            },
+            project: pin.project.to_string(),
+            selection: match &pin.selection {
+                PinSelector::ModrinthVersion(id) => id.to_string(),
+                PinSelector::CurseForgeFile(id) => id.to_string(),
+            },
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct PendingInput {
     pub key: String,
     pub name: Option<String>,
-    pub provider_selection: Option<String>,
+    pub provider_selection: Option<PendingProviderSelection>,
     pub filename: Option<String>,
     pub digests: Vec<(String, String)>,
     pub bytes: Option<u64>,
@@ -110,7 +133,13 @@ impl PendingReport {
                 ));
                 lines.push(format!(
                     "    provider {}; permitted page {}; candidate {}",
-                    input.provider_selection.as_deref().unwrap_or("unknown"),
+                    input.provider_selection.as_ref().map_or_else(
+                        || "unknown".into(),
+                        |selected| format!(
+                            "{}:{}@{}",
+                            selected.provider, selected.project, selected.selection
+                        )
+                    ),
                     input
                         .download_page
                         .as_deref()
@@ -170,9 +199,7 @@ fn input(
         key,
         name,
         filename,
-        provider_selection: pin
-            .as_ref()
-            .map(|p| format!("{:?}@{:?}", p.project, p.selection)),
+        provider_selection: pin.as_ref().map(PendingProviderSelection::from),
         digests,
         bytes: expected.as_ref().and_then(|e| e.size),
         download_page: None,
@@ -357,7 +384,6 @@ fn details(
                     _ => None,
                 };
                 if let Some((provider, project, selection)) = selection {
-                    row.provider_selection = Some(format!("{provider:?}:{project}@{selection}"));
                     use empack_core::identity::{
                         CurseForgeProjectId, ModrinthProjectId, ProviderProjectId,
                     };
@@ -373,6 +399,7 @@ fn details(
                         selection: project.parse_pin(selection)?,
                         project,
                     });
+                    row.provider_selection = row.pin.as_ref().map(PendingProviderSelection::from);
                 }
                 op.inputs.push(row);
             }

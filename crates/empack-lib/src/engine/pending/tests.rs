@@ -223,3 +223,20 @@ fn pending_ids_reject_ambiguity_and_replacement_without_crossing_roots() {
             .is_err()
     );
 }
+
+#[test]
+fn provider_selections_have_stable_separate_wire_fields() {
+    use empack_core::identity::{ModrinthProjectId, ProviderProjectId};
+    let project = ProviderProjectId::Modrinth(ModrinthProjectId::parse("Project1").unwrap());
+    let pin = ResolvedPin {
+        selection: project.parse_pin("Version1").unwrap(),
+        project,
+    };
+    let selected = PendingProviderSelection::from(&pin);
+    assert_eq!(
+        serde_json::to_value(selected).unwrap(),
+        serde_json::json!({
+            "provider":"modrinth", "project":"Project1", "selection":"Version1"
+        })
+    );
+}

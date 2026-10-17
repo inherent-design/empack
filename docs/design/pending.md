@@ -31,15 +31,16 @@ resumed through the shared command.
   `digests`, `bytes`, `download_page`, `supplied_candidate`, `verification`, and
   whether it is known to be `needed`.
 
-Null means unknown. An empty digest list means assertions are unavailable, not
+`provider_selection` contains separate `provider`, `project` and exact `selection`
+strings. Null means unknown. An empty digest list means assertions are unavailable, not
 that any file is acceptable. Filenames are display hints, never association keys.
 Saved records intentionally do not retain arbitrary host candidate paths.
-`retained; verification required` describes cached evidence, not a completed
+`retained; verification required` describes retained input evidence, not a completed
 obligation. Every continuation rechecks the bytes and all original assertions.
 
 Build records retain the recipe and verified-file associations; the report lists
 remote lock inputs and leaves whether each is required unknown until the original
-build preparation computes the selected output obligations. Existing v0.6 import
+build preparation computes the selected output obligations. Import
 records retain the source archive and supplied associations, not missing provider
 metadata. Import inspection therefore reports incomplete requirements explicitly;
 normal continuation reparses the retained archive and refreshes exact provider
@@ -60,7 +61,7 @@ selectors for imports. Repeated or ambiguous keys fail before publication.
 Import representation choices can be supplied again with
 `--import-optional-default BOOL` and `--import-local-files`; optional participation
 remains optional. Use the original `init --continue` options for other import
-representation decisions that were not saved in v0.6 records.
+representation decisions that were not saved in import records.
 
 `--downloads-dir DIR` explicitly requests a bounded scan of direct regular files.
 The existing scanner matches original digests/selected content identities and
