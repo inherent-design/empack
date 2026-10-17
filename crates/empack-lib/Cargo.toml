@@ -31,6 +31,7 @@ directories = { workspace = true }
 dotenvy = { workspace = true }
 envy = { workspace = true }
 ed25519-dalek = { workspace = true }
+getrandom = { workspace = true }
 indicatif = { workspace = true }
 percent-encoding = { workspace = true }
 reqwest = { workspace = true }

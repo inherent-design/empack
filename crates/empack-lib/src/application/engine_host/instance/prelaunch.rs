@@ -83,6 +83,7 @@ async fn update_with_transport(
         else {
             anyhow::bail!("Channel observation requires input")
         };
+        session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
         // Never continue after preview/decline: fetching a new release requires the durable floor.
         if !approve(session, "Channel observation")? {
             return Ok(None);

@@ -77,7 +77,7 @@ new operation.
 | `instance launch -- PROGRAM ARGS...` | Verify completed content and run a locally selected runtime under an instance lease |
 | `instance inspect` | Show the completed release, saved choices and retained rollback releases |
 | `instance subscribe` / `trust` | Enroll a channel and manage explicitly trusted publisher keys |
-| `instance observe-channel` | Authenticate and save a channel observation without installing content |
+| `instance check-updates` | Authenticate and save a channel observation without installing content |
 | `instance recover-runtime --acknowledge-stopped` | Clear runtime recovery evidence after all related processes have stopped |
 
 `instance options` lists the completed release's saved values and alternatives.
@@ -255,17 +255,21 @@ Publisher enrollment is explicit and separate from snapshot installation:
 
 ```sh
 empack --workdir instance instance subscribe --pack my-pack --channel stable https://packs.example.org/channels/stable.json --key PUBLIC_KEY_HEX
-empack --workdir instance instance observe-channel
+empack --workdir instance instance check-updates
 empack --workdir instance instance update
 ```
 
 Enrollment and observation save trust and authenticated sequence observations.
-`instance observe-channel` fetches the enrolled HTTPS URL and saves the verified
+`instance check-updates` fetches the enrolled HTTPS URL and saves the verified
 observation after approval. `instance update` fetches the exact signed release
 selected by that saved channel. Both commands also accept a local envelope path.
 Update checks current trust, expiry and exact release identity before applying
-content. Use `instance update --side server` for server instances; this command's
-side defaults to `client` and an existing instance cannot change sides. Local assets,
+content. Updates infer the validated installed side and layout; explicit conflicting
+options fail before acquisition. First installation defaults to client/game and
+prints that selection; choose `--side server` for a new server. `instance update
+--check` composes a fresh observation and update through separate approvals. Check
+approval persists the anti-replay floor even if installation never follows;
+preview saves nothing and never authorizes a later update. Local assets,
 verified cache entries and exact download sources supply its files. Remote immutable assets resolve relative to the authenticated release URL.
 `--file KEY=PATH` supplies restricted content.
 For Prism layouts, content application also updates the exact game/loader component

@@ -165,7 +165,7 @@ retaining its sequence floor. Reenrollment and revocation therefore cannot make
 old channel metadata fresh again. Rotation through explicit local reenrollment
 does not require a remote key-transition protocol.
 
-`instance observe-channel [ENVELOPE]` fetches the enrolled channel when no local
+`instance check-updates [ENVELOPE]` (alias `observe-channel`) fetches the enrolled channel when no local
 envelope is selected. Both paths verify bounded signed bytes
 against the current enrollment and persists its sequence and exact payload identity.
 It does not acquire or install release content. Channel acquisition must complete
@@ -174,6 +174,13 @@ payload can be retried; a lower sequence or different payload at the saved seque
 fails. A late trust edit invalidates the prepared operation. These control-document
 changes use the same exact grants, native observations and recoverable publication
 as other engine operations; they cannot write game files or installation history.
+
+Before approval, the host explains that observation saves the anti-replay floor
+without installing content. Preview persists nothing. `instance update --check`
+composes observation and application with fresh approvals, stopping after a declined
+or previewed observation. Existing validated records supply the side and layout;
+explicit conflicts fail before acquisition. First installation displays its
+client/game default unless overridden.
 
 `instance update [ENVELOPE]` selects the exact release named by the retained,
 authenticated channel. Selection verifies the envelope signature, payload identity,
@@ -202,6 +209,15 @@ Content transfer still requires the installation's explicit network grant and ve
 exact bytes before publication.
 
 ## Immutable publisher staging
+
+`release init --key-file KEY` initializes an external native Ed25519 seed for the
+existing publisher workspace. The key parent must already be private to the user,
+verified through native permissions. Preparation creates no key; approved execution
+uses native entropy and exclusive creation, and never replaces or removes an
+existing destination. Failure retires only its owned temporary candidate. Setup
+prints public identity and deployment instructions, without implicit enrollment or
+storing private material in project configuration. The key remains an explicit
+host input to signing commands. See [publishing](../publishing.md) for setup.
 
 `release stage SOURCE --key-file KEY` reads an extracted native export, verifies
 its selected assets and original assertions, and signs the exact release payload.

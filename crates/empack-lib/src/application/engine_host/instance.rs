@@ -14,6 +14,18 @@ use std::collections::BTreeMap;
 mod prelaunch;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
+    install_with_transport(
+        session,
+        command,
+        crate::engine::acquisition::HttpAcquisition::new()?,
+    )
+    .await
+}
+async fn install_with_transport(
+    session: &dyn Session,
+    command: InstanceCommand,
+    transport: crate::engine::acquisition::HttpAcquisition,
+) -> Result<()> {
     let require_subscription = matches!(
         &command,
         InstanceCommand::Prepare {
@@ -22,6 +34,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         }
     );
     let prepare_current = matches!(command, InstanceCommand::Prepare { .. });
+    let check = matches!(&command, InstanceCommand::Update { check: true, .. });
     let subscribed = matches!(command, InstanceCommand::Update { .. });
     let (release, sha256, side, layout, choices, files, conflicts) = match command {
         InstanceCommand::Install {
@@ -52,6 +65,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             conflicts,
         ),
         InstanceCommand::Update {
+            check: _,
             conflicts,
             release,
             side,
@@ -62,6 +76,52 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         _ => anyhow::bail!("Expected an instance installation request"),
     };
     let (invocation, root) = project_path(session)?;
+    let installed = inspect_optional(
+        session,
+        root.clone(),
+        state_root(session.config().app_config(), &invocation)?,
+    )
+    .await?;
+    let layout = layout
+        .map(|value| match value.as_str() {
+            "game" => Ok(InstanceLayout::Game),
+            "prism" => Ok(InstanceLayout::Prism),
+            _ => anyhow::bail!("Instance layout must be game or prism"),
+        })
+        .transpose()?;
+    let (side, layout) = environment(
+        side.as_deref(),
+        layout,
+        installed.as_ref().map(|(record, _)| record),
+    )?;
+    if let Some((record, decoded)) = &*installed {
+        session.display().status().info(&format!(
+            "Installed {} (release {}), {:?}/{:?}; update owner: {}",
+            decoded.document().version,
+            record.release,
+            record.side,
+            record.layout,
+            if subscribed {
+                "enrolled publisher via empack"
+            } else {
+                "explicit snapshot via empack"
+            }
+        ));
+    } else {
+        session.display().status().info(&format!(
+            "First installation: {side:?}/{layout:?} (default: client/game)"
+        ));
+    }
+    if check
+        && !subscription_with_transport(
+            session,
+            InstanceCommand::ObserveChannel { envelope: None },
+            transport.clone(),
+        )
+        .await?
+    {
+        return Ok(());
+    }
     let selected = release.map(|path| absolute(&invocation, &path));
     let assets = selected
         .as_ref()
@@ -117,7 +177,7 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
                     &mut scope,
                     selected_root,
                     state,
-                    &crate::engine::acquisition::HttpAcquisition::new()?,
+                    &transport,
                     version,
                 )
                 .await;
@@ -178,6 +238,11 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
             SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
         }
     };
+    session.display().status().info(&format!(
+        "Offered {} (release {})",
+        release.release().document().version,
+        release.release().id()
+    ));
     let request = InstallInstanceRequest {
         require_subscription,
         conflicts: conflict_resolutions(conflicts, &invocation)?,
@@ -186,19 +251,9 @@ async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> 
         } else {
             crate::engine::instance::InstanceAction::Apply
         },
-        layout: layout
-            .map(|layout| match layout.as_str() {
-                "game" => Ok(InstanceLayout::Game),
-                "prism" => Ok(InstanceLayout::Prism),
-                _ => anyhow::bail!("Instance layout must be game or prism"),
-            })
-            .transpose()?,
+        layout: Some(layout),
         release,
-        side: match side.as_str() {
-            "server" => InstanceSide::Server,
-            "client" => InstanceSide::Client,
-            _ => anyhow::bail!("Instance side must be client or server"),
-        },
+        side,
         choices,
         supplied: BTreeMap::new(),
         local_files,
@@ -286,7 +341,9 @@ pub(in crate::application) async fn dispatch(
         }
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
-        | InstanceCommand::ObserveChannel { .. }) => subscription(session, command).await,
+        | InstanceCommand::ObserveChannel { .. }) => {
+            subscription(session, command).await.map(|_| ())
+        }
         command @ (InstanceCommand::Install { .. }
         | InstanceCommand::Prepare { .. }
         | InstanceCommand::Update { .. }) => install(session, command).await,
@@ -540,7 +597,20 @@ async fn maintain(
     result
 }
 
-async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result<()> {
+async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result<bool> {
+    subscription_with_transport(
+        session,
+        command,
+        crate::engine::acquisition::HttpAcquisition::new()?,
+    )
+    .await
+}
+async fn subscription_with_transport(
+    session: &dyn Session,
+    command: InstanceCommand,
+    transport: crate::engine::acquisition::HttpAcquisition,
+) -> Result<bool> {
+    let observing = matches!(&command, InstanceCommand::ObserveChannel { .. });
     use crate::engine::api::SubscriptionRequest;
     use ed25519_dalek::VerifyingKey;
     let keys = |values: Vec<String>| -> Result<Vec<VerifyingKey>> {
@@ -587,7 +657,7 @@ async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result
                     let record = read_subscription(&mut scope, selected_root, state).await?;
                     // Revoked enrollment must fail before issuing a request.
                     record.trust()?;
-                    return crate::engine::acquisition::HttpAcquisition::new()?
+                    return transport
                         .publisher_metadata(
                             &mut scope,
                             &record.url,
@@ -656,7 +726,16 @@ async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result
                 crate::engine::release::trust::key_id(&key)
             ));
         }
-        apply(session, &engine, prepared, "Publisher trust", |receipt| {
+        if observing {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs().try_into()?;
+            let channel = view.record.authenticated_channel(now, &semver::Version::parse(if env!("CARGO_PKG_VERSION") == "0.0.0-dev" { "0.6.0-beta" } else { env!("CARGO_PKG_VERSION") })?)?;
+            session.display().status().info(&format!("Offered release {}; sequence {}; expires {} UTC Unix seconds; update owner: enrolled publisher via empack", channel.document().release.id, channel.document().sequence, channel.document().expires));
+            session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
+        }
+        if !approve(session, "Publisher trust and channel observation")? {
+            return Ok(false);
+        }
+        execute_approved(session, &engine, prepared, "Publisher trust", |receipt| {
             let ExecutionReceipt::Subscription(receipt) = receipt else {
                 anyhow::bail!("Unexpected subscription receipt")
             };
@@ -665,7 +744,8 @@ async fn subscription(session: &dyn Session, command: InstanceCommand) -> Result
                 receipt.record.pack, receipt.record.channel
             ))
         })
-        .await
+        .await?;
+        Ok(true)
     }
     .await;
     engine.shutdown().await;
@@ -944,4 +1024,60 @@ async fn discard_pending(session: &dyn Session) -> Result<()> {
     .await;
     engine.shutdown().await;
     result
+}
+
+fn environment(
+    side: Option<&str>,
+    layout: Option<InstanceLayout>,
+    installed: Option<&crate::engine::instance::InstanceRecord>,
+) -> Result<(InstanceSide, InstanceLayout)> {
+    let side = side
+        .map(|value| match value {
+            "client" => Ok(InstanceSide::Client),
+            "server" => Ok(InstanceSide::Server),
+            _ => anyhow::bail!("Instance side must be client or server"),
+        })
+        .transpose()?;
+    if let Some(record) = installed {
+        ensure!(
+            side.is_none_or(|side| side == record.side),
+            "Explicit side conflicts with the installed environment"
+        );
+        ensure!(
+            layout.is_none_or(|layout| layout == record.layout),
+            "Explicit layout conflicts with the installed layout"
+        );
+        Ok((record.side, record.layout))
+    } else {
+        Ok((
+            side.unwrap_or(InstanceSide::Client),
+            layout.unwrap_or_default(),
+        ))
+    }
+}
+async fn inspect_optional(
+    session: &dyn Session,
+    root: PathBuf,
+    state: PathBuf,
+) -> Result<
+    crate::engine::runtime::RetainedOutput<
+        Option<(crate::engine::instance::InstanceRecord, DecodedRelease)>,
+    >,
+> {
+    initialize::discover(session, move |mut scope| async move {
+        let mut resources = operation_resources().capture;
+        resources.scratch_bytes = 0;
+        let work =
+            scope.spawn_blocking(resources, operation_resources().prepared, move |cancel| {
+                crate::engine::instance::inspect_optional(
+                    &root,
+                    None,
+                    crate::engine::publication::RecoveryReader::new(state),
+                    SnapshotLimits::default(),
+                    &cancel,
+                )
+            })?;
+        scope.accept(work.wait().await?)?.transpose()
+    })
+    .await
 }
