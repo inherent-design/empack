@@ -128,9 +128,8 @@ impl PublisherSetup {
                     "Cannot create signing key exclusively; existing paths are never replaced",
                 )?;
             #[cfg(unix)]
-            self.directory
-                .try_clone()
-                .and_then(|directory| directory.into_std_file().sync_all())
+            crate::engine::native::readable_directory(&self.directory)
+                .and_then(|directory| directory.sync_all().map_err(Into::into))
                 .context("Signing key was created, but its directory could not be synchronized")?;
             Ok((
                 super::hex(key.verifying_key().as_bytes()),
