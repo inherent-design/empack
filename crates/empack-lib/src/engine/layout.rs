@@ -13,6 +13,7 @@ pub struct ProjectLayout;
 impl ProjectLayout {
     pub fn path(target: &ManagedPath) -> Result<PortableRelPath> {
         let value = match target {
+            ManagedPath::BindingsDocument => "empack.bindings.yml".to_owned(),
             ManagedPath::IntentDocument => "empack.yml".to_owned(),
             ManagedPath::LockDocument => "empack.lock".to_owned(),
             ManagedPath::Content { layer, path } => format!(
@@ -54,6 +55,7 @@ impl ProjectLayout {
             ".minecraft/.empack-layout" => return Ok(ManagedPath::PrismLayoutMarker),
             ".empack/subscription.json" => return Ok(ManagedPath::InstanceSubscription),
             ".empack/instance.json" => return Ok(ManagedPath::InstanceRecord),
+            "empack.bindings.yml" => return Ok(ManagedPath::BindingsDocument),
             "empack.yml" => return Ok(ManagedPath::IntentDocument),
             "empack.lock" => return Ok(ManagedPath::LockDocument),
             ".gitignore" => return Ok(ManagedPath::Scaffold(ProjectScaffold::GitIgnore)),

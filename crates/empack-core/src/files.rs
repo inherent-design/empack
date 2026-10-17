@@ -11,6 +11,8 @@ use core::fmt;
 pub enum ManagedPath {
     /// Normalized authoring document.
     IntentDocument,
+    /// Portable author integration intent.
+    BindingsDocument,
     /// Exact selection document.
     LockDocument,
     /// Content in an explicit environment layer.

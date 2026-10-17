@@ -1050,12 +1050,7 @@ async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
         lock.required_edges.insert(key, BTreeSet::new());
     }
     write_intent(root.path(), &intent);
-    let source = DocumentCodec
-        .decode_intent(
-            &fs::read(root.path().join("project/empack.yml")).unwrap(),
-            "fixture",
-        )
-        .unwrap();
+    let source = crate::testing::read_authoring(&root.path().join("project/empack.yml")).unwrap();
     lock.intent_revision = source.semantic_revision();
     let resolved = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
     fs::write(

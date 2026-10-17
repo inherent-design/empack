@@ -194,9 +194,7 @@ fn e2e_import_local_mrpack_and_build_mrpack() {
         config.contains("name: local-fixture-pack"),
         "empack.yml should import the mrpack pack name\n{config}"
     );
-    let decoded = empack_lib::engine::documents::DocumentCodec
-        .decode_intent(config.as_bytes(), "fixture")
-        .unwrap();
+    let decoded = empack_lib::testing::read_authoring(&pack_dir.join("empack.yml")).unwrap();
     assert_eq!(
         decoded.intent().runtime.loader,
         empack_core::model::LoaderKind::Fabric

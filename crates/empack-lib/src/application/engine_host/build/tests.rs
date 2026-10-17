@@ -263,9 +263,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let project = root.path().join("project");
-    let decoded = DocumentCodec
-        .decode_intent(&fs::read(project.join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let decoded = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     let resolved = DocumentCodec
         .decode_lock(
             &fs::read(project.join("empack.lock")).unwrap(),
@@ -563,14 +561,11 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
 
 #[tokio::test]
 async fn derived_build_choices_reject_changed_intent_before_preparation() {
-    use crate::engine::documents::DocumentCodec;
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let project = root.path().join("project");
     let host = session(root.path(), true, false);
-    let original = DocumentCodec
-        .decode_intent(&fs::read(project.join("empack.yml")).unwrap(), "original")
-        .unwrap();
+    let original = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     let current = DocumentCodec
         .decode_lock(
             &fs::read(project.join("empack.lock")).unwrap(),
@@ -612,7 +607,6 @@ async fn derived_build_choices_reject_changed_intent_before_preparation() {
 
 #[tokio::test]
 async fn derived_build_choices_allow_comment_edits_without_changing_the_output_plan() {
-    use crate::engine::documents::DocumentCodec;
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let project = root.path().join("project");
@@ -769,12 +763,7 @@ async fn curseforge_cli_recipe_uses_zip_and_only_publishes_requested_output() {
 async fn consumer_overrides_preserve_delivery_and_reject_lossy_policies() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
-    let parsed = DocumentCodec
-        .decode_intent(
-            &fs::read(root.path().join("project/empack.yml")).unwrap(),
-            "test",
-        )
-        .unwrap();
+    let parsed = crate::testing::read_authoring(&root.path().join("project/empack.yml")).unwrap();
     for (consumer, bundled, references) in [
         ("prism", Recipe::PRISM_BUNDLED, Recipe::PRISM_REFERENCES),
         ("server", Recipe::SERVER_BUNDLED, Recipe::SERVER_REFERENCES),
@@ -822,12 +811,7 @@ async fn consumer_overrides_preserve_delivery_and_reject_lossy_policies() {
 async fn subscribed_recipe_selection_retains_policy_and_distinct_output_names() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
-    let parsed = DocumentCodec
-        .decode_intent(
-            &fs::read(root.path().join("project/empack.yml")).unwrap(),
-            "fixture",
-        )
-        .unwrap();
+    let parsed = crate::testing::read_authoring(&root.path().join("project/empack.yml")).unwrap();
     for consumer in ["prism", "server"] {
         for delivery in ["references", "bundled"] {
             let selected = request(
@@ -857,12 +841,7 @@ async fn subscribed_recipe_selection_retains_policy_and_distinct_output_names() 
 async fn native_and_platform_cli_policies_select_distinct_outputs() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
-    let parsed = DocumentCodec
-        .decode_intent(
-            &fs::read(root.path().join("project/empack.yml")).unwrap(),
-            "fixture",
-        )
-        .unwrap();
+    let parsed = crate::testing::read_authoring(&root.path().join("project/empack.yml")).unwrap();
     for (consumer, authority, suffix) in [
         ("empack", "empack", "-subscribed.empack"),
         ("modrinth", "platform", "-platform.mrpack"),

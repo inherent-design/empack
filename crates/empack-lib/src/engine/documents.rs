@@ -1,4 +1,4 @@
-//! Versioned intent/lock codecs. Decoding creates semantic data, never publication authority.
+//! Versioned authoring/bindings/lock codecs. Decoding grants no publication authority.
 use anyhow::{Context, Result, bail, ensure};
 use empack_core::{
     digest::{ContentId, DigestSet, ExpectedDigest},
@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod bindings;
 mod intent;
 mod lock;
 pub(crate) mod recipe;
@@ -27,7 +28,7 @@ pub struct InvalidDocument {
 /// Maximum encoded document length, before YAML allocation.
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
-pub const INTENT_SCHEMA: u64 = 3;
+pub const INTENT_SCHEMA: u64 = 4;
 /// Exact selection schema.
 pub const LOCK_SCHEMA: u64 = 1;
 
@@ -38,8 +39,19 @@ pub struct DecodedIntent {
     semantic_revision: SemanticRevision,
     raw_revision: DocumentRevision,
     original: Vec<u8>,
+    bindings_original: Option<Vec<u8>>,
 }
 impl DecodedIntent {
+    /// Original portable integration intent, including comments; absence is also an input.
+    pub fn bindings_original(&self) -> Option<&[u8]> {
+        self.bindings_original.as_deref()
+    }
+    /// Raw binding revision; absence is a distinct publication precondition.
+    pub fn bindings_revision(&self) -> Option<DocumentRevision> {
+        self.bindings_original
+            .as_ref()
+            .map(|bytes| DocumentRevision(Sha256::digest(bytes).into()))
+    }
     /// Checked semantic intent.
     pub fn intent(&self) -> &ProjectIntent {
         &self.intent
@@ -96,6 +108,37 @@ pub struct PreparedDocument {
     pub bytes: Vec<u8>,
     /// Explicit syntax-preservation result.
     pub edit: DocumentEdit,
+    /// Corresponding bindings bytes, published in the same operation.
+    pub bindings: Option<Vec<u8>>,
+    /// Expected binding bytes, or expected absence when none were captured.
+    pub bindings_expected: Option<DocumentRevision>,
+}
+impl PreparedDocument {
+    /// Validate both candidate author inputs together.
+    pub fn decode(&self, origin: &str) -> Result<DecodedIntent> {
+        DocumentCodec.decode_authoring(&self.bytes, self.bindings.as_deref(), origin)
+    }
+    pub(crate) fn documents(
+        &self,
+        lock: &[u8],
+    ) -> BTreeMap<empack_core::files::ManagedPath, Vec<u8>> {
+        use empack_core::files::ManagedPath;
+        let mut values = BTreeMap::from([
+            (ManagedPath::IntentDocument, self.bytes.clone()),
+            (ManagedPath::LockDocument, lock.to_vec()),
+        ]);
+        if let Some(bytes) = &self.bindings {
+            values.insert(ManagedPath::BindingsDocument, bytes.clone());
+        }
+        values
+    }
+}
+/// Portable authoring inputs; exact resolution remains solely in empack.lock.
+pub struct AuthoringDocuments {
+    /// Compact ordinary author input.
+    pub intent: Vec<u8>,
+    /// Portable integration intent, absent when defaults suffice.
+    pub bindings: Option<Vec<u8>>,
 }
 /// Explicit file-role choices for one provider project; destinations carry no mutation authority.
 #[derive(Clone)]
@@ -153,8 +196,21 @@ impl DocumentCodec {
     }
     /// Parse intent with a named origin for diagnostics. No legacy fallback is attempted.
     pub fn decode_intent(&self, bytes: &[u8], origin: &str) -> Result<DecodedIntent> {
+        self.decode_authoring(bytes, None, origin)
+    }
+    /// Compose both author inputs before validating their canonical semantic meaning.
+    pub fn decode_authoring(
+        &self,
+        bytes: &[u8],
+        bindings: Option<&[u8]>,
+        origin: &str,
+    ) -> Result<DecodedIntent> {
         let value = parse(bytes).with_context(|| InvalidDocument {
             kind: "intent",
+            origin: origin.into(),
+        })?;
+        let value = bindings::compose(value, bindings).with_context(|| InvalidDocument {
+            kind: "authoring composition",
             origin: origin.into(),
         })?;
         let intent = intent::decode(&value).with_context(|| InvalidDocument {
@@ -173,6 +229,7 @@ impl DocumentCodec {
             raw_revision: DocumentRevision(Sha256::digest(bytes).into()),
             intent,
             original: bytes.to_vec(),
+            bindings_original: bindings.map(<[u8]>::to_vec),
         })
     }
     /// Reserve codec work from model text and node counts without allocating wire values.
@@ -195,16 +252,45 @@ impl DocumentCodec {
         source: &DecodedIntent,
         next: &ProjectIntent,
     ) -> Result<PreparedDocument> {
-        let (bytes, edit) = if source.intent() == next {
-            (source.original.clone(), DocumentEdit::Unchanged)
+        let (bytes, mut bindings, edit) = if source.intent() == next {
+            (
+                source.original.clone(),
+                source.bindings_original.clone(),
+                DocumentEdit::Unchanged,
+            )
         } else {
-            (self.encode_intent(next)?, DocumentEdit::Reformatted)
+            let next = self.encode_authoring(next)?;
+            (next.intent, next.bindings, DocumentEdit::Reformatted)
         };
+        if bindings.is_none() && source.bindings_original.is_some() {
+            bindings = Some(serialize(&json!({"schema":1,"bindings":{}}))?);
+        }
         Ok(PreparedDocument {
             expected: source.raw_revision,
             bytes,
+            bindings,
+            bindings_expected: source
+                .bindings_original
+                .as_ref()
+                .map(|bytes| DocumentRevision(Sha256::digest(bytes).into())),
             edit,
         })
+    }
+    /// Compact ordinary inputs and retain non-default integration intent separately.
+    pub fn encode_authoring(&self, intent: &ProjectIntent) -> Result<AuthoringDocuments> {
+        intent.validate()?;
+        let values = bindings::split(intent)?;
+        ensure!(
+            self.decode_authoring(
+                &values.intent,
+                values.bindings.as_deref(),
+                "encoded authoring"
+            )?
+            .intent()
+                == intent,
+            "Authoring split changed semantic intent"
+        );
+        Ok(values)
     }
     /// Decode and validate an exact lock against this particular semantic intent.
     pub fn decode_lock(

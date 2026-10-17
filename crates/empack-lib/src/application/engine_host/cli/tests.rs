@@ -54,9 +54,7 @@ fn options(value: &str) -> AddOptions {
     }
 }
 pub(super) fn project(root: &Path) -> ResolvedProject {
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("project/empack.yml")).unwrap(), "test")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&root.join("project/empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.join("project/empack.lock")).unwrap(),
@@ -444,11 +442,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
             .placements
             .clone(),
     );
-    fs::write(
-        root.path().join("project/empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
@@ -484,11 +478,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
     let lock_path = root.path().join("project/empack.lock");
     let intent_bytes = fs::read(&intent_path).unwrap();
     let lock_bytes = fs::read(&lock_path).unwrap();
-    fs::write(
-        &intent_path,
-        DocumentCodec.encode_intent(recorded.intent()).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&intent_path, recorded.intent()).unwrap();
     fs::write(&lock_path, DocumentCodec.encode_lock(&recorded).unwrap()).unwrap();
     let pinned = super::super::tests::snapshot(root.path());
     assert!(
@@ -501,6 +491,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
         .is_err()
     );
     assert_eq!(super::super::tests::snapshot(root.path()), pinned);
+    crate::testing::write_authoring(&intent_path, &intent).unwrap();
     fs::write(&intent_path, intent_bytes).unwrap();
     fs::write(&lock_path, lock_bytes).unwrap();
     fs::write(&metadata, b"invalid foreign metadata [").unwrap();
@@ -788,11 +779,7 @@ async fn provider_file_plan_preserves_companions_destinations_and_optional_choic
         .remove(&empack_core::model::FileSlot::parse("assets.zip").unwrap())
         .unwrap();
     let write = |intent: &empack_core::model::ProjectIntent| {
-        fs::write(
-            root.path().join("project/empack.yml"),
-            DocumentCodec.encode_intent(intent).unwrap(),
-        )
-        .unwrap()
+        crate::testing::write_authoring(&root.path().join("project/empack.yml"), intent).unwrap()
     };
     write(&intent);
     let services = || dependencies::AdditionServices {
@@ -912,11 +899,7 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         ContentKind::World,
         PortableRelPath::parse("saves", PathSyntax::ProjectContent).unwrap(),
     );
-    fs::write(
-        root.path().join("project/empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
@@ -1158,11 +1141,7 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
         ContentKind::World,
         PortableRelPath::parse("saves", PathSyntax::ProjectContent).unwrap(),
     );
-    fs::write(
-        root.path().join("project/empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
@@ -1299,7 +1278,8 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     let source = DocumentCodec.decode_intent(&wire, "imported role").unwrap();
     lock.intent_revision = source.semantic_revision();
     let recorded = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
-    fs::write(root.path().join("project/empack.yml"), wire).unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), recorded.intent())
+        .unwrap();
     fs::write(
         root.path().join("project/empack.lock"),
         DocumentCodec.encode_lock(&recorded).unwrap(),
@@ -1376,7 +1356,8 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
         .unwrap();
     lock.intent_revision = decoded.semantic_revision();
     let pinned = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
-    fs::write(root.path().join("project/empack.yml"), wire).unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), pinned.intent())
+        .unwrap();
     fs::write(
         root.path().join("project/empack.lock"),
         DocumentCodec.encode_lock(&pinned).unwrap(),
@@ -1485,11 +1466,7 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     let key = recorded.intent().roots.keys().next().unwrap().clone();
     let mut intent = recorded.intent().clone();
     intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
-    fs::write(
-        root.path().join("project/empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
+    crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronize(&session(root.path(), false), false)
         .await
         .unwrap();

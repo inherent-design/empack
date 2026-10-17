@@ -191,25 +191,29 @@ pub(in crate::engine) fn plan_selected_removal(
         &mut removals,
         std::iter::empty(),
     )?;
-    let documents = BTreeMap::from([
-        (ManagedPath::IntentDocument, candidate.intent.bytes.clone()),
-        (ManagedPath::LockDocument, candidate.lock.clone()),
-    ]);
+    let documents = candidate.intent.documents(&candidate.lock);
     let observed = verification::observed_mutation_for(
         workspace.observations(),
         documents.keys().chain(removals.iter()).cloned(),
     )?;
     let mut desired = BTreeMap::new();
     for (target, bytes) in &documents {
-        let ObservedPath::File(before) = &observed[target] else {
-            anyhow::bail!("Mutation document is not an existing regular file");
+        let permissions = match &observed[target] {
+            ObservedPath::File(before) => before.permissions,
+            ObservedPath::Absent if *target == ManagedPath::BindingsDocument => {
+                empack_core::files::FilePermissions {
+                    readonly: false,
+                    executable: false,
+                }
+            }
+            _ => anyhow::bail!("Authoring document is not a regular file"),
         };
         desired.insert(
             target.clone(),
             FileContent {
                 content: ContentId::from_sha256(Sha256::digest(bytes).into()),
                 bytes: bytes.len() as u64,
-                permissions: before.permissions,
+                permissions,
             },
         );
     }

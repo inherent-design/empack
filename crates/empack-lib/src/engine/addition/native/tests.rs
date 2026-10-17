@@ -196,9 +196,7 @@ fn reference_updates_retire_only_verified_old_materializations() {
         );
         let restored = DocumentCodec.decode_lock(
             &fs::read(root.path().join("empack.lock")).unwrap(),
-            &DocumentCodec
-                .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "intent")
-                .unwrap(),
+            &crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap(),
             "lock",
         );
         assert!(restored.is_ok());

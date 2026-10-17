@@ -42,8 +42,11 @@ Modrinth public resolution needs no API key. For CurseForge, provide your client
 through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version
 control. Resolution and referenced downloads require network access.
 
-Edit `empack.yml` directly or use authoring commands. Commit its exact generated lock
-when distributing reproducible author sources. Build requires satisfied intent and
+Edit `empack.yml` directly or use authoring commands. Common provider mods can use
+`label: modrinth:CANONICAL_ID`; use a mapping for side, content kind or exact policy.
+Non-default role and placement decisions belong to optional `empack.bindings.yml`.
+Commit `empack.yml`, `empack.lock` and bindings when present to share reproducible
+author sources. Build requires satisfied intent and
 does not implicitly update dependencies. Removal of a manifest root does not grant
 permission to delete user files or required shared dependencies.
 

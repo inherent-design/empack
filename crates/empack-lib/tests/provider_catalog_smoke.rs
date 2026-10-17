@@ -171,7 +171,7 @@ async fn publish_with_refreshed_locator(
         _ => anyhow::bail!("Resource fixture must use Modrinth"),
     };
     let intent_bytes = serde_json::to_vec(
-        &json!({"schema":3,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"recipes":[{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"}],"archive":"zip"},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
+        &json!({"schema":4,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"recipes":[{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"}],"archive":"zip"},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
     )?;
     let intent = DocumentCodec.decode_intent(&intent_bytes, "provider-smoke")?;
     let key = DependencyKey::parse("resources")?;

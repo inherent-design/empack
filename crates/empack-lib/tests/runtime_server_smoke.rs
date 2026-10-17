@@ -165,7 +165,7 @@ async fn package_runtime(
     let project = tempfile::tempdir()?;
     let host = tempfile::tempdir()?;
     let codec = DocumentCodec;
-    let mut intent = codec.decode_intent(b"schema: 3\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {recipes: [{consumer: server, delivery: bundled, environment: server, updates: snapshot}], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
+    let mut intent = codec.decode_intent(b"schema: 4\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {recipes: [{consumer: server, delivery: bundled, environment: server, updates: snapshot}], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
     intent.runtime.minecraft = runtime.minecraft.clone();
     intent.runtime.loader = runtime.loader;
     intent.runtime.loader_version = runtime.loader_version.clone();

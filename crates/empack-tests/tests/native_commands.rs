@@ -83,8 +83,7 @@ impl Project {
         out
     }
     fn roots(&self) -> usize {
-        DocumentCodec
-            .decode_intent(&fs::read(self.path().join("empack.yml")).unwrap(), "test")
+        empack_lib::testing::read_authoring(&self.path().join("empack.yml"))
             .unwrap()
             .intent()
             .roots

@@ -22,7 +22,7 @@ pub(super) struct Loaded {
 }
 pub(super) fn documents(
     snapshot: &crate::engine::snapshot::NativeSnapshot,
-) -> Result<[Option<[u8; 32]>; 2]> {
+) -> Result<[Option<[u8; 32]>; 3]> {
     let read = |name| -> Result<_> {
         Ok(
             match snapshot
@@ -35,7 +35,11 @@ pub(super) fn documents(
             },
         )
     };
-    Ok([read("empack.yml")?, read("empack.lock")?])
+    Ok([
+        read("empack.yml")?,
+        read("empack.bindings.yml")?,
+        read("empack.lock")?,
+    ])
 }
 pub(super) struct Selected {
     pub bytes: u64,
@@ -121,17 +125,18 @@ pub(super) fn read(selected: Selected, cancel: &Cancellation) -> Result<Option<L
     selected.check_binding()?;
     let record: record::Record =
         serde_json::from_slice(&bytes).context("Invalid pending build record")?;
-    ensure!(record.schema == 2, "Unsupported pending build schema");
+    ensure!(record.schema == 3, "Unsupported pending build schema");
     let snapshot = selected.capture(
         &[
             PortableRelPath::parse("empack.yml", PathSyntax::ProjectContent)?,
+            PortableRelPath::parse("empack.bindings.yml", PathSyntax::ProjectContent)?,
             PortableRelPath::parse("empack.lock", PathSyntax::ProjectContent)?,
         ],
         SnapshotLimits {
             entries: 16,
             depth: 2,
             file_bytes: crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
-            total_bytes: 2 * crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
+            total_bytes: 3 * crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
         },
         cancel,
     )?;

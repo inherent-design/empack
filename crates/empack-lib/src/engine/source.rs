@@ -152,11 +152,13 @@ impl CaptureFilter {
                 .collect();
             return spelling.is_some_and(|parts| {
                 let path = parts.join("/");
-                matches!(path.as_str(), "empack.yml" | "empack.lock" | "pack")
-                    || self
-                        .required
-                        .iter()
-                        .any(|required| template_overlap(&path, required))
+                matches!(
+                    path.as_str(),
+                    "empack.yml" | "empack.bindings.yml" | "empack.lock" | "pack"
+                ) || self
+                    .required
+                    .iter()
+                    .any(|required| template_overlap(&path, required))
             });
         }
         if let Some(outputs) = &self.template_outputs {

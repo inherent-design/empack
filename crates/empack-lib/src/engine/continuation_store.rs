@@ -57,7 +57,7 @@ pub(in crate::engine) fn encoded_bytes(record: &impl Serialize, maximum: u64) ->
 pub(in crate::engine) struct Binding {
     pub parent: String,
     pub project: Option<String>,
-    pub documents: [Option<[u8; 32]>; 2],
+    pub documents: Vec<Option<[u8; 32]>>,
 }
 /// Record validation remains with each workflow; saved DTOs carry no approval.
 pub(in crate::engine) trait BoundRecord: Serialize + DeserializeOwned {
@@ -152,20 +152,22 @@ pub(in crate::engine) fn bind_for(
         Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
-    let mut documents = [None, None];
+    let mut documents = vec![None; if kind == Kind::Instance { 2 } else { 3 }];
     if let Some(project) = &project {
         let paths = match kind {
-            Kind::Instance => [".empack/instance.json", ".empack/subscription.json"],
-            _ => ["empack.yml", "empack.lock"],
+            Kind::Instance => vec![".empack/instance.json", ".empack/subscription.json"],
+            _ => vec!["empack.yml", "empack.bindings.yml", "empack.lock"],
         }
-        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent).unwrap());
+        .into_iter()
+        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent).unwrap())
+        .collect::<Vec<_>>();
         let snapshot = project.capture(
             &paths,
             SnapshotLimits {
                 entries: 4,
                 depth: 2,
                 file_bytes: crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
-                total_bytes: 2 * crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
+                total_bytes: 3 * crate::engine::documents::MAX_DOCUMENT_BYTES as u64,
             },
             cancel,
         )?;

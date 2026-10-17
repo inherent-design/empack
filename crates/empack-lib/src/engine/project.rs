@@ -225,6 +225,7 @@ impl MutationSnapshot {
 pub struct ProjectRevision {
     root: native::ObjectIdentity,
     intent: DocumentRevision,
+    bindings: Option<DocumentRevision>,
     lock: Option<DocumentRevision>,
 }
 
@@ -239,6 +240,7 @@ impl WorkspaceSnapshot {
         ProjectRevision {
             root: self.root.binding,
             intent: self.intent.raw_revision(),
+            bindings: self.intent.bindings_revision(),
             lock: self.prior_lock.as_ref().map(DecodedLock::raw_revision),
         }
     }
@@ -421,6 +423,7 @@ impl ProjectReader {
         let _initial_guard = self.recovery.enter(&root)?;
         let scopes = [
             "empack.yml",
+            "empack.bindings.yml",
             "empack.lock",
             "pack",
             "overrides/common",
@@ -431,11 +434,19 @@ impl ProjectReader {
         .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
         .collect::<std::result::Result<Vec<_>, _>>()?;
         let document = PortableRelPath::parse("empack.yml", PathSyntax::ProjectContent)?;
-        let prior = root.capture(&[document], limits, cancel)?;
+        let prior = root.capture(
+            &[
+                document,
+                PortableRelPath::parse("empack.bindings.yml", PathSyntax::ProjectContent)?,
+            ],
+            limits,
+            cancel,
+        )?;
+        let bindings = read_document(&root, &prior, "empack.bindings.yml", cancel)?;
         let excludes = read_document(&root, &prior, "empack.yml", cancel)?
             .and_then(|bytes| {
                 DocumentCodec
-                    .decode_intent(&bytes, "replacement source")
+                    .decode_authoring(&bytes, bindings.as_deref(), "replacement source")
                     .ok()
             })
             .map(|document| document.intent().source_excludes.clone())
@@ -593,6 +604,7 @@ impl ProjectReader {
         ensure!(
             documents.root.binding == captured.root.binding
                 && documents.intent.raw_revision() == captured.intent.raw_revision()
+                && documents.intent.bindings_revision() == captured.intent.bindings_revision()
                 && documents.prior_lock.as_ref().map(DecodedLock::raw_revision)
                     == captured.prior_lock.as_ref().map(DecodedLock::raw_revision),
             "Project documents changed while selecting build inputs"
@@ -825,6 +837,7 @@ impl ProjectReader {
         ensure!(
             documents.root.binding == workspace.root.binding
                 && documents.intent.raw_revision() == workspace.intent.raw_revision()
+                && documents.intent.bindings_revision() == workspace.intent.bindings_revision()
                 && documents.prior_lock.as_ref().map(DecodedLock::raw_revision)
                     == workspace.prior_lock.as_ref().map(DecodedLock::raw_revision),
             "Project documents changed while selecting mutation inputs"
@@ -861,7 +874,7 @@ impl ProjectReader {
         let root = ProjectReadRoot::open(selected)?;
         let _initial_guard = self.recovery.enter(&root)?;
         let mut scopes = scopes.to_vec();
-        for name in ["empack.yml", "empack.lock"] {
+        for name in ["empack.yml", "empack.bindings.yml", "empack.lock"] {
             let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
             if !scopes.contains(&path) {
                 scopes.push(path);
@@ -870,7 +883,9 @@ impl ProjectReader {
         let native = root.capture_filtered(&scopes, limits, filter, cancel)?;
         let intent_bytes = read_document(&root, &native, "empack.yml", cancel)?
             .context(ProjectDocumentsError::MissingIntent)?;
-        let intent = DocumentCodec.decode_intent(&intent_bytes, "empack.yml")?;
+        let bindings = read_document(&root, &native, "empack.bindings.yml", cancel)?;
+        let intent =
+            DocumentCodec.decode_authoring(&intent_bytes, bindings.as_deref(), "empack.yml")?;
         let prior_lock = read_document(&root, &native, "empack.lock", cancel)?
             .map(|bytes| DocumentCodec.decode_prior_lock(&bytes, "empack.lock"))
             .transpose()?;

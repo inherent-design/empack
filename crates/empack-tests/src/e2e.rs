@@ -192,9 +192,7 @@ impl TestProject {
         use empack_lib::engine::documents::DocumentCodec;
         let manifest = self.root.join("empack.yml");
         let lock_path = self.root.join("empack.lock");
-        let decoded = DocumentCodec
-            .decode_intent(&std::fs::read(&manifest).unwrap(), "test")
-            .unwrap();
+        let decoded = empack_lib::testing::read_authoring(&manifest).unwrap();
         let prior = DocumentCodec
             .decode_lock(&std::fs::read(&lock_path).unwrap(), &decoded, "test")
             .unwrap();
@@ -212,7 +210,7 @@ impl TestProject {
         let mut lock = prior.lock().clone();
         lock.intent_revision = revision;
         let project = ResolvedProject::validate(intent, lock, revision).unwrap();
-        std::fs::write(manifest, bytes).unwrap();
+        empack_lib::testing::write_authoring(&manifest, project.intent()).unwrap();
         std::fs::write(lock_path, DocumentCodec.encode_lock(&project).unwrap()).unwrap();
     }
 
@@ -414,12 +412,7 @@ pub fn assert_project_initialized(project_root: &Path) {
 }
 pub fn read_project(project_root: &Path) -> empack_core::model::ResolvedProject {
     let codec = empack_lib::engine::documents::DocumentCodec;
-    let intent = codec
-        .decode_intent(
-            &std::fs::read(project_root.join("empack.yml")).unwrap(),
-            "empack.yml",
-        )
-        .unwrap();
+    let intent = empack_lib::testing::read_authoring(&project_root.join("empack.yml")).unwrap();
     codec
         .decode_lock(
             &std::fs::read(project_root.join("empack.lock")).unwrap(),

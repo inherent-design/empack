@@ -271,8 +271,7 @@ fn e2e_native_download_transport_failure_exits_three() {
     check(&result, EmpackExitCode::Network, "Download");
     assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
     assert!(
-        empack_lib::engine::documents::DocumentCodec
-            .decode_intent(&fs::read(project.dir().join("empack.yml")).unwrap(), "test")
+        empack_lib::testing::read_authoring(&project.dir().join("empack.yml"))
             .unwrap()
             .intent()
             .roots

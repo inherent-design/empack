@@ -14,7 +14,7 @@ pub(super) const MAX_RECORD: u64 = 4 << 20;
 pub(super) struct Record {
     pub schema: u32,
     pub fingerprint: [u8; 32],
-    pub documents: [Option<[u8; 32]>; 2],
+    pub documents: [Option<[u8; 32]>; 3],
     pub recipe: SavedRecipe,
     pub files: Vec<SavedFile>,
 }

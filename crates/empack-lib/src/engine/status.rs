@@ -201,7 +201,8 @@ fn author(root: &ProjectReadRoot, cancel: &Cancellation) -> Result<ContextStatus
     let Some(bytes) = read(root, "empack.yml", cancel)? else {
         return Ok(result);
     };
-    let intent = DocumentCodec.decode_intent(&bytes, "empack.yml")?;
+    let bindings = read(root, "empack.bindings.yml", cancel)?;
+    let intent = DocumentCodec.decode_authoring(&bytes, bindings.as_deref(), "empack.yml")?;
     result.state = RecordState::Valid;
     result.name = Some(intent.intent().metadata.name.clone());
     result.version = Some(intent.intent().metadata.version.clone());
@@ -297,7 +298,10 @@ pub fn inspect_workspace(
     }
     let _guard = RecoveryReader::new(state.into()).enter(&root)?;
     for (kind, markers) in [
-        (WorkspaceContext::Author, &["empack.yml", "empack.lock"][..]),
+        (
+            WorkspaceContext::Author,
+            &["empack.yml", "empack.bindings.yml", "empack.lock"][..],
+        ),
         (
             WorkspaceContext::Instance,
             &[".empack/instance.json", ".empack/subscription.json"][..],

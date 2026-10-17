@@ -307,12 +307,7 @@ async fn acquired_local_and_url_files_preserve_placement_requirements_and_sync_c
             .unwrap();
             assert!(sync.files().changes().is_empty());
         }
-        let decoded = DocumentCodec
-            .decode_intent(
-                &fs::read(root.path().join("empack.yml")).unwrap(),
-                "published",
-            )
-            .unwrap();
+        let decoded = crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
         assert_eq!(
             decoded.intent().roots[&key].requirements,
             root_intent.requirements

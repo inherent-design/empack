@@ -179,9 +179,7 @@ async fn direct_files_publish_one_batch_preserve_provenance_and_build_current_by
         fs::read(project.join("overrides/client/config/chosen.txt")).unwrap(),
         b"enabled=true"
     );
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(project.join("empack.yml")).unwrap(), "test")
-        .unwrap();
+    let intent = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     let resolved = DocumentCodec
         .decode_lock(
             &fs::read(project.join("empack.lock")).unwrap(),
@@ -304,7 +302,7 @@ async fn transient_download_as_local_preserves_evidence_without_persisting_locat
     let project = root.path().join("project");
     let intent_bytes = fs::read(project.join("empack.yml")).unwrap();
     let lock_bytes = fs::read(project.join("empack.lock")).unwrap();
-    let intent = DocumentCodec.decode_intent(&intent_bytes, "test").unwrap();
+    let intent = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     let resolved = DocumentCodec
         .decode_lock(&lock_bytes, &intent, "test")
         .unwrap();
@@ -843,12 +841,7 @@ async fn downloaded_world_requires_conversion_and_preserves_all_members() {
     .await
     .unwrap();
     download.assert_async().await;
-    let source = DocumentCodec
-        .decode_intent(
-            &fs::read(root.path().join("project/empack.yml")).unwrap(),
-            "test",
-        )
-        .unwrap();
+    let source = crate::testing::read_authoring(&root.path().join("project/empack.yml")).unwrap();
     assert!(
         matches!(&source.intent().roots.values().next().unwrap().source,SourceIntent::LocalFiles(members) if members.len()==2)
     );

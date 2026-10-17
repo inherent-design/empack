@@ -64,7 +64,7 @@ impl RemovalCandidate {
     }
     fn from_plan(source: &DecodedIntent, plan: RemovalPlan) -> Result<Self> {
         let intent = DocumentCodec.replace_intent(source, plan.intent())?;
-        let next = DocumentCodec.decode_intent(&intent.bytes, "removal candidate")?;
+        let next = intent.decode("removal candidate")?;
         let project = plan.clone().resolve(next.semantic_revision())?;
         let lock = DocumentCodec.encode_lock(&project)?;
         Ok(Self {

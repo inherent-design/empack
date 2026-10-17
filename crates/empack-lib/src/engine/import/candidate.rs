@@ -417,8 +417,13 @@ impl VerifiedImportContent {
         }
         cancel.check()?;
         let codec = DocumentCodec;
-        let intent_bytes = codec.encode_intent(&intent)?;
-        let decoded = codec.decode_intent(&intent_bytes, "import candidate")?;
+        let authoring = codec.encode_authoring(&intent)?;
+        let intent_bytes = &authoring.intent;
+        let decoded = codec.decode_authoring(
+            intent_bytes,
+            authoring.bindings.as_deref(),
+            "import candidate",
+        )?;
         let lock = ResolutionLock {
             acceptable_versions: decoded.intent().runtime.acceptable_versions.clone(),
             intent_revision: decoded.semantic_revision(),
@@ -433,7 +438,12 @@ impl VerifiedImportContent {
         };
         let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision())?;
         // Exercise the durable boundary now, rather than discovering a lossy representation at publication.
-        let document_bytes = intent_bytes.len() as u64 + codec.encode_lock(&project)?.len() as u64;
+        let document_bytes = intent_bytes.len() as u64
+            + authoring
+                .bindings
+                .as_ref()
+                .map_or(0, |bytes| bytes.len() as u64)
+            + codec.encode_lock(&project)?.len() as u64;
         let publication_bytes =
             bindings
                 .iter()

@@ -153,13 +153,23 @@ impl ImportCandidate {
             lock.dependencies.get_mut(&key).unwrap().files = NonEmpty::new(files)?;
         }
         let codec = DocumentCodec;
-        let intent_bytes = codec.encode_intent(&intent)?;
+        let authoring = codec.encode_authoring(&intent)?;
+        let intent_bytes = &authoring.intent;
         let revision = codec
-            .decode_intent(&intent_bytes, "interpreted world import")?
+            .decode_authoring(
+                intent_bytes,
+                authoring.bindings.as_deref(),
+                "interpreted world import",
+            )?
             .semantic_revision();
         lock.intent_revision = revision;
         self.project = ResolvedProject::validate(intent, lock, revision)?;
-        let mut bytes = intent_bytes.len() as u64 + codec.encode_lock(&self.project)?.len() as u64;
+        let mut bytes = intent_bytes.len() as u64
+            + authoring
+                .bindings
+                .as_ref()
+                .map_or(0, |bytes| bytes.len() as u64)
+            + codec.encode_lock(&self.project)?.len() as u64;
         let mut payload_bytes = 0u64;
         for ((key, slot), source) in &self.bindings {
             let (content, _) = self.bound_content(key, slot, source);

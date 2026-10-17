@@ -31,9 +31,7 @@ fn fixture(project: &TestProject, algorithm: &str, hash: &str) -> std::path::Pat
     archive
 }
 fn read(root: &Path) -> empack_core::model::ResolvedProject {
-    let intent = DocumentCodec
-        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "fixture")
-        .unwrap();
+    let intent = empack_lib::testing::read_authoring(&root.join("empack.yml")).unwrap();
     DocumentCodec
         .decode_lock(
             &fs::read(root.join("empack.lock")).unwrap(),
