@@ -136,6 +136,23 @@ fn progress_flags_do_not_authorize_overwriting_an_external_edit() {
     );
     assert!(error.is_err());
     assert!(publisher.recovery_required(&root).unwrap());
+    let report = crate::engine::status::inspect_workspace(
+        project.path(),
+        &state.path().join("private"),
+        None,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert!(
+        report.contexts.is_empty(),
+        "status must not read partially published documents"
+    );
+    assert_eq!(report.findings[0].code, "publication-recovery-required");
+    assert_eq!(report.findings[0].next, ["recover", "inspect"]);
+    assert!(
+        publisher.recovery_required(&root).unwrap(),
+        "status must not recover"
+    );
     fs::write(project.path().join("empack.yml"), b"user edit!").unwrap();
     assert!(publisher.recover(&root).is_err());
     assert_eq!(

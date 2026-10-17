@@ -86,6 +86,51 @@ fn resolved(root: &Path) -> empack_core::model::ResolvedProject {
         .unwrap()
 }
 #[tokio::test]
+async fn status_is_read_only_and_distinguishes_author_lock_states() {
+    use crate::engine::status::{RecordState, WorkspaceContext, inspect_workspace};
+    let root = tempfile::tempdir().unwrap();
+    let selected = session(root.path(), true, false);
+    execute_command_with_session(init(), &selected)
+        .await
+        .unwrap();
+    let project = root.path().join("project");
+    let state = root.path().join("state");
+    let inspect = || inspect_workspace(&project, &state, None, &Default::default()).unwrap();
+    let before = snapshot(root.path());
+    let report = inspect();
+    assert_eq!(report.selected, Some(WorkspaceContext::Author));
+    assert_eq!(report.contexts[0].name.as_deref(), Some("Native Pack"));
+    assert_eq!(report.contexts[0].lock, Some(RecordState::Valid));
+    for json in [false, true] {
+        execute_command_with_session(
+            Commands::Status {
+                context: None,
+                json,
+            },
+            &selected,
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(snapshot(root.path()), before);
+    let intent = project.join("empack.yml");
+    let original = fs::read_to_string(&intent).unwrap();
+    fs::write(&intent, original.replace("1.21.1", "1.20.1")).unwrap();
+    assert_eq!(inspect().contexts[0].lock, Some(RecordState::Stale));
+    fs::write(project.join("empack.lock"), b"malformed lock").unwrap();
+    assert_eq!(inspect().contexts[0].lock, Some(RecordState::Invalid));
+    fs::remove_file(project.join("empack.lock")).unwrap();
+    assert_eq!(inspect().contexts[0].lock, Some(RecordState::Missing));
+    fs::write(&intent, b"not an author document").unwrap();
+    assert_eq!(inspect().contexts[0].state, RecordState::Invalid);
+    fs::remove_file(&intent).unwrap();
+    fs::create_dir(&intent).unwrap();
+    fs::write(intent.join("unrelated"), b"must not be traversed").unwrap();
+    let before = snapshot(root.path());
+    assert_eq!(inspect().contexts[0].state, RecordState::Invalid);
+    assert_eq!(snapshot(root.path()), before);
+}
+#[tokio::test]
 async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_project() {
     let root = tempfile::tempdir().unwrap();
     let selected = session(root.path(), true, false);

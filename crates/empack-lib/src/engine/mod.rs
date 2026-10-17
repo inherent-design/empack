@@ -50,6 +50,7 @@ pub mod server_runtime;
 pub mod snapshot;
 pub mod source;
 mod staging;
+pub mod status;
 pub mod synchronization;
 pub mod templates;
 mod verification;

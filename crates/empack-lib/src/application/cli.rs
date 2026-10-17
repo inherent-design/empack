@@ -34,6 +34,8 @@ Export for a launcher: empack --workdir my-pack build modrinth
 
 Author commands use empack.yml and empack.lock.
 Instance commands manage a separate installed game directory.
+Author update selects dependency versions; instance update applies a published pack release.
+Neither command updates the empack executable. Use empack status to inspect a workspace.
 Use --dry-run before a command to preview changes.
 Run empack <command> --help for its options.")]
 #[command(version)]
@@ -564,6 +566,15 @@ pub enum InstanceCommand {
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Inspect workspace metadata without network access or durable changes
+    Status {
+        /// Select a context when a directory contains more than one workspace role
+        #[arg(long, value_parser = ["author", "publisher", "instance"])]
+        context: Option<String>,
+        /// Emit the versioned status report as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Sign and publish native releases for static HTTPS hosting
     Release {
         #[command(subcommand)]
@@ -786,7 +797,7 @@ impl Commands {
         match self {
             Commands::Instance { .. } | Commands::Release { .. } => false,
             Commands::Recover { .. } => false,
-            Commands::Requirements => false,
+            Commands::Requirements | Commands::Status { .. } => false,
             Commands::Version => false,
             Commands::Init(..) => false,
             Commands::Sync { .. } => true,
@@ -802,7 +813,7 @@ impl Commands {
         match self {
             Commands::Instance { .. } | Commands::Release { .. } => 1,
             Commands::Recover { .. } => 0,
-            Commands::Requirements => 0,
+            Commands::Requirements | Commands::Status { .. } => 0,
             Commands::Version => 0,
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
