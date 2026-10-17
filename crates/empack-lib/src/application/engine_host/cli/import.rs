@@ -436,15 +436,14 @@ fn decisions(
         loader,
         acceptable_versions,
         layout,
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![
                 Recipe::MODRINTH,
                 Recipe::PRISM_BUNDLED,
                 Recipe::SERVER_BUNDLED,
             ])?,
-            archive: DistributionArchive::Zip,
-        },
+            DistributionArchive::Zip,
+        ),
         files,
         exclude_auxiliary_members,
     })

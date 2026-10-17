@@ -1,4 +1,5 @@
 use super::*;
+use crate::application::process_runtime::Cancellation;
 use crate::application::{
     InitArgs,
     session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
@@ -202,7 +203,11 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
             built.outputs.as_slice()[1].artifact.as_str(),
             "Native Pack-1.0.mrpack"
         );
-        assert_eq!(built.archive, archive);
+        assert_eq!(built.outputs.as_slice()[0].archive, archive);
+        assert_eq!(
+            built.outputs.as_slice()[1].archive,
+            DistributionArchive::Zip
+        );
         assert_eq!(built.optional, choices.optional);
         assert_eq!(built.mrpack_optional, choices.mrpack_optional);
         assert_eq!(built.evidence, choices.evidence);
@@ -220,9 +225,14 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
         3
     );
     let mut selected = intent.intent().clone();
-    selected.distribution.archive = DistributionArchive::TarGz;
+    for profile in selected.distribution.profiles.values_mut() {
+        profile.archive = DistributionArchive::TarGz;
+    }
     let default = request(&selected, &args(), BuildDecisions::default()).unwrap();
-    assert_eq!(default.archive, DistributionArchive::TarGz);
+    assert_eq!(
+        default.outputs.as_slice()[1].archive,
+        DistributionArchive::TarGz
+    );
     assert!(
         default.outputs.as_slice()[1]
             .artifact
@@ -236,6 +246,8 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
     assert_eq!(
         request(&selected, &explicit, BuildDecisions::default())
             .unwrap()
+            .outputs
+            .as_slice()[1]
             .archive,
         DistributionArchive::Zip
     );
@@ -579,7 +591,9 @@ async fn derived_build_choices_reject_changed_intent_before_preparation() {
         .require_intent(original.semantic_revision());
     let mut changed = current.intent().clone();
     changed.metadata.name = "Changed Pack".into();
-    changed.distribution.archive = DistributionArchive::TarGz;
+    for profile in changed.distribution.profiles.values_mut() {
+        profile.archive = DistributionArchive::TarGz;
+    }
     let raw = DocumentCodec.encode_intent(&changed).unwrap();
     let revision = DocumentCodec
         .decode_intent(&raw, "changed")
@@ -673,14 +687,19 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
         java_major: 21,
         policies: BTreeMap::new(),
     });
-    intent.distribution.recipes = NonEmpty::new(vec![
-        Recipe::MODRINTH,
-        Recipe::PRISM_REFERENCES,
-        Recipe::SERVER_REFERENCES,
-        Recipe::PRISM_BUNDLED,
-        Recipe::SERVER_BUNDLED,
-    ])
-    .unwrap();
+    let native = intent.distribution.native.take();
+    intent.distribution = empack_core::model::DistributionIntent::from_recipes(
+        NonEmpty::new(vec![
+            Recipe::MODRINTH,
+            Recipe::PRISM_REFERENCES,
+            Recipe::SERVER_REFERENCES,
+            Recipe::PRISM_BUNDLED,
+            Recipe::SERVER_BUNDLED,
+        ])
+        .unwrap(),
+        DistributionArchive::Zip,
+    );
+    intent.distribution.native = native;
     let bytes = codec.encode_intent(&intent).unwrap();
     lock.intent_revision = codec
         .decode_intent(&bytes, "test")
@@ -722,6 +741,7 @@ async fn curseforge_cli_recipe_uses_zip_and_only_publishes_requested_output() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let args = BuildArgs {
+        ad_hoc: true,
         targets: vec!["curseforge".into()],
         format: Some(CliArchiveFormat::TarGz),
         ..Default::default()
@@ -769,6 +789,7 @@ async fn consumer_overrides_preserve_delivery_and_reject_lossy_policies() {
         ("server", Recipe::SERVER_BUNDLED, Recipe::SERVER_REFERENCES),
     ] {
         let mut options = BuildArgs {
+            ad_hoc: true,
             targets: vec![consumer.into()],
             ..Default::default()
         };
@@ -817,6 +838,7 @@ async fn subscribed_recipe_selection_retains_policy_and_distinct_output_names() 
             let selected = request(
                 parsed.intent(),
                 &BuildArgs {
+                    ad_hoc: true,
                     targets: vec![consumer.into()],
                     delivery: Some(delivery.into()),
                     updates: Some("empack".into()),
@@ -850,6 +872,7 @@ async fn native_and_platform_cli_policies_select_distinct_outputs() {
         let selected = request(
             parsed.intent(),
             &BuildArgs {
+                ad_hoc: true,
                 targets: vec![consumer.into()],
                 updates: Some(authority.into()),
                 ..Default::default()
@@ -861,4 +884,225 @@ async fn native_and_platform_cli_policies_select_distinct_outputs() {
         assert!(output.artifact.as_str().ends_with(suffix));
         assert_ne!(output.target.update_authority(), UpdateAuthority::Snapshot);
     }
+}
+
+#[tokio::test]
+async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity() {
+    use empack_core::model::{BuildProfile, NativeDistributionIntent};
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let source = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
+    let mut intent = source.intent().clone();
+    intent.distribution.native = Some(NativeDistributionIntent {
+        pack_id: "profile.fixture".into(),
+        java_major: 21,
+        policies: BTreeMap::new(),
+    });
+    intent.distribution.profiles.insert(
+        "prism".into(),
+        BuildProfile {
+            recipe: Recipe::PRISM_BUNDLED
+                .with_update_authority(UpdateAuthority::Empack)
+                .unwrap(),
+            archive: DistributionArchive::Zip,
+        },
+    );
+    intent.distribution.defaults = NonEmpty::new(vec!["prism".into()]).unwrap();
+    let configured = request(
+        &intent,
+        &BuildArgs {
+            targets: vec!["prism".into()],
+            ..Default::default()
+        },
+        BuildDecisions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        configured.outputs.as_slice()[0].target.update_authority(),
+        UpdateAuthority::Empack
+    );
+    assert!(
+        configured.outputs.as_slice()[0]
+            .artifact
+            .as_str()
+            .contains("subscribed")
+    );
+    let named = request(
+        &intent,
+        &BuildArgs {
+            profiles: vec!["prism".into()],
+            ..Default::default()
+        },
+        BuildDecisions::default(),
+    )
+    .unwrap();
+    assert_eq!(named.outputs, configured.outputs);
+    assert_eq!(
+        request(&intent, &BuildArgs::default(), BuildDecisions::default())
+            .unwrap()
+            .outputs,
+        named.outputs
+    );
+    let ad_hoc = request(
+        &intent,
+        &BuildArgs {
+            ad_hoc: true,
+            targets: vec!["prism".into()],
+            ..Default::default()
+        },
+        BuildDecisions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        ad_hoc.outputs.as_slice()[0].target.update_authority(),
+        UpdateAuthority::Snapshot
+    );
+    intent.distribution.profiles.insert(
+        "other".into(),
+        intent.distribution.profiles["prism"].clone(),
+    );
+    assert!(
+        request(
+            &intent,
+            &BuildArgs {
+                targets: vec!["prism".into()],
+                ..Default::default()
+            },
+            BuildDecisions::default()
+        )
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("Multiple profiles")
+    );
+    assert!(
+        request(
+            &intent,
+            &BuildArgs {
+                profiles: vec!["missing".into()],
+                ..Default::default()
+            },
+            BuildDecisions::default()
+        )
+        .is_err()
+    );
+    assert!(
+        request(
+            &intent,
+            &BuildArgs {
+                profiles: vec!["prism".into(), "other".into()],
+                ..Default::default()
+            },
+            BuildDecisions::default()
+        )
+        .is_err(),
+        "distinct profiles may not own the same artifact"
+    );
+    crate::testing::write_authoring(&project.join("empack.yml"), &intent).unwrap();
+    fs::remove_file(project.join("empack.lock")).unwrap();
+    let before = snapshot(root.path());
+    let args = BuildArgs {
+        profiles: vec!["prism".into()],
+        explain: true,
+        json: true,
+        updates: Some("snapshot".into()),
+        ..Default::default()
+    };
+    run(root.path(), &args, true, false).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    let workspace = ProjectReader::new(RecoveryReader::new(root.path().join("state")))
+        .capture(
+            &project,
+            &[],
+            SnapshotLimits::default(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let selected = request(
+        workspace.intent().intent(),
+        &args,
+        BuildDecisions::default(),
+    )
+    .unwrap();
+    let view = profiles::explain(&workspace, &args, &selected).unwrap();
+    assert_eq!(view["schema"], 1);
+    assert_eq!(view["lock"], "missing");
+    assert_eq!(view["profiles"][0]["recipe"]["updates"], "snapshot");
+    assert_eq!(view["profiles"][0]["origins"]["updates"], "cli-override");
+    assert_eq!(view["profiles"][0]["recipient_empack_required"], false);
+    assert_eq!(
+        view["profiles"][0]["output"],
+        format!("dist/{}", selected.outputs.as_slice()[0].artifact.as_str())
+    );
+    assert!(view["declared_manual_inputs"].is_null());
+    assert!(profiles::text(&view).contains("cli-override"));
+}
+
+#[tokio::test]
+async fn distinct_profile_formats_are_built_and_published_together() {
+    use empack_core::model::BuildProfile;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let original = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
+    let mut lock = DocumentCodec
+        .decode_prior_lock(&fs::read(project.join("empack.lock")).unwrap(), "fixture")
+        .unwrap()
+        .lock()
+        .clone();
+    let mut intent = original.intent().clone();
+    intent.distribution.profiles = BTreeMap::from([
+        (
+            "zip".into(),
+            BuildProfile {
+                recipe: Recipe::PRISM_BUNDLED,
+                archive: DistributionArchive::Zip,
+            },
+        ),
+        (
+            "tar".into(),
+            BuildProfile {
+                recipe: Recipe::PRISM_BUNDLED,
+                archive: DistributionArchive::TarGz,
+            },
+        ),
+    ]);
+    intent.distribution.defaults = NonEmpty::new(vec!["zip".into(), "tar".into()]).unwrap();
+    crate::testing::write_authoring(&project.join("empack.yml"), &intent).unwrap();
+    let source = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
+    lock.intent_revision = source.semantic_revision();
+    let resolved =
+        empack_core::model::ResolvedProject::validate(intent, lock, source.semantic_revision())
+            .unwrap();
+    fs::write(
+        project.join("empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+    let args = BuildArgs {
+        optional_defaults: true,
+        ..Default::default()
+    };
+    run(root.path(), &args, true, false).await.unwrap();
+    assert_eq!(
+        zip_bytes(
+            &project.join("dist/Native Pack-1.0-prism-bundled.zip"),
+            ".minecraft/config/example.txt"
+        ),
+        b"first"
+    );
+    let input = fs::File::open(project.join("dist/Native Pack-1.0-prism-bundled.tar.gz")).unwrap();
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(input));
+    let mut found = false;
+    for entry in archive.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        if entry.path().unwrap().as_ref() == Path::new(".minecraft/config/example.txt") {
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            assert_eq!(bytes, b"first");
+            found = true;
+        }
+    }
+    assert!(found);
 }

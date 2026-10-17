@@ -239,11 +239,10 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         acceptable_versions: vec![],
         layout: BTreeMap::new(),
         files,
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
-            archive: DistributionArchive::Zip,
-        },
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![Recipe::MODRINTH])?,
+            DistributionArchive::Zip,
+        ),
         // The known generated CurseForge report is not game content. Reject any additional
         // unknown member; record this exact exclusion in the durable import provenance.
         exclude_auxiliary_members: source.auxiliary_members.len() == 1

@@ -100,16 +100,17 @@ pub(super) fn request() -> BuildRequest {
         clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
+                archive: empack_core::model::DistributionArchive::Zip,
                 target: Recipe::MODRINTH,
                 artifact: path("result.mrpack"),
             },
             BuildOutput {
+                archive: empack_core::model::DistributionArchive::Zip,
                 target: Recipe::PRISM_BUNDLED,
                 artifact: path("client.zip"),
             },
         ])
         .unwrap(),
-        archive: DistributionArchive::Zip,
         optional: OptionalPolicy::Preserve,
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),
@@ -273,6 +274,7 @@ async fn cross_engine_and_missing_network_grants_are_rejected_before_effects() {
     );
     let mut server = request();
     server.outputs = NonEmpty::new(vec![BuildOutput {
+        archive: empack_core::model::DistributionArchive::Zip,
         target: Recipe::SERVER_BUNDLED,
         artifact: path("server.zip"),
     }])
@@ -358,6 +360,7 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
     }
     let mut server = request();
     server.outputs = NonEmpty::new(vec![BuildOutput {
+        archive: empack_core::model::DistributionArchive::Zip,
         target: Recipe::SERVER_BUNDLED,
         artifact: path("server.zip"),
     }])
@@ -494,6 +497,7 @@ async fn saved_provider_origins_remain_downloadable_without_catalog_credentials(
         };
         let mut request = request();
         request.outputs = NonEmpty::new(vec![BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: Recipe::PRISM_BUNDLED,
             artifact: path("client.zip"),
         }])
@@ -532,6 +536,7 @@ async fn provider_build_case(changed_digest: bool, unavailable: bool, saved_orig
     );
     let mut request = request();
     request.outputs = NonEmpty::new(vec![BuildOutput {
+        archive: empack_core::model::DistributionArchive::Zip,
         target: Recipe::PRISM_BUNDLED,
         artifact: path("client.zip"),
     }])
@@ -680,6 +685,7 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     );
     let mut request = request();
     request.outputs = NonEmpty::new(vec![BuildOutput {
+        archive: empack_core::model::DistributionArchive::Zip,
         target: Recipe::PRISM_BUNDLED,
         artifact: path("client.zip"),
     }])
@@ -1032,11 +1038,10 @@ async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCa
                             acceptable_versions: vec![],
                             layout: BTreeMap::new(),
                             exclude_auxiliary_members: false,
-                            distribution: DistributionIntent {
-                                native: None,
-                                recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
-                                archive: DistributionArchive::Zip,
-                            },
+                            distribution: DistributionIntent::from_recipes(
+                                NonEmpty::new(vec![Recipe::MODRINTH])?,
+                                DistributionArchive::Zip,
+                            ),
                             files: BTreeMap::from([(
                                 ImportContentKey::Override(0),
                                 ImportFileDecision {

@@ -242,7 +242,6 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
     ] {
         let mut selected = request();
         selected.clean = true;
-        selected.archive = archive;
         selected.outputs = NonEmpty::new(
             [
                 Recipe::MODRINTH,
@@ -254,6 +253,11 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
             .into_iter()
             .enumerate()
             .map(|(index, target)| BuildOutput {
+                archive: if target == Recipe::MODRINTH {
+                    DistributionArchive::Zip
+                } else {
+                    archive
+                },
                 target,
                 artifact: PortableRelPath::parse(
                     &format!("result-{index}.zip"),
@@ -292,6 +296,16 @@ fn saved_recipes_preserve_every_build_choice_and_reject_unknown_fields() {
         let wire = serde_json::to_value(recipe).unwrap();
         let decoded: record::SavedRecipe = serde_json::from_value(wire.clone()).unwrap();
         let restored = decoded.parse().unwrap();
+        for (expected, actual) in selected
+            .outputs
+            .as_slice()
+            .iter()
+            .zip(restored.outputs.as_slice())
+        {
+            assert_eq!(actual.archive, expected.archive);
+            assert_eq!(actual.target, expected.target);
+            assert_eq!(actual.artifact, expected.artifact);
+        }
         assert_eq!(
             serde_json::to_value(record::SavedRecipe::from(&restored)).unwrap(),
             wire
@@ -820,14 +834,17 @@ async fn native_release_batches_resume_exact_downloads_and_publish_with_other_co
     let mut selected = request();
     selected.outputs = NonEmpty::new(vec![
         BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: Recipe::EMPACK_REFERENCES,
             artifact: crate::engine::api::tests::path("references.empack"),
         },
         BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: Recipe::EMPACK_BUNDLED,
             artifact: crate::engine::api::tests::path("bundled.empack"),
         },
         BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: Recipe::PRISM_BUNDLED,
             artifact: crate::engine::api::tests::path("prism.zip"),
         },
@@ -983,6 +1000,7 @@ async fn server_projection_without_client_downloads(consumer: empack_core::distr
         "server.mrpack"
     };
     selected.outputs = NonEmpty::new(vec![BuildOutput {
+        archive: empack_core::model::DistributionArchive::Zip,
         target: recipe,
         artifact: crate::engine::api::tests::path(artifact),
     }])

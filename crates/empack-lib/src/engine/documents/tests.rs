@@ -3,7 +3,7 @@ use super::*;
 fn source() -> Value {
     json!({"schema":4,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
         "runtime":{"minecraft":"1.20.1","loader":{"kind":"neoforge","version":"47.1.106"}},
-        "distribution":{"recipes":[{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot"},{"consumer":"prism","delivery":"references","environment":"client","updates":"snapshot"},{"consumer":"server","delivery":"references","environment":"server","updates":"snapshot"},{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"},{"consumer":"server","delivery":"bundled","environment":"server","updates":"snapshot"}],"archive":"7z"},
+        "distribution":{"profiles":{"modrinth":{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot","format":"7z"},"prism":{"consumer":"prism","delivery":"references","environment":"client","updates":"snapshot","format":"7z"},"server":{"consumer":"server","delivery":"references","environment":"server","updates":"snapshot","format":"7z"},"prism-4":{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"7z"},"server-5":{"consumer":"server","delivery":"bundled","environment":"server","updates":"snapshot","format":"7z"}},"defaults":["modrinth","prism","server","prism-4","server-5"]},
         "layout":{"data-pack":"world/datapacks"},
         "dependencies":{"renderer alias":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":"AANobbMI"}},"content":"mod","version":{"mode":"exact","pin":{"provider":"modrinth","id":"Version1"}},"placement":"automatic","environment":{"client":{"optional":"renderer","default-enabled":false,"description":"Rendering support"},"server":"unsupported"}}},
         "extensions":{"authoring":{"note":"retain this","values":[1,true,null]}}})
@@ -215,7 +215,7 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
             json!("latest"),
         ),
         ("/dependencies/renderer alias/source/kind", json!("unknown")),
-        ("/distribution/archive", json!("rar")),
+        ("/distribution/profiles/modrinth/format", json!("rar")),
     ];
     for (path, invalid) in paths {
         let mut value = source();
@@ -834,12 +834,14 @@ fn intent_rejects_target_strings_and_retains_recipe_identity() {
             .is_err()
     );
     input = source();
-    input["distribution"]["recipes"][0]["updates"] = json!("platform");
+    input["distribution"]["profiles"]["modrinth"]["updates"] = json!("platform");
     let parsed = DocumentCodec
         .decode_intent(&serde_json::to_vec(&input).unwrap(), "recipes")
         .unwrap();
     assert_eq!(
-        parsed.intent().distribution.recipes.as_slice()[0].update_authority(),
+        parsed.intent().distribution.profiles["modrinth"]
+            .recipe
+            .update_authority(),
         empack_core::distribution::UpdateAuthority::Platform
     );
     assert_ne!(parsed.semantic_revision(), decoded().semantic_revision());
@@ -983,6 +985,39 @@ fn binding_semantics_raw_edits_conflicts_and_dangling_roles_remain_distinct() {
     assert!(
         DocumentCodec
             .decode_intent(&serde_json::to_vec(&old).unwrap(), "old schema")
+            .is_err()
+    );
+}
+
+#[test]
+fn named_profile_documents_reject_missing_defaults_unknown_fields_and_unsafe_names() {
+    for (field, invalid) in [
+        ("defaults", json!(["missing"])),
+        ("defaults", json!(["modrinth", "modrinth"])),
+        ("defaults", json!([])),
+        ("profiles", json!({})),
+    ] {
+        let mut value = source();
+        value["distribution"][field] = invalid;
+        assert!(
+            DocumentCodec
+                .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")
+                .is_err()
+        );
+    }
+    let mut value = source();
+    let profile = value["distribution"]["profiles"]["modrinth"].clone();
+    value["distribution"]["profiles"]["../outside"] = profile;
+    assert!(
+        DocumentCodec
+            .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")
+            .is_err()
+    );
+    let mut value = source();
+    value["distribution"]["profiles"]["modrinth"]["inherits"] = json!("prism");
+    assert!(
+        DocumentCodec
+            .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")
             .is_err()
     );
 }

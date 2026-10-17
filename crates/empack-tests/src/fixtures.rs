@@ -88,11 +88,10 @@ impl WorkflowProjectFixture {
                 roots: BTreeMap::new(),
                 layout: BTreeMap::new(),
                 extensions: BTreeMap::new(),
-                distribution: DistributionIntent {
-                    native: None,
-                    recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
-                    archive: DistributionArchive::Zip,
-                },
+                distribution: DistributionIntent::from_recipes(
+                    NonEmpty::new(vec![Recipe::MODRINTH])?,
+                    DistributionArchive::Zip,
+                ),
             },
             runtime,
             default_templates(),

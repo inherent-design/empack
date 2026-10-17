@@ -241,7 +241,10 @@ pub struct InitArgs {
   server      Prepared server runtime; bundled pack content by default
   empack      Exact native release and immutable assets
 
-Without CONSUMERS, use distribution.recipes from empack.yml.
+Without selectors, use distribution.defaults from empack.yml.
+A consumer selects its unique configured profile; use --ad-hoc for a new recipe.
+Use --profile NAME when multiple profiles have the same consumer.
+Use --explain (and optionally --json) to inspect the exact configuration without building.
 Use --delivery references for a Prism/server snapshot installed by empack.
 Prism/server reference exports and native empack exports need
 distribution.native identity and Java settings.
@@ -254,9 +257,25 @@ Examples:
   empack build prism server --delivery references
   empack build --continue")]
 pub struct BuildArgs {
+    /// Select complete authored profiles; repeat to build several together
+    #[arg(long = "profile", value_name = "NAME", conflicts_with_all = ["targets", "ad_hoc", "continue_build"])]
+    pub profiles: Vec<String>,
+
+    /// Create consumer recipes from built-in defaults instead of configured profiles
+    #[arg(long, requires = "targets", conflicts_with = "continue_build")]
+    pub ad_hoc: bool,
+
+    /// Show effective profiles, overrides and recipient requirements without building
+    #[arg(long, conflicts_with_all = ["continue_build", "open_downloads", "wait_downloads", "associate_downloads"])]
+    pub explain: bool,
+
+    /// Emit the effective build explanation as versioned JSON
+    #[arg(long, requires = "explain")]
+    pub json: bool,
+
     /// Consumers to build with explicit policy overrides
     #[arg(
-        help = "Consumers to build (default: distribution.recipes in empack.yml)",
+        help = "Consumers with a unique configured profile (or use --ad-hoc)",
         value_name = "CONSUMERS",
         value_parser = ["modrinth", "curseforge", "prism", "server", "empack"],
         conflicts_with = "continue_build"

@@ -3,7 +3,7 @@ use std::fs;
 const DOCUMENT: &str = r#"schema: 4
 pack: {name: Example, version: alpha}
 runtime: {minecraft: '1.20.1', loader: {kind: vanilla}}
-distribution: {recipes: [{consumer: modrinth, delivery: references, environment: both, updates: snapshot}], archive: zip}
+distribution: {defaults: [modrinth], profiles: {modrinth: {consumer: modrinth, delivery: references, environment: both, updates: snapshot, format: zip}}}
 dependencies: {}
 layout: {}
 extensions: {}

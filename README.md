@@ -47,8 +47,9 @@ for imports, optional files, restricted downloads and installed-instance command
 ## Pack authoring and distribution
 
 Authors edit `empack.yml`; `empack.lock` records exact selections. Authoring operations
-resolve dependencies and verify content before publication. Distribution recipes
-select a consumer, dependency delivery and update authority. An installed instance
+resolve dependencies and verify content before publication. Named build profiles
+select a consumer, dependency delivery, update authority and format. Use
+`empack build --explain` to inspect configured defaults before building. An installed instance
 records its owned files and optional choices separately from the authoring project.
 
 | Reference | Purpose |

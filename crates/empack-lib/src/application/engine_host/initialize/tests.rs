@@ -153,7 +153,14 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
     );
     assert_eq!(project.intent().metadata.author.as_deref(), Some("Tester"));
     assert_eq!(
-        project.intent().distribution.recipes.as_slice(),
+        project
+            .intent()
+            .distribution
+            .defaults
+            .as_slice()
+            .iter()
+            .map(|name| project.intent().distribution.profiles[name].recipe)
+            .collect::<Vec<_>>(),
         [
             Recipe::MODRINTH,
             Recipe::PRISM_BUNDLED,
@@ -247,17 +254,18 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
+                archive: empack_core::model::DistributionArchive::Zip,
                 target: Recipe::MODRINTH,
                 artifact: PortableRelPath::parse("pack.mrpack", PathSyntax::ProjectContent)
                     .unwrap(),
             },
             BuildOutput {
+                archive: empack_core::model::DistributionArchive::Zip,
                 target: Recipe::PRISM_BUNDLED,
                 artifact: PortableRelPath::parse("client.zip", PathSyntax::ProjectContent).unwrap(),
             },
         ])
         .unwrap(),
-        archive: DistributionArchive::Zip,
         optional: OptionalPolicy::Preserve,
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),

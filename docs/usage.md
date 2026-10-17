@@ -97,27 +97,46 @@ A rollback changes managed pack content, not gameplay history.
 
 ## Distribution selection
 
-Select Modrinth, CurseForge, Prism, server or native empack recipes in authored
-configuration. Where supported, select reference or bundled delivery independently
-of snapshot/channel updating. Platform format compatibility, platform eligibility
-and uploading are distinct results. Selecting every output is not the default.
+Define named output profiles in `empack.yml`. Each profile selects a consumer,
+delivery, environment, update owner and format. `distribution.defaults` selects
+which profiles a plain `empack build` builds together.
 
-For example:
-
-```sh
-empack build modrinth prism
-empack build prism server --delivery references
-empack build server --delivery bundled --format tar.gz
-empack build modrinth --environment client
-empack build empack --environment server --delivery references
+```yaml
+distribution:
+  defaults: [launcher]
+  profiles:
+    launcher:
+      consumer: prism
+      delivery: bundled
+      environment: client
+      updates: snapshot
+      format: zip
+    dedicated:
+      consumer: server
+      delivery: bundled
+      environment: server
+      updates: snapshot
+      format: tar.gz
 ```
 
-With no consumer arguments, build uses the complete `distribution.recipes` list.
-Explicit arguments start with snapshot policies: Modrinth/CurseForge/empack
-references and bundled Prism/server content. `--delivery`, `--environment` and `--updates` override
-the selected recipes. Invalid combinations fail before acquisition. Different
-policies for the same consumer belong in separate authored recipe objects.
-Continuation retains its saved recipes and rejects policy overrides.
+```sh
+empack build --explain
+empack build --profile launcher --explain --json
+empack build --profile launcher --profile dedicated --optional-defaults
+empack build prism --delivery references
+empack build --ad-hoc empack --environment server --delivery references
+```
+
+A consumer argument selects its unique configured profile. If several profiles use
+that consumer, select a name. `--ad-hoc` explicitly starts from built-in snapshot
+policies: Modrinth/CurseForge/empack references and bundled Prism/server content.
+`--delivery`, `--environment`, `--updates` and `--format` override selected values
+without editing the manifest. Modrinth and CurseForge require ZIP. Explanation
+shows each effective value and its origin, recipient requirements and known manual
+inputs; downloads and cache availability remain unverified.
+
+Invalid policies and colliding output paths fail before acquisition. Continuation
+retains the effective profiles and rejects policy overrides or changed author inputs.
 
 Prism consumes ordinary platform archives without an empack integration. A native
 Prism instance can instead carry launcher settings and explicitly subscribe through
@@ -191,12 +210,14 @@ Set stable native publication identity and runtime requirements in `empack.yml`:
 
 ```yaml
 distribution:
-  recipes:
-    - consumer: modrinth
-      delivery: references
+  defaults: [native]
+  profiles:
+    native:
+      consumer: empack
+      delivery: bundled
       environment: both
       updates: snapshot
-  archive: zip
+      format: zip
   native:
     pack-id: my-pack
     java-major: 21
@@ -207,7 +228,7 @@ sources:
     - private/**
 ```
 
-`empack build empack --delivery bundled` writes
+`empack build --profile native` writes
 `dist/<name>-<version>-empack-bundled.empack` using the configured archive format.
 Reference delivery uses an `empack-references` suffix. Native recipes share verified
 acquisition, missing-download continuation and combined publication with the other

@@ -129,6 +129,7 @@ async fn remove_and_demote_have_distinct_receipts_and_subsequent_build_content()
         );
         let mut build = super::tests::request();
         build.outputs = NonEmpty::new(vec![BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: Recipe::MODRINTH,
             artifact: path("after.mrpack"),
         }])

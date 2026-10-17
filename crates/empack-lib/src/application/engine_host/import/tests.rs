@@ -143,11 +143,10 @@ fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> 
         loader: None,
         acceptable_versions: vec![],
         layout: BTreeMap::new(),
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
-            archive: DistributionArchive::Zip,
-        },
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![Recipe::MODRINTH])?,
+            DistributionArchive::Zip,
+        ),
         files,
         exclude_auxiliary_members: false,
     })
@@ -263,6 +262,7 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
         &session(root.path(), true, false),
         &BuildArgs {
             targets: vec!["prism".into()],
+            ad_hoc: true,
             ..Default::default()
         },
         decisions,
@@ -698,11 +698,10 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
                 loader: None,
                 acceptable_versions: vec![],
                 layout: BTreeMap::new(),
-                distribution: DistributionIntent {
-                    native: None,
-                    recipes: NonEmpty::new(vec![Recipe::MODRINTH])?,
-                    archive: DistributionArchive::Zip,
-                },
+                distribution: DistributionIntent::from_recipes(
+                    NonEmpty::new(vec![Recipe::MODRINTH])?,
+                    DistributionArchive::Zip,
+                ),
                 files: BTreeMap::new(),
                 exclude_auxiliary_members: false,
             };

@@ -25,7 +25,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
     let load = required(runtime, "loader")?;
     fields(load, &["kind", "version"])?;
     let distribution = required(value, "distribution")?;
-    fields(distribution, &["recipes", "archive", "native"])?;
+    fields(distribution, &["profiles", "defaults", "native"])?;
     let source_excludes = if let Some(sources) = value.get("sources") {
         fields(sources, &["exclude"])?;
         sources
@@ -118,18 +118,17 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
             .unwrap_or_default(),
         distribution: DistributionIntent {
             native,
-            recipes: NonEmpty::new(
-                array(required(distribution, "recipes")?)?
-                    .iter()
-                    .map(recipe::decode)
-                    .collect::<Result<_>>()?,
-            )?,
-            archive: match text(required(distribution, "archive")?)? {
-                "zip" => DistributionArchive::Zip,
-                "tar.gz" => DistributionArchive::TarGz,
-                "7z" => DistributionArchive::SevenZip,
-                _ => bail!("Unknown distribution archive"),
-            },
+            profiles: object(required(distribution, "profiles")?)?
+                .iter()
+                .map(|(name, value)| {
+                    Ok((
+                        name.clone(),
+                        recipe::decode_profile(value)
+                            .with_context(|| format!("Build profile '{name}'"))?,
+                    ))
+                })
+                .collect::<Result<_>>()?,
+            defaults: NonEmpty::new(string_list(required(distribution, "defaults")?)?)?,
         },
         extensions: value
             .get("extensions")
@@ -266,6 +265,6 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
         "dependencies":roots,
         "sources":{"exclude":intent.source_excludes},
         "layout":intent.layout.iter().map(|(k,v)| (kind_name(*k),v.as_str())).collect::<BTreeMap<_,_>>(),
-        "distribution":{"native":intent.distribution.native.as_ref().map(|native| json!({"pack-id":native.pack_id,"java-major":native.java_major,"policies":native.policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>() })),"recipes":intent.distribution.recipes.as_slice().iter().map(recipe::encode).collect::<Vec<_>>(),"archive":match intent.distribution.archive {DistributionArchive::Zip=>"zip",DistributionArchive::TarGz=>"tar.gz",DistributionArchive::SevenZip=>"7z"}},
+        "distribution":{"native":intent.distribution.native.as_ref().map(|native| json!({"pack-id":native.pack_id,"java-major":native.java_major,"policies":native.policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>() })),"profiles":intent.distribution.profiles.iter().map(|(name, value)| (name, recipe::encode_profile(value))).collect::<BTreeMap<_,_>>(),"defaults":intent.distribution.defaults.as_slice()},
         "extensions":intent.extensions.iter().map(|(k,v)| (k,extension_value(v))).collect::<BTreeMap<_,_>>()})
 }

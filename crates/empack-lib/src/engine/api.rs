@@ -103,6 +103,8 @@ static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 pub struct PlanId(u64);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildOutput {
+    /// Exact container selected for this output.
+    pub archive: DistributionArchive,
     pub target: Recipe,
     pub artifact: PortableRelPath,
 }
@@ -111,7 +113,6 @@ pub struct BuildRequest {
     /// Retire other captured dist files only when every requested artifact verifies.
     pub clean: bool,
     pub outputs: NonEmpty<BuildOutput>,
-    pub archive: DistributionArchive,
     pub optional: OptionalPolicy,
     pub mrpack_optional: OptionalConversion,
     pub templates: TemplateOptions,
@@ -1324,6 +1325,14 @@ fn capture(
     }
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
+        ensure!(
+            !matches!(
+                output.target.consumer(),
+                empack_core::distribution::Consumer::Modrinth
+                    | empack_core::distribution::Consumer::CurseForge
+            ) || output.archive == DistributionArchive::Zip,
+            "Modrinth and CurseForge outputs require ZIP containers"
+        );
         ensure!(
             (crate::engine::build::curseforge::supports(output.target)
                 || crate::engine::build::launcher_recipe(output.target))

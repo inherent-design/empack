@@ -45,7 +45,7 @@ impl Default for BuildDecisions {
     }
 }
 
-/// Build a native v0.5 project. Supplied bytes retain their exact logical slot and evidence.
+/// Build a native authoring project. Supplied bytes retain their exact logical slot and evidence.
 /// Selected download roots are scanned without mutation. Durable continuation and explicit
 /// CLI association syntax remain separate host services; unsupported flags fail explicitly.
 pub async fn build(
@@ -74,6 +74,7 @@ pub async fn build_with_local_files(
 }
 mod assistance;
 mod browser;
+mod profiles;
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -101,7 +102,7 @@ async fn build_with_inputs(
     let state = state_root(config, &invocation)?;
     let selected = project.clone();
     // Only documents enter this preliminary read: payload capture belongs to Engine::prepare.
-    let intent = initialize::discover(session, move |mut scope| async move {
+    let workspace = initialize::discover(session, move |mut scope| async move {
         let work = scope.spawn_blocking(
             ResourceRequest {
                 jobs: 1,
@@ -120,13 +121,26 @@ async fn build_with_inputs(
                     SnapshotLimits::default(),
                     &cancel,
                 )?;
-                captured.require_resolved()
+                Ok::<_, anyhow::Error>(captured)
             },
         )?;
         scope.accept(work.wait().await?)?.transpose()
     })
     .await?;
-    let request = request(intent.intent(), args, decisions)?
+    let request = request(workspace.intent().intent(), args, decisions)?;
+    if args.explain {
+        let report = profiles::explain(&workspace, args, &request)?;
+        session.display().status().message(
+            &(if args.json {
+                serde_json::to_string_pretty(&report)?
+            } else {
+                profiles::text(&report)
+            }),
+        );
+        return Ok(());
+    }
+    workspace.require_resolved()?;
+    let request = request
         .with_content(supplied)
         .with_local_files(
             files
@@ -134,8 +148,8 @@ async fn build_with_inputs(
                 .map(|(key, path)| (key, absolute(&invocation, &path)))
                 .collect(),
         )
-        .require_intent(intent.lock().intent_revision);
-    drop(intent);
+        .require_intent(workspace.intent().semantic_revision());
+    drop(workspace);
     let engine = configured_engine(config, &invocation)?;
     let downloads = args
         .downloads_dir
@@ -175,6 +189,12 @@ fn configured_engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
 pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     ensure!(
         args.continue_build
+            && args.profiles.is_empty()
+            && !args.ad_hoc
+            && !args.explain
+            && args.delivery.is_none()
+            && args.environment.is_none()
+            && args.updates.is_none()
             && args.targets.is_empty()
             && args.format.is_none()
             && !args.clean
@@ -292,68 +312,17 @@ fn request(
     args: &BuildArgs,
     decisions: BuildDecisions,
 ) -> Result<BuildRequest> {
-    let mut targets = Vec::new();
-    for name in &args.targets {
-        targets.push(match name.as_str() {
-            "modrinth" => Recipe::MODRINTH,
-            "empack" => Recipe::EMPACK_REFERENCES,
-            "curseforge" => Recipe::CURSEFORGE,
-            "prism" => Recipe::PRISM_BUNDLED,
-            "server" => Recipe::SERVER_BUNDLED,
-            _ => {
-                return Err(empack_core::model::ModelError(format!(
-                    "Unknown build consumer: {name}"
-                ))
-                .into());
-            }
-        });
-    }
-    if targets.is_empty() {
-        targets.extend(intent.distribution.recipes.as_slice());
-    }
-    for recipe in &mut targets {
-        let delivery = match args.delivery.as_deref() {
-            None => recipe.delivery(),
-            Some("references") => Delivery::References,
-            Some("bundled") => Delivery::Bundled,
-            Some(_) => anyhow::bail!("Unknown dependency delivery"),
-        };
-        let environment = match args.environment.as_deref() {
-            None => recipe.environments(),
-            Some("client") => Environments::Client,
-            Some("server") => Environments::Server,
-            Some("both") => Environments::Both,
-            Some(_) => anyhow::bail!("Unknown distribution environment"),
-        };
-        let authority = match args.updates.as_deref() {
-            None => recipe.update_authority(),
-            Some("snapshot") => UpdateAuthority::Snapshot,
-            Some("platform") => UpdateAuthority::Platform,
-            Some("empack") => UpdateAuthority::Empack,
-            Some(_) => anyhow::bail!("Unknown update authority"),
-        };
-        *recipe = Recipe::new(recipe.consumer(), delivery, environment)?
-            .with_update_authority(authority)?;
-    }
-    let targets = empack_core::distribution::plan_recipes(&targets);
+    let targets = profiles::select(intent, args)?;
     let name = ArtifactStem::parse(&intent.metadata.name)
         .context("Pack name cannot form a portable artifact name")?;
     let version = ArtifactStem::parse(&intent.metadata.version)
         .context("Pack version cannot form a portable artifact name")?;
-    let archive = match args.format {
-        Some(CliArchiveFormat::Zip) => DistributionArchive::Zip,
-        Some(CliArchiveFormat::TarGz) => DistributionArchive::TarGz,
-        Some(CliArchiveFormat::SevenZ) => DistributionArchive::SevenZip,
-        None => intent.distribution.archive,
-    };
-    let extension = match archive {
-        DistributionArchive::Zip => "zip",
-        DistributionArchive::TarGz => "tar.gz",
-        DistributionArchive::SevenZip => "7z",
-    };
     let outputs = targets
         .into_iter()
-        .map(|target| {
+        .map(|selected| {
+            let target = selected.profile.recipe;
+            let archive = selected.profile.archive;
+            let extension = crate::engine::documents::recipe::archive_name(archive);
             let (suffix, extension) = match target {
                 recipe if crate::engine::mrpack::supports(recipe) => (
                     match recipe.environments() {
@@ -390,6 +359,7 @@ fn request(
                 _ => anyhow::bail!("Consumer recipe is not available through this build adapter"),
             };
             Ok(BuildOutput {
+                archive,
                 target,
                 artifact: PortableRelPath::parse(
                     &format!(
@@ -409,10 +379,13 @@ fn request(
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let mut collisions = crate::engine::layout::CollisionIndex::default();
+    for output in &outputs {
+        collisions.insert_file(&output.artifact)?;
+    }
     Ok(BuildRequest {
         clean: args.clean,
         outputs: NonEmpty::new(outputs).context("No build targets selected")?,
-        archive,
         optional: decisions.optional,
         mrpack_optional: decisions.mrpack_optional,
         templates: decisions.templates,

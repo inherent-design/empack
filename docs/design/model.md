@@ -26,7 +26,7 @@ selectors are resolved before persistence; a slug never becomes an ID by assignm
 
 | Document | Owner | Contents |
 | --- | --- | --- |
-| `empack.yml` | Author | Pack/runtime intent, dependencies, source inclusion, consumer recipes |
+| `empack.yml` | Author | Pack/runtime intent, dependencies, source inclusion, named output profiles |
 | `empack.bindings.yml` | Author/integration tools | Non-default placements, stable file-role assignments and source-member mappings |
 | `empack.lock` | Resolver | Exact runtime and files, original assertions, placements, required closure evidence |
 | Release manifest | Release builder | Portable exact inventory, runtime, choices, acquisition and installation policies |
@@ -65,7 +65,8 @@ has no package-manager control filenames; exclusions are authored policy.
 
 `distribution.native` defines `pack-id`, `java-major` and `policies`, an exact
 destination-to-`managed|seed` map. Delivery, environment and update authority belong
-to each entry in `distribution.recipes`. The stable
+to each named entry in `distribution.profiles`, alongside its archive format.
+`distribution.defaults` selects the ordered default profiles. The stable
 pack ID is a bounded portable identifier and must survive display-name/version
 changes. Java major is an explicit requirement; runtime activation checks it against
 the selected game/loader. Unknown policy destinations are errors. Configuration
