@@ -15,8 +15,20 @@ mod store;
 
 /// Native inspection handle, not a record decoded from editable data.
 pub struct SavedImportRecord(crate::engine::continuation_store::SavedRecord);
+impl SavedImportRecord {
+    pub fn identity(&self) -> String {
+        self.0.identity()
+    }
+}
+
 /// Exact native observation used only to discard unchanged host-private state.
 pub struct PendingImportCleanup(crate::engine::continuation_store::Cleanup);
+impl PendingImportCleanup {
+    pub fn identity(&self) -> String {
+        self.0.identity()
+    }
+}
+
 /// Inspect without decoding or trusting saved data. Stale records remain explicitly removable.
 pub async fn observe_pending_import(
     scope: &mut WorkScope,

@@ -73,7 +73,7 @@ pub async fn build_with_local_files(
     .await
 }
 mod assistance;
-mod browser;
+pub(super) mod browser;
 mod profiles;
 
 #[derive(Debug, thiserror::Error)]
@@ -187,6 +187,13 @@ fn configured_engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
 /// Continue an explicitly saved native build. Saved choices remain intact; new recipe flags
 /// are rejected, and every file association is checked against current captured obligations.
 pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
+    continue_build_selected(session, args, None).await
+}
+pub(super) async fn continue_build_selected(
+    session: &dyn Session,
+    args: &BuildArgs,
+    expected: Option<&str>,
+) -> Result<()> {
     ensure!(
         args.continue_build
             && args.profiles.is_empty()
@@ -217,6 +224,10 @@ pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<(
             ),
             crate::engine::api::SavedBuildResume::Prepared(resumed) => *resumed,
         };
+        ensure!(
+            expected.is_none_or(|id| id == resumed.saved.identity()),
+            "Selected pending build changed; inspect its new identity"
+        );
         let mut prepared = resumed.preparation;
         if !args.associate_downloads.is_empty() {
             let view = match &prepared {
@@ -259,15 +270,10 @@ pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<(
     result
 }
 fn input_selector(key: &AcquisitionKey) -> String {
-    let encode = |value: &str| {
-        percent_encoding::utf8_percent_encode(value, percent_encoding::NON_ALPHANUMERIC).to_string()
-    };
     match key {
-        AcquisitionKey::Locked(key) => format!(
-            "locked:{}:{}",
-            encode(key.dependency.as_str()),
-            encode(key.slot.as_str())
-        ),
+        AcquisitionKey::Locked(key) => {
+            crate::engine::pending::locked_selector(key.dependency.as_str(), key.slot.as_str())
+        }
     }
 }
 fn associations(

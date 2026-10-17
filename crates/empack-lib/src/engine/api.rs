@@ -1576,4 +1576,5 @@ mod recorded_sync_tests;
 mod suspension;
 pub use suspension::{ResumedBuild, SavedBuildRecord, SavedBuildResume, SuspendedBuildReceipt};
 
+pub(in crate::engine) use suspension::inspect_pending_build;
 pub(in crate::engine) use suspension::inspect_saved_build_presence;

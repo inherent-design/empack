@@ -55,6 +55,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
 fn command_name(command: &Commands) -> &'static str {
     match command {
         Commands::Status { .. } => "status",
+        Commands::Pending { .. } => "pending",
         Commands::Instance { .. } => "instance",
         Commands::Release { .. } => "release",
         Commands::Init(_) => "init",
@@ -76,6 +77,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     // a legacy outer lock would deadlock it and make preview unnecessarily mutating.
     match command {
         Commands::Status { context, json } => engine_host::status(session, context, json).await,
+        Commands::Pending { command } => engine_host::pending::dispatch(session, command).await,
         Commands::Instance { command } => engine_host::instance::dispatch(session, command).await,
         Commands::Release { command } => engine_host::release::dispatch(session, command).await,
         Commands::Recover { action, operation } => {

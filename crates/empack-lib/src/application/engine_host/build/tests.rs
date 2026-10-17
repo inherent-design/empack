@@ -467,9 +467,55 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         downloads_dir: None,
         ..continuing.clone()
     };
-    continue_build(&session(root.path(), true, false), &explicit)
+    let shared =
+        crate::engine::pending::inspect(&root.path().join("state"), &project, &Default::default())
+            .unwrap();
+    let operation = &shared.operations[0];
+    let saved_tree = snapshot(root.path());
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, true),
+        crate::application::cli::PendingCommand::Resume {
+            id: operation.id.clone(),
+            files: vec![],
+            downloads_dir: Some("nonexistent-downloads".into()),
+            open_downloads: true,
+            import_options: Default::default(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(root.path()), saved_tree);
+    assert!(
+        continue_build_selected(
+            &session(root.path(), true, false),
+            &continuing,
+            Some(&"0".repeat(64))
+        )
         .await
-        .unwrap();
+        .unwrap_err()
+        .to_string()
+        .contains("changed")
+    );
+    assert_eq!(snapshot(root.path()), saved_tree);
+
+    assert!(
+        operation
+            .inputs
+            .iter()
+            .any(|input| input.key == input_selector(&selected_key))
+    );
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        crate::application::cli::PendingCommand::Resume {
+            import_options: Default::default(),
+            id: operation.id[..12].into(),
+            files: explicit.associate_downloads.clone(),
+            downloads_dir: None,
+            open_downloads: false,
+        },
+    )
+    .await
+    .unwrap();
     assert!(
         !fs::read_dir(root.path().join("state/pending-builds"))
             .unwrap()

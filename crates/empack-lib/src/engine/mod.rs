@@ -59,3 +59,5 @@ mod verification;
 mod windows_privacy;
 
 pub(crate) mod runtime_versions;
+
+pub mod pending;

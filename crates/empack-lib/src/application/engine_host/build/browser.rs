@@ -17,6 +17,14 @@ pub(super) async fn open_missing(
         .filter_map(|need| need.provider.clone())
         .filter(|pin| !opened.contains(pin))
         .collect();
+    open_pins(session, pins, opened, remaining).await
+}
+pub(in crate::application::engine_host) async fn open_pins(
+    session: &dyn Session,
+    pins: BTreeSet<empack_core::model::ResolvedPin>,
+    opened: &mut BTreeSet<empack_core::model::ResolvedPin>,
+    remaining: Option<Duration>,
+) -> Result<()> {
     if pins.is_empty() {
         session
             .display()

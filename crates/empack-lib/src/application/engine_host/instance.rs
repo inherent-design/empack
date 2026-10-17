@@ -848,6 +848,13 @@ pub(super) async fn save_pending(
     anyhow::bail!("Instance was not applied; exact manual inputs remain pending")
 }
 async fn resume_instance(session: &dyn Session, files: Vec<String>) -> Result<()> {
+    resume_instance_selected(session, files, None).await
+}
+pub(super) async fn resume_instance_selected(
+    session: &dyn Session,
+    files: Vec<String>,
+    expected: Option<&str>,
+) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut associations = BTreeMap::new();
     for file in files {
@@ -873,6 +880,10 @@ async fn resume_instance(session: &dyn Session, files: Vec<String>) -> Result<()
         )
         .await?
         .context("No pending instance operation")?;
+        ensure!(
+            expected.is_none_or(|id| id == resumed.saved.identity()),
+            "Selected pending instance changed; inspect its new identity"
+        );
         let Some(prepared) = require_instance_ready(session, &engine, resumed.preparation).await?
         else {
             return Ok(());
