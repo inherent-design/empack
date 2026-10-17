@@ -82,6 +82,7 @@ fn e2e_init_from_fabulously_optimized() {
     );
     let intent = std::fs::read(pack_dir.join("empack.yml")).unwrap();
     let lock = std::fs::read(pack_dir.join("empack.lock")).unwrap();
+    let bindings = std::fs::read(pack_dir.join("empack.bindings.yml")).ok();
     for _ in 0..2 {
         let sync = empack_cmd(&pack_dir)
             .args(["--yes", "sync"])
@@ -94,6 +95,11 @@ fn e2e_init_from_fabulously_optimized() {
         );
         assert_eq!(std::fs::read(pack_dir.join("empack.yml")).unwrap(), intent);
         assert_eq!(std::fs::read(pack_dir.join("empack.lock")).unwrap(), lock);
+        assert_eq!(
+            std::fs::read(pack_dir.join("empack.bindings.yml")).ok(),
+            bindings
+        );
+        let _ = read_project(&pack_dir);
     }
     eprintln!(
         "fabopt import: {:.1}s ({count} dependencies)",
