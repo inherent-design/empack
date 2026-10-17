@@ -1153,19 +1153,52 @@ async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
     )
     .unwrap();
     let operation = &shared.operations[0];
+    let text = shared.text();
+    assert!(text.contains("one/primary"));
+    assert!(text.contains("curseforge:123@456"));
+    assert!(text.contains("sha512:"));
+    let downloads = root.path().join("downloads");
+    fs::create_dir(&downloads).unwrap();
+    fs::write(downloads.join("renamed.bin"), b"second").unwrap();
+    fs::write(downloads.join("duplicate.bin"), b"second").unwrap();
+    fs::write(downloads.join("unrelated.jar"), b"unrelated").unwrap();
+    let before = snapshot(root.path());
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true),
+        crate::application::cli::PendingCommand::Resume {
+            import_options: Default::default(),
+            id: operation.id.clone(),
+            files: vec![],
+            downloads_dir: Some(downloads.clone()),
+            open_downloads: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    // Two paths with identical verified bytes represent one candidate content identity.
     crate::application::engine_host::pending::dispatch(
         &session(root.path(), false),
         crate::application::cli::PendingCommand::Resume {
             import_options: Default::default(),
             id: operation.id.clone(),
-            files: vec!["two/primary=two.jar".into()],
-            downloads_dir: None,
+            files: vec![],
+            downloads_dir: Some(downloads.clone()),
             open_downloads: false,
         },
     )
     .await
     .unwrap();
     assert!(records().is_empty());
+    assert_eq!(fs::read(downloads.join("renamed.bin")).unwrap(), b"second");
+    assert_eq!(
+        fs::read(downloads.join("duplicate.bin")).unwrap(),
+        b"second"
+    );
+    assert_eq!(
+        fs::read(downloads.join("unrelated.jar")).unwrap(),
+        b"unrelated"
+    );
     assert_eq!(
         fs::read(root.path().join("project/pack/mods/one.jar")).unwrap(),
         b"first"
