@@ -294,10 +294,14 @@ pub(in crate::application) async fn dispatch(
             let (invocation, root) = project_path(session)?;
             let state = state_root(session.config().app_config(), &invocation)?;
             let inspected = inspect(session, root, None, state).await?;
-            let (record, _release) = &*inspected;
+            let (record, release) = &*inspected;
             session.display().status().info(&format!(
-                "Pack {} ({:?}), release {}",
-                record.pack, record.side, record.release
+                "Pack {} {} ({:?}), release {}; game directory: {}/",
+                record.pack,
+                release.document().version,
+                record.side,
+                record.release,
+                record.layout.directory()
             ));
             for choice in &record.choices {
                 session

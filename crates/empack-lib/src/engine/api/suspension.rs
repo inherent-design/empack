@@ -513,3 +513,12 @@ async fn restore(
 }
 #[cfg(test)]
 mod tests;
+
+/// Metadata-only presence observation; a saved record is not execution authority.
+pub(in crate::engine) fn inspect_saved_build_presence(
+    state: &std::path::Path,
+    project: &std::path::Path,
+    cancel: &Cancellation,
+) -> Result<bool> {
+    store::observe(state, project, cancel).map(|value| value.is_some())
+}

@@ -3,7 +3,26 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide covers v0.6.0-beta; `empack <command> --help` lists the installed options.
+This guide follows the development CLI; `empack <command> --help` lists the installed options.
+
+## Workspace status
+
+Run `empack --workdir ./pack status` before choosing an author, publisher or instance
+operation. Add `--json` for the versioned report used by library clients, or select
+`--context author`, `publisher` or `instance` when a directory contains more than
+one context.
+
+Status reads bounded control records without network requests, document rewrites,
+recovery or cache creation. It distinguishes missing, malformed and stale author
+locks and shows the human pack version, exact release, runtime and game directory
+when those records are available. Publisher storage is recognized but its contents
+are not authenticated by status. Pending records are reported as present; resuming
+still validates them and requests fresh approval. Interrupted publication must be
+inspected with `recover inspect` before live documents can be interpreted.
+
+Status does not verify installed content, authenticate a channel or establish that
+Minecraft will launch. `update` changes author dependency selections;
+`instance update` applies a published pack release. Neither updates empack itself.
 
 ## Authoring
 

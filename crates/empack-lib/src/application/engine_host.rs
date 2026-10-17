@@ -519,3 +519,41 @@ pub mod cli;
 
 pub(super) mod instance;
 pub(super) mod release;
+
+/// Metadata status uses the same report for embedded clients and the CLI.
+pub async fn status(session: &dyn Session, context: Option<String>, json: bool) -> Result<()> {
+    use crate::engine::status::{WorkspaceContext, inspect_workspace};
+    let context = match context.as_deref() {
+        Some("author") => Some(WorkspaceContext::Author),
+        Some("publisher") => Some(WorkspaceContext::Publisher),
+        Some("instance") => Some(WorkspaceContext::Instance),
+        None => None,
+        _ => anyhow::bail!("Unknown workspace context"),
+    };
+    let (invocation, root) = project_path(session)?;
+    let state = state_root(session.config().app_config(), &invocation)?;
+    let report = initialize::discover(session, move |mut scope| async move {
+        let work = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 256 << 20,
+                open_files: 16,
+                ..Default::default()
+            },
+            ResourceRequest {
+                memory_bytes: 1 << 20,
+                ..Default::default()
+            },
+            move |cancel| inspect_workspace(&root, &state, context, &cancel),
+        )?;
+        scope.accept(work.wait().await?)?.transpose()
+    })
+    .await?;
+    let text = if json {
+        serde_json::to_string_pretty(&*report)?
+    } else {
+        report.text()
+    };
+    session.display().status().message(&text);
+    Ok(())
+}
