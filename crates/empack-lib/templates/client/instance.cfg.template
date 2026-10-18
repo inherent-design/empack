@@ -2,9 +2,7 @@
 ConfigVersion=1.2
 InstanceType=OneSix
 ExportAuthor={{ini_quote AUTHOR}}
-MaxMemAlloc=8192
-MinMemAlloc=512
-PermGen=256
+OverrideMemory=false
 name={{ini_quote NAME}}
 iconKey=empack_icon
 AutoUpdate=false

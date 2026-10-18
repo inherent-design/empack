@@ -178,13 +178,14 @@ fn e2e_init_scaffolds_templates() {
             .unwrap();
         let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
         let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-            "0.7.0-beta"
+            "0.7.1-beta"
         } else {
             env!("CARGO_PKG_VERSION")
         };
         assert_eq!(workflow["env"]["EMPACK_VERSION"], format!("v{version}"));
         assert!(!bytes.contains("__EMPACK_RELEASE_TAG__"));
-        assert!(bytes.contains("empack build --yes modrinth"));
+        assert!(bytes.contains(&format!("python3 .github/scripts/empack-ci.py {name}")));
+        assert!(pack_dir.join(".github/scripts/empack-ci.py").is_file());
         assert!(!bytes.contains("packwiz"));
     }
     assert!(

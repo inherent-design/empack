@@ -1055,3 +1055,78 @@ fn smoke_outdated_json_and_runtime_plan_preserve_author_workspace() {
         assert_eq!(snapshot(&project), before);
     }
 }
+
+#[test]
+fn smoke_generated_workflow_builds_named_profiles_and_rejects_wrong_release_tag() {
+    let project = initialized();
+    let intent_path = project.dir().join("empack.yml");
+    let mut intent = empack_lib::testing::read_authoring(&intent_path)
+        .unwrap()
+        .intent()
+        .clone();
+    intent.metadata.name = "Pack With Spaces".into();
+    intent.metadata.version = "1.2.3-beta".into();
+    intent.distribution.defaults =
+        empack_core::model::NonEmpty::new(vec!["modrinth".into(), "prism".into()]).unwrap();
+    empack_lib::testing::write_authoring(&intent_path, &intent).unwrap();
+    command(&project).args(["sync", "--yes"]).assert().success();
+    fs::create_dir_all(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/stale.zip"), b"unselected").unwrap();
+    let runner = tempfile::tempdir().unwrap();
+    let binary = project.cmd();
+    let path = std::env::join_paths(
+        std::iter::once(Path::new(binary.get_program()).parent().unwrap().to_owned())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let helper = |action: &str| {
+        let mut child =
+            std::process::Command::new(if cfg!(windows) { "python" } else { "python3" });
+        for (key, value) in binary.get_envs() {
+            match value {
+                Some(value) => {
+                    child.env(key, value);
+                }
+                None => {
+                    child.env_remove(key);
+                }
+            }
+        }
+        child
+            .current_dir(project.dir())
+            .args([".github/scripts/empack-ci.py", action])
+            .env("PATH", &path)
+            .env("RUNNER_TEMP", runner.path())
+            .env("EMPACK_PROFILES", "")
+            .env("GITHUB_REF_NAME", "v9.9.9")
+            .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
+            .env("HTTPS_PROXY", "http://127.0.0.1:9")
+            .env("HTTP_PROXY", "http://127.0.0.1:9");
+        let mut child = assert_cmd::Command::from_std(child);
+        child.timeout(Duration::from_secs(60));
+        child
+    };
+    helper("release")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("must match authored version"));
+    assert!(!runner.path().join("empack-artifacts").exists());
+    helper("validate").assert().success();
+    let output = runner.path().join("empack-artifacts");
+    let names: Vec<_> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(names.len(), 3);
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.contains(' ') || name == "stale.zip")
+    );
+    let sums = fs::read_to_string(output.join("SHA256SUMS")).unwrap();
+    assert_eq!(sums.lines().count(), 2);
+    for line in sums.lines() {
+        let (_, name) = line.split_once("  ").unwrap();
+        assert!(output.join(name).is_file());
+    }
+}

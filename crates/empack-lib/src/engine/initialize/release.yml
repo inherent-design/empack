@@ -4,21 +4,31 @@ on:
     tags: ['v*']
 permissions:
   contents: write
+concurrency:
+  group: pack-release-${{ github.ref }}
+  cancel-in-progress: false
 env:
   EMPACK_VERSION: __EMPACK_RELEASE_TAG__
+  # Empty selects distribution.defaults; otherwise list profile names, one per line.
+  EMPACK_PROFILES: ''
+  JAVA_VERSION: '21'
 jobs:
   release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Install empack
-        run: cargo install --git https://github.com/inherent-design/empack.git --tag "$EMPACK_VERSION" --locked empack
-      - name: Build verified distribution
-        run: empack build --yes modrinth
-      - name: Publish tagged distribution
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Install verified empack release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.mrpack --verify-tag --generate-notes
+        run: python3 .github/scripts/empack-ci.py install
+      - name: Build and publish selected profiles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/empack-ci.py release

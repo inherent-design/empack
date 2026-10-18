@@ -478,6 +478,7 @@ exec "$program" -jar server.jar "$@"
             .env("JAVA_HOME", root.path().join("java space"))
             .env("PATH", &paths)
             .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
+            .env("EMPACK_NO_PAUSE", "1")
             .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
             .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
             .status()
@@ -546,6 +547,7 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
             .args(["/d", "/c", "start.bat", "nogui"])
             .current_dir(root.path())
             .env_remove("JAVA_HOME")
+            .env("EMPACK_NO_PAUSE", "1")
             .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
             .status()
             .unwrap();
@@ -640,4 +642,93 @@ fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
         );
         assert!(install.contains("--side server --require-subscription"));
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
+    let root = tempfile::Builder::new()
+        .prefix("server space ! ")
+        .tempdir()
+        .unwrap();
+    fs::create_dir(root.path().join("game")).unwrap();
+    put(
+        root.path(),
+        "install_pack.bat",
+        install_batch(None).as_bytes(),
+    );
+    let output = std::process::Command::new("cmd")
+        .args(["/d", "/c", "install_pack.bat"])
+        .current_dir(root.path())
+        .env("EMPACK_NO_PAUSE", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("already includes"));
+    put(
+        root.path(),
+        "java space/bin/java.cmd",
+        b"@echo off\r\necho %* > arguments.txt\r\nexit /b %EMPACK_TEST_STATUS%\r\n",
+    );
+    for launch in [
+        ServerLaunch::Jar(path("server.jar").unwrap()),
+        ServerLaunch::Arguments {
+            unix: path("unix.txt").unwrap(),
+            windows: path("libraries/win args.txt").unwrap(),
+        },
+    ] {
+        // A returning batch fixture substitutes for java.exe; generated arguments are unchanged.
+        let script = runtime_start(&launch, false, true).replace(
+            "  \"%JAVA_HOME%\\bin\\java.exe\"",
+            "  call \"%JAVA_HOME%\\bin\\java.cmd\"",
+        );
+        put(root.path(), "start.bat", script.as_bytes());
+        for code in [0, 9] {
+            let output = std::process::Command::new("cmd")
+                .args(["/d", "/c", "start.bat", "nogui"])
+                .current_dir(root.path())
+                .env("EMPACK_NO_PAUSE", "1")
+                .env("JAVA_HOME", root.path().join("java space"))
+                .env("EMPACK_TEST_STATUS", code.to_string())
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(code), "{output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).contains("game\\eula.txt"));
+            let args = fs::read_to_string(root.path().join("game/arguments.txt")).unwrap();
+            match launch {
+                ServerLaunch::Jar(_) => assert!(args.contains("-jar server.jar nogui")),
+                ServerLaunch::Arguments { .. } => {
+                    assert!(args.contains("@user_jvm_args.txt \"@libraries/win args.txt\" nogui"))
+                }
+            }
+        }
+    }
+    put(
+        root.path(),
+        "start.bat",
+        runtime_start(&ServerLaunch::Jar(path("server.jar").unwrap()), false, true).as_bytes(),
+    );
+    let output = std::process::Command::new("cmd")
+        .args(["/d", "/c", "start.bat"])
+        .current_dir(root.path())
+        .env("EMPACK_NO_PAUSE", "1")
+        .env("JAVA_HOME", root.path().join("missing-java"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("required Java version"));
+}
+
+#[test]
+fn windows_entry_points_keep_console_and_return_status() {
+    for script in [
+        start_batch(false),
+        start_batch(true),
+        install_batch(None),
+        install_batch(Some(&"a".repeat(64))),
+    ] {
+        assert!(script.contains("if not defined EMPACK_NO_PAUSE pause\r\nexit /b %_EMPACK_EXIT%"));
+        assert!(script.contains("DisableDelayedExpansion"));
+    }
+    assert!(start_batch(true).contains("set \"EMPACK_NO_PAUSE=1\"\r\ncall install_pack.bat"));
 }

@@ -1,6 +1,6 @@
 # Helpers and acceptance tests
 
-Contract for v0.7.0-beta. Callable types and signatures are defined in the
+Contract for v0.7.1-beta. Callable types and signatures are defined in the
 [verification](../../crates/empack-lib/src/engine/verification.rs), [bounded I/O](../../crates/empack-lib/src/engine/io.rs) and [artifact inspection](../../crates/empack-lib/src/engine/artifacts.rs). This page specifies their behavior and ownership.
 
 ## Shared helpers and utilities

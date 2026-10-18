@@ -54,6 +54,8 @@ pub enum ProjectScaffold {
     ValidationWorkflow,
     /// Tagged distribution publication.
     ReleaseWorkflow,
+    /// Shared generated workflow driver.
+    WorkflowHelper,
 }
 /// Portable permission intent. Native adapters additionally preserve appropriate source modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

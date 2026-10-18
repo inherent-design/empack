@@ -142,6 +142,9 @@ fn full_client_archives_include_game_templates_and_exact_launcher_profile() {
                 .read_to_string(&mut cfg)
                 .unwrap();
             assert!(cfg.contains("InstanceType=OneSix"));
+            assert!(cfg.contains("OverrideMemory=false"));
+            assert!(!cfg.contains("MaxMemAlloc="));
+            assert!(!cfg.contains("MinMemAlloc="));
             assert!(cfg.lines().any(|line| line == "PreLaunchCommand="));
             assert!(cfg.lines().any(|line| line == "WrapperCommand="));
             assert!(!cfg.contains("packwiz-installer-bootstrap.jar"));

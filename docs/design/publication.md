@@ -1,6 +1,6 @@
 # Publication and recovery
 
-Contract for v0.7.0-beta. Callable types and signatures are defined in the
+Contract for v0.7.1-beta. Callable types and signatures are defined in the
 [publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
 
 ## Journaled publication and recovery
