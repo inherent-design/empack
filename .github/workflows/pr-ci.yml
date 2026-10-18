@@ -67,8 +67,16 @@ jobs:
       - uses: jdx/mise-action@v5
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
-      - run: mise run test
-      - run: mise run e2e:strict
+      # Reuse the same feature graph for unit tests and strict executable tests.
+      # Rebuilding telemetry variants on Windows can exhaust the job before E2E.
+      - run: cargo build --workspace --all-features
+      - run: python -m unittest discover -s scripts/tests
+      - run: cargo nextest run --workspace --all-features -E 'not test(~e2e_)'
+      - run: cargo test --workspace --all-features --doc
+      - run: cargo nextest run --workspace --all-features -E 'test(~e2e_)'
+        env:
+          EMPACK_E2E_STRICT: "1"
+          EMPACK_RUN_LIVE_TESTS: "1"
 
   import-smoke:
     name: import-smoke (${{ matrix.os }})
