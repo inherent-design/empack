@@ -2222,7 +2222,7 @@ async fn late_world_creation_invalidates_initialization_without_adding_members()
             &*outcome,
             OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
         ),
-        "{outcome:?}"
+        "late world creation must fail before publication"
     );
     assert_eq!(
         fs::read(world.join("played.dat")).unwrap(),

@@ -401,10 +401,10 @@ async fn companion_files_require_complete_explicit_placement_without_losing_requ
     };
     for complete in [false, true] {
         let mut selected = input("renderer", true);
-        let mut placements = BTreeMap::from([("project1.jar".into(), placement("mods/main.jar"))]);
+        let mut placements = BTreeMap::from([("primary".into(), placement("mods/main.jar"))]);
         if complete {
             placements.insert(
-                "resources.zip".into(),
+                "role:required-resource-pack".into(),
                 placement("resourcepacks/companion.zip"),
             );
         }

@@ -392,10 +392,17 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         engine.transport = transport.clone();
         apply(&engine, root.path(), enroll(&key)).await;
         let mut document = native_release(&key, "remote").0.document().clone();
+        let world = matches!(&source, ReleaseSource::ProviderArchiveMember { .. });
+        let destination = if world {
+            "custom/world/level.dat"
+        } else {
+            "mods/a.jar"
+        };
+        let installed = root.path().join("game").join(destination);
         document.files.push(ReleaseFile {
-            world_root: None,
+            world_root: world.then(|| "custom/world".into()),
             key: "mod".into(),
-            destination: "mods/a.jar".into(),
+            destination: destination.into(),
             layer: ReleaseLayer::Common,
             policy: if matches!(&source, ReleaseSource::ProviderArchiveMember { .. }) {
                 FilePolicy::Seed
@@ -523,10 +530,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
                     ExecutionReceipt::Instance(_)
                 ))
             ));
-            assert_eq!(
-                fs::read(root.path().join("game/mods/a.jar")).unwrap(),
-                b"exact bytes"
-            );
+            assert_eq!(fs::read(&installed).unwrap(), b"exact bytes");
             assert_eq!(
                 fs::read(
                     root.path()
@@ -547,12 +551,12 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         drop(result);
         engine.release_completed(operation.id());
         if !bad_asset {
-            fs::remove_file(root.path().join("game/mods/a.jar")).unwrap();
+            fs::remove_file(&installed).unwrap();
             asset.remove_async().await;
             let repair_asset = server
                 .mock("GET", "/assets/a%252fb")
                 .with_body("exact bytes")
-                .expect(1)
+                .expect(if world { 0 } else { 1 })
                 .create_async()
                 .await;
             // Repair uses the completed locator after trust revocation, without selecting an update.
@@ -600,10 +604,15 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
                     ExecutionReceipt::Instance(_)
                 ))
             ));
-            assert_eq!(
-                fs::read(root.path().join("game/mods/a.jar")).unwrap(),
-                b"exact bytes"
-            );
+            if world {
+                assert!(
+                    !installed.exists(),
+                    "Repair must not refill an initialized world"
+                );
+            } else {
+                assert_eq!(fs::read(&installed).unwrap(), b"exact bytes");
+            }
+
             repair_asset.assert_async().await;
             drop(repaired);
             engine.release_completed(repair.id());
