@@ -248,6 +248,8 @@ cannot silently replace a verified runtime file or collide with another placemen
 
 Independently inspect archive member names, duplicates, case/Unicode collisions,
 permissions, sizes, digests, unexpected entries and actual decoded-byte limits.
+ZIP exports use a Unix creator marker and portable mode bits on every host,
+including Windows, so executable scripts retain their intended permissions.
 Check exact provider identities and consumer semantics, not merely archive readability.
 Receipts record recipe, resolution, content evidence, conversions and runtime assets.
 

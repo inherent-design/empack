@@ -8,6 +8,7 @@ fn archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
             *name,
             zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored)
+                .system(zip::System::Unix)
                 .unix_permissions(0o755),
         )
         .unwrap();

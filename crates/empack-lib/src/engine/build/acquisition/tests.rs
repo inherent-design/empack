@@ -540,7 +540,9 @@ fn captured_embedded_members_feed_verified_publication_without_distributing_the_
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         zip.start_file(
             "assets/item.zip",
-            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            zip::write::SimpleFileOptions::default()
+                .system(zip::System::Unix)
+                .unix_permissions(0o755),
         )
         .unwrap();
         zip.write_all(bytes).unwrap();

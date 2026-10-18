@@ -23,7 +23,9 @@ pub(in crate::engine) fn source(
     {
         zip.start_file(
             name,
-            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            zip::write::SimpleFileOptions::default()
+                .system(zip::System::Unix)
+                .unix_permissions(0o755),
         )
         .unwrap();
         zip.write_all(bytes).unwrap();

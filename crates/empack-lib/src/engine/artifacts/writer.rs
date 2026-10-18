@@ -145,12 +145,15 @@ pub fn write_archive(
     };
     match format {
         DistributionArchive::Zip => {
+            // Portable mode bits need a Unix creator marker, even on a Windows host.
             let mut writer = zip::ZipWriter::new(&mut bounded);
             for path in &directories {
                 cancel.check()?;
                 writer.add_directory(
                     format!("{}/", path.as_str()),
-                    zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+                    zip::write::SimpleFileOptions::default()
+                        .system(zip::System::Unix)
+                        .unix_permissions(0o755),
                 )?;
             }
             for (path, file) in expected {
@@ -158,6 +161,7 @@ pub fn write_archive(
                 writer.start_file(
                     path.as_str(),
                     zip::write::SimpleFileOptions::default()
+                        .system(zip::System::Unix)
                         .unix_permissions(mode(file.permissions))
                         .large_file(file.bytes >= u64::from(u32::MAX)),
                 )?;

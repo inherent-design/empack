@@ -20,7 +20,9 @@ fn archive(manifest: &str, bytes: &[u8], members: &[(&str, &[u8])]) -> AcquiredC
     for (name, bytes) in std::iter::once((manifest, bytes)).chain(members.iter().copied()) {
         zip.start_file(
             name,
-            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            zip::write::SimpleFileOptions::default()
+                .system(zip::System::Unix)
+                .unix_permissions(0o755),
         )
         .unwrap();
         zip.write_all(bytes).unwrap();

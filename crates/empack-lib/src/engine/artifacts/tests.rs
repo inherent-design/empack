@@ -92,7 +92,9 @@ fn zip(entries: &[(&str, &[u8], u32)]) -> Cursor<Vec<u8>> {
         writer
             .start_file(
                 *name,
-                zip::write::SimpleFileOptions::default().unix_permissions(*mode),
+                zip::write::SimpleFileOptions::default()
+                    .system(zip::System::Unix)
+                    .unix_permissions(*mode),
             )
             .unwrap();
         writer.write_all(bytes).unwrap();
@@ -236,6 +238,17 @@ fn every_encoder_preserves_portable_permissions_and_empty_directories() {
         .unwrap();
         assert_eq!(receipt.directories(), &BTreeSet::from([path("empty")]));
         assert_eq!(receipt.members(), 1);
+        if format == DistributionArchive::Zip {
+            output.rewind().unwrap();
+            let mut archive = zip::ZipArchive::new(&mut output).unwrap();
+            let launcher = archive.by_name("launcher").unwrap();
+            assert_eq!(launcher.system(), zip::System::Unix);
+            assert_eq!(launcher.unix_mode().unwrap() & 0o777, 0o555);
+            drop(launcher);
+            let directory = archive.by_name("empty/").unwrap();
+            assert_eq!(directory.system(), zip::System::Unix);
+            assert_eq!(directory.unix_mode().unwrap() & 0o777, 0o755);
+        }
         if format == DistributionArchive::TarGz {
             output.rewind().unwrap();
             let mut bytes = Vec::new();
@@ -337,4 +350,40 @@ fn legacy_cp437_names_remain_supported_without_a_utf8_declaration() {
         &Cancellation::default(),
     )
     .unwrap();
+}
+
+#[test]
+fn zip_creator_system_controls_permission_interpretation() {
+    let mut executable = content(b"script");
+    executable.permissions.executable = true;
+    let expected = BTreeMap::from([(path("launch.sh"), executable)]);
+    for system in [zip::System::Dos, zip::System::Unix] {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "launch.sh",
+                zip::write::SimpleFileOptions::default()
+                    .system(system)
+                    .unix_permissions(0o755),
+            )
+            .unwrap();
+        writer.write_all(b"script").unwrap();
+        let result = verify_archive(
+            &mut writer.finish().unwrap(),
+            DistributionArchive::Zip,
+            &expected,
+            ArchiveLimits::default(),
+            &Cancellation::default(),
+        );
+        if system == zip::System::Unix {
+            result.unwrap();
+        } else {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("permissions differ")
+            );
+        }
+    }
 }
