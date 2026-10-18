@@ -1,7 +1,7 @@
-# v0.6.0-beta design
+# v0.7.0-beta design
 
 These documents define empack's authoring, distribution and installed-instance
-contracts for v0.6.0-beta. Start with [usage](../usage.md) for commands and workflows.
+contracts for v0.7.0-beta. Start with [usage](../usage.md) for commands and workflows.
 Types in design examples name semantic boundaries; generated Rust API documentation
 defines callable signatures.
 
@@ -23,5 +23,5 @@ defines callable signatures.
 | [Runtime](runtime.md) | Async ownership, cancellation and admission |
 | [Verification](verification.md) | Evidence and conformance requirements |
 
-Implementation tasks are confined to [TODO.md](../../TODO.md). Design pages contain
-contracts, not progress records or migration ledgers.
+These contracts describe the checked-out implementation. Run-specific validation
+belongs in CI and pull requests, not in the design.

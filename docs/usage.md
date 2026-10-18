@@ -88,8 +88,10 @@ for ranking, evidence limits and publication rules.
 ## Installed instances
 
 Missing manual downloads can be saved after approval. The command reports the exact
-file key, byte count and SHA-256 address. Supply associations to `instance continue`;
-resuming checks the original assertions and instance base before showing a new plan.
+file key, byte count and SHA-256 address. Use `pending list`, then
+`pending resume ID --file KEY=PATH`; resuming checks the original assertions and
+instance base before showing a new plan. `instance continue --file KEY=PATH` remains
+available for an instance-specific continuation.
 A preview never saves or removes pending state. If the base or publisher enrollment
 has changed, inspect it and explicitly discard the stale recipe before selecting a
 new operation.
