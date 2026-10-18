@@ -372,6 +372,12 @@ pub struct InstanceConflictArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum ReleaseCommand {
+    /// Initialize signing for the selected existing publisher workspace
+    Init {
+        /// New seed file outside project/export roots, in an existing private directory
+        #[arg(long)]
+        key_file: PathBuf,
+    },
     /// Verify hosted immutable content, then publish a signed channel pointer
     PublishChannel {
         /// Exact release ID printed by release stage
@@ -437,13 +443,16 @@ pub enum InstanceCommand {
     },
     /// Apply the exact signed release selected by the saved authenticated channel observation
     Update {
+        /// Check and approve a fresh channel observation before separately approving installation
+        #[arg(long)]
+        check: bool,
         #[command(flatten)]
         conflicts: InstanceConflictArgs,
         /// Local signed release envelope; omit to fetch the saved channel's exact release
         release: Option<std::path::PathBuf>,
-        /// Match the installed environment; use --side server for server instances
-        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
-        side: String,
+        /// Infer the installed environment; first installation defaults to client
+        #[arg(long, value_parser = ["client", "server"])]
+        side: Option<String>,
         /// Retain the installed layout; new instances default to game
         #[arg(long, value_parser = ["game", "prism"])]
         layout: Option<String>,
@@ -483,6 +492,7 @@ pub enum InstanceCommand {
         revoke_all: bool,
     },
     /// Verify a signed channel envelope and save its anti-replay floor without installing content
+    #[command(name = "check-updates", visible_alias = "observe-channel")]
     ObserveChannel {
         /// Local signed envelope; omit to fetch the enrolled HTTPS channel
         envelope: Option<std::path::PathBuf>,
@@ -544,9 +554,9 @@ pub enum InstanceCommand {
         /// Expected SHA-256 of the exact release payload bytes
         #[arg(long)]
         sha256: String,
-        /// Environment to install; an existing instance cannot switch sides
-        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
-        side: String,
+        /// Infer the installed environment; first installation defaults to client
+        #[arg(long, value_parser = ["client", "server"])]
+        side: Option<String>,
         /// Fixed content directory; retained on updates (new instances default to game)
         #[arg(long, value_parser = ["game", "prism"])]
         layout: Option<String>,
@@ -567,9 +577,9 @@ pub enum InstanceCommand {
         /// Expected SHA-256 of the exact release payload bytes
         #[arg(long)]
         sha256: String,
-        /// Environment to install; an existing instance cannot switch sides
-        #[arg(long, value_parser = ["client", "server"], default_value = "client")]
-        side: String,
+        /// Infer the installed environment; first installation defaults to client
+        #[arg(long, value_parser = ["client", "server"])]
+        side: Option<String>,
         /// Fixed content directory; retained on updates (new instances default to game)
         #[arg(long, value_parser = ["game", "prism"])]
         layout: Option<String>,
@@ -650,8 +660,9 @@ pub enum Commands {
     #[command(
         after_help = "Select an existing directory with empack --workdir INSTANCE instance <command>.
 Create an empty directory before the first installation.
-Use install for a local snapshot; subscribe, observe-channel and update for a signed channel.
-Server installations and updates require --side server."
+Use install for a local snapshot; subscribe, check-updates and update for a signed channel.
+First installation defaults to client; choose --side server for a server.
+Updates infer the installed side/layout. update --check checks before applying."
     )]
     Instance {
         #[command(subcommand)]
@@ -931,6 +942,37 @@ mod tests {
     }
 
     #[test]
+    fn publisher_setup_and_update_conveniences_parse_explicitly() {
+        assert!(Cli::try_parse_from(["empack", "release", "init"]).is_err());
+        assert!(
+            Cli::try_parse_from(["empack", "release", "init", "--key-file", "private/key"]).is_ok()
+        );
+        for command in ["check-updates", "observe-channel"] {
+            assert!(matches!(
+                Cli::try_parse_from(["empack", "instance", command])
+                    .unwrap()
+                    .command,
+                Some(Commands::Instance {
+                    command: InstanceCommand::ObserveChannel { envelope: None }
+                })
+            ));
+        }
+        assert!(matches!(
+            Cli::try_parse_from(["empack", "instance", "update", "--check"])
+                .unwrap()
+                .command,
+            Some(Commands::Instance {
+                command: InstanceCommand::Update {
+                    check: true,
+                    side: None,
+                    layout: None,
+                    ..
+                }
+            })
+        ));
+    }
+
+    #[test]
     fn documented_beta_workflows_parse() {
         for command in [
             "empack init my-pack --modloader fabric --mc-version 1.21.1",
@@ -1041,7 +1083,7 @@ mod tests {
         else {
             panic!("not instance install")
         };
-        assert_eq!(side, "server");
+        assert_eq!(side.as_deref(), Some("server"));
         assert_eq!(choices, ["extra=yes"]);
         assert_eq!(files, ["one=some=file.jar"]);
     }

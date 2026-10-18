@@ -48,6 +48,9 @@ fn release(version: &str) -> DecodedRelease {
     .unwrap()
 }
 async fn fixture(root: &Path) -> SigningKey {
+    fixture_side(root, "client").await
+}
+async fn fixture_side(root: &Path, side: &str) -> SigningKey {
     fs::create_dir(root.join("project")).unwrap();
     let release = release("A");
     fs::write(root.join("initial.json"), release.bytes()).unwrap();
@@ -57,7 +60,7 @@ async fn fixture(root: &Path) -> SigningKey {
             conflicts: Default::default(),
             release: "initial.json".into(),
             sha256: release.id().into(),
-            side: "client".into(),
+            side: Some(side.into()),
             layout: None,
             choices: vec![],
             files: vec![],
@@ -242,4 +245,108 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         .is_err()
     );
     pointer.assert_async().await;
+}
+
+#[tokio::test]
+async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
+    use crate::application::session_mocks::MockResponse;
+    let root = tempfile::tempdir().unwrap();
+    let key = fixture_side(root.path(), "server").await;
+    let offered = release("B");
+    let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let _pointer = server
+        .mock("GET", "/channel.json")
+        .with_body(channel(&offered, &key, envelope.len() as u64))
+        .create_async()
+        .await;
+    let update = || InstanceCommand::Update {
+        check: true,
+        conflicts: Default::default(),
+        release: None,
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    };
+    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    for (yes, dry) in [(true, true), (false, false)] {
+        super::super::install_with_transport(
+            &session(root.path(), yes, dry),
+            update(),
+            transport(&server.url()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            before,
+            crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+        );
+    }
+    // A missing release fails after the approved observation, preserving its floor.
+    assert!(
+        super::super::install_with_transport(
+            &session(root.path(), true, false),
+            update(),
+            transport(&server.url())
+        )
+        .await
+        .is_err()
+    );
+    let saved = fs::read(root.path().join("project/.empack/subscription.json")).unwrap();
+    assert_eq!(
+        crate::engine::api::SubscriptionRecord::decode(&saved)
+            .unwrap()
+            .floor
+            .unwrap()
+            .sequence,
+        1
+    );
+    let _response = server
+        .mock("GET", "/release.json")
+        .with_body(envelope)
+        .create_async()
+        .await;
+    let interactive = MockInteractiveProvider::new();
+    interactive
+        .response_queue
+        .lock()
+        .unwrap()
+        .extend([MockResponse::Confirm(true), MockResponse::Confirm(false)]);
+    let prompts = interactive.confirm_calls.clone();
+    let host = session(root.path(), false, false).with_interactive(interactive);
+    super::super::install_with_transport(&host, update(), transport(&server.url()))
+        .await
+        .unwrap();
+    assert_eq!(prompts.lock().unwrap().len(), 2);
+    let installed = inspect(
+        &host,
+        root.path().join("project"),
+        None,
+        root.path().join("state"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(installed.0.release, release("A").id());
+    assert_eq!(
+        saved,
+        fs::read(root.path().join("project/.empack/subscription.json")).unwrap()
+    );
+    super::super::install_with_transport(
+        &session(root.path(), true, false),
+        update(),
+        transport(&server.url()),
+    )
+    .await
+    .unwrap();
+    let installed = inspect(
+        &host,
+        root.path().join("project"),
+        None,
+        root.path().join("state"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(installed.0.release, offered.id());
+    assert_eq!(installed.0.side, InstanceSide::Server);
 }

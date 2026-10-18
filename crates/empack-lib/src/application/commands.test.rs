@@ -366,7 +366,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
                 conflicts: Default::default(),
                 release: "release.json".into(),
                 sha256: payload.id().into(),
-                side: "client".into(),
+                side: Some("client".into()),
                 layout: Some("prism".into()),
                 choices: vec![],
                 files: vec![],
@@ -639,7 +639,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
                     conflicts: Default::default(),
                     release: export.join("release.json"),
                     sha256: decoded.id().into(),
-                    side: side.into(),
+                    side: Some(side.into()),
                     layout: None,
                     choices: vec![],
                     files: vec![],
@@ -659,6 +659,52 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
         );
         assert!(!instance.join("game/private").exists());
         assert!(!instance.join("game/pack.toml").exists());
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Install {
+                    conflicts: Default::default(),
+                    release: export.join("release.json"),
+                    sha256: decoded.id().into(),
+                    side: None,
+                    layout: None,
+                    choices: vec![],
+                    files: vec![],
+                },
+            },
+            &host,
+        )
+        .await
+        .unwrap();
+        let before = snapshot(&instance);
+        for (explicit_side, layout) in [
+            (
+                Some(if side == "server" { "client" } else { "server" }.into()),
+                None,
+            ),
+            (None, Some("prism".into())),
+        ] {
+            let error = execute_command_with_session(
+                Commands::Instance {
+                    command: InstanceCommand::Update {
+                        check: true,
+                        conflicts: Default::default(),
+                        release: Some("missing-release.json".into()),
+                        side: explicit_side,
+                        layout,
+                        choices: vec![],
+                        files: vec![],
+                    },
+                },
+                &host,
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("conflicts with the installed"),
+                "{error:#}"
+            );
+            assert_eq!(before, snapshot(&instance));
+        }
     }
     // The actual client build dispatch uses native preparation without acquiring installer JARs.
     execute_command_with_session(
@@ -699,7 +745,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
             conflicts: Default::default(),
             release: descriptor,
             sha256: release.id().into(),
-            side: "client".into(),
+            side: Some("client".into()),
             layout: Some("prism".into()),
             choices: vec![],
             files: vec![],
@@ -779,7 +825,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
                     conflicts: Default::default(),
                     release: "foreign.json".into(),
                     sha256: foreign.id().into(),
-                    side: "client".into(),
+                    side: Some("client".into()),
                     layout: None,
                     choices: vec![],
                     files: vec![],
@@ -841,9 +887,10 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     fs::write(root.path().join("signed-release.json"), &envelope).unwrap();
     let update = || Commands::Instance {
         command: InstanceCommand::Update {
+            check: false,
             conflicts: Default::default(),
             release: Some("signed-release.json".into()),
-            side: "client".into(),
+            side: Some("client".into()),
             layout: None,
             choices: vec![],
             files: vec![],
@@ -876,6 +923,18 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap(),
     )
     .unwrap();
+    let before_check = snapshot(&root.path().join("project"));
+    execute_command_with_session(
+        Commands::Instance {
+            command: InstanceCommand::ObserveChannel {
+                envelope: Some("channel.json".into()),
+            },
+        },
+        &session(root.path(), true, true),
+    )
+    .await
+    .unwrap();
+    assert_eq!(before_check, snapshot(&root.path().join("project")));
     execute_command_with_session(
         Commands::Instance {
             command: InstanceCommand::ObserveChannel {
@@ -886,6 +945,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     )
     .await
     .unwrap();
+    assert!(!root.path().join("project/game").exists());
     let saved = root.path().join("project/.empack/subscription.json");
     assert_eq!(
         SubscriptionRecord::decode(&fs::read(&saved).unwrap())
@@ -1025,7 +1085,7 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
             conflicts: Default::default(),
             release: "release.json".into(),
             sha256: payload.id().into(),
-            side: "client".into(),
+            side: Some("client".into()),
             layout: None,
             choices: vec![],
             files: vec![],
@@ -1087,4 +1147,39 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
         .await
         .is_err()
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn publisher_init_preview_decline_and_exclusive_creation() {
+    use crate::application::cli::ReleaseCommand;
+    let root = tempfile::tempdir().unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::create_dir(root.path().join("project")).unwrap();
+    let command = || Commands::Release {
+        command: ReleaseCommand::Init {
+            key_file: "publisher.key".into(),
+        },
+    };
+    execute_command_with_session(command(), &session(root.path(), true, true))
+        .await
+        .unwrap();
+    assert!(!root.path().join("publisher.key").exists());
+    execute_command_with_session(command(), &session(root.path(), false, false))
+        .await
+        .unwrap();
+    assert!(!root.path().join("publisher.key").exists());
+    execute_command_with_session(command(), &session(root.path(), true, false))
+        .await
+        .unwrap();
+    let key = fs::read(root.path().join("publisher.key")).unwrap();
+    assert_eq!(key.len(), 65);
+    assert!(
+        execute_command_with_session(command(), &session(root.path(), true, false))
+            .await
+            .is_err()
+    );
+    assert_eq!(key, fs::read(root.path().join("publisher.key")).unwrap());
+    assert!(snapshot(&root.path().join("project")).is_empty());
 }

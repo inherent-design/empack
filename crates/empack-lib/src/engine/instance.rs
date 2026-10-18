@@ -312,6 +312,17 @@ pub fn inspect(
     limits: SnapshotLimits,
     cancel: &Cancellation,
 ) -> Result<(InstanceRecord, DecodedRelease)> {
+    inspect_optional(selected_root, release, recovery, limits, cancel)?
+        .context("No completed instance exists")
+}
+/// Absence is distinct from an invalid completed record; callers may infer defaults only on absence.
+pub fn inspect_optional(
+    selected_root: &Path,
+    release: Option<&str>,
+    recovery: RecoveryReader,
+    limits: SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<Option<(InstanceRecord, DecodedRelease)>> {
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
     let snapshot = root.capture(
@@ -319,10 +330,11 @@ pub fn inspect(
         document_limits(limits),
         cancel,
     )?;
-    let record = InstanceRecord::decode(
-        &read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)?
-            .context("No completed instance exists")?,
-    )?;
+    let Some(bytes) = read_optional(&root, &snapshot, &ManagedPath::InstanceRecord, cancel)? else {
+        root.revalidate(&snapshot, cancel)?;
+        return Ok(None);
+    };
+    let record = InstanceRecord::decode(&bytes)?;
     ensure!(
         record.root == super::publication::root_key(&root)?,
         "Instance record belongs to another native root"
@@ -346,7 +358,7 @@ pub fn inspect(
         "Retained release descriptor changed"
     );
     root.revalidate(&snapshot, cancel)?;
-    Ok((record, decoded))
+    Ok(Some((record, decoded)))
 }
 
 /// Capture precisely the previous and incoming inventories. Unrelated game data is not read.
