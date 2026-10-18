@@ -1,7 +1,7 @@
-# v0.7.0-beta design
+# v0.7.0-alpha design
 
 These documents define empack's authoring, distribution and installed-instance
-contracts for v0.7.0-beta. Start with [usage](../usage.md) for commands and workflows.
+contracts for v0.7.0-alpha. Start with [usage](../usage.md) for commands and workflows.
 Types in design examples name semantic boundaries; generated Rust API documentation
 defines callable signatures.
 

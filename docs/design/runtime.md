@@ -1,6 +1,6 @@
 # Runtime ownership and decisions
 
-Contract for v0.7.0-beta. Callable types and signatures are defined in the
+Contract for v0.7.0-alpha. Callable types and signatures are defined in the
 [operation runtime](../../crates/empack-lib/src/engine/runtime.rs), [resource admission](../../crates/empack-lib/src/engine/resources.rs) and [process supervision](../../crates/empack-lib/src/application/process_runtime.rs). This page specifies their behavior and ownership.
 
 ## Runtime ownership, cancellation, and resource budgets
