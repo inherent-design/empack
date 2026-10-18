@@ -5,6 +5,11 @@ pub struct PendingInstanceCleanup {
     owner: Arc<()>,
     selected: store::Cleanup,
 }
+impl PendingInstanceCleanup {
+    pub fn identity(&self) -> String {
+        self.selected.identity()
+    }
+}
 impl Engine {
     /// Invalid and stale records can be selected without decoding or deleting them.
     pub async fn observe_pending_instance(

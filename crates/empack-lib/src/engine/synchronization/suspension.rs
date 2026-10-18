@@ -73,7 +73,19 @@ impl SyncInputContext {
     }
 }
 pub struct SavedSyncRecord(store::SavedRecord);
+impl SavedSyncRecord {
+    pub fn identity(&self) -> String {
+        self.0.identity()
+    }
+}
+
 pub struct PendingSyncCleanup(store::Cleanup);
+impl PendingSyncCleanup {
+    pub fn identity(&self) -> String {
+        self.0.identity()
+    }
+}
+
 pub struct ResumedSync {
     pub project: ResolvedProject,
     pub acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,

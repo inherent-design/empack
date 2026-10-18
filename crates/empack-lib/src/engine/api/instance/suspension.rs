@@ -108,6 +108,11 @@ pub struct SavedInstanceRecord {
     owner: Arc<()>,
     saved: store::SavedRecord,
 }
+impl SavedInstanceRecord {
+    pub fn identity(&self) -> String {
+        self.saved.identity()
+    }
+}
 pub struct SuspendedInstanceReceipt {
     pub saved: SavedInstanceRecord,
     pub retained_files: usize,

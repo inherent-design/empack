@@ -91,15 +91,38 @@ pub(super) fn observe(
     project: &Path,
     cancel: &Cancellation,
 ) -> Result<Option<(String, [u8; 32])>> {
+    observe_to(state, project, &mut io::sink(), cancel)
+}
+pub(super) struct OpaqueBuildRecord {
+    pub name: String,
+    pub content: [u8; 32],
+    pub bytes: Vec<u8>,
+}
+pub(super) fn inspect_opaque(
+    state: &Path,
+    project: &Path,
+    cancel: &Cancellation,
+) -> Result<Option<OpaqueBuildRecord>> {
+    let mut bytes = Vec::new();
+    Ok(
+        observe_to(state, project, &mut bytes, cancel)?.map(|(name, content)| OpaqueBuildRecord {
+            name,
+            content,
+            bytes,
+        }),
+    )
+}
+fn observe_to(
+    state: &Path,
+    project: &Path,
+    output: &mut impl Write,
+    cancel: &Cancellation,
+) -> Result<Option<(String, [u8; 32])>> {
     let Some(mut selected) = probe(state, project, cancel)? else {
         return Ok(None);
     };
-    let (content, bytes) = crate::engine::io::copy_bounded(
-        &mut selected.file,
-        &mut io::sink(),
-        selected.bytes,
-        cancel,
-    )?;
+    let (content, bytes) =
+        crate::engine::io::copy_bounded(&mut selected.file, output, selected.bytes, cancel)?;
     ensure!(
         bytes == selected.bytes,
         "Pending build record changed during inspection"

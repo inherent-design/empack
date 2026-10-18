@@ -100,7 +100,15 @@ pub(in crate::engine) struct Cleanup {
     content: [u8; 32],
     kind: Kind,
 }
+impl Cleanup {
+    pub(in crate::engine) fn identity(&self) -> String {
+        crate::engine::pending::operation_id(self.kind.directory(), &self.name, &self.content)
+    }
+}
 impl SavedRecord {
+    pub(in crate::engine) fn identity(&self) -> String {
+        crate::engine::pending::operation_id(self.kind.directory(), &self.name, &self.content)
+    }
     pub fn into_cleanup(self) -> Cleanup {
         Cleanup {
             state: self.state,
@@ -197,6 +205,27 @@ pub(in crate::engine) fn observe(
     target: &Path,
     cancel: &Cancellation,
 ) -> Result<Option<Cleanup>> {
+    observe_to(state, kind, target, &mut io::sink(), kind.maximum(), cancel)
+}
+/// Bounded presentation bytes share the existing native observation and cleanup identity.
+pub(in crate::engine) fn inspect_opaque(
+    state: &Path,
+    kind: Kind,
+    target: &Path,
+    maximum: u64,
+    cancel: &Cancellation,
+) -> Result<Option<(Cleanup, Vec<u8>)>> {
+    let mut bytes = Vec::new();
+    Ok(observe_to(state, kind, target, &mut bytes, maximum, cancel)?.map(|saved| (saved, bytes)))
+}
+fn observe_to(
+    state: &Path,
+    kind: Kind,
+    target: &Path,
+    output: &mut impl Write,
+    maximum: u64,
+    cancel: &Cancellation,
+) -> Result<Option<Cleanup>> {
     let (_, _, name) = location(target)?;
     let directory = match open_private_directory(&state.join(kind.directory()), false) {
         Ok(directory) => directory,
@@ -212,7 +241,7 @@ pub(in crate::engine) fn observe(
         Err(error) => return Err(error),
     };
     let (content, _) =
-        crate::engine::io::copy_bounded(&mut file, &mut io::sink(), kind.maximum(), cancel)?;
+        crate::engine::io::copy_bounded(&mut file, output, kind.maximum().min(maximum), cancel)?;
     Ok(Some(Cleanup {
         state: state.into(),
         name,

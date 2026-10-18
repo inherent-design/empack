@@ -582,6 +582,48 @@ pub enum InstanceCommand {
     },
 }
 
+#[derive(Debug, Clone, Args, Default)]
+pub struct PendingImportOptions {
+    /// Import only: choose defaults without making optional files mandatory
+    #[arg(long, value_name = "BOOL")]
+    pub import_optional_default: Option<bool>,
+    /// Import only: retain downloaded bytes locally instead of persisting their source URL
+    #[arg(long)]
+    pub import_local_files: bool,
+}
+
+/// Inspect and continue the existing workflow-specific saved inputs in one selected root.
+#[derive(Debug, Clone, Subcommand)]
+pub enum PendingCommand {
+    /// List saved operations without network access or durable changes
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show exact input identities and explicitly unknown metadata
+    Show {
+        id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Revalidate a selected recipe and request fresh workflow approval
+    Resume {
+        id: String,
+        #[arg(long = "file", value_name = "KEY=PATH")]
+        files: Vec<String>,
+        #[command(flatten)]
+        import_options: PendingImportOptions,
+        /// Scan direct regular children using original digests; candidates are reverified on resume
+        #[arg(long)]
+        downloads_dir: Option<PathBuf>,
+        /// Explicitly resolve and open permitted exact provider pages; never during preview
+        #[arg(long)]
+        open_downloads: bool,
+    },
+    /// Discard only this unchanged saved recipe; preserve downloads, content and recovery data
+    Discard { id: String },
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
@@ -593,6 +635,11 @@ pub enum Commands {
         /// Emit the versioned status report as JSON
         #[arg(long)]
         json: bool,
+    },
+    /// Inspect, resume or discard saved build/import/sync/instance inputs
+    Pending {
+        #[command(subcommand)]
+        command: PendingCommand,
     },
     /// Sign and publish native releases for static HTTPS hosting
     Release {
@@ -814,7 +861,9 @@ impl Commands {
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
-            Commands::Instance { .. } | Commands::Release { .. } => false,
+            Commands::Instance { .. } | Commands::Release { .. } | Commands::Pending { .. } => {
+                false
+            }
             Commands::Recover { .. } => false,
             Commands::Requirements | Commands::Status { .. } => false,
             Commands::Version => false,
@@ -830,7 +879,7 @@ impl Commands {
     /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
-            Commands::Instance { .. } | Commands::Release { .. } => 1,
+            Commands::Instance { .. } | Commands::Release { .. } | Commands::Pending { .. } => 1,
             Commands::Recover { .. } => 0,
             Commands::Requirements | Commands::Status { .. } => 0,
             Commands::Version => 0,
@@ -847,6 +896,39 @@ impl Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_commands_parse_exact_keys_and_explicit_assistance() {
+        for args in [
+            vec!["empack", "pending", "list", "--json"],
+            vec!["empack", "pending", "show", "abcdef", "--json"],
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--file",
+                "locked:mod:main=/tmp/file",
+                "--downloads-dir",
+                "/tmp/downloads",
+                "--open-downloads",
+            ],
+            vec![
+                "empack",
+                "pending",
+                "resume",
+                "abcdef",
+                "--import-optional-default",
+                "false",
+                "--import-local-files",
+            ],
+            vec!["empack", "pending", "discard", "abcdef"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_ok());
+        }
+        assert!(Cli::try_parse_from(["empack", "pending", "discard"]).is_err());
+        assert!(Cli::try_parse_from(["empack", "pending", "list", "--open-downloads"]).is_err());
+    }
 
     #[test]
     fn documented_beta_workflows_parse() {

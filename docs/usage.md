@@ -325,3 +325,25 @@ recipient's instance with one. Upload the artifact and install it through the
 platform's project/version interface to obtain platform updates. Importing the
 archive directly remains a snapshot. Modrinth platform exports reject unsupported
 hosting download domains; ordinary snapshot mrpacks may still use other HTTPS hosts.
+
+## Shared pending inputs
+
+Use the selected workspace or intended import destination for all four workflows:
+
+```sh
+empack --workdir my-pack pending list
+empack --workdir my-pack pending list --json
+empack --workdir my-pack pending show OPERATION_ID --json
+empack --workdir my-pack --dry-run pending resume OPERATION_ID --file EXACT_KEY=/path/to/file
+empack --workdir my-pack pending resume OPERATION_ID --file EXACT_KEY=/path/to/file
+empack --workdir my-pack pending resume OPERATION_ID --downloads-dir /path/to/Downloads --open-downloads
+empack --workdir my-pack pending discard OPERATION_ID
+```
+
+IDs accept unique prefixes and remain bound to the selected root and saved-record
+bytes. List/show do not fetch content or modify state. Resume verifies supplied
+bytes and asks for fresh workflow approval; discard conditionally removes only the
+selected recipe after approval. Preview never opens browsers or scans Downloads.
+Exact keys, unknown metadata, v0.6 compatibility and bounded assistance are described
+in [the pending-input contract](design/pending.md). Existing `build --continue`,
+`init --continue`, `sync --continue` and `instance continue` remain supported.

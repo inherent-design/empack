@@ -1052,9 +1052,27 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
         .await
         .unwrap();
     assert_eq!(snapshot(root.path()), before);
-    execute_command_with_session(continuation, &session(root.path(), true, false))
-        .await
-        .unwrap();
+    let pending = crate::engine::pending::inspect(
+        &root.path().join("state"),
+        &root.path().join("project"),
+        &Default::default(),
+    )
+    .unwrap();
+    let id = pending.operations[0].id.clone();
+    execute_command_with_session(
+        Commands::Pending {
+            command: crate::application::cli::PendingCommand::Resume {
+                import_options: Default::default(),
+                id,
+                files: vec!["mod=a.jar".into()],
+                downloads_dir: None,
+                open_downloads: false,
+            },
+        },
+        &session(root.path(), true, false),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         fs::read(root.path().join("project/game/mods/a.jar")).unwrap(),
         b"A"

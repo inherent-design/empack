@@ -24,6 +24,13 @@ use empack_core::{
 use std::collections::BTreeMap;
 
 pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
+    initialize_selected(session, args, None).await
+}
+pub(in crate::application::engine_host) async fn initialize_selected(
+    session: &dyn Session,
+    args: &InitArgs,
+    pending_id: Option<String>,
+) -> Result<()> {
     if args.from_source.is_none() && !args.continue_import {
         return super::super::initialize(session, args).await;
     }
@@ -55,7 +62,7 @@ pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
         accepted_observation: None,
     };
     let source = if args.continue_import {
-        ImportSource::Saved
+        pending_id.map_or(ImportSource::Saved, ImportSource::SavedSelected)
     } else if let Some(provider) = url_provider(source)? {
         ImportSource::Provider {
             selector: ModpackSelector::parse(provider, source)?,

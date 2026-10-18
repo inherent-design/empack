@@ -952,3 +952,73 @@ async fn restricted_provider_archive_accepts_only_matching_explicit_manual_bytes
         }
     }
 }
+
+#[tokio::test]
+async fn shared_pending_import_resumes_v06_source_without_a_second_store() {
+    use crate::application::cli::PendingCommand;
+    let root = tempfile::tempdir().unwrap();
+    let manifest = json!({"formatVersion":1,"game":"minecraft","name":"Imported","versionId":"1","dependencies":{"minecraft":"1.21.1"},"files":[{
+        "path":"config/example.txt", "fileSize":7, "downloads":["http://example.invalid/manual"],
+        "hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(sha2::Sha512::digest(b"payload").into()).hex()},
+        "env":{"client":"required","server":"required"}
+    }]});
+    fs::write(
+        root.path().join("source.mrpack"),
+        archive_with_manifest(
+            "modrinth.index.json",
+            &serde_json::to_vec(&manifest).unwrap(),
+            &[],
+        ),
+    )
+    .unwrap();
+    let error = import(
+        &session(root.path(), true, false),
+        request(local("source.mrpack"), false),
+        decisions,
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("content obligations need explicit input"));
+    fs::remove_file(root.path().join("source.mrpack")).unwrap();
+    let view = crate::engine::pending::inspect(
+        &root.path().join("state"),
+        &root.path().join("project"),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        view.operations[0].kind,
+        crate::engine::pending::PendingKind::Import
+    );
+    assert!(!view.operations[0].requirements_complete);
+    fs::write(root.path().join("selected.bin"), b"payload").unwrap();
+    crate::application::engine_host::pending::dispatch(
+        &session(root.path(), true, false),
+        PendingCommand::Resume {
+            import_options: crate::application::cli::PendingImportOptions {
+                import_local_files: true,
+                ..Default::default()
+            },
+            id: view.operations[0].id.clone(),
+            files: vec!["declared:0=selected.bin".into()],
+            downloads_dir: None,
+            open_downloads: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/example.txt")).unwrap(),
+        b"payload"
+    );
+    assert!(
+        crate::engine::pending::inspect(
+            &root.path().join("state"),
+            &root.path().join("project"),
+            &Default::default()
+        )
+        .unwrap()
+        .operations
+        .is_empty()
+    );
+}

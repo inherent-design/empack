@@ -41,6 +41,11 @@ pub struct SavedBuildRecord {
     name: String,
     content: [u8; 32],
 }
+impl SavedBuildRecord {
+    pub fn identity(&self) -> String {
+        crate::engine::pending::operation_id("pending-builds", &self.name, &self.content)
+    }
+}
 impl PartialEq for SavedBuildRecord {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.owner, &other.owner)
@@ -521,4 +526,23 @@ pub(in crate::engine) fn inspect_saved_build_presence(
     cancel: &Cancellation,
 ) -> Result<bool> {
     store::observe(state, project, cancel).map(|value| value.is_some())
+}
+
+pub(in crate::engine) fn inspect_pending_build(
+    state: &std::path::Path,
+    target: &std::path::Path,
+    cancel: &Cancellation,
+) -> Result<Option<(String, Vec<u8>)>> {
+    store::inspect_opaque(state, target, cancel).map(|value| {
+        value.map(|record| {
+            (
+                crate::engine::pending::operation_id(
+                    "pending-builds",
+                    &record.name,
+                    &record.content,
+                ),
+                record.bytes,
+            )
+        })
+    })
 }

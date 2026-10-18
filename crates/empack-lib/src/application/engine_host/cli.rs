@@ -29,6 +29,8 @@ mod import;
 mod synchronization;
 mod update;
 pub use import::initialize;
+pub(super) use import::initialize_selected;
+pub(super) use synchronization::resume_selected as resume_synchronization_selected;
 pub use synchronization::{resume as resume_synchronization, synchronize};
 pub use update::{adopt, update, update_with_policy};
 

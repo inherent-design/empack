@@ -557,3 +557,4 @@ pub async fn status(session: &dyn Session, context: Option<String>, json: bool) 
     session.display().status().message(&text);
     Ok(())
 }
+pub(super) mod pending;

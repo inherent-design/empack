@@ -36,6 +36,27 @@ pub(super) async fn resume_with_services(
     files: Vec<String>,
     services: dependencies::AdditionServices,
 ) -> Result<()> {
+    resume_with_services_selected(session, files, services, None).await
+}
+pub(in crate::application::engine_host) async fn resume_selected(
+    session: &dyn Session,
+    files: Vec<String>,
+    expected: String,
+) -> Result<()> {
+    resume_with_services_selected(
+        session,
+        files,
+        dependencies::configured_services(session)?,
+        Some(expected),
+    )
+    .await
+}
+async fn resume_with_services_selected(
+    session: &dyn Session,
+    files: Vec<String>,
+    services: dependencies::AdditionServices,
+    expected: Option<String>,
+) -> Result<()> {
     let (invocation, project) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
     let selected_state = state.clone();
@@ -68,6 +89,12 @@ pub(super) async fn resume_with_services(
         .context("No saved synchronization exists for this project")
     })
     .await?;
+    ensure!(
+        expected
+            .as_ref()
+            .is_none_or(|id| id == &resumed.saved.identity()),
+        "Selected pending synchronization changed; inspect its new identity"
+    );
     let context = resumed.context.clone();
     let project = resumed.project.clone();
     publish(

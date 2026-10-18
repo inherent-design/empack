@@ -48,15 +48,15 @@ pub struct DownloadCandidate {
     pub source: PathBuf,
     pub content: ContentId,
 }
-pub struct DownloadDiscovery {
+pub struct DownloadDiscovery<K = AcquisitionKey> {
     /// Different bytes matching weaker assertions remain ambiguous. Duplicate bytes collapse.
-    pub matches: BTreeMap<AcquisitionKey, Vec<DownloadCandidate>>,
+    pub matches: BTreeMap<K, Vec<DownloadCandidate>>,
     pub inspected_files: usize,
     pub skipped_files: usize,
     pub bytes_read: u64,
 }
-impl DownloadDiscovery {
-    pub fn unique_files(&self) -> BTreeMap<AcquisitionKey, PathBuf> {
+impl<K: Ord + Clone> DownloadDiscovery<K> {
+    pub fn unique_files(&self) -> BTreeMap<K, PathBuf> {
         self.matches
             .iter()
             .filter(|(_, candidates)| candidates.len() == 1)
@@ -67,13 +67,13 @@ impl DownloadDiscovery {
 
 /// Scans only direct regular children of explicitly selected roots. No directory, file,
 /// cache object or access record is created. Incomplete scans return no successful subset.
-pub async fn discover_downloads(
+pub async fn discover_downloads<K: Ord + Clone + Send + 'static>(
     scope: &mut WorkScope,
     roots: Vec<PathBuf>,
-    requirements: BTreeMap<AcquisitionKey, ExpectedContent>,
+    requirements: BTreeMap<K, ExpectedContent>,
     evidence: SourceEvidencePolicy,
     limits: DiscoveryLimits,
-) -> Result<RetainedOutput<DownloadDiscovery>> {
+) -> Result<RetainedOutput<DownloadDiscovery<K>>> {
     ensure!(
         roots.len() <= limits.roots,
         "Download root count limit exceeded"
@@ -109,13 +109,13 @@ pub async fn discover_downloads(
     scope.accept(work.wait().await?)?.transpose()
 }
 
-fn scan(
+fn scan<K: Ord + Clone>(
     roots: Vec<PathBuf>,
-    requirements: BTreeMap<AcquisitionKey, ExpectedContent>,
+    requirements: BTreeMap<K, ExpectedContent>,
     evidence: SourceEvidencePolicy,
     limits: DiscoveryLimits,
     cancel: &Cancellation,
-) -> Result<DownloadDiscovery> {
+) -> Result<DownloadDiscovery<K>> {
     let deadline = Instant::now()
         .checked_add(limits.deadline)
         .context("Download discovery deadline overflow")?;
@@ -140,7 +140,7 @@ fn scan(
             .is_ok()
         })
         .collect();
-    let mut matches: BTreeMap<AcquisitionKey, BTreeMap<ContentId, PathBuf>> = BTreeMap::new();
+    let mut matches: BTreeMap<K, BTreeMap<ContentId, PathBuf>> = BTreeMap::new();
     let mut inspected_files = 0;
     let mut skipped_files = 0;
     let mut bytes_read = 0;
