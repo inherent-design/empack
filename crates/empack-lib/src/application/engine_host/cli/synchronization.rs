@@ -410,6 +410,7 @@ pub(super) async fn synchronize_mode(
         let direct = if files.is_empty() { None } else {
             Some(FileAddition::acquire(&mut scope, &baseline, NonEmpty::new(files)?, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?)
         };
+        let checked_provider_keys = provider.as_ref().map(|group| group.project().lock().dependencies.keys().cloned().collect()).unwrap_or_default();
         let acquired = provider.as_ref().into_iter().flat_map(|provider|provider.materialized()).filter_map(|(key,content)|content.materialized().map(|file|(key.clone(),file.clone()))).collect();
         let worker = scope.spawn_blocking(ResourceRequest { jobs: 1, memory_bytes: 64 << 20, ..Default::default() }, ResourceRequest { memory_bytes: 64 << 20, ..Default::default() }, move |cancel| {
         cancel.check()?;
@@ -440,7 +441,11 @@ pub(super) async fn synchronize_mode(
         else { SynchronizationCandidate::prepare_initial(&source, &proposed)?; }
         Ok::<_, anyhow::Error>(proposed)
         })?;
-        Ok((scope.accept(worker.wait().await?)?.transpose()?, acquired))
+        let proposed = scope.accept(worker.wait().await?)?.transpose()?;
+        if revalidate_libraries {
+            super::migration::validate_retained_providers(&mut scope, &services.catalog, &proposed, &checked_provider_keys, limits).await?;
+        }
+        Ok((proposed, acquired))
     }).await?;
     let (resolved, acquired) = resolved;
     if let Some(options) = &migration {

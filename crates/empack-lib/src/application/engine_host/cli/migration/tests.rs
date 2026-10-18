@@ -208,7 +208,15 @@ async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_docum
     assert_eq!(fs::read(path).unwrap(), before);
 }
 
-async fn library_migration(pinned_requirement: bool) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LibraryCase {
+    Required,
+    DroppedCompatible,
+    DroppedIncompatible,
+    DroppedUnavailable,
+    SyncDroppedIncompatible,
+}
+async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let mut server = mockito::Server::new_async().await;
@@ -225,23 +233,40 @@ async fn library_migration(pinned_requirement: bool) {
             "Root0001",
             "RootNew1",
             vec!["1.21.2"],
-            vec![
-                dependency("Library1", pinned_requirement.then_some("LibNew01")),
-                dependency("Stable01", None),
-            ],
+            if case == LibraryCase::Required {
+                vec![
+                    dependency("Library1", pinned_requirement.then_some("LibNew01")),
+                    dependency("Stable01", None),
+                ]
+            } else {
+                vec![dependency("Stable01", None)]
+            },
         ),
-        ("Library1", "LibOld01", vec!["1.21.1"], vec![]),
+        (
+            "Library1",
+            "LibOld01",
+            if case == LibraryCase::DroppedCompatible {
+                vec!["1.21.1", "1.21.2"]
+            } else {
+                vec!["1.21.1"]
+            },
+            vec![],
+        ),
         ("Library1", "LibNew01", vec!["1.21.2"], vec![]),
         ("Stable01", "StableV1", vec!["1.21.1", "1.21.2"], vec![]),
     ];
     let mut catalogs = std::collections::BTreeMap::<&str, Vec<serde_json::Value>>::new();
+    let mut old_library_record = None;
     for (id, version, games, dependencies) in versions {
         let value = json!({"id":version,"project_id":id,"game_versions":games,"loaders":["fabric"],"files":[{"filename":format!("{id}.jar"),"primary":true,"size":7,"hashes":{"sha512":"11".repeat(64)},"url":format!("https://example.invalid/{id}.jar")}],"dependencies":dependencies,"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"});
-        server
+        let record = server
             .mock("GET", format!("/version/{version}").as_str())
             .with_body(value.to_string())
             .create_async()
             .await;
+        if version == "LibOld01" {
+            old_library_record = Some(record);
+        }
         catalogs.entry(id).or_default().push(value);
     }
     for (id, versions) in catalogs {
@@ -288,7 +313,53 @@ async fn library_migration(pinned_requirement: bool) {
             .parse_pin("LibOld01")
             .unwrap()
     );
+    if case == LibraryCase::DroppedUnavailable {
+        old_library_record.unwrap().remove_async().await;
+        server
+            .mock("GET", "/version/LibOld01")
+            .with_status(404)
+            .create_async()
+            .await;
+    }
+    if case == LibraryCase::SyncDroppedIncompatible {
+        let mut intent = old.intent().clone();
+        intent.runtime = MigrationOptions::parse(args(false)).unwrap().runtime;
+        crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
+    }
     let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    if matches!(
+        case,
+        LibraryCase::DroppedIncompatible
+            | LibraryCase::DroppedUnavailable
+            | LibraryCase::SyncDroppedIncompatible
+    ) {
+        let result = if case == LibraryCase::SyncDroppedIncompatible {
+            synchronization::synchronize_with_services(
+                &session(root.path(), false),
+                false,
+                services(&server),
+                RuntimeCatalog::for_loopback_tests(&server.url()),
+            )
+            .await
+        } else {
+            execute(root.path(), &server, args(false), false).await
+        };
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("library1"), "{error}");
+        assert!(
+            error.contains(if case == LibraryCase::DroppedUnavailable {
+                "evidence is unavailable or invalid"
+            } else {
+                "incompatible"
+            }),
+            "{error}"
+        );
+        assert_eq!(
+            crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+            before
+        );
+        return;
+    }
     execute(root.path(), &server, args(true), false)
         .await
         .unwrap();
@@ -312,19 +383,163 @@ async fn library_migration(pinned_requirement: bool) {
             .as_ref()
             .unwrap()
             .project
-            .parse_pin("LibNew01")
+            .parse_pin(if case == LibraryCase::Required {
+                "LibNew01"
+            } else {
+                "LibOld01"
+            })
             .unwrap()
     );
     assert_eq!(
         next.lock().dependencies[&stable],
         old.lock().dependencies[&stable]
     );
-    assert!(
+    assert_eq!(
         next.lock()
             .required_edges
             .values()
-            .any(|edges| edges.contains(&library))
+            .any(|edges| edges.contains(&library)),
+        case == LibraryCase::Required
     );
+    let report = delta::MigrationDelta::between(old.intent(), old.lock(), &next);
+    let json = serde_json::to_value(&report).unwrap();
+    assert_eq!(json["schema"], 2);
+    let rows = json["dependencies"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    let library_row = rows.iter().find(|row| row["key"] == "library1").unwrap();
+    assert_eq!(library_row["before"]["selection"]["selection"], "LibOld01");
+    assert_eq!(
+        library_row["after"]["selection"]["selection"],
+        if case == LibraryCase::Required {
+            "LibNew01"
+        } else {
+            "LibOld01"
+        }
+    );
+    assert_eq!(library_row["before"]["role"], "transitive");
+    assert_eq!(
+        library_row["before"]["reason_chain"],
+        json!(["root0001", "library1"])
+    );
+    assert!(
+        !library_row["after"]["placements"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        library_row["change"],
+        if case == LibraryCase::Required {
+            "changed"
+        } else {
+            "retained"
+        }
+    );
+    assert_eq!(
+        library_row["requirement"],
+        if case == LibraryCase::Required {
+            "required"
+        } else {
+            "no-longer-required-retained"
+        }
+    );
+    let text = report.text_lines().join("\n");
+    assert!(text.contains("LibOld01"));
+    assert!(text.contains("Library1.jar"));
+    assert!(text.contains("root0001 -> library1"));
+    if case == LibraryCase::Required {
+        assert!(text.contains("LibNew01"));
+    }
+    // Union reporting preserves removed keys and identifies newly required entries.
+    let mut synthetic_prior = old.lock().clone();
+    let dependency = synthetic_prior.dependencies.remove(&library).unwrap();
+    synthetic_prior
+        .required_edges
+        .values_mut()
+        .for_each(|edges| {
+            edges.remove(&library);
+        });
+    synthetic_prior.dependencies.insert(
+        DependencyKey::parse("previous-library").unwrap(),
+        dependency,
+    );
+    let union = serde_json::to_value(delta::MigrationDelta::between(
+        old.intent(),
+        &synthetic_prior,
+        &next,
+    ))
+    .unwrap();
+    let rows = union["dependencies"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(
+        rows.iter()
+            .find(|row| row["key"] == "previous-library")
+            .unwrap()["change"],
+        "removed"
+    );
+    if case == LibraryCase::Required {
+        let added = rows.iter().find(|row| row["key"] == "library1").unwrap();
+        assert_eq!(added["change"], "added");
+        assert_eq!(added["requirement"], "newly-required");
+    }
+    if case == LibraryCase::DroppedCompatible {
+        let mut lock = next.lock().clone();
+        let root_key = next.intent().roots.keys().next().unwrap();
+        lock.coverage.insert(root_key.clone(), Coverage::Unknown);
+        let unknown =
+            ResolvedProject::validate(next.intent().clone(), lock, next.lock().intent_revision)
+                .unwrap();
+        let report = serde_json::to_value(delta::MigrationDelta::between(
+            old.intent(),
+            old.lock(),
+            &unknown,
+        ))
+        .unwrap();
+        let row = report["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["key"] == "library1")
+            .unwrap();
+        assert_eq!(row["requirement"], "requirement-unknown-retained");
+    }
+    if case == LibraryCase::Required {
+        let mut lock = next.lock().clone();
+        let library = lock.dependencies.get_mut(&library).unwrap();
+        let mut files = library.files.as_slice().to_vec();
+        let mut placements = files[0].placements.as_slice().to_vec();
+        placements[0].destination =
+            empack_core::path::InstallDestination::parse("mods/relocated-library.jar").unwrap();
+        files[0].placements = NonEmpty::new(placements).unwrap();
+        library.files = NonEmpty::new(files).unwrap();
+        let moved =
+            ResolvedProject::validate(next.intent().clone(), lock, next.lock().intent_revision)
+                .unwrap();
+        let delta = delta::MigrationDelta::between(next.intent(), next.lock(), &moved);
+        let report = serde_json::to_value(&delta).unwrap();
+        let row = report["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["key"] == "library1")
+            .unwrap();
+        assert_eq!(row["change"], "changed");
+        assert_eq!(row["before"]["selection"], row["after"]["selection"]);
+        assert_eq!(
+            row["before"]["placements"][0]["destination"],
+            "mods/Library1.jar"
+        );
+        assert_eq!(
+            row["after"]["placements"][0]["destination"],
+            "mods/relocated-library.jar"
+        );
+        assert!(
+            delta
+                .text_lines()
+                .join("\n")
+                .contains("mods/relocated-library.jar")
+        );
+    }
     let after = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
     synchronization::synchronize(&session(root.path(), false), false)
         .await
@@ -336,9 +551,26 @@ async fn library_migration(pinned_requirement: bool) {
 }
 #[tokio::test]
 async fn migration_reselects_incompatible_required_libraries() {
-    library_migration(false).await;
+    library_migration(false, LibraryCase::Required).await;
 }
 #[tokio::test]
 async fn migration_applies_new_exact_required_library_selection() {
-    library_migration(true).await;
+    library_migration(true, LibraryCase::Required).await;
+}
+
+#[tokio::test]
+async fn migration_refuses_incompatible_library_dropped_from_new_closure() {
+    library_migration(false, LibraryCase::DroppedIncompatible).await;
+}
+#[tokio::test]
+async fn synchronization_refuses_incompatible_library_dropped_from_new_closure() {
+    library_migration(false, LibraryCase::SyncDroppedIncompatible).await;
+}
+#[tokio::test]
+async fn migration_refuses_unknown_retained_library_evidence() {
+    library_migration(false, LibraryCase::DroppedUnavailable).await;
+}
+#[tokio::test]
+async fn migration_reports_compatible_library_dropped_from_new_closure_as_retained() {
+    library_migration(false, LibraryCase::DroppedCompatible).await;
 }
