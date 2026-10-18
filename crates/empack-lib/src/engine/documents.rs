@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod bindings;
 mod intent;
 mod lock;
+pub(crate) use lock::file_evidence;
 pub(crate) mod recipe;
 mod sizing;
 

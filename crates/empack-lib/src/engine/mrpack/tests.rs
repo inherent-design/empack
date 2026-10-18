@@ -689,7 +689,7 @@ fn environment_export_preserves_selected_layers_without_excluded_evidence() {
     let files: Vec<_> = (0..archive.len())
         .filter_map(|index| {
             let file = archive.by_index(index).unwrap();
-            (!file.is_dir()).then(|| file.name().to_owned())
+            (!file.is_dir()).then(|| file.name().unwrap().into_owned())
         })
         .collect();
     assert_eq!(files.len(), 2);

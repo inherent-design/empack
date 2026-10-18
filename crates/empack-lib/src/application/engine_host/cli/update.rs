@@ -207,10 +207,8 @@ fn selections(
         });
         match &selected.identity {
             ResolvedIdentity::Provider(id) => {
-                let files = if let Some(root) = root
-                    && let PlacementIntent::ArchiveRoot(roots) = &root.placement
-                {
-                    ProviderFiles::PrimaryPlaced(roots.clone())
+                let files = if let Some(root) = root {
+                    ProviderFiles::from_placement(&root.placement)
                 } else if matches!(
                     primary.acquisition,
                     AcquisitionSpec::ProviderArchiveMember { .. }
@@ -235,14 +233,7 @@ fn selections(
                         })
                         .collect::<Result<Vec<_>>>()?;
                     ProviderFiles::PrimaryPlaced(NonEmpty::new(roots)?)
-                } else if root
-                    .is_some_and(|root| matches!(root.placement, PlacementIntent::Automatic))
-                    && selected.files.as_slice().len() == 1
-                {
-                    ProviderFiles::Primary
                 } else {
-                    // Filename identity is deliberate for multi-file/explicit placements. A provider
-                    // changing those roles requires a new placement choice, never an inferred move.
                     ProviderFiles::Placed(
                         selected
                             .files

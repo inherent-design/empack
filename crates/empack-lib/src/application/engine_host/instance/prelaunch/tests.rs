@@ -36,7 +36,7 @@ fn release(version: &str) -> DecodedRelease {
         schema: 1,
         pack: "prelaunch".into(),
         version: version.into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -104,7 +104,7 @@ fn channel(release: &DecodedRelease, key: &SigningKey, maximum: u64) -> Vec<u8> 
                 .unwrap()
                 .as_secs() as i64
                 + 3600,
-            minimum_engine: ">=0.6.0-beta".into(),
+            minimum_engine: ">=0.7.0-beta".into(),
             release: ChannelRelease {
                 id: release.id().into(),
                 url: "https://publisher.test/release.json".into(),

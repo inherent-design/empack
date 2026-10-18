@@ -23,6 +23,7 @@ use std::{
 
 mod conflicts;
 pub mod subscription;
+mod worlds;
 pub use conflicts::{ConflictChoice, ConflictResolution, FileIdentity, LocalOverride};
 
 /// Snapshot selection and publisher verification both retain exact validated bytes.
@@ -90,6 +91,9 @@ pub struct ChoiceSelection {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct InstanceRecord {
+    /// World subtrees permanently relinquished to the player, including currently absent roots.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initialized_worlds: Vec<String>,
     pub schema: u32,
     /// Native root identity prevents copied state from silently granting ownership elsewhere.
     pub root: String,
@@ -126,6 +130,11 @@ impl InstanceRecord {
             "Prism instance record requires client environment"
         );
         super::release::decode_hex::<32>(&record.release)?;
+        let mut worlds = BTreeSet::new();
+        for root in &record.initialized_worlds {
+            super::release::validate_world_root(root)?;
+            ensure!(worlds.insert(root), "Duplicate initialized world root");
+        }
         let mut history = BTreeSet::new();
         for id in &record.history {
             super::release::decode_hex::<32>(id)?;
@@ -503,11 +512,7 @@ pub(super) fn plan(
             )?)?;
             let bytes = read_optional(&root, &snapshot, &target, cancel)?
                 .context("Completed instance descriptor is missing")?;
-            let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-                "0.6.0-beta"
-            } else {
-                env!("CARGO_PKG_VERSION")
-            };
+            let version = crate::engine::compatibility_version();
             let active = super::release::trust::SelectedSnapshot::select(
                 &bytes,
                 &previous.release,
@@ -644,7 +649,20 @@ pub(super) fn plan(
         .into_iter()
         .map(|(key, value)| ChoiceSelection { key, value })
         .collect();
-    let incoming = project_files(release, side, layout, &choices)?;
+    let mut incoming = project_files(release, side, layout, &choices)?;
+    let (initialized_worlds, retired_world_targets, updated_snapshot) = worlds::protect(
+        &root,
+        layout,
+        previous.as_ref(),
+        worlds::WorldInventories {
+            old: &mut old_files,
+            incoming: &mut incoming,
+        },
+        snapshot,
+        limits,
+        cancel,
+    )?;
+    snapshot = updated_snapshot;
     let targets: BTreeSet<_> = old_files.keys().chain(incoming.keys()).cloned().collect();
     let release_target = descriptor(release.id())?;
     let scopes: BTreeSet<_> = targets
@@ -690,7 +708,7 @@ pub(super) fn plan(
             .chain(prism_profile.as_ref().map(|_| ManagedPath::PrismProfile)),
     )?;
     let mut resolutions = conflicts::resolutions(requested_conflicts, layout)?;
-    let old_overrides: BTreeMap<_, _> = previous
+    let mut old_overrides: BTreeMap<_, _> = previous
         .as_ref()
         .map(|record| {
             record
@@ -701,6 +719,7 @@ pub(super) fn plan(
         })
         .transpose()?
         .unwrap_or_default();
+    old_overrides.retain(|target, _| !retired_world_targets.contains(target));
     ensure!(
         old_overrides
             .keys()
@@ -869,6 +888,7 @@ pub(super) fn plan(
         asset_bases.sort_by(|a, b| a.release.cmp(&b.release));
     }
     let record = InstanceRecord {
+        initialized_worlds,
         local_overrides,
         asset_bases,
         schema: 1,

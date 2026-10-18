@@ -63,13 +63,28 @@ compatible locked selection stays exact; an incompatible selection is resolved
 again under the shared catalog budget. A new exact requirement from a selected
 root is honored without promoting the library into author intent. Existing logical
 keys remain stable. Explicit root pins still require deliberate policy changes.
+After resolution, sync and migration also check retained provider entries outside
+the new closure: these entries still ship through their locked placements. One
+bounded exact-selection batch shares its transfer allowance and deadline across
+all remaining entries. An incompatible retained entry blocks the operation with
+its logical key and instructions to remove or replace it deliberately. Unavailable
+or invalid provider evidence also blocks preparation; it is not compatibility
+proof. No migration deletes unused libraries automatically.
+
 An ambiguous file set or incompatible exact pin stops preparation with a diagnostic;
 edit the binding or version policy deliberately before retrying. Local content is
 retained, but its runtime compatibility remains the author's responsibility.
 
-The plan report separates current and proposed selections and identifies explicit
-replacements and manual sources. `--plan` never saves pending work or changes the
-project. It is a semantic candidate report, not an authorization token or proof
+The schema-2 plan report compares the union of current and proposed lock keys,
+including explicit roots and transitive entries. JSON and text include both exact
+selections, file roles, destinations, layers, side requirements and one shortest
+known root-to-dependency reason chain. It separates retained/changed/added/removed
+entries from required/newly-required/no-longer-required retained status, and marks
+explicit replacements and manual compatibility verification. Missing edges prove
+that an entry is no longer required only when reachable dependency coverage is
+complete; otherwise the report marks its requirement status unknown. Before and
+after runtime selections include the accepted alternative game versions. `--plan`
+never saves pending work or changes the project. It is a semantic candidate report, not an authorization token or proof
 that native replacement will succeed.
 
 ## Publication and continuation
@@ -82,6 +97,11 @@ captured author + bindings + lock
     -> native capture and exact replacement preview
     -> approval -> verified publication
 ```
+
+Each file's before/after evidence includes its logical role, expected size and digests,
+accepted content observation, acquisition source, and provenance. The report uses the
+lock's wire representation for these fields, so a changed source or byte assertion
+remains visible even when the provider pin and destination stay the same.
 
 `SyncRequest::Migration` carries a fresh `ProjectRevision`, resolved candidate and
 verified acquired content. Its constructor grants no write authority. Preparation

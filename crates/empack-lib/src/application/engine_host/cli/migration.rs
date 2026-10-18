@@ -4,7 +4,6 @@ use crate::{
     application::cli::MigrationArgs,
     engine::{
         documents::{DecodedIntent, DecodedLock, DocumentCodec},
-        providers::ObservedVersion,
         runtime_catalog::RuntimeCatalog,
     },
 };
@@ -12,8 +11,8 @@ use empack_core::{
     identity::{CurseForgeProjectId, ModrinthProjectId, ProviderProjectId},
     model::*,
 };
-use serde::Serialize;
 use std::collections::BTreeMap;
+mod delta;
 
 pub(super) struct MigrationOptions {
     pub runtime: RuntimeIntent,
@@ -113,102 +112,21 @@ impl MigrationOptions {
         prior: &DecodedLock,
         proposed: &ResolvedProject,
     ) -> Result<()> {
-        #[derive(Serialize)]
-        struct Row {
-            key: String,
-            source_replaced: bool,
-            current: Option<ObservedVersion>,
-            selection: Option<ObservedVersion>,
-            retained: bool,
-            manual_compatibility: bool,
-        }
-        #[derive(Serialize)]
-        struct Report {
-            schema: u32,
-            minecraft: String,
-            loader: String,
-            loader_version: Option<String>,
-            dependencies: Vec<Row>,
-            limitations: &'static str,
-        }
-        let report = Report {
-            schema: 1,
-            minecraft: proposed.lock().runtime.minecraft.as_str().into(),
-            loader: self.runtime_name().into(),
-            loader_version: proposed
-                .lock()
-                .runtime
-                .loader_version
-                .as_ref()
-                .map(|v| v.as_str().into()),
-            dependencies: proposed
-                .intent()
-                .roots
-                .iter()
-                .map(|(key, root)| Row {
-                    key: key.as_str().into(),
-                    source_replaced: source.intent().roots[key].source != root.source,
-                    current: prior
-                        .lock()
-                        .dependencies
-                        .get(key)
-                        .and_then(|d| d.selected.as_ref())
-                        .map(ObservedVersion::from_pin),
-                    retained: prior
-                        .lock()
-                        .dependencies
-                        .get(key)
-                        .is_some_and(|d| d.selected == proposed.lock().dependencies[key].selected),
-                    selection: proposed.lock().dependencies[key]
-                        .selected
-                        .as_ref()
-                        .map(ObservedVersion::from_pin),
-                    manual_compatibility: !matches!(root.source, SourceIntent::Provider(_)),
-                })
-                .collect(),
-            limitations: "Provider declarations and dependency evidence are checked. This does not port private files, configuration or worlds, prove gameplay compatibility, or validate a full Java compatibility range. Native conflicts are checked during preparation; a plan is not an execution grant.",
-        };
+        let report = delta::MigrationDelta::between(source.intent(), prior.lock(), proposed);
         if self.json {
             session
                 .display()
                 .status()
                 .message(&serde_json::to_string_pretty(&report)?);
         } else {
-            session.display().status().info(&format!(
-                "Migration candidate: Minecraft {} / {} {}",
-                report.minecraft,
-                report.loader,
-                report.loader_version.as_deref().unwrap_or("")
-            ));
-            for row in report.dependencies {
-                session.display().status().info(&format!(
-                    "{}: {}{}",
-                    row.key,
-                    row.selection.as_ref().map_or_else(
-                        || "manual source; verify compatibility".into(),
-                        |pin| format!("{}:{}@{}", pin.provider, pin.project, pin.selection)
-                    ),
-                    if row.source_replaced {
-                        " (explicit replacement)"
-                    } else {
-                        ""
-                    }
-                ));
+            for line in report.text_lines() {
+                session.display().status().info(&line);
             }
-            session.display().status().info(report.limitations);
         }
         Ok(())
     }
-    fn runtime_name(&self) -> &'static str {
-        match self.runtime.loader {
-            LoaderKind::Vanilla => "vanilla",
-            LoaderKind::Fabric => "fabric",
-            LoaderKind::Quilt => "quilt",
-            LoaderKind::Forge => "forge",
-            LoaderKind::NeoForge => "neoforge",
-        }
-    }
 }
+
 pub async fn migrate(session: &dyn Session, args: MigrationArgs) -> Result<()> {
     let materialize = args.materialize;
     let options = MigrationOptions::parse(args)?;

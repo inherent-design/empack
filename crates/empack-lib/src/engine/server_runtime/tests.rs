@@ -141,3 +141,29 @@ pub(in crate::engine) fn prepared_fixture() -> PreparedServerRuntime {
         .verify(server, ArchiveLimits::default(), &Cancellation::default())
         .unwrap()
 }
+
+#[test]
+fn runtime_jars_reject_invalid_declared_utf8_before_member_discovery() {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .start_file("é.class", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(b"class").unwrap();
+    let mut bytes = writer.finish().unwrap().into_inner();
+    let mut changed = 0;
+    for index in 0..bytes.len() - 1 {
+        if bytes[index..].starts_with("é.class".as_bytes()) {
+            bytes[index] = 0xff;
+            changed += 1;
+        }
+    }
+    assert_eq!(changed, 2);
+    let error = JarReader::open(
+        &content(&bytes),
+        ArchiveLimits::default(),
+        &Cancellation::default(),
+    )
+    .err()
+    .expect("invalid declared UTF-8 cannot change runtime member identity");
+    assert!(format!("{error:#}").contains("declares UTF-8"));
+}

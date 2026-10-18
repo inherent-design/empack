@@ -57,11 +57,7 @@ async fn update_with_transport(
             return Ok(Some(record.release.clone()));
         }
     };
-    let version = semver::Version::parse(if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-        "0.6.0-beta"
-    } else {
-        env!("CARGO_PKG_VERSION")
-    })?;
+    let version = semver::Version::parse(crate::engine::compatibility_version())?;
     let engine = engine(session.config().app_config(), &invocation)?;
     let result = async {
         let now = std::time::SystemTime::now()

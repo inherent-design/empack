@@ -86,10 +86,7 @@ impl ProviderArchiveAddition {
                 continue;
             };
             let declared = selected.resolution.files.as_slice();
-            let primary = declared
-                .iter()
-                .find(|file| file.primary)
-                .unwrap_or(&declared[0]);
+            let primary = selected.resolution.file_for_selector("primary")?;
             let file = match &choice.files {
                 ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => primary,
                 ProviderFiles::Named(names) => {
@@ -104,10 +101,9 @@ impl ProviderArchiveAddition {
                         places.len() == 1,
                         "Select one provider world archive and its destination roots"
                     );
-                    declared
-                        .iter()
-                        .find(|file| places.contains_key(&file.filename))
-                        .context("Selected world archive is missing")?
+                    selected
+                        .resolution
+                        .file_for_selector(places.keys().next().unwrap())?
                 }
                 ProviderFiles::All => {
                     ensure!(declared.len() == 1, "Select one provider world archive");
@@ -116,7 +112,7 @@ impl ProviderArchiveAddition {
             };
             let roots = match &choice.files {
                 ProviderFiles::PrimaryPlaced(roots) => roots.clone(),
-                ProviderFiles::Placed(places) => places[&file.filename].clone(),
+                ProviderFiles::Placed(places) => places.values().next().unwrap().clone(),
                 _ => {
                     let folder = choice.folder.as_ref().map(PortableRelPath::as_str).or_else(||self.current.intent().content_folder(ContentKind::World)).context("Provider worlds require an explicit destination folder or world layout")?;
                     NonEmpty::new(vec![Placement {

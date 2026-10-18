@@ -127,7 +127,10 @@ pub(super) fn assemble(
                     !entry.encrypted(),
                     "Library runtime library contains encrypted data"
                 );
-                let name = entry.name().to_owned();
+                let name = entry
+                    .name()
+                    .context("Invalid ZIP member name")?
+                    .into_owned();
                 if name
                     .strip_prefix("META-INF/services/")
                     .is_some_and(|name| !name.contains('/'))
@@ -193,11 +196,17 @@ pub(super) fn assemble(
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
         ensure!(
-            seen.insert(entry.name().to_owned()) && !entry.encrypted() && !entry.is_dir(),
+            seen.insert(
+                entry
+                    .name()
+                    .context("Invalid ZIP member name")?
+                    .into_owned()
+            ) && !entry.encrypted()
+                && !entry.is_dir(),
             "Invalid generated Fabric launcher entry"
         );
         let &(hash, size) = expected
-            .get(entry.name())
+            .get(entry.name()?.as_ref())
             .context("Unexpected generated launcher entry")?;
         ensure!(
             entry.size() == size,

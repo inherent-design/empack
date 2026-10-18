@@ -61,3 +61,13 @@ mod windows_privacy;
 pub(crate) mod runtime_versions;
 
 pub mod pending;
+
+/// Protocol capabilities of an untagged build, independent of its display version.
+pub(crate) const DEVELOPMENT_VERSION: &str = "0.7.0-beta";
+pub(crate) fn compatibility_version() -> &'static str {
+    if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
+        DEVELOPMENT_VERSION
+    } else {
+        env!("CARGO_PKG_VERSION")
+    }
+}

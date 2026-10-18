@@ -155,6 +155,9 @@ Project/file references retain the provider filename and standard content direct
 A renamed file or custom destination cannot be encoded in this manifest. Reject it
 instead of exporting a reference that installs somewhere else. Multiple selections
 from one provider project are also rejected when the consumer cannot preserve them.
+Restricted provider files retain this filename evidence even when their download
+alternatives are empty. A generic manual record with only a pin must be resolved
+before CurseForge export; its logical role is not filename evidence.
 
 A required local override is embedded at its selected client destination. Client
 overrides take precedence over common content; server-only content is excluded.
@@ -245,6 +248,8 @@ cannot silently replace a verified runtime file or collide with another placemen
 
 Independently inspect archive member names, duplicates, case/Unicode collisions,
 permissions, sizes, digests, unexpected entries and actual decoded-byte limits.
+ZIP exports use a Unix creator marker and portable mode bits on every host,
+including Windows, so executable scripts retain their intended permissions.
 Check exact provider identities and consumer semantics, not merely archive readability.
 Receipts record recipe, resolution, content evidence, conversions and runtime assets.
 

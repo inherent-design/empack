@@ -259,11 +259,30 @@ pub(super) fn decode(value: &Value) -> Result<ResolutionLock> {
 pub(super) fn encode(lock: &ResolutionLock) -> Value {
     let dependencies: BTreeMap<_,_> = lock.dependencies.iter().map(|(key,dep)| {
         let identity = match &dep.identity { ResolvedIdentity::Provider(project)=>json!({"kind":"provider","project":provider_value(project)}), ResolvedIdentity::Url(key)=>json!({"kind":"url","key":key.as_str()}), ResolvedIdentity::Local(key)=>json!({"kind":"local","key":key.as_str()}) };
-        let files: Vec<_> = dep.files.as_slice().iter().map(|file| json!({"slot":file.slot.as_str(),"provenance":{"source":file.provenance.source,"location":file.provenance.location,"declared-digests":file.provenance.declared_digests.as_ref().map(digests),"conversions":file.provenance.conversions},"acquisition":acquisition_value(&file.acquisition),"expected":{"digests":file.expected.digests.as_ref().map(digests),"size":file.expected.size,"accepted-observation":file.expected.accepted_observation.as_ref().map(|id|hex32(*id.bytes()))},"placements":file.placements.as_slice().iter().map(placement_value).collect::<Vec<_>>()})).collect();
+        let files: Vec<_> = dep.files.as_slice().iter().map(|file| {
+            let mut value = file_evidence(file);
+            value["placements"] = json!(file.placements.as_slice().iter().map(placement_value).collect::<Vec<_>>());
+            value
+        }).collect();
         (key.as_str(),json!({"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
     }).collect();
     json!({"schema":LOCK_SCHEMA,"acceptable-versions":lock.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
         "required-edges":lock.required_edges.iter().map(|(key,values)|(key.as_str(),values.iter().map(DependencyKey::as_str).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>(),
         "coverage":lock.coverage.iter().map(|(key,value)|(key.as_str(),match value {Coverage::CompleteForSelection=>"complete",Coverage::Partial=>"partial",Coverage::Unknown=>"unknown"})).collect::<BTreeMap<_,_>>(),
         "runtime":{"minecraft":lock.runtime.minecraft.as_str(),"loader":loader_name(lock.runtime.loader),"loader-version":lock.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}})
+}
+
+/// Shared wire evidence for lock persistence and semantic before/after reports.
+pub(crate) fn file_evidence(file: &ResolvedFile) -> Value {
+    json!({
+        "slot": file.slot.as_str(),
+        "acquisition": acquisition_value(&file.acquisition),
+        "expected": expected_value(&file.expected),
+        "provenance": {
+            "source": file.provenance.source,
+            "location": file.provenance.location,
+            "declared-digests": file.provenance.declared_digests.as_ref().map(digests),
+            "conversions": file.provenance.conversions,
+        },
+    })
 }

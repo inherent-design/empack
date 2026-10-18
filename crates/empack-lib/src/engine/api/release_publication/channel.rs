@@ -44,11 +44,7 @@ fn now() -> Result<i64> {
 }
 fn version() -> Result<semver::Version> {
     Ok(semver::Version::parse(
-        if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-            "0.6.0-beta"
-        } else {
-            env!("CARGO_PKG_VERSION")
-        },
+        crate::engine::compatibility_version(),
     )?)
 }
 fn url(base: &reqwest::Url, relative: &str) -> Result<String> {

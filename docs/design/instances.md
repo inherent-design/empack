@@ -83,7 +83,7 @@ Comparisons include content, size and supported permission attributes.
 | Managed A | A | Absent | Remove exact unchanged file |
 | Managed A | Absent | Absent | No file mutation; retire ownership |
 | Any | Regular file | Seed | Preserve existing user bytes |
-| Any | Absent | Seed | Create initial bytes without future replacement authority |
+| Any | Absent | Configuration seed | Create an independent initial default |
 | Seed | Existing file | Managed | Explicit ownership decision required |
 | Seed | Any file or absent | Absent | Preserve user state and retire seed tracking |
 | Any | Directory/link/unsupported kind at selected file | File or removal | Reject unsafe shape |
@@ -121,7 +121,25 @@ directory-valued merge source fails; a competing `--file` association for the sa
 logical file is ambiguous and fails. This command verifies selected bytes, not the
 semantic correctness of the user's merge algorithm.
 
-Initial configuration and world templates are seeds. Existing worlds, saves,
+Initial configuration files are independent seeds. World templates carry an
+explicit `world_root` in each portable release member, derived from the world
+content's member-relative placement. This supports custom destinations; directory
+spelling is not the ownership model. Conventional source world trees are normalized
+to the same explicit release representation.
+
+Before per-file planning, the instance checks each world group. Only an absent,
+never-initialized root may receive the initial tree. Any existing root is treated
+as player-owned, even if it is empty or lacks a release member. Completed instance
+state retains `initialized_worlds` across updates, repair, choice changes and
+rollback, including releases that omit the world. Deleting a member or the entire
+root does not authorize re-seeding. Protected subtrees are excluded from both
+acquisition and native member observation; new release files cannot fill holes.
+A newly initialized root's absence is revalidated before publication. When a
+previously managed file becomes part of a protected world, its saved local-override
+record is retired with the managed ownership; its bytes stay untouched. Overrides
+outside that world retain their existing authority and validation.
+
+Existing worlds, saves,
 logs, player preferences and runtime-generated data are excluded from ordinary
 release replacement and rollback. New releases cannot change a seed to managed
 ownership without an explicit local decision.

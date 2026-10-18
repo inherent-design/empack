@@ -331,7 +331,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
             schema: 1,
             pack: "dispatch".into(),
             version: "1".into(),
-            minimum_engine: ">=0.6.0-beta".into(),
+            minimum_engine: ">=0.7.0-beta".into(),
             runtime: ReleaseRuntime {
                 minecraft: "1.21.1".into(),
                 loader: ReleaseLoader::Vanilla,
@@ -339,6 +339,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
             },
             choices: vec![],
             files: vec![ReleaseFile {
+                world_root: None,
                 key: "mod".into(),
                 destination: "mods/test.jar".into(),
                 layer: ReleaseLayer::Common,
@@ -807,7 +808,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             schema: 1,
             pack: "another-pack".into(),
             version: "1".into(),
-            minimum_engine: ">=0.6.0-beta".into(),
+            minimum_engine: ">=0.7.0-beta".into(),
             runtime: crate::engine::release::ReleaseRuntime {
                 minecraft: "1.21.1".into(),
                 loader: crate::engine::release::ReleaseLoader::Vanilla,
@@ -846,7 +847,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         schema: 1,
         pack: "fixture".into(),
         version: "1".into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -859,6 +860,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             description: Some("Optional configuration".into()),
         }],
         files: vec![ReleaseFile {
+            world_root: None,
             key: "config".into(),
             destination: "config/example.txt".into(),
             layer: ReleaseLayer::Common,
@@ -911,7 +913,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             .unwrap()
             .as_secs() as i64
             + 60,
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         release: ChannelRelease {
             id: release.id().into(),
             url: "https://publisher.test/release.json".into(),
@@ -1049,7 +1051,7 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
         schema: 1,
         pack: "manual".into(),
         version: "1".into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -1057,6 +1059,7 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
         },
         choices: vec![],
         files: vec![ReleaseFile {
+            world_root: None,
             key: "mod".into(),
             destination: "mods/a.jar".into(),
             layer: ReleaseLayer::Common,

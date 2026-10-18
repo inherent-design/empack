@@ -172,7 +172,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                         .read_to_end(&mut bytes)
                         .unwrap();
                     assert_eq!(bytes, b"server");
-                    assert!(!zip.file_names().any(|p| p.contains("packwiz")));
+                    assert!(!zip.file_names().any(|p| p.unwrap().contains("packwiz")));
                 }
                 value.clear();
                 zip.by_name("install_pack.sh")
@@ -221,7 +221,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                                 SelectedSnapshot::select(
                                     release.bytes(),
                                     release.id(),
-                                    &semver::Version::parse("0.6.0-beta").unwrap(),
+                                    &semver::Version::parse("0.7.0-beta").unwrap(),
                                 )
                                 .unwrap(),
                             ),

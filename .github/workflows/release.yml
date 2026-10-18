@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: sed -i.bak "s/^version = .*/version = \"${{ steps.version.outputs.clean }}\"/" Cargo.toml
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-toolchain
         with:
           targets: ${{ matrix.target }}
 

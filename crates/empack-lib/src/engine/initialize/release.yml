@@ -5,7 +5,7 @@ on:
 permissions:
   contents: write
 env:
-  EMPACK_VERSION: v0.6.0-beta
+  EMPACK_VERSION: __EMPACK_RELEASE_TAG__
 jobs:
   release:
     runs-on: ubuntu-latest

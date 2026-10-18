@@ -624,7 +624,7 @@ fn subscribed_prism_recipes_preserve_delivery_and_require_local_enrollment() {
         }
         assert!(
             !zip.file_names()
-                .any(|name| name.ends_with("subscription.json"))
+                .any(|name| name.unwrap().ends_with("subscription.json"))
         );
     }
 }

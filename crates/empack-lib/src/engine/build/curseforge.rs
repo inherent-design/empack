@@ -313,10 +313,10 @@ mod tests {
         dep.identity = ResolvedIdentity::Provider(identity);
         dep.selected = Some(pin.clone());
         let mut file = dep.files.as_slice()[0].clone();
-        file.slot = FileSlot::parse("assets.zip").unwrap();
+        file.slot = FileSlot::parse("primary").unwrap();
         file.acquisition = AcquisitionSpec::Provider {
             pin,
-            slot: file.slot.clone(),
+            slot: FileSlot::parse("assets.zip").unwrap(),
             alternatives: vec!["https://example.invalid/assets.zip".into()],
         };
         let mut placement = file.placements.as_slice()[0].clone();
@@ -599,10 +599,10 @@ mod tests {
         let key = DependencyKey::parse("assets").unwrap();
         let dependency = lock.dependencies.get_mut(&key).unwrap();
         let mut file = dependency.files.as_slice()[0].clone();
-        file.acquisition = AcquisitionSpec::Manual {
-            pin: dependency.selected.clone(),
-            instructions: "Supply the exact restricted provider file".into(),
+        let AcquisitionSpec::Provider { alternatives, .. } = &mut file.acquisition else {
+            panic!()
         };
+        alternatives.clear();
         dependency.files = NonEmpty::new(vec![file.clone()]).unwrap();
         let project = explicitly_placed(project.intent().clone(), lock);
         write(root.path(), &project);
@@ -656,6 +656,20 @@ mod tests {
                 .keys()
                 .any(|path| path.as_str().starts_with("overrides/resourcepacks/"))
         );
+    }
+    #[test]
+    fn manual_pin_without_filename_cannot_claim_platform_placement() {
+        let project = fixture(false, false);
+        let dependency = project.lock().dependencies.values().next().unwrap();
+        let mut file = dependency.files.as_slice()[0].clone();
+        file.acquisition = AcquisitionSpec::Manual {
+            pin: dependency.selected.clone(),
+            instructions: "Supply the provider file".into(),
+        };
+        let error =
+            super::super::materialized::reference_for_target(&file, None, Recipe::CURSEFORGE)
+                .unwrap_err();
+        assert!(error.to_string().contains("resolved provider filename"));
     }
     #[test]
     fn captured_reference_permissions_cannot_disappear_during_export() {

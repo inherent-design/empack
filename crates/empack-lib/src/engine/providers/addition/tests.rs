@@ -185,7 +185,10 @@ async fn provider_closure_publishes_canonical_roots_and_preserves_required_conte
             };
             assert_eq!(
                 alternatives,
-                &[format!("https://example.com/{}", file.slot.as_str())],
+                &[format!(
+                    "https://example.com/{}.jar",
+                    dependency.selected.as_ref().unwrap().project
+                )],
                 "Safe provider origins must survive normalization for reference export"
             );
         }
@@ -398,10 +401,10 @@ async fn companion_files_require_complete_explicit_placement_without_losing_requ
     };
     for complete in [false, true] {
         let mut selected = input("renderer", true);
-        let mut placements = BTreeMap::from([("project1.jar".into(), placement("mods/main.jar"))]);
+        let mut placements = BTreeMap::from([("primary".into(), placement("mods/main.jar"))]);
         if complete {
             placements.insert(
-                "resources.zip".into(),
+                "role:required-resource-pack".into(),
                 placement("resourcepacks/companion.zip"),
             );
         }
@@ -1354,4 +1357,94 @@ async fn restricted_input_is_reported_before_unrelated_download_failure() {
     drop(handle);
     drop(outcome);
     assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn primary_binding_survives_provider_filename_changes() {
+    let mut server = Server::new_async().await;
+    let mut first = version("project1", "version1", json!([]));
+    first["files"][0]["filename"] = json!("menu-1.jar");
+    records(&mut server, "project1", "renderer", "mod", &first).await;
+    let places = NonEmpty::new(vec![Placement {
+        destination: empack_core::path::InstallDestination::parse("mods/menu.jar").unwrap(),
+        layer: ContentLayer::Client,
+        requirements: input("renderer", true).requirements,
+    }])
+    .unwrap();
+    // Decode the documented binding rather than testing only the in-memory constructor.
+    let mut author = current().intent().clone();
+    author.roots.insert(
+        DependencyKey::parse("chosen-alias").unwrap(),
+        DependencyIntent {
+            source: SourceIntent::Provider(ProviderProjectId::Modrinth(
+                ModrinthProjectId::parse("project1").unwrap(),
+            )),
+            kind: ContentKind::Mod,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::ByFile(BTreeMap::from([(
+                FileSlot::parse("primary").unwrap(),
+                places.clone(),
+            )])),
+            requirements: input("renderer", true).requirements,
+        },
+    );
+    let encoded = DocumentCodec.encode_authoring(&author).unwrap();
+    let decoded = DocumentCodec
+        .decode_authoring(
+            &encoded.intent,
+            encoded.bindings.as_deref(),
+            "primary fixture",
+        )
+        .unwrap();
+    let mut selected = input("renderer", true);
+    selected.files =
+        ProviderFiles::from_placement(&decoded.intent().roots.values().next().unwrap().placement);
+    let (outcome, _) = resolve(&server, vec![selected], limits()).await;
+    let current = ready(&outcome).project().clone();
+    let mut second = version("project1", "version2", json!([]));
+    second["files"][0]["filename"] = json!("menu-2.jar");
+    records(&mut server, "project1", "renderer", "mod", &second).await;
+    let mut updated = input("renderer", true);
+    updated.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("version2").unwrap(),
+    ));
+    updated.files =
+        ProviderFiles::from_placement(&current.intent().roots.values().next().unwrap().placement);
+    let (outcome, _) = resolve_with_current(&server, current, vec![updated], limits()).await;
+    let file = &ready(&outcome)
+        .project()
+        .lock()
+        .dependencies
+        .values()
+        .next()
+        .unwrap()
+        .files
+        .as_slice()[0];
+    assert_eq!(file.slot.as_str(), "primary");
+    assert_eq!(file.placements, places);
+    let AcquisitionSpec::Provider { slot, .. } = &file.acquisition else {
+        panic!()
+    };
+    assert_eq!(slot.as_str(), "menu-2.jar");
+}
+
+#[tokio::test]
+async fn ambiguous_primary_role_requires_explicit_selection() {
+    let mut server = Server::new_async().await;
+    let mut response = version("project1", "version1", json!([]));
+    let mut extra = response["files"][0].clone();
+    extra["filename"] = json!("second.jar");
+    response["files"].as_array_mut().unwrap().push(extra);
+    records(&mut server, "project1", "renderer", "mod", &response).await;
+    let (outcome, _) = resolve(&server, vec![input("renderer", true)], limits()).await;
+    let OperationOutcome::Completed(Err(error)) = &*outcome else {
+        panic!("ambiguous role was accepted")
+    };
+    assert!(
+        matches!(
+            error.downcast_ref::<CatalogError>(),
+            Some(CatalogError::InvalidRecord)
+        ),
+        "{error:#}"
+    );
 }

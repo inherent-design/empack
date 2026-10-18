@@ -1025,9 +1025,11 @@ fn smoke_outdated_json_and_runtime_plan_preserve_author_workspace() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 1);
-    assert_eq!(report["minecraft"], "1.21.1");
-    assert_eq!(report["loader"], "vanilla");
+    assert_eq!(report["schema"], 2);
+    assert_eq!(report["proposed_runtime"]["minecraft"], "1.21.1");
+    assert_eq!(report["proposed_runtime"]["loader"], "vanilla");
+    assert_eq!(report["current_runtime"], report["proposed_runtime"]);
+    assert_eq!(report["dependencies"], serde_json::json!([]));
     assert_eq!(snapshot(&project), before);
     for args in [
         vec![

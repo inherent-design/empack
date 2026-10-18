@@ -123,7 +123,13 @@ fn default_scaffolds() -> BTreeMap<ManagedPath, Vec<u8>> {
         ),
     ]
     .into_iter()
-    .map(|(path, bytes)| (path, bytes.to_vec()))
+    .map(|(path, bytes)| {
+        let tag = format!("v{}", super::compatibility_version());
+        let bytes = String::from_utf8_lossy(bytes)
+            .replace("__EMPACK_RELEASE_TAG__", &tag)
+            .into_bytes();
+        (path, bytes)
+    })
     .collect()
 }
 /// Editable data templates retain expressions until build-time metadata is known.

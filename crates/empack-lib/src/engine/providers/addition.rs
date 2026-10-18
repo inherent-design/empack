@@ -29,6 +29,23 @@ pub enum ProviderFiles {
     /// Per-file destinations and participation, including companion resource-pack roles.
     Placed(BTreeMap<String, NonEmpty<Placement>>),
 }
+impl ProviderFiles {
+    /// Interpret author placement identically for sync, update, adoption and migration.
+    pub(crate) fn from_placement(placement: &PlacementIntent) -> Self {
+        match placement {
+            PlacementIntent::Automatic => Self::Primary,
+            PlacementIntent::Explicit(places) | PlacementIntent::ArchiveRoot(places) => {
+                Self::PrimaryPlaced(places.clone())
+            }
+            PlacementIntent::ByFile(files) => Self::Placed(
+                files
+                    .iter()
+                    .map(|(slot, places)| (slot.as_str().to_owned(), places.clone()))
+                    .collect(),
+            ),
+        }
+    }
+}
 #[derive(Clone)]
 pub struct ProviderAddInput {
     pub selector: ProjectSelector,
@@ -468,65 +485,58 @@ fn normalize(
                     || matches!(policy, ProviderFiles::Placed(_)),
                 "Companion provider files require explicit per-file placement and participation"
             );
-            let files: Vec<_> = match policy {
-                ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => vec![
-                    declared
-                        .iter()
-                        .find(|file| file.primary)
-                        .unwrap_or(&declared[0]),
-                ],
-                ProviderFiles::All => declared.iter().collect(),
+            let mut chosen = Vec::new();
+            match policy {
+                ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => {
+                    chosen.push((
+                        "primary".to_owned(),
+                        selected.resolution.file_for_selector("primary")?,
+                    ));
+                }
+                ProviderFiles::All => {
+                    chosen.extend(declared.iter().map(|f| (f.filename.clone(), f)))
+                }
                 ProviderFiles::Placed(placements) => {
-                    ensure!(
-                        !placements.is_empty()
-                            && placements
-                                .keys()
-                                .all(|name| declared.iter().any(|file| &file.filename == name)),
-                        "Selected provider file is missing"
-                    );
-                    ensure!(
-                        declared
-                            .iter()
-                            .filter(|file| file.role.as_deref() == Some("required-resource-pack"))
-                            .all(|file| placements.contains_key(&file.filename)),
-                        "A required companion resource pack cannot be omitted"
-                    );
-                    declared
-                        .iter()
-                        .filter(|file| placements.contains_key(&file.filename))
-                        .collect()
+                    ensure!(!placements.is_empty(), "No provider file roles selected");
+                    for role in placements.keys() {
+                        chosen.push((role.clone(), selected.resolution.file_for_selector(role)?));
+                    }
                 }
                 ProviderFiles::Named(names) => {
-                    ensure!(
-                        !names.is_empty()
-                            && names
-                                .iter()
-                                .all(|name| declared.iter().any(|file| &file.filename == name)),
-                        "Selected provider file is missing"
-                    );
-                    declared
-                        .iter()
-                        .filter(|file| names.contains(&file.filename))
-                        .collect()
+                    ensure!(!names.is_empty(), "No provider files selected");
+                    for name in names {
+                        let file = declared
+                            .iter()
+                            .find(|file| &file.filename == name)
+                            .context("Selected provider file is missing")?;
+                        chosen.push((name.clone(), file));
+                    }
                 }
-            };
-            files
-            .into_iter()
-            .map(|file| {
-                let slot = FileSlot::parse(&file.filename)?;
+            }
+            let mut unique = BTreeSet::new();
+            ensure!(
+                chosen.iter().all(|(_, file)| unique.insert(&file.filename)),
+                "Multiple file roles select the same provider file"
+            );
+            ensure!(
+                declared
+                    .iter()
+                    .filter(|file| file.role.as_deref() == Some("required-resource-pack"))
+                    .all(|file| chosen
+                        .iter()
+                        .any(|(_, selected)| selected.filename == file.filename)),
+                "A required companion resource pack cannot be omitted"
+            );
+            chosen.into_iter().map(|(role, file)| {
+                let slot = FileSlot::parse(&role)?;
                 let placements = if let ProviderFiles::Placed(placements) = policy {
-                    placements[&file.filename].clone()
+                    placements[&role].clone()
                 } else if let ProviderFiles::PrimaryPlaced(placements) = policy {
                     placements.clone()
                 } else {
                     NonEmpty::new(vec![Placement {
-                        destination: InstallDestination::parse(&format!(
-                            "{}/{}",
-                            folder.context(
-                                "This content kind requires an explicit destination folder"
-                            )?,
-                            file.filename
-                        ))?,
+                        destination: InstallDestination::parse(&format!("{}/{}",
+                            folder.context("This content kind requires an explicit destination folder")?, file.filename))?,
                         layer: ContentLayer::Common,
                         requirements: requirements.clone(),
                     }])?
@@ -536,7 +546,7 @@ fn normalize(
                     expected: file.expected.clone(),
                     acquisition: AcquisitionSpec::Provider {
                         pin: selected.resolution.pin.clone(),
-                        slot,
+                        slot: FileSlot::parse(&file.filename)?,
                         alternatives: file.persistent_alternatives(),
                     },
                     provenance: Provenance {

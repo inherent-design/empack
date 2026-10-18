@@ -428,6 +428,14 @@ impl JarReader {
             archive: zip::ZipArchive::new(reader)?,
         })
     }
+    fn has_member(&self, target: &str) -> Result<bool> {
+        for name in self.archive.file_names() {
+            if name.context("Invalid runtime JAR member name")? == target {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
     fn main_attributes(&mut self) -> Result<BTreeMap<String, String>> {
         let entry = self
             .archive

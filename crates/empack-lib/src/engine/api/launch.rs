@@ -69,11 +69,7 @@ pub(super) async fn prepare(
                     .is_none_or(|expected| *expected == record.release),
                 "Completed release changed after the prelaunch decision; prepare launch again"
             );
-            let version = semver::Version::parse(if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-                "0.6.0-beta"
-            } else {
-                env!("CARGO_PKG_VERSION")
-            })?;
+            let version = semver::Version::parse(crate::engine::compatibility_version())?;
             let java_major = request
                 .server
                 .then_some(release.document().runtime.java_major);

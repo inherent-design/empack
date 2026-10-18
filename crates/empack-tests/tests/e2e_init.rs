@@ -177,7 +177,13 @@ fn e2e_init_scaffolds_templates() {
         let bytes = std::fs::read_to_string(pack_dir.join(format!(".github/workflows/{name}.yml")))
             .unwrap();
         let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
-        assert_eq!(workflow["env"]["EMPACK_VERSION"], "v0.6.0-beta");
+        let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
+            "0.7.0-beta"
+        } else {
+            env!("CARGO_PKG_VERSION")
+        };
+        assert_eq!(workflow["env"]["EMPACK_VERSION"], format!("v{version}"));
+        assert!(!bytes.contains("__EMPACK_RELEASE_TAG__"));
         assert!(bytes.contains("empack build --yes modrinth"));
         assert!(!bytes.contains("packwiz"));
     }

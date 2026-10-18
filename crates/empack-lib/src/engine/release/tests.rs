@@ -9,7 +9,7 @@ pub(super) fn document() -> ReleaseDocument {
         schema: 1,
         pack: "test-pack".into(),
         version: "1.0".into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::NeoForge {
@@ -19,6 +19,7 @@ pub(super) fn document() -> ReleaseDocument {
         },
         choices: vec![],
         files: vec![ReleaseFile {
+            world_root: None,
             key: "config".into(),
             destination: "config/example.toml".into(),
             layer: ReleaseLayer::Common,
@@ -38,7 +39,7 @@ pub(super) fn document() -> ReleaseDocument {
     }
 }
 fn version() -> semver::Version {
-    semver::Version::parse("0.6.0-beta").unwrap()
+    semver::Version::parse("0.7.0-beta").unwrap()
 }
 fn key() -> SigningKey {
     SigningKey::from_bytes(&[7; 32])
@@ -63,7 +64,7 @@ fn channel(release: &DecodedRelease) -> ChannelDocument {
             url: "https://example.com/release.json".into(),
             maximum_bytes: 16384,
         },
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
     }
 }
 #[test]
@@ -456,4 +457,24 @@ fn diagnostics_separate_publisher_authentication_from_payload_identity_and_tool_
     let old = Diagnostic::from_error(&old, DiagnosticPhase::Preparation);
     assert_eq!(old.code, DiagnosticCode::IncompatibleEngine);
     assert_eq!(old.observed.as_deref(), Some("0.5.0"));
+}
+
+#[test]
+fn world_groups_reject_escape_overlap_and_managed_injection() {
+    let mut doc = document();
+    doc.files[0].world_root = Some("custom/world".into());
+    assert!(DecodedRelease::encode(doc.clone()).is_err());
+    doc.files[0].destination = "custom/world/level.dat".into();
+    assert!(DecodedRelease::encode(doc.clone()).is_ok());
+    let mut injected = doc.files[0].clone();
+    injected.key = "injected".into();
+    injected.destination = "custom/world/region/a.mca".into();
+    injected.world_root = None;
+    doc.files.push(injected);
+    assert!(DecodedRelease::encode(doc.clone()).is_err());
+    doc.files.pop();
+    doc.files[0].world_root = Some("../outside".into());
+    assert!(DecodedRelease::encode(doc).is_err());
+    assert!(within_world("CUSTOM/World/region/a.mca", "custom/world"));
+    assert!(!within_world("custom/world-two/level.dat", "custom/world"));
 }

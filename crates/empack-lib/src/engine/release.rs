@@ -138,6 +138,10 @@ pub enum ReleaseLayer {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReleaseFile {
+    /// Initial-only world subtree, relative to the instance game directory.
+    /// All members of this group are suppressed once the root is initialized or occupied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_root: Option<String>,
     /// Stable logical role, independent of the destination and display name.
     pub key: String,
     pub destination: String,
@@ -401,6 +405,36 @@ impl ReleaseDocument {
                 );
             }
         }
+        let mut world_roots = std::collections::BTreeMap::new();
+        for root in self
+            .files
+            .iter()
+            .filter_map(|file| file.world_root.as_deref())
+        {
+            validate_world_root(root)?;
+            if let Some(previous) = world_roots.insert(super::layout::collision_key(root), root) {
+                ensure!(
+                    previous == root,
+                    "World roots have conflicting portable spellings"
+                );
+            }
+        }
+        for file in &self.files {
+            let destination = super::layout::collision_key(&file.destination);
+            for prefix in std::iter::once(destination.as_str()).chain(
+                destination
+                    .rmatch_indices('/')
+                    .map(|(index, _)| &destination[..index]),
+            ) {
+                if let Some(root) = world_roots.get(prefix) {
+                    ensure!(
+                        file.policy == FilePolicy::Seed
+                            && file.world_root.as_deref() == Some(*root),
+                        "World subtree contains a file outside its initialization group"
+                    );
+                }
+            }
+        }
         let mut files = BTreeSet::new();
         // Side-disjoint variants may share a destination; selected projection checks collisions.
         for file in &self.files {
@@ -419,8 +453,8 @@ impl ReleaseDocument {
                 !matches!(
                     first.as_str(),
                     "saves" | "world" | "world_nether" | "world_the_end"
-                ) || file.policy == FilePolicy::Seed,
-                "World content must be initial-only seeds"
+                ) || (file.policy == FilePolicy::Seed && file.world_root.is_some()),
+                "World content requires an explicit initial-only world group"
             );
             ensure!(
                 file.layer != ReleaseLayer::Client || file.server == Participation::Unsupported,
@@ -430,6 +464,13 @@ impl ReleaseDocument {
                 file.layer != ReleaseLayer::Server || file.client == Participation::Unsupported,
                 "Server-layer files cannot participate on clients"
             );
+            if let Some(root) = &file.world_root {
+                validate_world_root(root)?;
+                ensure!(
+                    file.policy == FilePolicy::Seed && within_world(&file.destination, root),
+                    "World member must be an initial seed below its declared root"
+                );
+            }
             file.content()?;
             file.expected()?;
             let assertions = file
@@ -499,7 +540,7 @@ impl ReleaseDocument {
                         https(url)?;
                     }
                     ensure!(
-                        file.policy == FilePolicy::Seed,
+                        file.policy == FilePolicy::Seed && file.world_root.is_some(),
                         "Provider world members must be seeds"
                     );
                 }
@@ -641,4 +682,22 @@ fn bounded_json(value: &impl Serialize, maximum: usize) -> Result<Vec<u8>> {
     };
     serde_json::to_writer(&mut buffer, value)?;
     Ok(buffer.bytes)
+}
+
+/// Component-aware matching keeps adjacent destination names independent.
+pub(crate) fn within_world(destination: &str, root: &str) -> bool {
+    super::layout::collision_key(destination)
+        .strip_prefix(&super::layout::collision_key(root))
+        .is_some_and(|suffix| suffix.starts_with('/'))
+}
+pub(crate) fn validate_world_root(root: &str) -> Result<()> {
+    let path = PortableRelPath::parse(root, PathSyntax::ProjectContent)?;
+    ensure!(
+        !matches!(
+            super::layout::collision_key(path.components().next().unwrap()).as_str(),
+            ".empack" | "empack.yml" | "empack.bindings.yml" | "empack.lock"
+        ),
+        "World initialization cannot claim instance control paths"
+    );
+    Ok(())
 }
