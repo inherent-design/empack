@@ -263,3 +263,17 @@ the complete recipe used to produce the archive.
 Generated workflows build the authored default profiles or explicitly named profiles.
 Their installation, staging and publication contract is [project automation](automation.md).
 The default Prism template inherits launcher memory settings.
+
+## Windows server entry points
+
+Extract the whole server archive before running `install_pack.bat` or `start.bat`.
+Bundled snapshots already contain their payload; installation confirms that state.
+Reference or subscribed exports prepare their exact release through empack on PATH.
+Starting uses `JAVA_HOME/bin/java.exe` when configured, otherwise Java on PATH.
+
+Both batch entry points retain their console until a key is pressed and preserve the
+operation’s exit code. Set `EMPACK_NO_PAUSE=1` for terminal automation and services.
+The start script suppresses the nested installer pause. Failures explain the required
+Java or empack prerequisite and direct the operator to the preceding output. Initial
+Minecraft EULA refusal remains visible; the operator must read and accept `game/eula.txt`.
+Empack never accepts the EULA automatically.
