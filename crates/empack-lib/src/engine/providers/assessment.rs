@@ -268,6 +268,7 @@ impl ProviderCatalog {
                     limits,
                     budget.expect("successful scans return their shared budget"),
                     Some(project),
+                    false,
                 )
                 .await;
             match closure {

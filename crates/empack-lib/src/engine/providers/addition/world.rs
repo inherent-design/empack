@@ -14,6 +14,7 @@ pub struct ProviderArchiveAddition {
     closure: ProviderClosure,
     choices: BTreeMap<ProviderProjectId, ProviderAddInput>,
     documents: AdmissionPermit,
+    revalidate_libraries: bool,
 }
 pub(super) struct WorldSelection {
     pub files: NonEmpty<ResolvedFile>,
@@ -31,12 +32,14 @@ impl ProviderArchiveAddition {
         closure: ProviderClosure,
         choices: BTreeMap<ProviderProjectId, ProviderAddInput>,
         documents: AdmissionPermit,
+        revalidate_libraries: bool,
     ) -> Self {
         Self {
             current,
             closure,
             choices,
             documents,
+            revalidate_libraries,
         }
     }
 
@@ -303,7 +306,13 @@ impl ProviderArchiveAddition {
                 },
             );
         }
-        let project = normalize(&self.current, &self.closure, &self.choices, &worlds)?;
+        let project = normalize(
+            &self.current,
+            &self.closure,
+            &self.choices,
+            &worlds,
+            self.revalidate_libraries,
+        )?;
         let group = AdditionGroup::from_resolved(&project)?;
         let mut materialized = DependencyContents::new();
         for (key, dependency) in &project.lock().dependencies {

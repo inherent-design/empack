@@ -161,15 +161,19 @@ async fn resume(
         .await;
     }
     if !session.config().app_config().dry_run {
+        let verified = if selected.kind == PendingKind::Sync && (downloads.is_some() || open) {
+            cli::retained_sync_input_keys(session, &selected.id).await?
+        } else {
+            BTreeSet::new()
+        };
         if let Some(downloads) = downloads {
             let (invocation, _) = project_path(session)?;
             let downloads = absolute(&invocation, &downloads);
             let requirements = selected
                 .inputs
                 .iter()
-                .filter(|input| {
-                    !files.contains_key(&input.key) && !input.verification.starts_with("retained")
-                })
+                // Only bytes recovered by the loader count as retained availability.
+                .filter(|input| !files.contains_key(&input.key) && !verified.contains(&input.key))
                 .filter_map(|input| {
                     input
                         .expected
@@ -177,53 +181,50 @@ async fn resume(
                         .map(|expected| (input.key.clone(), expected))
                 })
                 .collect::<BTreeMap<_, _>>();
-            ensure!(
-                !requirements.is_empty(),
-                "No missing exact assertions are available for scanning; supply exact --file associations or use the original workflow to refresh metadata"
-            );
-            let candidates = initialize::discover(session, move |mut scope| async move {
-                crate::engine::acquisition::discovery::discover_downloads(
-                    &mut scope,
-                    vec![downloads],
-                    requirements,
-                    crate::engine::content::SourceEvidencePolicy::Compatibility,
-                    crate::engine::acquisition::discovery::DiscoveryLimits {
-                        deadline: Duration::from_secs(30),
-                        ..Default::default()
-                    },
-                )
-                .await
-            })
-            .await?;
-            ensure!(
-                candidates
-                    .matches
-                    .values()
-                    .all(|matches| matches.len() <= 1),
-                "Download candidates are ambiguous; select explicit KEY=PATH associations"
-            );
-            for (key, path) in candidates.unique_files() {
-                files.insert(
-                    key,
-                    path.to_str()
-                        .context(
-                            "Use --file for a native path that cannot be represented as UTF-8",
-                        )?
-                        .into(),
+            if !requirements.is_empty() {
+                let candidates = initialize::discover(session, move |mut scope| async move {
+                    crate::engine::acquisition::discovery::discover_downloads(
+                        &mut scope,
+                        vec![downloads],
+                        requirements,
+                        crate::engine::content::SourceEvidencePolicy::Compatibility,
+                        crate::engine::acquisition::discovery::DiscoveryLimits {
+                            deadline: Duration::from_secs(30),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                })
+                .await?;
+                ensure!(
+                    candidates
+                        .matches
+                        .values()
+                        .all(|matches| matches.len() <= 1),
+                    "Download candidates are ambiguous; select explicit KEY=PATH associations"
                 );
+                for (key, path) in candidates.unique_files() {
+                    files.insert(
+                        key,
+                        path.to_str()
+                            .context(
+                                "Use --file for a native path that cannot be represented as UTF-8",
+                            )?
+                            .into(),
+                    );
+                }
+                session.display().status().info(&format!(
+                    "Found {} digest-verified candidates; continuation will verify them again",
+                    candidates.unique_files().len()
+                ));
             }
-            session.display().status().info(&format!(
-                "Found {} digest-verified candidates; continuation will verify them again",
-                candidates.unique_files().len()
-            ));
         }
         if open {
             let pins = selected
                 .inputs
                 .iter()
-                .filter(|input| {
-                    !files.contains_key(&input.key) && !input.verification.starts_with("retained")
-                })
+                // Only bytes recovered by the loader count as retained availability.
+                .filter(|input| !files.contains_key(&input.key) && !verified.contains(&input.key))
                 .filter_map(|input| input.pin.clone())
                 .collect();
             build::browser::open_pins(session, pins, &mut BTreeSet::new(), None).await?;

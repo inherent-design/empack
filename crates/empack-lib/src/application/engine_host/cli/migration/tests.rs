@@ -207,3 +207,138 @@ async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_docum
     );
     assert_eq!(fs::read(path).unwrap(), before);
 }
+
+async fn library_migration(pinned_requirement: bool) {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    runtime(&mut server).await;
+    let dependency = |project: &str, version: Option<&str>| json!({"project_id":project,"version_id":version,"dependency_type":"required"});
+    let versions = [
+        (
+            "Root0001",
+            "RootOld1",
+            vec!["1.21.1"],
+            vec![dependency("Library1", None), dependency("Stable01", None)],
+        ),
+        (
+            "Root0001",
+            "RootNew1",
+            vec!["1.21.2"],
+            vec![
+                dependency("Library1", pinned_requirement.then_some("LibNew01")),
+                dependency("Stable01", None),
+            ],
+        ),
+        ("Library1", "LibOld01", vec!["1.21.1"], vec![]),
+        ("Library1", "LibNew01", vec!["1.21.2"], vec![]),
+        ("Stable01", "StableV1", vec!["1.21.1", "1.21.2"], vec![]),
+    ];
+    let mut catalogs = std::collections::BTreeMap::<&str, Vec<serde_json::Value>>::new();
+    for (id, version, games, dependencies) in versions {
+        let value = json!({"id":version,"project_id":id,"game_versions":games,"loaders":["fabric"],"files":[{"filename":format!("{id}.jar"),"primary":true,"size":7,"hashes":{"sha512":"11".repeat(64)},"url":format!("https://example.invalid/{id}.jar")}],"dependencies":dependencies,"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"});
+        server
+            .mock("GET", format!("/version/{version}").as_str())
+            .with_body(value.to_string())
+            .create_async()
+            .await;
+        catalogs.entry(id).or_default().push(value);
+    }
+    for (id, versions) in catalogs {
+        server.mock("GET", format!("/project/{id}").as_str()).with_body(json!({"id":id,"slug":id.to_lowercase(),"title":id,"project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+        server
+            .mock("GET", format!("/project/{id}/version").as_str())
+            .match_query(mockito::Matcher::Any)
+            .with_body(json!(versions).to_string())
+            .create_async()
+            .await;
+    }
+    super::super::add_with_catalog(
+        &session(root.path(), false),
+        AddOptions {
+            inputs: vec!["Root0001".into()],
+            force: false,
+            continue_independent: false,
+            platform: Some(SearchPlatform::Modrinth),
+            kind: None,
+            version_id: None,
+            file_id: None,
+            file_plan: None,
+            download_as_local: false,
+        },
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    let old = project(root.path());
+    assert_eq!(old.intent().roots.len(), 1);
+    let library = DependencyKey::parse("library1").unwrap();
+    let stable = DependencyKey::parse("stable01").unwrap();
+    assert_eq!(
+        old.lock().dependencies[&library]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        old.lock().dependencies[&library]
+            .selected
+            .as_ref()
+            .unwrap()
+            .project
+            .parse_pin("LibOld01")
+            .unwrap()
+    );
+    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    execute(root.path(), &server, args(true), false)
+        .await
+        .unwrap();
+    assert_eq!(
+        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        before
+    );
+    execute(root.path(), &server, args(false), false)
+        .await
+        .unwrap();
+    let next = project(root.path());
+    assert_eq!(next.intent().roots.len(), 1);
+    assert_eq!(
+        next.lock().dependencies[&library]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        old.lock().dependencies[&library]
+            .selected
+            .as_ref()
+            .unwrap()
+            .project
+            .parse_pin("LibNew01")
+            .unwrap()
+    );
+    assert_eq!(
+        next.lock().dependencies[&stable],
+        old.lock().dependencies[&stable]
+    );
+    assert!(
+        next.lock()
+            .required_edges
+            .values()
+            .any(|edges| edges.contains(&library))
+    );
+    let after = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    synchronization::synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    assert_eq!(
+        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        after
+    );
+}
+#[tokio::test]
+async fn migration_reselects_incompatible_required_libraries() {
+    library_migration(false).await;
+}
+#[tokio::test]
+async fn migration_applies_new_exact_required_library_selection() {
+    library_migration(true).await;
+}

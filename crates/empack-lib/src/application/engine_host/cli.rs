@@ -34,8 +34,11 @@ pub use assessment::outdated;
 pub use import::initialize;
 pub(super) use import::initialize_selected;
 pub use migration::migrate;
-pub(super) use synchronization::resume_selected as resume_synchronization_selected;
 pub use synchronization::{resume as resume_synchronization, synchronize};
+pub(super) use synchronization::{
+    resume_selected as resume_synchronization_selected,
+    retained_input_keys as retained_sync_input_keys,
+};
 pub use update::{adopt, update, update_with_policy};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.

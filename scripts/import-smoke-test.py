@@ -1229,15 +1229,21 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
 def run_curated_build(pack: CuratedPack, project_dir: Path, empack_bin: Path,
                       layout: RuntimeLayout, timeout: int, announce: bool) -> CuratedBuildResult:
     label = curated_project_name(pack)
-    documents = {name: (project_dir / name).read_bytes() for name in ("empack.yml", "empack.lock")}
+    def document_bytes(name: str) -> bytes | None:
+        path = project_dir / name
+        return path.read_bytes() if path.exists() else None
+
+    documents = {name: document_bytes(name)
+                 for name in ("empack.yml", "empack.bindings.yml", "empack.lock")}
     for _ in range(2):
         sync = run_empack_command(empack_bin, ["--yes", "sync"], layout, timeout=timeout,
                                  label=f"{label}:sync", cwd=project_dir, prefer_pty=announce)
         if not sync.success:
             return CuratedBuildResult(output_tail=(sync.stdout + sync.stderr)[-4000:])
-        if any((project_dir / name).read_bytes() != value for name, value in documents.items()):
+        if any(document_bytes(name) != value for name, value in documents.items()):
             raise RuntimeError("sync changed imported intent or exact selections")
-    built = run_empack_command(empack_bin, ["--yes", "build", "prism"], layout,
+    built = run_empack_command(empack_bin, ["--yes", "build", "--ad-hoc", "prism", "--delivery", "bundled",
+                                         "--updates", "snapshot", "--format", "zip"], layout,
                               timeout=timeout, label=f"{label}:build", cwd=project_dir,
                               prefer_pty=announce)
     result = CuratedBuildResult(success=built.success, elapsed_secs=built.elapsed_secs,
@@ -1251,7 +1257,7 @@ def run_curated_build(pack: CuratedPack, project_dir: Path, empack_bin: Path,
                 raise RuntimeError("client archive is corrupt or lacks mod payloads")
             if pack.world_folder and not any(name.startswith(f".minecraft/{pack.world_folder}/") and name.endswith("/level.dat") for name in archive.namelist()):
                 raise RuntimeError("client archive lacks interpreted provider world members")
-        if any((project_dir / name).read_bytes() != value for name, value in documents.items()):
+        if any(document_bytes(name) != value for name, value in documents.items()):
             raise RuntimeError("build changed imported intent or exact selections")
         result.artifact_path = str(artifact)
     return result

@@ -15,6 +15,9 @@ and next-command arguments. `content_verified` is false: no game content is scan
 Missing, invalid, unavailable and stale states are separate. A publisher directory
 name never establishes release trust. Multiple contexts produce `context-ambiguous`;
 explicit selection controls presentation and does not grant mutation authority.
+A valid subscription before its first installation reports the completed instance
+as missing while showing its enrolled publisher channel. A malformed instance
+record remains invalid; enrollment does not establish an installed release.
 
 Inspection opens existing native coordination only, refuses unsafe ancestors and
 non-regular documents, bounds document bytes, checks observed file identity and

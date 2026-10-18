@@ -79,20 +79,41 @@ class NativeSmokeContracts(unittest.TestCase):
                 self.assertFalse(result.success)
                 self.assertEqual(command.call_count, 3)
                 self.assertIn("not verified", result.output_tail)
-                self.assertEqual(command.call_args.args[1], ["--yes", "build", "prism"])
+                self.assertEqual(command.call_args.args[1], ["--yes", "build", "--ad-hoc", "prism", "--delivery", "bundled", "--updates", "snapshot", "--format", "zip"])
 
     def test_sync_document_drift_fails_before_build(self):
-        with tempfile.TemporaryDirectory() as root:
-            base = Path(root)
-            for name in ("empack.yml", "empack.lock"):
-                (base / name).write_bytes(b"original")
-            layout = smoke.RuntimeLayout(base, base / "packs", base, base / "cache", base / "report.json")
-            def changed(*args, **kwargs):
-                (base / "empack.lock").write_bytes(b"changed")
-                return smoke.CommandResult(success=True)
-            with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
-                smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
-            command.assert_called_once()
+        for document in ("empack.yml", "empack.bindings.yml", "empack.lock"):
+            with self.subTest(document=document), tempfile.TemporaryDirectory() as root:
+                base = Path(root)
+                for name in ("empack.yml", "empack.bindings.yml", "empack.lock"):
+                    (base / name).write_bytes(b"original")
+                layout = smoke.RuntimeLayout(base, base / "packs", base, base / "cache", base / "report.json")
+                def changed(*args, **kwargs):
+                    (base / document).write_bytes(b"changed")
+                    return smoke.CommandResult(success=True)
+                with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
+                    smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                command.assert_called_once()
+
+    def test_sync_cannot_create_or_remove_bindings_unnoticed(self):
+        for existed in (False, True):
+            with self.subTest(existed=existed), tempfile.TemporaryDirectory() as root:
+                base = Path(root)
+                for name in ("empack.yml", "empack.lock"):
+                    (base / name).write_bytes(b"original")
+                bindings = base / "empack.bindings.yml"
+                if existed:
+                    bindings.write_bytes(b"original")
+                layout = smoke.RuntimeLayout(base, base / "packs", base, base / "cache", base / "report.json")
+                def changed(*args, **kwargs):
+                    if existed:
+                        bindings.unlink()
+                    else:
+                        bindings.write_bytes(b"new")
+                    return smoke.CommandResult(success=True)
+                with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
+                    smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                command.assert_called_once()
 
 
 if __name__ == "__main__":
