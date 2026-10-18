@@ -259,3 +259,7 @@ references retain exact hashes and sizes; side-specific exports mark the other
 side unsupported. Common and side overlays resolve to the effective bytes for
 the selected environment before archive paths are assigned. The receipt retains
 the complete recipe used to produce the archive.
+
+Generated workflows build the authored default profiles or explicitly named profiles.
+Their installation, staging and publication contract is [project automation](automation.md).
+The default Prism template inherits launcher memory settings.
