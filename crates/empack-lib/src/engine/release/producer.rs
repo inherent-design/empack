@@ -1162,13 +1162,20 @@ mod tests {
                 .all(|f| f.world_root.as_deref() == Some("custom/adventure")
                     && f.policy == FilePolicy::Seed)
         );
-        let required =
-            semver::VersionReq::parse(&plan.release().document().minimum_engine).unwrap();
-        assert!(!required.matches(&semver::Version::parse("0.6.0-beta").unwrap()));
-        assert!(
-            required
-                .matches(&semver::Version::parse(crate::engine::compatibility_version()).unwrap())
-        );
+        for (version, accepted) in [
+            ("0.6.0-beta", false),
+            (crate::engine::compatibility_version(), true),
+        ] {
+            assert_eq!(
+                crate::engine::release::trust::SelectedSnapshot::select(
+                    plan.release().bytes(),
+                    plan.release().id(),
+                    &semver::Version::parse(version).unwrap(),
+                )
+                .is_ok(),
+                accepted,
+            );
+        }
     }
 
     #[test]
