@@ -13,8 +13,6 @@ use empack_core::{
 };
 use std::collections::BTreeMap;
 mod delta;
-mod retained;
-pub(super) use retained::validate_retained_providers;
 
 pub(super) struct MigrationOptions {
     pub runtime: RuntimeIntent,

@@ -6,7 +6,7 @@ use crate::engine::{
 };
 use std::collections::BTreeSet;
 
-pub(in crate::application::engine_host::cli) async fn validate_retained_providers(
+pub(super) async fn validate_providers(
     scope: &mut WorkScope,
     catalog: &ProviderCatalog,
     proposed: &ResolvedProject,

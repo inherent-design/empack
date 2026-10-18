@@ -5,7 +5,7 @@ use empack_core::model::FileSlot;
 
 impl ProviderResolution {
     /// Resolve a stable primary/declared role or an explicit version-sensitive filename.
-    pub(super) fn select_file(&self, selector: &str) -> Result<&ProviderFile> {
+    pub fn file_for_selector(&self, selector: &str) -> Result<&ProviderFile> {
         let files = self.files.as_slice();
         if selector == "primary" {
             let primary: Vec<_> = files.iter().filter(|file| file.primary).collect();
@@ -53,7 +53,7 @@ impl ProviderResolution {
         );
         let files = self.files.as_slice();
         let selected = if slot.as_str() == "primary" || slot.as_str().starts_with("role:") {
-            Some(self.select_file(slot.as_str())?)
+            Some(self.file_for_selector(slot.as_str())?)
         } else {
             files.iter().find(|file| {
                 file.filename

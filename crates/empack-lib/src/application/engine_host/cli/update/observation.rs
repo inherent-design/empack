@@ -98,14 +98,16 @@ pub(super) async fn identify(
                 identified.resolution.pin.project == identity,
                 "Observed content belongs to another provider project"
             );
-            ensure!(
-                slot.as_ref().is_none_or(|slot| identified
-                    .matching_files
-                    .as_slice()
-                    .iter()
-                    .any(|role| role == slot.as_str())),
-                "Observed content belongs to another provider file role"
-            );
+            if let Some(slot) = slot {
+                let file = identified.resolution.file_for_selector(slot.as_str())?;
+                ensure!(
+                    identified
+                        .matching_files
+                        .as_slice()
+                        .contains(&file.filename),
+                    "Observed content belongs to another provider file role"
+                );
+            }
             let selected = &identified.resolution.pin.selection;
             ensure!(
                 pin.as_ref().is_none_or(|pin| pin == selected),

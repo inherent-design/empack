@@ -1767,3 +1767,113 @@ async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete
 }
 
 mod provider_world;
+
+#[tokio::test]
+async fn primary_placement_update_survives_filename_change_and_converges_with_sync() {
+    use empack_core::model::*;
+    let mut server = mockito::Server::new_async().await;
+    for selector in ["renderer", "Root0001"] {
+        server.mock("GET", format!("/project/{selector}").as_str())
+            .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+            .create_async().await;
+    }
+    let version = |id: &str, filename: &str| {
+        json!({
+            "id":id,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":filename,"primary":true,"size":7,"hashes":{
+                "sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},
+                "url":format!("https://example.invalid/{filename}")}],"dependencies":[],
+            "date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        })
+    };
+    for (id, filename) in [
+        ("RootVer1", "renderer-1.jar"),
+        ("RootVer2", "renderer-2.jar"),
+    ] {
+        server
+            .mock("GET", format!("/version/{id}").as_str())
+            .with_body(version(id, filename).to_string())
+            .create_async()
+            .await;
+    }
+    server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([version("RootVer2", "renderer-2.jar")]).to_string())
+        .create_async()
+        .await;
+    for by_role in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        add_with_catalog(
+            &session(root.path(), false),
+            options("renderer"),
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+        )
+        .await
+        .unwrap();
+        let current = project(root.path());
+        let mut intent = current.intent().clone();
+        let mut lock = current.lock().clone();
+        let key = intent.roots.keys().next().unwrap().clone();
+        let file = lock.dependencies[&key].files.as_slice()[0].clone();
+        let mut place = file.placements.as_slice()[0].clone();
+        place.destination = empack_core::path::InstallDestination::parse("mods/menu.jar").unwrap();
+        let places = NonEmpty::new(vec![place]).unwrap();
+        let authored = intent.roots.get_mut(&key).unwrap();
+        authored.version = VersionIntent::FollowCompatible;
+        authored.placement = if by_role {
+            PlacementIntent::ByFile(BTreeMap::from([(
+                FileSlot::parse("primary").unwrap(),
+                places.clone(),
+            )]))
+        } else {
+            PlacementIntent::Explicit(places.clone())
+        };
+        let mut file = file;
+        file.placements = places.clone();
+        lock.dependencies.get_mut(&key).unwrap().files = NonEmpty::new(vec![file]).unwrap();
+        crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
+        let decoded =
+            crate::testing::read_authoring(&root.path().join("project/empack.yml")).unwrap();
+        lock.intent_revision = decoded.semantic_revision();
+        let current = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+        fs::write(
+            root.path().join("project/empack.lock"),
+            DocumentCodec.encode_lock(&current).unwrap(),
+        )
+        .unwrap();
+        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+        update::update_with_services(
+            &session(root.path(), false),
+            vec![key.as_str().into()],
+            dependencies::AdditionServices {
+                transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
+                catalog,
+                files: DirectFileLimits::default(),
+            },
+        )
+        .await
+        .unwrap();
+        let updated = project(root.path());
+        let dependency = &updated.lock().dependencies[&key];
+        assert_eq!(
+            dependency.selected.as_ref().unwrap().selection,
+            empack_core::identity::PinSelector::ModrinthVersion(
+                empack_core::identity::ModrinthVersionId::parse("RootVer2").unwrap()
+            )
+        );
+        assert_eq!(dependency.files.as_slice()[0].slot.as_str(), "primary");
+        assert_eq!(dependency.files.as_slice()[0].placements, places);
+        let before = super::super::tests::snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            synchronize(&session(root.path(), false), false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            before
+        );
+    }
+}

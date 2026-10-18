@@ -490,7 +490,7 @@ fn normalize(
                 ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => {
                     chosen.push((
                         "primary".to_owned(),
-                        selected.resolution.select_file("primary")?,
+                        selected.resolution.file_for_selector("primary")?,
                     ));
                 }
                 ProviderFiles::All => {
@@ -499,7 +499,7 @@ fn normalize(
                 ProviderFiles::Placed(placements) => {
                     ensure!(!placements.is_empty(), "No provider file roles selected");
                     for role in placements.keys() {
-                        chosen.push((role.clone(), selected.resolution.select_file(role)?));
+                        chosen.push((role.clone(), selected.resolution.file_for_selector(role)?));
                     }
                 }
                 ProviderFiles::Named(names) => {

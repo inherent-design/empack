@@ -15,6 +15,7 @@ use empack_core::{
 };
 use std::collections::BTreeMap;
 mod materialization;
+mod retained;
 use crate::engine::synchronization::suspension::SyncInputContext;
 use materialization::publish;
 
@@ -443,7 +444,7 @@ pub(super) async fn synchronize_mode(
         })?;
         let proposed = scope.accept(worker.wait().await?)?.transpose()?;
         if revalidate_libraries {
-            super::migration::validate_retained_providers(&mut scope, &services.catalog, &proposed, &checked_provider_keys, limits).await?;
+            retained::validate_providers(&mut scope, &services.catalog, &proposed, &checked_provider_keys, limits).await?;
         }
         Ok((proposed, acquired))
     }).await?;
