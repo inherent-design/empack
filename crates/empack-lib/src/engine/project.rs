@@ -199,8 +199,31 @@ impl ReplacementSnapshot {
 /// Acquisition sources outside managed placements are not deletion authority.
 pub struct MutationSnapshot {
     workspace: WorkspaceSnapshot,
+    migration: bool,
 }
 impl MutationSnapshot {
+    pub(in crate::engine) fn synchronization_candidate(
+        &self,
+        proposed: Option<&ResolvedProject>,
+    ) -> Result<super::synchronization::SynchronizationCandidate> {
+        use super::synchronization::SynchronizationCandidate;
+        if self.migration {
+            SynchronizationCandidate::prepare_migration(
+                self.workspace.intent(),
+                self.workspace
+                    .prior_lock()
+                    .context("Migration requires an exact prior lock")?,
+                proposed.context("Migration requires resolved candidate intent")?,
+            )
+        } else {
+            SynchronizationCandidate::prepare_input(
+                self.workspace.intent(),
+                self.workspace.prior_lock(),
+                proposed,
+            )
+        }
+    }
+
     pub(in crate::engine) fn workspace(&self) -> &WorkspaceSnapshot {
         &self.workspace
     }
@@ -850,7 +873,10 @@ impl ProjectReader {
             spelling.insert_directory(path)?;
         }
         documents.root.revalidate(&documents.native, cancel)?;
-        Ok(MutationSnapshot { workspace })
+        Ok(MutationSnapshot {
+            workspace,
+            migration: false,
+        })
     }
     /// Documents are always in the read set. Extra scopes bind this operation's source and output inputs.
     pub fn capture(

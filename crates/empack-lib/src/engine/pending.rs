@@ -266,7 +266,11 @@ fn details(
 ) -> Result<()> {
     let record: serde_json::Value =
         serde_json::from_slice(bytes).context("Invalid pending record")?;
-    let schema = if op.kind == PendingKind::Build { 4 } else { 1 };
+    let schema = match op.kind {
+        PendingKind::Build => 4,
+        PendingKind::Sync => 2,
+        _ => 1,
+    };
     ensure!(
         record["schema"].as_u64() == Some(schema),
         "Unsupported saved record schema; use the original workflow continuation or explicitly discard this ID"
@@ -317,6 +321,12 @@ fn details(
             op.diagnostic = Some("Exact unresolved build requirements are recomputed from the saved output recipes during continuation; listed lock inputs may not all be needed".into());
         }
         PendingKind::Sync => {
+            if record["migration"]
+                .as_bool()
+                .context("Missing synchronization mode")?
+            {
+                op.diagnostic = Some("Runtime migration: continuation applies the retained candidate intent only after checking the original author documents and obtaining new approval".into());
+            }
             let intent = DocumentCodec.decode_intent(
                 record["intent"]
                     .as_str()

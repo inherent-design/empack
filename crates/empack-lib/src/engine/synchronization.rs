@@ -51,6 +51,47 @@ impl SynchronizationCandidate {
             preserve_lock,
         })
     }
+    /// Bind an explicit runtime migration to the original author documents.
+    /// Only runtime requests and provider replacements may change authoring intent.
+    pub fn prepare_migration(
+        source: &DecodedIntent,
+        prior: &DecodedLock,
+        proposed: &ResolvedProject,
+    ) -> Result<Self> {
+        let current = prior.bind(source)?;
+        let mut allowed = current.intent().clone();
+        allowed.runtime = proposed.intent().runtime.clone();
+        for (key, root) in &mut allowed.roots {
+            let next =
+                proposed.intent().roots.get(key).ok_or_else(|| {
+                    anyhow::anyhow!("Migration cannot remove an explicit dependency")
+                })?;
+            if root.source != next.source {
+                ensure!(
+                    matches!(root.source, empack_core::model::SourceIntent::Provider(_))
+                        && matches!(next.source, empack_core::model::SourceIntent::Provider(_)),
+                    "Migration replacements require explicit provider identities"
+                );
+                root.source = next.source.clone();
+                root.version = empack_core::model::VersionIntent::FollowCompatible;
+            }
+        }
+        ensure!(
+            &allowed == proposed.intent(),
+            "Migration changes unrelated authoring intent"
+        );
+        empack_core::synchronization::SynchronizationResolution::prepare(
+            proposed.intent(),
+            prior.lock(),
+            proposed,
+        )?;
+        Ok(Self {
+            project: proposed.clone(),
+            intent: DocumentCodec.replace_intent(source, proposed.intent())?,
+            lock: DocumentCodec.encode_lock(proposed)?,
+            preserve_lock: proposed.lock() == prior.lock(),
+        })
+    }
     /// Bind freshly resolved changed intent without upgrading still-valid prior selections.
     pub fn prepare_resolved(
         source: &DecodedIntent,

@@ -1183,3 +1183,27 @@ async fn publisher_init_preview_decline_and_exclusive_creation() {
     assert_eq!(key, fs::read(root.path().join("publisher.key")).unwrap());
     assert!(snapshot(&root.path().join("project")).is_empty());
 }
+
+#[test]
+fn initialization_runs_on_a_windows_sized_stack() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().to_owned();
+    std::thread::Builder::new()
+        .name("small-stack-cli".into())
+        .stack_size(1024 * 1024)
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let selected = session(&path, true, false);
+            runtime
+                .block_on(execute_command_with_session(init(), &selected))
+                .unwrap();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    assert!(root.path().join("project/empack.yml").is_file());
+    assert!(root.path().join("project/empack.lock").is_file());
+}

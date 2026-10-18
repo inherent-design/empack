@@ -654,6 +654,11 @@ pub(super) async fn synchronize_with_outcome(
     session: &dyn Session,
     request: SyncRequest,
 ) -> Result<bool> {
+    let operation_label = if matches!(&request, SyncRequest::Migration { .. }) {
+        "Runtime migration"
+    } else {
+        "Synchronization"
+    };
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = engine(session.config().app_config(), &invocation)?;
@@ -664,15 +669,15 @@ pub(super) async fn synchronize_with_outcome(
             .sync()
             .context("Missing synchronization preview")?;
         session.display().status().info(&format!(
-            "Synchronize {} recorded selections ({} deferred references)",
+            "{operation_label}: {} recorded selections ({} deferred references)",
             view.selected.len(),
             view.references.len()
         ));
         show_changes(session, &view.files)?;
-        if !approve(session, "Synchronization")? {
+        if !approve(session, operation_label)? {
             return Ok(false);
         }
-        execute_approved(session, &engine, prepared, "Synchronization", |receipt| {
+        execute_approved(session, &engine, prepared, operation_label, |receipt| {
             let ExecutionReceipt::Sync(receipt) = receipt else {
                 anyhow::bail!("Unexpected synchronization receipt");
             };

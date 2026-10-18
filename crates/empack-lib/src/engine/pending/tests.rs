@@ -61,7 +61,7 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
     let cancel = Cancellation::default();
     for kind in [Kind::Import, Kind::Synchronization, Kind::Instance] {
         let record = OpaqueRecord {
-            schema: 1,
+            schema: if kind == Kind::Synchronization { 2 } else { 1 },
             binding: store::bind_for(kind, &target, &cancel).unwrap().1,
             marker: 0,
         };

@@ -992,3 +992,64 @@ fn smoke_pending_list_is_read_only_json_without_an_author_project() {
         assert_eq!(snapshot(&project), before);
     }
 }
+
+#[test]
+fn smoke_outdated_json_and_runtime_plan_preserve_author_workspace() {
+    let project = initialized();
+    let before = snapshot(&project);
+    let output = command(&project)
+        .args(["outdated", "--json", "--release-policy", "stable-only"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["release_policy"], "stable-only");
+    assert_eq!(report["joint"]["state"], "not-applicable");
+    assert_eq!(report["dependencies"], serde_json::json!([]));
+    let output = command(&project)
+        .args([
+            "migrate",
+            "--minecraft",
+            "1.21.1",
+            "--loader",
+            "vanilla",
+            "--plan",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["minecraft"], "1.21.1");
+    assert_eq!(report["loader"], "vanilla");
+    assert_eq!(snapshot(&project), before);
+    for args in [
+        vec![
+            "migrate",
+            "--minecraft",
+            "1.21.1",
+            "--loader",
+            "vanilla",
+            "--json",
+        ],
+        vec![
+            "migrate",
+            "--minecraft",
+            "1.21.1",
+            "--loader",
+            "vanilla",
+            "--replace",
+            "bad",
+        ],
+        vec!["outdated", "--release-policy", "latest"],
+    ] {
+        command(&project).args(args).assert().failure();
+        assert_eq!(snapshot(&project), before);
+    }
+}

@@ -396,6 +396,7 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     fs::write(project.path().join("pack/mods/fixture.jar"), &bytes)?;
     let changed = project.snapshot();
     let update = || Commands::Update {
+        release_policy: Default::default(),
         continue_independent: false,
         dependencies: vec!["fixture".into()],
     };
@@ -416,6 +417,7 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert!(
         project
             .run(Commands::Update {
+                release_policy: Default::default(),
                 continue_independent: false,
                 dependencies: vec!["fixture".into(), "missing".into()]
             })
