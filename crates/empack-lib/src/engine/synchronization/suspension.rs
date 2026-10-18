@@ -87,6 +87,7 @@ impl PendingSyncCleanup {
 }
 
 pub struct ResumedSync {
+    pub migration: bool,
     pub project: ResolvedProject,
     pub acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
     pub saved: SavedSyncRecord,
@@ -97,6 +98,7 @@ pub struct ResumedSync {
 #[serde(deny_unknown_fields)]
 struct Record {
     schema: u32,
+    migration: bool,
     binding: Binding,
     intent: String,
     lock: String,
@@ -269,6 +271,7 @@ pub async fn load_pending_sync(
         }
     }
     Ok(Some(ResumedSync {
+        migration: record.migration,
         project,
         acquired,
         saved: SavedSyncRecord(saved),
@@ -278,6 +281,7 @@ pub async fn load_pending_sync(
 }
 /// Authorized host persistence only. Source documents must still match their original capture.
 pub struct SyncRetentionRequest {
+    pub migration: bool,
     pub state: PathBuf,
     pub context: SyncInputContext,
     pub project: ResolvedProject,
@@ -291,6 +295,7 @@ pub async fn save_pending_sync(
     request: SyncRetentionRequest,
 ) -> Result<SavedSyncRecord> {
     let SyncRetentionRequest {
+        migration,
         state,
         context,
         project,
@@ -357,7 +362,8 @@ pub async fn save_pending_sync(
             let intent = String::from_utf8(DocumentCodec.encode_intent(project.intent())?)?;
             let lock = String::from_utf8(DocumentCodec.encode_lock(&project)?)?;
             Ok::<_, anyhow::Error>(Record {
-                schema: 1,
+                schema: 2,
+                migration,
                 binding,
                 intent,
                 lock,

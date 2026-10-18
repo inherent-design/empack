@@ -12,6 +12,7 @@ defines callable signatures.
 | [Architecture](architecture.md) | Crates, ports and authority |
 | [Model](model.md) | Identities, authoring documents, release and instance values |
 | [Planning](planning.md) | Read sets, grants and postconditions |
+| [Assessment](assessment.md) | Provider update evidence and explicit runtime migration |
 | [Instances](instances.md) | Three-way reconciliation, choices and launch eligibility |
 | [Releases](releases.md) | Distribution, signatures and channels |
 | [Consumers](builds.md) | Format projections and runtime recipes |

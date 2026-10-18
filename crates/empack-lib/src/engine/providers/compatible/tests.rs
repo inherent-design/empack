@@ -587,3 +587,161 @@ async fn mixed_modrinth_projects_select_datapack_versions_without_becoming_mods(
             .unwrap()
     );
 }
+
+#[tokio::test]
+async fn assessment_distinguishes_policy_compatibility_and_complete_upstream_observation() {
+    let mut server = mockito::Server::new_async().await;
+    let project = server
+        .mock("GET", "/project/AANobbMI")
+        .with_body(
+            json!({"id":"AANobbMI","slug":"assets","title":"Assets","project_type":"mod"})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let versions = server
+        .mock("GET", "/project/AANobbMI/version")
+        .match_query("include_changelog=false")
+        .with_body(
+            json!([
+                version(
+                    "stable01",
+                    "release",
+                    "2025-01-01T00:00:00Z",
+                    "1.20.1",
+                    "fabric"
+                ),
+                version(
+                    "beta0001",
+                    "beta",
+                    "2025-02-01T00:00:00Z",
+                    "1.20.1",
+                    "fabric"
+                ),
+                version(
+                    "future01",
+                    "release",
+                    "2025-03-01T00:00:00Z",
+                    "1.21.1",
+                    "neoforge"
+                )
+            ])
+            .to_string(),
+        )
+        .create_async()
+        .await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 8,
+        memory_bytes: 64 << 20,
+        open_files: 32,
+        scratch_bytes: 64 << 20,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            Ok(catalog
+                .assess_versions(
+                    &mut scope,
+                    request(&mr_project(), ReleasePolicy::StableOnly),
+                    limits(),
+                )
+                .await)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.release_completed(handle.id());
+    runtime.shutdown().await;
+    let OperationOutcome::Completed(Ok(view)) = &*outcome else {
+        panic!("assessment failed")
+    };
+    assert_eq!(view.observed_records, 3);
+    for (value, expected) in [
+        (&view.permitted, "stable01"),
+        (&view.compatible, "beta0001"),
+        (&view.upstream, "future01"),
+    ] {
+        assert_eq!(
+            value.as_ref().unwrap().pin.selection,
+            mr_project().id.parse_pin(expected).unwrap()
+        );
+    }
+    assert!(governor.status().reserved.memory_bytes > 0);
+    drop(handle);
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    project.assert_async().await;
+    versions.assert_async().await;
+}
+
+#[tokio::test]
+async fn assessment_never_returns_partial_curseforge_pages_as_latest() {
+    for page_limit in [1, 2] {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/mods/123")
+            .with_body(cf_project().to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/mods/123/files")
+            .match_query("index=0&pageSize=50")
+            .with_body(cf_page(0, cf_file(10, 1, "2025-01-01T00:00:00Z")).to_string())
+            .create_async()
+            .await;
+        let second = server
+            .mock("GET", "/mods/123/files")
+            .match_query("index=1&pageSize=50")
+            .with_body(cf_page(1, cf_file(11, 1, "2025-02-01T00:00:00Z")).to_string())
+            .expect(usize::from(page_limit > 1))
+            .create_async()
+            .await;
+        let catalog =
+            ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into()));
+        let canonical =
+            curseforge::project(&serde_json::to_vec(&cf_project()).unwrap(), false).unwrap();
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 8,
+            memory_bytes: 64 << 20,
+            open_files: 32,
+            scratch_bytes: 64 << 20,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                Ok(catalog
+                    .assess_versions(
+                        &mut scope,
+                        request(&canonical, ReleasePolicy::Any),
+                        SelectionLimits {
+                            pages: page_limit,
+                            ..limits()
+                        },
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        runtime.release_completed(handle.id());
+        runtime.shutdown().await;
+        if page_limit == 1 {
+            assert!(
+                matches!(&*outcome, OperationOutcome::Completed(Err(error)) if matches!(error.downcast_ref::<CatalogError>(), Some(CatalogError::Limit)))
+            );
+        } else {
+            let OperationOutcome::Completed(Ok(view)) = &*outcome else {
+                panic!("complete scan failed")
+            };
+            assert_eq!(
+                view.upstream.as_ref().unwrap().pin.selection,
+                ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap())
+                    .parse_pin("11")
+                    .unwrap()
+            );
+        }
+        drop(handle);
+        drop(outcome);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        second.assert_async().await;
+    }
+}

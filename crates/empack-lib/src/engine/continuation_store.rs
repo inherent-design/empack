@@ -302,7 +302,10 @@ pub(in crate::engine) fn read<R: BoundRecord>(
         cancel,
     )?;
     let record: R = serde_json::from_slice(&bytes).context("Invalid pending operation record")?;
-    ensure!(record.schema() == 1, "Unsupported pending operation schema");
+    ensure!(
+        record.schema() == if kind == Kind::Synchronization { 2 } else { 1 },
+        "Unsupported pending operation schema"
+    );
     ensure!(
         record.binding() == &binding,
         "Saved operation is stale: target identity or documents changed"

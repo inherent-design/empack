@@ -62,6 +62,8 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
         Commands::Update { .. } => "update",
+        Commands::Outdated { .. } => "outdated",
+        Commands::Migrate(_) => "migrate",
         Commands::Adopt { .. } => "adopt",
         Commands::Build(_) => "build",
         Commands::Clean { .. } => "clean",
@@ -75,17 +77,27 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     session.process().check_cancelled()?;
     // Preparation captures its own generation. The publisher acquires mutation ownership;
     // a legacy outer lock would deadlock it and make preview unnecessarily mutating.
+    // Keep each workflow state on the heap. Otherwise debug builds embed the
+    // largest workflow in every dispatch frame, exhausting the Windows CLI stack.
     match command {
-        Commands::Status { context, json } => engine_host::status(session, context, json).await,
-        Commands::Pending { command } => engine_host::pending::dispatch(session, command).await,
-        Commands::Instance { command } => engine_host::instance::dispatch(session, command).await,
-        Commands::Release { command } => engine_host::release::dispatch(session, command).await,
-        Commands::Recover { action, operation } => {
-            engine_host::recover(session, action, operation).await
+        Commands::Status { context, json } => {
+            Box::pin(engine_host::status(session, context, json)).await
         }
-        Commands::Requirements => handle_requirements(session).await,
-        Commands::Version => handle_version(session).await,
-        Commands::Init(args) => engine_host::cli::initialize(session, &args).await,
+        Commands::Pending { command } => {
+            Box::pin(engine_host::pending::dispatch(session, command)).await
+        }
+        Commands::Instance { command } => {
+            Box::pin(engine_host::instance::dispatch(session, command)).await
+        }
+        Commands::Release { command } => {
+            Box::pin(engine_host::release::dispatch(session, command)).await
+        }
+        Commands::Recover { action, operation } => {
+            Box::pin(engine_host::recover(session, action, operation)).await
+        }
+        Commands::Requirements => Box::pin(handle_requirements(session)).await,
+        Commands::Version => Box::pin(handle_version(session)).await,
+        Commands::Init(args) => Box::pin(engine_host::cli::initialize(session, &args)).await,
         Commands::Add {
             mods,
             force,
@@ -97,7 +109,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             download_as_local,
             continue_independent,
         } => {
-            engine_host::cli::add(
+            Box::pin(engine_host::cli::add(
                 session,
                 engine_host::cli::AddOptions {
                     inputs: mods,
@@ -110,22 +122,36 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                     download_as_local,
                     continue_independent,
                 },
-            )
+            ))
+            .await
+        }
+        Commands::Migrate(options) => Box::pin(engine_host::cli::migrate(session, options)).await,
+        Commands::Outdated {
+            json,
+            release_policy,
+        } => {
+            Box::pin(engine_host::cli::outdated(
+                session,
+                json,
+                release_policy.into(),
+            ))
             .await
         }
         Commands::Update {
+            release_policy,
             dependencies,
             continue_independent,
         } => {
-            engine_host::cli::update_with_policy(
+            Box::pin(engine_host::cli::update_with_policy(
                 session,
                 dependencies,
+                release_policy.into(),
                 if continue_independent {
                     crate::engine::api::BatchPolicy::ContinueIndependent
                 } else {
                     crate::engine::api::BatchPolicy::AllRequested
                 },
-            )
+            ))
             .await
         }
         Commands::Adopt {
@@ -142,13 +168,13 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                         && selection.file_plan.is_none(),
                     "Source choices require --from"
                 );
-                engine_host::cli::adopt(session, dependencies).await
+                Box::pin(engine_host::cli::adopt(session, dependencies)).await
             } else {
                 anyhow::ensure!(
                     dependencies.is_empty(),
                     "Choose tracked keys or new source inputs for adoption"
                 );
-                engine_host::cli::adopt_inputs(
+                Box::pin(engine_host::cli::adopt_inputs(
                     session,
                     engine_host::cli::AddOptions {
                         inputs: from,
@@ -161,7 +187,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                         download_as_local: false,
                         continue_independent: false,
                     },
-                )
+                ))
                 .await
             }
         }
@@ -175,7 +201,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                 !deps,
                 "Automatic orphan cleanup requires complete dependency evidence; select exact dependencies to remove"
             );
-            engine_host::remove(
+            Box::pin(engine_host::remove(
                 session,
                 RemoveRequest {
                     selections: NonEmpty::new(
@@ -192,20 +218,20 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                         RemovalEvidencePolicy::RequireComplete
                     },
                 },
-            )
+            ))
             .await
         }
-        Commands::Build(args) => engine_host::cli::build(session, &args).await,
-        Commands::Clean { targets } => engine_host::clean(session, &targets).await,
+        Commands::Build(args) => Box::pin(engine_host::cli::build(session, &args)).await,
+        Commands::Clean { targets } => Box::pin(engine_host::clean(session, &targets)).await,
         Commands::Sync {
             materialize,
             continue_sync,
             files,
         } => {
             if continue_sync {
-                engine_host::cli::resume_synchronization(session, files).await
+                Box::pin(engine_host::cli::resume_synchronization(session, files)).await
             } else {
-                engine_host::cli::synchronize(session, materialize).await
+                Box::pin(engine_host::cli::synchronize(session, materialize)).await
             }
         }
     }

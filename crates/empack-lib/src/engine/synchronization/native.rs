@@ -116,12 +116,8 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
     cancel: &Cancellation,
 ) -> Result<SynchronizationPreparation> {
     cancel.check()?;
+    let candidate = workspace.synchronization_candidate(proposed)?;
     let workspace = workspace.into_workspace();
-    let candidate = SynchronizationCandidate::prepare_input(
-        workspace.intent(),
-        workspace.prior_lock(),
-        proposed,
-    )?;
     let mut previous = BTreeMap::new();
     for dependency in workspace
         .prior_lock()

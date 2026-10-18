@@ -561,3 +561,105 @@ async fn acquired_references_cannot_override_captured_local_sources_or_unknown_s
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+#[tokio::test]
+async fn migration_binds_original_documents_before_preparation_and_publication() {
+    for change in [
+        "none",
+        "before-prepare",
+        "after-prepare",
+        "unrelated-intent",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let current = source_project(root.path(), false, false);
+        let workspace = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
+            .capture(
+                root.path(),
+                &[],
+                SnapshotLimits::default(),
+                &crate::application::process_runtime::Cancellation::default(),
+            )
+            .unwrap();
+        let revision = workspace.revision();
+        let mut intent = current.intent().clone();
+        intent.runtime.minecraft = GameVersion::parse("1.20.2").unwrap();
+        if change == "unrelated-intent" {
+            intent.metadata.name = "Unauthorized unrelated edit".into();
+        }
+        let decoded = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "candidate")
+            .unwrap();
+        let mut lock = current.lock().clone();
+        lock.runtime.minecraft = intent.runtime.minecraft.clone();
+        lock.intent_revision = decoded.semantic_revision();
+        let resolution =
+            ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+        let request = SyncRequest::Migration {
+            source_revision: revision,
+            resolution,
+            evidence: SourceEvidencePolicy::Compatibility,
+            content: BTreeMap::new(),
+        };
+        let original = fs::read(root.path().join("empack.yml")).unwrap();
+        let edit = || {
+            let mut changed = b"# edit after capture\n".to_vec();
+            changed.extend(&original);
+            put(root.path(), "empack.yml", &changed);
+        };
+        if change == "before-prepare" {
+            edit();
+        }
+        let before = files(root.path());
+        let (engine, _) = engine(state.path().join("state"));
+        let result = engine.prepare(root.path().to_path_buf(), request).await;
+        if matches!(change, "before-prepare" | "unrelated-intent") {
+            assert!(result.is_err());
+            assert_eq!(files(root.path()), before);
+        } else {
+            let Preparation::Ready(prepared) = result.unwrap() else {
+                panic!("ready")
+            };
+            assert_eq!(files(root.path()), before);
+            let permission = grant(&prepared);
+            if change == "after-prepare" {
+                edit();
+            }
+            let before_execution = files(root.path());
+            let mut operation = engine
+                .start(prepared.authorize(permission).unwrap())
+                .unwrap();
+            let outcome = operation.wait().await;
+            if change == "after-prepare" {
+                assert!(!matches!(
+                    &*outcome,
+                    OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+                ));
+                assert_eq!(files(root.path()), before_execution);
+            } else {
+                assert!(matches!(
+                    &*outcome,
+                    OperationOutcome::Completed(ExecutionOutcome::Completed(
+                        ExecutionReceipt::Sync(_)
+                    ))
+                ));
+                let author =
+                    crate::testing::read_authoring(&root.path().join("empack.yml")).unwrap();
+                let next = DocumentCodec
+                    .decode_lock(
+                        &fs::read(root.path().join("empack.lock")).unwrap(),
+                        &author,
+                        "lock",
+                    )
+                    .unwrap();
+                assert_eq!(next.intent().runtime.minecraft.as_str(), "1.20.2");
+                assert_eq!(next.lock().dependencies, current.lock().dependencies);
+                assert_eq!(
+                    fs::read(root.path().join("sources/payload")).unwrap(),
+                    b"payload"
+                );
+            }
+        }
+        engine.shutdown().await;
+    }
+}
