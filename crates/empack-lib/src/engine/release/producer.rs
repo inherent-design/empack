@@ -45,7 +45,7 @@ impl NativeReleaseOptions {
         Ok(Self {
             require_subscription: false,
             pack: native.pack_id.clone(),
-            minimum_engine: ">=0.7.0-alpha".into(),
+            minimum_engine: ">=0.7.0-beta".into(),
             java_major: native.java_major,
             delivery: Delivery::References,
             environments: Environments::Both,
@@ -520,7 +520,7 @@ impl NativeReleasePlan {
         }
         if files.iter().any(|file| file.world_root.is_some()) {
             // Older engines must not apply per-file seed semantics to a world group.
-            let required = format!("{}, >=0.7.0-alpha", options.minimum_engine);
+            let required = format!("{}, >=0.7.0-beta", options.minimum_engine);
             semver::VersionReq::parse(&required)?;
             options.minimum_engine = required;
         }
@@ -966,7 +966,7 @@ mod tests {
         NativeReleaseOptions {
             require_subscription: false,
             pack: "stable-id".into(),
-            minimum_engine: ">=0.7.0-alpha".into(),
+            minimum_engine: ">=0.7.0-beta".into(),
             java_major: 17,
             delivery,
             environments: Environments::Both,

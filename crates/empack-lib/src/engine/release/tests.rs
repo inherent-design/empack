@@ -9,7 +9,7 @@ pub(super) fn document() -> ReleaseDocument {
         schema: 1,
         pack: "test-pack".into(),
         version: "1.0".into(),
-        minimum_engine: ">=0.7.0-alpha".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::NeoForge {
@@ -39,7 +39,7 @@ pub(super) fn document() -> ReleaseDocument {
     }
 }
 fn version() -> semver::Version {
-    semver::Version::parse("0.7.0-alpha").unwrap()
+    semver::Version::parse("0.7.0-beta").unwrap()
 }
 fn key() -> SigningKey {
     SigningKey::from_bytes(&[7; 32])
@@ -64,7 +64,7 @@ fn channel(release: &DecodedRelease) -> ChannelDocument {
             url: "https://example.com/release.json".into(),
             maximum_bytes: 16384,
         },
-        minimum_engine: ">=0.7.0-alpha".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
     }
 }
 #[test]

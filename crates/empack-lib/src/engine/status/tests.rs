@@ -15,7 +15,7 @@ fn installed(root: &Path, layout: InstanceLayout, side: InstanceSide) {
         server_launch: None,
         pack: "fixture-pack".into(),
         version: "2.3.0".into(),
-        minimum_engine: "0.7.0-alpha".into(),
+        minimum_engine: "0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,

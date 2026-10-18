@@ -64,7 +64,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
         schema: 1,
         pack: "fixture".into(),
         version: "1".into(),
-        minimum_engine: ">=0.7.0-alpha".into(),
+        minimum_engine: ">=0.7.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -77,7 +77,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     let selected = release::trust::SelectedSnapshot::select(
         release.bytes(),
         release.id(),
-        &semver::Version::parse("0.7.0-alpha").unwrap(),
+        &semver::Version::parse("0.7.0-beta").unwrap(),
     )
     .unwrap();
     InstallInstanceRequest {
@@ -264,7 +264,7 @@ fn replace_document(
         release::trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.7.0-alpha").unwrap(),
+            &semver::Version::parse("0.7.0-beta").unwrap(),
         )
         .unwrap(),
     );
@@ -1374,7 +1374,7 @@ async fn byte_identical_conflict_resolution_still_checks_source_assertions() {
         release::trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.7.0-alpha").unwrap(),
+            &semver::Version::parse("0.7.0-beta").unwrap(),
         )
         .unwrap(),
     );
@@ -2058,7 +2058,7 @@ fn world_request(files: &[(&str, &str, &[u8], FilePolicy)], world: &str) -> Inst
         release::trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.7.0-alpha").unwrap(),
+            &semver::Version::parse("0.7.0-beta").unwrap(),
         )
         .unwrap(),
     );

@@ -3,7 +3,7 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide follows the development CLI; `empack <command> --help` lists the installed options.
+This guide follows the v0.7.0-beta CLI; `empack <command> --help` lists the installed options.
 
 ## Workspace status
 

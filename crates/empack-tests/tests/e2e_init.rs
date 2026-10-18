@@ -178,7 +178,7 @@ fn e2e_init_scaffolds_templates() {
             .unwrap();
         let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
         let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-            "0.7.0-alpha"
+            "0.7.0-beta"
         } else {
             env!("CARGO_PKG_VERSION")
         };
