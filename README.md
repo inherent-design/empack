@@ -1,12 +1,14 @@
 # empack
 
-Empack manages Minecraft modpacks from one editable `empack.yml`. It resolves exact
+Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exact
 dependencies into `empack.lock`, builds launcher and server distributions, and can
 install and update native pack releases while preserving player-owned files.
 
-This documentation covers **v0.6.0-beta**. It replaces the v0.5 authoring schema and
-packwiz integration; existing projects require a new manifest or re-import from a
-supported Modrinth or CurseForge archive. There is no automatic schema migration.
+This checkout documents **v0.7.0-beta development**, which is not yet a published
+release. It uses author schema 4 and optional integration bindings schema 1. Older
+author documents require a new manifest or re-import from a supported Modrinth or
+CurseForge archive; no schema converter is provided. Use the documentation at your
+installed release tag when running a downloaded binary.
 
 ## Installation
 
@@ -38,7 +40,9 @@ empack --workdir my-pack build modrinth
 Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism.
 Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run
 `empack --workdir my-pack sync`; use `update` when you deliberately want newer
-compatible dependencies. Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
+compatible dependencies. `outdated` reports provider update evidence;
+`migrate --minecraft VERSION --loader FAMILY --plan` previews a runtime change.
+Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
 
 For an existing pack archive, use `empack init my-pack --from ./pack.mrpack` or a
 CurseForge manifest ZIP. Preview changes with `--dry-run`. See [usage](docs/usage.md)
@@ -49,8 +53,7 @@ for imports, optional files, restricted downloads and installed-instance command
 Authors edit `empack.yml`; `empack.lock` records exact selections. Authoring operations
 resolve dependencies and verify content before publication. Named build profiles
 select a consumer, dependency delivery, update authority and format. Use
-`empack build --explain` to inspect configured defaults before building. An installed instance
-records its owned files and optional choices separately from the authoring project.
+`empack build --explain` to inspect configured defaults before building. An installed instance records its owned files and optional choices separately from the authoring project.
 
 | Reference | Purpose |
 | --- | --- |

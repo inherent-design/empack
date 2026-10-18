@@ -15,6 +15,7 @@ pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
 pub async fn update_with_policy(
     session: &dyn Session,
     keys: Vec<String>,
+    releases: ReleasePolicy,
     policy: BatchPolicy,
 ) -> Result<()> {
     let services = dependencies::configured_services(session)?;
@@ -24,7 +25,7 @@ pub async fn update_with_policy(
     dependencies::update_batch_with_services(
         session,
         inputs,
-        ReleasePolicy::PreferStable,
+        releases,
         SourceEvidencePolicy::Compatibility,
         services,
         policy,

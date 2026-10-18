@@ -32,7 +32,9 @@ Minecraft will launch. `update` changes author dependency selections;
 | `add` | Describe and resolve dependencies, preserving exact source intent |
 | `remove` | Remove or demote selected logical roots with native ownership checks |
 | `sync` | Apply authored intent while retaining compatible locked selections |
+| `outdated` | Read provider update evidence and joint dependency blockers |
 | `update` | Deliberately refresh selected eligible dependency versions |
+| `migrate` | Plan or apply a Minecraft/loader change and explicit replacements |
 | `adopt` | Verify selected existing content and record it without hidden installation |
 | `build` | Produce explicitly selected consumer distributions |
 | `recover` | Inspect or finish/restore an interrupted publication |
@@ -55,11 +57,41 @@ placements normalize through the same engine. Ambiguous or unsupported inputs fa
 with actionable decisions. Default add/update batches publish nothing when any item
 fails. Explicit independent batches preserve failed groups and report partial effects.
 
+## Assessing and changing versions
+
+```bash
+empack outdated --json --release-policy prefer-stable
+empack --dry-run update sodium --release-policy stable-only
+empack migrate --minecraft 1.21.2 --loader fabric --plan
+empack --yes migrate --minecraft 1.21.2 --loader fabric
+```
+
+`outdated` distinguishes the locked version, policy-permitted candidate, compatible
+candidate and newest observed upstream selection. Unavailable evidence is reported
+as unknown, not up to date. Its joint dependency check is separate from each row;
+it does not promise that configurations or gameplay will work.
+
+A migration plan leaves the author files unchanged. Applying the same command
+without `--plan` resolves again and requires approval of the native changes. Valid
+locked selections stay selected. Use `--loader-version` for an exact loader and
+repeat `--accept-version` for explicitly accepted alternative game versions; the
+candidate replaces the previous alternative list. Replacing a project requires
+`--replace KEY=modrinth:CANONICAL_ID` or `KEY=curseforge:NUMERIC_ID` and deliberately
+resets that root to compatible version policy. It does not convert configurations,
+worlds or private files.
+
+Add `--materialize` to acquire referenced bytes. Missing manual content can be
+saved and resumed with `pending resume ID --file KEY=PATH`. A changed author
+workspace invalidates the saved candidate. See the [assessment contract](design/assessment.md)
+for ranking, evidence limits and publication rules.
+
 ## Installed instances
 
 Missing manual downloads can be saved after approval. The command reports the exact
-file key, byte count and SHA-256 address. Supply associations to `instance continue`;
-resuming checks the original assertions and instance base before showing a new plan.
+file key, byte count and SHA-256 address. Use `pending list`, then
+`pending resume ID --file KEY=PATH`; resuming checks the original assertions and
+instance base before showing a new plan. `instance continue --file KEY=PATH` remains
+available for an instance-specific continuation.
 A preview never saves or removes pending state. If the base or publisher enrollment
 has changed, inspect it and explicitly discard the stale recipe before selecting a
 new operation.

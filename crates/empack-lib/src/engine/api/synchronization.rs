@@ -14,6 +14,14 @@ use std::collections::BTreeSet;
 
 /// Exact per-slot materialization, optionally paired with resolution for changed authoring intent.
 pub enum SyncRequest {
+    /// Publish an explicitly proposed runtime and provider replacement plan.
+    /// The original author documents remain read preconditions throughout preparation.
+    Migration {
+        source_revision: crate::engine::project::ProjectRevision,
+        resolution: ResolvedProject,
+        evidence: SourceEvidencePolicy,
+        content: BTreeMap<LockedFileKey, crate::engine::mrpack::AcquiredBuildFile>,
+    },
     /// Use explicit per-slot content choices, retaining their acquisition evidence.
     Supplied {
         resolution: Option<ResolvedProject>,
@@ -63,7 +71,21 @@ pub(super) async fn prepare(
         anyhow::bail!("Synchronization requires an existing project")
     };
     ensure!(project.is_absolute(), "Project selection must be absolute");
+    let migration = matches!(&request, SyncRequest::Migration { .. });
     let (request, acquired, source_revision) = match request {
+        SyncRequest::Migration {
+            source_revision,
+            resolution,
+            evidence,
+            content,
+        } => (
+            SyncRequest::Recorded {
+                resolution: Some(resolution),
+                evidence,
+            },
+            content,
+            Some(source_revision),
+        ),
         SyncRequest::AcquiredReferences {
             source_revision,
             resolution,
@@ -80,7 +102,9 @@ pub(super) async fn prepare(
         request => (request, BTreeMap::new(), None),
     };
     let planned = match request {
-        SyncRequest::AcquiredReferences { .. } => unreachable!("normalized above"),
+        SyncRequest::Migration { .. } | SyncRequest::AcquiredReferences { .. } => {
+            unreachable!("normalized above")
+        }
         SyncRequest::Supplied {
             resolution,
             content,
@@ -120,9 +144,10 @@ pub(super) async fn prepare(
                 config.resources.prepared,
                 move |cancel| {
                     let snapshot = ProjectReader::new(RecoveryReader::new(state))
-                        .capture_recorded_synchronization(
+                        .capture_recorded_synchronization_mode(
                             &project,
                             resolution.as_ref(),
+                            migration,
                             limits,
                             &cancel,
                         )?;

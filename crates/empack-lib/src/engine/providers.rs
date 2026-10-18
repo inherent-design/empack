@@ -13,6 +13,10 @@ use empack_core::{
 use std::{sync::Arc, time::Duration};
 
 mod addition;
+mod assessment;
+pub use assessment::{
+    DependencyAssessment, JointAssessment, ObservedVersion, UpdateAssessment, UpdateReason,
+};
 mod batch;
 pub use addition::{
     ProviderAddInput, ProviderAddition, ProviderAdditionOutcome, ProviderArchiveAddition,
@@ -27,7 +31,8 @@ pub use closure::{
 };
 mod compatible;
 pub use compatible::{
-    CompatibleRequest, CompatibleSelection, ReleaseChannel, ReleasePolicy, SelectionLimits,
+    CatalogAssessment, CompatibleRequest, CompatibleSelection, ReleaseChannel, ReleasePolicy,
+    SelectionLimits, SelectionObservation,
 };
 mod identify;
 mod modpack;

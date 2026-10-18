@@ -11,6 +11,7 @@ clients cannot directly publish caller-constructed file changes.
 | Add / Remove | Logical selectors, sources and explicit policy | Exact ownership changes and coherent intent/lock |
 | Sync | Intent and retained exact resolution | Satisfied intent without implicit upgrades |
 | Update | Selected author roots | Deliberately refreshed compatible resolution |
+| Sync (`Migration`) | Captured revision and explicit runtime/replacement candidate | Verified intent, bindings and lock publication |
 | AdoptObserved | Explicit observed content and identity evidence | Verified document changes without hidden installation |
 | Build | Consumer recipes and choices | Verified artifacts from one captured resolution |
 | InstallInstance | Exact release, destination, side and choices | Completed instance and durable ownership record |
@@ -29,6 +30,11 @@ executable; its optional server mode uses the completed release's typed entry po
 channel observations. `StageReleaseRequest` and `PublishChannelRequest` publish
 verified publisher artifacts. `AcknowledgeStoppedRuntime` clears captured runtime
 recovery evidence only after the operator's explicit stopped-process assertion.
+
+Read-only `ProviderCatalog::assess_updates` returns policy, compatibility and upstream
+observations with a separate joint closure result. It does not create an execution
+grant. Runtime migration uses `SyncRequest::Migration` and the ordinary preparation
+and publication lifecycle; see [assessment and migration](assessment.md).
 
 ## Lifecycle
 

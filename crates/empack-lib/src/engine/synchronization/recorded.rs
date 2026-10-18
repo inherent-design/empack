@@ -1,5 +1,5 @@
 //! Captured sources satisfy recorded slots without resolving new versions or downloading content.
-use super::{SynchronizationCandidate, native::SynchronizationPreparation};
+use super::native::SynchronizationPreparation;
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
@@ -68,11 +68,7 @@ impl RecordedInputs {
         cancel: &Cancellation,
     ) -> Result<Self> {
         let workspace = snapshot.workspace();
-        let candidate = SynchronizationCandidate::prepare_input(
-            workspace.intent(),
-            workspace.prior_lock(),
-            resolution.as_ref(),
-        )?;
+        let candidate = snapshot.synchronization_candidate(resolution.as_ref())?;
         let mut content = BTreeMap::new();
         let mut local = Vec::new();
         let mut archives = BTreeMap::<PortableRelPath, Vec<FileInput>>::new();
