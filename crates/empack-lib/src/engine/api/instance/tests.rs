@@ -20,6 +20,13 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
         .iter()
         .map(|(key, path, bytes, policy)| {
             let file = ReleaseFile {
+                world_root: match path.split('/').collect::<Vec<_>>().as_slice() {
+                    ["saves", name, _, ..] => Some(format!("saves/{name}")),
+                    [root @ ("world" | "world_nether" | "world_the_end"), _, ..] => {
+                        Some((*root).into())
+                    }
+                    _ => None,
+                },
                 key: (*key).into(),
                 destination: (*path).into(),
                 layer: ReleaseLayer::Common,
@@ -57,7 +64,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
         schema: 1,
         pack: "fixture".into(),
         version: "1".into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -70,7 +77,7 @@ fn request(files: &[(&str, &str, &[u8], FilePolicy)]) -> InstallInstanceRequest 
     let selected = release::trust::SelectedSnapshot::select(
         release.bytes(),
         release.id(),
-        &semver::Version::parse("0.6.0-beta").unwrap(),
+        &semver::Version::parse("0.7.0-alpha").unwrap(),
     )
     .unwrap();
     InstallInstanceRequest {
@@ -257,7 +264,7 @@ fn replace_document(
         release::trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.6.0-beta").unwrap(),
+            &semver::Version::parse("0.7.0-alpha").unwrap(),
         )
         .unwrap(),
     );
@@ -685,6 +692,7 @@ async fn provider_world_archive_downloads_once_and_verifies_each_member() {
         ]);
         let mut document = input.release.release().document().clone();
         for file in &mut document.files {
+            file.world_root = Some("world".into());
             file.source = ReleaseSource::ProviderArchiveMember {
                 archive: ReleaseArchiveSource {
                     selection: ReleaseSelection {
@@ -1366,7 +1374,7 @@ async fn byte_identical_conflict_resolution_still_checks_source_assertions() {
         release::trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.6.0-beta").unwrap(),
+            &semver::Version::parse("0.7.0-alpha").unwrap(),
         )
         .unwrap(),
     );
@@ -2034,5 +2042,194 @@ async fn server_release_updates_runtime_and_rolls_back_without_touching_user_dat
         fs::read(root.path().join("game/world/level.dat")).unwrap(),
         b"played"
     );
+    engine.shutdown().await;
+}
+
+fn world_request(files: &[(&str, &str, &[u8], FilePolicy)], world: &str) -> InstallInstanceRequest {
+    let mut request = request(files);
+    let mut document = request.release.release().document().clone();
+    for file in &mut document.files {
+        if file.destination.starts_with(&format!("{world}/")) {
+            file.world_root = Some(world.into());
+        }
+    }
+    let release = DecodedRelease::encode(document).unwrap();
+    request.release = SelectedRelease::Snapshot(
+        release::trust::SelectedSnapshot::select(
+            release.bytes(),
+            release.id(),
+            &semver::Version::parse("0.7.0-alpha").unwrap(),
+        )
+        .unwrap(),
+    );
+    request
+}
+
+#[tokio::test]
+async fn initialized_world_groups_survive_update_repair_removal_and_rollback() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let first = || {
+        world_request(
+            &[
+                (
+                    "level",
+                    "custom/adventure/level.dat",
+                    b"original",
+                    FilePolicy::Seed,
+                ),
+                (
+                    "region",
+                    "custom/adventure/region/a.mca",
+                    b"original region",
+                    FilePolicy::Seed,
+                ),
+            ],
+            "custom/adventure",
+        )
+    };
+    let second = || {
+        world_request(
+            &[
+                (
+                    "level",
+                    "custom/adventure/level.dat",
+                    b"new template",
+                    FilePolicy::Seed,
+                ),
+                (
+                    "region",
+                    "custom/adventure/region/a.mca",
+                    b"changed template",
+                    FilePolicy::Seed,
+                ),
+                (
+                    "new-region",
+                    "custom/adventure/region/b.mca",
+                    b"injected region",
+                    FilePolicy::Seed,
+                ),
+                (
+                    "configuration",
+                    "config/new.toml",
+                    b"default",
+                    FilePolicy::Seed,
+                ),
+            ],
+            "custom/adventure",
+        )
+    };
+    let initial = apply(&engine, root.path(), first()).await;
+    assert_eq!(initial.initialized_worlds, ["custom/adventure"]);
+    let world = root.path().join("game/custom/adventure");
+    fs::write(world.join("level.dat"), b"played").unwrap();
+    fs::remove_file(world.join("region/a.mca")).unwrap();
+    apply(&engine, root.path(), second()).await;
+    assert_eq!(fs::read(world.join("level.dat")).unwrap(), b"played");
+    assert!(!world.join("region/a.mca").exists());
+    assert!(!world.join("region/b.mca").exists());
+    assert_eq!(
+        fs::read(root.path().join("game/config/new.toml")).unwrap(),
+        b"default"
+    );
+    let mut repair = second();
+    repair.action = crate::engine::instance::InstanceAction::Repair;
+    apply(&engine, root.path(), repair).await;
+    assert!(!world.join("region/a.mca").exists());
+    let mut rollback = first();
+    rollback.action = crate::engine::instance::InstanceAction::Rollback;
+    apply(&engine, root.path(), rollback).await;
+    assert_eq!(fs::read(world.join("level.dat")).unwrap(), b"played");
+    assert!(!world.join("region/a.mca").exists());
+    // Removing the entire world and omitting it from an intermediate release never grants re-seeding.
+    fs::remove_dir_all(&world).unwrap();
+    apply(&engine, root.path(), request(&[])).await;
+    apply(&engine, root.path(), second()).await;
+    assert!(!world.exists());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn preexisting_custom_world_is_preserved_without_inspecting_its_members() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let world = root.path().join("game/custom/adventure");
+    fs::create_dir_all(&world).unwrap();
+    fs::write(world.join("played.dat"), b"user data").unwrap();
+    let record = apply(
+        &engine,
+        root.path(),
+        world_request(
+            &[
+                (
+                    "level",
+                    "custom/adventure/level.dat",
+                    b"seed",
+                    FilePolicy::Seed,
+                ),
+                (
+                    "region",
+                    "custom/adventure/region/a.mca",
+                    b"seed",
+                    FilePolicy::Seed,
+                ),
+            ],
+            "custom/adventure",
+        ),
+    )
+    .await;
+    assert_eq!(record.initialized_worlds, ["custom/adventure"]);
+    assert_eq!(fs::read(world.join("played.dat")).unwrap(), b"user data");
+    assert!(!world.join("level.dat").exists());
+    assert!(!world.join("region").exists());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn late_world_creation_invalidates_initialization_without_adding_members() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let input = world_request(
+        &[(
+            "level",
+            "custom/adventure/level.dat",
+            b"seed",
+            FilePolicy::Seed,
+        )],
+        "custom/adventure",
+    );
+    let Preparation::Ready(prepared) = engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("expected prepared world")
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+        replacement: prepared.view().replacement(),
+    };
+    let world = root.path().join("game/custom/adventure");
+    fs::create_dir_all(&world).unwrap();
+    fs::write(world.join("played.dat"), b"created after preview").unwrap();
+    let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = operation.wait().await;
+    assert!(
+        matches!(
+            &*outcome,
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+        ),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        fs::read(world.join("played.dat")).unwrap(),
+        b"created after preview"
+    );
+    assert!(!world.join("level.dat").exists());
+    assert!(!root.path().join(".empack/instance.json").exists());
+    engine.release_completed(operation.id());
     engine.shutdown().await;
 }

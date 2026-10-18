@@ -10,7 +10,7 @@ fn source(root: &Path, assertions: Vec<SourceDigest>) -> DecodedRelease {
         schema: 1,
         pack: "published".into(),
         version: "1".into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -18,6 +18,7 @@ fn source(root: &Path, assertions: Vec<SourceDigest>) -> DecodedRelease {
         },
         choices: vec![],
         files: vec![ReleaseFile {
+            world_root: None,
             key: "config".into(),
             destination: "config/example.toml".into(),
             layer: ReleaseLayer::Common,
@@ -104,7 +105,7 @@ async fn immutable_release_staging_verifies_assets_signatures_and_republication(
             .release(
                 &encoded,
                 release.id(),
-                &semver::Version::parse("0.6.0-beta").unwrap()
+                &semver::Version::parse("0.7.0-alpha").unwrap()
             )
             .unwrap()
             .release()
@@ -324,7 +325,7 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
                     &pointer,
                     "stable",
                     now,
-                    &semver::Version::parse("0.6.0-beta").unwrap(),
+                    &semver::Version::parse("0.7.0-alpha").unwrap(),
                     None
                 )
                 .unwrap()
@@ -372,7 +373,7 @@ fn expired_publisher_pointer_retains_ordering_without_update_authority() {
         channel: "stable".into(),
         sequence: 4,
         expires: 1_700_000_000,
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         release: ChannelRelease {
             id: "a".repeat(64),
             url: "https://publisher.test/release.json".into(),
@@ -390,7 +391,7 @@ fn expired_publisher_pointer_retains_ordering_without_update_authority() {
                 &bytes,
                 "stable",
                 1_800_000_000,
-                &semver::Version::parse("0.6.0-beta").unwrap(),
+                &semver::Version::parse("0.7.0-alpha").unwrap(),
                 None
             )
             .is_err()

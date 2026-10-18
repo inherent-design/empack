@@ -45,7 +45,7 @@ impl NativeReleaseOptions {
         Ok(Self {
             require_subscription: false,
             pack: native.pack_id.clone(),
-            minimum_engine: ">=0.6.0-beta".into(),
+            minimum_engine: ">=0.7.0-alpha".into(),
             java_major: native.java_major,
             delivery: Delivery::References,
             environments: Environments::Both,
@@ -150,6 +150,7 @@ impl NativeReleasePlan {
                 },
             );
             document.files.push(ReleaseFile {
+                world_root: None,
                 key: logical_key(&["runtime", destination.as_str()])?,
                 destination: destination.as_str().into(),
                 layer: ReleaseLayer::Server,
@@ -288,6 +289,7 @@ impl NativeReleasePlan {
                     let policy = policy(&options, destination, dependency.kind)?;
                     let layer = layer(placement.layer);
                     files.push(ReleaseFile {
+                        world_root: None,
                         key: logical_key(&[
                             "dependency",
                             key.as_str(),
@@ -352,6 +354,7 @@ impl NativeReleasePlan {
             );
             let layer = layer(source.layer);
             files.push(ReleaseFile {
+                world_root: None,
                 key: logical_key(&["source", layer_name(layer), destination.as_str()])?,
                 destination: destination.as_str().into(),
                 layer,
@@ -482,6 +485,7 @@ impl NativeReleasePlan {
                 );
             }
             files.push(ReleaseFile {
+                world_root: None,
                 key,
                 destination: destination.as_str().into(),
                 layer: ReleaseLayer::Common,
@@ -501,12 +505,25 @@ impl NativeReleasePlan {
     }
     fn finish(
         project: &ResolvedProject,
-        files: Vec<ReleaseFile>,
+        mut files: Vec<ReleaseFile>,
         assets: BTreeMap<PortableRelPath, AcquiredBuildFile>,
         choices: BTreeMap<String, ReleaseChoice>,
-        options: NativeReleaseOptions,
+        mut options: NativeReleaseOptions,
         inventory: BuildInventory,
     ) -> Result<Self> {
+        let world_roots = world_roots(project)?;
+        for file in &mut files {
+            file.world_root = world_roots
+                .get(&file.destination)
+                .cloned()
+                .or_else(|| conventional_world_root(&file.destination));
+        }
+        if files.iter().any(|file| file.world_root.is_some()) {
+            // Older engines must not apply per-file seed semantics to a world group.
+            let required = format!("{}, >=0.7.0-alpha", options.minimum_engine);
+            semver::VersionReq::parse(&required)?;
+            options.minimum_engine = required;
+        }
         // Reapply stable-locator and strict semantic checks to programmatically supplied models.
         DocumentCodec.encode_lock(project)?;
         let runtime = &project.lock().runtime;
@@ -881,6 +898,43 @@ fn observed(file: &AcquiredBuildFile) -> Representation {
     }
 }
 
+fn world_roots(project: &ResolvedProject) -> Result<BTreeMap<String, String>> {
+    let mut roots = BTreeMap::new();
+    for dependency in project
+        .lock()
+        .dependencies
+        .values()
+        .filter(|d| d.kind == ContentKind::World)
+    {
+        for file in dependency.files.as_slice() {
+            for place in file.placements.as_slice() {
+                let destination = place.destination.relative().as_str();
+                let suffix = format!("/{}", file.slot.as_str());
+                let root = destination
+                    .strip_suffix(&suffix)
+                    .context("World placement needs a coherent member-relative root")?;
+                validate_world_root(root)?;
+                if let Some(previous) = roots.insert(destination.to_owned(), root.to_owned()) {
+                    ensure!(
+                        previous == root,
+                        "World destination belongs to competing initialization roots"
+                    );
+                }
+            }
+        }
+    }
+    Ok(roots)
+}
+fn conventional_world_root(destination: &str) -> Option<String> {
+    // Conventional source trees have no dependency role; normalize them into explicit wire groups.
+    let parts: Vec<_> = destination.split('/').collect();
+    match parts.as_slice() {
+        ["saves", name, _, ..] => Some(format!("saves/{name}")),
+        [root @ ("world" | "world_nether" | "world_the_end"), _, ..] => Some((*root).into()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -912,7 +966,7 @@ mod tests {
         NativeReleaseOptions {
             require_subscription: false,
             pack: "stable-id".into(),
-            minimum_engine: ">=0.6.0-beta".into(),
+            minimum_engine: ">=0.7.0-alpha".into(),
             java_major: 17,
             delivery,
             environments: Environments::Both,
@@ -1060,6 +1114,64 @@ mod tests {
         );
     }
     #[test]
+    fn custom_world_members_export_one_explicit_initialization_group() {
+        use empack_core::model::*;
+        let base = crate::engine::mrpack::tests::project(false, false);
+        let mut intent = base.intent().clone();
+        let mut lock = base.lock().clone();
+        let key = DependencyKey::parse("assets").unwrap();
+        let dependency = lock.dependencies.get_mut(&key).unwrap();
+        dependency.kind = ContentKind::World;
+        let mut files = dependency.files.as_slice().to_vec();
+        for (file, member) in files.iter_mut().zip(["level.dat", "region/a.mca"]) {
+            file.slot = FileSlot::parse(member).unwrap();
+            let mut place = file.placements.as_slice()[0].clone();
+            place.destination =
+                InstallDestination::parse(&format!("custom/adventure/{member}")).unwrap();
+            file.placements = NonEmpty::new(vec![place]).unwrap();
+        }
+        dependency.files = NonEmpty::new(files).unwrap();
+        let root = intent.roots.get_mut(&key).unwrap();
+        root.kind = ContentKind::World;
+        root.placement = PlacementIntent::ByFile(
+            dependency
+                .files
+                .as_slice()
+                .iter()
+                .map(|f| (f.slot.clone(), f.placements.clone()))
+                .collect(),
+        );
+        let encoded = DocumentCodec.encode_authoring(&intent).unwrap();
+        let decoded = DocumentCodec
+            .decode_authoring(&encoded.intent, encoded.bindings.as_deref(), "world")
+            .unwrap();
+        lock.intent_revision = decoded.semantic_revision();
+        let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+        let plan = NativeReleasePlan::prepare(
+            &project,
+            &acquisitions(&project),
+            vec![],
+            options(Delivery::Bundled),
+        )
+        .unwrap();
+        assert!(
+            plan.release()
+                .document()
+                .files
+                .iter()
+                .all(|f| f.world_root.as_deref() == Some("custom/adventure")
+                    && f.policy == FilePolicy::Seed)
+        );
+        let required =
+            semver::VersionReq::parse(&plan.release().document().minimum_engine).unwrap();
+        assert!(!required.matches(&semver::Version::parse("0.6.0-beta").unwrap()));
+        assert!(
+            required
+                .matches(&semver::Version::parse(crate::engine::compatibility_version()).unwrap())
+        );
+    }
+
+    #[test]
     fn archive_assertions_are_distinct_from_member_assertions_and_bundled_bytes() {
         let mut document = super::super::tests::document();
         document.files[0].source = ReleaseSource::ProviderArchiveMember {
@@ -1080,6 +1192,8 @@ mod tests {
             },
             member: "world/level.dat".into(),
         };
+        document.files[0].destination = "custom/world/level.dat".into();
+        document.files[0].world_root = Some("custom/world".into());
         document.files[0].asset = Some("assets/member".into());
         let release = DecodedRelease::encode(document.clone()).unwrap();
         assert!(

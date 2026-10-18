@@ -17,7 +17,7 @@ fn observe(key: &SigningKey, sequence: u64, release: &str) -> SubscriptionReques
         channel: "stable".into(),
         sequence,
         expires: 2_000_000_060,
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         release: ChannelRelease {
             id: release.into(),
             url: "https://publisher.test/release.json".into(),
@@ -27,7 +27,7 @@ fn observe(key: &SigningKey, sequence: u64, release: &str) -> SubscriptionReques
     SubscriptionRequest::Observe {
         envelope: sign(EnvelopeKind::Channel, &document.encode().unwrap(), &[key]).unwrap(),
         now: 2_000_000_000,
-        engine: semver::Version::parse("0.6.0-beta").unwrap(),
+        engine: semver::Version::parse("0.7.0-alpha").unwrap(),
     }
 }
 async fn apply(engine: &Engine, root: &Path, request: SubscriptionRequest) -> SubscriptionRecord {
@@ -107,7 +107,7 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
         rotated
             .authenticated_channel(
                 2_000_000_000,
-                &semver::Version::parse("0.6.0-beta").unwrap()
+                &semver::Version::parse("0.7.0-alpha").unwrap()
             )
             .is_err(),
         "Retained metadata must be reverified after key replacement"
@@ -130,7 +130,7 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
         disabled
             .authenticated_channel(
                 2_000_000_000,
-                &semver::Version::parse("0.6.0-beta").unwrap()
+                &semver::Version::parse("0.7.0-alpha").unwrap()
             )
             .is_err()
     );
@@ -194,7 +194,7 @@ fn native_release(key: &SigningKey, version: &str) -> (release::DecodedRelease, 
         schema: 1,
         pack: "fixture".into(),
         version: version.into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         runtime: release::ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: release::ReleaseLoader::Vanilla,
@@ -233,7 +233,7 @@ async fn subscribed_selection_binds_current_keys_floor_and_exact_signed_release(
     let other = SigningKey::from_bytes(&[12; 32]);
     let (a, signed_a) = native_release(&key, "a");
     let (b, signed_b) = native_release(&key, "b");
-    let version = semver::Version::parse("0.6.0-beta").unwrap();
+    let version = semver::Version::parse("0.7.0-alpha").unwrap();
     let select = |bytes: &[u8]| {
         select_release(
             root.path(),
@@ -393,6 +393,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
         apply(&engine, root.path(), enroll(&key)).await;
         let mut document = native_release(&key, "remote").0.document().clone();
         document.files.push(ReleaseFile {
+            world_root: None,
             key: "mod".into(),
             destination: "mods/a.jar".into(),
             layer: ReleaseLayer::Common,
@@ -442,7 +443,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             channel: "stable".into(),
             sequence: 1,
             expires: now + 600,
-            minimum_engine: ">=0.6.0-beta".into(),
+            minimum_engine: ">=0.7.0-alpha".into(),
             release: ChannelRelease {
                 id: release.id().into(),
                 url: "https://publisher.test/release.json".into(),
@@ -457,7 +458,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             SubscriptionRequest::Observe {
                 envelope: channel_bytes,
                 now,
-                engine: semver::Version::parse("0.6.0-beta").unwrap(),
+                engine: semver::Version::parse("0.7.0-alpha").unwrap(),
             },
         )
         .await;
@@ -476,7 +477,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
                     selected,
                     state,
                     &transport,
-                    semver::Version::parse("0.6.0-beta").unwrap(),
+                    semver::Version::parse("0.7.0-alpha").unwrap(),
                 )
                 .await
                 .map(|proof| proof.map(std::sync::Arc::new)))
@@ -564,7 +565,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             let snapshot = crate::engine::release::trust::SelectedSnapshot::select(
                 release.bytes(),
                 release.id(),
-                &semver::Version::parse("0.6.0-beta").unwrap(),
+                &semver::Version::parse("0.7.0-alpha").unwrap(),
             )
             .unwrap();
             let input = InstallInstanceRequest {
@@ -636,6 +637,7 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
     let (empty, _) = native_release(&key, "manual");
     let mut document = empty.document().clone();
     document.files.push(ReleaseFile {
+        world_root: None,
         key: "mod".into(),
         destination: "mods/a.jar".into(),
         layer: ReleaseLayer::Common,
@@ -666,7 +668,7 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
         channel: "stable".into(),
         sequence: 1,
         expires: now + 3600,
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         release: ChannelRelease {
             id: release.id().into(),
             url: "https://publisher.test/release.json".into(),
@@ -679,7 +681,7 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
         SubscriptionRequest::Observe {
             envelope: sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap(),
             now,
-            engine: semver::Version::parse("0.6.0-beta").unwrap(),
+            engine: semver::Version::parse("0.7.0-alpha").unwrap(),
         },
     )
     .await;
@@ -687,7 +689,7 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
         root.path(),
         &envelope,
         now,
-        &semver::Version::parse("0.6.0-beta").unwrap(),
+        &semver::Version::parse("0.7.0-alpha").unwrap(),
         RecoveryReader::new(state.clone()),
         &Default::default(),
     )

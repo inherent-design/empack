@@ -153,11 +153,7 @@ async fn install_with_transport(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-        "0.6.0-beta"
-    } else {
-        env!("CARGO_PKG_VERSION")
-    };
+    let version = crate::engine::compatibility_version();
     let version = semver::Version::parse(version)?;
     enum ReleaseInput {
         Snapshot(Box<crate::engine::runtime::RetainedOutput<DecodedRelease>>),
@@ -506,11 +502,7 @@ async fn maintain(
     let state = state_root(session.config().app_config(), &invocation)?;
     let inspected = inspect(session, root.clone(), release, state).await?;
     let (record, decoded) = &*inspected;
-    let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-        "0.6.0-beta"
-    } else {
-        env!("CARGO_PKG_VERSION")
-    };
+    let version = crate::engine::compatibility_version();
     let selected = SelectedSnapshot::select(
         decoded.bytes(),
         decoded.id(),
@@ -684,11 +676,7 @@ async fn subscription_with_transport(
                 scope.accept(work.wait().await?)?.transpose()
             })
             .await?;
-            let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-                "0.6.0-beta"
-            } else {
-                env!("CARGO_PKG_VERSION")
-            };
+            let version = crate::engine::compatibility_version();
             SubscriptionRequest::Observe {
                 envelope: bytes.iter().copied().collect(),
                 now: std::time::SystemTime::now()
@@ -728,7 +716,7 @@ async fn subscription_with_transport(
         }
         if observing {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs().try_into()?;
-            let channel = view.record.authenticated_channel(now, &semver::Version::parse(if env!("CARGO_PKG_VERSION") == "0.0.0-dev" { "0.6.0-beta" } else { env!("CARGO_PKG_VERSION") })?)?;
+            let channel = view.record.authenticated_channel(now, &semver::Version::parse(crate::engine::compatibility_version())?)?;
             session.display().status().info(&format!("Offered release {}; sequence {}; expires {} UTC Unix seconds; update owner: enrolled publisher via empack", channel.document().release.id, channel.document().sequence, channel.document().expires));
             session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
         }

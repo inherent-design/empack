@@ -437,7 +437,7 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
                             SelectedSnapshot::select(
                                 release.bytes(),
                                 release.id(),
-                                &semver::Version::parse("0.6.0-beta").unwrap(),
+                                &semver::Version::parse("0.7.0-alpha").unwrap(),
                             )
                             .unwrap(),
                         ),

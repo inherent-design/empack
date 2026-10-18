@@ -41,6 +41,7 @@ fn runtime_fixture() {
 }
 fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
     let file = ReleaseFile {
+        world_root: None,
         key: "mod".into(),
         destination: "mods/a.jar".into(),
         layer: ReleaseLayer::Common,
@@ -72,7 +73,7 @@ fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
         schema: 1,
         pack: "launch".into(),
         version: "1".into(),
-        minimum_engine: ">=0.6.0-beta".into(),
+        minimum_engine: ">=0.7.0-alpha".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -90,7 +91,7 @@ fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
             trust::SelectedSnapshot::select(
                 payload.bytes(),
                 payload.id(),
-                &semver::Version::parse("0.6.0-beta").unwrap(),
+                &semver::Version::parse("0.7.0-alpha").unwrap(),
             )
             .unwrap(),
         ),
@@ -271,7 +272,7 @@ async fn empty_native_installation_has_a_launchable_owned_directory() {
         trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.6.0-beta").unwrap(),
+            &semver::Version::parse("0.7.0-alpha").unwrap(),
         )
         .unwrap(),
     );
@@ -475,7 +476,7 @@ async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
         trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.6.0-beta").unwrap(),
+            &semver::Version::parse("0.7.0-alpha").unwrap(),
         )
         .unwrap(),
     );
@@ -552,7 +553,7 @@ async fn java_validation_requires_approval_and_retires_before_rejecting_old_java
         trust::SelectedSnapshot::select(
             release.bytes(),
             release.id(),
-            &semver::Version::parse("0.6.0-beta").unwrap(),
+            &semver::Version::parse("0.7.0-alpha").unwrap(),
         )
         .unwrap(),
     );
