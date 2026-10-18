@@ -112,8 +112,9 @@ Bindings refer to dependency keys and exact logical roles. For provider files,
 omits that declaration. Multiple primaries are ambiguous. `role:<name>` selects
 one provider-declared companion role. `filename:<name>` explicitly selects an
 exact, version-sensitive filename; bare filename keys retain that meaning.
-Primary and declared-role selectors remain in intent and the lock across filename
-changes. Sync, update, adoption and migration share this interpretation. Archive-root mappings
+Primary and declared-role selectors remain in intent and the lock's logical slot
+across filename changes. The acquisition record separately retains the exact
+provider filename for that selection, including export placement verification. Sync, update, adoption and migration share this interpretation. Archive-root mappings
 use `placement.archive-root`; local multi-file sources use `source-members`.
 No filename heuristic chooses a replacement role after an update. Missing or
 ambiguous roles must be resolved before a candidate is valid. Conflicting inline

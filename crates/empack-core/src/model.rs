@@ -521,7 +521,8 @@ pub enum AcquisitionSpec {
     Provider {
         /// Exact owning selection.
         pin: ResolvedPin,
-        /// Named file within a possibly multi-file provider version.
+        /// Exact provider filename or selector within this version, independent of the
+        /// author-facing ResolvedFile::slot. Native resolution records the returned filename.
         slot: FileSlot,
         /// Stable, credential-free locators.
         alternatives: Vec<String>,
@@ -877,9 +878,9 @@ impl ResolutionLock {
                 if file.expected.digests.is_none() && file.expected.accepted_observation.is_none() {
                     return Err(invalid("Selected file lacks expected content evidence"));
                 }
-                if let AcquisitionSpec::Provider { pin, slot, .. } = &file.acquisition {
+                if let AcquisitionSpec::Provider { pin, .. } = &file.acquisition {
                     pin.validate()?;
-                    if dependency.selected.as_ref() != Some(pin) || slot != &file.slot {
+                    if dependency.selected.as_ref() != Some(pin) {
                         return Err(invalid("File selection differs from owning dependency"));
                     }
                 }

@@ -540,6 +540,43 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
                 .contains("mods/relocated-library.jar")
         );
     }
+    if case == LibraryCase::Required {
+        // Equal provider pins and placements must not hide changed bytes or acquisition.
+        let mut lock = next.lock().clone();
+        let dependency = lock
+            .dependencies
+            .get_mut(&DependencyKey::parse("library1").unwrap())
+            .unwrap();
+        let mut files = dependency.files.as_slice().to_vec();
+        files[0].expected.size = Some(123456);
+        files[0].expected.accepted_observation =
+            Some(empack_core::digest::ContentId::from_sha256([42; 32]));
+        let AcquisitionSpec::Provider { alternatives, .. } = &mut files[0].acquisition else {
+            panic!()
+        };
+        *alternatives = vec!["https://example.org/revised-library.jar".into()];
+        dependency.files = NonEmpty::new(files).unwrap();
+        let changed =
+            ResolvedProject::validate(next.intent().clone(), lock, next.lock().intent_revision)
+                .unwrap();
+        let delta = delta::MigrationDelta::between(next.intent(), next.lock(), &changed);
+        let report = serde_json::to_value(&delta).unwrap();
+        let row = report["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["key"] == "library1")
+            .unwrap();
+        assert_eq!(row["change"], "changed");
+        assert_eq!(row["before"]["selection"], row["after"]["selection"]);
+        assert_eq!(row["before"]["placements"], row["after"]["placements"]);
+        assert_ne!(row["before"]["files"], row["after"]["files"]);
+        assert_eq!(row["after"]["files"][0]["expected"]["size"], 123456);
+        let text = delta.text_lines().join("\n");
+        assert!(text.contains("123456"));
+        assert!(text.contains("revised-library.jar"));
+        assert!(text.contains(&"2a".repeat(32)));
+    }
     let after = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
     synchronization::synchronize(&session(root.path(), false), false)
         .await

@@ -546,7 +546,7 @@ fn normalize(
                     expected: file.expected.clone(),
                     acquisition: AcquisitionSpec::Provider {
                         pin: selected.resolution.pin.clone(),
-                        slot,
+                        slot: FileSlot::parse(&file.filename)?,
                         alternatives: file.persistent_alternatives(),
                     },
                     provenance: Provenance {

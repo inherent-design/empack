@@ -15,7 +15,7 @@ pub(super) fn protect(
     mut snapshot: NativeSnapshot,
     limits: SnapshotLimits,
     cancel: &Cancellation,
-) -> Result<(Vec<String>, NativeSnapshot)> {
+) -> Result<(Vec<String>, BTreeSet<ManagedPath>, NativeSnapshot)> {
     let WorldInventories { old, incoming } = inventories;
     let mut initialized: BTreeSet<String> = previous
         .map(|record| record.initialized_worlds.iter().cloned().collect())
@@ -56,9 +56,14 @@ pub(super) fn protect(
                 || within_world(&file.destination, group)
         })
     };
+    let retired = old
+        .iter()
+        .filter(|(_, file)| preserve(file))
+        .map(|(target, _)| target.clone())
+        .collect();
     old.retain(|_, file| !preserve(file));
     incoming.retain(|_, file| !preserve(file));
-    Ok((initialized.into_iter().collect(), snapshot))
+    Ok((initialized.into_iter().collect(), retired, snapshot))
 }
 fn overlaps(a: &str, b: &str) -> bool {
     super::super::layout::collision_key(a) == super::super::layout::collision_key(b)

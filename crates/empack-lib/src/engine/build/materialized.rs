@@ -287,7 +287,9 @@ pub(super) fn reference_for_target(
     if super::curseforge::supports(target) {
         let selection = match &file.acquisition {
             AcquisitionSpec::Provider { pin, slot, .. } => Some((pin, slot)),
-            AcquisitionSpec::Manual { pin: Some(pin), .. } => Some((pin, &file.slot)),
+            AcquisitionSpec::Manual { pin: Some(_), .. } => anyhow::bail!(
+                "CurseForge export needs a resolved provider filename; synchronize this manual provider record before exporting"
+            ),
             _ => None,
         };
         if let Some((pin, slot)) = selection {

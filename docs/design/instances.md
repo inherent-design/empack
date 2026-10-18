@@ -134,7 +134,10 @@ state retains `initialized_worlds` across updates, repair, choice changes and
 rollback, including releases that omit the world. Deleting a member or the entire
 root does not authorize re-seeding. Protected subtrees are excluded from both
 acquisition and native member observation; new release files cannot fill holes.
-A newly initialized root's absence is revalidated before publication.
+A newly initialized root's absence is revalidated before publication. When a
+previously managed file becomes part of a protected world, its saved local-override
+record is retired with the managed ownership; its bytes stay untouched. Overrides
+outside that world retain their existing authority and validation.
 
 Existing worlds, saves,
 logs, player preferences and runtime-generated data are excluded from ordinary

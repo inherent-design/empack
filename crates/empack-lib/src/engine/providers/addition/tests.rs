@@ -1422,6 +1422,10 @@ async fn primary_binding_survives_provider_filename_changes() {
         .as_slice()[0];
     assert_eq!(file.slot.as_str(), "primary");
     assert_eq!(file.placements, places);
+    let AcquisitionSpec::Provider { slot, .. } = &file.acquisition else {
+        panic!()
+    };
+    assert_eq!(slot.as_str(), "menu-2.jar");
 }
 
 #[tokio::test]

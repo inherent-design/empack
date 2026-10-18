@@ -2233,3 +2233,84 @@ async fn late_world_creation_invalidates_initialization_without_adding_members()
     engine.release_completed(operation.id());
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn protected_world_retires_only_its_prior_local_overrides() {
+    use crate::engine::instance::{ConflictChoice, ConflictResolution};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(host.path().join("state"));
+    let original = || {
+        request(&[
+            (
+                "level",
+                "custom/adventure/level.dat",
+                b"template",
+                FilePolicy::Managed,
+            ),
+            ("config", "config/a", b"default", FilePolicy::Managed),
+        ])
+    };
+    apply(&engine, root.path(), original()).await;
+    fs::write(
+        root.path().join("game/custom/adventure/level.dat"),
+        b"played",
+    )
+    .unwrap();
+    fs::write(root.path().join("game/config/a"), b"settings").unwrap();
+    let mut preserved = original();
+    for destination in ["custom/adventure/level.dat", "config/a"] {
+        preserved.conflicts.push(ConflictResolution {
+            destination: destination.into(),
+            choice: ConflictChoice::Preserve,
+        });
+    }
+    assert_eq!(
+        apply(&engine, root.path(), preserved)
+            .await
+            .local_overrides
+            .len(),
+        2
+    );
+    let next = || {
+        world_request(
+            &[
+                (
+                    "level",
+                    "custom/adventure/level.dat",
+                    b"new world",
+                    FilePolicy::Seed,
+                ),
+                (
+                    "region",
+                    "custom/adventure/region/new.mca",
+                    b"new region",
+                    FilePolicy::Seed,
+                ),
+                ("config", "config/a", b"default", FilePolicy::Managed),
+            ],
+            "custom/adventure",
+        )
+    };
+    let record = apply(&engine, root.path(), next()).await;
+    assert_eq!(record.local_overrides.len(), 1);
+    assert_eq!(record.local_overrides[0].destination, "config/a");
+    let mut repair = next();
+    repair.action = InstanceAction::Repair;
+    apply(&engine, root.path(), repair).await;
+    assert_eq!(
+        fs::read(root.path().join("game/custom/adventure/level.dat")).unwrap(),
+        b"played"
+    );
+    assert!(
+        !root
+            .path()
+            .join("game/custom/adventure/region/new.mca")
+            .exists()
+    );
+    assert_eq!(
+        fs::read(root.path().join("game/config/a")).unwrap(),
+        b"settings"
+    );
+    engine.shutdown().await;
+}

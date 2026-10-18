@@ -650,7 +650,7 @@ pub(super) fn plan(
         .map(|(key, value)| ChoiceSelection { key, value })
         .collect();
     let mut incoming = project_files(release, side, layout, &choices)?;
-    let (initialized_worlds, updated_snapshot) = worlds::protect(
+    let (initialized_worlds, retired_world_targets, updated_snapshot) = worlds::protect(
         &root,
         layout,
         previous.as_ref(),
@@ -708,7 +708,7 @@ pub(super) fn plan(
             .chain(prism_profile.as_ref().map(|_| ManagedPath::PrismProfile)),
     )?;
     let mut resolutions = conflicts::resolutions(requested_conflicts, layout)?;
-    let old_overrides: BTreeMap<_, _> = previous
+    let mut old_overrides: BTreeMap<_, _> = previous
         .as_ref()
         .map(|record| {
             record
@@ -719,6 +719,7 @@ pub(super) fn plan(
         })
         .transpose()?
         .unwrap_or_default();
+    old_overrides.retain(|target, _| !retired_world_targets.contains(target));
     ensure!(
         old_overrides
             .keys()

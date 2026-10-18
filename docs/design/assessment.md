@@ -98,6 +98,11 @@ captured author + bindings + lock
     -> approval -> verified publication
 ```
 
+Each file's before/after evidence includes its logical role, expected size and digests,
+accepted content observation, acquisition source, and provenance. The report uses the
+lock's wire representation for these fields, so a changed source or byte assertion
+remains visible even when the provider pin and destination stay the same.
+
 `SyncRequest::Migration` carries a fresh `ProjectRevision`, resolved candidate and
 verified acquired content. Its constructor grants no write authority. Preparation
 rejects unrelated authoring changes, invalid retained selections and stale raw

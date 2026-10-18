@@ -63,6 +63,7 @@ struct DependencyState {
     kind: String,
     selection: Option<ObservedVersion>,
     placements: Vec<PlacementState>,
+    files: Vec<serde_json::Value>,
     reason_chain: Option<Vec<String>>,
     dependency_evidence: &'static str,
 }
@@ -177,6 +178,12 @@ fn state(
                         })
                 })
                 .collect(),
+            files: dependency
+                .files
+                .as_slice()
+                .iter()
+                .map(crate::engine::documents::file_evidence)
+                .collect(),
             reason_chain: chains.get(key).cloned(),
             dependency_evidence: match lock.coverage.get(key) {
                 Some(Coverage::CompleteForSelection) => "complete",
@@ -282,6 +289,15 @@ impl MigrationDelta {
                         "  {label}: {} [{} / {}] {pin}; dependency evidence: {}",
                         value.title, value.role, value.kind, value.dependency_evidence
                     ));
+                    for file in &value.files {
+                        lines.push(format!(
+                            "    file {}: expected {}; source {}; provenance {}",
+                            file["slot"].as_str().unwrap_or(""),
+                            file["expected"],
+                            file["acquisition"],
+                            file["provenance"]
+                        ));
+                    }
                     for placement in &value.placements {
                         lines.push(format!(
                             "    {} -> {} [{}; client={}; server={}]",
