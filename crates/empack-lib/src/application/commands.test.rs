@@ -595,6 +595,7 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
     }
     let build = Commands::Build(BuildArgs {
         targets: vec!["empack".into()],
+        ad_hoc: true,
         delivery: Some("bundled".into()),
         ..Default::default()
     });

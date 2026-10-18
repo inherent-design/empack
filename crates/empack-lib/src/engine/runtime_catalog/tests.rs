@@ -233,11 +233,10 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
         roots: BTreeMap::new(),
         layout: BTreeMap::new(),
         extensions: BTreeMap::new(),
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![Recipe::MODRINTH]).unwrap(),
-            archive: DistributionArchive::Zip,
-        },
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![Recipe::MODRINTH]).unwrap(),
+            DistributionArchive::Zip,
+        ),
     };
     let candidate = InitializeCandidate::new(intent, runtime.clone(), default_templates()).unwrap();
     assert_eq!(candidate.project().lock().runtime, runtime);

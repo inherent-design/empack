@@ -65,8 +65,7 @@ impl SavedFile {
 #[serde(deny_unknown_fields)]
 pub(super) struct SavedRecipe {
     clean: bool,
-    outputs: Vec<(serde_json::Value, String)>,
-    archive: String,
+    outputs: Vec<(serde_json::Value, String, String)>,
     optional: Optional,
     allow_optional_metadata_loss: bool,
     templates: Templates,
@@ -103,15 +102,10 @@ impl From<&BuildRequest> for SavedRecipe {
                     (
                         crate::engine::documents::recipe::encode(&output.target),
                         output.artifact.as_str().into(),
+                        crate::engine::documents::recipe::archive_name(output.archive).into(),
                     )
                 })
                 .collect(),
-            archive: match request.archive {
-                DistributionArchive::Zip => "zip",
-                DistributionArchive::TarGz => "tar-gz",
-                DistributionArchive::SevenZip => "7z",
-            }
-            .into(),
             optional: match &request.optional {
                 OptionalPolicy::Preserve => Optional::Preserve,
                 OptionalPolicy::Resolve {
@@ -158,20 +152,15 @@ impl SavedRecipe {
             outputs: NonEmpty::new(
                 self.outputs
                     .iter()
-                    .map(|(target, path)| {
+                    .map(|(target, path, archive)| {
                         Ok(BuildOutput {
+                            archive: crate::engine::documents::recipe::archive(archive)?,
                             target: crate::engine::documents::recipe::decode(target)?,
                             artifact: PortableRelPath::parse(path, PathSyntax::ArtifactName)?,
                         })
                     })
                     .collect::<Result<Vec<_>>>()?,
             )?,
-            archive: match self.archive.as_str() {
-                "zip" => DistributionArchive::Zip,
-                "tar-gz" => DistributionArchive::TarGz,
-                "7z" => DistributionArchive::SevenZip,
-                _ => anyhow::bail!("Unsupported saved archive format"),
-            },
             optional: match &self.optional {
                 Optional::Preserve => OptionalPolicy::Preserve,
                 Optional::Resolve {

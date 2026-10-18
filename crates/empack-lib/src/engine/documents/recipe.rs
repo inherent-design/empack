@@ -48,3 +48,37 @@ pub(crate) fn encode(recipe: &Recipe) -> Value {
         "updates": match recipe.update_authority() { UpdateAuthority::Snapshot => "snapshot", UpdateAuthority::Platform => "platform", UpdateAuthority::Empack => "empack" },
     })
 }
+
+pub(crate) fn archive(value: &str) -> Result<DistributionArchive> {
+    Ok(match value {
+        "zip" => DistributionArchive::Zip,
+        "tar.gz" => DistributionArchive::TarGz,
+        "7z" => DistributionArchive::SevenZip,
+        _ => bail!("Unknown distribution archive"),
+    })
+}
+pub(crate) fn archive_name(value: DistributionArchive) -> &'static str {
+    match value {
+        DistributionArchive::Zip => "zip",
+        DistributionArchive::TarGz => "tar.gz",
+        DistributionArchive::SevenZip => "7z",
+    }
+}
+pub(crate) fn decode_profile(value: &Value) -> Result<BuildProfile> {
+    fields(
+        value,
+        &["consumer", "delivery", "environment", "updates", "format"],
+    )?;
+    let format = archive(text(required(value, "format")?)?)?;
+    let mut recipe = value.clone();
+    recipe.as_object_mut().unwrap().remove("format");
+    Ok(BuildProfile {
+        recipe: decode(&recipe)?,
+        archive: format,
+    })
+}
+pub(crate) fn encode_profile(value: &BuildProfile) -> Value {
+    let mut recipe = encode(&value.recipe);
+    recipe["format"] = json!(archive_name(value.archive));
+    recipe
+}

@@ -115,7 +115,7 @@ pub(super) fn collision_key(path: &str) -> String {
 /// Conservative portable collision policy: canonical Unicode caseless matching.
 /// Preserve original names; a collision is an error, never a rename or overwrite.
 #[derive(Default)]
-pub(super) struct CollisionIndex {
+pub(crate) struct CollisionIndex {
     spelling: BTreeMap<String, String>,
     files: BTreeSet<String>,
 }

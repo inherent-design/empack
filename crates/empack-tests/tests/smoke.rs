@@ -928,3 +928,43 @@ fn smoke_independent_add_preserves_unowned_directory_and_installs_unrelated_file
             .contains_key(&empack_core::model::DependencyKey::parse("ready").unwrap())
     );
 }
+
+#[test]
+fn smoke_build_explanation_is_json_and_preserves_missing_lock_workspace() {
+    let project = initialized();
+    fs::remove_file(project.dir().join("empack.lock")).unwrap();
+    let before = snapshot(&project);
+    let output = command(&project)
+        .args([
+            "build",
+            "--profile",
+            "prism",
+            "--explain",
+            "--json",
+            "--format",
+            "tar.gz",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["lock"], "missing");
+    assert_eq!(report["optional_policy"]["mode"], "preserve");
+    assert_eq!(report["profiles"][0]["recipe"]["format"], "tar.gz");
+    assert_eq!(report["profiles"][0]["origins"]["format"], "cli-override");
+    assert!(report["declared_manual_inputs"].is_null());
+    assert_eq!(snapshot(&project), before);
+    for args in [
+        vec!["build", "--profile", "prism", "server"],
+        vec!["build", "--continue", "--profile", "prism"],
+        vec!["build", "--json"],
+        vec!["build", "--ad-hoc"],
+        vec!["build", "curseforge", "--explain"],
+    ] {
+        command(&project).args(args).assert().failure();
+        assert_eq!(snapshot(&project), before);
+    }
+}

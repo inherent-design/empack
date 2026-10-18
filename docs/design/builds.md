@@ -38,12 +38,31 @@ snapshot mrpacks report domain ineligibility without rejecting a valid archive.
 Tar/7z output is permitted for directory distributions where supported;
 it must not be advertised as a launcher-importable ZIP.
 
-Authored `distribution.recipes` is a nonempty ordered list of objects. Each object
-requires `consumer`, `delivery` and `environment`; `updates` defaults to `snapshot`.
-Unknown fields, old target strings and unsupported combinations fail decoding.
-The exact four-field recipe survives planning, build receipts and restart requests.
-Deduplication compares the complete recipe, so delivery or authority changes never
-collapse into the same request.
+Authored `distribution.profiles` maps portable names to complete recipes. Each
+profile contains `consumer`, `delivery`, `environment`, `updates` and `format`.
+`distribution.defaults` is a nonempty ordered list of distinct profile names.
+Unknown fields, missing defaults and unsupported policy combinations fail decoding.
+Names contain 1 to 64 ASCII letters, digits, hyphens or underscores. Profiles have
+no inheritance or implicit relationship to other profiles.
+
+`build` selects the authored defaults. `build --profile NAME` selects that exact
+profile; it is repeatable. A consumer shorthand such as `build prism` selects the
+single configured Prism profile and preserves its delivery and update authority.
+Missing or ambiguous consumer matches require a profile name or explicit
+`--ad-hoc`. Ad hoc recipes use built-in snapshot defaults. CLI policy and format
+overrides apply only to the invocation. Modrinth and CurseForge always use ZIP,
+including when a mixed-consumer invocation requests another format.
+
+`build --explain` and `build --explain --json` resolve the same effective profiles
+and output names as execution without acquiring content or changing state. The
+schema-1 report identifies value origins, recipient requirements, optional policy,
+lock status and declared manual inputs. A missing or stale lock leaves input facts
+unknown. This report does not verify downloads or prove build readiness.
+
+Every `BuildOutput` carries its own archive format. Duplicate selections of the
+same profile are collapsed; distinct profiles with colliding output paths fail
+before acquisition. Saved continuation retains effective recipes, paths and formats.
+Author or binding edits invalidate the saved context instead of changing its recipes.
 
 Initialization and imports default to Modrinth references, bundled Prism and bundled
 server snapshots. Native reference consumers require an explicit stable pack identity

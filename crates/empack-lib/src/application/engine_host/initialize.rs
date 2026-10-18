@@ -207,15 +207,14 @@ async fn initialize_with_catalog(
         },
         roots: BTreeMap::new(),
         layout,
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![
                 Recipe::MODRINTH,
                 Recipe::PRISM_BUNDLED,
                 Recipe::SERVER_BUNDLED,
             ])?,
-            archive: DistributionArchive::Zip,
-        },
+            DistributionArchive::Zip,
+        ),
         extensions: BTreeMap::new(),
     };
     let candidate = InitializeCandidate::new(intent, runtime, default_templates())?;

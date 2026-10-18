@@ -375,15 +375,88 @@ pub struct NativeDistributionIntent {
     /// Exact destination ownership overrides; world content remains seed-only.
     pub policies: BTreeMap<PortableRelPath, crate::instance::FilePolicy>,
 }
-/// Distribution defaults and native publisher policy.
+/// A complete named consumer recipe, including its archive container.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildProfile {
+    /// Consumer, delivery, environment and update authority.
+    pub recipe: crate::distribution::Recipe,
+    /// Container used for this profile.
+    pub archive: DistributionArchive,
+}
+/// Authored profiles and their explicit default selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistributionIntent {
-    /// Native release settings; required when selecting the empack consumer.
+    /// Native pack identity and recipient runtime policy.
     pub native: Option<NativeDistributionIntent>,
-    /// Complete consumer policies in explicit default order.
-    pub recipes: NonEmpty<crate::distribution::Recipe>,
-    /// Archive container for standalone distributions.
-    pub archive: DistributionArchive,
+    /// Complete named profiles, without implicit inheritance.
+    pub profiles: BTreeMap<String, BuildProfile>,
+    /// Explicit ordered profile names selected without CLI selectors.
+    pub defaults: NonEmpty<String>,
+}
+impl DistributionIntent {
+    /// Seed named profiles when initializing or importing a project.
+    pub fn from_recipes(
+        recipes: NonEmpty<crate::distribution::Recipe>,
+        archive: DistributionArchive,
+    ) -> Self {
+        use crate::distribution::Consumer;
+        let mut profiles = BTreeMap::new();
+        let mut defaults = Vec::new();
+        for (index, recipe) in recipes.as_slice().iter().enumerate() {
+            let consumer = match recipe.consumer() {
+                Consumer::Modrinth => "modrinth",
+                Consumer::CurseForge => "curseforge",
+                Consumer::Prism => "prism",
+                Consumer::Server => "server",
+                Consumer::Empack => "empack",
+            };
+            let mut name = String::from(consumer);
+            if profiles.contains_key(&name) {
+                name = alloc::format!("{consumer}-{}", index + 1);
+            }
+            defaults.push(name.clone());
+            profiles.insert(
+                name,
+                BuildProfile {
+                    recipe: *recipe,
+                    archive,
+                },
+            );
+        }
+        Self {
+            native: None,
+            profiles,
+            defaults: NonEmpty::new(defaults).expect("nonempty recipes"),
+        }
+    }
+    /// Validate portable names and the complete default selection.
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if self.profiles.is_empty() || self.profiles.len() > 128 {
+            return Err(ModelError("Select one to 128 build profiles".into()));
+        }
+        for name in self.profiles.keys() {
+            if name.is_empty()
+                || name.len() > 64
+                || !name
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
+            {
+                return Err(ModelError(
+                    "Build profile names use 1–64 ASCII letters, digits, hyphens or underscores"
+                        .into(),
+                ));
+            }
+        }
+        let mut selected = BTreeSet::new();
+        for name in self.defaults.as_slice() {
+            if !self.profiles.contains_key(name) || !selected.insert(name) {
+                return Err(ModelError(
+                    "Default build profiles must exist and be unique".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 /// All currently supported standalone archive formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -627,6 +700,7 @@ impl ProjectIntent {
 
     /// Check source/policy combinations without imposing target-format restrictions.
     pub fn validate(&self) -> Result<(), ModelError> {
+        self.distribution.validate()?;
         if self
             .source_excludes
             .iter()

@@ -125,7 +125,7 @@ pub(super) fn read(selected: Selected, cancel: &Cancellation) -> Result<Option<L
     selected.check_binding()?;
     let record: record::Record =
         serde_json::from_slice(&bytes).context("Invalid pending build record")?;
-    ensure!(record.schema == 3, "Unsupported pending build schema");
+    ensure!(record.schema == 4, "Unsupported pending build schema");
     let snapshot = selected.capture(
         &[
             PortableRelPath::parse("empack.yml", PathSyntax::ProjectContent)?,

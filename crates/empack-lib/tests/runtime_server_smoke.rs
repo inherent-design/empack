@@ -150,7 +150,7 @@ async fn package_runtime(
     use empack_core::{distribution::Recipe, model::NonEmpty};
     use empack_core::{
         inventory::OptionalPolicy,
-        model::{DistributionArchive, ResolutionLock, ResolvedProject},
+        model::{ResolutionLock, ResolvedProject},
         path::{PathSyntax, PortableRelPath},
     };
     use empack_lib::engine::{
@@ -165,7 +165,7 @@ async fn package_runtime(
     let project = tempfile::tempdir()?;
     let host = tempfile::tempdir()?;
     let codec = DocumentCodec;
-    let mut intent = codec.decode_intent(b"schema: 4\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {recipes: [{consumer: server, delivery: bundled, environment: server, updates: snapshot}], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
+    let mut intent = codec.decode_intent(b"schema: 4\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {profiles: {server: {consumer: server, delivery: bundled, environment: server, updates: snapshot, format: zip}}, defaults: [server]}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
     intent.runtime.minecraft = runtime.minecraft.clone();
     intent.runtime.loader = runtime.loader;
     intent.runtime.loader_version = runtime.loader_version.clone();
@@ -277,6 +277,7 @@ async fn package_runtime(
     let request = BuildRequest {
         clean: false,
         outputs: NonEmpty::new(vec![BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: if managed {
                 Recipe::SERVER_REFERENCES
             } else {
@@ -284,7 +285,6 @@ async fn package_runtime(
             },
             artifact,
         }])?,
-        archive: DistributionArchive::Zip,
         optional: OptionalPolicy::Preserve,
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),

@@ -171,7 +171,7 @@ async fn publish_with_refreshed_locator(
         _ => anyhow::bail!("Resource fixture must use Modrinth"),
     };
     let intent_bytes = serde_json::to_vec(
-        &json!({"schema":4,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"recipes":[{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot"}],"archive":"zip"},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
+        &json!({"schema":4,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"profiles":{"prism":{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"zip"}},"defaults":["prism"]},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
     )?;
     let intent = DocumentCodec.decode_intent(&intent_bytes, "provider-smoke")?;
     let key = DependencyKey::parse("resources")?;
@@ -273,10 +273,10 @@ async fn publish_with_refreshed_locator(
     let request = BuildRequest {
         clean: false,
         outputs: NonEmpty::new(vec![BuildOutput {
+            archive: empack_core::model::DistributionArchive::Zip,
             target: Recipe::PRISM_BUNDLED,
             artifact: PortableRelPath::parse("client.zip", PathSyntax::ArtifactName)?,
         }])?,
-        archive: DistributionArchive::Zip,
         optional: OptionalPolicy::Preserve,
         mrpack_optional: OptionalConversion::RejectMetadataLoss,
         templates: TemplateOptions::default(),

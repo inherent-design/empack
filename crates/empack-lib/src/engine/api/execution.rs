@@ -208,14 +208,14 @@ async fn execute(
         for output in request.outputs.as_slice() {
             let artifact = output.artifact.clone();
             let client_options = || ClientOptions {
-                archive: request.archive,
+                archive: output.archive,
                 optional: request.optional.clone(),
                 templates: request.templates.clone(),
                 evidence,
                 limits: config.archive,
             };
             let server_options = || ServerOptions {
-                archive: request.archive,
+                archive: output.archive,
                 optional: request.optional.clone(),
                 templates: request.templates.clone(),
                 evidence,
@@ -238,7 +238,7 @@ async fn execute(
                     DistributionRequest::Native {
                         artifact,
                         recipe: output.target,
-                        archive: request.archive,
+                        archive: output.archive,
                         evidence,
                         limits: config.archive,
                     }

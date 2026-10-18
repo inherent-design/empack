@@ -31,11 +31,10 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
         },
         roots: BTreeMap::new(),
         layout: BTreeMap::from([(ContentKind::DataPack, path("custom-data"))]),
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![Recipe::MODRINTH, Recipe::PRISM_BUNDLED]).unwrap(),
-            archive: DistributionArchive::SevenZip,
-        },
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![Recipe::MODRINTH, Recipe::PRISM_BUNDLED]).unwrap(),
+            DistributionArchive::SevenZip,
+        ),
         extensions: BTreeMap::from([(
             "example.fixture".into(),
             ExtensionValue::Text("preserved".into()),
@@ -399,6 +398,7 @@ async fn initialized_project_builds_an_empty_mrpack_with_preserved_runtime() {
     ));
     let mut build = super::tests::request();
     build.outputs = NonEmpty::new(vec![BuildOutput {
+        archive: empack_core::model::DistributionArchive::Zip,
         target: Recipe::MODRINTH,
         artifact: path("empty.mrpack"),
     }])

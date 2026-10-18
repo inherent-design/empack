@@ -635,11 +635,10 @@ fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCan
         loader: None,
         acceptable_versions: vec![],
         layout: BTreeMap::new(),
-        distribution: DistributionIntent {
-            native: None,
-            recipes: NonEmpty::new(vec![Recipe::MODRINTH]).unwrap(),
-            archive: DistributionArchive::Zip,
-        },
+        distribution: DistributionIntent::from_recipes(
+            NonEmpty::new(vec![Recipe::MODRINTH]).unwrap(),
+            DistributionArchive::Zip,
+        ),
         files,
         exclude_auxiliary_members: false,
     }
