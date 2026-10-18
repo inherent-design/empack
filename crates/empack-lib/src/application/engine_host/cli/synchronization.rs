@@ -625,18 +625,7 @@ pub(super) fn provider_input(
         }
         VersionIntent::ContentPinned(_) => anyhow::bail!("Provider roots require provider pins"),
     };
-    let files = match &root.placement {
-        PlacementIntent::Automatic => ProviderFiles::Primary,
-        PlacementIntent::ByFile(files) => ProviderFiles::Placed(
-            files
-                .iter()
-                .map(|(slot, places)| (slot.as_str().to_owned(), places.clone()))
-                .collect(),
-        ),
-        PlacementIntent::Explicit(placements) | PlacementIntent::ArchiveRoot(placements) => {
-            ProviderFiles::PrimaryPlaced(placements.clone())
-        }
-    };
+    let files = ProviderFiles::from_placement(&root.placement);
     Ok(ProviderAddInput {
         selector,
         key: Some(key.clone()),

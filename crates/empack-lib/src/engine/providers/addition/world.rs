@@ -86,10 +86,7 @@ impl ProviderArchiveAddition {
                 continue;
             };
             let declared = selected.resolution.files.as_slice();
-            let primary = declared
-                .iter()
-                .find(|file| file.primary)
-                .unwrap_or(&declared[0]);
+            let primary = selected.resolution.select_file("primary")?;
             let file = match &choice.files {
                 ProviderFiles::Primary | ProviderFiles::PrimaryPlaced(_) => primary,
                 ProviderFiles::Named(names) => {
