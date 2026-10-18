@@ -227,9 +227,10 @@ fn author(root: &ProjectReadRoot, cancel: &Cancellation) -> Result<ContextStatus
     Ok(result)
 }
 fn instance(root: &ProjectReadRoot, cancel: &Cancellation) -> Result<ContextStatus> {
-    let record = super::instance::InstanceRecord::decode(
-        &read(root, ".empack/instance.json", cancel)?.context("No completed instance exists")?,
-    )?;
+    let Some(bytes) = read(root, ".empack/instance.json", cancel)? else {
+        return Ok(empty(WorkspaceContext::Instance));
+    };
+    let record = super::instance::InstanceRecord::decode(&bytes)?;
     ensure!(
         record.root == super::publication::root_key(root)?,
         "Instance belongs to another root"

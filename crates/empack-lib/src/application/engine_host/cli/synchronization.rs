@@ -57,10 +57,52 @@ async fn resume_with_services_selected(
     services: dependencies::AdditionServices,
     expected: Option<String>,
 ) -> Result<()> {
+    let resumed = load_selected(session, expected, services.files.transfer).await?;
+    let context = resumed.context.clone();
+    let migrating = resumed.migration;
+    let project = resumed.project.clone();
+    publish(
+        session,
+        project.clone(),
+        Some(project),
+        true,
+        services,
+        materialization::SyncInputs {
+            migration: migrating,
+            context,
+            resumed: Some(resumed),
+            files,
+            resolved: BTreeMap::new(),
+        },
+    )
+    .await
+}
+
+/// Determine availability from reverified retained bytes, never pending presentation labels.
+pub(in crate::application::engine_host) async fn retained_input_keys(
+    session: &dyn Session,
+    expected: &str,
+) -> Result<BTreeSet<String>> {
+    let resumed = load_selected(
+        session,
+        Some(expected.to_owned()),
+        dependencies::configured_services(session)?.files.transfer,
+    )
+    .await?;
+    Ok(resumed
+        .acquired
+        .keys()
+        .map(|key| format!("{}/{}", key.dependency.as_str(), key.slot.as_str()))
+        .collect())
+}
+async fn load_selected(
+    session: &dyn Session,
+    expected: Option<String>,
+    transfer: crate::engine::acquisition::TransferLimits,
+) -> Result<crate::engine::synchronization::suspension::ResumedSync> {
     let (invocation, project) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
     let selected_state = state.clone();
-    let transfer = services.files.transfer;
     let resumed = initialize::discover(session, move |mut scope| async move {
         let work =
             scope.spawn_blocking(
@@ -95,24 +137,7 @@ async fn resume_with_services_selected(
             .is_none_or(|id| id == &resumed.saved.identity()),
         "Selected pending synchronization changed; inspect its new identity"
     );
-    let context = resumed.context.clone();
-    let migrating = resumed.migration;
-    let project = resumed.project.clone();
-    publish(
-        session,
-        project.clone(),
-        Some(project),
-        true,
-        services,
-        materialization::SyncInputs {
-            migration: migrating,
-            context,
-            resumed: Some(resumed),
-            files,
-            resolved: BTreeMap::new(),
-        },
-    )
-    .await
+    Ok(resumed)
 }
 
 pub(super) async fn synchronize_with_services(
@@ -276,6 +301,11 @@ pub(super) async fn synchronize_mode(
         || source.intent().roots.keys().cloned().collect(),
         |prior| affected_roots(source.intent(), prior, source.semantic_revision()),
     );
+    let revalidate_libraries = migration.is_some()
+        || previous.as_ref().is_some_and(|prior| {
+            prior.runtime != runtime
+                || prior.acceptable_versions != source.intent().runtime.acceptable_versions
+        });
     let baseline = resolver_context(source, previous.as_ref(), &runtime, &affected)?;
     let mut providers = Vec::new();
     let mut files = Vec::new();
@@ -366,7 +396,12 @@ pub(super) async fn synchronize_mode(
     };
     let resolved = scoped(session, governor(session.config().app_config()), move |mut scope| async move {
         let provider = if providers.is_empty() { None } else {
-            match services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, releases, limits).await? {
+            let outcome = if revalidate_libraries {
+                services.catalog.resolve_addition_for_runtime_change(&mut scope, &baseline, NonEmpty::new(providers)?, releases, limits).await?
+            } else {
+                services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, releases, limits).await?
+            };
+            match outcome {
                 ProviderAdditionOutcome::Ready(value) => Some(value),
                 ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire(&mut scope, &services.transport, SourceEvidencePolicy::Compatibility, services.files).await?),
                 ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!("Synchronization was not published: dependency evidence requires a decision: {:?}", closure.issues),

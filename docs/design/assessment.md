@@ -57,8 +57,13 @@ the old provider project. Unknown keys, duplicate mappings and non-provider root
 are rejected. Empack does not infer replacements across loader ecosystems.
 
 Still-compatible provider pins and original content assertions remain unchanged.
-Unsatisfied roots use the normal provider/file resolution and closure checks. An
-ambiguous file set or incompatible exact pin stops preparation with a diagnostic;
+Unsatisfied roots use the normal provider/file resolution and closure checks.
+Implicit required libraries are revalidated against the candidate runtime. A
+compatible locked selection stays exact; an incompatible selection is resolved
+again under the shared catalog budget. A new exact requirement from a selected
+root is honored without promoting the library into author intent. Existing logical
+keys remain stable. Explicit root pins still require deliberate policy changes.
+An ambiguous file set or incompatible exact pin stops preparation with a diagnostic;
 edit the binding or version policy deliberately before retrying. Local content is
 retained, but its runtime compatibility remains the author's responsibility.
 

@@ -95,6 +95,7 @@ impl ProviderCatalog {
             limits,
             transport::RequestBudget::new(limits.selection.catalog)?,
             None,
+            false,
         )
         .await
     }
@@ -105,6 +106,7 @@ impl ProviderCatalog {
         limits: ClosureLimits,
         mut budget: transport::RequestBudget,
         preferred: Option<&ResolvedProject>,
+        revalidate_libraries: bool,
     ) -> Result<ProviderClosure> {
         ensure!(
             limits.projects > 0
@@ -284,7 +286,34 @@ impl ProviderCatalog {
                                     )
                                     .await?;
                                 budget = next;
-                                value
+                                if revalidate_libraries
+                                    && matches!(
+                                        check_selection(&value, previous.kind, &request)
+                                            .as_ref()
+                                            .err()
+                                            .and_then(|error| error.downcast_ref::<CatalogError>()),
+                                        Some(CatalogError::NoCompatibleSelection)
+                                    )
+                                {
+                                    let (replacement, next) = self
+                                        .resolve_compatible_budget(
+                                            scope,
+                                            CompatibleRequest {
+                                                project: project.clone(),
+                                                kind: previous.kind,
+                                                game_versions: request.game_versions.clone(),
+                                                loader: request.loader,
+                                                releases: request.releases,
+                                            },
+                                            limits.selection,
+                                            budget,
+                                        )
+                                        .await?;
+                                    budget = next;
+                                    replacement.map(|selected| selected.resolution)
+                                } else {
+                                    value
+                                }
                             } else {
                                 let (project_record, next) = self
                                     .resolve_selector_budget(

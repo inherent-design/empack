@@ -984,13 +984,21 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
 
 #[tokio::test]
 async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
-    restricted_roundtrip(false).await;
+    restricted_roundtrip(false, false, false).await;
 }
 #[tokio::test]
 async fn restricted_migration_resumes_candidate_through_shared_pending_commands() {
-    restricted_roundtrip(true).await;
+    restricted_roundtrip(true, false, false).await;
 }
-async fn restricted_roundtrip(migration: bool) {
+#[tokio::test]
+async fn pending_download_scan_allows_complete_explicit_associations() {
+    restricted_roundtrip(false, true, false).await;
+}
+#[tokio::test]
+async fn pending_download_scan_recovers_missing_retained_content() {
+    restricted_roundtrip(false, false, true).await;
+}
+async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bool) {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let current = project(root.path());
@@ -1182,6 +1190,9 @@ async fn restricted_roundtrip(migration: bool) {
     );
     assert_eq!(snapshot(root.path()), before);
     fs::write(root.path().join("two.jar"), b"second").unwrap();
+    if lost_retained {
+        fs::remove_dir_all(root.path().join("state/pending-sync-content")).unwrap();
+    }
     let shared = crate::engine::pending::inspect(
         &root.path().join("state"),
         &root.path().join("project"),
@@ -1198,13 +1209,24 @@ async fn restricted_roundtrip(migration: bool) {
     fs::write(downloads.join("renamed.bin"), b"second").unwrap();
     fs::write(downloads.join("duplicate.bin"), b"second").unwrap();
     fs::write(downloads.join("unrelated.jar"), b"unrelated").unwrap();
+    if lost_retained {
+        fs::write(downloads.join("first.bin"), b"first").unwrap();
+    }
+    let associations = if explicit {
+        vec![format!(
+            "two/primary={}",
+            downloads.join("renamed.bin").display()
+        )]
+    } else {
+        vec![]
+    };
     let before = snapshot(root.path());
     crate::application::engine_host::pending::dispatch(
         &session(root.path(), true),
         crate::application::cli::PendingCommand::Resume {
             import_options: Default::default(),
             id: operation.id.clone(),
-            files: vec![],
+            files: associations.clone(),
             downloads_dir: Some(downloads.clone()),
             open_downloads: false,
         },
@@ -1222,7 +1244,7 @@ async fn restricted_roundtrip(migration: bool) {
         crate::application::cli::PendingCommand::Resume {
             import_options: Default::default(),
             id: operation.id.clone(),
-            files: vec![],
+            files: associations.clone(),
             downloads_dir: Some(downloads.clone()),
             open_downloads: false,
         },

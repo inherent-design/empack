@@ -68,8 +68,12 @@ The existing scanner matches original digests/selected content identities and
 size, never an extension. Ambiguous candidates require explicit associations.
 Candidates are reverified by the original continuation before use. Build scanning
 uses its freshly prepared exact output obligations. Other scans use available
-saved assertions and fail with guidance when those facts are unknown. No
-unverified candidate is marked complete or persisted as trusted evidence.
+saved assertions for inputs not explicitly supplied. A retained presentation label
+is not proof that its bytes remain available. Synchronization excludes retained
+inputs only after its loader recovers and verifies the stored bytes. If explicit associations cover every input, scanning is skipped.
+Without scan assertions, continuation still runs its normal verification and
+missing-input handling. No unverified candidate is marked complete or persisted
+as trusted evidence.
 
 `--open-downloads` explicitly resolves permitted pages for known exact provider
 selections through the existing provider catalog and bounded browser launcher.

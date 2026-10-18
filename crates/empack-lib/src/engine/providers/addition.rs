@@ -82,6 +82,30 @@ impl ProviderCatalog {
         releases: ReleasePolicy,
         limits: ClosureLimits,
     ) -> Result<ProviderAdditionOutcome> {
+        self.resolve_addition_mode(scope, current, inputs, releases, limits, false)
+            .await
+    }
+    /// Runtime changes revalidate implicit libraries while preserving valid exact selections.
+    pub(crate) async fn resolve_addition_for_runtime_change(
+        &self,
+        scope: &mut WorkScope,
+        current: &ResolvedProject,
+        inputs: NonEmpty<ProviderAddInput>,
+        releases: ReleasePolicy,
+        limits: ClosureLimits,
+    ) -> Result<ProviderAdditionOutcome> {
+        self.resolve_addition_mode(scope, current, inputs, releases, limits, true)
+            .await
+    }
+    async fn resolve_addition_mode(
+        &self,
+        scope: &mut WorkScope,
+        current: &ResolvedProject,
+        inputs: NonEmpty<ProviderAddInput>,
+        releases: ReleasePolicy,
+        limits: ClosureLimits,
+        revalidate_libraries: bool,
+    ) -> Result<ProviderAdditionOutcome> {
         ensure!(
             inputs.as_slice().len() <= limits.projects,
             CatalogError::Limit
@@ -157,6 +181,7 @@ impl ProviderCatalog {
                 limits,
                 budget,
                 Some(current),
+                revalidate_libraries,
             )
             .await?;
         if !closure.complete_for_required() {
@@ -187,10 +212,22 @@ impl ProviderCatalog {
                         .any(|dep| dep.identity == ResolvedIdentity::Provider(id.clone())))
         }) {
             return Ok(ProviderAdditionOutcome::Archives(Box::new(
-                ProviderArchiveAddition::new(current.clone(), closure, choices, reservation),
+                ProviderArchiveAddition::new(
+                    current.clone(),
+                    closure,
+                    choices,
+                    reservation,
+                    revalidate_libraries,
+                ),
             )));
         }
-        let project = normalize(current, &closure, &choices, &BTreeMap::new())?;
+        let project = normalize(
+            current,
+            &closure,
+            &choices,
+            &BTreeMap::new(),
+            revalidate_libraries,
+        )?;
         let group = AdditionGroup::from_resolved(&project)?;
         Ok(ProviderAdditionOutcome::Ready(Box::new(ProviderAddition {
             project,
@@ -225,6 +262,7 @@ fn normalize(
     closure: &ProviderClosure,
     roots: &BTreeMap<ProviderProjectId, ProviderAddInput>,
     worlds: &BTreeMap<ProviderProjectId, world::WorldSelection>,
+    revalidate_libraries: bool,
 ) -> Result<ResolvedProject> {
     let mut intent = current.intent().clone();
     intent.roots.clear();
@@ -346,6 +384,8 @@ fn normalize(
                 current.lock().dependencies.values().find(|dependency| {
                     dependency.identity == ResolvedIdentity::Provider(id.clone())
                 })
+            && (!revalidate_libraries
+                || existing.selected.as_ref() == Some(&selected.resolution.pin))
         {
             ensure!(
                 existing.kind == selected.kind

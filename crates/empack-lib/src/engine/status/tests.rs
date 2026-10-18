@@ -227,3 +227,49 @@ fn status_keeps_runtime_retirement_evidence_and_never_releases_the_lease() {
     assert!(publisher.lease_instance(&native).is_err());
     lease.complete().unwrap();
 }
+
+#[test]
+fn subscription_without_installation_reports_missing_instance_and_valid_enrollment() {
+    use crate::engine::instance::subscription::SubscriptionRecord;
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("absent-state");
+    let key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+    let subscription = SubscriptionRecord {
+        schema: 1,
+        root: super::super::publication::root_key(&ProjectReadRoot::open(root.path()).unwrap())
+            .unwrap(),
+        pack: "fixture-pack".into(),
+        channel: "stable".into(),
+        url: "https://example.invalid/channels/stable.json".into(),
+        keys: vec![crate::engine::release::hex(key.verifying_key().as_bytes())],
+        floor: None,
+        observed: None,
+    };
+    fs::create_dir(root.path().join(".empack")).unwrap();
+    fs::write(
+        root.path().join(".empack/subscription.json"),
+        serde_json::to_vec(&subscription).unwrap(),
+    )
+    .unwrap();
+    let before = tree(root.path());
+    let value = report(root.path(), &state);
+    assert_eq!(value.selected, Some(WorkspaceContext::Instance));
+    assert_eq!(value.contexts[0].state, RecordState::Missing);
+    assert!(
+        value.contexts[0]
+            .update_owner
+            .contains("publisher channel stable")
+    );
+    assert!(
+        !value
+            .findings
+            .iter()
+            .any(|f| f.code.starts_with("subscription-"))
+    );
+    assert_eq!(tree(root.path()), before);
+    fs::write(root.path().join(".empack/instance.json"), b"broken").unwrap();
+    assert_eq!(
+        report(root.path(), &state).contexts[0].state,
+        RecordState::Invalid
+    );
+}
