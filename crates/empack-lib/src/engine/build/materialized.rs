@@ -288,7 +288,7 @@ pub(super) fn reference_for_target(
         let selection = match &file.acquisition {
             AcquisitionSpec::Provider { pin, slot, .. } => Some((pin, slot)),
             AcquisitionSpec::Manual { pin: Some(_), .. } => anyhow::bail!(
-                "CurseForge export needs a resolved provider filename; synchronize this manual provider record before exporting"
+                "CurseForge export needs a resolved provider filename; a manual pin alone cannot establish the installation path"
             ),
             _ => None,
         };
