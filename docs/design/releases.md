@@ -282,3 +282,12 @@ revocation or replacement before publication invalidates the prepared operation.
 An initial snapshot digest still authorizes only the selected bytes. Neither the
 release nor an exported archive can enroll a key or pick a trusted origin for its
 recipient. Snapshot recipes leave enrollment optional.
+
+## Engine prerelease patch compatibility
+
+Engine requirements retain their SemVer comparator bounds. When a requirement explicitly
+admits a prerelease channel, later patches in the same major/minor and channel may also
+satisfy it. For example, `>=0.7.0-beta` admits `0.7.1-beta`; `=0.7.0-beta` and
+`>=0.7.0-beta, <0.7.1-0` do not. A stable-only requirement does not admit prereleases.
+An alpha, another minor line or another major line requires explicit admission.
+This policy applies equally to signed channel observations and exact release selection.

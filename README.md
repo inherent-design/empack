@@ -4,7 +4,7 @@ Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exa
 dependencies into `empack.lock`, builds launcher and server distributions, and can
 install and update native pack releases while preserving player-owned files.
 
-This documentation describes **v0.7.0-beta**. It uses author schema 4 and optional
+This documentation describes **v0.7.1-beta**. It uses author schema 4 and optional
 integration bindings schema 1. Older author documents require a new manifest or
 re-import from a supported Modrinth or CurseForge archive; no schema converter is
 provided. Use the documentation at your
@@ -57,6 +57,7 @@ select a consumer, dependency delivery, update authority and format. Use
 
 | Reference | Purpose |
 | --- | --- |
+| [Project automation](docs/design/automation.md) | Generated validation, release workflows and templates |
 | [Usage](docs/usage.md) | Author and installed-instance workflows |
 | [Consumer outputs](docs/design/builds.md) | Modrinth, CurseForge, Prism, server and native releases |
 | [Instance updates](docs/design/instances.md) | File ownership, user edits, repair and rollback |

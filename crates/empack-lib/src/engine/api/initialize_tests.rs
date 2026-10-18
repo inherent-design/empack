@@ -107,7 +107,7 @@ async fn initialize_all_loader_intents_without_preview_writes() {
             )) => {
                 assert_eq!(receipt.project.intent(), expected.intent());
                 assert_eq!(receipt.project.lock(), expected.lock());
-                assert_eq!(receipt.publication.changed_files, 7);
+                assert_eq!(receipt.publication.changed_files, 8);
             }
             _ => panic!("initialization failed"),
         }
@@ -115,6 +115,7 @@ async fn initialize_all_loader_intents_without_preview_writes() {
             ".gitignore",
             ".github/workflows/validate.yml",
             ".github/workflows/release.yml",
+            ".github/scripts/empack-ci.py",
         ] {
             assert!(selected.join(name).is_file(), "missing scaffold {name}");
         }
@@ -275,6 +276,7 @@ async fn initialization_preserves_scaffolds_and_binds_their_prior_state() {
             (".gitignore", b"custom-ignore\n".as_slice()),
             (".github/workflows/validate.yml", b"user validation"),
             (".github/workflows/release.yml", b"user release"),
+            (".github/scripts/empack-ci.py", b"user helper"),
             ("pack/ignored/keep", b"unowned"),
         ] {
             put(root.path(), name, bytes);
@@ -340,6 +342,10 @@ async fn initialization_preserves_scaffolds_and_binds_their_prior_state() {
         assert_eq!(
             fs::read(root.path().join(".github/workflows/release.yml")).unwrap(),
             b"user release"
+        );
+        assert_eq!(
+            fs::read(root.path().join(".github/scripts/empack-ci.py")).unwrap(),
+            b"user helper"
         );
         assert_eq!(
             fs::read(root.path().join("pack/ignored/keep")).unwrap(),

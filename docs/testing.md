@@ -1,6 +1,6 @@
 # Verification
 
-The [acceptance contracts](design/verification.md) define v0.7.0-beta behavior.
+The [acceptance contracts](design/verification.md) define v0.7.1-beta behavior.
 Tests verify the checked-out implementation; a contract or test count is not evidence
 that an unwired capability works. Record run-specific results in CI and PRs.
 
@@ -89,3 +89,11 @@ Do not combine unrelated historical runs into a same-head acceptance claim. Nati
 platform, provider, runtime and consumer results identify their tested revision,
 tool versions and explicit exclusions. Release publication follows successful
 acceptance of one immutable candidate and dependency graph.
+
+Generated project automation is covered by `scripts/tests/test_project_automation.py`
+and the executable `smoke_generated_workflow` contract. The latter initializes a pack
+with spaces in its name, builds Modrinth and Prism profiles through the generated
+helper, rejects a mismatched tag and excludes stale output. Python tests verify
+download digests, staging names, checksum contents and draft publication ordering.
+Windows CI executes generated batch scripts with native `cmd.exe`; Java fixtures
+check argument selection and exit status without claiming Minecraft gameplay.

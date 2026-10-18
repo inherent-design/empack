@@ -294,7 +294,27 @@ impl PublisherTrust {
     }
 }
 fn compatible(requirement: &str, engine: &semver::Version) -> Result<()> {
-    if !semver::VersionReq::parse(requirement)?.matches(engine) {
+    let mut admitted = semver::VersionReq::parse(requirement)?;
+    let channel = engine.pre.as_str().split('.').next().unwrap_or_default();
+    if !engine.pre.is_empty()
+        && admitted.comparators.iter().any(|bound| {
+            bound.major == engine.major
+                && bound.minor == Some(engine.minor)
+                && bound.patch.is_some_and(|patch| patch < engine.patch)
+                && !bound.pre.is_empty()
+                && bound.pre.as_str().split('.').next() == Some(channel)
+        })
+    {
+        // This tautological bound admits the patch's prerelease without relaxing
+        // any authored comparator, including exact pins and upper bounds.
+        admitted
+            .comparators
+            .push(semver::Comparator::parse(&format!(
+                ">={}.{}.{}-0",
+                engine.major, engine.minor, engine.patch
+            ))?);
+    }
+    if !admitted.matches(engine) {
         let mut diagnostic = Diagnostic::new(
             DiagnosticCode::IncompatibleEngine,
             DiagnosticPhase::Verification,
@@ -509,4 +529,34 @@ fn read_envelope(
             .context("Selected envelope does not exist")?;
     root.revalidate(&snapshot, cancel)?;
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::compatible;
+
+    #[test]
+    fn prerelease_patches_preserve_all_authored_bounds() {
+        for (requirement, version, expected) in [
+            (">=0.7.0-beta", "0.7.1-beta", true),
+            (">=0.7.0-beta.2", "0.7.1-beta.1", true),
+            (">=0.7.0-beta", "0.7.1", true),
+            (">=0.7.0-beta", "0.7.0-alpha", false),
+            (">=0.7.0-beta", "0.7.1-alpha", false),
+            (">=0.7.0-beta", "0.8.0-beta", false),
+            (">=0.7.0-beta", "1.7.1-beta", false),
+            (">=0.7.0", "0.7.1-beta", false),
+            (">=0.7.1", "0.7.1-beta", false),
+            ("=0.7.0-beta", "0.7.1-beta", false),
+            (">=0.7.0-beta, <0.7.1-0", "0.7.1-beta", false),
+            (">=0.7.0-beta, <0.7.2", "0.7.1-beta", true),
+            (">=0.7.0-beta, >=0.7.1-beta.2", "0.7.1-beta.1", false),
+        ] {
+            assert_eq!(
+                compatible(requirement, &semver::Version::parse(version).unwrap()).is_ok(),
+                expected,
+                "{version} against {requirement}"
+            );
+        }
+    }
 }

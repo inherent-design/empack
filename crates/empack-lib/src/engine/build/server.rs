@@ -1,4 +1,7 @@
 //! Server distributions compose verified runtime files with selected server content.
+mod windows;
+use windows::{install_batch, start_batch};
+
 use super::{
     BuildAcquisitions, PreparedArtifact,
     materialized::{PreparedGameContent, prepare_game_content, prepare_native_game_content},
@@ -137,7 +140,6 @@ JAVA_PATH="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 cd -- game
 exec "$JAVA_PATH" -jar server.jar "$@"
 "#;
-const START_BAT: &str = "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || exit /b 1\r\ncd game || exit /b 1\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
 fn start_script(references: bool) -> String {
     if references {
         START_SH
@@ -148,26 +150,6 @@ fn start_script(references: bool) -> String {
             )
     } else {
         START_SH.into()
-    }
-}
-fn start_batch(references: bool) -> String {
-    if references {
-        START_BAT
-            .replace(
-                "cd game || exit /b 1\r\n",
-                "call install_pack.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n",
-            )
-            .replace(
-                "  \"%JAVA_HOME%",
-                "  empack --workdir \"%cd%\" --yes instance launch -- \"%JAVA_HOME%",
-            )
-            .replace(
-                "  java -jar",
-                "  empack --workdir \"%cd%\" --yes instance launch -- java -jar",
-            )
-            + "exit /b %errorlevel%\r\n"
-    } else {
-        START_BAT.into()
     }
 }
 fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> String {
@@ -215,12 +197,6 @@ fn consumer_script(script: String, target: Recipe) -> String {
     }
 }
 
-fn install_batch(release: Option<&str>) -> String {
-    let command = release.map(|id| format!("empack --workdir \"%cd%\" --yes instance prepare \"%cd%\\.empack-consumer\\release.json\" --sha256 {id} --layout game --side server\r\nif errorlevel 1 exit /b %errorlevel%\r\n")).unwrap_or_default();
-    format!(
-        "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || exit /b 1\r\n{command}echo Server pack ready. Run start.bat to start it.\r\necho Review and accept the Minecraft EULA yourself before playing.\r\nexit /b 0\r\n"
-    )
-}
 fn install_script(release: Option<&str>) -> String {
     let command = release.map(|id| format!("empack --workdir \"$PWD\" --yes instance prepare \"$PWD/.empack-consumer/release.json\" --sha256 {id} --layout game --side server\n")).unwrap_or_default();
     format!(

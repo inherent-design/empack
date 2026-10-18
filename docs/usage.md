@@ -3,7 +3,7 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide follows the v0.7.0-beta CLI; `empack <command> --help` lists the installed options.
+This guide follows the v0.7.1-beta CLI; `empack <command> --help` lists the installed options.
 
 ## Workspace status
 
@@ -383,3 +383,28 @@ selected recipe after approval. Preview never opens browsers or scans Downloads.
 Exact keys, unknown metadata, v0.6 compatibility and bounded assistance are described
 in [the pending-input contract](design/pending.md). Existing `build --continue`,
 `init --continue`, `sync --continue` and `instance continue` remain supported.
+
+## Generated GitHub workflows
+
+New projects include validation and release workflows plus `.github/scripts/empack-ci.py`.
+They build the profiles in `distribution.defaults`. Set `EMPACK_PROFILES` in both
+workflows to select explicit names, one per line. Both workflows apply authored optional
+defaults. Set `JAVA_VERSION` for your runtime; the generated value is `21`.
+
+Commit coherent authoring documents, bindings and lock before running CI. A release tag
+must be `v` followed by the version in `empack.yml`. The release attaches every selected
+distribution and `SHA256SUMS`, using normalized download filenames. It does not upload
+to provider platforms. Existing workflow files are not automatically upgraded.
+
+Prism inherits the recipient’s launcher memory settings by default. To set an instance
+heap, add `OverrideMemory=true`, `MinMemAlloc=512` and an appropriate `MaxMemAlloc` value
+in MiB to `templates/client/instance.cfg.template`.
+
+See [project automation](design/automation.md) for installation verification, failure
+handling and the distinction between GitHub releases and native signed channels.
+
+On Windows, extract the complete server ZIP and run `start.bat`. For bundled snapshots,
+`install_pack.bat` confirms the already included files. Both scripts keep their window
+open when finished. For unattended use, set `EMPACK_NO_PAUSE=1`. Install the required
+Java version and set `JAVA_HOME` or PATH; managed exports also require empack on PATH.
+Read any initial EULA message and review `game/eula.txt` yourself.

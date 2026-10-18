@@ -31,6 +31,7 @@ impl ProjectLayout {
                 ProjectScaffold::GitIgnore => ".gitignore",
                 ProjectScaffold::ValidationWorkflow => ".github/workflows/validate.yml",
                 ProjectScaffold::ReleaseWorkflow => ".github/workflows/release.yml",
+                ProjectScaffold::WorkflowHelper => ".github/scripts/empack-ci.py",
             }
             .to_owned(),
             ManagedPath::Artifact(path) => format!("dist/{}", path.as_str()),
@@ -64,6 +65,9 @@ impl ProjectLayout {
             }
             ".github/workflows/release.yml" => {
                 return Ok(ManagedPath::Scaffold(ProjectScaffold::ReleaseWorkflow));
+            }
+            ".github/scripts/empack-ci.py" => {
+                return Ok(ManagedPath::Scaffold(ProjectScaffold::WorkflowHelper));
             }
             _ => {}
         }
