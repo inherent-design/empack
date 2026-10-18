@@ -1,7 +1,7 @@
 //! Independent byte-inventory verification for candidate distribution containers.
 use super::{io::copy_bounded, layout::CollisionIndex};
 use crate::application::process_runtime::Cancellation;
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::ContentId,
     files::{FileContent, FilePermissions},
@@ -222,7 +222,10 @@ pub fn verify_archive(
                     !entry.encrypted() && !entry.is_symlink(),
                     "Encrypted or linked archive member is unsupported"
                 );
-                let name = entry.name().to_owned();
+                let name = entry
+                    .name()
+                    .context("Invalid ZIP member name")?
+                    .into_owned();
                 let directory = entry.is_dir();
                 let permissions = if directory {
                     FilePermissions {
@@ -413,6 +416,12 @@ pub(super) fn preflight_zip(
         let comment = u16::from_le_bytes(header[32..34].try_into().unwrap());
         let mut name = vec![0; length];
         source.read_exact(&mut name)?;
+        // A declared UTF-8 name cannot silently become a CP437 path in a new decoder.
+        let flags = u16::from_le_bytes(header[8..10].try_into().unwrap());
+        if flags & (1 << 11) != 0 {
+            std::str::from_utf8(&name)
+                .context("ZIP member declares UTF-8 but has invalid name bytes")?;
+        }
         ensure!(names.insert(name), "Duplicate ZIP central directory member");
         source.seek(SeekFrom::Current(i64::from(extra) + i64::from(comment)))?;
         ensure!(

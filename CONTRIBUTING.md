@@ -6,7 +6,12 @@ preserve feature contracts and their negative-case tests.
 
 ## Development
 
-Use the pinned Rust toolchain, cargo-nextest and mise. Strict live tests additionally
+`rust-toolchain.toml` selects the compiler, rustfmt and Clippy for local builds and
+all CI jobs. CI reads this file through the shared toolchain action; it does not
+install a separate floating stable compiler. Update the pin and test the dependency
+graph together. Coverage additionally uses `llvm-tools-preview` and cargo-llvm-cov.
+
+Use cargo-nextest, mise and Python 3.11 or later with that toolchain. Strict live tests additionally
 require Java, provider access and any documented credentials. Never commit credentials or include them in diagnostics.
 
 ```bash

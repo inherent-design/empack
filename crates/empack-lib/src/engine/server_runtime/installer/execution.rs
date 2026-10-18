@@ -410,11 +410,7 @@ fn bundled_library_assertions(
     cancel: &Cancellation,
 ) -> Result<BTreeMap<PortableRelPath, ExpectedContent>> {
     let mut jar = JarReader::open(base, limits, cancel)?;
-    if !jar
-        .archive
-        .file_names()
-        .any(|name| name == "META-INF/libraries.list")
-    {
+    if !jar.has_member("META-INF/libraries.list")? {
         return Ok(BTreeMap::new());
     }
     let bytes = member(&mut jar, "META-INF/libraries.list", 1 << 20, cancel)?;
@@ -551,11 +547,7 @@ fn verify_launch(
                 let mut found = false;
                 for relative in libraries {
                     let mut jar = JarReader::open(&files[&relative].content, limits, cancel)?;
-                    if jar
-                        .archive
-                        .file_names()
-                        .any(|name| name == format!("{}.class", main.replace('.', "/")))
-                    {
+                    if jar.has_member(&format!("{}.class", main.replace('.', "/")))? {
                         check_class(&mut jar, &main, cancel)?;
                         found = true;
                     }

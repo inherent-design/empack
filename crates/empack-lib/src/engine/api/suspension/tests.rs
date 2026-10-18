@@ -1047,7 +1047,7 @@ async fn server_projection_without_client_downloads(consumer: empack_core::distr
     let files: Vec<_> = (0..archive.len())
         .filter_map(|index| {
             let member = archive.by_index(index).unwrap();
-            (!member.is_dir()).then(|| member.name().to_owned())
+            (!member.is_dir()).then(|| member.name().unwrap().into_owned())
         })
         .collect();
     assert_eq!(files.len(), 2, "only manifest and selected authored asset");

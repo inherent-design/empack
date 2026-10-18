@@ -90,13 +90,13 @@ impl ZipContentSource {
                 !entry.encrypted() && !entry.is_symlink(),
                 "Encrypted or linked source member is unsupported"
             );
+            let decoded_name = entry.name().context("Invalid source archive member name")?;
             let name = if entry.is_dir() {
-                entry
-                    .name()
+                decoded_name
                     .strip_suffix('/')
                     .context("Nonportable source directory name")?
             } else {
-                entry.name()
+                decoded_name.as_ref()
             };
             let path = PortableRelPath::parse(name, PathSyntax::ArchiveMember)?;
             ensure!(

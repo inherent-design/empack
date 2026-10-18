@@ -10,7 +10,7 @@ repository = "https://github.com/inherent-design/empack"
 version = "0.0.0-dev"
 
 [workspace.metadata.empack]
-release-target = "0.6.0-beta"
+release-target = "0.7.0-alpha"
 
 [workspace.dependencies]
 empack-core = { path = "crates/empack-core" }
@@ -39,17 +39,17 @@ indicatif = { version = "0.18.4", features = ["rayon", "improved_unicode"] }
 percent-encoding = "2.3.2"
 reqwest = { version = "0.13.2", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.154"
 serde-saphyr = "1.3.0"
 semver = "1"
-time = { version = "0.3.47", features = ["parsing"] }
+time = { version = "0.3.55", features = ["parsing"] }
 md-5 = "0.11.0"
 sha1 = "0.11.0"
-sha2 = "0.11"
+sha2 = "0.11.1"
 murmur2 = "0.1" # Murmur2 hash for CurseForge fingerprint API
 thiserror = "2.0.21"
-toml = "1.0.7"
-tokio = { version = "1.50.0", features = ["full"] }
+toml = "1.1.8"
+tokio = { version = "1.53.3", features = ["full"] }
 console = "0.16"
 tower = "0.5.3"
 tower_governor = "0.8.0" # Rate limiting middleware
@@ -64,18 +64,18 @@ tracing-subscriber = { version = "0.3.23", features = [
     "parking_lot",
 ] }
 windows-core = "0.100.0"
-zip = { version = "8.2", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
-tar = "0.4" # Tar archive creation for .tar.gz distribution fallback
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
+tar = "0.4.46" # Tar archive creation for .tar.gz distribution fallback
 flate2 = "1.1" # Gzip compression paired with tar
-sevenz-rust2 = { version = "0.23", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
+sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
 handlebars = "6.4.0"
 
 # Telemetry (optional, behind `telemetry` feature gate)
 tracing-chrome = "0.7"
 tracing-opentelemetry = "0.34"
-opentelemetry = "0.33"
-opentelemetry_sdk = { version = "0.33", features = ["trace"] }
-opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client"] }
+opentelemetry = "0.33.1"
+opentelemetry_sdk = { version = "0.33.1", features = ["trace"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "reqwest-blocking-client"] }
 
 # Dev dependencies
 assert_cmd = "2.2"

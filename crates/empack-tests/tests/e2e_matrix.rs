@@ -181,7 +181,7 @@ macro_rules! e2e_build_target {
                 let release = empack_lib::engine::release::DecodedRelease::decode(&bytes).unwrap();
                 assert_eq!(release.document().pack, "matrix.pack");
                 assert_eq!(release.document().runtime.minecraft, "1.21.1");
-                assert!(!archive.file_names().any(|p| p.contains("packwiz")));
+                assert!(!archive.file_names().any(|p| p.unwrap().contains("packwiz")));
             }
         }
     };

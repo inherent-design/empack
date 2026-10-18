@@ -1,0 +1,33 @@
+name: Project Rust toolchain
+description: Install the repository toolchain and requested job components
+inputs:
+  components:
+    description: Additional comma-separated components
+    default: ""
+  targets:
+    description: Additional comma-separated build targets
+    default: ""
+runs:
+  using: composite
+  steps:
+    - id: pin
+      shell: bash
+      env:
+        EXTRA_COMPONENTS: ${{ inputs.components }}
+      run: |
+        python - <<'PYTHON'
+        import os
+        import tomllib
+        from pathlib import Path
+        toolchain = tomllib.loads(Path("rust-toolchain.toml").read_text())["toolchain"]
+        components = list(toolchain.get("components", []))
+        components.extend(filter(None, os.environ["EXTRA_COMPONENTS"].split(",")))
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            print("channel=" + toolchain["channel"], file=output)
+            print("components=" + ",".join(dict.fromkeys(components)), file=output)
+        PYTHON
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.pin.outputs.channel }}
+        components: ${{ steps.pin.outputs.components }}
+        targets: ${{ inputs.targets }}
