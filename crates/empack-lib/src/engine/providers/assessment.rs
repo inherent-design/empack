@@ -92,6 +92,8 @@ pub struct JointAssessment {
     /// Final placements and retained-inventory coexistence require update preparation.
     pub candidate_compatibility: &'static str,
     pub declared_incompatibilities: Vec<DeclaredIncompatibility>,
+    /// False if the declaration scan did not run or exhausted its output allowance.
+    pub declarations_complete: bool,
     pub state: &'static str,
     pub selections: Vec<ObservedVersion>,
     pub reasons: Vec<UpdateReason>,
@@ -153,6 +155,7 @@ impl ProviderCatalog {
                 scope: "provider-dependency-closure",
                 candidate_compatibility: "not-assessed",
                 declared_incompatibilities: Vec::new(),
+                declarations_complete: false,
                 state: "not-assessed",
                 selections: Vec::new(),
                 reasons: Vec::new(),
@@ -289,8 +292,13 @@ impl ProviderCatalog {
                 .await;
             match closure {
                 Ok(closure) => {
-                    report.joint.declared_incompatibilities =
+                    let (declarations, complete) =
                         declared_incompatibilities(scope, project, &closure, limits.edges)?;
+                    report.joint.declared_incompatibilities = declarations;
+                    report.joint.declarations_complete = complete;
+                    if !complete {
+                        report.joint.reasons.push(UpdateReason::CatalogLimit);
+                    }
                     report.joint.selections = closure
                         .selections
                         .values()
@@ -332,7 +340,7 @@ fn declared_incompatibilities(
     project: &ResolvedProject,
     closure: &ProviderClosure,
     maximum: usize,
-) -> Result<Vec<DeclaredIncompatibility>> {
+) -> Result<(Vec<DeclaredIncompatibility>, bool)> {
     let mut candidate: BTreeMap<_, (ResolvedPin, Vec<ProviderIncompatibility>)> = project
         .lock()
         .dependencies
@@ -369,7 +377,9 @@ fn declared_incompatibilities(
         scope.cancellation().check()?;
         for (target, _) in candidate.values() {
             if assertions.iter().any(|assertion| assertion.matches(target)) {
-                ensure!(declarations.len() < maximum, CatalogError::Limit);
+                if declarations.len() == maximum {
+                    return Ok((declarations, false));
+                }
                 declarations.push(DeclaredIncompatibility {
                     from: ObservedVersion::from_pin(from),
                     target: ObservedVersion::from_pin(target),
@@ -377,7 +387,7 @@ fn declared_incompatibilities(
             }
         }
     }
-    Ok(declarations)
+    Ok((declarations, true))
 }
 
 #[cfg(test)]
