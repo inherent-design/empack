@@ -49,9 +49,6 @@ pub enum ClosureIssueKind {
         selected: ResolvedPin,
         required: PinSelector,
     },
-    IncompatibleSelection {
-        selected: ResolvedPin,
-    },
     IncompatibleRequirement {
         required: ResolvedPin,
     },
@@ -75,7 +72,8 @@ pub struct ProviderClosure {
     _graph: Vec<AdmissionPermit>,
 }
 impl ProviderClosure {
-    /// Complete only for these exact selections. Never authorizes deletion of unlisted content.
+    /// Complete required relationships for these exact selections. Negative assertions still
+    /// require placement-aware candidate validation. Never authorizes deletion of unlisted content.
     pub fn complete_for_required(&self) -> bool {
         self.issues.is_empty()
     }
@@ -422,7 +420,8 @@ impl ProviderCatalog {
             }
             cursor += 1;
         }
-        // Incompatibilities may reference a selection discovered after their source was scanned.
+        // Retain negative assertions for placement-aware candidate validation. This graph
+        // has no author file participation and cannot decide whether selections coexist.
         for node in result.selections.values() {
             scope.cancellation().check()?;
             budget.check_deadline()?;
@@ -437,19 +436,6 @@ impl ProviderCatalog {
                         kind: ClosureIssueKind::MissingIdentity,
                     });
                     continue;
-                }
-                let conflicting = result
-                    .selections
-                    .values()
-                    .find(|target| assertion.matches(&target.resolution.pin));
-                if let Some(conflicting) = conflicting {
-                    result.issues.push(ClosureIssue {
-                        from: node.resolution.pin.clone(),
-                        dependency: Some(dependency.clone()),
-                        kind: ClosureIssueKind::IncompatibleSelection {
-                            selected: conflicting.resolution.pin.clone(),
-                        },
-                    });
                 }
             }
         }

@@ -36,9 +36,18 @@ provider update. Reports contain an observation time and no credentials or downl
 locators.
 
 Per-root candidates and joint validation are separate. The joint check uses the
-existing required-dependency closure, including exact root pins and incompatibility
-edges. `validated` means the selected provider dependency evidence is complete and
-consistent. It does not verify new file-role bindings, native destinations, runtime
+required-dependency closure, including exact root pins. `joint.state: validated`
+means the required relationships are complete and consistent. It does not establish
+that the full retained inventory can be installed together.
+
+`joint.candidate_compatibility` remains `not-assessed`. The report lists
+`joint.declared_incompatibilities` between the proposed closure and retained exact
+selections, including retained reverse assertions. These are provider declarations,
+not placement-aware conflict decisions. Disjoint client/server content may satisfy
+them. Missing assertions do not prove compatibility. Update preparation composes
+the complete candidate and checks actual file participation before publication.
+
+Assessment does not verify new file-role bindings, native destinations, runtime
 startup or gameplay. `blocked` does not prove that no alternative combination exists;
 this resolver does not perform an unbounded search over version combinations.
 

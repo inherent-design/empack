@@ -75,8 +75,11 @@ empack --yes migrate --minecraft 1.21.2 --loader fabric
 
 `outdated` distinguishes the locked version, policy-permitted candidate, compatible
 candidate and newest observed upstream selection. Unavailable evidence is reported
-as unknown, not up to date. Its joint dependency check is separate from each row;
-it does not promise that configurations or gameplay will work.
+as unknown, not up to date. The required-dependency closure is checked separately
+from each row. Known incompatibility declarations also include retained selections,
+but the report does not decide whether their final client/server placements overlap.
+Candidate compatibility remains `not-assessed` until update preparation. Neither
+assessment nor preparation proves that configurations or gameplay will work.
 
 A migration plan leaves the author files unchanged. Applying the same command
 without `--plan` resolves again and requires approval of the native changes. Valid

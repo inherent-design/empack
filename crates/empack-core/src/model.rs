@@ -697,6 +697,27 @@ pub struct LockedDependency {
     /// Exact file inventory.
     pub files: NonEmpty<ResolvedFile>,
 }
+impl LockedDependency {
+    /// Whether any resolved files can coexist on one side, including optional files.
+    /// A disabled default does not prohibit a user from enabling that choice.
+    pub fn can_share_environment(&self, other: &Self) -> bool {
+        let participation = |dependency: &Self| {
+            let mut sides = [false; 2];
+            for file in dependency.files.as_slice() {
+                for placement in file.placements.as_slice() {
+                    sides[0] |= placement.layer != ContentLayer::Server
+                        && placement.requirements.client != Requirement::Unsupported;
+                    sides[1] |= placement.layer != ContentLayer::Client
+                        && placement.requirements.server != Requirement::Unsupported;
+                }
+            }
+            sides
+        };
+        let a = participation(self);
+        let b = participation(other);
+        (a[0] && b[0]) || (a[1] && b[1])
+    }
+}
 /// A provider-declared conflict with a project, exact selection, or both.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderIncompatibility {
@@ -1067,6 +1088,7 @@ impl ResolutionLock {
                         .selected
                         .as_ref()
                         .is_some_and(|pin| assertion.matches(pin))
+                        && dependency.can_share_environment(target)
                 }) {
                     return Err(ModelError(alloc::format!(
                         "{} declares incompatibility with {} in the candidate inventory",

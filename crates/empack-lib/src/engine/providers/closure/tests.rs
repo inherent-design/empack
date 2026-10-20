@@ -161,7 +161,7 @@ async fn project_only_dependency_resolves_compatible_selection_with_shared_budge
     ));
 }
 #[tokio::test]
-async fn explicit_roots_and_incompatible_edges_produce_truthful_conflicts() {
+async fn required_pin_conflicts_block_but_negative_assertions_await_placement() {
     let mut server = Server::new_async().await;
     record(&mut server,"project1","version1",json!([{"project_id":"project2","version_id":"version3","dependency_type":"required"},{"project_id":"project2","dependency_type":"incompatible"}])).await;
     record(&mut server, "project2", "version2", json!([])).await;
@@ -178,7 +178,7 @@ async fn explicit_roots_and_incompatible_edges_produce_truthful_conflicts() {
         panic!("conflicts were lost")
     };
     assert!(!graph.complete_for_required());
-    assert_eq!(graph.issues.len(), 2);
+    assert_eq!(graph.issues.len(), 1);
     assert!(
         graph
             .issues
@@ -186,11 +186,13 @@ async fn explicit_roots_and_incompatible_edges_produce_truthful_conflicts() {
             .any(|issue| matches!(issue.kind, ClosureIssueKind::SelectionConflict { .. }))
     );
     assert!(
-        graph
-            .issues
+        graph.selections[&pin("project1", "version1").project]
+            .resolution
+            .dependencies
             .iter()
-            .any(|issue| matches!(issue.kind, ClosureIssueKind::IncompatibleSelection { .. }))
+            .any(|dependency| dependency.incompatibility().is_some())
     );
+
     assert_eq!(
         graph.selections[&pin("project2", "version2").project]
             .resolution

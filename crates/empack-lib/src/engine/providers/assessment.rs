@@ -1,8 +1,10 @@
 //! Read-only update evidence; catalog rows and joint dependency validation are separate.
 use super::*;
-use empack_core::model::{DependencySelection, ResolvedProject, SourceIntent};
+use empack_core::model::{
+    DependencySelection, ProviderIncompatibility, ResolvedProject, SourceIntent,
+};
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -77,10 +79,19 @@ pub struct DependencyAssessment {
     pub observed_records: Option<usize>,
     pub reasons: Vec<UpdateReason>,
 }
+/// Known provider declaration between candidate selections; participation is not assessed.
+#[derive(Debug, Serialize)]
+pub struct DeclaredIncompatibility {
+    pub from: ObservedVersion,
+    pub target: ObservedVersion,
+}
 #[derive(Debug, Serialize)]
 pub struct JointAssessment {
-    /// This validates provider dependencies, not file bindings, runtime startup or gameplay.
+    /// This validates required relationships, not complete inventory compatibility.
     pub scope: &'static str,
+    /// Final placements and retained-inventory coexistence require update preparation.
+    pub candidate_compatibility: &'static str,
+    pub declared_incompatibilities: Vec<DeclaredIncompatibility>,
     pub state: &'static str,
     pub selections: Vec<ObservedVersion>,
     pub reasons: Vec<UpdateReason>,
@@ -140,6 +151,8 @@ impl ProviderCatalog {
             dependencies: Vec::new(),
             joint: JointAssessment {
                 scope: "provider-dependency-closure",
+                candidate_compatibility: "not-assessed",
+                declared_incompatibilities: Vec::new(),
                 state: "not-assessed",
                 selections: Vec::new(),
                 reasons: Vec::new(),
@@ -276,6 +289,8 @@ impl ProviderCatalog {
                 .await;
             match closure {
                 Ok(closure) => {
+                    report.joint.declared_incompatibilities =
+                        declared_incompatibilities(scope, project, &closure, limits.edges)?;
                     report.joint.selections = closure
                         .selections
                         .values()
@@ -290,7 +305,6 @@ impl ProviderCatalog {
                     for issue in closure.issues {
                         let (key, reason) = match issue.kind {
                             ClosureIssueKind::SelectionConflict { .. }
-                            | ClosureIssueKind::IncompatibleSelection { .. }
                             | ClosureIssueKind::IncompatibleRequirement { .. } => {
                                 ("conflict", UpdateReason::DependencyConflict)
                             }
@@ -311,6 +325,59 @@ impl ProviderCatalog {
         scope.cancellation().check()?;
         Ok(report)
     }
+}
+
+fn declared_incompatibilities(
+    scope: &WorkScope,
+    project: &ResolvedProject,
+    closure: &ProviderClosure,
+    maximum: usize,
+) -> Result<Vec<DeclaredIncompatibility>> {
+    let mut candidate: BTreeMap<_, (ResolvedPin, Vec<ProviderIncompatibility>)> = project
+        .lock()
+        .dependencies
+        .values()
+        .filter_map(|dependency| {
+            dependency.selected.as_ref().map(|pin| {
+                (
+                    pin.project.clone(),
+                    (pin.clone(), dependency.incompatibilities.clone()),
+                )
+            })
+        })
+        .collect();
+    for (id, node) in &closure.selections {
+        let mut assertions = node
+            .resolution
+            .dependencies
+            .iter()
+            .filter_map(ProviderDependency::incompatibility)
+            .collect::<Vec<_>>();
+        if let Some((prior, retained)) = candidate.get(id)
+            && prior == &node.resolution.pin
+        {
+            for assertion in retained {
+                if !assertions.contains(assertion) {
+                    assertions.push(assertion.clone());
+                }
+            }
+        }
+        candidate.insert(id.clone(), (node.resolution.pin.clone(), assertions));
+    }
+    let mut declarations = Vec::new();
+    for (from, assertions) in candidate.values() {
+        scope.cancellation().check()?;
+        for (target, _) in candidate.values() {
+            if assertions.iter().any(|assertion| assertion.matches(target)) {
+                ensure!(declarations.len() < maximum, CatalogError::Limit);
+                declarations.push(DeclaredIncompatibility {
+                    from: ObservedVersion::from_pin(from),
+                    target: ObservedVersion::from_pin(target),
+                });
+            }
+        }
+    }
+    Ok(declarations)
 }
 
 #[cfg(test)]

@@ -1225,3 +1225,104 @@ async fn selected_provider_changes_check_retained_inventory_before_publication()
     assert!(format!("{error:#}").contains("incompatib"), "{error:#}");
     assert_eq!(snapshot(&temp.path().join("project")), after);
 }
+
+#[tokio::test]
+async fn separated_conflicts_preserve_evidence_and_project_distinct_build_inventories() {
+    use crate::application::process_runtime::Cancellation;
+    use crate::engine::{
+        build::acquisition::plan_target_build_acquisitions, content::SourceEvidencePolicy,
+        project::ProjectReader, publication::RecoveryReader, snapshot::SnapshotLimits,
+    };
+    use empack_core::{distribution::Recipe, inventory::OptionalPolicy};
+    for mode in ["selected", "batch"] {
+        let temp = tempfile::tempdir().unwrap();
+        fixture(temp.path()).await;
+        let mut a = input("renderer", Some("a"));
+        a.pin = None;
+        a.requirements.server = Requirement::Unsupported;
+        let mut b = input("required-library", Some("b"));
+        b.pin = None;
+        b.requirements.client = Requirement::Unsupported;
+        if mode == "selected" {
+            let mut initial = Server::new_async().await;
+            records_with_dependencies(&mut initial, json!([])).await;
+            add(
+                temp.path(),
+                &initial,
+                vec![a.clone(), b.clone()],
+                true,
+                false,
+            )
+            .await
+            .unwrap();
+        }
+        let mut next = Server::new_async().await;
+        records_for_version(
+            &mut next,
+            "RootVer2",
+            json!([{
+                "project_id":"Need0001", "dependency_type":"incompatible"
+            }]),
+        )
+        .await;
+        if mode == "selected" {
+            update_mixed(
+                temp.path(),
+                &next,
+                vec![AddHostInput::Provider(a.clone())],
+                true,
+                false,
+            )
+            .await
+            .unwrap();
+        } else {
+            add(temp.path(), &next, vec![a, b.clone()], true, false)
+                .await
+                .unwrap();
+        }
+        let root = temp.path().join("project");
+        let project = read(&root);
+        assert_eq!(
+            project.lock().dependencies[&DependencyKey::parse("a").unwrap()]
+                .incompatibilities
+                .len(),
+            1
+        );
+        let cancel = Cancellation::default();
+        let workspace = ProjectReader::new(RecoveryReader::new(temp.path().join("state")))
+            .capture_build(&root, &[], SnapshotLimits::default(), &cancel)
+            .unwrap();
+        for (recipe, expected) in [(Recipe::PRISM_BUNDLED, "a"), (Recipe::SERVER_BUNDLED, "b")] {
+            let plan = plan_target_build_acquisitions(
+                &workspace,
+                &BuildAcquisitions::default(),
+                recipe,
+                &OptionalPolicy::Resolve {
+                    choices: BTreeMap::new(),
+                    use_defaults: true,
+                },
+                SourceEvidencePolicy::Compatibility,
+                &cancel,
+            )
+            .unwrap();
+            assert_eq!(plan.needs().len(), 1, "{mode}: {recipe:?}");
+            let crate::engine::build::acquisition::AcquisitionKey::Locked(key) =
+                &plan.needs()[0].key;
+            assert_eq!(key.dependency.as_str(), expected);
+        }
+        // Retained A's assertion must reject making B participate on the client.
+        let before = snapshot(&root);
+        b.requirements.client = Requirement::Required;
+        let error = update_mixed(
+            temp.path(),
+            &next,
+            vec![AddHostInput::Provider(b)],
+            true,
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("incompatib"), "{error:#}");
+        assert_eq!(snapshot(&root), before);
+    }
+}
