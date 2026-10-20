@@ -19,6 +19,7 @@ changes that are not yet available in a published binary.
 | --- | --- |
 | [Contributing](../CONTRIBUTING.md) | Toolchain, checks and contribution conventions |
 | [Testing](testing.md) | Deterministic tests and external consumer acceptance |
+| [v0.9 browser authoring candidate](candidates/v0.9.0-beta-browser-authoring.md) | Proposed portable editing engine and browser capabilities; not implemented |
 | [Design contracts](design/README.md) | Engine boundaries, formats and guarantees |
 | [Modrinth integration](reference/MODRINTH.md) | Provider identity and format behavior |
 | [CurseForge integration](reference/CURSEFORGE.md) | Provider identity and download constraints |
