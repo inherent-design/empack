@@ -165,16 +165,21 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
                 matches!(provider, "modrinth" | "curseforge"),
                 "Unknown source provider"
             );
-            json!({"kind":"provider","identity":{"provider":provider,"project":project}})
+            json!({"kind":"provider-selector","request":{"provider":provider,"selector":project}})
         } else {
             source
         }
     };
     ensure!(!map.contains_key("mirrors"), "mirrors applies only to url");
-    let provider = source.get("kind") == Some(&json!("provider"));
+    let provider = matches!(
+        source.get("kind").and_then(Value::as_str),
+        Some("provider" | "provider-selector")
+    );
     let pin = map.remove("pin");
     ensure!(
-        !map.contains_key("releases") || (provider && pin.is_none()),
+        !map.contains_key("releases")
+            || ((provider || source.get("kind").and_then(Value::as_str) == Some("search"))
+                && pin.is_none()),
         "releases applies only to an unpinned provider request"
     );
     if let Some(policy) = map.get("releases") {
@@ -201,7 +206,7 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
     );
     let version = if let Some(pin) = pin {
         let id = text(&pin)?;
-        json!({"mode":"exact","pin":{"provider":source["identity"]["provider"],"id":id}})
+        json!({"mode":"exact","pin":{"provider":if source["kind"]=="provider" {source["identity"]["provider"].clone()} else {source["request"]["provider"].clone()},"id":id}})
     } else if let Some(digests) = digests {
         json!({"mode":"content-pinned","digests":digests})
     } else {
@@ -310,14 +315,14 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
         }
         let source = map.remove("source").unwrap();
         match source["kind"].as_str().unwrap() {
-            "provider" => {
-                let identity = &source["identity"];
+            "provider-selector" => {
+                let request = &source["request"];
                 map.insert(
                     "source".into(),
                     json!(format!(
                         "{}:{}",
-                        text(&identity["provider"])?,
-                        text(&identity["project"])?
+                        text(&request["provider"])?,
+                        text(&request["selector"])?
                     )),
                 );
             }

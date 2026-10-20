@@ -94,7 +94,10 @@ impl MigrationOptions {
                 .get_mut(key)
                 .context("Replacement key is not an explicit dependency")?;
             ensure!(
-                matches!(root.source, SourceIntent::Provider(_)),
+                matches!(
+                    root.source,
+                    SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_)
+                ),
                 "Migration can replace only provider-owned roots"
             );
             ensure!(

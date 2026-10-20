@@ -325,6 +325,7 @@ impl FileAddition {
                 }
             }
             let next = LockedDependency {
+                source_selector: None,
                 title: input.title,
                 kind: input.kind,
                 identity,

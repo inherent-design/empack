@@ -14,6 +14,11 @@ use std::collections::BTreeSet;
 
 /// Exact per-slot materialization, optionally paired with resolution for changed authoring intent.
 pub enum SyncRequest {
+    /// Pin current provider selections or remove their pins without resolving or restoring content.
+    SelectionIntent {
+        keys: empack_core::model::NonEmpty<DependencyKey>,
+        pinned: bool,
+    },
     /// Publish an explicitly proposed runtime and provider replacement plan.
     /// The original author documents remain read preconditions throughout preparation.
     Migration {
@@ -101,90 +106,106 @@ pub(super) async fn prepare(
         ),
         request => (request, BTreeMap::new(), None),
     };
-    let planned = match request {
-        SyncRequest::Migration { .. } | SyncRequest::AcquiredReferences { .. } => {
-            unreachable!("normalized above")
-        }
-        SyncRequest::Supplied {
-            resolution,
-            content,
-        } => {
-            let state = config.state_root.clone();
-            let limits = config.snapshot;
-            let work = scope.spawn_blocking(
-                config.resources.capture,
-                config.resources.prepared,
-                move |cancel| {
-                    let snapshot = ProjectReader::new(RecoveryReader::new(state))
-                        .capture_synchronization_with_resolution(
-                            &project,
-                            resolution.as_ref(),
-                            limits,
-                            &cancel,
-                        )?;
-                    native_sync::plan_synchronization_with_resolution(
-                        snapshot,
-                        content,
-                        resolution.as_ref(),
-                        &cancel,
-                    )
-                },
-            )?;
-            scope.accept(work.wait().await?)?.transpose()?
-        }
-        SyncRequest::Recorded {
-            resolution,
-            evidence,
-        } => {
-            let state = config.state_root.clone();
-            let limits = config.snapshot;
-            let archive = config.archive;
-            let work = scope.spawn_blocking(
-                config.resources.capture,
-                config.resources.prepared,
-                move |cancel| {
-                    let snapshot = ProjectReader::new(RecoveryReader::new(state))
-                        .capture_recorded_synchronization_mode(
-                            &project,
-                            resolution.as_ref(),
-                            migration,
-                            limits,
-                            &cancel,
-                        )?;
-                    snapshot.require_revision(source_revision)?;
-                    let memory = native_sync::recorded::RecordedInputs::metadata_memory(
-                        &snapshot,
-                        resolution.as_ref(),
-                        archive,
+    let planned =
+        match request {
+            SyncRequest::SelectionIntent { keys, pinned } => {
+                let state = config.state_root.clone();
+                let limits = config.snapshot;
+                let work =
+                    scope.spawn_blocking(
+                        config.resources.capture,
+                        config.resources.prepared,
+                        move |cancel| {
+                            let workspace = ProjectReader::new(RecoveryReader::new(state))
+                                .capture(&project, &[], limits, &cancel)?;
+                            native_sync::plan_selection_intent(workspace, &keys, pinned, &cancel)
+                        },
                     )?;
-                    Ok::<_, anyhow::Error>((snapshot, resolution, memory))
-                },
-            )?;
-            let captured = scope.accept(work.wait().await?)?.transpose()?;
-            let mut resources = config.resources.capture;
-            resources.memory_bytes = resources.memory_bytes.max(captured.2);
-            let work =
-                scope.spawn_blocking(resources, config.resources.prepared, move |cancel| {
-                    let ((snapshot, resolution, _), _reservation) = captured.into_parts();
-                    native_sync::recorded::RecordedInputs::new(
-                        snapshot, resolution, archive, &cancel,
-                    )
+                scope.accept(work.wait().await?)?.transpose()?
+            }
+            SyncRequest::Migration { .. } | SyncRequest::AcquiredReferences { .. } => {
+                unreachable!("normalized above")
+            }
+            SyncRequest::Supplied {
+                resolution,
+                content,
+            } => {
+                let state = config.state_root.clone();
+                let limits = config.snapshot;
+                let work = scope.spawn_blocking(
+                    config.resources.capture,
+                    config.resources.prepared,
+                    move |cancel| {
+                        let snapshot = ProjectReader::new(RecoveryReader::new(state))
+                            .capture_synchronization_with_resolution(
+                                &project,
+                                resolution.as_ref(),
+                                limits,
+                                &cancel,
+                            )?;
+                        native_sync::plan_synchronization_with_resolution(
+                            snapshot,
+                            content,
+                            resolution.as_ref(),
+                            &cancel,
+                        )
+                    },
+                )?;
+                scope.accept(work.wait().await?)?.transpose()?
+            }
+            SyncRequest::Recorded {
+                resolution,
+                evidence,
+            } => {
+                let state = config.state_root.clone();
+                let limits = config.snapshot;
+                let archive = config.archive;
+                let work = scope.spawn_blocking(
+                    config.resources.capture,
+                    config.resources.prepared,
+                    move |cancel| {
+                        let snapshot = ProjectReader::new(RecoveryReader::new(state))
+                            .capture_recorded_synchronization_mode(
+                                &project,
+                                resolution.as_ref(),
+                                migration,
+                                limits,
+                                &cancel,
+                            )?;
+                        snapshot.require_revision(source_revision)?;
+                        let memory = native_sync::recorded::RecordedInputs::metadata_memory(
+                            &snapshot,
+                            resolution.as_ref(),
+                            archive,
+                        )?;
+                        Ok::<_, anyhow::Error>((snapshot, resolution, memory))
+                    },
+                )?;
+                let captured = scope.accept(work.wait().await?)?.transpose()?;
+                let mut resources = config.resources.capture;
+                resources.memory_bytes = resources.memory_bytes.max(captured.2);
+                let work =
+                    scope.spawn_blocking(resources, config.resources.prepared, move |cancel| {
+                        let ((snapshot, resolution, _), _reservation) = captured.into_parts();
+                        native_sync::recorded::RecordedInputs::new(
+                            snapshot, resolution, archive, &cancel,
+                        )
+                    })?;
+                let inputs = scope.accept(work.wait().await?)?.transpose()?;
+                let mut work_resources = config.resources.local_acquisition;
+                work_resources.scratch_bytes = work_resources.scratch_bytes.max(inputs.bytes());
+                work_resources.memory_bytes = work_resources.memory_bytes.max(inputs.memory()?);
+                work_resources.open_files = work_resources.open_files.max(inputs.open_files());
+                let mut retained = config.resources.prepared;
+                retained.scratch_bytes = inputs.retained_bytes();
+                retained.open_files = retained.open_files.max(inputs.open_files());
+                let work = scope.spawn_blocking(work_resources, retained, move |cancel| {
+                    let (inputs, _reservation) = inputs.into_parts();
+                    inputs.prepare_with_references(evidence, acquired, &cancel)
                 })?;
-            let inputs = scope.accept(work.wait().await?)?.transpose()?;
-            let mut work_resources = config.resources.local_acquisition;
-            work_resources.scratch_bytes = work_resources.scratch_bytes.max(inputs.bytes());
-            work_resources.memory_bytes = work_resources.memory_bytes.max(inputs.memory()?);
-            work_resources.open_files = work_resources.open_files.max(inputs.open_files());
-            let mut retained = config.resources.prepared;
-            retained.scratch_bytes = inputs.retained_bytes();
-            retained.open_files = retained.open_files.max(inputs.open_files());
-            let work = scope.spawn_blocking(work_resources, retained, move |cancel| {
-                let (inputs, _reservation) = inputs.into_parts();
-                inputs.prepare_with_references(evidence, acquired, &cancel)
-            })?;
-            scope.accept(work.wait().await?)?.transpose()?
-        }
-    };
+                scope.accept(work.wait().await?)?.transpose()?
+            }
+        };
     let (resources, retained) = project_change::resources(planned.bytes()?, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
         let (planned, _reservation) = planned.into_parts();

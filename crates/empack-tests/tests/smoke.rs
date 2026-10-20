@@ -645,6 +645,7 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
         lock.dependencies.insert(
             key.clone(),
             LockedDependency {
+                source_selector: None,
                 title: key.as_str().into(),
                 kind: ContentKind::Mod,
                 identity: ResolvedIdentity::Provider(identity),

@@ -13,11 +13,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod authoring;
 mod bindings;
+mod editing;
 mod intent;
 mod lock;
 pub(crate) use lock::file_evidence;
+mod inspection;
 pub(crate) mod recipe;
 mod sizing;
+pub use inspection::{AuthoringInspection, DependencyInspection};
 
 /// Malformed authored documents are usage failures, distinct from filesystem failures.
 #[derive(Debug, thiserror::Error)]
@@ -32,7 +35,7 @@ pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
 pub const INTENT_SCHEMA: u64 = 5;
 /// Exact selection schema.
-pub const LOCK_SCHEMA: u64 = 1;
+pub const LOCK_SCHEMA: u64 = 2;
 
 /// Parsed intent retains raw bytes independently of canonical semantic meaning.
 #[derive(Debug, Clone)]
@@ -98,6 +101,8 @@ impl DecodedLock {
 pub enum DocumentEdit {
     /// No semantic change; original comments and formatting are retained byte-for-byte.
     Unchanged,
+    /// Changed values retain unrelated source syntax.
+    Preserved,
     /// The caller must include document reformatting in its plan/receipt.
     Reformatted,
 }
@@ -261,12 +266,30 @@ impl DocumentCodec {
                 DocumentEdit::Unchanged,
             )
         } else {
-            let next = self.encode_authoring(next)?;
-            (next.intent, next.bindings, DocumentEdit::Reformatted)
+            let original = parse(&source.original)?;
+            let old = bindings::split_preserving(source.intent(), &original)?;
+            let encoded = bindings::split_preserving(next, &original)?;
+            let empty = serialize(&json!({"schema":1,"bindings":{}}))?;
+            let bytes = editing::patch(&source.original, &old.intent, &encoded.intent)?;
+            let bindings = match &source.bindings_original {
+                Some(original) => Some(editing::patch(
+                    original,
+                    old.bindings.as_deref().unwrap_or(&empty),
+                    encoded.bindings.as_deref().unwrap_or(&empty),
+                )?),
+                None => encoded.bindings,
+            };
+            (bytes, bindings, DocumentEdit::Preserved)
         };
         if bindings.is_none() && source.bindings_original.is_some() {
             bindings = Some(serialize(&json!({"schema":1,"bindings":{}}))?);
         }
+        ensure!(
+            self.decode_authoring(&bytes, bindings.as_deref(), "prepared authoring edit")?
+                .intent()
+                == next,
+            "Preserving source syntax could not express the requested edit"
+        );
         Ok(PreparedDocument {
             expected: source.raw_revision,
             bytes,
@@ -694,4 +717,20 @@ fn release_policy(value: &Value) -> Result<ReleasePolicy> {
         "any" => Ok(ReleasePolicy::Any),
         _ => bail!("Unknown dependency release policy"),
     }
+}
+
+fn provider_selector(value: &Value) -> Result<ProviderSelector> {
+    fields(value, &["provider", "selector"])?;
+    let provider = match text(required(value, "provider")?)? {
+        "modrinth" => ProviderKind::Modrinth,
+        "curseforge" => ProviderKind::CurseForge,
+        _ => bail!("Unknown provider namespace"),
+    };
+    Ok(ProviderSelector::new(
+        provider,
+        text(required(value, "selector")?)?,
+    )?)
+}
+fn provider_selector_value(value: &ProviderSelector) -> Value {
+    json!({"provider":match value.provider() { ProviderKind::Modrinth=>"modrinth", ProviderKind::CurseForge=>"curseforge" },"selector":value.value()})
 }

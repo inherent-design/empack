@@ -155,10 +155,23 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         .await
         .unwrap();
         let current = project(root.path()).lock().clone();
+        let dependency = current.dependencies.values().next().unwrap();
+        assert_eq!(
+            dependency.source_selector.as_ref().unwrap().value(),
+            if input == "Root0001" {
+                "Root0001"
+            } else {
+                "renderer"
+            }
+        );
         if let Some(mut expected) = prior {
             // Independently initialized packs have distinct IDs and semantic revisions.
             assert_ne!(current.intent_revision, expected.intent_revision);
             expected.intent_revision = current.intent_revision;
+            // Request spelling is retained independently of canonical selection and content.
+            for (key, dependency) in &mut expected.dependencies {
+                dependency.source_selector = current.dependencies[key].source_selector.clone();
+            }
             assert_eq!(current, expected);
         }
         prior = Some(current);

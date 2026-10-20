@@ -34,7 +34,7 @@ selectors are resolved before persistence; a slug never becomes an ID by assignm
 | Instance record | Instance engine | Last completed release, owned files, side, choices, authority and source binding |
 | Recovery journal | Publisher | Approved operation, native root, before/after evidence and durable progress |
 
-Author intent uses schema 5, optional bindings use schema 1, and exact resolution uses schema 1. Release, channel and
+Author intent uses schema 5, optional bindings use schema 1, and exact resolution uses schema 2. Release, channel and
 instance schemas have their own explicit versions. Unknown intent fields and invalid explicit
 variants fail; they cannot silently become search input. Original author bytes are
 preserved when no semantic edit is required. Canonical semantic identity and raw
@@ -49,6 +49,13 @@ interpreted archive members. Mods, resource packs, shaders, datapacks and worlds
 retain their content kind. Exact pins and follow-compatible selection are explicit.
 Sync retains valid exact selections; update deliberately resolves eligible changes.
 Unknown dependency coverage is not an empty required-dependency set.
+
+A qualified source string records a `ProviderSelector`, not an asserted canonical ID.
+The lock stores its exact request in `source-selector` beside the resolved provider identity.
+Sync, update, adoption and assessment reuse that identity while the request is unchanged,
+including when a provider renames or reassigns a slug. A changed request needs fresh lookup.
+An explicit tagged `provider` source with `identity` remains the strict canonical-ID form.
+Parsing either form performs no network requests.
 
 A resolved dependency can contain multiple named file roles and placements. Source
 path and destination are independent. Provider-owned world archives retain the

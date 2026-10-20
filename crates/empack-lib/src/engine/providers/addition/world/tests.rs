@@ -51,6 +51,7 @@ async fn provider_world_interpretation_publishes_members_and_preserves_identity_
         .start(move |mut scope| async move {
             let result = async {
                 let input = ProviderAddInput {
+                    source_selector: None,
                     releases: None,
                     selector: ProjectSelector::parse(ProviderKind::CurseForge, "123")?,
                     key: Some(DependencyKey::parse("my-world")?),

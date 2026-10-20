@@ -316,25 +316,29 @@ pub(super) async fn synchronize_mode(
             .as_ref()
             .and_then(|prior| prior.dependencies.get(key));
         match &root.source {
-            SourceIntent::Provider(id) => {
+            SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_) => {
+                let id = root.source.canonical_project(old).cloned();
+                let selector = if let Some(id) = &id {
+                    ProjectSelector::canonical(id.clone())
+                } else {
+                    let request = root
+                        .source
+                        .selector()
+                        .context("Missing provider lookup request")?;
+                    ProjectSelector::parse(request.provider(), request.value())?
+                };
                 let same_context = previous.as_ref().is_some_and(|prior| {
                     runtime_satisfies(&source.intent().runtime, &prior.runtime)
                         && prior.acceptable_versions == source.intent().runtime.acceptable_versions
                 });
-                let mut input = provider_input(
-                    key,
-                    root,
-                    ProjectSelector::canonical(id.clone()),
-                    old,
-                    same_context,
-                )?;
+                let mut input = provider_input(key, root, selector, old, same_context)?;
                 // A policy edit calls for revalidation, not an implicit update of a still-valid pin.
                 if input.pin.is_none()
                     && !same_context
                     && let Some(pin) = old
                         .filter(|old| old.kind == root.kind)
                         .and_then(|old| old.selected.as_ref())
-                        .filter(|pin| &pin.project == id)
+                        .filter(|pin| Some(&pin.project) == id.as_ref())
                 {
                     let catalog = services.catalog.clone();
                     let pin = pin.clone();
@@ -588,7 +592,10 @@ fn resolver_context(
             lock.dependencies
                 .get(*key)
                 .is_some_and(|old| match (&root.source, &old.identity) {
-                    (SourceIntent::Provider(a), ResolvedIdentity::Provider(b)) => a != b,
+                    (
+                        SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_),
+                        ResolvedIdentity::Provider(b),
+                    ) => root.source.canonical_project(Some(old)) != Some(b),
                     (
                         SourceIntent::Local(_) | SourceIntent::LocalFiles(_),
                         ResolvedIdentity::Local(_),
@@ -621,7 +628,7 @@ pub(super) fn provider_input(
     old: Option<&LockedDependency>,
     same_runtime: bool,
 ) -> Result<ProviderAddInput> {
-    let retained = old.filter(|old| same_runtime && old.kind == root.kind && matches!((&root.source, &old.identity), (SourceIntent::Provider(a), ResolvedIdentity::Provider(b)) if a == b));
+    let retained = old.filter(|old| same_runtime && old.kind == root.kind && matches!(&old.identity, ResolvedIdentity::Provider(b) if root.source.canonical_project(Some(old)) == Some(b)));
     let pin = match &root.version {
         VersionIntent::Exact(pin) => Some(pin.clone()),
         VersionIntent::FollowCompatible => {
@@ -631,6 +638,7 @@ pub(super) fn provider_input(
     };
     let files = ProviderFiles::from_placement(&root.placement);
     Ok(ProviderAddInput {
+        source_selector: root.source.selector().cloned(),
         releases: root.releases,
         selector,
         key: Some(key.clone()),

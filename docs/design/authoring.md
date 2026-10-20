@@ -113,6 +113,13 @@ locked selection. `manifest diff` classifies differences between current authori
 and the available lock; it does not claim to predict a resolved candidate.
 `pin KEY` records its current exact provider selection. `unpin KEY` restores
 compatible intent while retaining the current selection; neither refreshes files.
+Pinning removes a per-dependency automatic preference; unpinning returns to the project
+preference. Pin edits capture and publish author documents only. They preserve every
+locked file, provider selection, graph edge and runtime. Stale raw inputs still reject
+publication. Unsupported changed YAML syntax fails explicitly; it is never a reason
+to reformat unrelated content. Existing inline integration retains its document ownership.
+The local diff compares constraints and recorded selections. It cannot reconstruct prior
+display metadata or profiles because the lock does not store old author documents.
 
 Display metadata and output-format edits do not select provider versions. Runtime,
 source, selection and binding edits invalidate the corresponding evidence. Every

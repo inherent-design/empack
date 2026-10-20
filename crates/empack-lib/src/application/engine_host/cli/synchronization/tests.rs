@@ -1046,6 +1046,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         lock.dependencies.insert(
             key.clone(),
             LockedDependency {
+                source_selector: None,
                 title: key.as_str().into(),
                 kind: ContentKind::Mod,
                 identity: ResolvedIdentity::Provider(identity),
@@ -1295,4 +1296,158 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
     }
     assert_eq!(snapshot(&root.path().join("project")), after);
     no_network.assert_async().await;
+}
+
+#[tokio::test]
+async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    let record = json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]});
+    let slug = server
+        .mock("GET", "/project/renderer")
+        .with_body(record.to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let canonical = server
+        .mock("GET", "/project/Root0001")
+        .with_body(record.to_string())
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    let version = server.mock("GET", "/version/RootVer1").with_body(json!({
+        "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+        "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+        "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+    }).to_string()).expect_at_least(1).create_async().await;
+    let mut intent = project(root.path()).intent().clone();
+    let key = DependencyKey::parse("menu").unwrap();
+    let request =
+        empack_core::model::ProviderSelector::new(ProviderKind::Modrinth, "renderer").unwrap();
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::ProviderSelector(request.clone()),
+            releases: None,
+            kind: ContentKind::Mod,
+            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                ModrinthVersionId::parse("RootVer1").unwrap(),
+            )),
+            placement: PlacementIntent::Automatic,
+            requirements: required(),
+        },
+    );
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    slug.assert_async().await;
+    slug.remove_async().await;
+    let redirected = server.mock("GET", "/project/renderer").with_body(json!({"id":"Other001","slug":"renderer","title":"Other","project_type":"mod","loaders":["fabric"]}).to_string()).expect(0).create_async().await;
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key].source_selector,
+        Some(request.clone())
+    );
+    // Update and a placement edit must use the locked identity, never re-resolve the slug.
+    super::super::update::update_with_services(
+        &session(root.path(), false),
+        vec!["menu".into()],
+        services(&server.url()),
+    )
+    .await
+    .unwrap();
+    intent.roots.get_mut(&key).unwrap().placement = placed("mods/menu.jar");
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    let renamed = DependencyKey::parse("renamed-menu").unwrap();
+    let dependency = intent.roots.remove(&key).unwrap();
+    intent.roots.insert(renamed.clone(), dependency);
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    let current = project(root.path());
+    assert!(!current.lock().dependencies.contains_key(&key));
+    assert_eq!(
+        current.lock().dependencies[&renamed].source_selector,
+        Some(request)
+    );
+    assert_eq!(
+        current.lock().dependencies[&renamed].identity,
+        ResolvedIdentity::Provider(ProviderProjectId::Modrinth(
+            ModrinthProjectId::parse("Root0001").unwrap()
+        ))
+    );
+    let stable = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), &server.url(), false).await.unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), stable);
+    redirected.assert_async().await;
+    canonical.assert_async().await;
+    version.assert_async().await;
+    // Pin helpers route through normal CLI approval and mutate only author documents.
+    use crate::application::{
+        Commands, cli::ManifestCommand, commands::execute_command_with_session,
+    };
+    let before = snapshot(&root.path().join("project"));
+    execute_command_with_session(
+        Commands::Unpin {
+            dependencies: vec!["renamed-menu".into()],
+        },
+        &session(root.path(), true),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&root.path().join("project")), before);
+    let exact = project(root.path()).lock().dependencies.clone();
+    execute_command_with_session(
+        Commands::Unpin {
+            dependencies: vec!["renamed-menu".into()],
+        },
+        &session(root.path(), false),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        project(root.path()).intent().roots[&renamed].version,
+        VersionIntent::FollowCompatible
+    ));
+    assert_eq!(project(root.path()).lock().dependencies, exact);
+    execute_command_with_session(
+        Commands::Pin {
+            dependencies: vec!["renamed-menu".into()],
+        },
+        &session(root.path(), false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(project(root.path()).intent(), &intent);
+    assert_eq!(project(root.path()).lock().dependencies, exact);
+    let before = snapshot(root.path());
+    for json in [false, true] {
+        for command in [
+            ManifestCommand::Check { json },
+            ManifestCommand::Explain {
+                dependency: "renamed-menu".into(),
+                json,
+            },
+            ManifestCommand::Diff { json },
+        ] {
+            execute_command_with_session(
+                Commands::Manifest { command },
+                &session(root.path(), false),
+            )
+            .await
+            .unwrap();
+        }
+    }
+    assert_eq!(snapshot(root.path()), before);
+    // Editing the request is a deliberate source change. An old exact pin cannot follow it.
+    intent.roots.get_mut(&renamed).unwrap().source = SourceIntent::ProviderSelector(
+        empack_core::model::ProviderSelector::new(ProviderKind::Modrinth, "new-source").unwrap(),
+    );
+    write_intent(root.path(), &intent);
+    let changed = server.mock("GET", "/project/new-source").with_body(json!({"id":"Other001","slug":"new-source","title":"Other","project_type":"mod","loaders":["fabric"]}).to_string()).expect(1).create_async().await;
+    let before = snapshot(&root.path().join("project"));
+    assert!(sync(root.path(), &server.url(), false).await.is_err());
+    assert_eq!(snapshot(&root.path().join("project")), before);
+    changed.assert_async().await;
 }

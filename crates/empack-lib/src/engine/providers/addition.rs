@@ -48,6 +48,8 @@ impl ProviderFiles {
 }
 #[derive(Clone)]
 pub struct ProviderAddInput {
+    /// Authored lookup retained even when execution uses its locked canonical identity.
+    pub source_selector: Option<ProviderSelector>,
     /// Authored per-root preference, separate from an operation override.
     pub releases: Option<ReleasePolicy>,
     pub selector: ProjectSelector,
@@ -147,6 +149,18 @@ impl ProviderCatalog {
                 )
                 .await?;
             budget = next;
+            if let Some(request) = &input.source_selector {
+                let bound = current.lock().dependencies.values().any(|locked| {
+                    locked.source_selector.as_ref() == Some(request)
+                        && locked.identity == ResolvedIdentity::Provider(project.id.clone())
+                });
+                ensure!(
+                    bound
+                        || ProjectSelector::parse(request.provider(), request.value())?
+                            .matches(&project),
+                    "Authored provider selector lacks a matching canonical binding"
+                );
+            }
             let mut input = input.clone();
             if input.releases.is_none() {
                 let key = input
@@ -586,7 +600,35 @@ fn normalize(
             })
             .collect::<Result<Vec<_>>>()?
         };
+        let source = root.map(|root| {
+            current
+                .intent()
+                .roots
+                .get(key)
+                .filter(|existing| {
+                    existing
+                        .source
+                        .canonical_project(current.lock().dependencies.get(key))
+                        == Some(id)
+                })
+                .map(|existing| existing.source.clone())
+                .unwrap_or_else(|| {
+                    root.source_selector
+                        .clone()
+                        .or_else(|| root.selector.authored_selector())
+                        .map(SourceIntent::ProviderSelector)
+                        .unwrap_or_else(|| SourceIntent::Provider(id.clone()))
+                })
+        });
         let dependency = LockedDependency {
+            source_selector: match &source {
+                Some(source) => source.selector().cloned(),
+                None => current
+                    .lock()
+                    .dependencies
+                    .get(key)
+                    .and_then(|locked| locked.source_selector.clone()),
+            },
             title: selected.resolution.project.title.clone(),
             kind: selected.kind,
             identity: ResolvedIdentity::Provider(id.clone()),
@@ -602,7 +644,7 @@ fn normalize(
                     } else {
                         None
                     },
-                    source: SourceIntent::Provider(id.clone()),
+                    source: source.expect("Explicit provider root has authored source"),
                     kind: selected.kind,
                     version: root
                         .pin

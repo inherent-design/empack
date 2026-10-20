@@ -68,6 +68,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     };
     let input = || {
         NonEmpty::new(vec![AddHostInput::Provider(ProviderAddInput {
+            source_selector: None,
             releases: None,
             selector: ProjectSelector::parse(ProviderKind::CurseForge, "42").unwrap(),
             key: Some(DependencyKey::parse("adventure").unwrap()),

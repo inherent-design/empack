@@ -688,9 +688,45 @@ pub enum PendingCommand {
     Discard { id: String },
 }
 
+/// Read-only authoring inspection; never resolves or rewrites dependencies.
+#[derive(Debug, Clone, Subcommand)]
+pub enum ManifestCommand {
+    /// Validate both author documents and report whether the lock satisfies them
+    Check {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show effective intent, policy, bindings and recorded identity for a logical key
+    Explain {
+        dependency: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compare current constraints with the recorded lock, without resolving a candidate
+    Diff {
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Inspect authoring intent and its exact lock without network access
+    Manifest {
+        #[command(subcommand)]
+        command: ManifestCommand,
+    },
+    /// Pin current provider selections; remove per-dependency automatic preferences
+    Pin {
+        #[arg(required = true)]
+        dependencies: Vec<String>,
+    },
+    /// Remove provider pins while retaining the exact current selections
+    Unpin {
+        #[arg(required = true)]
+        dependencies: Vec<String>,
+    },
     /// Inspect workspace metadata without network access or durable changes
     Status {
         /// Select a context when a directory contains more than one workspace role
@@ -949,7 +985,10 @@ impl Commands {
             Commands::Requirements | Commands::Status { .. } => false,
             Commands::Version => false,
             Commands::Init(..) => false,
-            Commands::Sync { .. } => true,
+            Commands::Sync { .. }
+            | Commands::Manifest { .. }
+            | Commands::Pin { .. }
+            | Commands::Unpin { .. } => true,
             Commands::Build(..) => true,
             Commands::Add { .. }
             | Commands::Update { .. }
@@ -970,7 +1009,10 @@ impl Commands {
             Commands::Version => 0,
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
-            Commands::Sync { .. } => 5,
+            Commands::Sync { .. }
+            | Commands::Manifest { .. }
+            | Commands::Pin { .. }
+            | Commands::Unpin { .. } => 5,
             Commands::Add { .. }
             | Commands::Update { .. }
             | Commands::Adopt { .. }

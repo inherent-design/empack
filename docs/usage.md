@@ -30,6 +30,8 @@ Minecraft will launch. `update` changes author dependency selections;
 | --- | --- |
 | `init` | Create an authoring project or import a supported archive |
 | `add` | Describe and resolve dependencies, preserving exact source intent |
+| `manifest check/explain/diff` | Inspect local authoring and recorded constraints without network access |
+| `pin` / `unpin` | Change exact provider selection intent without refreshing content |
 | `remove` | Remove or demote selected logical roots with native ownership checks |
 | `sync` | Apply authored intent while retaining compatible locked selections |
 | `outdated` | Read provider update evidence and joint dependency blockers |
@@ -50,7 +52,7 @@ through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and versio
 control. Resolution and referenced downloads require network access.
 
 Edit `empack.yml` directly or use authoring commands. Common provider mods can use
-`label: modrinth:CANONICAL_ID`; use a mapping for side, content kind or exact policy.
+`label: modrinth:SELECTOR`; use a mapping for side, content kind or exact policy.
 Non-default role and placement decisions belong to optional `empack.bindings.yml`.
 Commit `empack.yml`, `empack.lock` and bindings when present to share reproducible
 author sources. Build requires satisfied intent and

@@ -57,7 +57,9 @@ menu:
 ```
 
 `empack pin menu` records the current locked selection. `empack unpin menu` removes
-that restriction without selecting a newer file. Human version names are display
+that restriction without selecting a newer file. Pinning removes a dependency's
+`releases` override because automatic preference does not apply to an exact pin.
+Unpinning uses the project preference unless you add an override again. Human version names are display
 labels, not dependency ranges.
 
 A local `path` is the source file, not its installed destination. Use `adopt` to
@@ -109,4 +111,11 @@ for your Minecraft and loader combination.
 
 Use `empack manifest check` for local validation, `manifest explain menu` for an
 effective dependency view, and `manifest diff` to inspect authoring changes against
-the available lock. These inspection commands do not install or update content.
+the available lock. The lock does not retain old display metadata or build profiles,
+so this is a constraint comparison, not a historical manifest diff. These inspection
+commands do not install or update content or contact providers.
+
+Commands preserve unrelated comments and ordering. If an edited YAML value uses
+anchors, flow collections or multiline syntax that cannot be changed safely, expand
+that value into a block mapping and retry. Empack reports the unsupported edit instead
+of silently reformatting the whole file.

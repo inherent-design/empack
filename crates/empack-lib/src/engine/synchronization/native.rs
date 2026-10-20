@@ -97,6 +97,73 @@ impl SynchronizationPreparation {
         })
     }
 }
+/// Pin changes own only the captured author documents and exact lock, never game files.
+pub(in crate::engine) fn plan_selection_intent(
+    workspace: WorkspaceSnapshot,
+    keys: &empack_core::model::NonEmpty<empack_core::model::DependencyKey>,
+    pinned: bool,
+    cancel: &Cancellation,
+) -> Result<SynchronizationPreparation> {
+    cancel.check()?;
+    let candidate = SynchronizationCandidate::prepare_selection_intent(
+        workspace.intent(),
+        workspace
+            .prior_lock()
+            .context("Pin changes require a current lock; run sync first")?,
+        keys,
+        pinned,
+    )?;
+    let mut documents = candidate
+        .intent_document()
+        .documents(candidate.lock_document());
+    if candidate.preserves_lock_document() {
+        documents.insert(
+            ManagedPath::LockDocument,
+            workspace
+                .read_document(
+                    &PortableRelPath::parse("empack.lock", PathSyntax::ProjectContent)?,
+                    cancel,
+                )?
+                .context("Captured lock disappeared")?,
+        );
+    }
+    let observed =
+        verification::observed_mutation_for(workspace.observations(), documents.keys().cloned())?;
+    let desired = documents
+        .iter()
+        .map(|(target, bytes)| {
+            let permissions = match &observed[target] {
+                ObservedPath::File(before) => before.permissions,
+                ObservedPath::Absent if *target == ManagedPath::BindingsDocument => {
+                    empack_core::files::FilePermissions {
+                        readonly: false,
+                        executable: false,
+                    }
+                }
+                _ => anyhow::bail!("Author document is not a regular file"),
+            };
+            Ok((
+                target.clone(),
+                FileContent {
+                    content: ContentId::from_sha256(Sha256::digest(bytes).into()),
+                    bytes: bytes.len() as u64,
+                    permissions,
+                },
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let plan = verification::plan_mutation_files(&observed, &desired, &BTreeSet::new())?;
+    documents.retain(|target, _| plan.expected().contains_key(target));
+    verification::candidate_stage_limits(workspace.observations(), &plan)?;
+    Ok(SynchronizationPreparation {
+        workspace,
+        candidate,
+        plan,
+        documents,
+        content: BTreeMap::new(),
+        references: BTreeSet::new(),
+    })
+}
 pub(in crate::engine) fn plan_synchronization(
     workspace: MutationSnapshot,
     acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,

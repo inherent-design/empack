@@ -149,6 +149,10 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
     )?;
     let source = required(value, "source")?;
     let source = match text(required(source, "kind")?)? {
+        "provider-selector" => {
+            fields(source, &["kind", "request"])?;
+            SourceIntent::ProviderSelector(provider_selector(required(source, "request")?)?)
+        }
         "provider" => {
             fields(source, &["kind", "identity"])?;
             SourceIntent::Provider(provider(required(source, "identity")?)?)
@@ -257,6 +261,7 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
 pub(super) fn encode(intent: &ProjectIntent) -> Value {
     let roots: BTreeMap<_, _> = intent.roots.iter().map(|(key, dep)| {
         let source = match &dep.source {
+            SourceIntent::ProviderSelector(request) => json!({"kind":"provider-selector","request":provider_selector_value(request)}),
             SourceIntent::Provider(id) => json!({"kind":"provider","identity":provider_value(id)}),
             SourceIntent::Search { query, providers } => json!({"kind":"search","query":query,"providers":providers.as_slice().iter().map(|v| match v { ProviderKind::Modrinth => "modrinth", ProviderKind::CurseForge => "curseforge" }).collect::<Vec<_>>()}),
             SourceIntent::Url(values) => json!({"kind":"url","downloads":values.as_slice()}),

@@ -244,6 +244,7 @@ fn selections(
                     )
                 };
                 inputs.push(AddHostInput::Provider(ProviderAddInput {
+                    source_selector: root.and_then(|root| root.source.selector()).cloned(),
                     releases: root.and_then(|root| root.releases),
                     selector: ProjectSelector::canonical(id.clone()),
                     key: Some(key),

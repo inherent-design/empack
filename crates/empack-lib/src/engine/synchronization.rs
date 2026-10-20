@@ -5,8 +5,8 @@ pub mod suspension;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::{Result, ensure};
 use empack_core::model::ResolvedProject;
-pub(in crate::engine) use native::plan_synchronization_with_resolution;
 pub use native::{PreparedSynchronization, SynchronizationReceipt, prepare_synchronization};
+pub(in crate::engine) use native::{plan_selection_intent, plan_synchronization_with_resolution};
 
 /// Intent edits requiring new provider/content/runtime evidence cannot reuse the old lock.
 #[derive(Debug, thiserror::Error)]
@@ -51,6 +51,58 @@ impl SynchronizationCandidate {
             preserve_lock,
         })
     }
+    /// Change provider pin intent without selecting versions or inspecting installed payloads.
+    pub fn prepare_selection_intent(
+        source: &DecodedIntent,
+        prior: &DecodedLock,
+        keys: &empack_core::model::NonEmpty<empack_core::model::DependencyKey>,
+        pinned: bool,
+    ) -> Result<Self> {
+        use empack_core::model::{SourceIntent, VersionIntent};
+        let current = prior.bind(source)?;
+        let mut intent = current.intent().clone();
+        let mut unique = std::collections::BTreeSet::new();
+        for key in keys.as_slice() {
+            ensure!(unique.insert(key), "Repeated pin key: {}", key.as_str());
+            let root = intent.roots.get_mut(key).ok_or_else(|| {
+                anyhow::anyhow!("Pin requires an explicit dependency: {}", key.as_str())
+            })?;
+            let selected = &current.lock().dependencies[key];
+            ensure!(
+                matches!(
+                    root.source,
+                    SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_)
+                ),
+                "Pin requires a resolved provider source: {}",
+                key.as_str()
+            );
+            if pinned {
+                root.version = VersionIntent::Exact(
+                    selected
+                        .selected
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("Provider selection missing"))?
+                        .selection
+                        .clone(),
+                );
+                // An automatic override would be inapplicable beside an exact pin.
+                root.releases = None;
+            } else {
+                root.version = VersionIntent::FollowCompatible;
+            }
+        }
+        let document = DocumentCodec.replace_intent(source, &intent)?;
+        let decoded = document.decode("selection intent")?;
+        let mut lock = current.lock().clone();
+        lock.intent_revision = decoded.semantic_revision();
+        let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision())?;
+        Ok(Self {
+            lock: DocumentCodec.encode_lock(&project)?,
+            preserve_lock: project.lock() == prior.lock(),
+            project,
+            intent: document,
+        })
+    }
     /// Bind an explicit runtime migration to the original author documents.
     /// Only runtime requests and provider replacements may change authoring intent.
     pub fn prepare_migration(
@@ -68,8 +120,11 @@ impl SynchronizationCandidate {
                 })?;
             if root.source != next.source {
                 ensure!(
-                    matches!(root.source, empack_core::model::SourceIntent::Provider(_))
-                        && matches!(next.source, empack_core::model::SourceIntent::Provider(_)),
+                    matches!(
+                        root.source,
+                        empack_core::model::SourceIntent::Provider(_)
+                            | empack_core::model::SourceIntent::ProviderSelector(_)
+                    ) && matches!(next.source, empack_core::model::SourceIntent::Provider(_)),
                     "Migration replacements require explicit provider identities"
                 );
                 root.source = next.source.clone();
