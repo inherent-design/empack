@@ -63,6 +63,10 @@ pub(super) struct RequestBudget {
     deadline: Instant,
 }
 impl RequestBudget {
+    /// Carry the original deadline into CPU-only assessment after transport retires.
+    pub(super) fn deadline(&self) -> Instant {
+        self.deadline
+    }
     pub(super) fn check_deadline(&self) -> Result<()> {
         ensure!(Instant::now() < self.deadline, CatalogError::Deadline);
         Ok(())

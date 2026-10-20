@@ -364,14 +364,11 @@ async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects()
     }
 }
 
-#[tokio::test]
-async fn declaration_limit_keeps_completed_rows_and_marks_partial_evidence() {
+fn project_with_retained_declarations() -> ResolvedProject {
     use empack_core::{
         model::{ContentLayer, DependencyKey},
         requirements::{Requirement, Requirements},
     };
-    let mut server = Server::new_async().await;
-    records(&mut server, "Project1", "Version4", json!([])).await;
     let base = fixture(
         &[
             ("a", "Project1", "Version1"),
@@ -418,9 +415,14 @@ async fn declaration_limit_keeps_completed_rows_and_marks_partial_evidence() {
         }
         dependency.files = NonEmpty::new(files).unwrap();
     }
-    let project =
-        ResolvedProject::validate(base.intent().clone(), lock, base.lock().intent_revision)
-            .unwrap();
+    ResolvedProject::validate(base.intent().clone(), lock, base.lock().intent_revision).unwrap()
+}
+
+#[tokio::test]
+async fn declaration_limit_keeps_completed_rows_and_marks_partial_evidence() {
+    let mut server = Server::new_async().await;
+    records(&mut server, "Project1", "Version4", json!([])).await;
+    let project = project_with_retained_declarations();
     for maximum in [1, 2] {
         let report = assess_with_limits(
             &server,
@@ -444,5 +446,93 @@ async fn declaration_limit_keeps_completed_rows_and_marks_partial_evidence() {
             serde_json::to_value(&report).unwrap()["joint"]["declarations_complete"],
             maximum == 2
         );
+    }
+}
+
+#[tokio::test]
+async fn declaration_scan_honors_original_deadline_and_keeps_partial_evidence() {
+    let mut server = Server::new_async().await;
+    records(&mut server, "Project1", "Version4", json!([])).await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let runtime = OperationRuntime::new(
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 64 << 20,
+            open_files: 8,
+            ..Default::default()
+        }),
+        1,
+    );
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let project = project_with_retained_declarations();
+            let mut pin = project
+                .lock()
+                .dependencies
+                .values()
+                .next()
+                .unwrap()
+                .selected
+                .clone()
+                .unwrap();
+            pin.selection = pin.project.parse_pin("Version4").unwrap();
+            let limits = ClosureLimits::default();
+            let budget = transport::RequestBudget::new(limits.selection.catalog).unwrap();
+            let deadline = budget.deadline();
+            let closure = catalog
+                .resolve_required_closure_budget(
+                    &mut scope,
+                    ClosureRequest {
+                        roots: NonEmpty::new(vec![ClosureRoot {
+                            pin,
+                            kind: ContentKind::ResourcePack,
+                        }])
+                        .unwrap(),
+                        game_versions: NonEmpty::new(vec![
+                            project.intent().runtime.minecraft.clone(),
+                        ])
+                        .unwrap(),
+                        loader: project.intent().runtime.loader,
+                        releases: ReleasePolicy::PreferStable,
+                    },
+                    limits,
+                    budget,
+                    None,
+                    false,
+                )
+                .await
+                .unwrap();
+            let mut saw_partial = false;
+            let mut saw_complete = false;
+            // Sweep expiry across setup and comparisons without depending on host scheduling.
+            for expires_after in 0..32 {
+                let mut calls = 0;
+                let (declarations, incomplete) =
+                    declared_incompatibilities(&scope, &project, &closure, 10, deadline, || {
+                        calls += 1;
+                        if calls > expires_after {
+                            deadline
+                        } else {
+                            deadline - Duration::from_secs(1)
+                        }
+                    })
+                    .unwrap();
+                if let Some(reason) = incomplete {
+                    assert_eq!(reason, UpdateReason::Deadline);
+                    saw_partial |= declarations.len() == 1;
+                    assert!(declarations.len() <= 2);
+                } else {
+                    saw_complete = true;
+                    assert_eq!(declarations.len(), 2);
+                }
+            }
+            assert!(saw_partial && saw_complete);
+            Ok(())
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    if let OperationOutcome::Failed(error) = &*outcome {
+        panic!("declaration scan failed: {error}");
     }
 }
