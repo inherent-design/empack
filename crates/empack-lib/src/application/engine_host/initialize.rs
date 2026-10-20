@@ -247,6 +247,19 @@ pub(super) fn parse_loader(value: &str) -> Result<LoaderKind> {
     })
 }
 type LoaderChoice = (LoaderKind, Option<RetainedOutput<LoaderVersions>>);
+fn remaining_catalog_limits(
+    mut limits: RuntimeCatalogLimits,
+    deadline: std::time::Instant,
+    now: std::time::Instant,
+) -> Result<RuntimeCatalogLimits> {
+    let remaining = deadline.saturating_duration_since(now);
+    ensure!(
+        !remaining.is_zero(),
+        crate::engine::acquisition::TransferError::Deadline
+    );
+    limits.transfer.deadline = remaining;
+    Ok(limits)
+}
 async fn compatible_loader(
     session: &dyn Session,
     catalog: RuntimeCatalog,
@@ -284,16 +297,15 @@ async fn compatible_loader(
             let game = game.clone();
             let (sender, receiver) = tokio::sync::oneshot::channel();
             let handle = runtime.start(move |mut scope| async move {
-                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-                let versions = if remaining.is_zero() {
-                    Err(crate::engine::acquisition::TransferError::Deadline.into())
-                } else {
-                    let mut request_limits = limits;
-                    request_limits.transfer.deadline = remaining;
-                    catalog
-                        .loaders(&mut scope, game, family, request_limits)
-                        .await
-                };
+                let versions =
+                    match remaining_catalog_limits(limits, deadline, std::time::Instant::now()) {
+                        Ok(request_limits) => {
+                            catalog
+                                .loaders(&mut scope, game, family, request_limits)
+                                .await
+                        }
+                        Err(error) => Err(error),
+                    };
                 let _ = sender.send(versions);
                 Ok(())
             })?;
