@@ -64,6 +64,8 @@ impl ObservedVersion {
 }
 #[derive(Debug, Serialize)]
 pub struct DependencyAssessment {
+    /// Effective automatic preference for this root, including operation override.
+    pub release_policy: &'static str,
     pub key: String,
     pub name: String,
     pub current: Option<ObservedVersion>,
@@ -116,9 +118,10 @@ impl ProviderCatalog {
         &self,
         scope: &mut WorkScope,
         project: &ResolvedProject,
-        policy: ReleasePolicy,
+        policy: impl Into<Option<ReleasePolicy>> + Send,
         limits: ClosureLimits,
     ) -> Result<UpdateAssessment> {
+        let policy = policy.into();
         ensure!(
             project.intent().roots.len() <= limits.projects,
             CatalogError::Limit
@@ -131,11 +134,9 @@ impl ProviderCatalog {
             schema: 1,
             observed_at: time::OffsetDateTime::now_utc()
                 .format(&time::format_description::well_known::Rfc3339)?,
-            release_policy: match policy {
-                ReleasePolicy::StableOnly => "stable-only",
-                ReleasePolicy::PreferStable => "prefer-stable",
-                ReleasePolicy::Any => "any",
-            },
+            release_policy: policy
+                .unwrap_or(project.intent().dependency_policy)
+                .as_str(),
             dependencies: Vec::new(),
             joint: JointAssessment {
                 scope: "provider-dependency-closure",
@@ -151,6 +152,7 @@ impl ProviderCatalog {
             let locked = project.lock().dependencies.get(key);
             let current = locked.and_then(|dependency| dependency.selected.as_ref());
             let mut row = DependencyAssessment {
+                release_policy: project.intent().release_policy(Some(key), policy).as_str(),
                 key: key.as_str().into(),
                 name: locked.map_or_else(|| key.as_str().into(), |d| d.title.clone()),
                 current: current.map(ObservedVersion::from_pin),
@@ -185,7 +187,7 @@ impl ProviderCatalog {
                 kind: intent.kind,
                 game_versions: games.clone(),
                 loader: project.intent().runtime.loader,
-                releases: policy,
+                releases: project.intent().release_policy(Some(key), policy),
             };
             match self
                 .assess_versions_budget(scope, request, limits.selection, remaining)
@@ -263,7 +265,7 @@ impl ProviderCatalog {
                         roots: NonEmpty::new(roots)?,
                         game_versions: games,
                         loader: project.intent().runtime.loader,
-                        releases: policy,
+                        releases: policy.unwrap_or(project.intent().dependency_policy),
                     },
                     limits,
                     budget.expect("successful scans return their shared budget"),

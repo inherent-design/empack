@@ -38,6 +38,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Local(source.clone()),
             kind: ContentKind::Mod,
             version: VersionIntent::FollowCompatible,

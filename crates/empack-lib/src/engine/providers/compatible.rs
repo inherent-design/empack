@@ -14,13 +14,7 @@ pub enum ReleaseChannel {
     Beta,
     Alpha,
 }
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ReleasePolicy {
-    StableOnly,
-    #[default]
-    PreferStable,
-    Any,
-}
+pub use empack_core::model::ReleasePolicy;
 #[derive(Debug, Clone)]
 pub struct CompatibleRequest {
     pub project: ProviderProjectId,

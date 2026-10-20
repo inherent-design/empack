@@ -15,7 +15,7 @@ pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
 pub async fn update_with_policy(
     session: &dyn Session,
     keys: Vec<String>,
-    releases: ReleasePolicy,
+    releases: Option<ReleasePolicy>,
     policy: BatchPolicy,
 ) -> Result<()> {
     let services = dependencies::configured_services(session)?;
@@ -175,7 +175,7 @@ pub(super) async fn update_with_services(
     dependencies::update_with_services(
         session,
         inputs,
-        ReleasePolicy::PreferStable,
+        None,
         SourceEvidencePolicy::Compatibility,
         services,
     )
@@ -244,6 +244,7 @@ fn selections(
                     )
                 };
                 inputs.push(AddHostInput::Provider(ProviderAddInput {
+                    releases: root.and_then(|root| root.releases),
                     selector: ProjectSelector::canonical(id.clone()),
                     key: Some(key),
                     kind: Some(selected.kind),
@@ -267,6 +268,7 @@ fn selections(
                         Ok((file.slot.clone(), path.clone()))
                     }).collect::<Result<_>>()?;
                     Some(empack_core::model::DependencyIntent {
+                        releases: None,
                         source: SourceIntent::LocalFiles(members),
                         kind: selected.kind,
                         version: VersionIntent::FollowCompatible,

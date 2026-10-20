@@ -1783,7 +1783,7 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
             "files":[{"filename":filename,"primary":true,"size":7,"hashes":{
                 "sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},
                 "url":format!("https://example.invalid/{filename}")}],"dependencies":[],
-            "date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+            "date_published":if id=="RootVer2" {"2026-02-01T00:00:00Z"} else {"2026-01-01T00:00:00Z"},"status":"listed","version_type":if id=="RootVer2" {"alpha"} else {"release"}
         })
     };
     for (id, filename) in [
@@ -1799,7 +1799,13 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
     server
         .mock("GET", "/project/Root0001/version")
         .match_query(mockito::Matcher::Any)
-        .with_body(json!([version("RootVer2", "renderer-2.jar")]).to_string())
+        .with_body(
+            json!([
+                version("RootVer2", "renderer-2.jar"),
+                version("RootVer1", "renderer-1.jar")
+            ])
+            .to_string(),
+        )
         .create_async()
         .await;
     for by_role in [false, true] {
@@ -1814,6 +1820,7 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         .unwrap();
         let current = project(root.path());
         let mut intent = current.intent().clone();
+        intent.dependency_policy = ReleasePolicy::StableOnly;
         let mut lock = current.lock().clone();
         let key = intent.roots.keys().next().unwrap().clone();
         let file = lock.dependencies[&key].files.as_slice()[0].clone();
@@ -1822,6 +1829,7 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         let places = NonEmpty::new(vec![place]).unwrap();
         let authored = intent.roots.get_mut(&key).unwrap();
         authored.version = VersionIntent::FollowCompatible;
+        authored.releases = Some(ReleasePolicy::Any);
         authored.placement = if by_role {
             PlacementIntent::ByFile(BTreeMap::from([(
                 FileSlot::parse("primary").unwrap(),
@@ -1856,6 +1864,10 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         .await
         .unwrap();
         let updated = project(root.path());
+        assert_eq!(
+            updated.intent().roots[&key].releases,
+            Some(ReleasePolicy::Any)
+        );
         let dependency = &updated.lock().dependencies[&key];
         assert_eq!(
             dependency.selected.as_ref().unwrap().selection,

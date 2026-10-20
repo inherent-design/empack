@@ -686,3 +686,12 @@ fn extension_value(value: &ExtensionValue) -> Value {
 
 #[cfg(test)]
 mod tests;
+
+fn release_policy(value: &Value) -> Result<ReleasePolicy> {
+    match text(value)? {
+        "stable-only" => Ok(ReleasePolicy::StableOnly),
+        "prefer-stable" => Ok(ReleasePolicy::PreferStable),
+        "any" => Ok(ReleasePolicy::Any),
+        _ => bail!("Unknown dependency release policy"),
+    }
+}

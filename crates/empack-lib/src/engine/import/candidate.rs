@@ -104,6 +104,7 @@ impl VerifiedImportContent {
         })?;
         let runtime = select_runtime(&source.runtime, options.loader)?;
         let mut intent = ProjectIntent {
+            dependency_policy: Default::default(),
             installation_policies: BTreeMap::new(),
             source_excludes: Vec::new(),
             metadata: options.metadata,
@@ -373,6 +374,7 @@ impl VerifiedImportContent {
                 intent.roots.insert(
                     decision.key.clone(),
                     DependencyIntent {
+                        releases: None,
                         source: source_intent,
                         kind: decision.kind,
                         version,

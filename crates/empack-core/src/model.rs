@@ -199,6 +199,27 @@ pub enum ProviderKind {
     /// CurseForge.
     CurseForge,
 }
+/// Provider classifications used for automatic selection, independent of pack channels.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ReleasePolicy {
+    /// Only provider-classified stable releases.
+    StableOnly,
+    /// Prefer stable releases, with eligible prereleases as fallback.
+    #[default]
+    PreferStable,
+    /// Give stable and prerelease records equal preference.
+    Any,
+}
+impl ReleasePolicy {
+    /// Stable authoring and reporting spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StableOnly => "stable-only",
+            Self::PreferStable => "prefer-stable",
+            Self::Any => "any",
+        }
+    }
+}
 /// Sync retains the exact lock; only update refreshes compatible selections.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VersionIntent {
@@ -224,6 +245,8 @@ pub enum PlacementIntent {
 /// A requested dependency.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DependencyIntent {
+    /// Automatic selection override for this provider root.
+    pub releases: Option<ReleasePolicy>,
     /// Independent acquisition intent.
     pub source: SourceIntent,
     /// Content kind.
@@ -459,6 +482,8 @@ pub enum DistributionArchive {
 /// Authoring intent. It contains no installed state or native write authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectIntent {
+    /// Default automatic selection policy for explicit and implicit provider content.
+    pub dependency_policy: ReleasePolicy,
     /// Exact installation policy overrides, authored as integration bindings.
     pub installation_policies: BTreeMap<PortableRelPath, crate::instance::FilePolicy>,
     /// Layer-relative exclusion rules; locked sources remain explicit obligations.
@@ -634,6 +659,20 @@ pub struct ResolutionLock {
 }
 
 impl ProjectIntent {
+    /// Apply an operation override, then root preference, then project default.
+    pub fn release_policy(
+        &self,
+        key: Option<&DependencyKey>,
+        operation: Option<ReleasePolicy>,
+    ) -> ReleasePolicy {
+        operation
+            .or_else(|| {
+                key.and_then(|key| self.roots.get(key))
+                    .and_then(|root| root.releases)
+            })
+            .unwrap_or(self.dependency_policy)
+    }
+
     /// Resolve a type's automatic directory. Other kinds require an authored folder or placement.
     pub fn content_folder(&self, kind: ContentKind) -> Option<&str> {
         self.layout
@@ -727,6 +766,16 @@ impl ProjectIntent {
             return Err(invalid("Vanilla cannot select a loader version"));
         }
         for dep in self.roots.values() {
+            if dep.releases.is_some()
+                && (!matches!(
+                    dep.source,
+                    SourceIntent::Provider(_) | SourceIntent::Search { .. }
+                ) || matches!(dep.version, VersionIntent::Exact(_)))
+            {
+                return Err(invalid(
+                    "Release preference requires an unpinned provider request",
+                ));
+            }
             validate_requirements(&dep.requirements)?;
             match (&dep.source, &dep.version) {
                 (SourceIntent::Provider(project), VersionIntent::Exact(selection)) => ResolvedPin {

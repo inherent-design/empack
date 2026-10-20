@@ -133,7 +133,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             Box::pin(engine_host::cli::outdated(
                 session,
                 json,
-                release_policy.into(),
+                release_policy.map(Into::into),
             ))
             .await
         }
@@ -145,7 +145,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             Box::pin(engine_host::cli::update_with_policy(
                 session,
                 dependencies,
-                release_policy.into(),
+                release_policy.map(Into::into),
                 if continue_independent {
                     crate::engine::api::BatchPolicy::ContinueIndependent
                 } else {

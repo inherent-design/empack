@@ -69,6 +69,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 fn input(selector: &str, key: Option<&str>) -> ProviderAddInput {
     ProviderAddInput {
+        releases: None,
         selector: ProjectSelector::parse(ProviderKind::Modrinth, selector).unwrap(),
         key: key.map(|value| DependencyKey::parse(value).unwrap()),
         kind: None,

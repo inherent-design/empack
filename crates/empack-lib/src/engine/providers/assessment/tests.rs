@@ -47,12 +47,7 @@ async fn assess(server: &Server, project: ResolvedProject) -> UpdateAssessment {
     let mut handle = runtime
         .start(move |mut scope| async move {
             Ok(catalog
-                .assess_updates(
-                    &mut scope,
-                    &project,
-                    ReleasePolicy::PreferStable,
-                    ClosureLimits::default(),
-                )
+                .assess_updates(&mut scope, &project, None, ClosureLimits::default())
                 .await)
         })
         .unwrap();
@@ -202,4 +197,64 @@ async fn manual_sources_are_not_reported_as_current_provider_versions() {
     );
     assert!(report.dependencies[0].permitted.is_none());
     assert_eq!(report.joint.state, "not-applicable");
+}
+
+#[tokio::test]
+async fn assessment_uses_authored_preferences_and_reports_each_effective_policy() {
+    let mut server = Server::new_async().await;
+    server
+        .mock("GET", "/project/Project1")
+        .with_body(
+            json!({"id":"Project1","slug":"assets","title":"Assets","project_type":"resourcepack"})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let mut candidate = version("Project1", "Version2", "1.20.1", json!([]));
+    candidate["version_type"] = json!("beta");
+    server
+        .mock("GET", "/project/Project1/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([candidate.clone()]).to_string())
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/version/Version2")
+        .with_body(candidate.to_string())
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/version/Version1")
+        .with_body(version("Project1", "Version1", "1.20.1", json!([])).to_string())
+        .create_async()
+        .await;
+    let base = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
+    for preference in [Some(ReleasePolicy::Any), None] {
+        let mut intent = base.intent().clone();
+        intent.dependency_policy = ReleasePolicy::StableOnly;
+        intent.roots.values_mut().next().unwrap().releases = preference;
+        let revision = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "policy")
+            .unwrap()
+            .semantic_revision();
+        let mut lock = base.lock().clone();
+        lock.intent_revision = revision;
+        let report = assess(
+            &server,
+            ResolvedProject::validate(intent, lock, revision).unwrap(),
+        )
+        .await;
+        assert_eq!(report.release_policy, "stable-only");
+        let row = &report.dependencies[0];
+        assert_eq!(
+            row.release_policy,
+            preference.unwrap_or(ReleasePolicy::StableOnly).as_str()
+        );
+        if preference.is_some() {
+            assert_eq!(row.permitted.as_ref().unwrap().selection, "Version2");
+        } else {
+            assert!(row.permitted.is_none());
+            assert!(row.reasons.contains(&UpdateReason::ReleasePolicy));
+        }
+    }
 }

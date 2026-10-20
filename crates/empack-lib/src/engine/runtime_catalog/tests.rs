@@ -217,6 +217,7 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
     .unwrap();
     let runtime = choices.resolve(None).unwrap();
     let intent = ProjectIntent {
+        dependency_policy: Default::default(),
         installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata: PackMetadata {

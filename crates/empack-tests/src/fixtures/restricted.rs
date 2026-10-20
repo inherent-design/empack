@@ -60,6 +60,7 @@ pub fn with_provider(name: &str, pin: ResolvedPin) -> TestProject {
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Provider(identity.clone()),
             kind: ContentKind::ResourcePack,
             version: VersionIntent::Exact(pin.selection.clone()),

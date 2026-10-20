@@ -13,6 +13,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
             "extensions",
             "sources",
             "installation-policies",
+            "dependency-policy",
         ],
     )?;
     ensure!(
@@ -61,6 +62,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
         .transpose()?
         .unwrap_or_default();
     let intent = ProjectIntent {
+        dependency_policy: release_policy(required(value, "dependency-policy")?)?,
         source_excludes,
         installation_policies,
         metadata: PackMetadata {
@@ -136,7 +138,14 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
 fn dependency(value: &Value) -> Result<DependencyIntent> {
     fields(
         value,
-        &["source", "content", "version", "placement", "environment"],
+        &[
+            "source",
+            "content",
+            "version",
+            "placement",
+            "environment",
+            "releases",
+        ],
     )?;
     let source = required(value, "source")?;
     let source = match text(required(source, "kind")?)? {
@@ -233,6 +242,11 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
         )?)
     };
     Ok(DependencyIntent {
+        releases: value
+            .get("releases")
+            .filter(|value| !value.is_null())
+            .map(release_policy)
+            .transpose()?,
         source,
         kind: kind(required(value, "content")?)?,
         version,
@@ -251,9 +265,9 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
         };
         let version = match &dep.version { VersionIntent::FollowCompatible => json!({"mode":"follow-compatible"}), VersionIntent::Exact(pin) => json!({"mode":"exact","pin":pin_value(pin)}), VersionIntent::ContentPinned(expected) => json!({"mode":"content-pinned","digests":digests(expected)}) };
         let placement = match &dep.placement { PlacementIntent::Automatic => json!("automatic"), PlacementIntent::ArchiveRoot(values) => json!({"archive-root":values.as_slice().iter().map(placement_value).collect::<Vec<_>>()}), PlacementIntent::Explicit(values) => json!(values.as_slice().iter().map(placement_value).collect::<Vec<_>>()), PlacementIntent::ByFile(files) => json!({"files": files.iter().map(|(slot, places)| (slot.as_str(), places.as_slice().iter().map(placement_value).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>()}) };
-        (key.as_str(), json!({"source":source,"content":kind_name(dep.kind),"version":version,"placement":placement,"environment":requirements_value(&dep.requirements)}))
+        (key.as_str(), json!({"releases":dep.releases.map(ReleasePolicy::as_str),"source":source,"content":kind_name(dep.kind),"version":version,"placement":placement,"environment":requirements_value(&dep.requirements)}))
     }).collect();
-    json!({"schema":INTENT_SCHEMA,
+    json!({"schema":INTENT_SCHEMA,"dependency-policy":intent.dependency_policy.as_str(),
         "pack":{"id":intent.metadata.id,"name":intent.metadata.name,"version":intent.metadata.version,"authors":intent.metadata.authors,"description":intent.metadata.description},
         "runtime":{"java":intent.runtime.java_major,"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
         "dependencies":roots,

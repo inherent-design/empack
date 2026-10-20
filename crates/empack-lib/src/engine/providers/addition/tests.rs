@@ -30,6 +30,7 @@ pub(super) fn current() -> ResolvedProject {
 }
 pub(super) fn input(selector: &str, pinned: bool) -> ProviderAddInput {
     ProviderAddInput {
+        releases: None,
         selector: ProjectSelector::parse(ProviderKind::Modrinth, selector).unwrap(),
         key: Some(DependencyKey::parse("chosen-alias").unwrap()),
         kind: None,
@@ -99,6 +100,15 @@ async fn resolve_with_current(
     inputs: Vec<ProviderAddInput>,
     limits: ClosureLimits,
 ) -> (Outcome, ResourceGovernor) {
+    resolve_with_policy(server, current, inputs, limits, None).await
+}
+async fn resolve_with_policy(
+    server: &Server,
+    current: ResolvedProject,
+    inputs: Vec<ProviderAddInput>,
+    limits: ClosureLimits,
+    policy: Option<ReleasePolicy>,
+) -> (Outcome, ResourceGovernor) {
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
     let governor = ResourceGovernor::new(ResourceRequest {
         jobs: 2,
@@ -114,7 +124,7 @@ async fn resolve_with_current(
                     &mut scope,
                     &current,
                     NonEmpty::new(inputs).unwrap(),
-                    ReleasePolicy::PreferStable,
+                    policy,
                     limits,
                 )
                 .await)
@@ -1376,6 +1386,7 @@ async fn primary_binding_survives_provider_filename_changes() {
     author.roots.insert(
         DependencyKey::parse("chosen-alias").unwrap(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Provider(ProviderProjectId::Modrinth(
                 ModrinthProjectId::parse("project1").unwrap(),
             )),
@@ -1447,4 +1458,111 @@ async fn ambiguous_primary_role_requires_explicit_selection() {
         ),
         "{error:#}"
     );
+}
+
+#[tokio::test]
+async fn authored_root_and_project_policies_are_shared_with_closure_and_explicit_override() {
+    let mut server = Server::new_async().await;
+    for (project, stable_id, alpha_id) in [
+        ("Root0001", "Stable01", "Alpha001"),
+        ("Root0002", "Stable02", "Alpha002"),
+        ("Library1", "Stable03", "Alpha003"),
+    ] {
+        let deps = if project == "Library1" {
+            json!([])
+        } else {
+            json!([{"project_id":"Library1","dependency_type":"required"}])
+        };
+        let stable = version(project, stable_id, deps.clone());
+        let mut alpha = version(project, alpha_id, deps);
+        alpha["version_type"] = json!("alpha");
+        alpha["date_published"] = json!("2026-02-01T00:00:00Z");
+        server.mock("GET", format!("/project/{project}").as_str()).with_body(
+            json!({"id":project,"slug":project,"title":project,"project_type":"mod","loaders":["fabric"]}).to_string()
+        ).create_async().await;
+        for selected in [&stable, &alpha] {
+            server
+                .mock(
+                    "GET",
+                    format!("/version/{}", selected["id"].as_str().unwrap()).as_str(),
+                )
+                .with_body(selected.to_string())
+                .create_async()
+                .await;
+        }
+        server
+            .mock("GET", format!("/project/{project}/version").as_str())
+            .match_query(Matcher::Any)
+            .with_body(json!([alpha, stable]).to_string())
+            .create_async()
+            .await;
+    }
+    let base = current();
+    let mut intent = base.intent().clone();
+    intent.dependency_policy = ReleasePolicy::StableOnly;
+    let revision = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "policy")
+        .unwrap()
+        .semantic_revision();
+    let mut lock = base.lock().clone();
+    lock.intent_revision = revision;
+    let base = ResolvedProject::validate(intent, lock, revision).unwrap();
+    for override_policy in [None, Some(ReleasePolicy::Any)] {
+        let mut first = input("Root0001", false);
+        first.key = Some(DependencyKey::parse("first").unwrap());
+        first.releases = Some(ReleasePolicy::Any);
+        let mut second = input("Root0002", false);
+        second.key = Some(DependencyKey::parse("second").unwrap());
+        let (result, governor) = resolve_with_policy(
+            &server,
+            base.clone(),
+            vec![first, second],
+            limits(),
+            override_policy,
+        )
+        .await;
+        let ready = ready(&result);
+        for (project, expected) in [
+            ("Root0001", "Alpha001"),
+            (
+                "Root0002",
+                if override_policy.is_some() {
+                    "Alpha002"
+                } else {
+                    "Stable02"
+                },
+            ),
+            (
+                "Library1",
+                if override_policy.is_some() {
+                    "Alpha003"
+                } else {
+                    "Stable03"
+                },
+            ),
+        ] {
+            let id = ProviderProjectId::Modrinth(ModrinthProjectId::parse(project).unwrap());
+            let selected = ready
+                .project()
+                .lock()
+                .dependencies
+                .values()
+                .find(|d| d.identity == ResolvedIdentity::Provider(id.clone()))
+                .unwrap();
+            assert_eq!(
+                selected.selected.as_ref().unwrap().selection,
+                PinSelector::ModrinthVersion(ModrinthVersionId::parse(expected).unwrap())
+            );
+        }
+        assert_eq!(
+            ready.project().intent().dependency_policy,
+            ReleasePolicy::StableOnly
+        );
+        assert_eq!(
+            ready.project().intent().roots[&DependencyKey::parse("first").unwrap()].releases,
+            Some(ReleasePolicy::Any)
+        );
+        drop(result);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
 }

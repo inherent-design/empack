@@ -68,6 +68,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     };
     let input = || {
         NonEmpty::new(vec![AddHostInput::Provider(ProviderAddInput {
+            releases: None,
             selector: ProjectSelector::parse(ProviderKind::CurseForge, "42").unwrap(),
             key: Some(DependencyKey::parse("adventure").unwrap()),
             kind: Some(ContentKind::World),
@@ -447,6 +448,7 @@ async fn fresh_provider_world_sync_retains_interpreted_bytes_and_previews_withou
     intent.roots.insert(
         DependencyKey::parse("world-alias").unwrap(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Provider(empack_core::identity::ProviderProjectId::CurseForge(
                 empack_core::identity::CurseForgeProjectId::parse("42").unwrap(),
             )),

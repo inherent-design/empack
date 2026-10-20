@@ -253,6 +253,7 @@ impl FileAddition {
                 }
             };
             let next_root = DependencyIntent {
+                releases: None,
                 source,
                 kind: input.kind,
                 version: if input.role.member().is_some() {
