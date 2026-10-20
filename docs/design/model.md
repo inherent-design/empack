@@ -34,13 +34,13 @@ selectors are resolved before persistence; a slug never becomes an ID by assignm
 | Instance record | Instance engine | Last completed release, owned files, side, choices, authority and source binding |
 | Recovery journal | Publisher | Approved operation, native root, before/after evidence and durable progress |
 
-Author intent uses schema 4, optional bindings use schema 1, and exact resolution uses schema 1. Release, channel and
+Author intent uses schema 5, optional bindings use schema 1, and exact resolution uses schema 1. Release, channel and
 instance schemas have their own explicit versions. Unknown intent fields and invalid explicit
 variants fail; they cannot silently become search input. Original author bytes are
 preserved when no semantic edit is required. Canonical semantic identity and raw
 file revision serve different purposes. Both author documents contribute to normalized
 intent, and both raw revisions (including absence) are captured before approval.
-Schema 3 author inputs are rejected; there is no automatic or general-purpose migration path.
+Earlier author schemas are rejected; there is no automatic or general-purpose migration path.
 
 ## Author intent and resolution
 
@@ -63,15 +63,13 @@ excludes the same path from incidental content. Rules are captured with the auth
 document and never inherited from host-global ignore files. Native source capture
 has no package-manager control filenames; exclusions are authored policy.
 
-`distribution.native` defines `pack-id`, `java-major` and `policies`, an exact
-destination-to-`managed|seed` map. Delivery, environment and update authority belong
-to each named entry in `distribution.profiles`, alongside its archive format.
-`distribution.defaults` selects the ordered default profiles. The stable
-pack ID is a bounded portable identifier and must survive display-name/version
-changes. Java major is an explicit requirement; runtime activation checks it against
-the selected game/loader. Unknown policy destinations are errors. Configuration
-and world content default to seeds. World content cannot become managed replacement
-content, including worlds placed under an authored custom directory.
+`pack.id` is the stable publisher-selected identity. `runtime.java` declares the
+minimum recipient Java major. Neither belongs to a particular output consumer.
+`build.profiles` contains complete consumer recipes; `build.default` selects the
+ordered defaults. A project may omit builds until it needs a distribution.
+Installation policy overrides remain in integration bindings. Configuration and
+world content default to seeds. World content cannot become managed replacement
+content, including worlds placed under a custom directory.
 
 ## Compact dependencies and integration bindings
 
@@ -86,11 +84,13 @@ dependencies:
     side: client
 ```
 
-Compact sources name canonical provider IDs. They do not resolve slugs or search
-implicitly. A mapping can specify `content`, `version` or full `environment`
-requirements, including optional groups. `side` is shorthand for required client,
-server or both; it conflicts with an explicit `environment` rather than overriding
-it. URL, local and search sources retain their explicit source variants.
+Compact sources contain an exact provider selector. Resolution establishes canonical
+identity; a retained selector binding prevents silent reassignment on sync or update.
+Strict canonical IDs remain available through the explicit provider source form.
+A source edit requests a new binding. Search remains an explicit separate source.
+`pin` inherits its provider from the source. Local paths and direct URL assertions
+have source-specific rules, not provider version constraints. See the
+[authoring contract](authoring.md) for expansion and validation.
 
 Non-default placements and local multi-file source mappings live in an optional,
 version-controlled `empack.bindings.yml`:
