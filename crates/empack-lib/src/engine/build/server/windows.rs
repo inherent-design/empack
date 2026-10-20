@@ -1,9 +1,11 @@
 //! Windows console entry points preserve failures and support unattended callers.
+use super::ServerInterface;
+
 const HEADER: &str =
     "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || goto directory_error\r\n";
 const FINISH: &str = ":finish\r\nif not defined EMPACK_NO_PAUSE pause\r\nexit /b %_EMPACK_EXIT%\r\n:directory_error\r\necho Cannot open the server directory. Extract the entire ZIP before running this script.\r\nset \"_EMPACK_EXIT=1\"\r\ngoto finish\r\n";
 
-pub(super) fn start_batch(managed: bool) -> String {
+pub(super) fn start_batch(managed: bool, interface: ServerInterface) -> String {
     let preparation = if managed {
         "set \"_EMPACK_SAVED_PAUSE=%EMPACK_NO_PAUSE%\"\r\nset \"EMPACK_NO_PAUSE=1\"\r\ncall install_pack.bat\r\nset \"_EMPACK_EXIT=%errorlevel%\"\r\nset \"EMPACK_NO_PAUSE=%_EMPACK_SAVED_PAUSE%\"\r\nif not \"%_EMPACK_EXIT%\"==\"0\" goto finish\r\n"
     } else {
@@ -14,8 +16,9 @@ pub(super) fn start_batch(managed: bool) -> String {
     } else {
         ""
     };
+    let arguments = interface.arguments();
     format!(
-        "{HEADER}{preparation}echo Starting server. Java comes from JAVA_HOME when set, otherwise PATH.\r\nif defined JAVA_HOME (\r\n  {command}\"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  {command}java -jar server.jar %*\r\n)\r\nset \"_EMPACK_EXIT=%errorlevel%\"\r\nif not \"%_EMPACK_EXIT%\"==\"0\" echo Server failed. Check the output above and the required Java version; managed packs also need empack on PATH.\r\necho Server stopped. If Minecraft requested EULA acceptance, review game\\eula.txt before restarting.\r\n{FINISH}"
+        "{HEADER}{preparation}echo Starting server. Java comes from JAVA_HOME when set, otherwise PATH.\r\nif defined JAVA_HOME (\r\n  {command}\"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar {arguments}%*\r\n) else (\r\n  {command}java -jar server.jar {arguments}%*\r\n)\r\nset \"_EMPACK_EXIT=%errorlevel%\"\r\nif not \"%_EMPACK_EXIT%\"==\"0\" echo Server failed. Check the output above and the required Java version; managed packs also need empack on PATH.\r\necho Server stopped. If Minecraft requested EULA acceptance, review game\\eula.txt before restarting.\r\n{FINISH}"
     )
 }
 

@@ -119,6 +119,10 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                 !lightweight
             );
             assert!(expected.contains_key(&path("install_pack.bat").unwrap()));
+            for name in ["start.sh", "start.bat", "start_gui.sh", "start_gui.bat"] {
+                let entry = expected.get(&path(name).unwrap()).expect("server launcher");
+                assert_eq!(entry.permissions.executable, name.ends_with(".sh"));
+            }
             assert!(!expected.contains_key(&path("eula.txt").unwrap()));
             assert!(!expected.contains_key(&path("excluded").unwrap()));
             assert_eq!(
@@ -147,6 +151,20 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             if format == DistributionArchive::Zip {
                 let mut zip = zip::ZipArchive::new(file).unwrap();
                 let mut value = String::new();
+                for name in ["start.sh", "start.bat", "start_gui.sh", "start_gui.bat"] {
+                    value.clear();
+                    zip.by_name(name)
+                        .unwrap()
+                        .read_to_string(&mut value)
+                        .unwrap();
+                    assert_eq!(
+                        value.contains("nogui"),
+                        !name.starts_with("start_gui"),
+                        "{name}"
+                    );
+                    assert_eq!(value.contains("instance launch --server"), lightweight);
+                }
+                value.clear();
                 if !lightweight {
                     zip.by_name("game/config/example")
                         .unwrap()
@@ -322,7 +340,11 @@ fn captured_user_scripts_are_preserved_and_reported() {
     let host = tempfile::tempdir().unwrap();
     let external = fixture(root.path());
     let cancel = Cancellation::default();
-    put(root.path(), "templates/server/start.sh", b"custom script");
+    put(
+        root.path(),
+        "templates/server/start_gui.sh",
+        b"custom script",
+    );
     let build = prepare_server_build(
         capture(root.path(), host.path(), "server.zip"),
         path("server.zip").unwrap(),
@@ -343,7 +365,7 @@ fn captured_user_scripts_are_preserved_and_reported() {
     let mut zip =
         zip::ZipArchive::new(fs::File::open(root.path().join("dist/server.zip")).unwrap()).unwrap();
     let mut value = String::new();
-    zip.by_name("start.sh")
+    zip.by_name("start_gui.sh")
         .unwrap()
         .read_to_string(&mut value)
         .unwrap();
@@ -355,7 +377,7 @@ fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("game")).unwrap();
-    put(root.path(), "start.sh", START_SH.as_bytes());
+
     put(
         root.path(),
         "java space/bin/java",
@@ -366,17 +388,27 @@ fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
         fs::Permissions::from_mode(0o700),
     )
     .unwrap();
-    let status = std::process::Command::new("bash")
-        .arg(root.path().join("start.sh"))
-        .args(["nogui", "an argument"])
-        .env("JAVA_HOME", root.path().join("java space"))
-        .status()
-        .unwrap();
-    assert!(status.success());
-    assert_eq!(
-        fs::read_to_string(root.path().join("game/arguments")).unwrap(),
-        "-jar\nserver.jar\nnogui\nan argument\n"
-    );
+    for (interface, argument) in [
+        (ServerInterface::Console, "nogui\n"),
+        (ServerInterface::Gui, ""),
+    ] {
+        put(
+            root.path(),
+            "start.sh",
+            start_script(false, interface).as_bytes(),
+        );
+        let status = std::process::Command::new("bash")
+            .arg(root.path().join("start.sh"))
+            .arg("an argument")
+            .env("JAVA_HOME", root.path().join("java space"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(
+            fs::read_to_string(root.path().join("game/arguments")).unwrap(),
+            format!("-jar\nserver.jar\n{argument}an argument\n")
+        );
+    }
     put(
         root.path(),
         "install_pack.sh",
@@ -426,11 +458,7 @@ fn native_start_prepares_first_and_failure_blocks_the_server() {
         .tempdir()
         .unwrap();
     fs::create_dir(root.path().join("game")).unwrap();
-    put(
-        root.path(),
-        "start.sh",
-        runtime_start(&ServerLaunch::Jar(path("server.jar").unwrap()), true, false).as_bytes(),
-    );
+
     let id = "a".repeat(64);
     put(
         root.path(),
@@ -467,48 +495,65 @@ exec "$program" -jar server.jar "$@"
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
     ))
     .unwrap();
-    for (code, runtime_code) in [(0, 0), (0, 9), (7, 0)] {
-        let arguments = root.path().join("game/server-arguments");
-        if arguments.exists() {
-            fs::remove_file(&arguments).unwrap();
-        }
-        let status = std::process::Command::new("bash")
-            .arg(root.path().join("start.sh"))
-            .args(["nogui", "an argument"])
-            .env("JAVA_HOME", root.path().join("java space"))
-            .env("PATH", &paths)
-            .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
-            .env("EMPACK_NO_PAUSE", "1")
-            .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
-            .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
-            .status()
-            .unwrap();
-        assert_eq!(
-            status.code(),
-            Some(if code == 0 { runtime_code } else { code })
+    for (interface, argument) in [
+        (ServerInterface::Console, "nogui\n"),
+        (ServerInterface::Gui, ""),
+    ] {
+        put(
+            root.path(),
+            "start.sh",
+            runtime_start(
+                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                true,
+                false,
+                interface,
+            )
+            .as_bytes(),
         );
-        assert_eq!(arguments.exists(), code == 0);
-        let selected = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
-        let expected = format!(
-            "--workdir\n{}\n--yes\ninstance\nprepare\n{}/.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n",
-            root.path().display(),
-            root.path().display()
-        );
-        assert_eq!(selected, expected);
-        if code == 0 {
-            let launch = fs::read_to_string(root.path().join("instance-arguments.launch")).unwrap();
+        for (code, runtime_code) in [(0, 0), (0, 9), (7, 0)] {
+            let arguments = root.path().join("game/server-arguments");
+            if arguments.exists() {
+                fs::remove_file(&arguments).unwrap();
+            }
+            let status = std::process::Command::new("bash")
+                .arg(root.path().join("start.sh"))
+                .arg("an argument")
+                .env("JAVA_HOME", root.path().join("java space"))
+                .env("PATH", &paths)
+                .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
+                .env("EMPACK_NO_PAUSE", "1")
+                .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
+                .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
+                .status()
+                .unwrap();
             assert_eq!(
-                launch,
-                format!(
-                    "--workdir\n{}\n--yes\ninstance\nlaunch\n--server\n--\n{}\nnogui\nan argument\n",
-                    root.path().display(),
-                    root.path().join("java space/bin/java").display()
-                )
+                status.code(),
+                Some(if code == 0 { runtime_code } else { code })
             );
-            assert_eq!(
-                fs::read_to_string(arguments).unwrap(),
-                "-jar\nserver.jar\nnogui\nan argument\n"
+            assert_eq!(arguments.exists(), code == 0);
+            let selected = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
+            let expected = format!(
+                "--workdir\n{}\n--yes\ninstance\nprepare\n{}/.empack-consumer/release.json\n--sha256\n{id}\n--layout\ngame\n--side\nserver\n",
+                root.path().display(),
+                root.path().display()
             );
+            assert_eq!(selected, expected);
+            if code == 0 {
+                let launch =
+                    fs::read_to_string(root.path().join("instance-arguments.launch")).unwrap();
+                assert_eq!(
+                    launch,
+                    format!(
+                        "--workdir\n{}\n--yes\ninstance\nlaunch\n--server\n--\n{}\n{argument}an argument\n",
+                        root.path().display(),
+                        root.path().join("java space/bin/java").display()
+                    )
+                );
+                assert_eq!(
+                    fs::read_to_string(arguments).unwrap(),
+                    format!("-jar\nserver.jar\n{argument}an argument\n")
+                );
+            }
         }
     }
 }
@@ -517,13 +562,7 @@ exec "$program" -jar server.jar "$@"
 fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("game")).unwrap();
-    put(
-        root.path(),
-        "start.bat",
-        start_batch(true)
-            .replace("empack --workdir", "call fake-empack.cmd --workdir")
-            .as_bytes(),
-    );
+
     // CALL lets a batch fixture return like the empack executable it replaces.
     let install = install_batch(Some(&"a".repeat(64)))
         .replace("empack --workdir", "call fake-empack.cmd --workdir");
@@ -531,34 +570,52 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     put(
         root.path(),
         "fake-empack.cmd",
-        b"@echo off\r\nif %5==launch goto launch\r\necho %* > instance-arguments\r\nexit /b %EMPACK_TEST_INSTALL_STATUS%\r\n:launch\r\necho %* > launch-arguments\r\ncd game || exit /b 92\r\ncall java.cmd nogui\r\nexit /b %errorlevel%\r\n",
+        b"@echo off\r\nif %5==launch goto launch\r\necho %* > instance-arguments\r\nexit /b %EMPACK_TEST_INSTALL_STATUS%\r\n:launch\r\necho %* > launch-arguments\r\ncd game || exit /b 92\r\ncall java.cmd\r\nexit /b %errorlevel%\r\n",
     );
     put(
         root.path(),
         "game/java.cmd",
         b"@echo off\r\necho %* > server-arguments\r\nexit /b 0\r\n",
     );
-    for code in [0, 7] {
-        let args = root.path().join("game/server-arguments");
-        if args.exists() {
-            fs::remove_file(&args).unwrap();
-        }
-        let status = std::process::Command::new("cmd")
-            .args(["/d", "/c", "start.bat", "nogui"])
-            .current_dir(root.path())
-            .env_remove("JAVA_HOME")
-            .env("EMPACK_NO_PAUSE", "1")
-            .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
-            .status()
-            .unwrap();
-        assert_eq!(status.code(), Some(code));
-        assert_eq!(args.exists(), code == 0);
-        let arguments = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
-        assert!(arguments.contains("instance prepare"));
-        assert!(arguments.contains("--layout game --side server"));
-        if code == 0 {
-            let launch = fs::read_to_string(root.path().join("launch-arguments")).unwrap();
-            assert!(launch.contains("instance launch -- java -jar server.jar nogui"));
+    for (interface, console) in [
+        (ServerInterface::Console, true),
+        (ServerInterface::Gui, false),
+    ] {
+        put(
+            root.path(),
+            "start.bat",
+            runtime_start(
+                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                true,
+                true,
+                interface,
+            )
+            .replace("empack --workdir", "call fake-empack.cmd --workdir")
+            .as_bytes(),
+        );
+        for code in [0, 7] {
+            let args = root.path().join("game/server-arguments");
+            if args.exists() {
+                fs::remove_file(&args).unwrap();
+            }
+            let status = std::process::Command::new("cmd")
+                .args(["/d", "/c", "start.bat"])
+                .current_dir(root.path())
+                .env_remove("JAVA_HOME")
+                .env("EMPACK_NO_PAUSE", "1")
+                .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(code));
+            assert_eq!(args.exists(), code == 0);
+            let arguments = fs::read_to_string(root.path().join("instance-arguments")).unwrap();
+            assert!(arguments.contains("instance prepare"));
+            assert!(arguments.contains("--layout game --side server"));
+            if code == 0 {
+                let launch = fs::read_to_string(root.path().join("launch-arguments")).unwrap();
+                assert!(launch.contains("instance launch --server -- java"));
+                assert_eq!(launch.contains("nogui"), console);
+            }
         }
     }
 }
@@ -585,34 +642,39 @@ fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
                 unix: path("libraries/loader/unix_args.txt").unwrap(),
                 windows: path("libraries/loader/win_args.txt").unwrap(),
             },
-            "@user_jvm_args.txt\n@libraries/loader/unix_args.txt\nuser argument\n",
+            "@user_jvm_args.txt\n@libraries/loader/unix_args.txt\nnogui\nuser argument\n",
         ),
         (
             ServerLaunch::Jar(path("forge-1.12.2-14.23.5.2860.jar").unwrap()),
-            "-jar\nforge-1.12.2-14.23.5.2860.jar\nuser argument\n",
+            "-jar\nforge-1.12.2-14.23.5.2860.jar\nnogui\nuser argument\n",
         ),
     ] {
-        put(
-            root.path(),
-            "start.sh",
-            runtime_start(&launch, false, false).as_bytes(),
-        );
-        let status = std::process::Command::new("bash")
-            .arg(root.path().join("start.sh"))
-            .arg("user argument")
-            .env("JAVA_HOME", root.path().join("java"))
-            .status()
-            .unwrap();
-        assert!(status.success());
-        assert_eq!(
-            std::fs::read_to_string(root.path().join("game/arguments.txt")).unwrap(),
-            expected
-        );
-        let windows = runtime_start(&launch, false, true);
-        assert!(windows.contains("DisableDelayedExpansion"));
-        if matches!(launch, ServerLaunch::Arguments { .. }) {
-            assert!(windows.contains("@libraries/loader/win_args.txt"));
-            assert!(!windows.contains("unix_args.txt"));
+        for (interface, argument) in [
+            (ServerInterface::Console, "nogui\n"),
+            (ServerInterface::Gui, ""),
+        ] {
+            put(
+                root.path(),
+                "start.sh",
+                runtime_start(&launch, false, false, interface).as_bytes(),
+            );
+            let status = std::process::Command::new("bash")
+                .arg(root.path().join("start.sh"))
+                .arg("user argument")
+                .env("JAVA_HOME", root.path().join("java"))
+                .status()
+                .unwrap();
+            assert!(status.success());
+            assert_eq!(
+                std::fs::read_to_string(root.path().join("game/arguments.txt")).unwrap(),
+                expected.replace("nogui\n", argument)
+            );
+            let windows = runtime_start(&launch, false, true, interface);
+            assert!(windows.contains("DisableDelayedExpansion"));
+            if matches!(launch, ServerLaunch::Arguments { .. }) {
+                assert!(windows.contains("@libraries/loader/win_args.txt"));
+                assert!(!windows.contains("unix_args.txt"));
+            }
         }
     }
 }
@@ -622,25 +684,28 @@ fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
     let recipe = Recipe::SERVER_BUNDLED
         .with_update_authority(empack_core::distribution::UpdateAuthority::Empack)
         .unwrap();
-    for windows in [false, true] {
-        let launch = consumer_script(
-            runtime_start(
-                &ServerLaunch::Jar(path("server.jar").unwrap()),
-                true,
-                windows,
-            ),
-            recipe,
-        );
-        assert!(launch.contains("instance launch --server --check-updates --"));
-        let install = consumer_script(
-            if windows {
-                install_batch(Some("digest"))
-            } else {
-                install_script(Some("digest"))
-            },
-            recipe,
-        );
-        assert!(install.contains("--side server --require-subscription"));
+    for interface in [ServerInterface::Console, ServerInterface::Gui] {
+        for windows in [false, true] {
+            let launch = consumer_script(
+                runtime_start(
+                    &ServerLaunch::Jar(path("server.jar").unwrap()),
+                    true,
+                    windows,
+                    interface,
+                ),
+                recipe,
+            );
+            assert!(launch.contains("instance launch --server --check-updates --"));
+            let install = consumer_script(
+                if windows {
+                    install_batch(Some("digest"))
+                } else {
+                    install_script(Some("digest"))
+                },
+                recipe,
+            );
+            assert!(install.contains("--side server --require-subscription"));
+        }
     }
 }
 
@@ -677,28 +742,38 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
             windows: path("libraries/win args.txt").unwrap(),
         },
     ] {
-        // A returning batch fixture substitutes for java.exe; generated arguments are unchanged.
-        let script = runtime_start(&launch, false, true).replace(
-            "  \"%JAVA_HOME%\\bin\\java.exe\"",
-            "  call \"%JAVA_HOME%\\bin\\java.cmd\"",
-        );
-        put(root.path(), "start.bat", script.as_bytes());
-        for code in [0, 9] {
-            let output = std::process::Command::new("cmd")
-                .args(["/d", "/c", "start.bat", "nogui"])
-                .current_dir(root.path())
-                .env("EMPACK_NO_PAUSE", "1")
-                .env("JAVA_HOME", root.path().join("java space"))
-                .env("EMPACK_TEST_STATUS", code.to_string())
-                .output()
-                .unwrap();
-            assert_eq!(output.status.code(), Some(code), "{output:?}");
-            assert!(String::from_utf8_lossy(&output.stdout).contains("game\\eula.txt"));
-            let args = fs::read_to_string(root.path().join("game/arguments.txt")).unwrap();
-            match launch {
-                ServerLaunch::Jar(_) => assert!(args.contains("-jar server.jar nogui")),
-                ServerLaunch::Arguments { .. } => {
-                    assert!(args.contains("@user_jvm_args.txt \"@libraries/win args.txt\" nogui"))
+        for (interface, argument) in [
+            (ServerInterface::Console, "nogui"),
+            (ServerInterface::Gui, ""),
+        ] {
+            // A returning batch fixture substitutes for java.exe; generated arguments are unchanged.
+            let script = runtime_start(&launch, false, true, interface).replace(
+                "  \"%JAVA_HOME%\\bin\\java.exe\"",
+                "  call \"%JAVA_HOME%\\bin\\java.cmd\"",
+            );
+            put(root.path(), "start.bat", script.as_bytes());
+            for code in [0, 9] {
+                let output = std::process::Command::new("cmd")
+                    .args(["/d", "/c", "start.bat"])
+                    .current_dir(root.path())
+                    .env("EMPACK_NO_PAUSE", "1")
+                    .env("JAVA_HOME", root.path().join("java space"))
+                    .env("EMPACK_TEST_STATUS", code.to_string())
+                    .output()
+                    .unwrap();
+                assert_eq!(output.status.code(), Some(code), "{output:?}");
+                assert!(String::from_utf8_lossy(&output.stdout).contains("game\\eula.txt"));
+                let args = fs::read_to_string(root.path().join("game/arguments.txt")).unwrap();
+                assert_eq!(args.contains("nogui"), !argument.is_empty());
+                match launch {
+                    ServerLaunch::Jar(_) => {
+                        assert!(args.contains(&format!("-jar server.jar {argument}")))
+                    }
+                    ServerLaunch::Arguments { .. } => {
+                        assert!(args.contains(&format!(
+                            "@user_jvm_args.txt \"@libraries/win args.txt\" {argument}"
+                        )))
+                    }
                 }
             }
         }
@@ -706,7 +781,13 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
     put(
         root.path(),
         "start.bat",
-        runtime_start(&ServerLaunch::Jar(path("server.jar").unwrap()), false, true).as_bytes(),
+        runtime_start(
+            &ServerLaunch::Jar(path("server.jar").unwrap()),
+            false,
+            true,
+            ServerInterface::Console,
+        )
+        .as_bytes(),
     );
     let output = std::process::Command::new("cmd")
         .args(["/d", "/c", "start.bat"])
@@ -722,13 +803,18 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
 #[test]
 fn windows_entry_points_keep_console_and_return_status() {
     for script in [
-        start_batch(false),
-        start_batch(true),
+        start_batch(false, ServerInterface::Console),
+        start_batch(true, ServerInterface::Console),
+        start_batch(false, ServerInterface::Gui),
+        start_batch(true, ServerInterface::Gui),
         install_batch(None),
         install_batch(Some(&"a".repeat(64))),
     ] {
         assert!(script.contains("if not defined EMPACK_NO_PAUSE pause\r\nexit /b %_EMPACK_EXIT%"));
         assert!(script.contains("DisableDelayedExpansion"));
     }
-    assert!(start_batch(true).contains("set \"EMPACK_NO_PAUSE=1\"\r\ncall install_pack.bat"));
+    assert!(
+        start_batch(true, ServerInterface::Console)
+            .contains("set \"EMPACK_NO_PAUSE=1\"\r\ncall install_pack.bat")
+    );
 }

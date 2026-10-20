@@ -132,31 +132,51 @@ fn generated(bytes: &[u8], executable: bool, cancel: &Cancellation) -> Result<Ac
         },
     })
 }
+#[derive(Clone, Copy)]
+enum ServerInterface {
+    Console,
+    Gui,
+}
+impl ServerInterface {
+    fn arguments(self) -> &'static str {
+        match self {
+            Self::Console => "nogui ",
+            Self::Gui => "",
+        }
+    }
+}
+
 // These scripts contain no project metadata. All arguments remain separate shell arguments.
 const START_SH: &str = r#"#!/usr/bin/env bash
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 JAVA_PATH="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 cd -- game
-exec "$JAVA_PATH" -jar server.jar "$@"
+exec "$JAVA_PATH" -jar server.jar {{SERVER_ARGUMENTS}}"$@"
 "#;
-fn start_script(references: bool) -> String {
+fn start_script(references: bool, interface: ServerInterface) -> String {
+    let script = START_SH.replace("{{SERVER_ARGUMENTS}}", interface.arguments());
     if references {
-        START_SH
+        script
             .replace("cd -- game\n", "bash ./install_pack.sh\n")
             .replace(
                 "exec \"$JAVA_PATH\"",
                 "exec empack --workdir \"$PWD\" --yes instance launch -- \"$JAVA_PATH\"",
             )
     } else {
-        START_SH.into()
+        script
     }
 }
-fn runtime_start(launch: &ServerLaunch, references: bool, windows: bool) -> String {
+fn runtime_start(
+    launch: &ServerLaunch,
+    references: bool,
+    windows: bool,
+    interface: ServerInterface,
+) -> String {
     let script = if windows {
-        start_batch(references)
+        start_batch(references, interface)
     } else {
-        start_script(references)
+        start_script(references, interface)
     };
     if references {
         return script
@@ -334,6 +354,8 @@ pub(super) fn prepare_server_archive(
     let user_configuration = [
         "start.sh",
         "start.bat",
+        "start_gui.sh",
+        "start_gui.bat",
         "install_pack.sh",
         "install_pack.bat",
         "game/server.properties",
@@ -343,13 +365,43 @@ pub(super) fn prepare_server_archive(
     for (name, bytes, executable) in [
         (
             "start.sh",
-            consumer_script(runtime_start(runtime.launch(), references, false), target)
-                .into_bytes(),
+            consumer_script(
+                runtime_start(
+                    runtime.launch(),
+                    references,
+                    false,
+                    ServerInterface::Console,
+                ),
+                target,
+            )
+            .into_bytes(),
             true,
         ),
         (
             "start.bat",
-            consumer_script(runtime_start(runtime.launch(), references, true), target).into_bytes(),
+            consumer_script(
+                runtime_start(runtime.launch(), references, true, ServerInterface::Console),
+                target,
+            )
+            .into_bytes(),
+            false,
+        ),
+        (
+            "start_gui.sh",
+            consumer_script(
+                runtime_start(runtime.launch(), references, false, ServerInterface::Gui),
+                target,
+            )
+            .into_bytes(),
+            true,
+        ),
+        (
+            "start_gui.bat",
+            consumer_script(
+                runtime_start(runtime.launch(), references, true, ServerInterface::Gui),
+                target,
+            )
+            .into_bytes(),
             false,
         ),
         (

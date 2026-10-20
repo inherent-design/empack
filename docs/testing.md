@@ -97,3 +97,8 @@ helper, rejects a mismatched tag and excludes stale output. Python tests verify
 download digests, staging names, checksum contents and draft publication ordering.
 Windows CI executes generated batch scripts with native `cmd.exe`; Java fixtures
 check argument selection and exit status without claiming Minecraft gameplay.
+
+Server archive tests check both console and GUI launchers in ZIP, TAR and 7z outputs.
+Native shell and Windows command fixtures verify the default `nogui` argument, its
+absence from GUI launchers, argument boundaries, preparation ordering and exit codes.
+Live runtime probes exercise console launchers; they do not certify desktop GUI rendering.
