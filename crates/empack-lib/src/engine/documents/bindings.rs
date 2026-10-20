@@ -94,7 +94,7 @@ pub(super) fn split_preserving(
             .remove("installation-policies")
             .unwrap()
     };
-    let author = authoring::compact(author)?;
+    let author = authoring::compact_preserving(author, original)?;
     Ok(AuthoringDocuments {
         intent: serialize(&author)?,
         bindings: if bindings.is_empty() && policies == json!({}) {

@@ -110,7 +110,9 @@ belong in authoring documents.
 ## Editing and inspection
 
 Semantic edits modify the affected YAML nodes and preserve unrelated comments,
-ordering and formatting. Formatting is explicit, not a side effect of dependency
+ordering and formatting. Edit comparisons retain authored block forms for dependencies,
+loader requests, profiles, sources, environment requirements and optional choices.
+Formatting is explicit, not a side effect of dependency
 resolution. Duplicate keys, unknown fields, conflicting shorthand and inapplicable
 options fail before network work, with the document path in the diagnostic.
 

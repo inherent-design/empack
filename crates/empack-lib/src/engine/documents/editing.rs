@@ -332,6 +332,98 @@ mod tests {
         assert_eq!(edit.decode("check").unwrap().intent(), next.intent());
     }
     #[test]
+    fn block_pin_and_unpin_preserve_inner_source_comments() {
+        let input = INPUT.replace(
+            "alpha: modrinth:Alpha001 # alpha note",
+            "alpha:\n    source: modrinth:Alpha001 # source note",
+        );
+        let source = DocumentCodec
+            .decode_intent(input.as_bytes(), "block")
+            .unwrap();
+        let mut next = source.intent().clone();
+        next.roots
+            .get_mut(&DependencyKey::parse("alpha").unwrap())
+            .unwrap()
+            .selection = DependencySelection::ProviderPin(PinSelector::ModrinthVersion(
+            ModrinthVersionId::parse("Version1").unwrap(),
+        ));
+        let pinned = DocumentCodec.replace_intent(&source, &next).unwrap();
+        let text = String::from_utf8(pinned.bytes.clone()).unwrap();
+        assert!(
+            text.contains("    source: modrinth:Alpha001 # source note\n"),
+            "{text}"
+        );
+        assert!(text.contains("    pin: Version1\n"), "{text}");
+        let unpinned = DocumentCodec
+            .replace_intent(&pinned.decode("pinned").unwrap(), source.intent())
+            .unwrap();
+        assert_eq!(unpinned.bytes, input.as_bytes());
+    }
+
+    #[test]
+    fn expanded_loader_profile_and_source_forms_keep_inner_comments() {
+        let loader = INPUT.replace(
+            "  loader: fabric",
+            "  loader:\n    kind: fabric # loader note",
+        );
+        let profile = format!(
+            "{INPUT}build:\n  default: [client]\n  profiles:\n    client:\n      target: prism # target note\n"
+        );
+        let local = INPUT.replace(
+            "alpha: modrinth:Alpha001 # alpha note",
+            "alpha:\n    source:\n      kind: local\n      path: vendor/a.jar # source note",
+        );
+        let optional = INPUT.replace("alpha: modrinth:Alpha001 # alpha note", "alpha:\n    source: modrinth:Alpha001\n    optional:\n      choice: alpha # choice note");
+        for (input, next, keep) in [
+            (
+                loader.clone(),
+                loader.replace(
+                    "fabric # loader note",
+                    "fabric # loader note\n    pin: 0.16.0",
+                ),
+                "kind: fabric # loader note",
+            ),
+            (
+                profile.clone(),
+                profile.replace(
+                    "prism # target note",
+                    "prism # target note\n      format: tar.gz",
+                ),
+                "target: prism # target note",
+            ),
+            (
+                local.clone(),
+                local.replace("vendor/a.jar", "vendor/b.jar"),
+                "path: vendor/b.jar # source note",
+            ),
+            (
+                optional.clone(),
+                optional.replace(
+                    "alpha # choice note",
+                    "alpha # choice note\n      default: true",
+                ),
+                "choice: alpha # choice note",
+            ),
+        ] {
+            let source = DocumentCodec
+                .decode_intent(input.as_bytes(), "before")
+                .unwrap();
+            let desired = DocumentCodec
+                .decode_intent(next.as_bytes(), "after")
+                .unwrap();
+            let edit = DocumentCodec
+                .replace_intent(&source, desired.intent())
+                .unwrap();
+            assert!(
+                String::from_utf8_lossy(&edit.bytes).contains(keep),
+                "{}",
+                String::from_utf8_lossy(&edit.bytes)
+            );
+            assert_eq!(edit.decode("checked").unwrap().intent(), desired.intent());
+        }
+    }
+
+    #[test]
     fn add_and_remove_entries_keep_neighbor_comments() {
         let source = DocumentCodec
             .decode_intent(INPUT.as_bytes(), "test")

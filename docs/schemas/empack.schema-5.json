@@ -592,12 +592,12 @@
                       "minLength": 1
                     },
                     "default": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": false
                     }
                   },
                   "required": [
-                    "choice",
-                    "default"
+                    "choice"
                   ],
                   "additionalProperties": false
                 }
