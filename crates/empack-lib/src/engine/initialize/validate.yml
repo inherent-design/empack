@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 env:
   EMPACK_VERSION: __EMPACK_RELEASE_TAG__
-  # Empty selects distribution.defaults; otherwise list profile names, one per line.
+  # Empty selects build.default; otherwise list profile names, one per line.
   EMPACK_PROFILES: ''
   JAVA_VERSION: '21'
 jobs:

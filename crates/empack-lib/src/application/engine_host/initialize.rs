@@ -197,9 +197,11 @@ async fn initialize_with_catalog(
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
     let intent = ProjectIntent {
+        installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata,
         runtime: RuntimeIntent {
+            java_major: args.java.unwrap_or(21),
             minecraft: game,
             acceptable_versions,
             loader,
@@ -399,9 +401,12 @@ async fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Re
     ensure!(!name.trim().is_empty(), "Pack name cannot be empty");
     ensure!(!version.trim().is_empty(), "Pack version cannot be empty");
     Ok(PackMetadata {
+        id: crate::engine::initialize::new_pack_id()?,
         name,
         version,
-        author: (!author.is_empty()).then_some(author),
+        authors: ((!author.is_empty()).then_some(author))
+            .into_iter()
+            .collect(),
         description: None,
     })
 }

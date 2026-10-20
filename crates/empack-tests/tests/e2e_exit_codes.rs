@@ -134,7 +134,7 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
     let path = project.dir().join("empack.yml");
     let mut intent: serde_json::Value =
         serde_saphyr::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    intent["dependencies"]["fixture"]["source"]["path"] = serde_json::json!(format!(
+    intent["dependencies"]["fixture"]["path"] = serde_json::json!(format!(
         "../{}",
         sentinel.path().file_name().unwrap().to_str().unwrap()
     ));

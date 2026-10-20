@@ -422,6 +422,7 @@ fn decisions(
         files.insert(key.clone(), decision);
     }
     let metadata = PackMetadata {
+        id: crate::engine::initialize::new_pack_id()?,
         name: args
             .pack_name
             .clone()
@@ -432,13 +433,16 @@ fn decisions(
             .clone()
             .or_else(|| source.metadata.version.clone())
             .unwrap_or_else(|| "1.0.0".into()),
-        author: args
+        authors: (args
             .author
             .clone()
-            .or_else(|| source.metadata.author.clone()),
+            .or_else(|| source.metadata.author.clone()))
+        .into_iter()
+        .collect(),
         description: source.metadata.summary.clone(),
     };
     Ok(ImportCandidateOptions {
+        java_major: args.java.unwrap_or(21),
         metadata,
         loader,
         acceptable_versions,

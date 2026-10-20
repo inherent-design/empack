@@ -72,14 +72,17 @@ impl WorkflowProjectFixture {
         };
         let candidate = InitializeCandidate::new(
             ProjectIntent {
+                installation_policies: BTreeMap::new(),
                 source_excludes: Vec::new(),
                 metadata: PackMetadata {
+                    id: "test-pack".into(),
                     name: self.pack_name.clone(),
-                    author: Some(self.author.clone()),
+                    authors: vec![self.author.clone()],
                     version: self.version.clone(),
                     description: None,
                 },
                 runtime: RuntimeIntent {
+                    java_major: 21,
                     minecraft: runtime.minecraft.clone(),
                     acceptable_versions: vec![],
                     loader,

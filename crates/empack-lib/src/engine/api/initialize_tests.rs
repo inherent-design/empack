@@ -16,14 +16,17 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
             .then(|| LoaderVersion::parse("exact-test-version").unwrap()),
     };
     let intent = ProjectIntent {
+        installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata: PackMetadata {
+            id: "test-pack".into(),
             name: "New pack $(literal)".into(),
             version: "0.1.0".into(),
-            author: Some("Author".into()),
+            authors: (Some("Author".into())).into_iter().collect(),
             description: Some("Pack description".into()),
         },
         runtime: RuntimeIntent {
+            java_major: 21,
             minecraft: runtime.minecraft.clone(),
             acceptable_versions: vec![GameVersion::parse("1.20.2").unwrap()],
             loader,

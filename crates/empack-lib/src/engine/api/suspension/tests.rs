@@ -815,11 +815,9 @@ async fn native_release_batches_resume_exact_downloads_and_publish_with_other_co
         )
         .unwrap();
     let mut intent = project.intent().clone();
-    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-        pack_id: "resume.native".into(),
-        java_major: 17,
-        policies: BTreeMap::new(),
-    });
+    intent.metadata.id = "resume.native".into();
+    intent.runtime.java_major = 17;
+    intent.installation_policies = BTreeMap::new();
     let project = explicitly_placed(intent, project.lock().clone());
     fs::write(
         root.path().join("empack.yml"),
@@ -964,11 +962,9 @@ async fn server_projection_without_client_downloads(consumer: empack_core::distr
         .unwrap();
     let mut intent = project.intent().clone();
     if consumer == Consumer::Empack {
-        intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-            pack_id: "server.projection".into(),
-            java_major: 17,
-            policies: BTreeMap::new(),
-        });
+        intent.metadata.id = "server.projection".into();
+        intent.runtime.java_major = 17;
+        intent.installation_policies = BTreeMap::new();
     }
     let project = explicitly_placed(intent, project.lock().clone());
     fs::write(

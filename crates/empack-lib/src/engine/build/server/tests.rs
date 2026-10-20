@@ -20,11 +20,9 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
 pub(in crate::engine::build) fn fixture(root: &Path) -> BuildAcquisitions {
     let original = project(false, false);
     let mut intent = original.intent().clone();
-    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-        pack_id: "server.fixture".into(),
-        java_major: 21,
-        policies: BTreeMap::new(),
-    });
+    intent.metadata.id = "server.fixture".into();
+    intent.runtime.java_major = 21;
+    intent.installation_policies = BTreeMap::new();
     intent.runtime.loader = LoaderKind::Vanilla;
     intent.runtime.loader_version = None;
     for dependency in intent.roots.values_mut() {

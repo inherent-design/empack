@@ -315,7 +315,7 @@ fn template_values(project: &empack_core::model::ResolvedProject) -> BTreeMap<St
         ("INSTANCE_PREPARE_COMMAND", String::new()),
         ("NAME", metadata.name.clone()),
         ("VERSION", metadata.version.clone()),
-        ("AUTHOR", metadata.author.clone().unwrap_or_default()),
+        ("AUTHOR", metadata.authors.join(", ")),
         (
             "DESCRIPTION",
             metadata.description.clone().unwrap_or_default(),

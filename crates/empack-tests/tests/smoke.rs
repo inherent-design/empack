@@ -1066,8 +1066,7 @@ fn smoke_generated_workflow_builds_named_profiles_and_rejects_wrong_release_tag(
         .clone();
     intent.metadata.name = "Pack With Spaces".into();
     intent.metadata.version = "1.2.3-beta".into();
-    intent.distribution.defaults =
-        empack_core::model::NonEmpty::new(vec!["modrinth".into(), "prism".into()]).unwrap();
+    intent.distribution.defaults = vec!["modrinth".into(), "prism".into()];
     empack_lib::testing::write_authoring(&intent_path, &intent).unwrap();
     command(&project).args(["sync", "--yes"]).assert().success();
     fs::create_dir_all(project.dir().join("dist")).unwrap();

@@ -147,18 +147,22 @@ pub enum LoaderKind {
 /// Human pack metadata does not double as filesystem authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackMetadata {
+    /// Stable pack identity, independent of display name and version.
+    pub id: String,
     /// Display name.
     pub name: String,
     /// Human release version.
     pub version: String,
-    /// Optional author attribution.
-    pub author: Option<String>,
+    /// Ordered author attribution.
+    pub authors: Vec<String>,
     /// Optional description.
     pub description: Option<String>,
 }
 /// Requested runtime compatibility.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeIntent {
+    /// Declared minimum recipient Java major.
+    pub java_major: u16,
     /// Primary game version.
     pub minecraft: GameVersion,
     /// Explicit additional compatible versions.
@@ -365,16 +369,6 @@ pub enum ExtensionValue {
     /// Named values.
     Object(BTreeMap<String, ExtensionValue>),
 }
-/// Distribution preferences retained independently of runtime and dependencies.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeDistributionIntent {
-    /// Stable publisher-selected identity, independent of display name and version.
-    pub pack_id: String,
-    /// Explicit runtime requirement, verified by the selected runtime adapter before launch.
-    pub java_major: u16,
-    /// Exact destination ownership overrides; world content remains seed-only.
-    pub policies: BTreeMap<PortableRelPath, crate::instance::FilePolicy>,
-}
 /// A complete named consumer recipe, including its archive container.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildProfile {
@@ -386,12 +380,10 @@ pub struct BuildProfile {
 /// Authored profiles and their explicit default selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistributionIntent {
-    /// Native pack identity and recipient runtime policy.
-    pub native: Option<NativeDistributionIntent>,
     /// Complete named profiles, without implicit inheritance.
     pub profiles: BTreeMap<String, BuildProfile>,
     /// Explicit ordered profile names selected without CLI selectors.
-    pub defaults: NonEmpty<String>,
+    pub defaults: Vec<String>,
 }
 impl DistributionIntent {
     /// Seed named profiles when initializing or importing a project.
@@ -423,16 +415,12 @@ impl DistributionIntent {
                 },
             );
         }
-        Self {
-            native: None,
-            profiles,
-            defaults: NonEmpty::new(defaults).expect("nonempty recipes"),
-        }
+        Self { profiles, defaults }
     }
     /// Validate portable names and the complete default selection.
     pub fn validate(&self) -> Result<(), ModelError> {
-        if self.profiles.is_empty() || self.profiles.len() > 128 {
-            return Err(ModelError("Select one to 128 build profiles".into()));
+        if self.profiles.len() > 128 {
+            return Err(ModelError("Select at most 128 build profiles".into()));
         }
         for name in self.profiles.keys() {
             if name.is_empty()
@@ -471,6 +459,8 @@ pub enum DistributionArchive {
 /// Authoring intent. It contains no installed state or native write authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectIntent {
+    /// Exact installation policy overrides, authored as integration bindings.
+    pub installation_policies: BTreeMap<PortableRelPath, crate::instance::FilePolicy>,
     /// Layer-relative exclusion rules; locked sources remain explicit obligations.
     pub source_excludes: Vec<String>,
     /// Human metadata.
@@ -709,18 +699,26 @@ impl ProjectIntent {
         {
             return Err(invalid("Source exclusion must be one bounded pattern"));
         }
-        if let Some(native) = &self.distribution.native
-            && (native.pack_id.is_empty()
-                || native.pack_id.len() > 128
-                || !native
-                    .pack_id
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || b"-_.+".contains(&c))
-                || native.java_major < 8)
+        if self.metadata.id.is_empty()
+            || self.metadata.id.len() > 128
+            || !self
+                .metadata
+                .id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"-_.+".contains(&c))
+            || self.runtime.java_major < 8
         {
             return Err(invalid(
-                "Native distribution requires stable pack identity and Java major",
+                "Pack identity and a Java minimum of at least 8 are required",
             ));
+        }
+        if self
+            .metadata
+            .authors
+            .iter()
+            .any(|author| author.trim().is_empty() || author.chars().any(char::is_control))
+        {
+            return Err(invalid("Authors must be nonempty attribution strings"));
         }
         if self.metadata.name.trim().is_empty() || self.metadata.version.trim().is_empty() {
             return Err(invalid("Pack name and version are required"));

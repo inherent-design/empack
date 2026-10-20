@@ -207,6 +207,10 @@ pub struct InitArgs {
     )]
     pub mc_version: Option<String>,
 
+    /// Minimum recipient Java major; defaults to 21 when omitted.
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Declared minimum Java major (default: 21; adjust for your game/loader)")]
+    pub java: Option<u16>,
+
     /// Author name
     #[arg(
         long,
@@ -291,13 +295,13 @@ pub struct InitArgs {
   server      Prepared server runtime; bundled pack content by default
   empack      Exact native release and immutable assets
 
-Without selectors, use distribution.defaults from empack.yml.
+Without selectors, use build.default from empack.yml.
 A consumer selects its unique configured profile; use --ad-hoc for a new recipe.
 Use --profile NAME when multiple profiles have the same consumer.
 Use --explain (and optionally --json) to inspect the exact configuration without building.
 Use --delivery references for a Prism/server snapshot installed by empack.
 Prism/server reference exports and native empack exports need
-distribution.native identity and Java settings.
+pack.id and runtime.java settings.
 Bundled content does not include client game binaries or imply offline launch.
 Update authority is independent of dependency delivery; snapshots are the default.
 All requested outputs are verified before combined publication.

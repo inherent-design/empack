@@ -23,11 +23,9 @@ fn path(value: &str) -> PortableRelPath {
 fn fixture(root: &Path) -> BuildAcquisitions {
     let initial = project(false, false);
     let mut intent = initial.intent().clone();
-    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-        pack_id: "test.pack".into(),
-        java_major: 21,
-        policies: std::collections::BTreeMap::new(),
-    });
+    intent.metadata.id = "test.pack".into();
+    intent.runtime.java_major = 21;
+    intent.installation_policies = std::collections::BTreeMap::new();
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     fs::write(
         root.join("empack.yml"),

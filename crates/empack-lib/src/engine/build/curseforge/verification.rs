@@ -78,7 +78,7 @@ pub(super) fn verify_manifest_bytes(
     ensure!(
         manifest.name == metadata.name
             && manifest.version == metadata.version
-            && manifest.author == metadata.author.as_deref().unwrap_or(""),
+            && manifest.author == metadata.authors.join(", "),
         "CurseForge manifest metadata differs from author intent"
     );
     ensure!(

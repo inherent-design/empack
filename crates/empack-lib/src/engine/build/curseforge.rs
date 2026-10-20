@@ -196,7 +196,7 @@ pub(super) fn prepare_archive(
     let metadata = &game.project().intent().metadata;
     let manifest = serde_json::to_vec_pretty(&json!({
         "manifestType":"minecraftModpack", "manifestVersion":1,
-        "name":metadata.name, "version":metadata.version, "author":metadata.author.as_deref().unwrap_or(""),
+        "name":metadata.name, "version":metadata.version, "author":metadata.authors.join(", "),
         "minecraft":{"version":runtime.minecraft.as_str(), "modLoaders":loaders},
         "files":references.into_iter().map(|(project,(file,required))| json!({"projectID":project,"fileID":file,"required":required})).collect::<Vec<_>>(),
         "overrides":"overrides"

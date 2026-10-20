@@ -628,10 +628,12 @@ fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCan
         })
         .collect();
     ImportCandidateOptions {
+        java_major: 21,
         metadata: PackMetadata {
+            id: "test-pack".into(),
             name: "Imported pack".into(),
             version: "1".into(),
-            author: None,
+            authors: (None).into_iter().collect(),
             description: None,
         },
         loader: None,

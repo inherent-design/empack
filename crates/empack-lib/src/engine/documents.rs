@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod authoring;
 mod bindings;
 mod intent;
 mod lock;
@@ -29,7 +30,7 @@ pub struct InvalidDocument {
 /// Maximum encoded document length, before YAML allocation.
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
-pub const INTENT_SCHEMA: u64 = 4;
+pub const INTENT_SCHEMA: u64 = 5;
 /// Exact selection schema.
 pub const LOCK_SCHEMA: u64 = 1;
 
@@ -245,7 +246,7 @@ impl DocumentCodec {
             intent::decode(&value)? == *intent,
             "Intent has a noncanonical semantic value"
         );
-        serialize(&value)
+        serialize(&authoring::compact(value)?)
     }
     /// Prepare a raw-revision-bound edit. No-op edits preserve original bytes exactly.
     pub fn replace_intent(

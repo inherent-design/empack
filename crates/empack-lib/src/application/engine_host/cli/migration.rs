@@ -57,6 +57,7 @@ impl MigrationOptions {
         }
         Ok(Self {
             runtime: RuntimeIntent {
+                java_major: 21,
                 minecraft: GameVersion::parse(&args.minecraft)?,
                 loader,
                 loader_version: args
@@ -84,7 +85,9 @@ impl MigrationOptions {
             .context("Migration needs a current lock; synchronize the author project first")?
             .bind(source)?;
         let mut intent = source.intent().clone();
+        let java_major = intent.runtime.java_major;
         intent.runtime = self.runtime.clone();
+        intent.runtime.java_major = java_major;
         for (key, id) in &self.replacements {
             let root = intent
                 .roots

@@ -134,10 +134,12 @@ fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> 
         })
         .collect();
     Ok(ImportCandidateOptions {
+        java_major: 21,
         metadata: PackMetadata {
+            id: "test-pack".into(),
             name: "Imported".into(),
             version: "1".into(),
-            author: None,
+            authors: (None).into_iter().collect(),
             description: None,
         },
         loader: None,
@@ -689,10 +691,12 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         move |content| {
             assert_eq!(content.content().len(), 1);
             let mut options = ImportCandidateOptions {
+                java_major: 21,
                 metadata: PackMetadata {
+                    id: "test-pack".into(),
                     name: "Imported".into(),
                     version: "1".into(),
-                    author: None,
+                    authors: (None).into_iter().collect(),
                     description: None,
                 },
                 loader: None,

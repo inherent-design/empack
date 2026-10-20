@@ -134,7 +134,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             "url":"https://example.invalid/renderer.jar"}],"dependencies":[],
         "date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
     }).to_string()).create_async().await;
-    let mut prior = None;
+    let mut prior: Option<empack_core::model::ResolutionLock> = None;
     for input in ["renderer", "Root0001", "https://modrinth.com/mod/renderer"] {
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
@@ -154,8 +154,11 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         )
         .await
         .unwrap();
-        let current = DocumentCodec.encode_lock(&project(root.path())).unwrap();
-        if let Some(expected) = prior {
+        let current = project(root.path()).lock().clone();
+        if let Some(mut expected) = prior {
+            // Independently initialized packs have distinct IDs and semantic revisions.
+            assert_ne!(current.intent_revision, expected.intent_revision);
+            expected.intent_revision = current.intent_revision;
             assert_eq!(current, expected);
         }
         prior = Some(current);
@@ -182,10 +185,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             fs::read(root.path().join("project/empack.yml")).unwrap(),
             intent_before
         );
-        assert_eq!(
-            DocumentCodec.encode_lock(&project(root.path())).unwrap(),
-            prior.clone().unwrap()
-        );
+        assert_eq!(project(root.path()).lock(), prior.as_ref().unwrap());
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(&session(root.path(), false), false)

@@ -59,8 +59,8 @@ def selection():
         if name.strip():
             args += ["--profile", name.strip()]
     report = json.loads(run("empack", "build", "--explain", "--json", *args, capture=True))
-    if report.get("schema") != 1 or report.get("lock") != "current":
-        raise ValueError("Build requires a schema-1 explanation with a current lock; run empack sync locally")
+    if report.get("schema") != 2 or report.get("lock") != "current":
+        raise ValueError("Build requires a schema-2 explanation with a current lock; run empack sync locally")
     if not report.get("profiles"):
         raise ValueError("No build profiles selected")
     return report

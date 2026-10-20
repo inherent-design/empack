@@ -30,6 +30,8 @@ pub struct ImportFileDecision {
     pub provider_destination: Option<InstallDestination>,
 }
 pub struct ImportCandidateOptions {
+    /// Declared recipient Java minimum, independent of output profiles.
+    pub java_major: u16,
     pub metadata: PackMetadata,
     /// Index into the source loader declarations. None selects the sole/primary loader or vanilla.
     pub loader: Option<usize>,
@@ -102,9 +104,11 @@ impl VerifiedImportContent {
         })?;
         let runtime = select_runtime(&source.runtime, options.loader)?;
         let mut intent = ProjectIntent {
+            installation_policies: BTreeMap::new(),
             source_excludes: Vec::new(),
             metadata: options.metadata,
             runtime: RuntimeIntent {
+                java_major: options.java_major,
                 minecraft: runtime.minecraft.clone(),
                 acceptable_versions: options.acceptable_versions,
                 loader: runtime.loader,

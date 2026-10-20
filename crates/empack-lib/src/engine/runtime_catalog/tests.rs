@@ -217,14 +217,17 @@ fn catalog_selection_initializes_coherent_intent_and_lock_without_manufacturing_
     .unwrap();
     let runtime = choices.resolve(None).unwrap();
     let intent = ProjectIntent {
+        installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata: PackMetadata {
+            id: "test-pack".into(),
             name: "Catalog selection".into(),
             version: "1.0.0".into(),
-            author: None,
+            authors: (None).into_iter().collect(),
             description: None,
         },
         runtime: RuntimeIntent {
+            java_major: 21,
             minecraft: game("1.21.1"),
             acceptable_versions: vec![],
             loader: LoaderKind::Fabric,
