@@ -324,6 +324,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Provider(identity.clone()),
             kind: ContentKind::ResourcePack,
             version: VersionIntent::FollowCompatible,

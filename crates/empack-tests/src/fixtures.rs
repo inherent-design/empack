@@ -72,6 +72,7 @@ impl WorkflowProjectFixture {
         };
         let candidate = InitializeCandidate::new(
             ProjectIntent {
+                dependency_policy: Default::default(),
                 installation_policies: BTreeMap::new(),
                 source_excludes: Vec::new(),
                 metadata: PackMetadata {

@@ -15,7 +15,7 @@ fn args(plan: bool) -> MigrationArgs {
         plan,
         json: false,
         materialize: false,
-        release_policy: CliReleasePolicy::PreferStable,
+        release_policy: Some(CliReleasePolicy::PreferStable),
     }
 }
 fn services(server: &mockito::Server) -> dependencies::AdditionServices {

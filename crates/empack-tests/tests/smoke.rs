@@ -58,6 +58,7 @@ fn smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches() {
             .intent()
             .clone();
         let dependency = DependencyIntent {
+            releases: None,
             source: SourceIntent::Local(
                 PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
             ),
@@ -628,6 +629,7 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
         intent.roots.insert(
             key.clone(),
             DependencyIntent {
+                releases: None,
                 source: SourceIntent::Provider(identity.clone()),
                 kind: ContentKind::Mod,
                 version: VersionIntent::Exact(pin.selection.clone()),

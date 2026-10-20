@@ -17,7 +17,7 @@ mod delta;
 pub(super) struct MigrationOptions {
     pub runtime: RuntimeIntent,
     pub replacements: BTreeMap<DependencyKey, ProviderProjectId>,
-    pub releases: ReleasePolicy,
+    pub releases: Option<ReleasePolicy>,
     pub plan: bool,
     pub json: bool,
 }
@@ -71,7 +71,7 @@ impl MigrationOptions {
                     .collect::<std::result::Result<_, _>>()?,
             },
             replacements,
-            releases: args.release_policy.into(),
+            releases: args.release_policy.map(Into::into),
             plan: args.plan,
             json: args.json,
         })

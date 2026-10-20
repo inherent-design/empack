@@ -385,9 +385,7 @@ pub(super) async fn synchronize_mode(
         Duration::from_secs(session.config().app_config().net_timeout);
     let source = source.clone();
     let prior = prior.clone();
-    let releases = migration
-        .as_ref()
-        .map_or(ReleasePolicy::PreferStable, |options| options.releases);
+    let releases = migration.as_ref().and_then(|options| options.releases);
     let original_source = original.clone();
     let migrating = migration.is_some();
     let acquisition_services = dependencies::AdditionServices {
@@ -633,6 +631,7 @@ pub(super) fn provider_input(
     };
     let files = ProviderFiles::from_placement(&root.placement);
     Ok(ProviderAddInput {
+        releases: root.releases,
         selector,
         key: Some(key.clone()),
         kind: Some(root.kind),

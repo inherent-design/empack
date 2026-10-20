@@ -18,8 +18,17 @@ pub(super) fn expand(mut value: Value) -> Result<Value> {
             "extensions",
             "sources",
             "installation-policies",
+            "dependency-policy",
         ],
     )?;
+    let policy = value.get("dependency-policy").cloned().unwrap_or(json!({}));
+    fields(&policy, &["releases"])?;
+    let policy = policy
+        .get("releases")
+        .cloned()
+        .unwrap_or(json!("prefer-stable"));
+    release_policy(&policy)?;
+    value["dependency-policy"] = policy;
     let pack = value.get_mut("pack").context("Missing pack")?;
     fields(pack, &["id", "name", "version", "authors", "description"])?;
     pack.as_object_mut()
@@ -123,6 +132,7 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
             "sha256",
             "digests",
             "pin",
+            "releases",
             "type",
             "side",
             "optional",
@@ -163,6 +173,13 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
     ensure!(!map.contains_key("mirrors"), "mirrors applies only to url");
     let provider = source.get("kind") == Some(&json!("provider"));
     let pin = map.remove("pin");
+    ensure!(
+        !map.contains_key("releases") || (provider && pin.is_none()),
+        "releases applies only to an unpinned provider request"
+    );
+    if let Some(policy) = map.get("releases") {
+        release_policy(policy)?;
+    }
     ensure!(
         pin.is_none() || provider,
         "pin applies only to a provider source"
@@ -225,6 +242,14 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
 
 /// Produce schema syntax from normalized data, without changing semantic meaning.
 pub(super) fn compact(mut value: Value) -> Result<Value> {
+    let policy = value
+        .as_object_mut()
+        .unwrap()
+        .remove("dependency-policy")
+        .unwrap();
+    if policy != "prefer-stable" {
+        value["dependency-policy"] = json!({"releases":policy});
+    }
     let distribution = value
         .as_object_mut()
         .unwrap()
@@ -261,6 +286,9 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
     }
     for (key, dependency) in value["dependencies"].as_object_mut().unwrap() {
         let map = dependency.as_object_mut().unwrap();
+        if map.get("releases").is_none_or(Value::is_null) {
+            map.remove("releases");
+        }
         let content = map.remove("content").unwrap();
         if content != "mod" {
             map.insert("type".into(), content);
@@ -486,5 +514,54 @@ mod tests {
                 .intent(),
             &source
         );
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    #[test]
+    fn dependency_preferences_compose_and_reject_pin_or_file_overrides() {
+        let base = json!({"schema":5,"pack":{"id":"pack","name":"Pack","version":"1"},"runtime":{"minecraft":"1.21.1","loader":"fabric","java":21},"dependency-policy":{"releases":"stable-only"},"dependencies":{"a":{"source":"modrinth:AANobbMI","releases":"any"},"b":"modrinth:Root0002"}});
+        let decoded = DocumentCodec
+            .decode_intent(&serde_json::to_vec(&base).unwrap(), "policy")
+            .unwrap();
+        let intent = decoded.intent();
+        assert_eq!(
+            intent.release_policy(Some(&DependencyKey::parse("a").unwrap()), None),
+            ReleasePolicy::Any
+        );
+        assert_eq!(
+            intent.release_policy(Some(&DependencyKey::parse("b").unwrap()), None),
+            ReleasePolicy::StableOnly
+        );
+        assert_eq!(
+            intent.release_policy(
+                Some(&DependencyKey::parse("a").unwrap()),
+                Some(ReleasePolicy::PreferStable)
+            ),
+            ReleasePolicy::PreferStable
+        );
+        let encoded = DocumentCodec.encode_authoring(intent).unwrap();
+        assert_eq!(
+            DocumentCodec
+                .decode_authoring(&encoded.intent, encoded.bindings.as_deref(), "roundtrip")
+                .unwrap()
+                .intent(),
+            intent
+        );
+        for dependency in [
+            json!({"source":"modrinth:AANobbMI","pin":"Version1","releases":"any"}),
+            json!({"path":"vendor/mod.jar","releases":"any"}),
+            json!({"source":"modrinth:AANobbMI","releases":"latest"}),
+        ] {
+            let mut invalid = base.clone();
+            invalid["dependencies"]["a"] = dependency;
+            assert!(
+                DocumentCodec
+                    .decode_intent(&serde_json::to_vec(&invalid).unwrap(), "invalid")
+                    .is_err()
+            );
+        }
     }
 }

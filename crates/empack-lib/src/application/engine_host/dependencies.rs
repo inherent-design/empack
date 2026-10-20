@@ -33,7 +33,7 @@ mod identification;
 pub async fn add_providers(
     session: &dyn Session,
     inputs: NonEmpty<ProviderAddInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     existing: ExistingDependencyPolicy,
 ) -> Result<()> {
     let catalog = ProviderCatalog::new(
@@ -49,7 +49,7 @@ pub async fn add_providers(
 async fn add_with_catalog(
     session: &dyn Session,
     inputs: NonEmpty<ProviderAddInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     existing: ExistingDependencyPolicy,
     catalog: ProviderCatalog,
 ) -> Result<()> {
@@ -100,7 +100,7 @@ pub(super) struct AdditionServices {
 pub async fn add(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     existing: ExistingDependencyPolicy,
 ) -> Result<()> {
@@ -112,7 +112,7 @@ pub async fn add(
 pub async fn update(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
 ) -> Result<()> {
     let services = configured_services(session)?;
@@ -121,7 +121,7 @@ pub async fn update(
 pub(super) async fn update_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     services: AdditionServices,
 ) -> Result<()> {
@@ -145,7 +145,7 @@ pub(super) async fn adopt_with_services(
     change_with_services(
         session,
         inputs,
-        ReleasePolicy::PreferStable,
+        None,
         SourceEvidencePolicy::Compatibility,
         Change::Adopt,
         services,
@@ -212,7 +212,7 @@ enum Change {
 pub(super) async fn add_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     existing: ExistingDependencyPolicy,
     services: AdditionServices,
@@ -231,7 +231,7 @@ pub(super) async fn add_with_services(
 pub(super) async fn add_batch_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     existing: ExistingDependencyPolicy,
     services: AdditionServices,
@@ -251,7 +251,7 @@ pub(super) async fn add_batch_with_services(
 pub(super) async fn update_batch_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     services: AdditionServices,
     policy: BatchPolicy,
@@ -270,12 +270,13 @@ pub(super) async fn update_batch_with_services(
 async fn change_with_services(
     session: &dyn Session,
     inputs: NonEmpty<AddHostInput>,
-    releases: ReleasePolicy,
+    releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     change: Change,
     services: AdditionServices,
     batch: BatchPolicy,
 ) -> Result<()> {
+    let releases = releases.into();
     let update = matches!(&change, Change::Update);
     let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;

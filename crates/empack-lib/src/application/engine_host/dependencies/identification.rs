@@ -203,6 +203,7 @@ pub(super) async fn resolve(
             "Repeated supplied provider file"
         );
         providers.push(ProviderAddInput {
+            releases: None,
             selector: ProjectSelector::canonical(pin.project.clone()),
             key: None,
             kind: Some(kind),

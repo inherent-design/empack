@@ -295,6 +295,7 @@ async fn selected_with_catalog(
             (selector, Some(kind))
         };
         inputs.push(AddHostInput::Provider(ProviderAddInput {
+            releases: None,
             selector,
             key: None,
             kind: selected_kind,
@@ -352,7 +353,7 @@ async fn selected_with_catalog(
     dependencies::add_batch_with_services(
         session,
         NonEmpty::new(inputs)?,
-        ReleasePolicy::PreferStable,
+        None,
         SourceEvidencePolicy::Compatibility,
         if options.force {
             ExistingDependencyPolicy::UpdateSameIdentity

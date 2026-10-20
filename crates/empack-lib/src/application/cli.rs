@@ -50,8 +50,8 @@ pub struct MigrationArgs {
     #[arg(long)]
     pub materialize: bool,
     /// Stability preference for newly selected provider versions
-    #[arg(long, value_enum, default_value = "prefer-stable")]
-    pub release_policy: CliReleasePolicy,
+    #[arg(long, value_enum)]
+    pub release_policy: Option<CliReleasePolicy>,
 }
 
 /// Explicit source decisions for adopting previously untracked installed content.
@@ -758,15 +758,15 @@ Updates infer the installed side/layout. update --check checks before applying."
         #[arg(long)]
         json: bool,
         /// Provider version policy; independent of pack subscription channels
-        #[arg(long, value_enum, default_value = "prefer-stable")]
-        release_policy: CliReleasePolicy,
+        #[arg(long, value_enum)]
+        release_policy: Option<CliReleasePolicy>,
     },
 
     /// Deliberately refresh selected author dependency resolutions
     Update {
         /// Provider version policy; exact author pins remain exact
-        #[arg(long, value_enum, default_value = "prefer-stable")]
-        release_policy: CliReleasePolicy,
+        #[arg(long, value_enum)]
+        release_policy: Option<CliReleasePolicy>,
         /// Publish verified independent groups and report failures without discarding prior content
         #[arg(long)]
         continue_independent: bool,

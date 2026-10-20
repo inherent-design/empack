@@ -16,6 +16,7 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
             .then(|| LoaderVersion::parse("exact-test-version").unwrap()),
     };
     let intent = ProjectIntent {
+        dependency_policy: Default::default(),
         installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata: PackMetadata {

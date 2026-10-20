@@ -197,6 +197,7 @@ async fn initialize_with_catalog(
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
     let intent = ProjectIntent {
+        dependency_policy: Default::default(),
         installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata,

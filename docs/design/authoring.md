@@ -75,8 +75,10 @@ cannot establish historical identity.
 
 Effective automatic policy is schema default, then project preference, then a
 per-root override. An explicit operation override applies only to that operation
-and is shown in its explanation. Required dependencies use the same effective
-policy context as their root; conflicting exact selections remain errors. Exact
+and is shown in its explanation. Implicit required dependencies use the project preference, or an explicit operation
+override. Explicit roots retain their own preference. This avoids traversal-order
+inheritance when multiple roots share a library. Conflicting exact selections remain
+errors. Exact
 pins bypass preference ordering, not runtime, ownership or integrity validation.
 
 Sync retains valid exact selections. Update deliberately refreshes eligible selected

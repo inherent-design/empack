@@ -52,6 +52,7 @@ async fn missing_and_changed_intent_resolve_local_bytes_without_losing_authored_
         intent.roots.insert(
             key.clone(),
             DependencyIntent {
+                releases: None,
                 source: SourceIntent::Local(
                     PortableRelPath::parse("seed/settings.toml", PathSyntax::ProjectContent)
                         .unwrap(),
@@ -149,6 +150,7 @@ async fn fresh_provider_sync_keeps_followed_pin_for_placement_edits_then_applies
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Provider(ProviderProjectId::Modrinth(
                 ModrinthProjectId::parse("Root0001").unwrap(),
             )),
@@ -223,6 +225,7 @@ async fn failed_fresh_batch_retains_documents_and_payloads() {
         intent.roots.insert(
             DependencyKey::parse(name).unwrap(),
             DependencyIntent {
+                releases: None,
                 source: SourceIntent::Local(
                     PortableRelPath::parse(&format!("{name}.toml"), PathSyntax::ProjectContent)
                         .unwrap(),
@@ -257,6 +260,7 @@ async fn authored_local_sources_cannot_traverse_symlinked_ancestors() {
     intent.roots.insert(
         DependencyKey::parse("settings").unwrap(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Local(
                 PortableRelPath::parse("linked/settings.toml", PathSyntax::ProjectContent).unwrap(),
             ),
@@ -299,6 +303,7 @@ async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source(
         let mut intent = project(root.path()).intent().clone();
         let key = DependencyKey::parse("settings").unwrap();
         let selected = DependencyIntent {
+            releases: None,
             source: SourceIntent::Local(
                 PortableRelPath::parse("seed.toml", PathSyntax::ProjectContent).unwrap(),
             ),
@@ -420,6 +425,7 @@ async fn materialization_verifies_the_whole_batch_without_updating_pins_or_previ
         intent.roots.insert(
             DependencyKey::parse(key).unwrap(),
             DependencyIntent {
+                releases: None,
                 source: SourceIntent::Provider(ProviderProjectId::Modrinth(
                     ModrinthProjectId::parse(id).unwrap(),
                 )),
@@ -592,6 +598,7 @@ async fn automatic_layout_changes_move_content_while_explicit_placements_remain_
         intent.roots.insert(
             DependencyKey::parse(key).unwrap(),
             DependencyIntent {
+                releases: None,
                 source: SourceIntent::Local(
                     PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
                 ),
@@ -693,6 +700,7 @@ async fn removing_an_accepted_game_version_requires_fresh_provider_resolution() 
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Provider(ProviderProjectId::Modrinth(
                 ModrinthProjectId::parse("Root0001").unwrap(),
             )),
@@ -762,6 +770,7 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
         intent.roots.insert(
             key.clone(),
             DependencyIntent {
+                releases: None,
                 source: if grouped {
                     SourceIntent::LocalFiles(BTreeMap::from([(
                         FileSlot::parse("settings").unwrap(),
@@ -870,6 +879,7 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
     intent.roots.insert(
         key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::LocalFiles(BTreeMap::from([(
                 role.clone(),
                 PortableRelPath::parse("seed/settings.toml", PathSyntax::ProjectContent).unwrap(),
@@ -883,6 +893,7 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
     intent.roots.insert(
         url_key.clone(),
         DependencyIntent {
+            releases: None,
             source: SourceIntent::Url(
                 NonEmpty::new(vec!["https://example.invalid/settings.toml".into()]).unwrap(),
             ),
@@ -1022,6 +1033,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         intent.roots.insert(
             key.clone(),
             DependencyIntent {
+                releases: None,
                 source: SourceIntent::Provider(identity.clone()),
                 kind: ContentKind::Mod,
                 version: VersionIntent::Exact(pin.selection.clone()),

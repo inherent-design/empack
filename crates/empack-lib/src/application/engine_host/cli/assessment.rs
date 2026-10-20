@@ -2,7 +2,11 @@
 use super::*;
 use crate::engine::providers::{ClosureLimits, ObservedVersion, UpdateAssessment};
 
-pub async fn outdated(session: &dyn Session, json: bool, releases: ReleasePolicy) -> Result<()> {
+pub async fn outdated(
+    session: &dyn Session,
+    json: bool,
+    releases: Option<ReleasePolicy>,
+) -> Result<()> {
     let project = super::current(session).await?;
     let catalog = dependencies::configured_services(session)?.catalog;
     let mut limits = ClosureLimits::default();
@@ -45,7 +49,10 @@ fn text(report: &UpdateAssessment) -> Result<String> {
         report.observed_at, report.release_policy
     )];
     for row in &report.dependencies {
-        lines.push(format!("{} [{}]: {}", row.name, row.key, row.state));
+        lines.push(format!(
+            "{} [{}]: {} (policy: {})",
+            row.name, row.key, row.state, row.release_policy
+        ));
         for (label, value) in [
             ("current", &row.current),
             ("permitted", &row.permitted),

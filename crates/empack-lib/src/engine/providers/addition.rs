@@ -48,6 +48,8 @@ impl ProviderFiles {
 }
 #[derive(Clone)]
 pub struct ProviderAddInput {
+    /// Authored per-root preference, separate from an operation override.
+    pub releases: Option<ReleasePolicy>,
     pub selector: ProjectSelector,
     pub key: Option<DependencyKey>,
     pub kind: Option<ContentKind>,
@@ -96,10 +98,10 @@ impl ProviderCatalog {
         scope: &mut WorkScope,
         current: &ResolvedProject,
         inputs: NonEmpty<ProviderAddInput>,
-        releases: ReleasePolicy,
+        releases: impl Into<Option<ReleasePolicy>> + Send,
         limits: ClosureLimits,
     ) -> Result<ProviderAdditionOutcome> {
-        self.resolve_addition_mode(scope, current, inputs, releases, limits, false)
+        self.resolve_addition_mode(scope, current, inputs, releases.into(), limits, false)
             .await
     }
     /// Runtime changes revalidate implicit libraries while preserving valid exact selections.
@@ -108,10 +110,10 @@ impl ProviderCatalog {
         scope: &mut WorkScope,
         current: &ResolvedProject,
         inputs: NonEmpty<ProviderAddInput>,
-        releases: ReleasePolicy,
+        releases: impl Into<Option<ReleasePolicy>> + Send,
         limits: ClosureLimits,
     ) -> Result<ProviderAdditionOutcome> {
-        self.resolve_addition_mode(scope, current, inputs, releases, limits, true)
+        self.resolve_addition_mode(scope, current, inputs, releases.into(), limits, true)
             .await
     }
     async fn resolve_addition_mode(
@@ -119,7 +121,7 @@ impl ProviderCatalog {
         scope: &mut WorkScope,
         current: &ResolvedProject,
         inputs: NonEmpty<ProviderAddInput>,
-        releases: ReleasePolicy,
+        releases: Option<ReleasePolicy>,
         limits: ClosureLimits,
         revalidate_libraries: bool,
     ) -> Result<ProviderAdditionOutcome> {
@@ -145,6 +147,28 @@ impl ProviderCatalog {
                 )
                 .await?;
             budget = next;
+            let mut input = input.clone();
+            if input.releases.is_none() {
+                let key = input
+                    .key
+                    .as_ref()
+                    .filter(|key| current.intent().roots.contains_key(*key))
+                    .or_else(|| {
+                        current
+                            .lock()
+                            .dependencies
+                            .iter()
+                            .find_map(|(key, dependency)| {
+                                (dependency.identity
+                                    == ResolvedIdentity::Provider(project.id.clone())
+                                    && current.intent().roots.contains_key(key))
+                                .then_some(key)
+                            })
+                    });
+                input.releases = key
+                    .and_then(|key| current.intent().roots.get(key))
+                    .and_then(|root| root.releases);
+            }
             let kind = input
                 .kind
                 .or_else(|| {
@@ -171,7 +195,9 @@ impl ProviderCatalog {
                             kind,
                             game_versions: games.clone(),
                             loader: current.lock().runtime.loader,
-                            releases,
+                            releases: releases
+                                .or(input.releases)
+                                .unwrap_or(current.intent().dependency_policy),
                         },
                         limits.selection,
                         budget,
@@ -193,7 +219,7 @@ impl ProviderCatalog {
                     roots: NonEmpty::new(roots)?,
                     game_versions: games,
                     loader: current.lock().runtime.loader,
-                    releases,
+                    releases: releases.unwrap_or(current.intent().dependency_policy),
                 },
                 limits,
                 budget,
@@ -571,6 +597,11 @@ fn normalize(
             intent.roots.insert(
                 key.clone(),
                 DependencyIntent {
+                    releases: if root.pin.is_none() {
+                        root.releases
+                    } else {
+                        None
+                    },
                     source: SourceIntent::Provider(id.clone()),
                     kind: selected.kind,
                     version: root
