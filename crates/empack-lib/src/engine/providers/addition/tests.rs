@@ -30,6 +30,7 @@ pub(super) fn current() -> ResolvedProject {
 }
 pub(super) fn input(selector: &str, pinned: bool) -> ProviderAddInput {
     ProviderAddInput {
+        source_selector: None,
         releases: None,
         selector: ProjectSelector::parse(ProviderKind::Modrinth, selector).unwrap(),
         key: Some(DependencyKey::parse("chosen-alias").unwrap()),
@@ -286,8 +287,9 @@ async fn equivalent_resource_pack_selectors_remain_unpinned_and_use_kind_specifi
         let key = DependencyKey::parse("chosen-alias").unwrap();
         let root = &project.intent().roots[&key];
         assert_eq!(
-            root.source,
-            SourceIntent::Provider(ProviderProjectId::Modrinth(
+            root.source
+                .canonical_project(project.lock().dependencies.get(&key)),
+            Some(&ProviderProjectId::Modrinth(
                 ModrinthProjectId::parse("project1").unwrap()
             ))
         );
@@ -1565,4 +1567,25 @@ async fn authored_root_and_project_policies_are_shared_with_closure_and_explicit
         drop(result);
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
+}
+
+#[tokio::test]
+async fn a_new_authored_selector_cannot_claim_an_unrelated_canonical_lookup() {
+    let mut server = Server::new_async().await;
+    records(
+        &mut server,
+        "project1",
+        "renderer",
+        "mod",
+        &version("project1", "version1", json!([])),
+    )
+    .await;
+    let mut request = input("project1", true);
+    request.source_selector =
+        Some(ProviderSelector::new(ProviderKind::Modrinth, "different-project").unwrap());
+    let (outcome, _) = resolve(&server, vec![request], limits()).await;
+    let OperationOutcome::Completed(Err(error)) = &*outcome else {
+        panic!("Unverified selector binding was accepted")
+    };
+    assert!(format!("{error:#}").contains("matching canonical binding"));
 }

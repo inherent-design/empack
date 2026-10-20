@@ -33,7 +33,9 @@ pub fn affected_roots(
                 != intent.runtime.acceptable_versions
                 && matches!(
                     root.source,
-                    SourceIntent::Provider(_) | SourceIntent::Search { .. }
+                    SourceIntent::Provider(_)
+                        | SourceIntent::ProviderSelector(_)
+                        | SourceIntent::Search { .. }
                 );
             (runtime_changed
                 || compatibility_changed
@@ -59,11 +61,8 @@ pub fn rebind_prior_aliases(
         if prior.dependencies.contains_key(requested) {
             continue;
         }
-        let SourceIntent::Provider(project) = &root.source else {
-            continue;
-        };
         if let Some((existing, _)) = prior.dependencies.iter().find(|(key, dependency)| {
-            !intent.roots.contains_key(*key) && matches!(&dependency.identity, ResolvedIdentity::Provider(value) if value == project)
+            !intent.roots.contains_key(*key) && matches!(&dependency.identity, ResolvedIdentity::Provider(value) if root.source.canonical_project(Some(dependency)) == Some(value))
         }) && aliases.insert(existing.clone(), requested.clone()).is_some() {
             return Err(ModelError("Multiple requested labels claim one prior identity".into()));
         }

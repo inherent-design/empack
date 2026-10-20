@@ -659,3 +659,82 @@ fn first_resolution_creates_a_lock_without_adopting_untracked_files() {
         );
     }
 }
+
+#[test]
+fn pin_edits_publish_only_documents_preserve_payloads_and_reject_stale_sources() {
+    use empack_core::model::{NonEmpty, VersionIntent};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let original = crate::engine::addition::tests::fixture(
+        &[("root", "Project1", "Version1")],
+        &["root"],
+        &[],
+        true,
+    );
+    let mut bytes = b"# keep comments\n".to_vec();
+    bytes.extend(DocumentCodec.encode_intent(original.intent()).unwrap());
+    put(root.path(), "empack.yml", &bytes);
+    put(
+        root.path(),
+        "empack.lock",
+        &DocumentCodec.encode_lock(&original).unwrap(),
+    );
+    let key = original.intent().roots.keys().next().unwrap().clone();
+    let keys = NonEmpty::new(vec![key.clone()]).unwrap();
+    let cancel = Cancellation::default();
+    let reader = ProjectReader::new(RecoveryReader::new(host.path().join("state")));
+    let publisher = Publisher::open(&host.path().join("state")).unwrap();
+    let capture = || {
+        reader
+            .capture(root.path(), &[], SnapshotLimits::default(), &cancel)
+            .unwrap()
+    };
+    for pinned in [true, false] {
+        let prepared = plan_selection_intent(capture(), &keys, pinned, &cancel)
+            .unwrap()
+            .stage(&cancel)
+            .unwrap();
+        assert!(prepared.files().changes().iter().all(|change| matches!(
+            change.target(),
+            ManagedPath::IntentDocument | ManagedPath::LockDocument | ManagedPath::BindingsDocument
+        )));
+        let receipt = prepared.publish(&publisher, &cancel).unwrap();
+        assert_eq!(
+            receipt.project.lock().dependencies,
+            original.lock().dependencies
+        );
+        assert_eq!(
+            receipt.project.lock().required_edges,
+            original.lock().required_edges
+        );
+        assert_eq!(receipt.project.lock().runtime, original.lock().runtime);
+        assert_eq!(
+            matches!(
+                receipt.project.intent().roots[&key].version,
+                VersionIntent::Exact(_)
+            ),
+            pinned
+        );
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+            b"edited bytes"
+        );
+        assert!(
+            fs::read(root.path().join("empack.yml"))
+                .unwrap()
+                .starts_with(b"# keep comments\n")
+        );
+    }
+    let prepared = plan_selection_intent(capture(), &keys, true, &cancel)
+        .unwrap()
+        .stage(&cancel)
+        .unwrap();
+    let mut bytes = fs::read(root.path().join("empack.yml")).unwrap();
+    bytes.extend(b"# newer user edit\n");
+    fs::write(root.path().join("empack.yml"), &bytes).unwrap();
+    let lock = fs::read(root.path().join("empack.lock")).unwrap();
+    assert!(prepared.publish(&publisher, &cancel).is_err());
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), bytes);
+    assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), lock);
+}

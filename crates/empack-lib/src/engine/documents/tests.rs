@@ -61,6 +61,7 @@ fn resolution(source: &DecodedIntent) -> ResolutionLock {
         dependencies: BTreeMap::from([(
             key.clone(),
             LockedDependency {
+                source_selector: None,
                 title: "Sodium".into(),
                 kind: ContentKind::Mod,
                 identity: ResolvedIdentity::Provider(project.clone()),
@@ -192,7 +193,8 @@ fn comment_edits_have_same_semantics_but_distinct_raw_revisions() {
     next.metadata.version = "next".into();
     let edit = DocumentCodec.replace_intent(&b, &next).unwrap();
     assert_eq!(edit.expected, b.raw_revision());
-    assert_eq!(edit.edit, DocumentEdit::Reformatted);
+    assert_eq!(edit.edit, DocumentEdit::Preserved);
+    assert!(edit.bytes.starts_with(b"# user comment\n"));
     assert_eq!(
         DocumentCodec
             .decode_intent(&edit.bytes, "edit")
@@ -847,6 +849,9 @@ fn authoring_composition_keeps_common_dependencies_compact_and_advanced_intent_l
     let mut intent = original.intent().clone();
     let key = intent.roots.keys().next().unwrap().clone();
     let root = intent.roots.get_mut(&key).unwrap();
+    root.source = SourceIntent::ProviderSelector(
+        ProviderSelector::new(ProviderKind::Modrinth, "AANobbMI").unwrap(),
+    );
     root.version = VersionIntent::FollowCompatible;
     root.requirements = Requirements {
         client: Requirement::Required,

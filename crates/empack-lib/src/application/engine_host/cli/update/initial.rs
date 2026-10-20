@@ -25,7 +25,24 @@ pub(super) async fn adopt(
     for key in selected {
         let root = &source.intent().roots[&key];
         match &root.source {
-            SourceIntent::Provider(identity) => {
+            SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_) => {
+                let identity = if let Some(identity) = root.source.canonical_project(None) {
+                    identity.clone()
+                } else {
+                    let request = root
+                        .source
+                        .selector()
+                        .context("Missing provider lookup request")?;
+                    let selector = ProjectSelector::parse(request.provider(), request.value())?;
+                    let catalog = services.catalog.clone();
+                    initialize::discover(session, move |mut scope| async move {
+                        let project = catalog
+                            .resolve_selector(&mut scope, selector, Default::default())
+                            .await?;
+                        Ok(project.id.clone())
+                    })
+                    .await?
+                };
                 let mut input = super::super::synchronization::provider_input(
                     &key,
                     root,

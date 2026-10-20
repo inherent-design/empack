@@ -164,7 +164,7 @@ impl ProviderCatalog {
                 observed_records: None,
                 reasons: Vec::new(),
             };
-            let SourceIntent::Provider(identity) = &intent.source else {
+            let Some(identity) = intent.source.canonical_project(locked) else {
                 row.state = "manual";
                 row.reasons
                     .push(if matches!(intent.source, SourceIntent::Search { .. }) {

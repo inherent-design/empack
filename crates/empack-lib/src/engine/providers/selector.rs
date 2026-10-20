@@ -17,6 +17,15 @@ enum Selector {
     Slug(ProviderKind, String),
 }
 impl ProjectSelector {
+    pub(super) fn authored_selector(&self) -> Option<empack_core::model::ProviderSelector> {
+        match &self.value {
+            Selector::Canonical(_) => None,
+            Selector::Slug(provider, value) => Some(
+                empack_core::model::ProviderSelector::new(*provider, value)
+                    .expect("Validated provider selector"),
+            ),
+        }
+    }
     pub fn canonical(id: ProviderProjectId) -> Self {
         Self {
             value: Selector::Canonical(id),

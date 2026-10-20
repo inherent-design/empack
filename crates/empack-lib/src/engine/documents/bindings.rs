@@ -55,28 +55,45 @@ pub(super) fn compose(mut author: Value, bindings: Option<&[u8]>) -> Result<Valu
 
 /// Split normalized meaning without inventing roles or rewriting provider selectors.
 pub(super) fn split(intent: &ProjectIntent) -> Result<AuthoringDocuments> {
+    split_preserving(intent, &Value::Null)
+}
+/// Existing inline integration stays in its authored document during targeted edits.
+pub(super) fn split_preserving(
+    intent: &ProjectIntent,
+    original: &Value,
+) -> Result<AuthoringDocuments> {
     let mut author = intent::encode(intent);
     let mut bindings = serde_json::Map::new();
     for (key, value) in author["dependencies"].as_object_mut().unwrap() {
         let dependency = value.as_object_mut().unwrap();
         let mut binding = serde_json::Map::new();
-        let placement = dependency.remove("placement").unwrap();
-        if placement != "automatic" {
-            binding.insert("placement".into(), placement);
+        if original["dependencies"][key].get("placement").is_none() {
+            let placement = dependency.remove("placement").unwrap();
+            if placement != "automatic" {
+                binding.insert("placement".into(), placement);
+            }
         }
         let source = dependency["source"].as_object_mut().unwrap();
-        if source["kind"] == "local-files" {
+        if source["kind"] == "local-files"
+            && original["dependencies"][key]["source"]
+                .get("members")
+                .is_none()
+        {
             binding.insert("source-members".into(), source.remove("members").unwrap());
         }
         if !binding.is_empty() {
             bindings.insert(key.clone(), Value::Object(binding));
         }
     }
-    let policies = author
-        .as_object_mut()
-        .unwrap()
-        .remove("installation-policies")
-        .unwrap();
+    let policies = if original.get("installation-policies").is_some() {
+        json!({})
+    } else {
+        author
+            .as_object_mut()
+            .unwrap()
+            .remove("installation-policies")
+            .unwrap()
+    };
     let author = authoring::compact(author)?;
     Ok(AuthoringDocuments {
         intent: serialize(&author)?,

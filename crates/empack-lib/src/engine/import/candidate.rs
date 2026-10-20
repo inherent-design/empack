@@ -388,6 +388,7 @@ impl VerifiedImportContent {
                 dependencies.insert(
                     decision.key.clone(),
                     LockedDependency {
+                        source_selector: None,
                         title,
                         kind: decision.kind,
                         identity,

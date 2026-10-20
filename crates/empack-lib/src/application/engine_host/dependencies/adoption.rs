@@ -121,6 +121,7 @@ mod tests {
     fn resolution_details_expose_changed_pins_digests_requirements_and_edges() {
         let identity = ProviderProjectId::Modrinth(ModrinthProjectId::parse("Project1").unwrap());
         let dependency = LockedDependency {
+            source_selector: None,
             title: "Selected content".into(),
             kind: ContentKind::Mod,
             identity: ResolvedIdentity::Provider(identity.clone()),

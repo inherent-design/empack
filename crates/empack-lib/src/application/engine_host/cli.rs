@@ -27,6 +27,7 @@ mod assessment;
 mod file_plan;
 mod files;
 mod import;
+pub mod manifest;
 mod migration;
 mod synchronization;
 mod update;
@@ -295,6 +296,7 @@ async fn selected_with_catalog(
             (selector, Some(kind))
         };
         inputs.push(AddHostInput::Provider(ProviderAddInput {
+            source_selector: None,
             releases: None,
             selector,
             key: None,

@@ -113,7 +113,14 @@ fn acquisition_value(value: &AcquisitionSpec) -> Value {
 fn dependency(value: &Value) -> Result<LockedDependency> {
     fields(
         value,
-        &["title", "content", "identity", "selection", "files"],
+        &[
+            "title",
+            "content",
+            "identity",
+            "selection",
+            "files",
+            "source-selector",
+        ],
     )?;
     let identity = required(value, "identity")?;
     let identity = match text(required(identity, "kind")?)? {
@@ -132,6 +139,11 @@ fn dependency(value: &Value) -> Result<LockedDependency> {
         _ => bail!("Unknown resolved identity"),
     };
     Ok(LockedDependency {
+        source_selector: value
+            .get("source-selector")
+            .filter(|v| !v.is_null())
+            .map(provider_selector)
+            .transpose()?,
         title: label(required(value, "title")?)?.into(),
         kind: kind(required(value, "content")?)?,
         identity,
@@ -264,7 +276,7 @@ pub(super) fn encode(lock: &ResolutionLock) -> Value {
             value["placements"] = json!(file.placements.as_slice().iter().map(placement_value).collect::<Vec<_>>());
             value
         }).collect();
-        (key.as_str(),json!({"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
+        (key.as_str(),json!({"source-selector":dep.source_selector.as_ref().map(provider_selector_value),"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
     }).collect();
     json!({"schema":LOCK_SCHEMA,"acceptable-versions":lock.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
         "required-edges":lock.required_edges.iter().map(|(key,values)|(key.as_str(),values.iter().map(DependencyKey::as_str).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>(),

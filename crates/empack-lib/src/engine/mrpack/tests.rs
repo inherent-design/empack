@@ -116,6 +116,7 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
         dependencies: BTreeMap::from([(
             key.clone(),
             LockedDependency {
+                source_selector: None,
                 title: "Assets".into(),
                 kind: ContentKind::ResourcePack,
                 identity: ResolvedIdentity::Url(key.clone()),

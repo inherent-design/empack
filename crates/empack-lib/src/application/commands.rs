@@ -55,6 +55,9 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
 fn command_name(command: &Commands) -> &'static str {
     match command {
         Commands::Status { .. } => "status",
+        Commands::Manifest { .. } => "manifest",
+        Commands::Pin { .. } => "pin",
+        Commands::Unpin { .. } => "unpin",
         Commands::Pending { .. } => "pending",
         Commands::Instance { .. } => "instance",
         Commands::Release { .. } => "release",
@@ -80,6 +83,20 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     // Keep each workflow state on the heap. Otherwise debug builds embed the
     // largest workflow in every dispatch frame, exhausting the Windows CLI stack.
     match command {
+        Commands::Manifest { command } => {
+            Box::pin(engine_host::cli::manifest::inspect(session, command)).await
+        }
+        Commands::Pin { dependencies } => {
+            Box::pin(engine_host::cli::manifest::pin(session, dependencies, true)).await
+        }
+        Commands::Unpin { dependencies } => {
+            Box::pin(engine_host::cli::manifest::pin(
+                session,
+                dependencies,
+                false,
+            ))
+            .await
+        }
         Commands::Status { context, json } => {
             Box::pin(engine_host::status(session, context, json)).await
         }

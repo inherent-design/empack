@@ -177,6 +177,8 @@ pub struct RuntimeIntent {
 pub enum SourceIntent {
     /// Canonical provider-owned project.
     Provider(ProviderProjectId),
+    /// Exact readable lookup request, bound to canonical identity by the lock.
+    ProviderSelector(ProviderSelector),
     /// Deliberately unresolved query and provider preference.
     Search {
         /// Search text.
@@ -198,6 +200,73 @@ pub enum ProviderKind {
     Modrinth,
     /// CurseForge.
     CurseForge,
+}
+/// An exact provider lookup request, never a canonical ID by assignment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderSelector {
+    provider: ProviderKind,
+    value: String,
+}
+impl ProviderSelector {
+    /// Validate portable lookup syntax without consulting a provider.
+    pub fn new(provider: ProviderKind, value: &str) -> Result<Self, ModelError> {
+        if value.is_empty()
+            || value.len() > 256
+            || matches!(value, "." | "..")
+            || !value
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.+".contains(&b))
+        {
+            return Err(invalid("Provider selector must be an exact ID or slug"));
+        }
+        Ok(Self {
+            provider,
+            value: value.into(),
+        })
+    }
+    /// Provider namespace.
+    pub fn provider(&self) -> ProviderKind {
+        self.provider
+    }
+    /// Original exact lookup spelling.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    /// Canonical identities may bind only within the requested namespace.
+    pub fn accepts(&self, id: &ProviderProjectId) -> bool {
+        matches!(
+            (self.provider, id),
+            (ProviderKind::Modrinth, ProviderProjectId::Modrinth(_))
+                | (ProviderKind::CurseForge, ProviderProjectId::CurseForge(_))
+        )
+    }
+}
+impl SourceIntent {
+    /// Authored exact lookup spelling, separate from its canonical binding.
+    pub fn selector(&self) -> Option<&ProviderSelector> {
+        match self {
+            Self::ProviderSelector(value) => Some(value),
+            _ => None,
+        }
+    }
+    /// A selector can reuse identity only when the lock retains that exact request.
+    pub fn canonical_project<'a>(
+        &'a self,
+        locked: Option<&'a LockedDependency>,
+    ) -> Option<&'a ProviderProjectId> {
+        match self {
+            Self::Provider(id) => Some(id),
+            Self::ProviderSelector(request) => locked.and_then(|locked| match &locked.identity {
+                ResolvedIdentity::Provider(id)
+                    if locked.source_selector.as_ref() == Some(request) && request.accepts(id) =>
+                {
+                    Some(id)
+                }
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
 }
 /// Provider classifications used for automatic selection, independent of pack channels.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -270,7 +339,10 @@ impl DependencyIntent {
             return Err(invalid("Lock changed requested content kind"));
         }
         match (&self.source, &selected.identity) {
-            (SourceIntent::Provider(a), ResolvedIdentity::Provider(b)) if a == b => {}
+            (
+                SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_),
+                ResolvedIdentity::Provider(id),
+            ) if self.source.canonical_project(Some(selected)) == Some(id) => {}
             (SourceIntent::Search { providers, .. }, ResolvedIdentity::Provider(project))
                 if providers.as_slice().contains(&match project {
                     ProviderProjectId::Modrinth(_) => ProviderKind::Modrinth,
@@ -607,6 +679,8 @@ pub enum ResolvedIdentity {
 /// One resolved root or transitively retained dependency.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockedDependency {
+    /// Exact authored selector whose canonical result is identity.
+    pub source_selector: Option<ProviderSelector>,
     /// Resolved display title, independent of the logical key.
     pub title: String,
     /// Verified provider/file content kind.
@@ -769,7 +843,9 @@ impl ProjectIntent {
             if dep.releases.is_some()
                 && (!matches!(
                     dep.source,
-                    SourceIntent::Provider(_) | SourceIntent::Search { .. }
+                    SourceIntent::Provider(_)
+                        | SourceIntent::ProviderSelector(_)
+                        | SourceIntent::Search { .. }
                 ) || matches!(dep.version, VersionIntent::Exact(_)))
             {
                 return Err(invalid(
@@ -783,6 +859,15 @@ impl ProjectIntent {
                     selection: selection.clone(),
                 }
                 .validate()?,
+                (SourceIntent::ProviderSelector(request), VersionIntent::Exact(selection)) => {
+                    if !matches!(
+                        (request.provider(), selection),
+                        (ProviderKind::Modrinth, PinSelector::ModrinthVersion(_))
+                            | (ProviderKind::CurseForge, PinSelector::CurseForgeFile(_))
+                    ) {
+                        return Err(invalid("Pin belongs to a different provider namespace"));
+                    }
+                }
                 (
                     SourceIntent::Url(_) | SourceIntent::Local(_) | SourceIntent::LocalFiles(_),
                     VersionIntent::Exact(_),
@@ -832,7 +917,9 @@ impl ProjectIntent {
                 if dep.kind != ContentKind::World
                     || !matches!(
                         dep.source,
-                        SourceIntent::Provider(_) | SourceIntent::Search { .. }
+                        SourceIntent::Provider(_)
+                            | SourceIntent::ProviderSelector(_)
+                            | SourceIntent::Search { .. }
                     )
                 {
                     return Err(invalid("Archive-root placement requires a provider world"));
@@ -885,6 +972,11 @@ impl ResolutionLock {
         let mut identities = BTreeSet::new();
         let mut destinations = BTreeSet::new();
         for (key, dependency) in &self.dependencies {
+            if let Some(request) = &dependency.source_selector
+                && !matches!(&dependency.identity, ResolvedIdentity::Provider(id) if request.accepts(id))
+            {
+                return Err(invalid("Source selector binds another provider namespace"));
+            }
             if let ResolvedIdentity::Provider(project) = &dependency.identity {
                 if !identities.insert(project) {
                     return Err(invalid(

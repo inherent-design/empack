@@ -110,6 +110,7 @@ pub(super) fn encoding_memory(project: &ResolvedProject) -> Result<u64> {
         size.requirements(&value.requirements)?;
         match &value.source {
             SourceIntent::Provider(_) => {}
+            SourceIntent::ProviderSelector(request) => size.text(request.value())?,
             SourceIntent::Search { query, providers } => {
                 size.text(query)?;
                 size.nodes(providers.as_slice().len())?;
@@ -172,6 +173,9 @@ pub(super) fn encoding_memory(project: &ResolvedProject) -> Result<u64> {
         size.nodes(16)?;
         size.text(key.as_str())?;
         size.text(&dependency.title)?;
+        if let Some(request) = &dependency.source_selector {
+            size.text(request.value())?;
+        }
         match &dependency.identity {
             ResolvedIdentity::Provider(_) => {}
             ResolvedIdentity::Url(key) | ResolvedIdentity::Local(key) => size.text(key.as_str())?,

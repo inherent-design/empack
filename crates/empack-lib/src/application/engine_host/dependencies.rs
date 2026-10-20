@@ -655,10 +655,15 @@ pub(super) async fn synchronize_with_outcome(
     session: &dyn Session,
     request: SyncRequest,
 ) -> Result<bool> {
-    let operation_label = if matches!(&request, SyncRequest::Migration { .. }) {
-        "Runtime migration"
-    } else {
-        "Synchronization"
+    let operation_label = match &request {
+        SyncRequest::Migration { .. } => "Runtime migration",
+        SyncRequest::SelectionIntent { pinned: true, .. } => {
+            "Pin current selections (removes per-dependency automatic preferences)"
+        }
+        SyncRequest::SelectionIntent { pinned: false, .. } => {
+            "Remove pins and retain current selections"
+        }
+        _ => "Synchronization",
     };
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -683,7 +688,7 @@ pub(super) async fn synchronize_with_outcome(
                 anyhow::bail!("Unexpected synchronization receipt");
             };
             Ok(format!(
-                "Synchronized {} recorded dependencies; {} managed file changes",
+                "{operation_label}: {} recorded dependencies; {} managed file changes",
                 receipt.project.lock().dependencies.len(),
                 receipt.publication.changed_files
             ))
