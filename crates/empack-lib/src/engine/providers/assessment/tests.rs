@@ -116,7 +116,7 @@ async fn changed_rows_require_joint_validation_and_pins_remain_exact() {
     assert_eq!(report.joint.state, "validated");
 }
 #[tokio::test]
-async fn individually_eligible_updates_with_incompatible_edges_are_blocked() {
+async fn declared_incompatibilities_do_not_claim_placement_aware_validation() {
     let mut server = Server::new_async().await;
     records(
         &mut server,
@@ -142,12 +142,16 @@ async fn individually_eligible_updates_with_incompatible_edges_are_blocked() {
             .iter()
             .all(|row| row.state == "change-available")
     );
-    assert_eq!(report.joint.state, "blocked");
-    assert!(
-        report
-            .joint
-            .reasons
-            .contains(&UpdateReason::DependencyConflict)
+    assert_eq!(report.joint.state, "validated");
+    assert_eq!(report.joint.candidate_compatibility, "not-assessed");
+    assert_eq!(report.joint.declared_incompatibilities.len(), 1);
+    assert_eq!(
+        report.joint.declared_incompatibilities[0].from.selection,
+        "Version3"
+    );
+    assert_eq!(
+        report.joint.declared_incompatibilities[0].target.selection,
+        "Version4"
     );
 }
 #[tokio::test]
@@ -256,5 +260,98 @@ async fn assessment_uses_authored_preferences_and_reports_each_effective_policy(
             assert!(row.permitted.is_none());
             assert!(row.reasons.contains(&UpdateReason::ReleasePolicy));
         }
+    }
+}
+
+#[tokio::test]
+async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects() {
+    use empack_core::{
+        addition::{AdditionGroup, AdditionPlan},
+        model::DependencyKey,
+    };
+    for reverse in [false, true] {
+        let mut server = Server::new_async().await;
+        records(
+            &mut server,
+            "Project1",
+            "Version3",
+            if reverse {
+                json!([])
+            } else {
+                json!([{"project_id":"Project2", "dependency_type":"incompatible"}])
+            },
+        )
+        .await;
+        let base = fixture(
+            &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+            &["a"],
+            &[],
+            true,
+        );
+        let a = DependencyKey::parse("a").unwrap();
+        let b = DependencyKey::parse("b").unwrap();
+        let selected = fixture(&[("a", "Project1", "Version3")], &["a"], &[], true);
+        let mut prior = base.lock().clone();
+        let mut next = selected.lock().clone();
+        let assertion = if reverse {
+            let pin = next.dependencies[&a].selected.as_ref().unwrap();
+            ProviderIncompatibility {
+                project: Some(pin.project.clone()),
+                selection: Some(pin.selection.clone()),
+            }
+        } else {
+            ProviderIncompatibility {
+                project: Some(
+                    prior.dependencies[&b]
+                        .selected
+                        .as_ref()
+                        .unwrap()
+                        .project
+                        .clone(),
+                ),
+                selection: None,
+            }
+        };
+        if reverse {
+            prior
+                .dependencies
+                .get_mut(&b)
+                .unwrap()
+                .incompatibilities
+                .push(assertion);
+        } else {
+            next.dependencies
+                .get_mut(&a)
+                .unwrap()
+                .incompatibilities
+                .push(assertion);
+        }
+        let current =
+            ResolvedProject::validate(base.intent().clone(), prior, base.lock().intent_revision)
+                .unwrap();
+        let proposed = ResolvedProject::validate(
+            selected.intent().clone(),
+            next,
+            selected.lock().intent_revision,
+        )
+        .unwrap();
+        let report = assess(&server, current.clone()).await;
+        assert_eq!(report.joint.state, "validated");
+        assert_eq!(report.joint.candidate_compatibility, "not-assessed");
+        assert_eq!(report.joint.declared_incompatibilities.len(), 1);
+        let pair = &report.joint.declared_incompatibilities[0];
+        assert_eq!(
+            pair.from.project,
+            if reverse { "Project2" } else { "Project1" }
+        );
+        assert_eq!(
+            pair.target.project,
+            if reverse { "Project1" } else { "Project2" }
+        );
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json["joint"]["candidate_compatibility"], "not-assessed");
+        let group = AdditionGroup::from_resolved(&proposed).unwrap();
+        let error = AdditionPlan::prepare_update(&current, &group).unwrap_err();
+        assert!(error.to_string().contains("incompatib"), "{error}");
     }
 }

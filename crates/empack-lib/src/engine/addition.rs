@@ -122,6 +122,98 @@ pub(in crate::engine) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
+    fn negative_evidence_uses_all_files_layers_and_optional_participation() {
+        use empack_core::requirements::{ChoiceKey, OptionalChoice, Requirement, Requirements};
+        let base = fixture(
+            &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],
+            &["a", "b"],
+            &[],
+            true,
+        );
+        for reverse in [false, true] {
+            let mut lock = base.lock().clone();
+            for (name, layer, client, server) in [
+                (
+                    "a",
+                    ContentLayer::Client,
+                    Requirement::Required,
+                    Requirement::Unsupported,
+                ),
+                (
+                    "b",
+                    ContentLayer::Server,
+                    Requirement::Unsupported,
+                    Requirement::Required,
+                ),
+            ] {
+                let dep = lock.dependencies.get_mut(&key(name)).unwrap();
+                let mut file = dep.files.as_slice()[0].clone();
+                let mut placement = file.placements.as_slice()[0].clone();
+                placement.layer = layer;
+                placement.requirements = Requirements { client, server };
+                file.placements = NonEmpty::new(vec![placement]).unwrap();
+                dep.files = NonEmpty::new(vec![file]).unwrap();
+            }
+            let (from, target) = if reverse { ("b", "a") } else { ("a", "b") };
+            let target = lock.dependencies[&key(target)]
+                .selected
+                .as_ref()
+                .unwrap()
+                .project
+                .clone();
+            lock.dependencies
+                .get_mut(&key(from))
+                .unwrap()
+                .incompatibilities
+                .push(ProviderIncompatibility {
+                    project: Some(target),
+                    selection: None,
+                });
+            lock.validate_structure().unwrap();
+            for requirement in [
+                Requirement::Required,
+                Requirement::Optional(OptionalChoice {
+                    key: ChoiceKey::parse("companion").unwrap(),
+                    default_enabled: false,
+                    description: None,
+                }),
+            ] {
+                let mut overlap = lock.clone();
+                let b = overlap.dependencies.get_mut(&key("b")).unwrap();
+                let mut files = b.files.as_slice().to_vec();
+                let mut companion = files[0].clone();
+                companion.slot = FileSlot::parse("companion").unwrap();
+                let mut placement = companion.placements.as_slice()[0].clone();
+                placement.layer = ContentLayer::Common;
+                placement.destination = InstallDestination::parse("mods/companion.jar").unwrap();
+                placement.requirements = Requirements {
+                    client: requirement,
+                    server: Requirement::Unsupported,
+                };
+                companion.placements = NonEmpty::new(vec![placement]).unwrap();
+                files.push(companion);
+                b.files = NonEmpty::new(files).unwrap();
+                let error = overlap.validate_structure().unwrap_err();
+                assert!(error.to_string().contains("incompatib"), "{error}");
+            }
+            let mut invalid = lock;
+            invalid
+                .dependencies
+                .get_mut(&key(from))
+                .unwrap()
+                .incompatibilities[0]
+                .project = None;
+            assert!(
+                invalid
+                    .validate_structure()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("provider source and target")
+            );
+        }
+    }
+
+    #[test]
     fn initial_adoption_requires_resolution_of_retained_roots_and_runtime() {
         let complete = fixture(
             &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],

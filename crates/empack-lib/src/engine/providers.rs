@@ -15,7 +15,8 @@ use std::{sync::Arc, time::Duration};
 mod addition;
 mod assessment;
 pub use assessment::{
-    DependencyAssessment, JointAssessment, ObservedVersion, UpdateAssessment, UpdateReason,
+    DeclaredIncompatibility, DependencyAssessment, JointAssessment, ObservedVersion,
+    UpdateAssessment, UpdateReason,
 };
 mod batch;
 pub use addition::{

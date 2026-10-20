@@ -68,10 +68,62 @@ fn text(report: &UpdateAssessment) -> Result<String> {
         ));
     }
     lines.push(format!(
-        "Joint provider dependency selection: {} ({})",
+        "Required provider closure: {} ({})",
         report.joint.state,
         serde_json::to_string(&report.joint.reasons)?
     ));
-    lines.push("Available catalog observations are bounded and time-specific. A different permitted selection need not be newer. Joint validation does not verify file bindings, startup, configuration or worlds; conflicts do not prove no alternative solution exists.".into());
+    lines.push(format!(
+        "Candidate compatibility (including retained inventory): {}",
+        report.joint.candidate_compatibility
+    ));
+    for declaration in &report.joint.declared_incompatibilities {
+        lines.push(format!(
+            "Declared incompatibility: {} -> {} (client/server coexistence not assessed)",
+            version(Some(&declaration.from)),
+            version(Some(&declaration.target))
+        ));
+    }
+    lines.push("Available catalog observations are bounded and time-specific. A different permitted selection need not be newer. Required-closure validation does not verify complete retained-inventory compatibility, file bindings, startup, configuration or worlds; conflicts do not prove no alternative solution exists.".into());
     Ok(lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::providers::{DeclaredIncompatibility, JointAssessment};
+
+    #[test]
+    fn text_separates_required_closure_from_candidate_compatibility() {
+        let pin = |project: &str| ObservedVersion {
+            provider: "modrinth",
+            project: project.into(),
+            selection: "Version1".into(),
+            version: None,
+            published_at: None,
+            channel: None,
+        };
+        let report = UpdateAssessment {
+            schema: 1,
+            observed_at: "now".into(),
+            release_policy: "prefer-stable",
+            dependencies: Vec::new(),
+            joint: JointAssessment {
+                scope: "provider-dependency-closure",
+                state: "validated",
+                candidate_compatibility: "not-assessed",
+                selections: Vec::new(),
+                reasons: Vec::new(),
+                declared_incompatibilities: vec![DeclaredIncompatibility {
+                    from: pin("ProjectA"),
+                    target: pin("ProjectB"),
+                }],
+            },
+        };
+        let output = text(&report).unwrap();
+        assert!(output.contains("Required provider closure: validated"));
+        assert!(
+            output.contains("Candidate compatibility (including retained inventory): not-assessed")
+        );
+        assert!(output.contains("modrinth:ProjectA@Version1 -> modrinth:ProjectB@Version1 (client/server coexistence not assessed)"));
+    }
 }

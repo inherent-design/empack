@@ -23,8 +23,17 @@ become permission to delete an apparent orphan.
 Known incompatibility assertions remain attached to their exact provider selection
 in the lock. A target can name a canonical project, an exact provider version/file,
 or both. Candidate validation checks them against every retained or newly selected
-provider entry before publication. The same rule applies to add, update, adoption
-and synchronization. A conflicting mod is never removed automatically.
+provider entry before publication. A pair conflicts only when its resolved files can
+participate together on the client or together on the server. Participation includes
+all file placements and their layers; optional choices count even when disabled by
+default. Client-only and server-only selections can coexist, and their assertions
+remain recorded so a later placement change is checked. The same rule applies to
+add, update, adoption and synchronization. A conflicting mod is never removed
+automatically.
+
+Provider closure resolution retains negative assertions without deciding installation
+participation. It validates required relationships and assertion identities; the
+composed candidate supplies the file placements needed for conflict rejection.
 
 Synchronization can add negative evidence to an unchanged explicit root reached
 through an affected root's required closure. Its exact selection, files, placement,
@@ -33,7 +42,7 @@ Out-of-scope records retain their complete prior description.
 
 Changing the source selection replaces its assertions; refreshing the same selection
 preserves known assertions. Independent batches connect requests whose old or new
-selections participate in a declared conflict, so a failed member cannot leave its
+selections can participate together in a declared conflict, so a failed member cannot leave its
 partner in an invalid combined candidate. Explicit replacement is checked against
 the resulting inventory, not the files that existed before the operation.
 

@@ -197,3 +197,87 @@ fn negative_relationships_keep_interdependent_updates_in_one_component() {
     assert!(empack_core::addition::AdditionPlan::prepare_update(&current, &combined).is_ok());
     assert!(empack_core::addition::AdditionPlan::prepare_update(&current, &groups[0]).is_err());
 }
+
+#[test]
+fn disjoint_sides_are_independent_until_old_or_new_placements_overlap() {
+    use empack_core::requirements::{Requirement, Requirements};
+    let side = |project: ResolvedProject, client: bool| {
+        let mut lock = project.lock().clone();
+        for dependency in lock.dependencies.values_mut() {
+            let mut files = dependency.files.as_slice().to_vec();
+            for file in &mut files {
+                let mut placements = file.placements.as_slice().to_vec();
+                for placement in &mut placements {
+                    placement.layer = ContentLayer::Common;
+                    placement.requirements = Requirements {
+                        client: if client {
+                            Requirement::Required
+                        } else {
+                            Requirement::Unsupported
+                        },
+                        server: if client {
+                            Requirement::Unsupported
+                        } else {
+                            Requirement::Required
+                        },
+                    };
+                }
+                file.placements = NonEmpty::new(placements).unwrap();
+            }
+            dependency.files = NonEmpty::new(files).unwrap();
+        }
+        explicitly_placed(project.intent().clone(), lock)
+    };
+    let a = side(
+        fixture(&[("a", "ProjectA", "VersionA")], &["a"], &[], true),
+        true,
+    );
+    let b = side(
+        fixture(&[("b", "ProjectB", "VersionB")], &["b"], &[], true),
+        false,
+    );
+    let mut lock = a.lock().clone();
+    lock.dependencies
+        .values_mut()
+        .next()
+        .unwrap()
+        .incompatibilities
+        .push(ProviderIncompatibility {
+            project: Some(
+                b.lock()
+                    .dependencies
+                    .values()
+                    .next()
+                    .unwrap()
+                    .selected
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .clone(),
+            ),
+            selection: None,
+        });
+    let a = explicitly_placed(a.intent().clone(), lock);
+    let current = combined(&[a.clone(), b.clone()]);
+    assert_eq!(
+        independent_components(&current, &[group(&a), group(&b)]).unwrap(),
+        vec![vec![0], vec![1]]
+    );
+    let moved = side(b.clone(), true);
+    assert_eq!(
+        independent_components(&current, &[group(&a), group(&moved)]).unwrap(),
+        vec![vec![0, 1]]
+    );
+    // Old placements still connect a request that removes the old conflict.
+    let old = combined(&[
+        side(
+            fixture(&[("a", "ProjectA", "VersionA")], &["a"], &[], true),
+            true,
+        ),
+        moved,
+    ]);
+    assert_eq!(
+        independent_components(&old, &[group(&a), group(&b)]).unwrap(),
+        vec![vec![0, 1]]
+    );
+}
