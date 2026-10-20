@@ -26,6 +26,11 @@ or both. Candidate validation checks them against every retained or newly select
 provider entry before publication. The same rule applies to add, update, adoption
 and synchronization. A conflicting mod is never removed automatically.
 
+Synchronization can add negative evidence to an unchanged explicit root reached
+through an affected root's required closure. Its exact selection, files, placement,
+required edges and coverage remain unchanged; previous assertions cannot disappear.
+Out-of-scope records retain their complete prior description.
+
 Changing the source selection replaces its assertions; refreshing the same selection
 preserves known assertions. Independent batches connect requests whose old or new
 selections participate in a declared conflict, so a failed member cannot leave its

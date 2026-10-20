@@ -138,11 +138,26 @@ impl SynchronizationResolution {
             })?;
             let retained_root = intent.roots.contains_key(key) && !affected_roots.contains(key);
             if !allowed.contains(key) || retained_root {
-                if previous != next
+                let additive_evidence = allowed.contains(key)
+                    && previous.selected.is_some()
+                    && previous.selected == next.selected
+                    && previous
+                        .incompatibilities
+                        .iter()
+                        .all(|assertion| next.incompatibilities.contains(assertion))
+                    && {
+                        let mut retained = next.clone();
+                        retained.incompatibilities = previous.incompatibilities.clone();
+                        retained == *previous
+                    };
+                if (previous != next && !additive_evidence)
                     || prior.coverage.get(key) != proposed.lock().coverage.get(key)
                     || prior.required_edges.get(key) != proposed.lock().required_edges.get(key)
                 {
                     return Err(ModelError("Synchronization changes a valid retained selection; request an explicit update".into()));
+                }
+                if previous != next {
+                    changed.insert(key.clone());
                 }
             } else if previous != next {
                 if previous.selected.is_some() && previous.selected == next.selected {
@@ -212,7 +227,7 @@ impl SynchronizationResolution {
     pub fn affected_roots(&self) -> &BTreeSet<DependencyKey> {
         &self.affected_roots
     }
-    /// Logical records whose exact installed description is new or changed.
+    /// Logical records whose exact selection, inventory or evidence is new or changed.
     pub fn changed(&self) -> &BTreeSet<DependencyKey> {
         &self.changed
     }

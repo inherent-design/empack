@@ -238,6 +238,68 @@ mod tests {
         )
     }
     #[test]
+    fn unchanged_explicit_dependency_accepts_only_additive_in_scope_negative_evidence() {
+        use empack_core::identity::{ModrinthProjectId, ModrinthVersionId, ProviderProjectId};
+        let key = |s| DependencyKey::parse(s).unwrap();
+        let assertion = |id| ProviderIncompatibility {
+            project: Some(ProviderProjectId::Modrinth(
+                ModrinthProjectId::parse(id).unwrap(),
+            )),
+            selection: None,
+        };
+        for case in ["add", "remove", "content", "pin", "outside"] {
+            let current = fixture(
+                &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],
+                &["a", "b"],
+                if case == "outside" {
+                    &[]
+                } else {
+                    &[("a", "b")]
+                },
+                true,
+            );
+            let mut prior = current.lock().clone();
+            prior
+                .dependencies
+                .get_mut(&key("b"))
+                .unwrap()
+                .incompatibilities
+                .push(assertion("Absent0D"));
+            let mut intent = current.intent().clone();
+            let a2 = PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version2").unwrap());
+            intent.roots.get_mut(&key("a")).unwrap().selection =
+                DependencySelection::ProviderPin(a2.clone());
+            let mut next = prior.clone();
+            next.dependencies
+                .get_mut(&key("a"))
+                .unwrap()
+                .selected
+                .as_mut()
+                .unwrap()
+                .selection = a2;
+            let b = next.dependencies.get_mut(&key("b")).unwrap();
+            b.incompatibilities.push(assertion("Absent0C"));
+            if case == "remove" {
+                b.incompatibilities.remove(0);
+            }
+            if case == "pin" {
+                b.selected.as_mut().unwrap().selection =
+                    PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version3").unwrap());
+            }
+            if case == "content" {
+                let mut files = b.files.as_slice().to_vec();
+                files[0].expected.size = Some(123);
+                b.files = NonEmpty::new(files).unwrap();
+            }
+            let proposed =
+                ResolvedProject::validate(intent.clone(), next, prior.intent_revision).unwrap();
+            let result = empack_core::synchronization::SynchronizationResolution::prepare(
+                &intent, &prior, &proposed,
+            );
+            assert_eq!(result.is_ok(), case == "add", "{case}: {result:?}");
+        }
+    }
+    #[test]
     fn sync_cannot_discard_negative_evidence_for_a_retained_pin() {
         use empack_core::{
             identity::{ModrinthProjectId, ProviderProjectId},
