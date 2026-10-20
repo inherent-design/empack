@@ -1309,6 +1309,7 @@ fn verify_world_build(
     lock.dependencies = BTreeMap::from([(
         key.clone(),
         LockedDependency {
+            incompatibilities: Vec::new(),
             source_selector: None,
             title: "World".into(),
             kind: ContentKind::World,

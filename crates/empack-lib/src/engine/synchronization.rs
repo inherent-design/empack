@@ -238,6 +238,50 @@ mod tests {
         )
     }
     #[test]
+    fn sync_cannot_discard_negative_evidence_for_a_retained_pin() {
+        use empack_core::{
+            identity::{ModrinthProjectId, ProviderProjectId},
+            path::InstallDestination,
+        };
+        let project = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
+        let mut prior = project.lock().clone();
+        prior
+            .dependencies
+            .values_mut()
+            .next()
+            .unwrap()
+            .incompatibilities
+            .push(ProviderIncompatibility {
+                project: Some(ProviderProjectId::Modrinth(
+                    ModrinthProjectId::parse("Absent01").unwrap(),
+                )),
+                selection: None,
+            });
+        let mut intent = project.intent().clone();
+        let mut locked = project.lock().clone();
+        let dep = locked.dependencies.values_mut().next().unwrap();
+        let mut files = dep.files.as_slice().to_vec();
+        let mut placement = files[0].placements.as_slice()[0].clone();
+        placement.destination = InstallDestination::parse("mods/moved.jar").unwrap();
+        files[0].placements = NonEmpty::new(vec![placement]).unwrap();
+        dep.files = NonEmpty::new(files).unwrap();
+        intent.roots.values_mut().next().unwrap().placement = PlacementIntent::ByFile(
+            dep.files
+                .as_slice()
+                .iter()
+                .map(|file| (file.slot.clone(), file.placements.clone()))
+                .collect(),
+        );
+        let proposed =
+            ResolvedProject::validate(intent.clone(), locked, project.lock().intent_revision)
+                .unwrap();
+        let error = empack_core::synchronization::SynchronizationResolution::prepare(
+            &intent, &prior, &proposed,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("incompatibilities"), "{error}");
+    }
+    #[test]
     fn ordinary_sync_preserves_exact_selections_unlisted_content_and_source_evidence() {
         let current = fixture(
             &[

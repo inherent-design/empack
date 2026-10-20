@@ -255,6 +255,81 @@ impl Editor<'_> {
     }
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct EditingLimitation {
+    pub document: &'static str,
+    pub path: Vec<String>,
+    pub reason: String,
+}
+
+/// Report known unsupported editing syntax without changing accepted authoring.
+pub(super) fn limitations(original: &[u8], document: &'static str) -> Vec<EditingLimitation> {
+    fn visit(
+        editor: &Editor<'_>,
+        node: &Node,
+        path: &mut Vec<String>,
+        document: &'static str,
+        result: &mut Vec<EditingLimitation>,
+    ) {
+        let check = editor.safe(node).and_then(|_| {
+            if matches!(node.value, Syntax::Scalar) {
+                let range = token(node)?;
+                ensure!(
+                    !editor.text[range].contains(['\n', '\r']),
+                    "Cannot safely edit multiline YAML scalar"
+                );
+            }
+            Ok(())
+        });
+        if let Err(error) = check {
+            result.push(EditingLimitation {
+                document,
+                path: path.clone(),
+                reason: error.to_string(),
+            });
+            return;
+        }
+        match &node.value {
+            Syntax::Map(entries) => {
+                for (key, value) in entries {
+                    path.push(key.value.clone());
+                    visit(editor, value, path, document, result);
+                    path.pop();
+                }
+            }
+            Syntax::Seq(entries) => {
+                for (index, value) in entries.iter().enumerate() {
+                    path.push(index.to_string());
+                    visit(editor, value, path, document, result);
+                    path.pop();
+                }
+            }
+            Syntax::Scalar => (),
+        }
+    }
+    let mut result = Vec::new();
+    let parsed = std::str::from_utf8(original)
+        .map_err(anyhow::Error::from)
+        .and_then(|text| {
+            let node: Node = serde_saphyr::from_str(text)?;
+            let editor = Editor {
+                text,
+                newline: "\n",
+                changes: Vec::new(),
+            };
+            visit(&editor, &node, &mut Vec::new(), document, &mut result);
+            Ok(())
+        });
+    if let Err(error) = parsed {
+        result.push(EditingLimitation {
+            document,
+            path: Vec::new(),
+            reason: format!("Editing syntax could not be inspected: {error}"),
+        });
+    }
+    result
+}
+
 pub(super) fn patch(original: &[u8], old: &[u8], next: &[u8]) -> Result<Vec<u8>> {
     let old = parse(old)?;
     let next = parse(next)?;

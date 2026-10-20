@@ -388,6 +388,7 @@ impl VerifiedImportContent {
                 dependencies.insert(
                     decision.key.clone(),
                     LockedDependency {
+                        incompatibilities: Vec::new(),
                         source_selector: None,
                         title,
                         kind: decision.kind,
@@ -402,6 +403,14 @@ impl VerifiedImportContent {
         for (pin, record) in self.plan().providers().records() {
             cancel.check()?;
             let from = &provider_keys[&pin.project];
+            dependencies
+                .get_mut(from)
+                .context("Missing imported provider selection")?
+                .incompatibilities = record
+                .dependencies
+                .iter()
+                .filter_map(|dependency| dependency.incompatibility())
+                .collect();
             for edge in &record.dependencies {
                 if edge.relation != DependencyRelation::Required {
                     continue;

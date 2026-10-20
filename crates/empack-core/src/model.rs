@@ -293,6 +293,8 @@ impl ReleasePolicy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencySelection {
     /// Resolve when missing or changed, then retain the exact lock selection.
+    /// For URL sources this accepts first-observed bytes when no matching evidence exists;
+    /// author documents must explicitly acknowledge that policy with `accept-observed`.
     Automatic,
     /// A provider-specific version or file request.
     ProviderPin(PinSelector),
@@ -689,8 +691,33 @@ pub struct LockedDependency {
     pub identity: ResolvedIdentity,
     /// Exact selected provider pin where applicable.
     pub selected: Option<ResolvedPin>,
+    /// Known negative provider assertions bound to this exact selection. An empty list
+    /// does not establish complete compatibility evidence, especially for older locks.
+    pub incompatibilities: Vec<ProviderIncompatibility>,
     /// Exact file inventory.
     pub files: NonEmpty<ResolvedFile>,
+}
+/// A provider-declared conflict with a project, exact selection, or both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderIncompatibility {
+    /// Canonical target project when declared.
+    pub project: Option<ProviderProjectId>,
+    /// Exact target version/file when declared; absence means every project selection.
+    pub selection: Option<PinSelector>,
+}
+impl ProviderIncompatibility {
+    /// Match only the declared project and selection constraints.
+    pub fn matches(&self, pin: &ResolvedPin) -> bool {
+        (self.project.is_some() || self.selection.is_some())
+            && self
+                .project
+                .as_ref()
+                .is_none_or(|project| project == &pin.project)
+            && self
+                .selection
+                .as_ref()
+                .is_none_or(|selection| selection == &pin.selection)
+    }
 }
 /// Whether missing dependency edges may be interpreted as a complete set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1018,6 +1045,35 @@ impl ResolutionLock {
                 return Err(invalid(
                     "A URL or local identity cannot claim a provider selection",
                 ));
+            }
+            for assertion in &dependency.incompatibilities {
+                if dependency.selected.is_none()
+                    || (assertion.project.is_none() && assertion.selection.is_none())
+                {
+                    return Err(invalid(
+                        "Incompatibility requires a provider source and target",
+                    ));
+                }
+                if let (Some(project), Some(selection)) = (&assertion.project, &assertion.selection)
+                {
+                    ResolvedPin {
+                        project: project.clone(),
+                        selection: selection.clone(),
+                    }
+                    .validate()?;
+                }
+                if let Some((target, _)) = self.dependencies.iter().find(|(_, target)| {
+                    target
+                        .selected
+                        .as_ref()
+                        .is_some_and(|pin| assertion.matches(pin))
+                }) {
+                    return Err(ModelError(alloc::format!(
+                        "{} declares incompatibility with {} in the candidate inventory",
+                        key.as_str(),
+                        target.as_str()
+                    )));
+                }
             }
             archive::validate_members(dependency)?;
             let mut slots = BTreeSet::new();

@@ -188,6 +188,7 @@ async fn publish_with_refreshed_locator(
         dependencies: BTreeMap::from([(
             key.clone(),
             LockedDependency {
+                incompatibilities: Vec::new(),
                 source_selector: None,
                 title: "Resources".into(),
                 kind: ContentKind::ResourcePack,

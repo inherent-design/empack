@@ -427,20 +427,21 @@ impl ProviderCatalog {
             scope.cancellation().check()?;
             budget.check_deadline()?;
             for dependency in &node.resolution.dependencies {
-                if dependency.relation != DependencyRelation::Incompatible {
+                let Some(assertion) = dependency.incompatibility() else {
+                    continue;
+                };
+                if assertion.project.is_none() && assertion.selection.is_none() {
+                    result.issues.push(ClosureIssue {
+                        from: node.resolution.pin.clone(),
+                        dependency: Some(dependency.clone()),
+                        kind: ClosureIssueKind::MissingIdentity,
+                    });
                     continue;
                 }
-                let conflicting = result.selections.values().find(|target| {
-                    (dependency.project.is_some() || dependency.pin.is_some())
-                        && dependency
-                            .project
-                            .as_ref()
-                            .is_none_or(|id| id == &target.resolution.pin.project)
-                        && dependency
-                            .pin
-                            .as_ref()
-                            .is_none_or(|pin| pin == &target.resolution.pin.selection)
-                });
+                let conflicting = result
+                    .selections
+                    .values()
+                    .find(|target| assertion.matches(&target.resolution.pin));
                 if let Some(conflicting) = conflicting {
                     result.issues.push(ClosureIssue {
                         from: node.resolution.pin.clone(),

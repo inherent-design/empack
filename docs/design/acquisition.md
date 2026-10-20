@@ -20,6 +20,23 @@ stable releases when available unless the author chooses another release policy.
 Required dependency expansion retains evidence completeness; unknown edges never
 become permission to delete an apparent orphan.
 
+Known incompatibility assertions remain attached to their exact provider selection
+in the lock. A target can name a canonical project, an exact provider version/file,
+or both. Candidate validation checks them against every retained or newly selected
+provider entry before publication. The same rule applies to add, update, adoption
+and synchronization. A conflicting mod is never removed automatically.
+
+Changing the source selection replaces its assertions; refreshing the same selection
+preserves known assertions. Independent batches connect requests whose old or new
+selections participate in a declared conflict, so a failed member cannot leave its
+partner in an invalid combined candidate. Explicit replacement is checked against
+the resulting inventory, not the files that existed before the operation.
+
+Older locks without the optional `incompatibilities` field retain no negative
+assertions. Missing assertions do not establish compatibility; refreshed metadata
+can supply additional evidence. Required-edge coverage remains separate from a
+claim of complete compatibility or a search for alternative solutions.
+
 ## Import normalization
 
 Local and remote mrpack/CurseForge archives produce normalized intent, exact files,

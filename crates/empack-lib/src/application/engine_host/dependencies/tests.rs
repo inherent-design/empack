@@ -1134,3 +1134,94 @@ async fn native_adoption_rejects_incomplete_or_incoherent_observations_without_p
         }
     }
 }
+
+#[tokio::test]
+async fn selected_provider_changes_check_retained_inventory_before_publication() {
+    let temp = tempfile::tempdir().unwrap();
+    fixture(temp.path()).await;
+    let mut initial = Server::new_async().await;
+    records_with_dependencies(&mut initial, json!([])).await;
+    let mut a = input("renderer", Some("a"));
+    a.pin = None;
+    let mut b = input("required-library", Some("b"));
+    b.pin = None;
+    add(
+        temp.path(),
+        &initial,
+        vec![a.clone(), b.clone()],
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let before = snapshot(&temp.path().join("project"));
+    let mut next = Server::new_async().await;
+    records_for_version(
+        &mut next,
+        "RootVer2",
+        json!([{
+            "project_id":"Need0001", "version_id":"NeedVer1", "dependency_type":"incompatible"
+        }]),
+    )
+    .await;
+    for updating in [true, false] {
+        let error = if updating {
+            update_mixed(
+                temp.path(),
+                &next,
+                vec![AddHostInput::Provider(a.clone())],
+                true,
+                false,
+            )
+            .await
+        } else {
+            add(temp.path(), &next, vec![a.clone()], true, false).await
+        }
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("incompatib"), "{error:#}");
+        assert_eq!(snapshot(&temp.path().join("project")), before);
+    }
+    // Replacing B1 with B2 in the same candidate satisfies the version-specific assertion.
+    let mut jointly = Server::new_async().await;
+    records_for_selections(
+        &mut jointly,
+        "RootVer2",
+        "NeedVer2",
+        json!([{
+            "project_id":"Need0001", "version_id":"NeedVer1", "dependency_type":"incompatible"
+        }]),
+    )
+    .await;
+    update_mixed(
+        temp.path(),
+        &jointly,
+        vec![
+            AddHostInput::Provider(a.clone()),
+            AddHostInput::Provider(b.clone()),
+        ],
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let project = read(&temp.path().join("project"));
+    assert_eq!(
+        project.lock().dependencies[&DependencyKey::parse("a").unwrap()]
+            .incompatibilities
+            .len(),
+        1
+    );
+    let after = snapshot(&temp.path().join("project"));
+    // The retained A2 assertion still rejects reverting only B to its prohibited B1.
+    let error = update_mixed(
+        temp.path(),
+        &initial,
+        vec![AddHostInput::Provider(b)],
+        true,
+        false,
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("incompatib"), "{error:#}");
+    assert_eq!(snapshot(&temp.path().join("project")), after);
+}

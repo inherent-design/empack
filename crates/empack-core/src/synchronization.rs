@@ -146,6 +146,13 @@ impl SynchronizationResolution {
                 }
             } else if previous != next {
                 if previous.selected.is_some() && previous.selected == next.selected {
+                    if previous
+                        .incompatibilities
+                        .iter()
+                        .any(|assertion| !next.incompatibilities.contains(assertion))
+                    {
+                        return Err(ModelError("Synchronization cannot discard known incompatibilities for an unchanged provider selection".into()));
+                    }
                     for old in previous.files.as_slice() {
                         if let Some(new) = next
                             .files

@@ -325,6 +325,7 @@ impl FileAddition {
                 }
             }
             let next = LockedDependency {
+                incompatibilities: Vec::new(),
                 source_selector: None,
                 title: input.title,
                 kind: input.kind,

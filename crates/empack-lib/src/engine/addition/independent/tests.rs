@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::addition::tests::fixture;
 use crate::engine::mrpack::tests::{explicitly_placed, project};
 use empack_core::{
     addition::AdditionPlan,
@@ -160,4 +161,39 @@ fn independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions() {
         independent_components(&empty(), &[group(&a), group(&b)]).unwrap(),
         vec![vec![0, 1]]
     );
+}
+
+#[test]
+fn negative_relationships_keep_interdependent_updates_in_one_component() {
+    let current = fixture(
+        &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],
+        &["a", "b"],
+        &[],
+        true,
+    );
+    let a = fixture(&[("a", "ProjectA", "Version2")], &["a"], &[], true);
+    let mut lock = a.lock().clone();
+    lock.dependencies
+        .values_mut()
+        .next()
+        .unwrap()
+        .incompatibilities
+        .push(ProviderIncompatibility {
+            project: Some(empack_core::identity::ProviderProjectId::Modrinth(
+                empack_core::identity::ModrinthProjectId::parse("ProjectB").unwrap(),
+            )),
+            selection: Some(empack_core::identity::PinSelector::ModrinthVersion(
+                empack_core::identity::ModrinthVersionId::parse("VersionB").unwrap(),
+            )),
+        });
+    let a = ResolvedProject::validate(a.intent().clone(), lock, a.lock().intent_revision).unwrap();
+    let b = fixture(&[("b", "ProjectB", "Version3")], &["b"], &[], true);
+    let groups = [group(&a), group(&b)];
+    assert_eq!(
+        independent_components(&current, &groups).unwrap(),
+        vec![vec![0, 1]]
+    );
+    let combined = AdditionGroup::combine(&current, &[&groups[0], &groups[1]]).unwrap();
+    assert!(empack_core::addition::AdditionPlan::prepare_update(&current, &combined).is_ok());
+    assert!(empack_core::addition::AdditionPlan::prepare_update(&current, &groups[0]).is_err());
 }

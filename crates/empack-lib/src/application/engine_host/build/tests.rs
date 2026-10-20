@@ -335,6 +335,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     lock.dependencies.insert(
         key.clone(),
         LockedDependency {
+            incompatibilities: Vec::new(),
             source_selector: None,
             title: "Manual assets".into(),
             kind: ContentKind::ResourcePack,
