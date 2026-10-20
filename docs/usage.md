@@ -3,7 +3,7 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide follows the v0.7.1-beta CLI; `empack <command> --help` lists the installed options.
+This guide follows the v0.7.2-beta CLI; `empack <command> --help` lists the installed options.
 
 ## Workspace status
 
@@ -403,8 +403,6 @@ in MiB to `templates/client/instance.cfg.template`.
 See [project automation](design/automation.md) for installation verification, failure
 handling and the distinction between GitHub releases and native signed channels.
 
-On Windows, extract the complete server ZIP and run `start.bat`. For bundled snapshots,
-`install_pack.bat` confirms the already included files. Both scripts keep their window
-open when finished. For unattended use, set `EMPACK_NO_PAUSE=1`. Install the required
-Java version and set `JAVA_HOME` or PATH; managed exports also require empack on PATH.
-Read any initial EULA message and review `game/eula.txt` yourself.
+Server exports start without the Minecraft GUI through `start.sh` or `start.bat`.
+Use `start_gui.sh` or `start_gui.bat` to request the GUI. See
+[running a server](servers.md) for Java, installation, EULA handling and Windows errors.

@@ -46,7 +46,8 @@ Run formatting and Clippy. Document exported contracts with inputs, outcomes and
 limitations. Prefer comments that explain an invariant over comments that restate
 code. Use structured, redacted diagnostics and remove temporary debugging output.
 
-Keep normative requirements in `docs/design/` and commands in `docs/usage.md`.
+Keep normative requirements in `docs/design/` and operational instructions in the
+user guides linked from `docs/README.md`.
 Update contracts with behavior changes; keep run-specific evidence in CI and PRs.
 Keep implementation tasks in `TODO.md`; do not add historical delivery ledgers.
 Design contracts describe the target and must not claim unimplemented commands are

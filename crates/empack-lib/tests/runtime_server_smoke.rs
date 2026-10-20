@@ -90,10 +90,10 @@ async fn verify_live_distribution(
             .env("EMPACK_CACHE_DIR", state.path().join("cache"));
     }
     let historical = matches!(game, "1.12.2" | "1.7.10");
-    command
-        .env("EMPACK_NO_PAUSE", "1")
-        .arg(if historical { "nogui" } else { "--help" })
-        .current_dir(root.path());
+    command.env("EMPACK_NO_PAUSE", "1").current_dir(root.path());
+    if !historical {
+        command.arg("--help");
+    }
     let output = execute_async(
         command,
         Duration::from_secs(90),
