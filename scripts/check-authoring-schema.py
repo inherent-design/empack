@@ -33,6 +33,7 @@ def main(binary):
         {"path": "vendor/mod.jar"},
         {"path": "vendor/texture.zip", "type": "resource-pack", "side": "client", "optional": True},
         {"source": "modrinth:Example1", "optional": {"choice": "shared-choice", "default": False}},
+        {"source": "modrinth:Example1", "optional": {"choice": "shared-choice"}},
         {"url": "https://example.org/mod.jar", "sha256": "a" * 64, "mirrors": ["https://mirror.example.org/mod.jar"]},
         {"source": {"kind": "provider", "identity": {"provider": "modrinth", "project": "Example1"}}},
         {"source": {"kind": "search", "query": "renderer", "providers": ["modrinth"]}, "releases": "stable-only"},

@@ -1220,7 +1220,7 @@ async fn adding_a_project_file_retains_source_ownership_and_refuses_unaccepted_d
     let vendor = root.path().join("project/vendor");
     fs::create_dir(&vendor).unwrap();
     let bytes = jar(&vendor);
-    execute_command_with_session(add("project/vendor/fixture.jar"), &selected)
+    execute_command_with_session(add(vendor.join("fixture.jar").to_str().unwrap()), &selected)
         .await
         .unwrap();
     let current = resolved(root.path());

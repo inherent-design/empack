@@ -112,12 +112,7 @@ pub(super) fn input(
     let source = if let DirectFileSource::Local(path) = source {
         let (_, project) = project_path(session)?;
         if let Ok(relative) = path.strip_prefix(&project) {
-            let source = PortableRelPath::parse(
-                relative
-                    .to_str()
-                    .context("Local source path is not UTF-8")?,
-                PathSyntax::ProjectContent,
-            )?;
+            let source = portable_source(relative)?;
             DirectFileSource::TrackedLocal { path, source }
         } else {
             DirectFileSource::Local(path)
@@ -151,4 +146,45 @@ pub(super) fn input(
             requirements,
         }])?,
     })
+}
+
+/// Native separators are syntax, while every component still obeys portable file rules.
+fn portable_source(relative: &Path) -> Result<PortableRelPath> {
+    let components = relative
+        .components()
+        .map(|component| match component {
+            std::path::Component::Normal(name) => {
+                name.to_str().context("Local source path is not UTF-8")
+            }
+            _ => anyhow::bail!("Local source path must contain only relative file components"),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(PortableRelPath::parse(
+        &components.join("/"),
+        PathSyntax::ProjectContent,
+    )?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn native_source_components_preserve_portable_spelling_and_reject_traversal() {
+        let source = PathBuf::from("vendor").join("mods").join("custom.jar");
+        assert_eq!(
+            portable_source(&source).unwrap().as_str(),
+            "vendor/mods/custom.jar"
+        );
+        for path in [
+            PathBuf::new(),
+            PathBuf::from("../outside.jar"),
+            PathBuf::from("vendor").join("..").join("outside.jar"),
+            std::env::temp_dir().join("outside.jar"),
+            PathBuf::from("vendor").join("CON.jar"),
+        ] {
+            assert!(portable_source(&path).is_err(), "{path:?}");
+        }
+        #[cfg(unix)]
+        assert!(portable_source(Path::new(r"vendor/back\slash.jar")).is_err());
+    }
 }

@@ -246,7 +246,12 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
 }
 
 /// Produce schema syntax from normalized data, without changing semantic meaning.
-pub(super) fn compact(mut value: Value) -> Result<Value> {
+pub(super) fn compact(value: Value) -> Result<Value> {
+    compact_preserving(value, &Value::Null)
+}
+
+/// Keep authored expanded forms in edit comparisons, so shorthand never replaces a block.
+pub(super) fn compact_preserving(mut value: Value, original: &Value) -> Result<Value> {
     let policy = value
         .as_object_mut()
         .unwrap()
@@ -267,7 +272,9 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
             let target = profile.as_object_mut().unwrap().remove("consumer").unwrap();
             profile["target"] = target.clone();
             let preset = json!({"target":target});
-            if profile_value(&profile)? == profile_value(&preset)? {
+            if !original["build"]["profiles"][name].is_object()
+                && profile_value(&profile)? == profile_value(&preset)?
+            {
                 profile = target;
             }
             Ok((name, profile))
@@ -280,7 +287,7 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
     let pin = load.as_object_mut().unwrap().remove("version");
     if let Some(pin) = pin.filter(|v| !v.is_null()) {
         load["pin"] = pin;
-    } else {
+    } else if !original["runtime"]["loader"].is_object() {
         *load = load["kind"].clone();
     }
     if value["pack"]["authors"] == json!([]) {
@@ -290,6 +297,7 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
         value["pack"].as_object_mut().unwrap().remove("description");
     }
     for (key, dependency) in value["dependencies"].as_object_mut().unwrap() {
+        let authored = &original["dependencies"][key];
         let map = dependency.as_object_mut().unwrap();
         if map.get("releases").is_none_or(Value::is_null) {
             map.remove("releases");
@@ -305,7 +313,10 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
             }
             "content-assertions" => {
                 let digests = &selection["digests"];
-                if object(digests)?.len() == 1 && digests.get("sha256").is_some() {
+                if authored.get("digests").is_none()
+                    && object(digests)?.len() == 1
+                    && digests.get("sha256").is_some()
+                {
                     map.insert("sha256".into(), digests["sha256"].clone());
                 } else {
                     map.insert("digests".into(), digests.clone());
@@ -315,7 +326,7 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
         }
         let source = map.remove("source").unwrap();
         match source["kind"].as_str().unwrap() {
-            "provider-selector" => {
+            "provider-selector" if !authored["source"].is_object() => {
                 let request = &source["request"];
                 map.insert(
                     "source".into(),
@@ -326,10 +337,12 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
                     )),
                 );
             }
-            "local" => {
+            "local" if !authored["source"].is_object() => {
                 map.insert("path".into(), source["path"].clone());
             }
-            "url" if selection["mode"] == "content-assertions" => {
+            "url"
+                if selection["mode"] == "content-assertions" && !authored["source"].is_object() =>
+            {
                 let downloads = array(&source["downloads"])?;
                 map.insert("url".into(), downloads[0].clone());
                 if downloads.len() > 1 {
@@ -347,7 +360,7 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
         if let Ok(uniform) = env.uniform() {
             let optional = uniform.choice;
             let simple = optional.is_none_or(|choice| choice.description.is_none());
-            if simple {
+            if simple && authored.get("environment").is_none() {
                 map.remove("environment");
                 match uniform.environments {
                     Environments::Client => {
@@ -361,7 +374,10 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
                 if let Some(choice) = optional {
                     map.insert(
                         "optional".into(),
-                        if choice.key.as_str() == key && !choice.default_enabled {
+                        if !authored["optional"].is_object()
+                            && choice.key.as_str() == key
+                            && !choice.default_enabled
+                        {
                             json!(true)
                         } else {
                             json!({"choice":choice.key.as_str(),"default":choice.default_enabled})
@@ -370,7 +386,10 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
                 }
             }
         }
-        if map.len() == 1 && map.get("source").is_some_and(Value::is_string) {
+        if !authored.is_object()
+            && map.len() == 1
+            && map.get("source").is_some_and(Value::is_string)
+        {
             *dependency = map["source"].clone();
         }
     }

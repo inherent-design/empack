@@ -118,7 +118,9 @@ the available lock. The lock does not retain old display metadata or build profi
 so this is a constraint comparison, not a historical manifest diff. These inspection
 commands do not install or update content or contact providers.
 
-Commands preserve unrelated comments and ordering. If an edited YAML value uses
+Commands preserve unrelated comments and ordering. Existing block declarations remain
+blocks when adding or removing a pin or changing a loader, source or build profile.
+If an edited YAML value uses
 anchors, flow collections or multiline syntax that cannot be changed safely, expand
 that value into a block mapping and retry. Empack reports the unsupported edit instead
 of silently reformatting the whole file.
