@@ -34,6 +34,13 @@ async fn records(server: &mut Server, project: &str, id: &str, deps: Value) {
         .await;
 }
 async fn assess(server: &Server, project: ResolvedProject) -> UpdateAssessment {
+    assess_with_limits(server, project, ClosureLimits::default()).await
+}
+async fn assess_with_limits(
+    server: &Server,
+    project: ResolvedProject,
+    limits: ClosureLimits,
+) -> UpdateAssessment {
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
     let runtime = OperationRuntime::new(
         ResourceGovernor::new(ResourceRequest {
@@ -47,7 +54,7 @@ async fn assess(server: &Server, project: ResolvedProject) -> UpdateAssessment {
     let mut handle = runtime
         .start(move |mut scope| async move {
             Ok(catalog
-                .assess_updates(&mut scope, &project, None, ClosureLimits::default())
+                .assess_updates(&mut scope, &project, None, limits)
                 .await)
         })
         .unwrap();
@@ -79,6 +86,7 @@ async fn changed_rows_require_joint_validation_and_pins_remain_exact() {
         "Version2"
     );
     assert_eq!(report.joint.state, "validated");
+    assert!(report.joint.declarations_complete);
     let mut intent = project.intent().clone();
     intent.roots.values_mut().next().unwrap().selection = DependencySelection::ProviderPin(
         project
@@ -353,5 +361,88 @@ async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects()
         let group = AdditionGroup::from_resolved(&proposed).unwrap();
         let error = AdditionPlan::prepare_update(&current, &group).unwrap_err();
         assert!(error.to_string().contains("incompatib"), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn declaration_limit_keeps_completed_rows_and_marks_partial_evidence() {
+    use empack_core::{
+        model::{ContentLayer, DependencyKey},
+        requirements::{Requirement, Requirements},
+    };
+    let mut server = Server::new_async().await;
+    records(&mut server, "Project1", "Version4", json!([])).await;
+    let base = fixture(
+        &[
+            ("a", "Project1", "Version1"),
+            ("b", "Project2", "Version2"),
+            ("c", "Project3", "Version3"),
+        ],
+        &["a"],
+        &[],
+        true,
+    );
+    let mut lock = base.lock().clone();
+    let key = |value| DependencyKey::parse(value).unwrap();
+    for (from, target, client) in [("b", "c", true), ("c", "b", false)] {
+        let target = lock.dependencies[&key(target)]
+            .selected
+            .as_ref()
+            .unwrap()
+            .project
+            .clone();
+        let dependency = lock.dependencies.get_mut(&key(from)).unwrap();
+        dependency.incompatibilities.push(ProviderIncompatibility {
+            project: Some(target),
+            selection: None,
+        });
+        let mut files = dependency.files.as_slice().to_vec();
+        for file in &mut files {
+            let mut placements = file.placements.as_slice().to_vec();
+            for placement in &mut placements {
+                placement.layer = ContentLayer::Common;
+                placement.requirements = Requirements {
+                    client: if client {
+                        Requirement::Required
+                    } else {
+                        Requirement::Unsupported
+                    },
+                    server: if client {
+                        Requirement::Unsupported
+                    } else {
+                        Requirement::Required
+                    },
+                };
+            }
+            file.placements = NonEmpty::new(placements).unwrap();
+        }
+        dependency.files = NonEmpty::new(files).unwrap();
+    }
+    let project =
+        ResolvedProject::validate(base.intent().clone(), lock, base.lock().intent_revision)
+            .unwrap();
+    for maximum in [1, 2] {
+        let report = assess_with_limits(
+            &server,
+            project.clone(),
+            ClosureLimits {
+                edges: maximum,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(report.dependencies.len(), 1);
+        assert_eq!(report.dependencies[0].state, "change-available");
+        assert_eq!(report.joint.state, "validated");
+        assert_eq!(report.joint.declared_incompatibilities.len(), maximum);
+        assert_eq!(report.joint.declarations_complete, maximum == 2);
+        assert_eq!(
+            report.joint.reasons.contains(&UpdateReason::CatalogLimit),
+            maximum == 1
+        );
+        assert_eq!(
+            serde_json::to_value(&report).unwrap()["joint"]["declarations_complete"],
+            maximum == 2
+        );
     }
 }

@@ -78,6 +78,7 @@ candidate and newest observed upstream selection. Unavailable evidence is report
 as unknown, not up to date. The required-dependency closure is checked separately
 from each row. Known incompatibility declarations also include retained selections,
 but the report does not decide whether their final client/server placements overlap.
+A limited declaration scan retains the available rows and marks its list incomplete.
 Candidate compatibility remains `not-assessed` until update preparation. Neither
 assessment nor preparation proves that configurations or gameplay will work.
 

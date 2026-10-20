@@ -44,7 +44,10 @@ that the full retained inventory can be installed together.
 `joint.declared_incompatibilities` between the proposed closure and retained exact
 selections, including retained reverse assertions. These are provider declarations,
 not placement-aware conflict decisions. Disjoint client/server content may satisfy
-them. Missing assertions do not prove compatibility. Update preparation composes
+them. `joint.declarations_complete` is false when the scan did not run or reached
+its output limit. Reaching the limit preserves completed rows and the bounded
+partial list with a `catalog-limit` reason. Missing assertions do not prove
+compatibility. Update preparation composes
 the complete candidate and checks actual file participation before publication.
 
 Assessment does not verify new file-role bindings, native destinations, runtime

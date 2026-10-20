@@ -76,6 +76,10 @@ fn text(report: &UpdateAssessment) -> Result<String> {
         "Candidate compatibility (including retained inventory): {}",
         report.joint.candidate_compatibility
     ));
+    lines.push(format!(
+        "Declared incompatibility list complete: {}",
+        report.joint.declarations_complete
+    ));
     for declaration in &report.joint.declared_incompatibilities {
         lines.push(format!(
             "Declared incompatibility: {} -> {} (client/server coexistence not assessed)",
@@ -111,6 +115,7 @@ mod tests {
                 scope: "provider-dependency-closure",
                 state: "validated",
                 candidate_compatibility: "not-assessed",
+                declarations_complete: false,
                 selections: Vec::new(),
                 reasons: Vec::new(),
                 declared_incompatibilities: vec![DeclaredIncompatibility {
@@ -121,6 +126,7 @@ mod tests {
         };
         let output = text(&report).unwrap();
         assert!(output.contains("Required provider closure: validated"));
+        assert!(output.contains("Declared incompatibility list complete: false"));
         assert!(
             output.contains("Candidate compatibility (including retained inventory): not-assessed")
         );
