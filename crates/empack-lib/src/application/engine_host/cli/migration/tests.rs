@@ -126,7 +126,7 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
     let old = project(root.path());
     let key = old.intent().roots.keys().next().unwrap().clone();
     let mut intent = old.intent().clone();
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::Automatic;
     crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronization::synchronize(&session(root.path(), false), false)
         .await
@@ -157,8 +157,8 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
         "Root0002"
     );
     assert_eq!(
-        replaced.intent().roots[&key].version,
-        VersionIntent::FollowCompatible
+        replaced.intent().roots[&key].selection,
+        DependencySelection::Automatic
     );
     let before = crate::application::engine_host::tests::snapshot(root.path());
     let mut invalid = args(false);

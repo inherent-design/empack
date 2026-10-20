@@ -291,3 +291,8 @@ satisfy it. For example, `>=0.7.0-beta` admits `0.7.1-beta`; `=0.7.0-beta` and
 `>=0.7.0-beta, <0.7.1-0` do not. A stable-only requirement does not admit prereleases.
 An alpha, another minor line or another major line requires explicit admission.
 This policy applies equally to signed channel observations and exact release selection.
+
+Native exports produced by v0.8 declare `>=0.8.0-beta`. An older release that only
+admits the 0.7 beta line does not implicitly admit a 0.8 prerelease. Rebuild and
+republish the pack descriptor when changing its admitted engine line; the installer
+does not rewrite an authenticated requirement.

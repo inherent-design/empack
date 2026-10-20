@@ -80,7 +80,7 @@ async fn changed_rows_require_joint_validation_and_pins_remain_exact() {
     );
     assert_eq!(report.joint.state, "validated");
     let mut intent = project.intent().clone();
-    intent.roots.values_mut().next().unwrap().version = VersionIntent::Exact(
+    intent.roots.values_mut().next().unwrap().selection = DependencySelection::ProviderPin(
         project
             .lock()
             .dependencies

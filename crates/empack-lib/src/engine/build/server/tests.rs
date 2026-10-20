@@ -237,7 +237,8 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
                                 SelectedSnapshot::select(
                                     release.bytes(),
                                     release.id(),
-                                    &semver::Version::parse("0.7.0-beta").unwrap(),
+                                    &semver::Version::parse(crate::engine::compatibility_version())
+                                        .unwrap(),
                                 )
                                 .unwrap(),
                             ),

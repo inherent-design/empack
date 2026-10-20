@@ -63,7 +63,7 @@ fn smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches() {
                 PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
             ),
             kind: ContentKind::Config,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: PlacementIntent::Explicit(
                 NonEmpty::new(vec![Placement {
                     destination: InstallDestination::parse("config/settings.toml").unwrap(),
@@ -632,7 +632,7 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
                 releases: None,
                 source: SourceIntent::Provider(identity.clone()),
                 kind: ContentKind::Mod,
-                version: VersionIntent::Exact(pin.selection.clone()),
+                selection: DependencySelection::ProviderPin(pin.selection.clone()),
                 placement: PlacementIntent::Explicit(NonEmpty::new(vec![place.clone()]).unwrap()),
                 requirements: Requirements {
                     client: Requirement::Required,
@@ -953,7 +953,7 @@ fn smoke_build_explanation_is_json_and_preserves_missing_lock_workspace() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 1);
+    assert_eq!(report["schema"], 2);
     assert_eq!(report["lock"], "missing");
     assert_eq!(report["optional_policy"]["mode"], "preserve");
     assert_eq!(report["profiles"][0]["recipe"]["format"], "tar.gz");

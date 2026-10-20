@@ -6,7 +6,7 @@ use crate::{
     digest::{ContentId, DigestSet},
     identity::{PinSelector, ProviderProjectId},
     path::{InstallDestination, PortableRelPath},
-    requirements::{Requirement, Requirements},
+    requirements::{OptionalChoice, Requirement, Requirements},
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -291,13 +291,13 @@ impl ReleasePolicy {
 }
 /// Sync retains the exact lock; only update refreshes compatible selections.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VersionIntent {
+pub enum DependencySelection {
     /// Resolve when missing or changed, then retain the exact lock selection.
-    FollowCompatible,
+    Automatic,
     /// A provider-specific version or file request.
-    Exact(PinSelector),
+    ProviderPin(PinSelector),
     /// Explicit source-byte declarations.
-    ContentPinned(DigestSet),
+    ContentAssertions(DigestSet),
 }
 /// Placement request, independent of source identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -321,7 +321,7 @@ pub struct DependencyIntent {
     /// Content kind.
     pub kind: ContentKind,
     /// Selection policy.
-    pub version: VersionIntent,
+    pub selection: DependencySelection,
     /// Desired placements.
     pub placement: PlacementIntent,
     /// Required or optional participation per side.
@@ -353,7 +353,7 @@ impl DependencyIntent {
                 if key == b => {}
             _ => return Err(invalid("Locked identity differs from source intent")),
         }
-        if let VersionIntent::Exact(pin) = &self.version
+        if let DependencySelection::ProviderPin(pin) = &self.selection
             && selected.selected.as_ref().map(|value| &value.selection) != Some(pin)
         {
             return Err(invalid("Lock does not satisfy requested pin"));
@@ -379,7 +379,7 @@ impl DependencyIntent {
                 }
                 _ => {}
             }
-            if let VersionIntent::ContentPinned(expected) = &self.version
+            if let DependencySelection::ContentAssertions(expected) = &self.selection
                 && file.expected.digests.as_ref() != Some(expected)
             {
                 return Err(invalid("Lock changed declared source digests"));
@@ -839,27 +839,47 @@ impl ProjectIntent {
         if self.runtime.loader == LoaderKind::Vanilla && self.runtime.loader_version.is_some() {
             return Err(invalid("Vanilla cannot select a loader version"));
         }
+        let mut choices = BTreeMap::new();
         for dep in self.roots.values() {
+            validate_shared_choices(&mut choices, &dep.requirements)?;
             if dep.releases.is_some()
                 && (!matches!(
                     dep.source,
                     SourceIntent::Provider(_)
                         | SourceIntent::ProviderSelector(_)
                         | SourceIntent::Search { .. }
-                ) || matches!(dep.version, VersionIntent::Exact(_)))
+                ) || matches!(dep.selection, DependencySelection::ProviderPin(_)))
             {
                 return Err(invalid(
                     "Release preference requires an unpinned provider request",
                 ));
             }
             validate_requirements(&dep.requirements)?;
-            match (&dep.source, &dep.version) {
-                (SourceIntent::Provider(project), VersionIntent::Exact(selection)) => ResolvedPin {
-                    project: project.clone(),
-                    selection: selection.clone(),
+            match (&dep.source, &dep.selection) {
+                (
+                    SourceIntent::Provider(_)
+                    | SourceIntent::ProviderSelector(_)
+                    | SourceIntent::Search { .. },
+                    DependencySelection::ContentAssertions(_),
+                ) => {
+                    return Err(invalid(
+                        "Provider content assertions belong to exact resolution",
+                    ));
                 }
-                .validate()?,
-                (SourceIntent::ProviderSelector(request), VersionIntent::Exact(selection)) => {
+                (SourceIntent::Search { .. }, DependencySelection::ProviderPin(_)) => {
+                    return Err(invalid("An exact pin requires an explicit provider source"));
+                }
+                (SourceIntent::Provider(project), DependencySelection::ProviderPin(selection)) => {
+                    ResolvedPin {
+                        project: project.clone(),
+                        selection: selection.clone(),
+                    }
+                    .validate()?
+                }
+                (
+                    SourceIntent::ProviderSelector(request),
+                    DependencySelection::ProviderPin(selection),
+                ) => {
                     if !matches!(
                         (request.provider(), selection),
                         (ProviderKind::Modrinth, PinSelector::ModrinthVersion(_))
@@ -870,7 +890,7 @@ impl ProjectIntent {
                 }
                 (
                     SourceIntent::Url(_) | SourceIntent::Local(_) | SourceIntent::LocalFiles(_),
-                    VersionIntent::Exact(_),
+                    DependencySelection::ProviderPin(_),
                 ) => {
                     return Err(invalid("A file source cannot carry a provider pin"));
                 }
@@ -889,7 +909,7 @@ impl ProjectIntent {
                 if members.is_empty() {
                     return Err(invalid("Tracked member inventory is empty"));
                 }
-                if !matches!(dep.version, VersionIntent::FollowCompatible) {
+                if !matches!(dep.selection, DependencySelection::Automatic) {
                     return Err(invalid(
                         "Tracked members retain individual content assertions",
                     ));
@@ -909,6 +929,7 @@ impl ProjectIntent {
                 }
                 for placements in files.values() {
                     for placement in placements.as_slice() {
+                        validate_shared_choices(&mut choices, &placement.requirements)?;
                         validate_placement(placement)?;
                     }
                 }
@@ -925,11 +946,13 @@ impl ProjectIntent {
                     return Err(invalid("Archive-root placement requires a provider world"));
                 }
                 for placement in placements.as_slice() {
+                    validate_shared_choices(&mut choices, &placement.requirements)?;
                     validate_placement(placement)?;
                 }
             }
             if let PlacementIntent::Explicit(placements) = &dep.placement {
                 for placement in placements.as_slice() {
+                    validate_shared_choices(&mut choices, &placement.requirements)?;
                     validate_placement(placement)?;
                 }
             }
@@ -1110,4 +1133,23 @@ impl ResolvedProject {
     pub fn lock(&self) -> &ResolutionLock {
         &self.lock
     }
+}
+
+/// Choice keys are shared installation intent, so conflicting declarations fail before resolution.
+fn validate_shared_choices<'a>(
+    declared: &mut BTreeMap<&'a str, &'a OptionalChoice>,
+    requirements: &'a Requirements,
+) -> Result<(), ModelError> {
+    for requirement in [&requirements.client, &requirements.server] {
+        if let Requirement::Optional(choice) = requirement
+            && let Some(previous) = declared.insert(choice.key.as_str(), choice)
+            && previous != choice
+        {
+            return Err(ModelError(alloc::format!(
+                "Conflicting optional choice: {}",
+                choice.key.as_str()
+            )));
+        }
+    }
+    Ok(())
 }

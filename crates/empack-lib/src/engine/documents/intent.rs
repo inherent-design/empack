@@ -141,7 +141,7 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
         &[
             "source",
             "content",
-            "version",
+            "selection",
             "placement",
             "environment",
             "releases",
@@ -192,21 +192,21 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
         }
         _ => bail!("Unknown dependency source kind"),
     };
-    let version = required(value, "version")?;
-    let version = match text(required(version, "mode")?)? {
-        "follow-compatible" => {
-            fields(version, &["mode"])?;
-            VersionIntent::FollowCompatible
+    let selection = required(value, "selection")?;
+    let selection = match text(required(selection, "mode")?)? {
+        "automatic" => {
+            fields(selection, &["mode"])?;
+            DependencySelection::Automatic
         }
-        "exact" => {
-            fields(version, &["mode", "pin"])?;
-            VersionIntent::Exact(pin(required(version, "pin")?)?)
+        "provider-pin" => {
+            fields(selection, &["mode", "pin"])?;
+            DependencySelection::ProviderPin(pin(required(selection, "pin")?)?)
         }
-        "content-pinned" => {
-            fields(version, &["mode", "digests"])?;
-            VersionIntent::ContentPinned(digest_set(required(version, "digests")?)?)
+        "content-assertions" => {
+            fields(selection, &["mode", "digests"])?;
+            DependencySelection::ContentAssertions(digest_set(required(selection, "digests")?)?)
         }
-        _ => bail!("Unknown version policy"),
+        _ => bail!("Unknown source selection policy"),
     };
     let places = required(value, "placement")?;
     let placement = if places == "automatic" {
@@ -253,7 +253,7 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
             .transpose()?,
         source,
         kind: kind(required(value, "content")?)?,
-        version,
+        selection,
         placement,
         requirements: requirements(required(value, "environment")?)?,
     })
@@ -268,9 +268,9 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
             SourceIntent::Local(path) => json!({"kind":"local","path":path.as_str()}),
             SourceIntent::LocalFiles(members) => json!({"kind":"local-files","members":members.iter().map(|(slot,path)|(slot.as_str(),path.as_str())).collect::<BTreeMap<_,_>>() }),
         };
-        let version = match &dep.version { VersionIntent::FollowCompatible => json!({"mode":"follow-compatible"}), VersionIntent::Exact(pin) => json!({"mode":"exact","pin":pin_value(pin)}), VersionIntent::ContentPinned(expected) => json!({"mode":"content-pinned","digests":digests(expected)}) };
+        let selection = match &dep.selection { DependencySelection::Automatic => json!({"mode":"automatic"}), DependencySelection::ProviderPin(pin) => json!({"mode":"provider-pin","pin":pin_value(pin)}), DependencySelection::ContentAssertions(expected) => json!({"mode":"content-assertions","digests":digests(expected)}) };
         let placement = match &dep.placement { PlacementIntent::Automatic => json!("automatic"), PlacementIntent::ArchiveRoot(values) => json!({"archive-root":values.as_slice().iter().map(placement_value).collect::<Vec<_>>()}), PlacementIntent::Explicit(values) => json!(values.as_slice().iter().map(placement_value).collect::<Vec<_>>()), PlacementIntent::ByFile(files) => json!({"files": files.iter().map(|(slot, places)| (slot.as_str(), places.as_slice().iter().map(placement_value).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>()}) };
-        (key.as_str(), json!({"releases":dep.releases.map(ReleasePolicy::as_str),"source":source,"content":kind_name(dep.kind),"version":version,"placement":placement,"environment":requirements_value(&dep.requirements)}))
+        (key.as_str(), json!({"releases":dep.releases.map(ReleasePolicy::as_str),"source":source,"content":kind_name(dep.kind),"selection":selection,"placement":placement,"environment":requirements_value(&dep.requirements)}))
     }).collect();
     json!({"schema":INTENT_SCHEMA,"dependency-policy":intent.dependency_policy.as_str(),
         "pack":{"id":intent.metadata.id,"name":intent.metadata.name,"version":intent.metadata.version,"authors":intent.metadata.authors,"description":intent.metadata.description},

@@ -2,8 +2,8 @@
 use super::*;
 use crate::engine::addition::{DirectFileInput, DirectFileSource, FileEvidence, FileKindPolicy};
 use empack_core::model::{
-    AcquisitionSpec, DependencyKey, ExpectedContent, Placement, PlacementIntent, ResolvedIdentity,
-    SourceIntent, VersionIntent,
+    AcquisitionSpec, DependencyKey, DependencySelection, ExpectedContent, Placement,
+    PlacementIntent, ResolvedIdentity, SourceIntent,
 };
 
 mod initial;
@@ -201,8 +201,8 @@ fn selections(
         let requirements = root
             .map(|root| root.requirements.clone())
             .unwrap_or_else(|| primary.placements.as_slice()[0].requirements.clone());
-        let pin = root.and_then(|root| match &root.version {
-            VersionIntent::Exact(pin) => Some(pin.clone()),
+        let pin = root.and_then(|root| match &root.selection {
+            DependencySelection::ProviderPin(pin) => Some(pin.clone()),
             _ => None,
         });
         match &selected.identity {
@@ -272,7 +272,7 @@ fn selections(
                         releases: None,
                         source: SourceIntent::LocalFiles(members),
                         kind: selected.kind,
-                        version: VersionIntent::FollowCompatible,
+                        selection: DependencySelection::Automatic,
                         requirements: requirements.clone(),
                         placement: PlacementIntent::ByFile(
                             selected
@@ -330,8 +330,8 @@ fn selections(
                         ),
                     },
                 };
-                let evidence = match root.map(|root| &root.version) {
-                    Some(VersionIntent::ContentPinned(digests)) => {
+                let evidence = match root.map(|root| &root.selection) {
+                    Some(DependencySelection::ContentAssertions(digests)) => {
                         FileEvidence::Declared(ExpectedContent {
                             digests: Some(digests.clone()),
                             size: None,

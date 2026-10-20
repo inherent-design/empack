@@ -40,7 +40,7 @@ impl NativeReleaseOptions {
         Ok(Self {
             require_subscription: false,
             pack: intent.metadata.id.clone(),
-            minimum_engine: ">=0.7.0-beta".into(),
+            minimum_engine: ">=0.8.0-beta".into(),
             java_major: intent.runtime.java_major,
             delivery: Delivery::References,
             environments: Environments::Both,
@@ -961,7 +961,7 @@ mod tests {
         NativeReleaseOptions {
             require_subscription: false,
             pack: "stable-id".into(),
-            minimum_engine: ">=0.7.0-beta".into(),
+            minimum_engine: ">=0.8.0-beta".into(),
             java_major: 17,
             delivery,
             environments: Environments::Both,

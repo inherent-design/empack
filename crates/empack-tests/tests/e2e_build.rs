@@ -231,13 +231,20 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
             );
         }
     }
-    std::fs::write(project.dir().join("local.zip"), &bytes).unwrap();
-    let original = std::fs::read_to_string(&manifest).unwrap();
-    std::fs::write(
-        &manifest,
-        original.replace("pack/resourcepacks/local.zip", "local.zip"),
-    )
-    .unwrap();
+    std::fs::create_dir(project.dir().join("vendor")).unwrap();
+    std::fs::write(project.dir().join("vendor/local.zip"), &bytes).unwrap();
+    let mut changed = empack_lib::testing::read_authoring(&manifest)
+        .unwrap()
+        .intent()
+        .clone();
+    changed.roots.values_mut().next().unwrap().source = empack_core::model::SourceIntent::Local(
+        empack_core::path::PortableRelPath::parse(
+            "vendor/local.zip",
+            empack_core::path::PathSyntax::ProjectContent,
+        )
+        .unwrap(),
+    );
+    empack_lib::testing::write_authoring(&manifest, &changed).unwrap();
     assert_cmd::Command::from_std(project.cmd())
         .args([
             "--dry-run",

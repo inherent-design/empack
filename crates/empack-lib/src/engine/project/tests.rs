@@ -41,7 +41,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
             releases: None,
             source: SourceIntent::Local(source.clone()),
             kind: ContentKind::Mod,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: PlacementIntent::Automatic,
             requirements: requirements.clone(),
         },

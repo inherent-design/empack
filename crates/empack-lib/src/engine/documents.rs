@@ -103,8 +103,6 @@ pub enum DocumentEdit {
     Unchanged,
     /// Changed values retain unrelated source syntax.
     Preserved,
-    /// The caller must include document reformatting in its plan/receipt.
-    Reformatted,
 }
 /// Prepared replacement bytes with their expected source revision, not permission to write.
 #[derive(Debug, Clone)]

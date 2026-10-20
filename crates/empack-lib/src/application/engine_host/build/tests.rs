@@ -327,7 +327,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
             releases: None,
             source: SourceIntent::Provider(identity.clone()),
             kind: ContentKind::ResourcePack,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: PlacementIntent::Explicit(NonEmpty::new(vec![placement.clone()]).unwrap()),
             requirements,
         },

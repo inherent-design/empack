@@ -1,6 +1,6 @@
 //! Read-only update evidence; catalog rows and joint dependency validation are separate.
 use super::*;
-use empack_core::model::{ResolvedProject, SourceIntent, VersionIntent};
+use empack_core::model::{DependencySelection, ResolvedProject, SourceIntent};
 use serde::Serialize;
 use std::collections::BTreeSet;
 
@@ -205,7 +205,8 @@ impl ProviderCatalog {
                         .upstream
                         .as_ref()
                         .map(ObservedVersion::observation);
-                    let permitted = if let VersionIntent::Exact(pin) = &intent.version {
+                    let permitted = if let DependencySelection::ProviderPin(pin) = &intent.selection
+                    {
                         row.state = "pinned";
                         row.reasons.push(UpdateReason::Pinned);
                         Some(ResolvedPin {

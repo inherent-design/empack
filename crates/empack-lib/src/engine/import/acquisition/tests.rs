@@ -912,7 +912,10 @@ async fn import_candidate_keeps_url_files_as_url_roots_with_original_hashes() {
     assert!(
         matches!(&root.source, SourceIntent::Url(urls) if urls.as_slice() == ["https://example.org/different-name.bin"])
     );
-    assert!(matches!(root.version, VersionIntent::ContentPinned(_)));
+    assert!(matches!(
+        root.selection,
+        DependencySelection::ContentAssertions(_)
+    ));
     assert!(matches!(locked.identity, ResolvedIdentity::Url(_)));
     assert!(locked.selected.is_none());
     let file = &locked.files.as_slice()[0];

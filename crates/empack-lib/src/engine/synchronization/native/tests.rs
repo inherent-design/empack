@@ -662,7 +662,7 @@ fn first_resolution_creates_a_lock_without_adopting_untracked_files() {
 
 #[test]
 fn pin_edits_publish_only_documents_preserve_payloads_and_reject_stale_sources() {
-    use empack_core::model::{NonEmpty, VersionIntent};
+    use empack_core::model::{DependencySelection, NonEmpty};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     fixture(root.path());
@@ -711,8 +711,8 @@ fn pin_edits_publish_only_documents_preserve_payloads_and_reject_stale_sources()
         assert_eq!(receipt.project.lock().runtime, original.lock().runtime);
         assert_eq!(
             matches!(
-                receipt.project.intent().roots[&key].version,
-                VersionIntent::Exact(_)
+                receipt.project.intent().roots[&key].selection,
+                DependencySelection::ProviderPin(_)
             ),
             pinned
         );

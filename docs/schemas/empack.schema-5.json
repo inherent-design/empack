@@ -1,0 +1,979 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inherent.design/empack/schemas/empack.schema-5.json",
+  "title": "Empack authoring schema 5",
+  "description": "Editor completion and structural validation. Use empack manifest check for composed bindings, path safety, provider ownership and semantic constraints.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 5
+    },
+    "pack": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.+\\-]+$",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human release label; no dependency version-range semantics."
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "minecraft": {
+          "type": "string",
+          "minLength": 1
+        },
+        "loader": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/loader"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/loader"
+                },
+                "pin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "java": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 65535,
+          "description": "Declared minimum Java major, not a supported-version range."
+        },
+        "acceptable-versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        }
+      },
+      "required": [
+        "minecraft",
+        "loader",
+        "java"
+      ],
+      "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/dependency"
+      }
+    },
+    "dependency-policy": {
+      "type": "object",
+      "properties": {
+        "releases": {
+          "$ref": "#/$defs/releases",
+          "default": "prefer-stable"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/profile"
+          }
+        },
+        "default": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/kind"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/path"
+      }
+    },
+    "extensions": {
+      "type": "object"
+    },
+    "sources": {
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "installation-policies": {
+      "$ref": "#/$defs/policies"
+    }
+  },
+  "required": [
+    "schema",
+    "pack",
+    "runtime"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "provider": {
+      "enum": [
+        "modrinth",
+        "curseforge"
+      ]
+    },
+    "source-string": {
+      "type": "string",
+      "pattern": "^(modrinth|curseforge):[A-Za-z0-9_.+\\-]+$",
+      "description": "Exact provider lookup. The lock retains canonical identity across slug changes."
+    },
+    "kind": {
+      "enum": [
+        "mod",
+        "resource-pack",
+        "shader-pack",
+        "data-pack",
+        "world",
+        "config",
+        "other-file"
+      ]
+    },
+    "releases": {
+      "enum": [
+        "stable-only",
+        "prefer-stable",
+        "any"
+      ]
+    },
+    "loader": {
+      "enum": [
+        "vanilla",
+        "fabric",
+        "quilt",
+        "forge",
+        "neoforge"
+      ]
+    },
+    "https": {
+      "type": "string",
+      "pattern": "^https://",
+      "description": "Credential-free HTTPS locator. The CLI also rejects embedded credentials and ephemeral authorization."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Portable project-relative path; parent traversal and absolute paths are rejected by the CLI."
+    },
+    "requirement": {
+      "oneOf": [
+        {
+          "enum": [
+            "required",
+            "unsupported"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "optional": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default-enabled": {
+              "type": "boolean"
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "optional",
+            "default-enabled"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/requirement"
+        },
+        "server": {
+          "$ref": "#/$defs/requirement"
+        }
+      },
+      "required": [
+        "client",
+        "server"
+      ],
+      "additionalProperties": false
+    },
+    "placement": {
+      "type": "object",
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/path"
+        },
+        "layer": {
+          "enum": [
+            "common",
+            "common-override",
+            "client",
+            "server"
+          ]
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        }
+      },
+      "required": [
+        "destination",
+        "layer",
+        "environment"
+      ],
+      "additionalProperties": false
+    },
+    "placements": {
+      "oneOf": [
+        {
+          "const": "automatic"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/placement"
+          },
+          "minItems": 1
+        },
+        {
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/placement"
+                },
+                "minItems": 1
+              },
+              "minProperties": 1
+            }
+          },
+          "required": [
+            "files"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "archive-root": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/placement"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "archive-root"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "digests": {
+      "type": "object",
+      "properties": {
+        "md5": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{32}$"
+        },
+        "sha1": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{40}$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "sha512": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{128}$"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "minProperties": 1
+    },
+    "provider-source": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/source-string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "provider"
+            },
+            "identity": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "$ref": "#/$defs/provider"
+                },
+                "project": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "provider",
+                "project"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "identity"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "provider-selector"
+            },
+            "request": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "$ref": "#/$defs/provider"
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "provider",
+                "selector"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "request"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "source": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/provider-source"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "search"
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/provider"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "kind",
+            "query",
+            "providers"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "local"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "local-files"
+            },
+            "members": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/path"
+              },
+              "minProperties": 1
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "url"
+            },
+            "downloads": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/https"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "kind",
+            "downloads"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "dependency": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/source-string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "$ref": "#/$defs/source"
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            },
+            "url": {
+              "$ref": "#/$defs/https"
+            },
+            "mirrors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/https"
+              },
+              "minItems": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            },
+            "digests": {
+              "$ref": "#/$defs/digests"
+            },
+            "pin": {
+              "type": "string",
+              "minLength": 1
+            },
+            "releases": {
+              "$ref": "#/$defs/releases"
+            },
+            "type": {
+              "$ref": "#/$defs/kind",
+              "default": "mod"
+            },
+            "side": {
+              "enum": [
+                "client",
+                "server",
+                "both"
+              ],
+              "default": "both"
+            },
+            "optional": {
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "choice": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "default": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "choice",
+                    "default"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "environment": {
+              "$ref": "#/$defs/environment"
+            },
+            "placement": {
+              "$ref": "#/$defs/placements"
+            }
+          },
+          "required": [],
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "source"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "required": [
+                "path"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "source"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "required": [
+                "url"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "source"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "path"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "pin",
+                  "releases"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "sha256",
+                  "digests"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "side",
+                  "environment"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "optional",
+                  "environment"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "url"
+                ]
+              },
+              "then": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "sha256"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "digests"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "mirrors"
+                ]
+              },
+              "then": {
+                "required": [
+                  "url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "pin"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "$ref": "#/$defs/provider-source"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "pin"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "releases"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "releases"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/provider-source"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "const": "search"
+                          },
+                          "query": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "providers": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/$defs/provider"
+                            },
+                            "minItems": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "query",
+                          "providers"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/provider-source"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "search",
+                              "local-files"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "sha256"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "digests"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "target": {
+      "enum": [
+        "prism",
+        "server",
+        "modrinth",
+        "curseforge",
+        "empack"
+      ]
+    },
+    "profile": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/target"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "$ref": "#/$defs/target"
+            },
+            "delivery": {
+              "enum": [
+                "bundled",
+                "references"
+              ]
+            },
+            "environment": {
+              "enum": [
+                "client",
+                "server",
+                "both"
+              ]
+            },
+            "updates": {
+              "enum": [
+                "snapshot",
+                "platform",
+                "empack"
+              ]
+            },
+            "format": {
+              "enum": [
+                "zip",
+                "tar.gz",
+                "7z"
+              ]
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": [
+          "managed",
+          "seed"
+        ]
+      }
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "placement": {
+          "$ref": "#/$defs/placements"
+        },
+        "source-members": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/path"
+          },
+          "minProperties": 1
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "placement"
+          ]
+        },
+        {
+          "required": [
+            "source-members"
+          ]
+        }
+      ]
+    }
+  }
+}

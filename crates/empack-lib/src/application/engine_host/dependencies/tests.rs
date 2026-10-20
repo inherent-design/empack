@@ -14,7 +14,7 @@ use crate::{
 };
 use empack_core::{
     identity::{ModrinthVersionId, PinSelector},
-    model::{DependencyKey, ProviderKind, ResolvedProject, VersionIntent},
+    model::{DependencyKey, DependencySelection, ProviderKind, ResolvedProject},
     removal::{RemovalEvidencePolicy, RemovalMode},
     requirements::{Requirement, Requirements},
 };
@@ -217,8 +217,8 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
     assert_eq!(installed.intent().roots.len(), 1);
     assert_eq!(installed.lock().dependencies.len(), 2);
     assert!(matches!(
-        installed.intent().roots[&key].version,
-        VersionIntent::Exact(_)
+        installed.intent().roots[&key].selection,
+        DependencySelection::ProviderPin(_)
     ));
     assert!(
         installed.lock().required_edges[&key]

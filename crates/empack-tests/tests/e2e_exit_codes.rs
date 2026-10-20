@@ -109,14 +109,15 @@ fn e2e_malformed_intent_and_lock_exit_two() {
     }
 }
 #[test]
-fn e2e_missing_tracked_file_cannot_report_success() {
+fn e2e_missing_authored_source_cannot_build_from_an_installed_copy() {
     let project = fixture();
     add_local(&project);
-    fs::remove_file(project.dir().join("pack/mods/fixture.jar")).unwrap();
+    assert!(project.dir().join("pack/mods/fixture.jar").is_file());
+    fs::remove_file(project.dir().join("fixture.jar")).unwrap();
     let result = output(&project, &["build", "--yes", "modrinth"]);
     assert!(
         !result.status.success(),
-        "Missing locked content must not build successfully"
+        "Missing authored content must not build from its installed copy"
     );
     assert!(
         !project

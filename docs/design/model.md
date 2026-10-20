@@ -46,7 +46,7 @@ Earlier author schemas are rejected; there is no automatic or general-purpose mi
 
 Dependency sources include provider selection, verified URL files, local files and
 interpreted archive members. Mods, resource packs, shaders, datapacks and worlds
-retain their content kind. Exact pins and follow-compatible selection are explicit.
+retain their content kind. Exact pins and automatic compatible selection are explicit.
 Sync retains valid exact selections; update deliberately resolves eligible changes.
 Unknown dependency coverage is not an empty required-dependency set.
 
@@ -80,7 +80,7 @@ content, including worlds placed under a custom directory.
 
 ## Compact dependencies and integration bindings
 
-A provider dependency with the ordinary mod, both-sides and follow-compatible
+A provider dependency with the ordinary mod, both-sides and automatic compatible
 policy can be one line:
 
 ```yaml

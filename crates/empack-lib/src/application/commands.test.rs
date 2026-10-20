@@ -331,7 +331,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
             schema: 1,
             pack: "dispatch".into(),
             version: "1".into(),
-            minimum_engine: ">=0.7.0-beta".into(),
+            minimum_engine: ">=0.8.0-beta".into(),
             runtime: ReleaseRuntime {
                 minecraft: "1.21.1".into(),
                 loader: ReleaseLoader::Vanilla,
@@ -806,7 +806,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             schema: 1,
             pack: "another-pack".into(),
             version: "1".into(),
-            minimum_engine: ">=0.7.0-beta".into(),
+            minimum_engine: ">=0.8.0-beta".into(),
             runtime: crate::engine::release::ReleaseRuntime {
                 minecraft: "1.21.1".into(),
                 loader: crate::engine::release::ReleaseLoader::Vanilla,
@@ -845,7 +845,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         schema: 1,
         pack: "fixture".into(),
         version: "1".into(),
-        minimum_engine: ">=0.7.0-beta".into(),
+        minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -911,7 +911,7 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             .unwrap()
             .as_secs() as i64
             + 60,
-        minimum_engine: ">=0.7.0-beta".into(),
+        minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: release.id().into(),
             url: "https://publisher.test/release.json".into(),
@@ -1049,7 +1049,7 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
         schema: 1,
         pack: "manual".into(),
         version: "1".into(),
-        minimum_engine: ">=0.7.0-beta".into(),
+        minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
@@ -1207,4 +1207,58 @@ fn initialization_runs_on_a_windows_sized_stack() {
         .unwrap();
     assert!(root.path().join("project/empack.yml").is_file());
     assert!(root.path().join("project/empack.lock").is_file());
+}
+
+#[tokio::test]
+async fn adding_a_project_file_retains_source_ownership_and_refuses_unaccepted_drift() {
+    use empack_core::model::SourceIntent;
+    let root = tempfile::tempdir().unwrap();
+    let selected = session(root.path(), true, false);
+    execute_command_with_session(init(), &selected)
+        .await
+        .unwrap();
+    let vendor = root.path().join("project/vendor");
+    fs::create_dir(&vendor).unwrap();
+    let bytes = jar(&vendor);
+    execute_command_with_session(add("project/vendor/fixture.jar"), &selected)
+        .await
+        .unwrap();
+    let current = resolved(root.path());
+    let (key, dependency) = current.intent().roots.iter().next().unwrap();
+    assert!(
+        matches!(&dependency.source, SourceIntent::Local(path) if path.as_str() == "vendor/fixture.jar")
+    );
+    let installed = root.path().join("project/pack/mods/fixture.jar");
+    assert_eq!(fs::read(&installed).unwrap(), bytes);
+    let mut changed = bytes.clone();
+    changed.extend(b"deliberate local edit");
+    fs::write(vendor.join("fixture.jar"), &changed).unwrap();
+    let before = snapshot(root.path());
+    assert!(
+        execute_command_with_session(
+            Commands::Sync {
+                materialize: false,
+                continue_sync: false,
+                files: vec![]
+            },
+            &selected
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(snapshot(root.path()), before);
+    execute_command_with_session(
+        Commands::Pin {
+            dependencies: vec![key.as_str().into()],
+        },
+        &selected,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(snapshot(root.path()), before);
+    execute_command_with_session(remove(key.as_str()), &selected)
+        .await
+        .unwrap();
+    assert_eq!(fs::read(vendor.join("fixture.jar")).unwrap(), changed);
+    assert!(!installed.exists());
 }

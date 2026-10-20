@@ -105,7 +105,7 @@ impl MigrationOptions {
                 "Replacement selects the existing project; omit it to retain its policy"
             );
             root.source = SourceIntent::Provider(id.clone());
-            root.version = VersionIntent::FollowCompatible;
+            root.selection = DependencySelection::Automatic;
         }
         DocumentCodec
             .replace_intent(source, &intent)?

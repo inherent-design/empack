@@ -45,7 +45,9 @@ and must belong to the selected canonical project. A dependency cannot specify b
 an exact pin and its own automatic release preference. Local and URL mappings reject
 provider-only fields. URL alternatives use `mirrors` and assert the same bytes with
 `sha256` or an explicit digest set. Downloaded bytes never replace an authored digest
-implicitly. Local sources remain distinct from installation destinations.
+implicitly. Local sources remain distinct from installation destinations. CLI additions
+preserve project-relative file sources; external files are imported into portable project
+storage. Interpreted world archives retain their individual member sources.
 
 `side` accepts `client`, `server` or `both`; it cannot coexist with `environment`.
 `optional: true` creates a default-disabled choice using the logical dependency key.
@@ -73,13 +75,18 @@ renames or reassigns its slug. A changed source requires a new explicit binding.
 Search is never a fallback for failed exact lookup. Without a lock, readable names
 cannot establish historical identity.
 
+The normalized `DependencySelection` has `Automatic`, `ProviderPin` and
+`ContentAssertions` variants. Source-specific validation rejects provider pins on
+manual files and authored content assertions on provider selections. There is no
+universal dependency version expression. Pack labels and engine protocol version
+requirements keep their separate meanings.
+
 Effective automatic policy is schema default, then project preference, then a
 per-root override. An explicit operation override applies only to that operation
-and is shown in its explanation. Implicit required dependencies use the project preference, or an explicit operation
-override. Explicit roots retain their own preference. This avoids traversal-order
+and is shown in its explanation. Implicit required dependencies use the project
+preference, or an explicit operation override. Explicit roots retain their own preference. This avoids traversal-order
 inheritance when multiple roots share a library. Conflicting exact selections remain
-errors. Exact
-pins bypass preference ordering, not runtime, ownership or integrity validation.
+errors. Exact pins bypass preference ordering, not runtime, ownership or integrity validation.
 
 Sync retains valid exact selections. Update deliberately refreshes eligible selected
 roots and required dependencies. Outdated reports evidence without changing intent.

@@ -689,7 +689,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         .roots
         .get_mut(&DependencyKey::parse("existing").unwrap())
         .unwrap()
-        .version = empack_core::model::VersionIntent::Exact(pin.clone());
+        .selection = empack_core::model::DependencySelection::ProviderPin(pin.clone());
     let raw = DocumentCodec.encode_intent(&next_intent).unwrap();
     let source = DocumentCodec.decode_intent(&raw, "edited pin").unwrap();
     let mut lock = updated.lock().clone();

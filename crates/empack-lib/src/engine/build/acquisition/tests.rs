@@ -1257,7 +1257,7 @@ fn verify_world_build(
     let requirements = root_intent.requirements.clone();
     root_intent.kind = ContentKind::World;
     root_intent.source = SourceIntent::Provider(archive.pin.project.clone());
-    root_intent.version = VersionIntent::Exact(archive.pin.selection.clone());
+    root_intent.selection = DependencySelection::ProviderPin(archive.pin.selection.clone());
     root_intent.placement = PlacementIntent::ArchiveRoot(
         NonEmpty::new(vec![Placement {
             layer: ContentLayer::Common,

@@ -629,12 +629,14 @@ pub(super) fn provider_input(
     same_runtime: bool,
 ) -> Result<ProviderAddInput> {
     let retained = old.filter(|old| same_runtime && old.kind == root.kind && matches!(&old.identity, ResolvedIdentity::Provider(b) if root.source.canonical_project(Some(old)) == Some(b)));
-    let pin = match &root.version {
-        VersionIntent::Exact(pin) => Some(pin.clone()),
-        VersionIntent::FollowCompatible => {
+    let pin = match &root.selection {
+        DependencySelection::ProviderPin(pin) => Some(pin.clone()),
+        DependencySelection::Automatic => {
             retained.and_then(|old| old.selected.as_ref().map(|pin| pin.selection.clone()))
         }
-        VersionIntent::ContentPinned(_) => anyhow::bail!("Provider roots require provider pins"),
+        DependencySelection::ContentAssertions(_) => {
+            anyhow::bail!("Provider roots require provider pins")
+        }
     };
     let files = ProviderFiles::from_placement(&root.placement);
     Ok(ProviderAddInput {
@@ -714,13 +716,15 @@ pub(super) fn direct_input(
             }])?
         }
     };
-    let evidence = match &root.version {
-        VersionIntent::ContentPinned(digests) => FileEvidence::Declared(ExpectedContent {
-            digests: Some(digests.clone()),
-            size: None,
-            accepted_observation: None,
-        }),
-        VersionIntent::FollowCompatible => {
+    let evidence = match &root.selection {
+        DependencySelection::ContentAssertions(digests) => {
+            FileEvidence::Declared(ExpectedContent {
+                digests: Some(digests.clone()),
+                size: None,
+                accepted_observation: None,
+            })
+        }
+        DependencySelection::Automatic => {
             let same = old
                 .and_then(|old| {
                     (old.files.as_slice().len() == 1).then_some(&old.files.as_slice()[0])
@@ -734,7 +738,9 @@ pub(super) fn direct_input(
                 FileEvidence::Declared(file.expected.clone())
             })
         }
-        VersionIntent::Exact(_) => anyhow::bail!("Direct content cannot use a provider pin"),
+        DependencySelection::ProviderPin(_) => {
+            anyhow::bail!("Direct content cannot use a provider pin")
+        }
     };
     Ok(DirectFileInput {
         role: match &root.placement {

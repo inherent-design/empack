@@ -210,8 +210,8 @@ async fn provider_closure_publishes_canonical_roots_and_preserves_required_conte
         BTreeSet::from([DependencyKey::parse("library").unwrap()])
     );
     assert!(matches!(
-        addition.project().intent().roots[&key].version,
-        VersionIntent::Exact(_)
+        addition.project().intent().roots[&key].selection,
+        DependencySelection::ProviderPin(_)
     ));
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
@@ -293,7 +293,7 @@ async fn equivalent_resource_pack_selectors_remain_unpinned_and_use_kind_specifi
                 ModrinthProjectId::parse("project1").unwrap()
             ))
         );
-        assert_eq!(root.version, VersionIntent::FollowCompatible);
+        assert_eq!(root.selection, DependencySelection::Automatic);
         assert_eq!(root.placement, PlacementIntent::Automatic);
         assert_eq!(root.kind, ContentKind::ResourcePack);
         assert_eq!(
@@ -1393,7 +1393,7 @@ async fn primary_binding_survives_provider_filename_changes() {
                 ModrinthProjectId::parse("project1").unwrap(),
             )),
             kind: ContentKind::Mod,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: PlacementIntent::ByFile(BTreeMap::from([(
                 FileSlot::parse("primary").unwrap(),
                 places.clone(),

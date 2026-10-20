@@ -852,7 +852,7 @@ fn authoring_composition_keeps_common_dependencies_compact_and_advanced_intent_l
     root.source = SourceIntent::ProviderSelector(
         ProviderSelector::new(ProviderKind::Modrinth, "AANobbMI").unwrap(),
     );
-    root.version = VersionIntent::FollowCompatible;
+    root.selection = DependencySelection::Automatic;
     root.requirements = Requirements {
         client: Requirement::Required,
         server: Requirement::Required,
@@ -1017,5 +1017,63 @@ fn named_profile_documents_reject_missing_defaults_unknown_fields_and_unsafe_nam
         DocumentCodec
             .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")
             .is_err()
+    );
+}
+
+#[test]
+fn core_rejects_source_inapplicable_selections_and_conflicting_shared_choices() {
+    let mut intent = decoded().intent().clone();
+    let key = intent.roots.keys().next().unwrap().clone();
+    let mut dependency = intent.roots[&key].clone();
+    dependency.selection = DependencySelection::ContentAssertions(
+        DigestSet::parse([("sha256", "a".repeat(64).as_str())]).unwrap(),
+    );
+    intent.roots.insert(key.clone(), dependency);
+    assert!(
+        intent
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("Provider content assertions")
+    );
+
+    let mut intent = decoded().intent().clone();
+    let mut second = intent.roots[&key].clone();
+    intent
+        .roots
+        .insert(DependencyKey::parse("second").unwrap(), second.clone());
+    intent.validate().unwrap();
+    let Requirement::Optional(choice) = &mut second.requirements.client else {
+        unreachable!()
+    };
+    choice.default_enabled = !choice.default_enabled;
+    intent
+        .roots
+        .insert(DependencyKey::parse("second").unwrap(), second.clone());
+    assert!(
+        intent
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("Conflicting optional choice")
+    );
+
+    intent
+        .roots
+        .remove(&DependencyKey::parse("second").unwrap());
+    intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::Explicit(
+        NonEmpty::new(vec![Placement {
+            destination: InstallDestination::parse("mods/renderer.jar").unwrap(),
+            layer: ContentLayer::Client,
+            requirements: second.requirements,
+        }])
+        .unwrap(),
+    );
+    assert!(
+        intent
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("Conflicting optional choice")
     );
 }
