@@ -700,17 +700,49 @@ async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
     assert!(snapshot(root.path()).is_empty());
 }
 
+#[test]
+fn compatible_catalog_may_use_the_full_discovery_deadline() {
+    let mut limits = RuntimeCatalogLimits::default();
+    limits.transfer.deadline = Duration::from_millis(400);
+    let start = std::time::Instant::now();
+    let deadline = start + limits.transfer.deadline;
+    // Explicit clock samples test the budget without racing HTTP scheduling.
+    // In particular, catalogs are not restricted to a quarter of the deadline.
+    for elapsed in [0, 150, 399] {
+        let remaining =
+            remaining_catalog_limits(limits, deadline, start + Duration::from_millis(elapsed))
+                .unwrap();
+        assert_eq!(
+            remaining.transfer.deadline,
+            Duration::from_millis(400 - elapsed)
+        );
+        assert_eq!(remaining.transfer.file_bytes, limits.transfer.file_bytes);
+        assert_eq!(
+            remaining.transfer.transfer_bytes,
+            limits.transfer.transfer_bytes
+        );
+        assert_eq!(remaining.entries, limits.entries);
+    }
+    for elapsed in [400, 401] {
+        let error =
+            remaining_catalog_limits(limits, deadline, start + Duration::from_millis(elapsed))
+                .err()
+                .expect("expired discovery must not start another catalog request");
+        assert!(matches!(
+            error.downcast_ref::<crate::engine::acquisition::TransferError>(),
+            Some(crate::engine::acquisition::TransferError::Deadline)
+        ));
+    }
+}
+
 #[tokio::test]
-async fn compatible_catalog_may_use_the_full_discovery_deadline() {
+async fn compatible_catalog_selects_the_requested_pin() {
     let mut server = mockito::Server::new_async().await;
-    let mut delayed = mockito::Server::new_async().await;
-    let neo = delayed
+    let mut neo_server = mockito::Server::new_async().await;
+    let neo = neo_server
         .mock("GET", "/neoforge")
         .with_status(200)
-        .with_chunked_body(|writer| {
-            std::thread::sleep(Duration::from_millis(150));
-            writer.write_all(br#"{"versions":["21.1.1"]}"#)
-        })
+        .with_body(br#"{"versions":["21.1.1"]}"#)
         .create_async()
         .await;
     let mut fast = Vec::new();
@@ -732,11 +764,11 @@ async fn compatible_catalog_may_use_the_full_discovery_deadline() {
     let host = session(root.path(), false, false)
         .with_interactive(MockInteractiveProvider::new().queue_select(0));
     let mut limits = RuntimeCatalogLimits::default();
-    limits.transfer.deadline = Duration::from_millis(400);
-    let (family, _) = compatible_loader(
+    limits.transfer.deadline = Duration::from_secs(30);
+    let (family, versions) = compatible_loader(
         &host,
         RuntimeCatalog::for_loopback_tests(&server.url())
-            .with_loader_test_origin(LoaderKind::NeoForge, &delayed.url()),
+            .with_loader_test_origin(LoaderKind::NeoForge, &neo_server.url()),
         GameVersion::parse("1.21.1").unwrap(),
         Some(LoaderVersion::parse("21.1.1").unwrap()),
         limits,
@@ -744,6 +776,16 @@ async fn compatible_catalog_may_use_the_full_discovery_deadline() {
     .await
     .unwrap();
     assert_eq!(family, LoaderKind::NeoForge);
+    assert_eq!(
+        versions
+            .unwrap()
+            .resolve(None)
+            .unwrap()
+            .loader_version
+            .unwrap()
+            .as_str(),
+        "21.1.1"
+    );
     neo.assert_async().await;
     for response in fast {
         response.assert_async().await;
