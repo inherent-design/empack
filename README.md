@@ -4,7 +4,7 @@ Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exa
 dependencies into `empack.lock`, builds launcher and server distributions, and can
 install and update native pack releases while preserving player-owned files.
 
-This documentation describes **v0.7.1-beta**. It uses author schema 4 and optional
+This documentation describes **v0.7.2-beta**. It uses author schema 4 and optional
 integration bindings schema 1. Older author documents require a new manifest or
 re-import from a supported Modrinth or CurseForge archive; no schema converter is
 provided. Use the documentation at your
@@ -55,16 +55,10 @@ resolve dependencies and verify content before publication. Named build profiles
 select a consumer, dependency delivery, update authority and format. Use
 `empack build --explain` to inspect configured defaults before building. An installed instance records its owned files and optional choices separately from the authoring project.
 
-| Reference | Purpose |
-| --- | --- |
-| [Project automation](docs/design/automation.md) | Generated validation, release workflows and templates |
-| [Usage](docs/usage.md) | Author and installed-instance workflows |
-| [Consumer outputs](docs/design/builds.md) | Modrinth, CurseForge, Prism, server and native releases |
-| [Instance updates](docs/design/instances.md) | File ownership, user edits, repair and rollback |
-| [Publisher setup](docs/publishing.md) | Signing keys, static hosting and channel publication |
-| [Release trust](docs/design/releases.md) | Immutable releases, subscriptions and publisher authentication |
-| [Engine design](docs/design/architecture.md) | Interfaces, effects and runtime ownership |
-| [Verification](docs/testing.md) | Execution and consumer acceptance |
+User guides cover [commands and workflows](docs/usage.md),
+[running a server](docs/servers.md) and [publishing pack updates](docs/publishing.md).
+The [documentation index](docs/README.md) separates these guides from development
+references and engine contracts.
 
 ## Contributing and license
 

@@ -1,6 +1,6 @@
 # Verification
 
-The [acceptance contracts](design/verification.md) define v0.7.1-beta behavior.
+The [acceptance contracts](design/verification.md) define v0.7.2-beta behavior.
 Tests verify the checked-out implementation; a contract or test count is not evidence
 that an unwired capability works. Record run-specific results in CI and PRs.
 

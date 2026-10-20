@@ -215,8 +215,10 @@ asset evidence and generated start scripts. Java selection and EULA acceptance
 remain operator responsibilities. The installer never accepts the EULA automatically.
 
 Both deliveries place runtime files and selected game content under `game/`. Root
-`start.sh` and `start.bat` scripts enter that directory and preserve separate Java
-arguments, including historical JAR and loader argument-file launch forms. Put
+`start.sh` and `start.bat` scripts supply `nogui` after the runtime launch arguments.
+`start_gui.sh` and `start_gui.bat` omit it. Both variants preserve separate user
+arguments, including historical JAR and loader argument-file launch forms. Managed
+variants use the same preparation and subscription checks before launch. Put
 server configuration templates under `templates/server/game/`; launcher scripts
 remain at the distribution root.
 
@@ -271,7 +273,7 @@ Bundled snapshots already contain their payload; installation confirms that stat
 Reference or subscribed exports prepare their exact release through empack on PATH.
 Starting uses `JAVA_HOME/bin/java.exe` when configured, otherwise Java on PATH.
 
-Both batch entry points retain their console until a key is pressed and preserve the
+The installer and both start batch entry points retain their console until a key is pressed and preserve the
 operation’s exit code. Set `EMPACK_NO_PAUSE=1` for terminal automation and services.
 The start script suppresses the nested installer pause. Failures explain the required
 Java or empack prerequisite and direct the operator to the preceding output. Initial
