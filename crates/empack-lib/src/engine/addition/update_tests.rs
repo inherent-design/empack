@@ -93,7 +93,7 @@ fn transitive_update_requires_dependents_and_does_not_promote_temporary_roots() 
 fn update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities() {
     let current = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
     let mut intent = current.intent().clone();
-    intent.roots.get_mut(&key("root")).unwrap().version = VersionIntent::Exact(
+    intent.roots.get_mut(&key("root")).unwrap().selection = DependencySelection::ProviderPin(
         PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version1").unwrap()),
     );
     let source = DocumentCodec

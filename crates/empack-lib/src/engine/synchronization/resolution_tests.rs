@@ -65,7 +65,7 @@ fn changed_pin_resolution_retains_unrelated_exact_selections_and_authoring() {
         true,
     );
     let mut intent = current.intent().clone();
-    intent.roots.get_mut(&key("root")).unwrap().version = VersionIntent::Exact(
+    intent.roots.get_mut(&key("root")).unwrap().selection = DependencySelection::ProviderPin(
         PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version2").unwrap()),
     );
     let changed = fixture(

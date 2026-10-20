@@ -58,7 +58,7 @@ impl SynchronizationCandidate {
         keys: &empack_core::model::NonEmpty<empack_core::model::DependencyKey>,
         pinned: bool,
     ) -> Result<Self> {
-        use empack_core::model::{SourceIntent, VersionIntent};
+        use empack_core::model::{DependencySelection, SourceIntent};
         let current = prior.bind(source)?;
         let mut intent = current.intent().clone();
         let mut unique = std::collections::BTreeSet::new();
@@ -77,7 +77,7 @@ impl SynchronizationCandidate {
                 key.as_str()
             );
             if pinned {
-                root.version = VersionIntent::Exact(
+                root.selection = DependencySelection::ProviderPin(
                     selected
                         .selected
                         .as_ref()
@@ -88,7 +88,7 @@ impl SynchronizationCandidate {
                 // An automatic override would be inapplicable beside an exact pin.
                 root.releases = None;
             } else {
-                root.version = VersionIntent::FollowCompatible;
+                root.selection = DependencySelection::Automatic;
             }
         }
         let document = DocumentCodec.replace_intent(source, &intent)?;
@@ -128,7 +128,7 @@ impl SynchronizationCandidate {
                     "Migration replacements require explicit provider identities"
                 );
                 root.source = next.source.clone();
-                root.version = empack_core::model::VersionIntent::FollowCompatible;
+                root.selection = empack_core::model::DependencySelection::Automatic;
             }
         }
         ensure!(
@@ -294,8 +294,8 @@ mod tests {
             if runtime {
                 desired.runtime.minecraft = GameVersion::parse("1.21.1").unwrap();
             } else {
-                desired.roots.values_mut().next().unwrap().version =
-                    VersionIntent::Exact(PinSelector::ModrinthVersion(
+                desired.roots.values_mut().next().unwrap().selection =
+                    DependencySelection::ProviderPin(PinSelector::ModrinthVersion(
                         empack_core::identity::ModrinthVersionId::parse("Version2").unwrap(),
                     ));
             }

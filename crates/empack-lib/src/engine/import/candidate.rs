@@ -312,12 +312,12 @@ impl VerifiedImportContent {
                         expected,
                     )
                 };
-            let version = if let Some(pin) = &selection {
-                VersionIntent::Exact(pin.selection.clone())
+            let selection_policy = if let Some(pin) = &selection {
+                DependencySelection::ProviderPin(pin.selection.clone())
             } else if let Some(digests) = &expected.digests {
-                VersionIntent::ContentPinned(digests.clone())
+                DependencySelection::ContentAssertions(digests.clone())
             } else {
-                VersionIntent::FollowCompatible
+                DependencySelection::Automatic
             };
             let file = ResolvedFile {
                 slot: slot.clone(),
@@ -377,7 +377,7 @@ impl VerifiedImportContent {
                         releases: None,
                         source: source_intent,
                         kind: decision.kind,
-                        version,
+                        selection: selection_policy,
                         placement: PlacementIntent::ByFile(BTreeMap::from([(
                             file.slot.clone(),
                             NonEmpty::new(vec![placement])?,

@@ -107,6 +107,24 @@ pub(super) fn input(
     } else {
         required()
     };
+    // A file already inside the checkout remains an authored source. External inputs
+    // are copied into managed project storage so the manifest stays portable.
+    let source = if let DirectFileSource::Local(path) = source {
+        let (_, project) = project_path(session)?;
+        if let Ok(relative) = path.strip_prefix(&project) {
+            let source = PortableRelPath::parse(
+                relative
+                    .to_str()
+                    .context("Local source path is not UTF-8")?,
+                PathSyntax::ProjectContent,
+            )?;
+            DirectFileSource::TrackedLocal { path, source }
+        } else {
+            DirectFileSource::Local(path)
+        }
+    } else {
+        source
+    };
     let key = Path::new(&filename)
         .file_stem()
         .and_then(|stem| stem.to_str())

@@ -646,11 +646,11 @@ fn normalize(
                     },
                     source: source.expect("Explicit provider root has authored source"),
                     kind: selected.kind,
-                    version: root
+                    selection: root
                         .pin
                         .clone()
-                        .map(VersionIntent::Exact)
-                        .unwrap_or(VersionIntent::FollowCompatible),
+                        .map(DependencySelection::ProviderPin)
+                        .unwrap_or(DependencySelection::Automatic),
                     placement: if selected.kind == ContentKind::World {
                         PlacementIntent::ArchiveRoot(worlds[id].roots.clone())
                     } else if root.folder.is_some() || !matches!(root.files, ProviderFiles::Primary)

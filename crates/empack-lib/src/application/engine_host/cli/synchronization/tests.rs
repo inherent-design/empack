@@ -58,7 +58,7 @@ async fn missing_and_changed_intent_resolve_local_bytes_without_losing_authored_
                         .unwrap(),
                 ),
                 kind: ContentKind::Config,
-                version: VersionIntent::FollowCompatible,
+                selection: DependencySelection::Automatic,
                 placement: placed("config/settings.toml"),
                 requirements: required(),
             },
@@ -105,7 +105,7 @@ async fn missing_and_changed_intent_resolve_local_bytes_without_losing_authored_
                 .is_err()
         );
         assert_eq!(snapshot(root.path()), drifted);
-        intent.roots.get_mut(&key).unwrap().version = VersionIntent::ContentPinned(
+        intent.roots.get_mut(&key).unwrap().selection = DependencySelection::ContentAssertions(
             DigestSet::new(vec![ExpectedDigest::Sha256(
                 Sha256::digest(b"enabled = false").into(),
             )])
@@ -155,7 +155,7 @@ async fn fresh_provider_sync_keeps_followed_pin_for_placement_edits_then_applies
                 ModrinthProjectId::parse("Root0001").unwrap(),
             )),
             kind: ContentKind::Mod,
-            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+            selection: DependencySelection::ProviderPin(PinSelector::ModrinthVersion(
                 ModrinthVersionId::parse("RootVer1").unwrap(),
             )),
             placement: PlacementIntent::Automatic,
@@ -167,7 +167,7 @@ async fn fresh_provider_sync_keeps_followed_pin_for_placement_edits_then_applies
     let first = project(root.path()).lock().dependencies[&key]
         .selected
         .clone();
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::Automatic;
     intent.roots.get_mut(&key).unwrap().placement = placed("mods/custom-name.jar");
     write_intent(root.path(), &intent);
     sync(root.path(), &server.url(), false).await.unwrap();
@@ -191,7 +191,7 @@ async fn fresh_provider_sync_keeps_followed_pin_for_placement_edits_then_applies
     assert!(format!("{error:#}").contains("assertions changed"));
     assert_eq!(snapshot(root.path()), before_failure);
     changed_assertions.assert_async().await;
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::Exact(
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::ProviderPin(
         PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap()),
     );
     write_intent(root.path(), &intent);
@@ -231,7 +231,7 @@ async fn failed_fresh_batch_retains_documents_and_payloads() {
                         .unwrap(),
                 ),
                 kind: ContentKind::Config,
-                version: VersionIntent::FollowCompatible,
+                selection: DependencySelection::Automatic,
                 placement: placed(&format!("config/{name}.toml")),
                 requirements: required(),
             },
@@ -265,7 +265,7 @@ async fn authored_local_sources_cannot_traverse_symlinked_ancestors() {
                 PortableRelPath::parse("linked/settings.toml", PathSyntax::ProjectContent).unwrap(),
             ),
             kind: ContentKind::Config,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: placed("config/settings.toml"),
             requirements: required(),
         },
@@ -308,7 +308,7 @@ async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source(
                 PortableRelPath::parse("seed.toml", PathSyntax::ProjectContent).unwrap(),
             ),
             kind: ContentKind::Config,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: placed("config/settings.toml"),
             requirements: required(),
         };
@@ -430,7 +430,7 @@ async fn materialization_verifies_the_whole_batch_without_updating_pins_or_previ
                     ModrinthProjectId::parse(id).unwrap(),
                 )),
                 kind: ContentKind::Mod,
-                version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                selection: DependencySelection::ProviderPin(PinSelector::ModrinthVersion(
                     ModrinthVersionId::parse(version).unwrap(),
                 )),
                 placement: PlacementIntent::Automatic,
@@ -603,7 +603,7 @@ async fn automatic_layout_changes_move_content_while_explicit_placements_remain_
                     PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
                 ),
                 kind: ContentKind::Config,
-                version: VersionIntent::FollowCompatible,
+                selection: DependencySelection::Automatic,
                 placement,
                 requirements: required(),
             },
@@ -705,7 +705,7 @@ async fn removing_an_accepted_game_version_requires_fresh_provider_resolution() 
                 ModrinthProjectId::parse("Root0001").unwrap(),
             )),
             kind: ContentKind::Mod,
-            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+            selection: DependencySelection::ProviderPin(PinSelector::ModrinthVersion(
                 ModrinthVersionId::parse("RootVer1").unwrap(),
             )),
             placement: PlacementIntent::Automatic,
@@ -722,7 +722,7 @@ async fn removing_an_accepted_game_version_requires_fresh_provider_resolution() 
         "a now-incompatible explicit pin cannot be silently replaced"
     );
     assert_eq!(snapshot(root.path()), pinned);
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::Automatic;
     write_intent(root.path(), &intent);
     sync(root.path(), &server.url(), false).await.unwrap();
     assert_eq!(
@@ -780,7 +780,7 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
                     SourceIntent::Local(path.clone())
                 },
                 kind: ContentKind::Config,
-                version: VersionIntent::FollowCompatible,
+                selection: DependencySelection::Automatic,
                 placement: if grouped {
                     let PlacementIntent::Explicit(places) = placed("config/settings.toml") else {
                         unreachable!()
@@ -885,7 +885,7 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
                 PortableRelPath::parse("seed/settings.toml", PathSyntax::ProjectContent).unwrap(),
             )])),
             kind: ContentKind::Config,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: PlacementIntent::ByFile(BTreeMap::from([(role.clone(), local_places)])),
             requirements: required(),
         },
@@ -898,7 +898,7 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
                 NonEmpty::new(vec!["https://example.invalid/settings.toml".into()]).unwrap(),
             ),
             kind: ContentKind::Config,
-            version: VersionIntent::FollowCompatible,
+            selection: DependencySelection::Automatic,
             placement: PlacementIntent::ByFile(BTreeMap::from([(role.clone(), url_places)])),
             requirements: required(),
         },
@@ -1036,7 +1036,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
                 releases: None,
                 source: SourceIntent::Provider(identity.clone()),
                 kind: ContentKind::Mod,
-                version: VersionIntent::Exact(pin.selection.clone()),
+                selection: DependencySelection::ProviderPin(pin.selection.clone()),
                 placement: PlacementIntent::Explicit(NonEmpty::new(vec![place.clone()]).unwrap()),
                 requirements: required(),
             },
@@ -1331,7 +1331,7 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
             source: SourceIntent::ProviderSelector(request.clone()),
             releases: None,
             kind: ContentKind::Mod,
-            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+            selection: DependencySelection::ProviderPin(PinSelector::ModrinthVersion(
                 ModrinthVersionId::parse("RootVer1").unwrap(),
             )),
             placement: PlacementIntent::Automatic,
@@ -1407,8 +1407,8 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     .await
     .unwrap();
     assert!(matches!(
-        project(root.path()).intent().roots[&renamed].version,
-        VersionIntent::FollowCompatible
+        project(root.path()).intent().roots[&renamed].selection,
+        DependencySelection::Automatic
     ));
     assert_eq!(project(root.path()).lock().dependencies, exact);
     execute_command_with_session(

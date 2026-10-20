@@ -387,8 +387,8 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             empack_core::model::SourceIntent::Provider(_)
         ));
         assert!(matches!(
-            resolved.intent().roots.values().next().unwrap().version,
-            empack_core::model::VersionIntent::Exact(_)
+            resolved.intent().roots.values().next().unwrap().selection,
+            empack_core::model::DependencySelection::ProviderPin(_)
         ));
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
@@ -449,7 +449,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
     let recorded = project(root.path());
     let key = recorded.intent().roots.keys().next().unwrap().clone();
     let mut intent = recorded.intent().clone();
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::Automatic;
     intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::Explicit(
         recorded.lock().dependencies[&key].files.as_slice()[0]
             .placements
@@ -1359,7 +1359,8 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
             .bytes(),
     );
     let digests = empack_core::digest::DigestSet::new(vec![digest]).unwrap();
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::ContentPinned(digests.clone());
+    intent.roots.get_mut(&key).unwrap().selection =
+        DependencySelection::ContentAssertions(digests.clone());
     let mut files = lock.dependencies[&key].files.as_slice().to_vec();
     files[0].expected.digests = Some(digests);
     lock.dependencies.get_mut(&key).unwrap().files = NonEmpty::new(files).unwrap();
@@ -1478,7 +1479,7 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     let recorded = project(root.path());
     let key = recorded.intent().roots.keys().next().unwrap().clone();
     let mut intent = recorded.intent().clone();
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::Automatic;
     crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronize(&session(root.path(), false), false)
         .await
@@ -1841,7 +1842,7 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         place.destination = empack_core::path::InstallDestination::parse("mods/menu.jar").unwrap();
         let places = NonEmpty::new(vec![place]).unwrap();
         let authored = intent.roots.get_mut(&key).unwrap();
-        authored.version = VersionIntent::FollowCompatible;
+        authored.selection = DependencySelection::Automatic;
         authored.releases = Some(ReleasePolicy::Any);
         authored.placement = if by_role {
             PlacementIntent::ByFile(BTreeMap::from([(

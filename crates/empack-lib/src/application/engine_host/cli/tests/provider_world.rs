@@ -153,7 +153,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     }
     // Unpin through authored intent, reconcile without upgrading, then explicitly update.
     let mut intent = project(root.path()).intent().clone();
-    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    intent.roots.get_mut(&key).unwrap().selection = DependencySelection::Automatic;
     crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     synchronization::synchronize_with_services(
         &session(root.path(), false),
@@ -454,7 +454,7 @@ async fn fresh_provider_world_sync_retains_interpreted_bytes_and_previews_withou
                 empack_core::identity::CurseForgeProjectId::parse("42").unwrap(),
             )),
             kind: ContentKind::World,
-            version: VersionIntent::Exact(PinSelector::CurseForgeFile(
+            selection: DependencySelection::ProviderPin(PinSelector::CurseForgeFile(
                 CurseForgeFileId::parse("456").unwrap(),
             )),
             placement: PlacementIntent::Automatic,

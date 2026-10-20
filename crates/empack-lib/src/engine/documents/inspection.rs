@@ -62,8 +62,8 @@ impl DocumentCodec {
                         .or_else(|| locked.and_then(|locked| match &locked.identity { ResolvedIdentity::Provider(id) => Some(provider_value(id)), _ => None })),
                     source_binding_current: root.filter(|root| matches!(root.source, SourceIntent::ProviderSelector(_))).map(|root| root.source.canonical_project(locked).is_some()),
                     locked_selection: locked.and_then(|locked| locked.selected.as_ref()).map(|selected| pin_value(&selected.selection)),
-                    release_policy: root.filter(|root| !matches!(root.version, VersionIntent::Exact(_)) && matches!(root.source, SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_) | SourceIntent::Search { .. })).map(|_| intent.release_policy(Some(&key), None).as_str()),
-                    policy_origin: root.filter(|root| !matches!(root.version, VersionIntent::Exact(_)) && matches!(root.source, SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_) | SourceIntent::Search { .. })).map(|root| if root.releases.is_some() { "dependency" } else { if project_policy_authored { "project" } else { "schema-default" } }),
+                    release_policy: root.filter(|root| !matches!(root.selection, DependencySelection::ProviderPin(_)) && matches!(root.source, SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_) | SourceIntent::Search { .. })).map(|_| intent.release_policy(Some(&key), None).as_str()),
+                    policy_origin: root.filter(|root| !matches!(root.selection, DependencySelection::ProviderPin(_)) && matches!(root.source, SourceIntent::Provider(_) | SourceIntent::ProviderSelector(_) | SourceIntent::Search { .. })).map(|root| if root.releases.is_some() { "dependency" } else { if project_policy_authored { "project" } else { "schema-default" } }),
                     selection_satisfied: validation.as_ref().map(Result::is_ok),
                     reason: validation.and_then(Result::err).map(|error| error.to_string()).or_else(|| root.is_none().then(|| "Retained lock entry; absence from roots is not deletion authority".into())),
                 }
@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(report.lock_status, "stale");
         assert_eq!(report.dependencies[0].selection_satisfied, Some(true));
         assert_eq!(report.runtime_satisfied, Some(true));
-        intent.roots.values_mut().next().unwrap().version = VersionIntent::Exact(
+        intent.roots.values_mut().next().unwrap().selection = DependencySelection::ProviderPin(
             PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version2").unwrap()),
         );
         let changed = DocumentCodec

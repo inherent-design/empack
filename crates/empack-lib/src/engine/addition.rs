@@ -285,7 +285,7 @@ pub(in crate::engine) mod tests {
                     ))
                 }
                 "pin" => {
-                    root.version = VersionIntent::Exact(
+                    root.selection = DependencySelection::ProviderPin(
                         ProviderProjectId::Modrinth(ModrinthProjectId::parse("ProjectA").unwrap())
                             .parse_pin("VersionB")
                             .unwrap(),
@@ -312,7 +312,7 @@ pub(in crate::engine) mod tests {
             );
         }
         let mut intent = resolved.intent().clone();
-        intent.roots.get_mut(&key("root")).unwrap().version = VersionIntent::Exact(
+        intent.roots.get_mut(&key("root")).unwrap().selection = DependencySelection::ProviderPin(
             resolved.lock().dependencies[&key("root")]
                 .selected
                 .as_ref()
@@ -616,7 +616,8 @@ pub(in crate::engine) mod tests {
             .unwrap()
             .selection
             .clone();
-        intent.roots.get_mut(&key("alias")).unwrap().version = VersionIntent::Exact(pin.clone());
+        intent.roots.get_mut(&key("alias")).unwrap().selection =
+            DependencySelection::ProviderPin(pin.clone());
         let decoded = DocumentCodec
             .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "fixture")
             .unwrap();
@@ -625,8 +626,8 @@ pub(in crate::engine) mod tests {
         let request = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
         let result = candidate(&current, &request).unwrap();
         assert_eq!(
-            result.project().intent().roots[&key("existing")].version,
-            VersionIntent::Exact(pin)
+            result.project().intent().roots[&key("existing")].selection,
+            DependencySelection::ProviderPin(pin)
         );
         assert!(!result.project().intent().roots.contains_key(&key("alias")));
         assert_eq!(result.plan().changed(), &BTreeSet::from([key("existing")]));

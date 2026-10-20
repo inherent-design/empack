@@ -63,7 +63,7 @@ pub fn with_provider(name: &str, pin: ResolvedPin) -> TestProject {
             releases: None,
             source: SourceIntent::Provider(identity.clone()),
             kind: ContentKind::ResourcePack,
-            version: VersionIntent::Exact(pin.selection.clone()),
+            selection: DependencySelection::ProviderPin(pin.selection.clone()),
             placement: PlacementIntent::Explicit(placements.clone()),
             requirements,
         },

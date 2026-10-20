@@ -204,16 +204,16 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
         !direct_url || digests.is_some(),
         "Direct URLs require sha256 or digests"
     );
-    let version = if let Some(pin) = pin {
+    let selection = if let Some(pin) = pin {
         let id = text(&pin)?;
-        json!({"mode":"exact","pin":{"provider":if source["kind"]=="provider" {source["identity"]["provider"].clone()} else {source["request"]["provider"].clone()},"id":id}})
+        json!({"mode":"provider-pin","pin":{"provider":if source["kind"]=="provider" {source["identity"]["provider"].clone()} else {source["request"]["provider"].clone()},"id":id}})
     } else if let Some(digests) = digests {
-        json!({"mode":"content-pinned","digests":digests})
+        json!({"mode":"content-assertions","digests":digests})
     } else {
-        json!({"mode":"follow-compatible"})
+        json!({"mode":"automatic"})
     };
     map.insert("source".into(), source);
-    map.insert("version".into(), version);
+    map.insert("selection".into(), selection);
     let kind = map.remove("type").unwrap_or(json!("mod"));
     map.insert("content".into(), kind);
     map.entry("placement").or_insert(json!("automatic"));
@@ -298,13 +298,13 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
         if content != "mod" {
             map.insert("type".into(), content);
         }
-        let version = map.remove("version").unwrap();
-        match version["mode"].as_str().unwrap() {
-            "exact" => {
-                map.insert("pin".into(), version["pin"]["id"].clone());
+        let selection = map.remove("selection").unwrap();
+        match selection["mode"].as_str().unwrap() {
+            "provider-pin" => {
+                map.insert("pin".into(), selection["pin"]["id"].clone());
             }
-            "content-pinned" => {
-                let digests = &version["digests"];
+            "content-assertions" => {
+                let digests = &selection["digests"];
                 if object(digests)?.len() == 1 && digests.get("sha256").is_some() {
                     map.insert("sha256".into(), digests["sha256"].clone());
                 } else {
@@ -329,7 +329,7 @@ pub(super) fn compact(mut value: Value) -> Result<Value> {
             "local" => {
                 map.insert("path".into(), source["path"].clone());
             }
-            "url" if version["mode"] == "content-pinned" => {
+            "url" if selection["mode"] == "content-assertions" => {
                 let downloads = array(&source["downloads"])?;
                 map.insert("url".into(), downloads[0].clone());
                 if downloads.len() > 1 {
@@ -449,8 +449,8 @@ mod tests {
         let source = decode(&value).unwrap();
         let roots = &source.intent().roots;
         assert!(matches!(
-            roots[&DependencyKey::parse("menu").unwrap()].version,
-            VersionIntent::Exact(_)
+            roots[&DependencyKey::parse("menu").unwrap()].selection,
+            DependencySelection::ProviderPin(_)
         ));
         assert!(
             matches!(&roots[&DependencyKey::parse("local").unwrap()].source, SourceIntent::Local(path) if path.as_str()=="vendor/custom.jar")

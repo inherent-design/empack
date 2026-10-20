@@ -237,7 +237,7 @@ async fn acquired_local_and_url_files_preserve_placement_requirements_and_sync_c
         assert_eq!(addition.project().lock().coverage[&key], Coverage::Unknown);
         assert_eq!(dependency.files.as_slice()[0].expected, declared());
         assert!(
-            matches!(&root_intent.version, VersionIntent::ContentPinned(value) if Some(value) == declared().digests.as_ref())
+            matches!(&root_intent.selection, DependencySelection::ContentAssertions(value) if Some(value) == declared().digests.as_ref())
         );
         let target = "overrides/client/resourcepacks/chosen-name.zip";
         if mode != "url" {
@@ -355,8 +355,8 @@ async fn accepted_observation_does_not_become_declared_authenticity() {
             .values()
             .next()
             .unwrap()
-            .version,
-        VersionIntent::FollowCompatible
+            .selection,
+        DependencySelection::Automatic
     );
     drop(outcome);
     assert_eq!(governor.status().reserved, ResourceRequest::default());

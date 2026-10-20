@@ -256,14 +256,14 @@ impl FileAddition {
                 releases: None,
                 source,
                 kind: input.kind,
-                version: if input.role.member().is_some() {
-                    VersionIntent::FollowCompatible
+                selection: if input.role.member().is_some() {
+                    DependencySelection::Automatic
                 } else {
                     expected
                         .digests
                         .clone()
-                        .map(VersionIntent::ContentPinned)
-                        .unwrap_or(VersionIntent::FollowCompatible)
+                        .map(DependencySelection::ContentAssertions)
+                        .unwrap_or(DependencySelection::Automatic)
                 },
                 placement: match &input.role {
                     FileInputRole::Named(slot) | FileInputRole::Member(slot) => {
@@ -280,7 +280,7 @@ impl FileAddition {
                 ensure!(
                     existing.kind == next_root.kind
                         && existing.requirements == next_root.requirements
-                        && existing.version == next_root.version,
+                        && existing.selection == next_root.selection,
                     "Member group declarations disagree"
                 );
                 let (SourceIntent::LocalFiles(prior), SourceIntent::LocalFiles(next)) =

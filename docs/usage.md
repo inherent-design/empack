@@ -245,9 +245,18 @@ cause an inherited environment value to override a supplied command-line value.
 
 ## Native release example
 
-Set stable native publication identity and runtime requirements in `empack.yml`:
+Set stable pack identity and runtime requirements in `empack.yml`:
 
 ```yaml
+schema: 5
+pack:
+  id: my-pack
+  name: My Pack
+  version: "Autumn Update"
+runtime:
+  minecraft: "1.21.1"
+  loader: neoforge
+  java: 21
 build:
   default: [native]
   profiles:
@@ -257,14 +266,18 @@ build:
       environment: both
       updates: snapshot
       format: zip
-  native:
-    pack-id: my-pack
-    java-major: 21
-    policies:
-      config/server-defaults.toml: seed
 sources:
   exclude:
     - private/**
+```
+
+For custom installation policy, add `empack.bindings.yml`:
+
+```yaml
+schema: 1
+bindings: {}
+policies:
+  config/server-defaults.toml: seed
 ```
 
 `empack build --profile native` writes

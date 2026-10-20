@@ -22,6 +22,16 @@ dependencies. Architecture checks keep `empack-core` free of I/O/runtime depende
 cargo nextest run -p empack-lib --lib --no-default-features
 ```
 
+After building the executable, compare the editor schemas with the actual CLI:
+
+```sh
+uv run scripts/check-authoring-schema.py target/debug/empack
+```
+
+This exercises accepted and rejected authoring forms without creating host state or
+cache storage. JSON Schema checks complement composed domain validation; they do not
+replace it.
+
 Formatting and Clippy apply to all targets/features. Native filesystem/process
 claims require real temporary roots and OS primitives; pure planner tests cannot
 prove link handling, locks or crash durability.

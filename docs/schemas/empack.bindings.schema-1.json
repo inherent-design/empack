@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inherent.design/empack/schemas/empack.bindings.schema-1.json",
+  "title": "Empack integration bindings schema 1",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "empack.schema-5.json#/$defs/binding"
+      }
+    },
+    "policies": {
+      "$ref": "empack.schema-5.json#/$defs/policies"
+    }
+  },
+  "required": [
+    "schema",
+    "bindings"
+  ],
+  "additionalProperties": false
+}

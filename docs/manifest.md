@@ -62,8 +62,11 @@ that restriction without selecting a newer file. Pinning removes a dependency's
 Unpinning uses the project preference unless you add an override again. Human version names are display
 labels, not dependency ranges.
 
-A local `path` is the source file, not its installed destination. Use `adopt` to
-accept deliberate changed bytes. A direct `url` requires expected content evidence:
+A local `path` is the source file, not its installed destination. `add` retains a
+file already inside the author checkout at that source path; an external file is
+copied into project storage to keep the declaration portable. World archive imports
+retain interpreted members as their own sources. Use `adopt` to accept deliberate
+changed bytes. A direct `url` requires expected content evidence:
 
 ```yaml
 textures:
@@ -119,3 +122,16 @@ Commands preserve unrelated comments and ordering. If an edited YAML value uses
 anchors, flow collections or multiline syntax that cannot be changed safely, expand
 that value into a block mapping and retry. Empack reports the unsupported edit instead
 of silently reformatting the whole file.
+
+## Editor completion
+
+The repository includes [author schema 5](schemas/empack.schema-5.json) and
+[bindings schema 1](schemas/empack.bindings.schema-1.json) as JSON Schemas. Configure
+your YAML editor to associate these local files with `empack.yml` and
+`empack.bindings.yml`. Keep both schemas in the same directory so their references
+resolve without a network request.
+
+Editor checks cover syntax, supported fields and source-specific options. Run
+`empack manifest check` for cross-document references, shared optional choices,
+portable paths and effective runtime/profile validation. Neither editor validation
+nor manifest inspection verifies downloaded bytes or provider compatibility.
