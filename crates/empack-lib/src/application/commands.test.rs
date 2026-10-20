@@ -542,7 +542,7 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
 #[tokio::test]
 async fn native_export_to_install_preserves_layers_and_uses_author_source_policy() {
     use crate::{application::cli::InstanceCommand, engine::release::DecodedRelease};
-    use empack_core::model::{NativeDistributionIntent, ResolvedProject};
+    use empack_core::model::ResolvedProject;
     let root = tempfile::tempdir().unwrap();
     let selected = session(root.path(), true, false);
     let mod_bytes = jar(root.path());
@@ -554,11 +554,9 @@ async fn native_export_to_install_preserves_layers_and_uses_author_source_policy
         .unwrap();
     let project = resolved(root.path());
     let mut intent = project.intent().clone();
-    intent.distribution.native = Some(NativeDistributionIntent {
-        pack_id: "native-dispatch".into(),
-        java_major: 21,
-        policies: Default::default(),
-    });
+    intent.metadata.id = "native-dispatch".into();
+    intent.runtime.java_major = 21;
+    intent.installation_policies = Default::default();
     intent.source_excludes = vec![
         "*.pw.toml".into(),
         "pack.toml".into(),

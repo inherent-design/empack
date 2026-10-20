@@ -18,7 +18,7 @@ spec.loader.exec_module(ci)
 
 class ProjectAutomation(unittest.TestCase):
     def report(self):
-        return {'schema': 1, 'pack': 'Pack With Spaces', 'version': '1.2.3-beta',
+        return {'schema': 2, 'pack_id': 'fixture', 'pack': 'Pack With Spaces', 'version': '1.2.3-beta',
                 'lock': 'current', 'profiles': [
                     {'name': 'launcher profile', 'output': 'dist/Pack With Spaces-prism.zip'},
                     {'name': 'modrinth', 'output': 'dist/Pack With Spaces.mrpack'}]}

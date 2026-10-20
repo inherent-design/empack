@@ -102,6 +102,8 @@ as fixed snapshots in ZIP archives. Expanded profiles override individual option
 `empack build --explain` displays the exact selected recipes. Omit `build` until you
 need outputs. The pack ID stays unchanged across renames and release labels.
 `runtime.java` declares a minimum Java major, not compatibility with every newer JVM.
+Initialization uses 21 unless you select `init --java MAJOR`; choose a value appropriate
+for your Minecraft and loader combination.
 
 Use `empack manifest check` for local validation, `manifest explain menu` for an
 effective dependency view, and `manifest diff` to inspect authoring changes against

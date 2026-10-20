@@ -82,17 +82,16 @@ pub(super) fn encoding_memory(project: &ResolvedProject) -> Result<u64> {
     for rule in &intent.source_excludes {
         size.text(rule)?;
     }
-    if let Some(native) = &intent.distribution.native {
-        size.nodes(4)?;
-        size.text(&native.pack_id)?;
-        for path in native.policies.keys() {
-            size.text(path.as_str())?;
-            size.nodes(1)?;
-        }
+    size.text(&intent.metadata.id)?;
+    for path in intent.installation_policies.keys() {
+        size.text(path.as_str())?;
+        size.nodes(1)?;
     }
     size.text(&intent.metadata.name)?;
     size.text(&intent.metadata.version)?;
-    size.optional(intent.metadata.author.as_deref())?;
+    for author in &intent.metadata.authors {
+        size.text(author)?;
+    }
     size.optional(intent.metadata.description.as_deref())?;
     size.text(intent.runtime.minecraft.as_str())?;
     size.optional(

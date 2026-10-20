@@ -1028,10 +1028,12 @@ async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCa
                     .into_candidate(
                         &mut scope,
                         ImportCandidateOptions {
+                            java_major: 21,
                             metadata: PackMetadata {
+                                id: "test-pack".into(),
                                 name: "Imported".into(),
                                 version: "1".into(),
-                                author: None,
+                                authors: (None).into_iter().collect(),
                                 description: None,
                             },
                             loader: None,

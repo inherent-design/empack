@@ -9,7 +9,7 @@ user-owned; installing a newer empack executable does not replace them.
 | Input | Default | Contract |
 | --- | --- | --- |
 | `EMPACK_VERSION` | Initializing release tag | Download the Linux x86-64 release executable and verify its GitHub asset SHA-256 digest before execution. Missing digest evidence fails installation. |
-| `EMPACK_PROFILES` | Empty | Select `distribution.defaults`; otherwise select the named profiles, one per line. |
+| `EMPACK_PROFILES` | Empty | Select `build.default`; otherwise select the named profiles, one per line. |
 | `JAVA_VERSION` | `21` | Provision Temurin for server preparation. Authors select the Java version their Minecraft and loader require. |
 | Optional files | Authored defaults | Pass `--optional-defaults` to explanation and execution. |
 | Release tag | `v` plus authored version | Reject a mismatch before acquiring build inputs. |

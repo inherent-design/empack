@@ -36,21 +36,16 @@ pub struct NativeReleaseOptions {
 }
 impl NativeReleaseOptions {
     pub fn from_project(project: &ResolvedProject) -> Result<Self> {
-        let native = project
-            .intent()
-            .distribution
-            .native
-            .as_ref()
-            .context("Native distribution requires distribution.native settings")?;
+        let intent = project.intent();
         Ok(Self {
             require_subscription: false,
-            pack: native.pack_id.clone(),
+            pack: intent.metadata.id.clone(),
             minimum_engine: ">=0.7.0-beta".into(),
-            java_major: native.java_major,
+            java_major: intent.runtime.java_major,
             delivery: Delivery::References,
             environments: Environments::Both,
-            policies: native
-                .policies
+            policies: intent
+                .installation_policies
                 .iter()
                 .map(|(p, policy)| {
                     (

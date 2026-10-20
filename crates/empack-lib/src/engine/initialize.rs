@@ -159,3 +159,17 @@ pub fn default_templates() -> BTreeMap<PortableRelPath, Vec<u8>> {
     })
     .collect()
 }
+
+/// Establish a portable pack identity once, independently of mutable display metadata.
+pub fn new_pack_id() -> Result<String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| anyhow::anyhow!("Cannot generate pack identity: {error}"))?;
+    Ok(format!(
+        "pack-{}",
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
+}

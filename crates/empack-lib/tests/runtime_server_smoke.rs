@@ -166,16 +166,14 @@ async fn package_runtime(
     let project = tempfile::tempdir()?;
     let host = tempfile::tempdir()?;
     let codec = DocumentCodec;
-    let mut intent = codec.decode_intent(b"schema: 4\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {profiles: {server: {consumer: server, delivery: bundled, environment: server, updates: snapshot, format: zip}}, defaults: [server]}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
+    let mut intent = codec.decode_intent(b"schema: 5\npack: {id: fixture, name: Runtime, version: test}\nruntime: {java: 21, minecraft: '1.20.1', loader: {kind: vanilla}}\nbuild: {profiles: {server: {target: server, delivery: bundled, environment: server, updates: snapshot, format: zip}}, default: [server]}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
     intent.runtime.minecraft = runtime.minecraft.clone();
     intent.runtime.loader = runtime.loader;
     intent.runtime.loader_version = runtime.loader_version.clone();
     if managed {
-        intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-            pack_id: "runtime.smoke".into(),
-            java_major: 21,
-            policies: Default::default(),
-        });
+        intent.metadata.id = "runtime.smoke".into();
+        intent.runtime.java_major = 21;
+        intent.installation_policies = Default::default();
     }
     let bytes = codec.encode_intent(&intent)?;
     let revision = codec

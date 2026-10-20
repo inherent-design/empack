@@ -728,12 +728,9 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
         .lock()
         .clone();
     let mut intent = old.intent().clone();
-    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-        pack_id: "budget.probe".into(),
-        java_major: 21,
-        policies: BTreeMap::new(),
-    });
-    let native = intent.distribution.native.take();
+    intent.metadata.id = "budget.probe".into();
+    intent.runtime.java_major = 21;
+    intent.installation_policies = BTreeMap::new();
     intent.distribution = empack_core::model::DistributionIntent::from_recipes(
         NonEmpty::new(vec![
             Recipe::MODRINTH,
@@ -745,7 +742,6 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
         .unwrap(),
         DistributionArchive::Zip,
     );
-    intent.distribution.native = native;
     let bytes = codec.encode_intent(&intent).unwrap();
     lock.intent_revision = codec
         .decode_intent(&bytes, "test")
@@ -934,17 +930,15 @@ async fn native_and_platform_cli_policies_select_distinct_outputs() {
 
 #[tokio::test]
 async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity() {
-    use empack_core::model::{BuildProfile, NativeDistributionIntent};
+    use empack_core::model::BuildProfile;
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let project = root.path().join("project");
     let source = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     let mut intent = source.intent().clone();
-    intent.distribution.native = Some(NativeDistributionIntent {
-        pack_id: "profile.fixture".into(),
-        java_major: 21,
-        policies: BTreeMap::new(),
-    });
+    intent.metadata.id = "profile.fixture".into();
+    intent.runtime.java_major = 21;
+    intent.installation_policies = BTreeMap::new();
     intent.distribution.profiles.insert(
         "prism".into(),
         BuildProfile {
@@ -954,7 +948,7 @@ async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity
             archive: DistributionArchive::Zip,
         },
     );
-    intent.distribution.defaults = NonEmpty::new(vec!["prism".into()]).unwrap();
+    intent.distribution.defaults = vec!["prism".into()];
     let configured = request(
         &intent,
         &BuildArgs {
@@ -1072,7 +1066,7 @@ async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity
     )
     .unwrap();
     let view = profiles::explain(&workspace, &args, &selected).unwrap();
-    assert_eq!(view["schema"], 1);
+    assert_eq!(view["schema"], 2);
     assert_eq!(view["lock"], "missing");
     assert_eq!(view["profiles"][0]["recipe"]["updates"], "snapshot");
     assert_eq!(view["profiles"][0]["origins"]["updates"], "cli-override");
@@ -1114,7 +1108,7 @@ async fn distinct_profile_formats_are_built_and_published_together() {
             },
         ),
     ]);
-    intent.distribution.defaults = NonEmpty::new(vec!["zip".into(), "tar".into()]).unwrap();
+    intent.distribution.defaults = vec!["zip".into(), "tar".into()];
     crate::testing::write_authoring(&project.join("empack.yml"), &intent).unwrap();
     let source = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     lock.intent_revision = source.semantic_revision();

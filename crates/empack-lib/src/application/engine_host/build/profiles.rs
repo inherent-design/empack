@@ -67,6 +67,10 @@ pub(super) fn select(intent: &ProjectIntent, args: &BuildArgs) -> Result<Vec<Sel
     };
     let mut seen = std::collections::BTreeSet::new();
     selected.retain(|item| seen.insert((item.name.clone(), item.origin)));
+    ensure!(
+        !selected.is_empty(),
+        "No default build profiles; select --profile NAME or --ad-hoc TARGET"
+    );
     for item in &mut selected {
         let recipe = item.profile.recipe;
         let delivery = match args.delivery.as_deref() {
@@ -118,7 +122,7 @@ pub(super) fn explain(
         let mut origins = BTreeMap::from([("consumer", selected.origin), ("delivery", selected.origin), ("environment", selected.origin), ("updates", selected.origin), ("format", selected.origin)]);
         for (field, changed) in [("delivery", args.delivery.is_some()), ("environment", args.environment.is_some()), ("updates", args.updates.is_some()), ("format", args.format.is_some())] { if changed { origins.insert(field, "cli-override"); } }
         if matches!(target.consumer(), Consumer::Modrinth | Consumer::CurseForge) { origins.insert("format", "consumer-required-zip"); }
-        json!({"name":selected.name,"selection":selected.origin,"recipe":crate::engine::documents::recipe::encode_profile(&BuildProfile { recipe: target, archive: output.archive }),"origins":origins,"output":format!("dist/{}",output.artifact.as_str()),"recipient_empack_required":recipient,"java":intent.distribution.native.as_ref().map(|n| json!({"minimum_major":n.java_major,"meaning":"declared native minimum; not a complete compatibility range"})),"runtime_preparation":if target.consumer()==Consumer::Prism { "Prism prepares client game/runtime files" } else if target.consumer()==Consumer::Server { "empack prepares server runtime; recipient supplies Java" } else { "consumer-defined" },"author_acquisition":"May require verified downloads even for references; not assessed by explanation"})
+        json!({"name":selected.name,"selection":selected.origin,"recipe":crate::engine::documents::recipe::encode_profile(&BuildProfile { recipe: target, archive: output.archive }),"origins":origins,"output":format!("dist/{}",output.artifact.as_str()),"recipient_empack_required":recipient,"java":json!({"minimum_major":intent.runtime.java_major,"meaning":"declared minimum; not a complete compatibility range"}),"runtime_preparation":if target.consumer()==Consumer::Prism { "Prism prepares client game/runtime files" } else if target.consumer()==Consumer::Server { "empack prepares server runtime; recipient supplies Java" } else { "consumer-defined" },"author_acquisition":"May require verified downloads even for references; not assessed by explanation"})
     }).collect::<Vec<_>>();
     let resolved = workspace.require_resolved();
     let manual = resolved.as_ref().ok().map(|project| {
@@ -149,7 +153,7 @@ pub(super) fn explain(
         } => json!({"mode":"resolve", "choices":choices, "use_defaults":use_defaults}),
     };
     Ok(
-        json!({"schema":1,"pack":intent.metadata.name,"version":intent.metadata.version,"profiles":profiles,"lock":if resolved.is_ok(){"current"} else if workspace.prior_lock().is_none(){"missing"}else{"stale"},"optional_policy":optional,"declared_manual_inputs":manual,"input_verification":"Not performed; unavailable provider downloads and cache contents remain unknown","native_settings_present":intent.distribution.native.is_some(),"clean":request.clean}),
+        json!({"schema":2,"pack_id":intent.metadata.id,"pack":intent.metadata.name,"version":intent.metadata.version,"profiles":profiles,"lock":if resolved.is_ok(){"current"} else if workspace.prior_lock().is_none(){"missing"}else{"stale"},"optional_policy":optional,"declared_manual_inputs":manual,"input_verification":"Not performed; unavailable provider downloads and cache contents remain unknown","clean":request.clean}),
     )
 }
 pub(super) fn text(report: &Value) -> String {

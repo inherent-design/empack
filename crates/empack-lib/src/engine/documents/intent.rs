@@ -12,6 +12,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
             "distribution",
             "extensions",
             "sources",
+            "installation-policies",
         ],
     )?;
     ensure!(
@@ -19,13 +20,16 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
         "Unsupported intent schema; expected {INTENT_SCHEMA}"
     );
     let pack = required(value, "pack")?;
-    fields(pack, &["name", "version", "author", "description"])?;
+    fields(pack, &["id", "name", "version", "authors", "description"])?;
     let runtime = required(value, "runtime")?;
-    fields(runtime, &["minecraft", "acceptable-versions", "loader"])?;
+    fields(
+        runtime,
+        &["minecraft", "acceptable-versions", "loader", "java"],
+    )?;
     let load = required(runtime, "loader")?;
     fields(load, &["kind", "version"])?;
     let distribution = required(value, "distribution")?;
-    fields(distribution, &["profiles", "defaults", "native"])?;
+    fields(distribution, &["profiles", "defaults"])?;
     let source_excludes = if let Some(sources) = value.get("sources") {
         fields(sources, &["exclude"])?;
         sources
@@ -36,51 +40,42 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
     } else {
         Vec::new()
     };
-    let native = distribution
-        .get("native")
-        .filter(|v| !v.is_null())
-        .map(|native| -> Result<NativeDistributionIntent> {
-            fields(native, &["pack-id", "java-major", "policies"])?;
-            let policies = native
-                .get("policies")
-                .map(|v| {
-                    object(v)?
-                        .iter()
-                        .map(|(k, v)| {
-                            let policy = match text(v)? {
-                                "managed" => empack_core::instance::FilePolicy::Managed,
-                                "seed" => empack_core::instance::FilePolicy::Seed,
-                                _ => bail!("Unknown native file policy"),
-                            };
-                            Ok((
-                                PortableRelPath::parse(k, PathSyntax::ProjectContent)?,
-                                policy,
-                            ))
-                        })
-                        .collect::<Result<BTreeMap<_, _>>>()
+    let installation_policies = value
+        .get("installation-policies")
+        .map(|v| {
+            object(v)?
+                .iter()
+                .map(|(k, v)| {
+                    let policy = match text(v)? {
+                        "managed" => empack_core::instance::FilePolicy::Managed,
+                        "seed" => empack_core::instance::FilePolicy::Seed,
+                        _ => bail!("Unknown installation file policy"),
+                    };
+                    Ok((
+                        PortableRelPath::parse(k, PathSyntax::ProjectContent)?,
+                        policy,
+                    ))
                 })
-                .transpose()?
-                .unwrap_or_default();
-            Ok(NativeDistributionIntent {
-                pack_id: text(required(native, "pack-id")?)?.into(),
-                java_major: u16::try_from(
-                    required(native, "java-major")?
-                        .as_u64()
-                        .context("Java major must be an integer")?,
-                )?,
-                policies,
-            })
+                .collect::<Result<BTreeMap<_, _>>>()
         })
-        .transpose()?;
+        .transpose()?
+        .unwrap_or_default();
     let intent = ProjectIntent {
         source_excludes,
+        installation_policies,
         metadata: PackMetadata {
+            id: text(required(pack, "id")?)?.into(),
             name: text(required(pack, "name")?)?.into(),
             version: text(required(pack, "version")?)?.into(),
-            author: optional_text(pack, "author")?,
+            authors: string_list(required(pack, "authors")?)?,
             description: optional_text(pack, "description")?,
         },
         runtime: RuntimeIntent {
+            java_major: u16::try_from(
+                required(runtime, "java")?
+                    .as_u64()
+                    .context("runtime.java must be an integer")?,
+            )?,
             minecraft: GameVersion::parse(text(required(runtime, "minecraft")?)?)?,
             acceptable_versions: runtime
                 .get("acceptable-versions")
@@ -117,7 +112,6 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
             .transpose()?
             .unwrap_or_default(),
         distribution: DistributionIntent {
-            native,
             profiles: object(required(distribution, "profiles")?)?
                 .iter()
                 .map(|(name, value)| {
@@ -128,7 +122,7 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
                     ))
                 })
                 .collect::<Result<_>>()?,
-            defaults: NonEmpty::new(string_list(required(distribution, "defaults")?)?)?,
+            defaults: string_list(required(distribution, "defaults")?)?,
         },
         extensions: value
             .get("extensions")
@@ -260,11 +254,12 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
         (key.as_str(), json!({"source":source,"content":kind_name(dep.kind),"version":version,"placement":placement,"environment":requirements_value(&dep.requirements)}))
     }).collect();
     json!({"schema":INTENT_SCHEMA,
-        "pack":{"name":intent.metadata.name,"version":intent.metadata.version,"author":intent.metadata.author,"description":intent.metadata.description},
-        "runtime":{"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
+        "pack":{"id":intent.metadata.id,"name":intent.metadata.name,"version":intent.metadata.version,"authors":intent.metadata.authors,"description":intent.metadata.description},
+        "runtime":{"java":intent.runtime.java_major,"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
         "dependencies":roots,
         "sources":{"exclude":intent.source_excludes},
         "layout":intent.layout.iter().map(|(k,v)| (kind_name(*k),v.as_str())).collect::<BTreeMap<_,_>>(),
-        "distribution":{"native":intent.distribution.native.as_ref().map(|native| json!({"pack-id":native.pack_id,"java-major":native.java_major,"policies":native.policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>() })),"profiles":intent.distribution.profiles.iter().map(|(name, value)| (name, recipe::encode_profile(value))).collect::<BTreeMap<_,_>>(),"defaults":intent.distribution.defaults.as_slice()},
+        "installation-policies":intent.installation_policies.iter().map(|(path,policy)|(path.as_str(),match policy {empack_core::instance::FilePolicy::Managed=>"managed",empack_core::instance::FilePolicy::Seed=>"seed"})).collect::<BTreeMap<_,_>>(),
+        "distribution":{"profiles":intent.distribution.profiles.iter().map(|(name, value)| (name, recipe::encode_profile(value))).collect::<BTreeMap<_,_>>(),"defaults":intent.distribution.defaults.as_slice()},
         "extensions":intent.extensions.iter().map(|(k,v)| (k,extension_value(v))).collect::<BTreeMap<_,_>>()})
 }

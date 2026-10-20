@@ -151,7 +151,7 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
         project.intent().layout[&ContentKind::World].as_str(),
         "saves"
     );
-    assert_eq!(project.intent().metadata.author.as_deref(), Some("Tester"));
+    assert_eq!(project.intent().metadata.authors, vec!["Tester".to_owned()]);
     assert_eq!(
         project
             .intent()

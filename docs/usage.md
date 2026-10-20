@@ -3,7 +3,7 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide follows the v0.7.2-beta CLI; `empack <command> --help` lists the installed options.
+This guide follows the v0.8.0-beta CLI; `empack <command> --help` lists the installed options.
 
 ## Workspace status
 
@@ -39,6 +39,11 @@ Minecraft will launch. `update` changes author dependency selections;
 | `build` | Produce explicitly selected consumer distributions |
 | `recover` | Inspect or finish/restore an interrupted publication |
 | `clean` | Retire explicitly owned artifacts, disposable cache or continuation |
+
+Initialization establishes `pack.id` once. `init --java MAJOR` declares the minimum
+recipient Java version (default 21); adjust it for your game and loader. A display
+name or version change preserves the pack ID. See the [manifest guide](manifest.md)
+for source-specific declarations and author-only projects.
 
 Modrinth public resolution needs no API key. For CurseForge, provide your client key
 through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version
@@ -130,21 +135,21 @@ A rollback changes managed pack content, not gameplay history.
 ## Distribution selection
 
 Define named output profiles in `empack.yml`. Each profile selects a consumer,
-delivery, environment, update owner and format. `distribution.defaults` selects
+delivery, environment, update owner and format. `build.default` selects
 which profiles a plain `empack build` builds together.
 
 ```yaml
-distribution:
-  defaults: [launcher]
+build:
+  default: [launcher]
   profiles:
     launcher:
-      consumer: prism
+      target: prism
       delivery: bundled
       environment: client
       updates: snapshot
       format: zip
     dedicated:
-      consumer: server
+      target: server
       delivery: bundled
       environment: server
       updates: snapshot
@@ -241,11 +246,11 @@ cause an inherited environment value to override a supplied command-line value.
 Set stable native publication identity and runtime requirements in `empack.yml`:
 
 ```yaml
-distribution:
-  defaults: [native]
+build:
+  default: [native]
   profiles:
     native:
-      consumer: empack
+      target: empack
       delivery: bundled
       environment: both
       updates: snapshot
@@ -387,7 +392,7 @@ in [the pending-input contract](design/pending.md). Existing `build --continue`,
 ## Generated GitHub workflows
 
 New projects include validation and release workflows plus `.github/scripts/empack-ci.py`.
-They build the profiles in `distribution.defaults`. Set `EMPACK_PROFILES` in both
+They build the profiles in `build.default`. Set `EMPACK_PROFILES` in both
 workflows to select explicit names, one per line. Both workflows apply authored optional
 defaults. Set `JAVA_VERSION` for your runtime; the generated value is `21`.
 

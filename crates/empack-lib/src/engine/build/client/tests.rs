@@ -17,11 +17,9 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
 fn fixture(root: &Path) -> BuildAcquisitions {
     let initial = project(false, false);
     let mut intent = initial.intent().clone();
-    intent.distribution.native = Some(empack_core::model::NativeDistributionIntent {
-        pack_id: "test.pack".into(),
-        java_major: 21,
-        policies: BTreeMap::new(),
-    });
+    intent.metadata.id = "test.pack".into();
+    intent.runtime.java_major = 21;
+    intent.installation_policies = BTreeMap::new();
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     put(
         root,

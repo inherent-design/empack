@@ -38,12 +38,18 @@ snapshot mrpacks report domain ineligibility without rejecting a valid archive.
 Tar/7z output is permitted for directory distributions where supported;
 it must not be advertised as a launcher-importable ZIP.
 
-Authored `distribution.profiles` maps portable names to complete recipes. Each
-profile contains `consumer`, `delivery`, `environment`, `updates` and `format`.
-`distribution.defaults` is a nonempty ordered list of distinct profile names.
-Unknown fields, missing defaults and unsupported policy combinations fail decoding.
+Authored `build.profiles` maps portable names to complete recipes. Each
+profile expands `target`, `delivery`, `environment`, `updates` and `format`.
+Prism and server string presets select bundled snapshot ZIP outputs.
+`build.default` is an ordered list of distinct profile names.
+Unknown fields, dangling default names and unsupported policy combinations fail decoding.
+Author-only projects may omit profiles and defaults; building then requires an
+explicit configured profile or an ad-hoc target.
 Names contain 1 to 64 ASCII letters, digits, hyphens or underscores. Profiles have
 no inheritance or implicit relationship to other profiles.
+
+Build explanation schema 2 includes `pack_id` and the project-owned Java minimum.
+Generated automation requires this version and a current lock.
 
 `build` selects the authored defaults. `build --profile NAME` selects that exact
 profile; it is repeatable. A consumer shorthand such as `build prism` selects the
@@ -116,8 +122,8 @@ release establishes exact content addresses before publication; source assertion
 remain separately recorded. Missing restricted bytes use the same saved build request
 and verified association mechanism as other consumers.
 
-`distribution.native` contains stable pack identity, Java requirements and destination
-ownership policies. Delivery belongs to each recipe. Reference and bundled artifacts
+`pack.id` supplies stable pack identity and `runtime.java` declares the recipient
+Java minimum. Integration bindings carry destination ownership policies. Delivery belongs to each recipe. Reference and bundled artifacts
 have distinct names and payload identities. A receipt reports the exact release JSON
 identity separately from the surrounding archive inventory. Optional choices remain
 in the release for installation; native-only builds reject materialization choices.

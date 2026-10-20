@@ -1,11 +1,11 @@
 use super::*;
 
 fn source() -> Value {
-    json!({"schema":4,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
-        "runtime":{"minecraft":"1.20.1","loader":{"kind":"neoforge","version":"47.1.106"}},
-        "distribution":{"profiles":{"modrinth":{"consumer":"modrinth","delivery":"references","environment":"both","updates":"snapshot","format":"7z"},"prism":{"consumer":"prism","delivery":"references","environment":"client","updates":"snapshot","format":"7z"},"server":{"consumer":"server","delivery":"references","environment":"server","updates":"snapshot","format":"7z"},"prism-4":{"consumer":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"7z"},"server-5":{"consumer":"server","delivery":"bundled","environment":"server","updates":"snapshot","format":"7z"}},"defaults":["modrinth","prism","server","prism-4","server-5"]},
+    json!({"schema":5,"pack":{"id":"fixture","name":"Pack [日本語]\n$(display data)","version":"alpha"},
+        "runtime":{"java":21,"minecraft":"1.20.1","loader":{"kind":"neoforge","pin":"47.1.106"}},
+        "build":{"profiles":{"modrinth":{"target":"modrinth","delivery":"references","environment":"both","updates":"snapshot","format":"7z"},"prism":{"target":"prism","delivery":"references","environment":"client","updates":"snapshot","format":"7z"},"server":{"target":"server","delivery":"references","environment":"server","updates":"snapshot","format":"7z"},"prism-4":{"target":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"7z"},"server-5":{"target":"server","delivery":"bundled","environment":"server","updates":"snapshot","format":"7z"}},"default":["modrinth","prism","server","prism-4","server-5"]},
         "layout":{"data-pack":"world/datapacks"},
-        "dependencies":{"renderer alias":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":"AANobbMI"}},"content":"mod","version":{"mode":"exact","pin":{"provider":"modrinth","id":"Version1"}},"placement":"automatic","environment":{"client":{"optional":"renderer","default-enabled":false,"description":"Rendering support"},"server":"unsupported"}}},
+        "dependencies":{"renderer alias":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":"AANobbMI"}},"pin":"Version1","placement":"automatic","environment":{"client":{"optional":"renderer","default-enabled":false,"description":"Rendering support"},"server":"unsupported"}}},
         "extensions":{"authoring":{"note":"retain this","values":[1,true,null]}}})
 }
 fn decoded() -> DecodedIntent {
@@ -210,12 +210,9 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
             "/dependencies/renderer alias/source/identity/project",
             json!("sodium"),
         ),
-        (
-            "/dependencies/renderer alias/version/pin/id",
-            json!("latest"),
-        ),
+        ("/dependencies/renderer alias/pin", json!("latest")),
         ("/dependencies/renderer alias/source/kind", json!("unknown")),
-        ("/distribution/profiles/modrinth/format", json!("rar")),
+        ("/build/profiles/modrinth/format", json!("rar")),
     ];
     for (path, invalid) in paths {
         let mut value = source();
@@ -237,7 +234,7 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
     let raw = serde_saphyr::to_string(&source()).unwrap();
     assert!(
         DocumentCodec
-            .decode_intent(format!("schema: 4\n{raw}").as_bytes(), "duplicate")
+            .decode_intent(format!("schema: 5\n{raw}").as_bytes(), "duplicate")
             .is_err()
     );
     assert!(
@@ -324,7 +321,8 @@ fn url_order_changes_semantics_and_credentials_cannot_enter_documents() {
     let dep = &mut value["dependencies"]["renderer alias"];
     dep["source"] =
         json!({"kind":"url","downloads":["https://example.com/one","https://example.com/two"]});
-    dep["version"] = json!({"mode":"content-pinned","digests":{"sha256":"a".repeat(64)}});
+    dep.as_object_mut().unwrap().remove("pin");
+    dep["sha256"] = json!("a".repeat(64));
     let a = DocumentCodec
         .decode_intent(&serde_json::to_vec(&value).unwrap(), "a")
         .unwrap();
@@ -516,7 +514,7 @@ fn local_member_sources_have_explicit_nonempty_coverage_and_individual_evidence(
         .next()
         .unwrap();
     dependency["source"] = json!({"kind":"local-files","members":{"level.dat":"pack/saves/world/level.dat","region":"pack/saves/world/region/r.0.0.mca"}});
-    dependency["version"] = json!({"mode":"follow-compatible"});
+    dependency.as_object_mut().unwrap().remove("pin");
     dependency["placement"] = json!({"files":{
         "level.dat":[{"destination":"saves/world/level.dat","layer":"common","environment":{"client":"required","server":"unsupported"}}],
         "region":[{"destination":"saves/world/region/r.0.0.mca","layer":"common","environment":{"client":"required","server":"unsupported"}}]
@@ -542,9 +540,7 @@ fn local_member_sources_have_explicit_nonempty_coverage_and_individual_evidence(
             "empty" => dependency["source"]["members"] = json!({}),
             "escape" => dependency["source"]["members"]["level.dat"] = json!("../outside"),
             "automatic" => dependency["placement"] = json!("automatic"),
-            "pin" => {
-                dependency["version"] = json!({"mode":"content-pinned","digests":{"md5":"321c3cf486ed509164edec1e1981fec8"}})
-            }
+            "pin" => dependency["digests"] = json!({"md5":"321c3cf486ed509164edec1e1981fec8"}),
             _ => unreachable!(),
         }
         assert!(
@@ -751,14 +747,12 @@ fn native_publication_and_source_rules_are_strict_author_intent() {
     let project = crate::engine::mrpack::tests::project(false, false);
     let mut intent = project.intent().clone();
     intent.source_excludes = vec!["private/**".into(), "!private/shared.txt".into()];
-    intent.distribution.native = Some(NativeDistributionIntent {
-        pack_id: "stable.pack".into(),
-        java_major: 17,
-        policies: std::collections::BTreeMap::from([(
-            PortableRelPath::parse("config/options.txt", PathSyntax::ProjectContent).unwrap(),
-            empack_core::instance::FilePolicy::Seed,
-        )]),
-    });
+    intent.metadata.id = "stable.pack".into();
+    intent.runtime.java_major = 17;
+    intent.installation_policies = std::collections::BTreeMap::from([(
+        PortableRelPath::parse("config/options.txt", PathSyntax::ProjectContent).unwrap(),
+        empack_core::instance::FilePolicy::Seed,
+    )]);
     let codec = DocumentCodec;
     let encoded = codec.encode_intent(&intent).unwrap();
     let decoded = codec.decode_intent(&encoded, "native").unwrap();
@@ -770,7 +764,7 @@ fn native_publication_and_source_rules_are_strict_author_intent() {
     intent.source_excludes.push("bad\npattern".into());
     assert!(codec.encode_intent(&intent).is_err());
     let mut value: serde_json::Value = serde_saphyr::from_slice(&encoded).unwrap();
-    value["distribution"]["native"]["extra"] = serde_json::json!(true);
+    value["build"]["native"]["extra"] = serde_json::json!(true);
     assert!(
         codec
             .decode_intent(&serde_json::to_vec(&value).unwrap(), "unknown")
@@ -827,14 +821,14 @@ fn recipes_preserve_all_policy_dimensions_and_reject_old_targets() {
 #[test]
 fn intent_rejects_target_strings_and_retains_recipe_identity() {
     let mut input = source();
-    input["distribution"]["targets"] = json!(["mrpack"]);
+    input["build"]["targets"] = json!(["mrpack"]);
     assert!(
         DocumentCodec
             .decode_intent(&serde_json::to_vec(&input).unwrap(), "old-targets")
             .is_err()
     );
     input = source();
-    input["distribution"]["profiles"]["modrinth"]["updates"] = json!("platform");
+    input["build"]["profiles"]["modrinth"]["updates"] = json!("platform");
     let parsed = DocumentCodec
         .decode_intent(&serde_json::to_vec(&input).unwrap(), "recipes")
         .unwrap();
@@ -992,13 +986,12 @@ fn binding_semantics_raw_edits_conflicts_and_dangling_roles_remain_distinct() {
 #[test]
 fn named_profile_documents_reject_missing_defaults_unknown_fields_and_unsafe_names() {
     for (field, invalid) in [
-        ("defaults", json!(["missing"])),
-        ("defaults", json!(["modrinth", "modrinth"])),
-        ("defaults", json!([])),
+        ("default", json!(["missing"])),
+        ("default", json!(["modrinth", "modrinth"])),
         ("profiles", json!({})),
     ] {
         let mut value = source();
-        value["distribution"][field] = invalid;
+        value["build"][field] = invalid;
         assert!(
             DocumentCodec
                 .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")
@@ -1006,15 +999,15 @@ fn named_profile_documents_reject_missing_defaults_unknown_fields_and_unsafe_nam
         );
     }
     let mut value = source();
-    let profile = value["distribution"]["profiles"]["modrinth"].clone();
-    value["distribution"]["profiles"]["../outside"] = profile;
+    let profile = value["build"]["profiles"]["modrinth"].clone();
+    value["build"]["profiles"]["../outside"] = profile;
     assert!(
         DocumentCodec
             .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")
             .is_err()
     );
     let mut value = source();
-    value["distribution"]["profiles"]["modrinth"]["inherits"] = json!("prism");
+    value["build"]["profiles"]["modrinth"]["inherits"] = json!("prism");
     assert!(
         DocumentCodec
             .decode_intent(&serde_json::to_vec(&value).unwrap(), "profiles")

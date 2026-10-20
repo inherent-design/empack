@@ -221,7 +221,9 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         );
     }
     Ok(ImportCandidateOptions {
+        java_major: 21,
         metadata: PackMetadata {
+            id: "test-pack".into(),
             name: source
                 .metadata
                 .name
@@ -232,7 +234,7 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
                 .version
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("Fixture version missing"))?,
-            author: source.metadata.author.clone(),
+            authors: (source.metadata.author.clone()).into_iter().collect(),
             description: source.metadata.summary.clone(),
         },
         loader: None,
