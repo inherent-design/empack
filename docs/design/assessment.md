@@ -45,8 +45,9 @@ that the full retained inventory can be installed together.
 selections, including retained reverse assertions. These are provider declarations,
 not placement-aware conflict decisions. Disjoint client/server content may satisfy
 them. `joint.declarations_complete` is false when the scan did not run or reached
-its output limit. Reaching the limit preserves completed rows and the bounded
-partial list with a `catalog-limit` reason. Missing assertions do not prove
+its output limit or shared deadline. Reaching a bound preserves completed rows and
+the partial list with a `catalog-limit` or `deadline` reason. The scan uses the
+original catalog deadline, including while comparing retained selections. Missing assertions do not prove
 compatibility. Update preparation composes
 the complete candidate and checks actual file participation before publication.
 

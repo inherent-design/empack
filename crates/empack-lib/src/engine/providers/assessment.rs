@@ -5,6 +5,7 @@ use empack_core::model::{
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use tokio::time::Instant;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -92,7 +93,7 @@ pub struct JointAssessment {
     /// Final placements and retained-inventory coexistence require update preparation.
     pub candidate_compatibility: &'static str,
     pub declared_incompatibilities: Vec<DeclaredIncompatibility>,
-    /// False if the declaration scan did not run or exhausted its output allowance.
+    /// False if the declaration scan did not run, timed out or exhausted its allowance.
     pub declarations_complete: bool,
     pub state: &'static str,
     pub selections: Vec<ObservedVersion>,
@@ -139,7 +140,9 @@ impl ProviderCatalog {
             project.intent().roots.len() <= limits.projects,
             CatalogError::Limit
         );
-        let mut budget = Some(transport::RequestBudget::new(limits.selection.catalog)?);
+        let initial_budget = transport::RequestBudget::new(limits.selection.catalog)?;
+        let deadline = initial_budget.deadline();
+        let mut budget = Some(initial_budget);
         let mut games = vec![project.intent().runtime.minecraft.clone()];
         games.extend(project.intent().runtime.acceptable_versions.clone());
         let games = NonEmpty::new(games)?;
@@ -292,13 +295,17 @@ impl ProviderCatalog {
                 .await;
             match closure {
                 Ok(closure) => {
-                    let (declarations, complete) =
-                        declared_incompatibilities(scope, project, &closure, limits.edges)?;
+                    let (declarations, incomplete) = declared_incompatibilities(
+                        scope,
+                        project,
+                        &closure,
+                        limits.edges,
+                        deadline,
+                        Instant::now,
+                    )?;
                     report.joint.declared_incompatibilities = declarations;
-                    report.joint.declarations_complete = complete;
-                    if !complete {
-                        report.joint.reasons.push(UpdateReason::CatalogLimit);
-                    }
+                    report.joint.declarations_complete = incomplete.is_none();
+                    report.joint.reasons.extend(incomplete);
                     report.joint.selections = closure
                         .selections
                         .values()
@@ -340,21 +347,29 @@ fn declared_incompatibilities(
     project: &ResolvedProject,
     closure: &ProviderClosure,
     maximum: usize,
-) -> Result<(Vec<DeclaredIncompatibility>, bool)> {
-    let mut candidate: BTreeMap<_, (ResolvedPin, Vec<ProviderIncompatibility>)> = project
-        .lock()
-        .dependencies
-        .values()
-        .filter_map(|dependency| {
-            dependency.selected.as_ref().map(|pin| {
-                (
-                    pin.project.clone(),
-                    (pin.clone(), dependency.incompatibilities.clone()),
-                )
-            })
-        })
-        .collect();
+    deadline: Instant,
+    mut now: impl FnMut() -> Instant,
+) -> Result<(Vec<DeclaredIncompatibility>, Option<UpdateReason>)> {
+    let mut within_deadline = || -> Result<bool> {
+        scope.cancellation().check()?;
+        Ok(now() < deadline)
+    };
+    let mut candidate: BTreeMap<_, (ResolvedPin, Vec<ProviderIncompatibility>)> = BTreeMap::new();
+    for dependency in project.lock().dependencies.values() {
+        if !within_deadline()? {
+            return Ok((Vec::new(), Some(UpdateReason::Deadline)));
+        }
+        if let Some(pin) = &dependency.selected {
+            candidate.insert(
+                pin.project.clone(),
+                (pin.clone(), dependency.incompatibilities.clone()),
+            );
+        }
+    }
     for (id, node) in &closure.selections {
+        if !within_deadline()? {
+            return Ok((Vec::new(), Some(UpdateReason::Deadline)));
+        }
         let mut assertions = node
             .resolution
             .dependencies
@@ -365,6 +380,9 @@ fn declared_incompatibilities(
             && prior == &node.resolution.pin
         {
             for assertion in retained {
+                if !within_deadline()? {
+                    return Ok((Vec::new(), Some(UpdateReason::Deadline)));
+                }
                 if !assertions.contains(assertion) {
                     assertions.push(assertion.clone());
                 }
@@ -374,11 +392,19 @@ fn declared_incompatibilities(
     }
     let mut declarations = Vec::new();
     for (from, assertions) in candidate.values() {
-        scope.cancellation().check()?;
+        if !within_deadline()? {
+            return Ok((declarations, Some(UpdateReason::Deadline)));
+        }
+        if assertions.is_empty() {
+            continue;
+        }
         for (target, _) in candidate.values() {
+            if !within_deadline()? {
+                return Ok((declarations, Some(UpdateReason::Deadline)));
+            }
             if assertions.iter().any(|assertion| assertion.matches(target)) {
                 if declarations.len() == maximum {
-                    return Ok((declarations, false));
+                    return Ok((declarations, Some(UpdateReason::CatalogLimit)));
                 }
                 declarations.push(DeclaredIncompatibility {
                     from: ObservedVersion::from_pin(from),
@@ -387,7 +413,7 @@ fn declared_incompatibilities(
             }
         }
     }
-    Ok((declarations, true))
+    Ok((declarations, None))
 }
 
 #[cfg(test)]
