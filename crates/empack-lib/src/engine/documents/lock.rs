@@ -120,6 +120,7 @@ fn dependency(value: &Value) -> Result<LockedDependency> {
             "selection",
             "files",
             "source-selector",
+            "incompatibilities",
         ],
     )?;
     let identity = required(value, "identity")?;
@@ -139,6 +140,30 @@ fn dependency(value: &Value) -> Result<LockedDependency> {
         _ => bail!("Unknown resolved identity"),
     };
     Ok(LockedDependency {
+        incompatibilities: value
+            .get("incompatibilities")
+            .map(|entries| {
+                array(entries)?
+                    .iter()
+                    .map(|entry| {
+                        fields(entry, &["project", "selection"])?;
+                        Ok(ProviderIncompatibility {
+                            project: entry
+                                .get("project")
+                                .filter(|v| !v.is_null())
+                                .map(provider)
+                                .transpose()?,
+                            selection: entry
+                                .get("selection")
+                                .filter(|v| !v.is_null())
+                                .map(pin)
+                                .transpose()?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default(),
         source_selector: value
             .get("source-selector")
             .filter(|v| !v.is_null())
@@ -276,7 +301,7 @@ pub(super) fn encode(lock: &ResolutionLock) -> Value {
             value["placements"] = json!(file.placements.as_slice().iter().map(placement_value).collect::<Vec<_>>());
             value
         }).collect();
-        (key.as_str(),json!({"source-selector":dep.source_selector.as_ref().map(provider_selector_value),"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
+        (key.as_str(),json!({"incompatibilities":dep.incompatibilities.iter().map(|entry| json!({"project":entry.project.as_ref().map(provider_value),"selection":entry.selection.as_ref().map(pin_value)})).collect::<Vec<_>>(),"source-selector":dep.source_selector.as_ref().map(provider_selector_value),"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
     }).collect();
     json!({"schema":LOCK_SCHEMA,"acceptable-versions":lock.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
         "required-edges":lock.required_edges.iter().map(|(key,values)|(key.as_str(),values.iter().map(DependencyKey::as_str).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>(),

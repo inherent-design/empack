@@ -130,6 +130,7 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
             "url",
             "mirrors",
             "sha256",
+            "accept-observed",
             "digests",
             "pin",
             "releases",
@@ -145,7 +146,6 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
         .filter(|key| value.get(**key).is_some())
         .count();
     ensure!(source_count == 1, "Specify exactly one source, path or url");
-    let direct_url = value.get("url").is_some();
     let map = value.as_object_mut().unwrap();
     let source = if let Some(path) = map.remove("path") {
         json!({"kind":"local","path":path})
@@ -200,9 +200,15 @@ fn expand_dependency(key: &str, input: &Value) -> Result<Value> {
         !provider || digests.is_none(),
         "Provider integrity is resolved from its selected files"
     );
+    let observed = map.remove("accept-observed");
+    let is_url = source.get("kind").and_then(Value::as_str) == Some("url");
     ensure!(
-        !direct_url || digests.is_some(),
-        "Direct URLs require sha256 or digests"
+        observed.is_none() || (is_url && observed == Some(json!(true)) && digests.is_none()),
+        "accept-observed must be true and applies only to a URL without sha256 or digests"
+    );
+    ensure!(
+        !is_url || digests.is_some() || observed.is_some(),
+        "URL sources require sha256 or digests; use accept-observed: true to explicitly trust the first acquired bytes"
     );
     let selection = if let Some(pin) = pin {
         let id = text(&pin)?;
@@ -325,6 +331,9 @@ pub(super) fn compact_preserving(mut value: Value, original: &Value) -> Result<V
             _ => {}
         }
         let source = map.remove("source").unwrap();
+        if source["kind"] == "url" && selection["mode"] == "automatic" {
+            map.insert("accept-observed".into(), json!(true));
+        }
         match source["kind"].as_str().unwrap() {
             "provider-selector" if !authored["source"].is_object() => {
                 let request = &source["request"];
@@ -340,9 +349,7 @@ pub(super) fn compact_preserving(mut value: Value, original: &Value) -> Result<V
             "local" if !authored["source"].is_object() => {
                 map.insert("path".into(), source["path"].clone());
             }
-            "url"
-                if selection["mode"] == "content-assertions" && !authored["source"].is_object() =>
-            {
+            "url" if !authored["source"].is_object() => {
                 let downloads = array(&source["downloads"])?;
                 map.insert("url".into(), downloads[0].clone());
                 if downloads.len() > 1 {

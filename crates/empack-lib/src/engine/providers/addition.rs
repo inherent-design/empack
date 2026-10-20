@@ -491,7 +491,13 @@ fn normalize(
                     }),
                 "Retained dependency participation needs an explicit change"
             );
-            dependencies.insert(key.clone(), existing.clone());
+            let mut retained = existing.clone();
+            for assertion in incompatibilities(current, &selected.resolution) {
+                if !retained.incompatibilities.contains(&assertion) {
+                    retained.incompatibilities.push(assertion);
+                }
+            }
+            dependencies.insert(key.clone(), retained);
             coverage.insert(key.clone(), selected.resolution.coverage);
             if let Some(required) = closure.required_edges.get(&selected.resolution.pin) {
                 edges.insert(
@@ -621,6 +627,7 @@ fn normalize(
                 })
         });
         let dependency = LockedDependency {
+            incompatibilities: incompatibilities(current, &selected.resolution),
             source_selector: match &source {
                 Some(source) => source.selector().cloned(),
                 None => current
@@ -701,3 +708,27 @@ fn normalize(
 
 #[cfg(test)]
 mod tests;
+
+fn incompatibilities(
+    current: &ResolvedProject,
+    resolution: &ProviderResolution,
+) -> Vec<ProviderIncompatibility> {
+    let mut assertions: Vec<_> = resolution
+        .dependencies
+        .iter()
+        .filter_map(ProviderDependency::incompatibility)
+        .collect();
+    if let Some(previous) = current
+        .lock()
+        .dependencies
+        .values()
+        .find(|dependency| dependency.selected.as_ref() == Some(&resolution.pin))
+    {
+        for assertion in &previous.incompatibilities {
+            if !assertions.contains(assertion) {
+                assertions.push(assertion.clone());
+            }
+        }
+    }
+    assertions
+}

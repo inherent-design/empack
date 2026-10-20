@@ -260,8 +260,17 @@ fn cf() -> Value {
     json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"Pack","version":"1","files":[{"projectID":123,"fileID":456,"required":false},{"projectID":124,"fileID":457,"required":true}],"minecraft":{"version":"1.21.1","modLoaders":[{"id":"fabric-0.16.0","primary":true}]},"overrides":"overrides"})
 }
 async fn provider(server: &mut Server, project: u64, file: u64, url: Option<String>) {
+    provider_with_dependencies(server, project, file, url, json!([])).await;
+}
+async fn provider_with_dependencies(
+    server: &mut Server,
+    project: u64,
+    file: u64,
+    url: Option<String>,
+    dependencies: Value,
+) {
     server.mock("GET", format!("/mods/{project}").as_str()).with_body(json!({"data":{"id":project,"gameId":432,"classId":6,"slug":format!("mod-{project}"),"name":"Mod"}}).to_string()).create_async().await;
-    server.mock("GET", format!("/mods/{project}/files/{file}").as_str()).with_body(json!({"data":{"id":file,"gameId":432,"modId":project,"fileName":format!("mod-{project}.jar"),"fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":url,"gameVersions":["1.21.1","Fabric"],"dependencies":[]}}).to_string()).create_async().await;
+    server.mock("GET", format!("/mods/{project}/files/{file}").as_str()).with_body(json!({"data":{"id":file,"gameId":432,"modId":project,"fileName":format!("mod-{project}.jar"),"fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":url,"gameVersions":["1.21.1","Fabric"],"dependencies":dependencies}}).to_string()).create_async().await;
 }
 #[tokio::test]
 async fn restricted_obligations_precede_downloads_and_explicit_bytes_are_reverified() {
@@ -1379,4 +1388,45 @@ async fn restricted_import_reuses_verified_cache_without_download_locators() {
         selected_governor.status().reserved,
         ResourceRequest::default()
     );
+}
+
+#[tokio::test]
+async fn import_preserves_known_incompatibilities_and_refuses_conflicting_inventory() {
+    for target in [124, 125] {
+        let mut server = Server::new_async().await;
+        let url = format!("{}/payload", server.url());
+        provider_with_dependencies(
+            &mut server,
+            123,
+            456,
+            Some(url.clone()),
+            json!([{"modId":target,"relationType":5}]),
+        )
+        .await;
+        provider(&mut server, 124, 457, Some(url)).await;
+        server
+            .mock("GET", "/payload")
+            .with_body("payload")
+            .create_async()
+            .await;
+        let outcome = interpret(source("manifest.json", cf(), &[]), server.url(), |_| {}).await;
+        match &*outcome {
+            OperationOutcome::Completed(Ok(candidate)) if target == 125 => {
+                assert_eq!(
+                    candidate
+                        .project()
+                        .lock()
+                        .dependencies
+                        .values()
+                        .map(|dep| dep.incompatibilities.len())
+                        .sum::<usize>(),
+                    1
+                );
+            }
+            OperationOutcome::Completed(Err(error)) if target == 124 => {
+                assert!(format!("{error:#}").contains("incompatib"), "{error:#}")
+            }
+            _ => panic!("Incorrect import conflict result for {target}"),
+        }
+    }
 }

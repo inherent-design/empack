@@ -45,7 +45,11 @@ and must belong to the selected canonical project. A dependency cannot specify b
 an exact pin and its own automatic release preference. Local and URL mappings reject
 provider-only fields. URL alternatives use `mirrors` and assert the same bytes with
 `sha256` or an explicit digest set. Downloaded bytes never replace an authored digest
-implicitly. Local sources remain distinct from installation destinations. CLI additions
+implicitly. URL input without assertions requires `accept-observed: true`, validated
+after source normalization for both spellings. It normalizes to automatic selection
+for that URL; encoding writes the acknowledgement explicitly. Provider and local
+sources reject that acknowledgement, as do asserted URLs. A matching prior lock
+retains its original assertions or accepted observation. Local sources remain distinct from installation destinations. CLI additions
 preserve project-relative file sources; external files are imported into portable project
 storage. Interpreted world archives retain their individual member sources.
 
@@ -117,7 +121,10 @@ resolution. Duplicate keys, unknown fields, conflicting shorthand and inapplicab
 options fail before network work, with the document path in the diagnostic.
 
 `manifest check` validates both author documents locally. `manifest explain KEY`
-shows effective source, policy provenance, requirements, bindings and available
+reports known YAML editing restrictions without rejecting otherwise valid input.
+It uses the same project-level root check as synchronization, including automatic
+layout. `manifest explain KEY` shows URL evidence policy, effective source, policy
+provenance, requirements, bindings and available
 locked selection. `manifest diff` classifies differences between current authoring
 and the available lock; it does not claim to predict a resolved candidate.
 `pin KEY` records its current exact provider selection. `unpin KEY` restores

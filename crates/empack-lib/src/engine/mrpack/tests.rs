@@ -62,7 +62,7 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
         json!({"client":"required","server":"unsupported"})
     };
     let intent = DocumentCodec.decode_intent(&serde_json::to_vec(&json!({"schema":5,"pack":{"id":"fixture","name":"Test","version":"alpha"},"runtime":{"java":21,"minecraft":"1.20.1","loader":{"kind":"fabric","pin":"0.16.0"}},"build":{"profiles":{"modrinth":{"target":"modrinth","delivery":"references","environment":"both","updates":"snapshot","format":"zip"}},"default":["modrinth"]},"dependencies":{
-        "assets":{"source":{"kind":"url","downloads":[url]},"type":"resource-pack","placement":"automatic","environment":environment}
+        "assets":{"source":{"kind":"url","downloads":[url]},"accept-observed":true,"type":"resource-pack","placement":"automatic","environment":environment}
     }})).unwrap(), "test.yml").unwrap();
     let key = DependencyKey::parse("assets").unwrap();
     let content = acquired(b"payload");
@@ -116,6 +116,7 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
         dependencies: BTreeMap::from([(
             key.clone(),
             LockedDependency {
+                incompatibilities: Vec::new(),
                 source_selector: None,
                 title: "Assets".into(),
                 kind: ContentKind::ResourcePack,

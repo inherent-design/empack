@@ -82,6 +82,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         dependencies: BTreeMap::from([(
             key.clone(),
             LockedDependency {
+                incompatibilities: Vec::new(),
                 source_selector: None,
                 title: "Local".into(),
                 kind: ContentKind::Mod,

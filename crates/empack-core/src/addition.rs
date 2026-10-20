@@ -225,6 +225,12 @@ impl AdditionPlan {
                     // Keep original byte/provenance facts, but do not discard newly established
                     // required edges. Conflicting complete edge sets need explicit resolution.
                     merge_evidence(&mut lock, destination, &proposed, group.lock.coverage[key])?;
+                    let retained = lock.dependencies.get_mut(destination).unwrap();
+                    for assertion in &dependency.incompatibilities {
+                        if !retained.incompatibilities.contains(assertion) {
+                            retained.incompatibilities.push(assertion.clone());
+                        }
+                    }
                     continue;
                 }
                 if existing.selected != dependency.selected {
@@ -245,8 +251,18 @@ impl AdditionPlan {
             if lock.dependencies.get(destination) != Some(dependency) {
                 changed.insert(destination.clone());
             }
-            lock.dependencies
-                .insert(destination.clone(), dependency.clone());
+            let mut dependency = dependency.clone();
+            if let Some(existing) = lock.dependencies.get(destination)
+                && existing.selected.is_some()
+                && existing.selected == dependency.selected
+            {
+                for assertion in &existing.incompatibilities {
+                    if !dependency.incompatibilities.contains(assertion) {
+                        dependency.incompatibilities.push(assertion.clone());
+                    }
+                }
+            }
+            lock.dependencies.insert(destination.clone(), dependency);
             if preserve_evidence {
                 merge_evidence(&mut lock, destination, &proposed, group.lock.coverage[key])?;
             } else {

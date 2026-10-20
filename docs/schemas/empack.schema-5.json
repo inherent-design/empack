@@ -608,6 +608,10 @@
             },
             "placement": {
               "$ref": "#/$defs/placements"
+            },
+            "accept-observed": {
+              "const": true,
+              "description": "Explicitly accept the first acquired URL bytes and retain their observed identity; not independent source authentication."
             }
           },
           "required": [],
@@ -706,8 +710,30 @@
             },
             {
               "if": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "source"
+                    ],
+                    "properties": {
+                      "source": {
+                        "type": "object",
+                        "required": [
+                          "kind"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "const": "url"
+                          }
+                        }
+                      }
+                    }
+                  }
                 ]
               },
               "then": {
@@ -720,6 +746,11 @@
                   {
                     "required": [
                       "digests"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "accept-observed"
                     ]
                   }
                 ]
@@ -876,6 +907,60 @@
                     }
                   ]
                 }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "accept-observed"
+                ]
+              },
+              "then": {
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "url"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "source"
+                        ],
+                        "properties": {
+                          "source": {
+                            "type": "object",
+                            "required": [
+                              "kind"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "const": "url"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "sha256"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "digests"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
               }
             }
           ]

@@ -54,6 +54,14 @@ def main(binary):
         {"source": {"kind": "local-files", "members": {"primary": "vendor/mod.jar"}}, "sha256": "a" * 64},
     ]:
         cases.append((False, {"dependencies": {"example": dependency}}))
+    for source in [{"url": "https://example.org/mod.jar"},
+                   {"source": {"kind": "url", "downloads": ["https://example.org/mod.jar"]}}]:
+        for policy, valid in [({}, False), ({"sha256": "a" * 64}, True),
+                              ({"accept-observed": True}, True), ({"accept-observed": False}, False),
+                              ({"accept-observed": True, "sha256": "a" * 64}, False)]:
+            cases.append((valid, {"dependencies": {"example": dict(source, **policy)}}))
+    for source in [{"path": "mod.jar"}, {"source": "modrinth:Example1"}]:
+        cases.append((False, {"dependencies": {"example": dict(source, **{"accept-observed": True})}}))
     cases.extend([
         (True, {"build": {"default": ["client", "server"], "profiles": {"client": "prism", "server": {"target": "server", "format": "tar.gz"}}}}),
         (False, {"schema": 4}),

@@ -61,6 +61,7 @@ fn resolution(source: &DecodedIntent) -> ResolutionLock {
         dependencies: BTreeMap::from([(
             key.clone(),
             LockedDependency {
+                incompatibilities: Vec::new(),
                 source_selector: None,
                 title: "Sodium".into(),
                 kind: ContentKind::Mod,
@@ -1075,5 +1076,87 @@ fn core_rejects_source_inapplicable_selections_and_conflicting_shared_choices() 
             .unwrap_err()
             .to_string()
             .contains("Conflicting optional choice")
+    );
+}
+
+#[test]
+fn url_spellings_require_assertions_or_explicit_first_observation() {
+    for declaration in [
+        json!({"url":"https://example.org/mod.jar"}),
+        json!({"source":{"kind":"url","downloads":["https://example.org/mod.jar"]}}),
+    ] {
+        for (policy, valid) in [
+            (json!({}), false),
+            (json!({"sha256":"aa".repeat(32)}), true),
+            (json!({"accept-observed":true}), true),
+            (json!({"accept-observed":false}), false),
+            (
+                json!({"accept-observed":true,"sha256":"aa".repeat(32)}),
+                false,
+            ),
+        ] {
+            let mut dependency = declaration.clone();
+            dependency
+                .as_object_mut()
+                .unwrap()
+                .extend(policy.as_object().unwrap().clone());
+            let mut value = source();
+            value["dependencies"] = json!({"custom":dependency});
+            let decoded = DocumentCodec.decode_intent(&serde_json::to_vec(&value).unwrap(), "url");
+            assert_eq!(decoded.is_ok(), valid, "{dependency}: {decoded:?}");
+            if let Ok(decoded) = decoded {
+                let encoded = DocumentCodec.encode_intent(decoded.intent()).unwrap();
+                let again = DocumentCodec.decode_intent(&encoded, "roundtrip").unwrap();
+                assert_eq!(decoded.intent(), again.intent());
+            }
+        }
+    }
+}
+
+#[test]
+fn negative_provider_evidence_round_trips_and_older_locks_remain_readable() {
+    let source = decoded();
+    let mut lock = resolution(&source);
+    let dependency = lock.dependencies.values_mut().next().unwrap();
+    dependency.incompatibilities = vec![ProviderIncompatibility {
+        project: Some(ProviderProjectId::Modrinth(
+            ModrinthProjectId::parse("Other001").unwrap(),
+        )),
+        selection: Some(PinSelector::ModrinthVersion(
+            ModrinthVersionId::parse("OtherVer").unwrap(),
+        )),
+    }];
+    let project = validate(&source, lock).unwrap();
+    let encoded = DocumentCodec.encode_lock(&project).unwrap();
+    let restored = DocumentCodec
+        .decode_lock(&encoded, &source, "lock")
+        .unwrap();
+    assert_eq!(project.lock(), restored.lock());
+    let mut wire = parse(&encoded).unwrap();
+    wire["dependencies"]["renderer alias"]
+        .as_object_mut()
+        .unwrap()
+        .remove("incompatibilities");
+    let old = DocumentCodec
+        .decode_lock(&serde_json::to_vec(&wire).unwrap(), &source, "older-lock")
+        .unwrap();
+    assert!(
+        old.lock()
+            .dependencies
+            .values()
+            .next()
+            .unwrap()
+            .incompatibilities
+            .is_empty()
+    );
+    wire["dependencies"]["renderer alias"]["incompatibilities"] = json!([{}]);
+    assert!(
+        DocumentCodec
+            .decode_lock(
+                &serde_json::to_vec(&wire).unwrap(),
+                &source,
+                "invalid-target"
+            )
+            .is_err()
     );
 }

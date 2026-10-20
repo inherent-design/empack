@@ -71,6 +71,7 @@ pub fn with_provider(name: &str, pin: ResolvedPin) -> TestProject {
     lock.dependencies.insert(
         key.clone(),
         LockedDependency {
+            incompatibilities: Vec::new(),
             source_selector: None,
             title: "Manual assets".into(),
             kind: ContentKind::ResourcePack,

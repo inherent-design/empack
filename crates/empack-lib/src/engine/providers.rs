@@ -101,6 +101,16 @@ pub struct ProviderDependency {
     pub filename: Option<String>,
     pub relation: DependencyRelation,
 }
+impl ProviderDependency {
+    pub(crate) fn incompatibility(&self) -> Option<empack_core::model::ProviderIncompatibility> {
+        (self.relation == DependencyRelation::Incompatible).then(|| {
+            empack_core::model::ProviderIncompatibility {
+                project: self.project.clone(),
+                selection: self.pin.clone(),
+            }
+        })
+    }
+}
 /// No Debug implementation: transient locators may include signed query values.
 pub struct ProviderFile {
     pub filename: String,

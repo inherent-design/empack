@@ -66,7 +66,7 @@ A local `path` is the source file, not its installed destination. `add` retains 
 file already inside the author checkout at that source path; an external file is
 copied into project storage to keep the declaration portable. World archive imports
 retain interpreted members as their own sources. Use `adopt` to accept deliberate
-changed bytes. A direct `url` requires expected content evidence:
+changed bytes. A direct `url` normally requires expected content evidence:
 
 ```yaml
 textures:
@@ -75,6 +75,20 @@ textures:
   type: resource-pack
   side: client
 ```
+
+When no independent digest is available, explicitly choose first-observed bytes:
+
+```yaml
+custom:
+  url: https://example.org/custom.jar
+  accept-observed: true
+```
+
+`accept-observed` applies only to URLs without `sha256` or `digests`. Both the short
+`url` form and expanded `source: {kind: url, downloads: [...]}` require one of these
+policies. The first accepted bytes establish an observed identity, not independent
+authentication. Later sync retains matching locked evidence and rejects changed
+bytes. `manifest explain` shows which evidence policy applies.
 
 Optional `mirrors` must return the same asserted bytes. Hash mismatches stop the
 operation. A provider pin cannot constrain a local file or direct URL.
@@ -92,7 +106,8 @@ dependencies:
 
 `prefer-stable` is the default. `stable-only` excludes provider-classified prereleases;
 `any` gives them equal preference. These labels describe provider classifications,
-not a guarantee that a mod works. Implicit required dependencies use the project
+not a guarantee that a mod works. Preferences govern new automatic choices; changing
+them does not certify or refresh every retained or exact-pinned selection. Implicit required dependencies use the project
 preference. `--release-policy` on update, outdated or migration overrides preferences
 for that operation without rewriting authored policy. Exact pins remain exact regardless of project
 preference. A pinned dependency cannot also declare its own release preference.
@@ -137,3 +152,9 @@ Editor checks cover syntax, supported fields and source-specific options. Run
 `empack manifest check` for cross-document references, shared optional choices,
 portable paths and effective runtime/profile validation. Neither editor validation
 nor manifest inspection verifies downloaded bytes or provider compatibility.
+
+Inspection reports known YAML editing limitations with document paths. A valid flow
+mapping, alias or multiline value can remain readable while requiring expansion
+before a targeted edit. These warnings do not modify input or certify every other
+possible edit. `manifest diff` checks automatic layout and explicit bindings with
+the same root-satisfaction rules used by reconciliation.

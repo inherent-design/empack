@@ -52,6 +52,17 @@ pub async fn inspect(session: &dyn Session, command: ManifestCommand) -> Result<
 }
 fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<String> {
     let caveat = "Local metadata only: no provider queries or file verification. Diff compares current constraints with locked selections; the lock does not retain earlier display metadata or build profiles.";
+    let limitations = report
+        .editing_limitations
+        .iter()
+        .map(|item| format!("{} {}: {}", item.document, item.path.join("."), item.reason))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let caveat = if limitations.is_empty() {
+        caveat.to_owned()
+    } else {
+        format!("{caveat}\nEditing limitations (input remains readable):\n{limitations}")
+    };
     match command {
         ManifestCommand::Check { json } => {
             if json {
@@ -95,6 +106,11 @@ fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<Stri
                     lines.push(format!("{label}: {}", serde_json::to_string(value)?));
                 }
             }
+            if let Some(policy) = row.evidence_policy {
+                lines.push(format!(
+                    "URL evidence: {policy}; retained observations remain binding"
+                ));
+            }
             if let Some(policy) = row.release_policy {
                 lines.push(format!(
                     "Release policy: {policy} [{}]",
@@ -104,7 +120,7 @@ fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<Stri
             if let Some(reason) = &row.reason {
                 lines.push(reason.clone());
             }
-            lines.push(caveat.into());
+            lines.push(caveat);
             Ok(lines.join("\n"))
         }
         ManifestCommand::Diff { json } => {
@@ -123,7 +139,7 @@ fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<Stri
                 if let Some(reason) = &report.lock_reason {
                     lines.push(reason.clone());
                 }
-                lines.push(caveat.into());
+                lines.push(caveat);
                 Ok(lines.join("\n"))
             }
         }

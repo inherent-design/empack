@@ -44,6 +44,8 @@ pub fn independent_components(
 struct Footprint<'a> {
     labels: BTreeSet<&'a DependencyKey>,
     identities: Vec<&'a ResolvedIdentity>,
+    selections: Vec<&'a ResolvedPin>,
+    incompatibilities: Vec<&'a ProviderIncompatibility>,
     required: BTreeSet<&'a DependencyKey>,
     writes: Vec<String>,
     reads: Vec<String>,
@@ -53,6 +55,8 @@ impl<'a> Footprint<'a> {
         let mut result = Self {
             labels: BTreeSet::new(),
             identities: Vec::new(),
+            selections: Vec::new(),
+            incompatibilities: Vec::new(),
             required: BTreeSet::new(),
             writes: Vec::new(),
             reads: Vec::new(),
@@ -79,7 +83,9 @@ impl<'a> Footprint<'a> {
         }
         Ok(result)
     }
-    fn capture_files(&mut self, dependency: &LockedDependency) -> Result<()> {
+    fn capture_files(&mut self, dependency: &'a LockedDependency) -> Result<()> {
+        self.selections.extend(dependency.selected.as_ref());
+        self.incompatibilities.extend(&dependency.incompatibilities);
         for file in dependency.files.as_slice() {
             for placement in file.placements.as_slice() {
                 let path = ProjectLayout::path(&ManagedPath::Content {
@@ -98,7 +104,14 @@ impl<'a> Footprint<'a> {
         Ok(())
     }
     fn overlaps(&self, other: &Self) -> bool {
-        self.labels.iter().any(|key| other.required.contains(key))
+        self.incompatibilities
+            .iter()
+            .any(|assertion| other.selections.iter().any(|pin| assertion.matches(pin)))
+            || other
+                .incompatibilities
+                .iter()
+                .any(|assertion| self.selections.iter().any(|pin| assertion.matches(pin)))
+            || self.labels.iter().any(|key| other.required.contains(key))
             || other.labels.iter().any(|key| self.required.contains(key))
             || self
                 .identities

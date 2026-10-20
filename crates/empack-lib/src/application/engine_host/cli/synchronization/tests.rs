@@ -1046,6 +1046,7 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         lock.dependencies.insert(
             key.clone(),
             LockedDependency {
+                incompatibilities: Vec::new(),
                 source_selector: None,
                 title: key.as_str().into(),
                 kind: ContentKind::Mod,

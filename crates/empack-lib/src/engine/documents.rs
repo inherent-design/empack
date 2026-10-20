@@ -20,7 +20,7 @@ pub(crate) use lock::file_evidence;
 mod inspection;
 pub(crate) mod recipe;
 mod sizing;
-pub use inspection::{AuthoringInspection, DependencyInspection};
+pub use inspection::{AuthoringInspection, DependencyInspection, EditingLimitation};
 
 /// Malformed authored documents are usage failures, distinct from filesystem failures.
 #[derive(Debug, thiserror::Error)]
