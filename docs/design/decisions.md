@@ -5,7 +5,7 @@ explicit projections of the same exact resolution.
 
 | Decision | Contract |
 | --- | --- |
-| Release | `v0.7.2-beta`; development package versions remain tag-derived |
+| Release | `v0.8.0-beta`; development package versions remain tag-derived |
 | Authoring | Compact `empack.yml`, optional portable `empack.bindings.yml`, and generated exact `empack.lock` |
 | Identity | Provider project, exact file, logical role, destination and ownership are distinct |
 | Foreign backend | No packwiz observation, metadata maintenance, import/export or JAR runtime |
@@ -23,7 +23,10 @@ explicit projections of the same exact resolution.
 | Recovery | Durable file-level publication with expected-old checks; no global atomic visibility claim |
 | Runtime | One host Tokio runtime and engine-owned task retirement |
 | Program delivery | Native binaries and thin launcher integration; no second installer engine |
-| Schema support | Strict versioned documents; no automatic legacy-schema migration |
+| Schema support | Author schema 5; older schemas fail explicitly; no conversion command |
+| Selection | Compatible provider selection or an exact pin; no universal version-range language |
+| Release preference | Schema default `prefer-stable`, project policy, then dependency override |
+| Author edits | Targeted changes preserve unrelated comments, ordering and formatting |
 
 ## Scope boundaries
 

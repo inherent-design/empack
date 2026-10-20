@@ -1,7 +1,7 @@
-# v0.7.2-beta design
+# v0.8.0-beta design
 
 These documents define empack's authoring, distribution and installed-instance
-contracts for v0.7.2-beta. Start with [usage](../usage.md) for commands and workflows.
+contracts for v0.8.0-beta. Start with [usage](../usage.md) for commands and workflows.
 Types in design examples name semantic boundaries; generated Rust API documentation
 defines callable signatures.
 
@@ -10,6 +10,7 @@ defines callable signatures.
 | [Decisions](decisions.md) | Product scope and defaults |
 | [Features](features.md) | Preserved capabilities and consumer obligations |
 | [Architecture](architecture.md) | Crates, ports and authority |
+| [Authoring](authoring.md) | Schema expansion, selection policy, editing and inspection |
 | [Model](model.md) | Identities, authoring documents, release and instance values |
 | [Planning](planning.md) | Read sets, grants and postconditions |
 | [Assessment](assessment.md) | Provider update evidence and explicit runtime migration |
