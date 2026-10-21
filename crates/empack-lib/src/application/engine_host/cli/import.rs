@@ -450,8 +450,8 @@ fn decisions(
         distribution: DistributionIntent::from_recipes(
             NonEmpty::new(vec![
                 Recipe::MODRINTH,
-                Recipe::PRISM_BUNDLED,
-                Recipe::SERVER_BUNDLED,
+                Recipe::PRISM_REFERENCES,
+                Recipe::SERVER_REFERENCES,
             ])?,
             DistributionArchive::Zip,
         ),

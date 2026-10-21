@@ -29,9 +29,12 @@ dependencies:
 build:
   default: [client, server]
   profiles:
-    client: prism
+    client:
+      target: prism
+      delivery: references
     server:
       target: server
+      delivery: references
       format: tar.gz
 ```
 
@@ -119,7 +122,9 @@ selection, archive mappings or installation policy. Keep it in version control
 alongside the manifest and lock. See [the model reference](design/model.md) for
 advanced forms and per-side requirements.
 
-`build.profiles` names outputs. The `prism` and `server` presets bundle pack content
+`build.profiles` names outputs. Initialization and ad-hoc builds prefer references;
+use explicit `delivery: references` in hand-written profiles. The schema-5 `prism`
+and `server` presets retain their original meaning and bundle pack content
 as fixed snapshots in ZIP archives. Expanded profiles override individual options;
 `empack build --explain` displays the exact selected recipes. Omit `build` until you
 need outputs. The pack ID stays unchanged across renames and release labels.

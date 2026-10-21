@@ -196,15 +196,22 @@ impl SynchronizationResolution {
                     }
                 }
                 changed.insert(key.clone());
-                if previous.selected != next.selected
-                    && prior.required_edges.iter().any(|(dependent, edges)| {
-                        !allowed.contains(dependent) && edges.contains(key)
-                    })
-                {
-                    return Err(ModelError(
-                        "Changed selection has retained dependents requiring explicit resolution"
-                            .into(),
-                    ));
+                if previous.selected != next.selected {
+                    let dependents: Vec<_> = prior
+                        .required_edges
+                        .iter()
+                        .filter(|(dependent, edges)| {
+                            !allowed.contains(*dependent) && edges.contains(key)
+                        })
+                        .map(|(dependent, _)| dependent.as_str())
+                        .collect();
+                    if !dependents.is_empty() {
+                        return Err(ModelError(alloc::format!(
+                            "Changed selection {} has retained dependents requiring explicit resolution: {}",
+                            key.as_str(),
+                            dependents.join(", ")
+                        )));
+                    }
                 }
             }
         }

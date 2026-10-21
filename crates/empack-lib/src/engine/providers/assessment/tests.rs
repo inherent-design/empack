@@ -536,3 +536,91 @@ async fn declaration_scan_honors_original_deadline_and_keeps_partial_evidence() 
         panic!("declaration scan failed: {error}");
     }
 }
+
+#[tokio::test]
+async fn malformed_root_does_not_hide_independent_catalog_evidence() {
+    let mut server = Server::new_async().await;
+    server
+        .mock("GET", "/project/Project1")
+        .with_body("{}")
+        .create_async()
+        .await;
+    records(&mut server, "Project2", "Version2", json!([])).await;
+    let report = assess(
+        &server,
+        fixture(
+            &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+            &["a", "b"],
+            &[],
+            true,
+        ),
+    )
+    .await;
+    assert_eq!(
+        report.dependencies[0].reasons,
+        vec![UpdateReason::InvalidEvidence]
+    );
+    assert!(report.dependencies[1].catalog_complete);
+    assert_eq!(report.dependencies[1].state, "unchanged");
+    assert_eq!(report.joint.state, "not-assessed");
+}
+
+#[tokio::test]
+async fn malformed_root_still_consumes_the_shared_transfer_allowance() {
+    let mut server = Server::new_async().await;
+    server
+        .mock("GET", "/project/Project1")
+        .with_body("{}")
+        .create_async()
+        .await;
+    // Exactly the whole allowance: it would parse if the first request's two bytes were lost.
+    let second =
+        json!({"id":"Project2","slug":"Project2","title":"Project2","project_type":"resourcepack"})
+            .to_string();
+    server
+        .mock("GET", "/project/Project2")
+        .with_body(second.clone())
+        .create_async()
+        .await;
+    let skipped = server
+        .mock("GET", "/project/Project2/version")
+        .expect(0)
+        .create_async()
+        .await;
+    let mut limits = ClosureLimits::default();
+    limits.selection.catalog.transfer_bytes = second.len() as u64;
+    let report = assess_with_limits(
+        &server,
+        fixture(
+            &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+            &["a", "b"],
+            &[],
+            true,
+        ),
+        limits,
+    )
+    .await;
+    assert_eq!(
+        report.dependencies[0].reasons,
+        vec![UpdateReason::InvalidEvidence]
+    );
+    assert_eq!(
+        report.dependencies[1].reasons,
+        vec![UpdateReason::CatalogLimit]
+    );
+    assert!(!report.is_complete());
+    assert!(
+        report.dependencies[0]
+            .diagnostic
+            .as_deref()
+            .unwrap()
+            .contains("Dependency a (Project1)")
+    );
+    skipped.assert_async().await;
+}
+
+#[test]
+fn surviving_catalog_budget_keeps_its_original_deadline() {
+    let budget = transport::RequestBudget::new(CatalogLimits::default()).unwrap();
+    assert_eq!(budget.deadline(), budget.clone().deadline());
+}

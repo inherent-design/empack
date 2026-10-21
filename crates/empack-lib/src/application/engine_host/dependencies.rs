@@ -380,7 +380,10 @@ async fn change_with_services(
             } else {
                 let resolved = services.catalog.resolve_addition(
                     &mut scope, &current, NonEmpty::new(providers)?, releases, limits
-                ).await?;
+                ).await.with_context(|| format!(
+                    "Provider resolution failed before publication (shared --net-timeout {} seconds); --continue-independent applies only after resolution. For a deadline failure, retry with a larger explicit --net-timeout",
+                    limits.selection.catalog.deadline.as_secs()
+                ))?;
                 match resolved {
                     ProviderAdditionOutcome::Ready(addition) => Some(addition),
                     ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire_with_supplied(&mut scope, &services.transport, evidence, services.files, &mut supplied).await?),
@@ -412,7 +415,7 @@ async fn change_with_services(
         .await?;
         for (key, dependency) in addition.group().dependencies() {
             session.display().status().info(&format!(
-                "Record {}: {} ({:?})", key.as_str(), dependency.title, dependency.identity
+                "Check {}: {} ({})", key.as_str(), dependency.title, identity_label(&dependency.identity)
             ));
         }
         let request: Request = if batch == BatchPolicy::ContinueIndependent && !adopt {
@@ -452,6 +455,15 @@ async fn change_with_services(
     engine.shutdown().await;
     result
 }
+fn identity_label(identity: &empack_core::model::ResolvedIdentity) -> String {
+    use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
+    match identity {
+        ResolvedIdentity::Provider(ProviderProjectId::Modrinth(id)) => format!("modrinth:{id}"),
+        ResolvedIdentity::Provider(ProviderProjectId::CurseForge(id)) => format!("curseforge:{id}"),
+        ResolvedIdentity::Url(key) => format!("url:{}", key.as_str()),
+        ResolvedIdentity::Local(key) => format!("local:{}", key.as_str()),
+    }
+}
 async fn publish_update(
     session: &dyn Session,
     engine: &Engine,
@@ -464,9 +476,14 @@ async fn publish_update(
             continue;
         }
         session.display().status().info(&format!(
-            "Update {} as {}",
+            "Check {} as {}: {}",
             requested.as_str(),
             canonical.as_str(),
+            if view.changed_selections.contains(canonical) {
+                "selection changed"
+            } else {
+                "selection retained"
+            },
         ));
     }
     if !view.references.is_empty() {
@@ -481,8 +498,8 @@ async fn publish_update(
             anyhow::bail!("Unexpected update receipt");
         };
         Ok(format!(
-            "Updated {} selected dependencies; preserved authored intent",
-            receipt.selected.len()
+            "Checked {} selected dependencies: {} selections changed, {} retained; preserved authored intent",
+            receipt.selected.len(), receipt.changed_selections.len(), receipt.selected.len() - receipt.changed_selections.len()
         ))
     })
     .await
@@ -496,10 +513,10 @@ pub(super) async fn publish_addition(
     show_batch(session, view.batch.as_ref());
     for (key, previous) in &view.replaced {
         session.display().status().info(&format!(
-            "Replace {}: {} ({:?})",
+            "Replace {}: {} ({})",
             key.as_str(),
             previous.title,
-            previous.identity
+            identity_label(&previous.identity)
         ));
     }
     for unknown in &view.incomplete_evidence {

@@ -326,6 +326,7 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
         &session(root.path(), true, false),
         &BuildArgs {
             targets: vec!["prism".into()],
+            delivery: Some("bundled".into()),
             ..Default::default()
         },
         super::super::BuildDecisions::default(),

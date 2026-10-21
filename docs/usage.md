@@ -67,7 +67,7 @@ fails. Explicit independent batches preserve failed groups and report partial ef
 ## Assessing and changing versions
 
 ```bash
-empack outdated --json --release-policy prefer-stable
+empack outdated --strict --json --release-policy prefer-stable
 empack --dry-run update sodium --release-policy stable-only
 empack migrate --minecraft 1.21.2 --loader fabric --plan
 empack --yes migrate --minecraft 1.21.2 --loader fabric

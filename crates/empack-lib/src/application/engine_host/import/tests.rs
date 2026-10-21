@@ -264,6 +264,7 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
         &session(root.path(), true, false),
         &BuildArgs {
             targets: vec!["prism".into()],
+            delivery: Some("bundled".into()),
             ad_hoc: true,
             ..Default::default()
         },

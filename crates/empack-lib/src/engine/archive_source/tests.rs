@@ -360,3 +360,108 @@ fn member_observations_keep_the_original_container_assurance_without_digest_upgr
         );
     }
 }
+
+#[tokio::test]
+async fn opaque_mod_inspection_accepts_case_distinct_jvm_members() {
+    use crate::engine::{
+        addition::{FileKindPolicy, validate_file_kind},
+        mrpack::AcquiredBuildFile,
+        resources::{ResourceGovernor, ResourceRequest},
+        runtime::{OperationOutcome, OperationRuntime},
+    };
+    let file = AcquiredBuildFile {
+        content: content(&archive(&[
+            ("META-INF/mods.toml", b"modLoader = 'javafml'"),
+            ("org/example/A.class", b"one"),
+            ("org/example/a.class", b"two"),
+        ])),
+        permissions: FilePermissions {
+            readonly: false,
+            executable: false,
+        },
+    };
+    let runtime = OperationRuntime::new(
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 512 << 20,
+            open_files: 8,
+            ..Default::default()
+        }),
+        1,
+    );
+    let mut operation = runtime
+        .start(move |mut scope| async move {
+            Ok(validate_file_kind(
+                &mut scope,
+                &file,
+                empack_core::model::ContentKind::Mod,
+                FileKindPolicy::RequireRecognized,
+                ArchiveLimits::default(),
+            )
+            .await)
+        })
+        .unwrap();
+    let result = operation.wait().await;
+    runtime.shutdown().await;
+    let OperationOutcome::Completed(result) = &*result else {
+        panic!("inspection did not complete")
+    };
+    assert!(result.is_ok(), "opaque mod inspection failed: {result:?}");
+}
+
+#[test]
+fn opaque_inspection_keeps_namespace_integrity_and_bounded_verification() {
+    let cancel = Cancellation::default();
+    let good = archive(&[("A.class", b"one"), ("a.class", b"two")]);
+    assert_eq!(
+        ZipContentSource::inspect_opaque(&content(&good), ArchiveLimits::default(), &cancel)
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(ZipContentSource::open(&content(&good), ArchiveLimits::default(), &cancel).is_err());
+    for entries in [
+        vec![("../escape", b"x".as_slice())],
+        vec![("same", b"x".as_slice()), ("same/child", b"x".as_slice())],
+    ] {
+        assert!(
+            ZipContentSource::inspect_opaque(
+                &content(&archive(&entries)),
+                ArchiveLimits::default(),
+                &cancel
+            )
+            .is_err()
+        );
+    }
+    let mut duplicate = good.clone();
+    for index in 0..duplicate.len() - 7 {
+        if duplicate[index..].starts_with(b"a.class") {
+            duplicate[index] = b'A';
+        }
+    }
+    assert!(
+        ZipContentSource::inspect_opaque(&content(&duplicate), ArchiveLimits::default(), &cancel)
+            .is_err()
+    );
+    let mut corrupt = good.clone();
+    let offset = corrupt
+        .windows(3)
+        .position(|bytes| bytes == b"one")
+        .unwrap();
+    corrupt[offset] ^= 1;
+    assert!(
+        ZipContentSource::inspect_opaque(&content(&corrupt), ArchiveLimits::default(), &cancel)
+            .is_err()
+    );
+    assert!(
+        ZipContentSource::inspect_opaque(
+            &content(&good),
+            ArchiveLimits {
+                total_bytes: 1,
+                ..Default::default()
+            },
+            &cancel
+        )
+        .is_err()
+    );
+}

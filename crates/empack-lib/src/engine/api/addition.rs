@@ -43,6 +43,7 @@ pub struct AddPreview {
     pub plan: PlanId,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub existing_roots: BTreeSet<DependencyKey>,
+    pub changed_selections: BTreeSet<DependencyKey>,
     pub existing: ExistingDependencyPolicy,
     pub replaced: BTreeMap<DependencyKey, LockedDependency>,
     pub incomplete_evidence: Vec<DependencyKey>,
@@ -75,6 +76,8 @@ pub struct UpdatePreview {
     pub plan: PlanId,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub selected: BTreeSet<DependencyKey>,
+    /// Selected roots whose exact pin or manual content assertions changed.
+    pub changed_selections: BTreeSet<DependencyKey>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
     /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
@@ -86,6 +89,7 @@ impl From<&AddPreview> for UpdatePreview {
             plan: value.plan,
             bindings: value.bindings.clone(),
             selected: value.existing_roots.clone(),
+            changed_selections: value.changed_selections.clone(),
             files: value.files.clone(),
             batch: value.batch.clone(),
             references: value.references.clone(),
@@ -97,6 +101,8 @@ pub struct UpdateReceipt {
     pub batch: Option<DependencyBatchReport>,
     pub plan: PlanId,
     pub selected: BTreeSet<DependencyKey>,
+    /// Selected roots whose exact pin or manual content assertions changed.
+    pub changed_selections: BTreeSet<DependencyKey>,
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
@@ -278,6 +284,41 @@ async fn prepare_change(
         } else {
             Vec::new()
         };
+        let changed_selections = planned
+            .candidate()
+            .plan()
+            .existing_roots()
+            .iter()
+            .filter(|key| {
+                let before = planned
+                    .prior_lock()
+                    .and_then(|lock| lock.dependencies.get(*key));
+                let after = planned.candidate().project().lock().dependencies.get(*key);
+                match (before, after) {
+                    (Some(before), Some(after))
+                        if before.selected.is_some() || after.selected.is_some() =>
+                    {
+                        before.selected != after.selected
+                    }
+                    (Some(before), Some(after)) => {
+                        before
+                            .files
+                            .as_slice()
+                            .iter()
+                            .map(|file| (&file.slot, &file.expected))
+                            .collect::<Vec<_>>()
+                            != after
+                                .files
+                                .as_slice()
+                                .iter()
+                                .map(|file| (&file.slot, &file.expected))
+                                .collect::<Vec<_>>()
+                    }
+                    _ => true,
+                }
+            })
+            .cloned()
+            .collect();
         let addition = planned.stage(&cancel)?;
         let files = addition.files().clone();
         let view = AddPreview {
@@ -289,6 +330,7 @@ async fn prepare_change(
             ),
             bindings: addition.candidate().plan().bindings().clone(),
             existing_roots: addition.candidate().plan().existing_roots().clone(),
+            changed_selections,
             replaced: addition.candidate().plan().replaced().clone(),
             incomplete_evidence: addition.candidate().plan().incomplete_evidence().to_vec(),
             existing: policy,
@@ -347,11 +389,13 @@ pub(super) async fn run_update(
     scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let selected = prepared.view.existing_roots.clone();
+    let changed_selections = prepared.view.changed_selections.clone();
     let convert = |receipt: Box<RetainedOutput<AddReceipt>>| {
         ExecutionReceipt::Update(Box::new(receipt.map(|value| UpdateReceipt {
             batch: value.batch,
             plan: value.plan,
             selected,
+            changed_selections,
             publication: value.publication,
             project: value.project,
             bindings: value.bindings,

@@ -163,8 +163,8 @@ async fn initialization_host_retains_explicit_runtime_and_layout_choices_without
             .collect::<Vec<_>>(),
         [
             Recipe::MODRINTH,
-            Recipe::PRISM_BUNDLED,
-            Recipe::SERVER_BUNDLED
+            Recipe::PRISM_REFERENCES,
+            Recipe::SERVER_REFERENCES
         ]
     );
 }

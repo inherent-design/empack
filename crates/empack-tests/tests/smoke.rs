@@ -1068,6 +1068,9 @@ fn smoke_generated_workflow_builds_named_profiles_and_rejects_wrong_release_tag(
         .unwrap()
         .intent()
         .clone();
+    assert!(intent.distribution.profiles.values().all(
+        |profile| profile.recipe.delivery() == empack_core::distribution::Delivery::References
+    ));
     intent.metadata.name = "Pack With Spaces".into();
     intent.metadata.version = "1.2.3-beta".into();
     intent.distribution.defaults = vec!["modrinth".into(), "prism".into()];
@@ -1122,6 +1125,11 @@ fn smoke_generated_workflow_builds_named_profiles_and_rejects_wrong_release_tag(
         .collect();
     assert_eq!(names.len(), 3);
     assert!(
+        names
+            .iter()
+            .any(|name| name.ends_with("prism-references.zip"))
+    );
+    assert!(
         !names
             .iter()
             .any(|name| name.contains(' ') || name == "stale.zip")
@@ -1132,4 +1140,19 @@ fn smoke_generated_workflow_builds_named_profiles_and_rejects_wrong_release_tag(
         let (_, name) = line.split_once("  ").unwrap();
         assert!(output.join(name).is_file());
     }
+}
+
+#[test]
+fn smoke_strict_outdated_accepts_complete_empty_assessment() {
+    let project = initialized();
+    let output = command(&project)
+        .args(["outdated", "--strict", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["joint"]["state"], "not-applicable");
+    assert_eq!(report["dependencies"].as_array().unwrap().len(), 0);
 }

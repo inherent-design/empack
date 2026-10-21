@@ -248,7 +248,14 @@ impl FileAddition {
             }
             if input.role.member().is_none() {
                 validate_file_kind(scope, &file, input.kind, input.kind_policy, limits.archive)
-                    .await?;
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Inspect dependency {} ({})",
+                            input.key.as_str(),
+                            input.title
+                        )
+                    })?;
             }
             acquired.push(AcquiredFileInput {
                 role: input.role,
@@ -298,14 +305,13 @@ pub async fn validate_file_kind(
                     memory_bytes: (archive.entries as u64).checked_mul(2048).and_then(|bytes| bytes.checked_add(128 << 10)).context("Archive estimate overflow")?,
                     ..Default::default()
                 }, ResourceRequest::default(), move |cancel| {
-                    let mut archive = ZipContentSource::open(&source, archive, &cancel)?;
-                    archive.verify_members(&cancel)?;
+                    let members = ZipContentSource::inspect_opaque(&source, archive, &cancel)?;
                     let mut pack = false;
                     let mut data = false;
                     let mut assets = false;
                     let mut shaders = false;
                     let mut module = false;
-                    for (path, _) in archive.files() {
+                    for path in &members {
                         cancel.check()?;
                         let name = path.as_str();
                         ensure!(!matches!(name, "modrinth.index.json" | "level.dat"),

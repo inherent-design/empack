@@ -12,8 +12,8 @@ fn consumer(name: &str) -> Result<Recipe> {
     Ok(match name {
         "modrinth" => Recipe::MODRINTH,
         "curseforge" => Recipe::CURSEFORGE,
-        "prism" => Recipe::PRISM_BUNDLED,
-        "server" => Recipe::SERVER_BUNDLED,
+        "prism" => Recipe::PRISM_REFERENCES,
+        "server" => Recipe::SERVER_REFERENCES,
         "empack" => Recipe::EMPACK_REFERENCES,
         _ => anyhow::bail!("Unknown build consumer: {name}"),
     })

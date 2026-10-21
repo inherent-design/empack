@@ -104,7 +104,9 @@ policy and file-role interpretation; only their refresh policy differs.
 bundled, snapshot, ZIP. Expanded profiles use `target`, with optional `delivery`,
 `environment`, `updates` and `format`. All supported consumer combinations retain
 their recipe validation. Presets are fixed by schema, not tool version or profile
-name. Explanation and execution use the same expansion and selection.
+name. Initialization and import scaffolds write explicit reference profiles instead
+of these bundled presets. Ad-hoc recipes also prefer references. Explanation and
+execution use the same expansion and selection.
 
 An author-only project is valid without profiles. Building requires a selected
 configured profile or an explicit ad-hoc target. Empack update authority never

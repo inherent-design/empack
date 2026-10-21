@@ -78,6 +78,7 @@ pub struct DependencyAssessment {
     pub state: &'static str,
     pub catalog_complete: bool,
     pub observed_records: Option<usize>,
+    pub diagnostic: Option<String>,
     pub reasons: Vec<UpdateReason>,
 }
 /// Known provider declaration between candidate selections; participation is not assessed.
@@ -107,6 +108,16 @@ pub struct UpdateAssessment {
     pub dependencies: Vec<DependencyAssessment>,
     pub joint: JointAssessment,
 }
+impl UpdateAssessment {
+    /// Completeness applies to provider assessment, not installation or runtime verification.
+    pub fn is_complete(&self) -> bool {
+        self.dependencies
+            .iter()
+            .all(|row| row.catalog_complete || row.reasons == [UpdateReason::ManualSource])
+            && (self.joint.state == "not-applicable"
+                || (self.joint.state == "validated" && self.joint.declarations_complete))
+    }
+}
 pub(super) fn reason(error: &anyhow::Error) -> UpdateReason {
     match error.downcast_ref::<CatalogError>() {
         Some(CatalogError::Limit) => UpdateReason::CatalogLimit,
@@ -126,7 +137,7 @@ pub(super) fn reason(error: &anyhow::Error) -> UpdateReason {
 }
 impl ProviderCatalog {
     /// Assess explicit author roots under one transport allowance and deadline.
-    /// Errors remain unknown evidence, and stop further queries rather than resetting the budget.
+    /// Root-local errors remain unknown while independent queries share the original budget.
     /// The report is not an execution grant or a proof that alternative solutions do not exist.
     pub async fn assess_updates(
         &self,
@@ -181,6 +192,7 @@ impl ProviderCatalog {
                 state: "unknown",
                 catalog_complete: false,
                 observed_records: None,
+                diagnostic: None,
                 reasons: Vec::new(),
             };
             let Some(identity) = intent.source.canonical_project(locked) else {
@@ -208,6 +220,7 @@ impl ProviderCatalog {
                 loader: project.intent().runtime.loader,
                 releases: project.intent().release_policy(Some(key), policy),
             };
+            let retained_budget = remaining.clone();
             match self
                 .assess_versions_budget(scope, request, limits.selection, remaining)
                 .await
@@ -269,7 +282,21 @@ impl ProviderCatalog {
                 }
                 Err(error) => {
                     scope.cancellation().check()?;
-                    row.reasons.push(reason(&error));
+                    let cause = reason(&error);
+                    if matches!(
+                        cause,
+                        UpdateReason::InvalidEvidence
+                            | UpdateReason::NotFound
+                            | UpdateReason::NoCompatibleSelection
+                    ) {
+                        budget = Some(retained_budget);
+                    }
+                    row.diagnostic = Some(format!(
+                        "Dependency {} ({}): {error:#}",
+                        key.as_str(),
+                        identity
+                    ));
+                    row.reasons.push(cause);
                     complete = false;
                 }
             }

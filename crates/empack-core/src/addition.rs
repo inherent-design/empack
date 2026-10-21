@@ -100,16 +100,47 @@ impl fmt::Display for AdditionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BatchConflict(key) => write!(f, "Batch requests disagree about {}", key.as_str()),
-            Self::UpdateMissing(key) => write!(f, "Cannot update an uninstalled identity: {}", key.as_str()),
+            Self::UpdateMissing(key) => {
+                write!(f, "Cannot update an uninstalled identity: {}", key.as_str())
+            }
             Self::Replacement(error) => error.fmt(f),
-            Self::MissingReplacementRoot(key) => write!(f, "Replacement requires an explicit root for {}", key.as_str()),
+            Self::MissingReplacementRoot(key) => write!(
+                f,
+                "Replacement requires an explicit root for {}",
+                key.as_str()
+            ),
             Self::EmptyRequest => f.write_str("Addition requires an explicit dependency root"),
-            Self::UnrequestedSelection(key) => write!(f, "Unrequested installation in addition: {}", key.as_str()),
-            Self::RuntimeMismatch => f.write_str("Addition was resolved for a different runtime or compatibility policy"),
-            Self::OccupiedKey(key) => write!(f, "Dependency label already names another selection: {}", key.as_str()),
-            Self::InvalidLogicalIdentity(key) => write!(f, "File identity differs from logical key: {}", key.as_str()),
-            Self::RetainedSelectionConflict(key) => write!(f, "Required selection conflicts with retained content: {}; resolve its update explicitly", key.as_str()),
-            Self::RequiredBy(_) => f.write_str("Selection update has retained required dependents; resolve those dependents in the same request"),
+            Self::UnrequestedSelection(key) => {
+                write!(f, "Unrequested installation in addition: {}", key.as_str())
+            }
+            Self::RuntimeMismatch => {
+                f.write_str("Addition was resolved for a different runtime or compatibility policy")
+            }
+            Self::OccupiedKey(key) => write!(
+                f,
+                "Dependency label already names another selection: {}",
+                key.as_str()
+            ),
+            Self::InvalidLogicalIdentity(key) => write!(
+                f,
+                "File identity differs from logical key: {}",
+                key.as_str()
+            ),
+            Self::RetainedSelectionConflict(key) => write!(
+                f,
+                "Required selection conflicts with retained content: {}; resolve its update explicitly",
+                key.as_str()
+            ),
+            Self::RequiredBy(keys) => {
+                f.write_str("Selection update has retained required dependents: ")?;
+                for (index, key) in keys.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    f.write_str(key.as_str())?;
+                }
+                f.write_str("; include these keys in the same update request")
+            }
             Self::InvalidProject(error) => error.fmt(f),
         }
     }
