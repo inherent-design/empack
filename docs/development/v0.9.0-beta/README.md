@@ -5,7 +5,7 @@ an SDK acceptance harness. These are target contracts, not capabilities supplied
 by v0.8.1-beta. Public signatures become callable only with their implementation.
 
 A project can retain unfinished work, including invalid author text and missing
-custom files. Export requires a valid, immutable selection of inputs. The native
+custom files. Export requires globally valid authoring semantics and an immutable selection of inputs. The native
 CLI and browser SDK use the same interpretation of dependencies, bindings,
 templates, recipes and evidence.
 
@@ -103,7 +103,7 @@ must not introduce those effects through transitive dependencies.
 | --- | --- |
 | Baseline | Preserve v0.8.1 authoring/identity/evidence semantics and native guarantees |
 | Author formats | Keep author schema 5, bindings schema 1 and lock schema 2 unless a separately reviewed semantic change requires otherwise |
-| Raw documents | Authoritative bytes; parsed/structured views bind to a revision |
+| Raw documents | Authoritative bytes; invalid text is saveable, but export requires whole-document semantic validation |
 | Assets | Logical asset identity separate from immutable content identity and session access tokens |
 | Imported custom content | Retained copies by default; explicit external/missing references supported |
 | Portable save | ZIP format 1 with `project.json` and content-addressed objects; complete-custom-source and explicit partial modes required |
@@ -113,6 +113,20 @@ must not introduce those effects through transitive dependencies.
 | Writer ownership | One writable owner per project, transactional expected-head commits, coordinated collection |
 | Undo | Bounded session history retaining asset references; current draft survives reopen, cross-session undo optional |
 | Completion | Verified artifact, requested download, committed file and uncertain finalization are distinct outcomes |
+
+## Feasibility before interface freeze
+
+The [feasibility gates and minimum profiles](feasibility.md) precede public API,
+project-format and storage-protocol freeze. A small experiment alongside checkpoint
+1 tests OPFS-backed cooperative ZIP, task-queue cancellation, file retrieval and
+actual mandatory browser catalog/CDN routes. It supplies evidence for the shared
+implementation, not a second permanent archive or network path.
+
+Checkpoint 3 owns the minimum reusable cooperative ZIP foundation and its thin
+browser adapter. Checkpoint 4 consumes that tested layer for bundle save/reopen.
+Checkpoint 5 adds consumer export, independent verification and destination delivery.
+Baseline tests, dependency audits and behavior-preserving extraction may proceed
+while feasibility runs; unresolved assumptions block the relevant interface freeze.
 
 ## Development entry points
 
