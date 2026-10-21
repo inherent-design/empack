@@ -119,6 +119,9 @@ impl UpdateAssessment {
     }
 }
 pub(super) fn reason(error: &anyhow::Error) -> UpdateReason {
+    if error.is::<empack_core::identity::IdentityError>() {
+        return UpdateReason::InvalidEvidence;
+    }
     match error.downcast_ref::<CatalogError>() {
         Some(CatalogError::Limit) => UpdateReason::CatalogLimit,
         Some(CatalogError::Deadline) => UpdateReason::Deadline,
@@ -130,6 +133,7 @@ pub(super) fn reason(error: &anyhow::Error) -> UpdateReason {
             CatalogError::InvalidRecord
             | CatalogError::Identity
             | CatalogError::ContentKindMismatch
+            | CatalogError::UnsupportedKind
             | CatalogError::IncompleteLookup,
         ) => UpdateReason::InvalidEvidence,
         _ => UpdateReason::ProviderUnavailable,
