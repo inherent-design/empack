@@ -144,6 +144,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
         Commands::Migrate(options) => Box::pin(engine_host::cli::migrate(session, options)).await,
         Commands::Outdated {
+            strict,
             json,
             release_policy,
         } => {
@@ -151,6 +152,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                 session,
                 json,
                 release_policy.map(Into::into),
+                strict,
             ))
             .await
         }

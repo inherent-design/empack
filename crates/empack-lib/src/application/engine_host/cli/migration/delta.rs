@@ -289,15 +289,10 @@ impl MigrationDelta {
                         "  {label}: {} [{} / {}] {pin}; dependency evidence: {}",
                         value.title, value.role, value.kind, value.dependency_evidence
                     ));
-                    for file in &value.files {
-                        lines.push(format!(
-                            "    file {}: expected {}; source {}; provenance {}",
-                            file["slot"].as_str().unwrap_or(""),
-                            file["expected"],
-                            file["acquisition"],
-                            file["provenance"]
-                        ));
-                    }
+                    lines.push(format!(
+                        "    {} files; full assertions and sources available with --json",
+                        value.files.len()
+                    ));
                     for placement in &value.placements {
                         lines.push(format!(
                             "    {} -> {} [{}; client={}; server={}]",

@@ -43,9 +43,27 @@ impl ZipContentSource {
             content.lease().len(),
             limits,
             cancel,
+            false,
         )?;
         source.evidence = Some(super::content::ArchiveEvidence::captured(content));
         Ok(source)
+    }
+    /// Verify an opaque ZIP/JAR without granting member extraction authority.
+    /// Its case-sensitive namespace is independent of native destination rules.
+    pub(in crate::engine) fn inspect_opaque(
+        content: &AcquiredContent,
+        limits: ArchiveLimits,
+        cancel: &Cancellation,
+    ) -> Result<Vec<PortableRelPath>> {
+        let mut archive = Self::from_reader(
+            Box::new(content.lease().open()),
+            content.lease().len(),
+            limits,
+            cancel,
+            true,
+        )?;
+        archive.verify_members(cancel)?;
+        Ok(archive.files.into_keys().collect())
     }
     /// Read a captured native archive without duplicating its compressed bytes in scratch.
     /// The owning workflow must retain and revalidate the snapshot before publishing members.
@@ -61,6 +79,7 @@ impl ZipContentSource {
             expected.size.expect("captured size"),
             limits,
             cancel,
+            false,
         )
     }
     fn from_reader(
@@ -68,6 +87,7 @@ impl ZipContentSource {
         bytes: u64,
         limits: ArchiveLimits,
         cancel: &Cancellation,
+        opaque: bool,
     ) -> Result<Self> {
         ensure!(
             bytes <= limits.compressed_bytes,
@@ -81,7 +101,11 @@ impl ZipContentSource {
             "Source archive exceeds entry limit"
         );
         let mut files = BTreeMap::new();
-        let mut collisions = CollisionIndex::default();
+        let mut collisions = if opaque {
+            CollisionIndex::exact_members()
+        } else {
+            CollisionIndex::default()
+        };
         let mut total = 0u64;
         for index in 0..archive.len() {
             cancel.check()?;

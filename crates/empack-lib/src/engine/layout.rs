@@ -120,10 +120,19 @@ pub(super) fn collision_key(path: &str) -> String {
 /// Preserve original names; a collision is an error, never a rename or overwrite.
 #[derive(Default)]
 pub(crate) struct CollisionIndex {
+    exact: bool,
     spelling: BTreeMap<String, String>,
     files: BTreeSet<String>,
 }
 impl CollisionIndex {
+    /// Opaque archive members are never projected onto a native filesystem.
+    pub(super) fn exact_members() -> Self {
+        Self {
+            exact: true,
+            ..Self::default()
+        }
+    }
+
     pub fn insert_file(&mut self, path: &PortableRelPath) -> Result<()> {
         self.insert(path, true)
     }
@@ -138,7 +147,11 @@ impl CollisionIndex {
                 prefix.push('/');
             }
             prefix.push_str(part);
-            let key = collision_key(&prefix);
+            let key = if self.exact {
+                prefix.clone()
+            } else {
+                collision_key(&prefix)
+            };
             ensure!(
                 !self.files.contains(&key),
                 "File destination collides with another file or ancestor: {prefix}"

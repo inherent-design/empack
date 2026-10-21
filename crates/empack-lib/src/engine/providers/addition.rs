@@ -147,7 +147,17 @@ impl ProviderCatalog {
                     limits.selection.catalog,
                     budget,
                 )
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Resolve dependency {} ({})",
+                        input
+                            .key
+                            .as_ref()
+                            .map_or("new dependency", |key| key.as_str()),
+                        input.selector.value()
+                    )
+                })?;
             budget = next;
             if let Some(request) = &input.source_selector {
                 let bound = current.lock().dependencies.values().any(|locked| {
@@ -216,7 +226,12 @@ impl ProviderCatalog {
                         limits.selection,
                         budget,
                     )
-                    .await?;
+                    .await.with_context(|| format!(
+                        "Select dependency {} (project {}, Minecraft {}, loader {:?}, policy {})",
+                        input.key.as_ref().map_or("new dependency", |key| key.as_str()),
+                        project.id, current.lock().runtime.minecraft.as_str(), current.lock().runtime.loader,
+                        releases.or(input.releases).unwrap_or(current.intent().dependency_policy).as_str()
+                    ))?;
                 budget = next;
                 selected.resolution.pin.clone()
             };
@@ -529,7 +544,18 @@ fn normalize(
             ensure!(
                 declared.iter().all(|file| file.role.is_none())
                     || matches!(policy, ProviderFiles::Placed(_)),
-                "Companion provider files require explicit per-file placement and participation"
+                "Companion provider files require explicit per-file placement and participation for {} (project {}): {}; bind primary and each required companion role in empack.bindings.yml",
+                key.as_str(),
+                id,
+                declared
+                    .iter()
+                    .map(|file| format!(
+                        "{} ({})",
+                        file.filename,
+                        file.role.as_deref().unwrap_or("primary")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
             let mut chosen = Vec::new();
             match policy {

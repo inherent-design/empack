@@ -99,3 +99,12 @@ Browser assistance opens verified provider pages only after approval; `--yes` al
 does not open a browser. Bounded waiting is attached to the saved recipe and cumulative
 scan allowance. Timeout leaves continuation intact. Resume revalidates release,
 assertions, choices, supplied files and destination observations before publication.
+
+## Opaque archive inspection
+
+Direct JAR and ZIP content is inspected within its case-sensitive archive namespace.
+Case-distinct JVM members remain distinct because inspection does not extract them
+onto a filesystem. Duplicate names, file/ancestor conflicts, unsafe paths, links,
+encryption, CRC failures and bounded expansion remain rejected. A separate inspection
+entry point returns member names after verification and grants no extraction access.
+World/import member extraction retains portable caseless destination checks.

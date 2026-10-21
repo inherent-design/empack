@@ -225,6 +225,7 @@ async fn direct_files_publish_one_batch_preserve_provenance_and_build_current_by
         &session(root.path(), true, false),
         &BuildArgs {
             targets: vec!["prism".into()],
+            delivery: Some("bundled".into()),
             ..Default::default()
         },
         BuildDecisions::default(),
@@ -345,17 +346,20 @@ async fn transient_download_as_local_preserves_evidence_without_persisting_locat
         .unwrap();
         assert_eq!(snapshot(&project), before);
     }
-    build(
-        &session(root.path(), true, false),
-        &BuildArgs {
-            targets: vec!["modrinth".into(), "prism".into()],
-            ..Default::default()
-        },
-        BuildDecisions::default(),
-        BuildAcquisitions::default(),
-    )
-    .await
-    .unwrap();
+    for consumer in ["modrinth", "prism"] {
+        build(
+            &session(root.path(), true, false),
+            &BuildArgs {
+                targets: vec![consumer.into()],
+                delivery: (consumer == "prism").then(|| "bundled".into()),
+                ..Default::default()
+            },
+            BuildDecisions::default(),
+            BuildAcquisitions::default(),
+        )
+        .await
+        .unwrap();
+    }
     for (name, member) in [
         (
             "File Pack-1.0.mrpack",

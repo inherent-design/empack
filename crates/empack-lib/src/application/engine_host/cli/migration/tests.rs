@@ -573,9 +573,9 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         assert_ne!(row["before"]["files"], row["after"]["files"]);
         assert_eq!(row["after"]["files"][0]["expected"]["size"], 123456);
         let text = delta.text_lines().join("\n");
-        assert!(text.contains("123456"));
-        assert!(text.contains("revised-library.jar"));
-        assert!(text.contains(&"2a".repeat(32)));
+        assert!(text.contains("full assertions and sources available with --json"));
+        assert!(!text.contains("revised-library.jar"));
+        assert!(!text.contains(&"2a".repeat(32)));
     }
     let after = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
     synchronization::synchronize(&session(root.path(), false), false)

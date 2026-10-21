@@ -998,6 +998,7 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         &session(root.path(), false),
         &crate::application::BuildArgs {
             targets: vec!["prism".into()],
+            delivery: Some("bundled".into()),
             ..Default::default()
         },
     )

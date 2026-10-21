@@ -621,6 +621,10 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         preview.update().unwrap().selected,
         std::collections::BTreeSet::from([DependencyKey::parse("existing").unwrap()])
     );
+    assert_eq!(
+        preview.update().unwrap().changed_selections,
+        preview.update().unwrap().selected
+    );
     assert!(preview.add().is_none());
     assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
     assert!(!state.path().join("state").exists());
@@ -679,6 +683,12 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         assert!(view.sync().unwrap().files.changes().is_empty());
         assert!(view.sync().unwrap().files.expected().is_empty());
     }
+    let retained = engine
+        .preview(root.path().to_path_buf(), make_request())
+        .await
+        .unwrap();
+    assert_eq!(retained.update().unwrap().selected.len(), 1);
+    assert!(retained.update().unwrap().changed_selections.is_empty());
     // An author changes a pin after the explicit update. Fresh resolution may satisfy this
     // change, but the ordinary recorded-only request must not pretend the old pin still fits.
     let mut next_intent = updated.intent().clone();

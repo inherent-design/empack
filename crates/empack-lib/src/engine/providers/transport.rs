@@ -9,7 +9,13 @@ use empack_core::{
     model::{ProviderKind, ResolvedPin},
 };
 use reqwest::{Client, StatusCode, Url, header::HeaderValue};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 use tokio::time::Instant;
 
 #[derive(Debug, thiserror::Error)]
@@ -57,9 +63,11 @@ pub(super) struct CatalogTransport {
     #[cfg(test)]
     pub(super) test_origin: Option<Url>,
 }
+/// Clones retain the same charged bytes and absolute deadline after a failed worker.
+#[derive(Clone)]
 pub(super) struct RequestBudget {
     limits: CatalogLimits,
-    received: u64,
+    received: Arc<AtomicU64>,
     deadline: Instant,
 }
 impl RequestBudget {
@@ -79,7 +87,7 @@ impl RequestBudget {
         ensure!(!limits.deadline.is_zero(), CatalogError::Deadline);
         Ok(Self {
             limits,
-            received: 0,
+            received: Arc::new(AtomicU64::new(0)),
             deadline: Instant::now()
                 .checked_add(limits.deadline)
                 .ok_or(CatalogError::Deadline)?,
@@ -361,7 +369,10 @@ impl CatalogTransport {
                     tokio::time::sleep(Duration::from_secs(delay)).await;
                     continue;
                 }
-                let remaining = budget.limits.transfer_bytes.saturating_sub(budget.received);
+                let remaining = budget
+                    .limits
+                    .transfer_bytes
+                    .saturating_sub(budget.received.load(Ordering::Relaxed));
                 let maximum = budget.limits.response_bytes.min(remaining);
                 ensure!(
                     response
@@ -377,12 +388,14 @@ impl CatalogTransport {
                     .try_reserve_exact(capacity)
                     .map_err(|_| CatalogError::Limit)?;
                 while let Some(chunk) = response.chunk().await.map_err(|_| CatalogError::Network)? {
-                    budget.received = budget
+                    let previous = budget
                         .received
-                        .checked_add(chunk.len() as u64)
-                        .ok_or(CatalogError::Limit)?;
+                        .try_update(Ordering::Relaxed, Ordering::Relaxed, |received| {
+                            Some(received.saturating_add(chunk.len() as u64))
+                        })
+                        .expect("always charges received bytes");
                     ensure!(
-                        budget.received <= budget.limits.transfer_bytes
+                        chunk.len() as u64 <= budget.limits.transfer_bytes.saturating_sub(previous)
                             && chunk.len() as u64 <= maximum.saturating_sub(bytes.len() as u64),
                         CatalogError::Limit
                     );

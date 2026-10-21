@@ -1,6 +1,7 @@
 //! Bounded compatible selection is a resolver operation, never an implicit build/update effect.
 use super::*;
 use crate::application::process_runtime::Cancellation;
+use anyhow::Context;
 use empack_core::model::{GameVersion, LoaderKind, ProviderKind};
 use serde::Deserialize;
 use serde_json::Value;
@@ -581,7 +582,14 @@ fn parse_page(
         };
         let resolution = match &project.id {
             ProviderProjectId::Modrinth(_) => {
-                modrinth::selection(project.clone(), &pin, &serde_json::to_vec(&value)?)?
+                modrinth::selection(project.clone(), &pin, &serde_json::to_vec(&value)?)
+                    .with_context(|| {
+                        format!(
+                            "Invalid Modrinth version {} in project {}",
+                            ObservedVersion::from_pin(&pin).selection,
+                            project.id
+                        )
+                    })?
             }
             ProviderProjectId::CurseForge(_) => curseforge::selection(
                 project.clone(),
@@ -664,7 +672,8 @@ fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
     value
         .get(name)
         .and_then(Value::as_str)
-        .ok_or_else(|| CatalogError::InvalidRecord.into())
+        .ok_or_else(|| anyhow::Error::from(CatalogError::InvalidRecord))
+        .with_context(|| format!("Invalid provider field {name}"))
 }
 pub(super) fn loader_matches(resolution: &ProviderResolution, request: &CompatibleRequest) -> bool {
     match request.kind {

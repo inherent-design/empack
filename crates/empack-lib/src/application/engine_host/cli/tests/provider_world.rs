@@ -204,6 +204,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
         &session(root.path(), false),
         &crate::application::BuildArgs {
             targets: vec!["prism".into()],
+            delivery: Some("bundled".into()),
             ..Default::default()
         },
     )

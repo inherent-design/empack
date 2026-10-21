@@ -319,6 +319,7 @@ async fn client_full_archives_contain_current_content_for_every_format() -> Resu
         project
             .run(Commands::Build(BuildArgs {
                 targets: vec!["prism".into()],
+                delivery: Some("bundled".into()),
                 format: Some(format),
                 ..Default::default()
             }))

@@ -6,6 +6,7 @@ pub async fn outdated(
     session: &dyn Session,
     json: bool,
     releases: Option<ReleasePolicy>,
+    strict: bool,
 ) -> Result<()> {
     let project = super::current(session).await?;
     let catalog = dependencies::configured_services(session)?.catalog;
@@ -18,12 +19,24 @@ pub async fn outdated(
             .await
     })
     .await?;
+    present(session, &report, json, strict)
+}
+fn present(
+    session: &dyn Session,
+    report: &UpdateAssessment,
+    json: bool,
+    strict: bool,
+) -> Result<()> {
     let output = if json {
-        serde_json::to_string_pretty(&report)?
+        serde_json::to_string_pretty(report)?
     } else {
-        text(&report)?
+        text(report)?
     };
     session.display().status().message(&output);
+    ensure!(
+        !strict || report.is_complete(),
+        "Dependency assessment is incomplete; inspect the reported reasons"
+    );
     Ok(())
 }
 fn version(value: Option<&ObservedVersion>) -> String {
@@ -48,6 +61,7 @@ fn text(report: &UpdateAssessment) -> Result<String> {
         "Dependency assessment at {} ({})",
         report.observed_at, report.release_policy
     )];
+    lines.push(format!("Assessment complete: {}", report.is_complete()));
     for row in &report.dependencies {
         lines.push(format!(
             "{} [{}]: {} (policy: {})",
@@ -60,6 +74,9 @@ fn text(report: &UpdateAssessment) -> Result<String> {
             ("upstream", &row.upstream),
         ] {
             lines.push(format!("  {label}: {}", version(value.as_ref())));
+        }
+        if let Some(diagnostic) = &row.diagnostic {
+            lines.push(format!("  {diagnostic}"));
         }
         lines.push(format!(
             "  Catalog complete: {}; reasons: {}",
@@ -106,7 +123,7 @@ mod tests {
             published_at: None,
             channel: None,
         };
-        let report = UpdateAssessment {
+        let mut report = UpdateAssessment {
             schema: 1,
             observed_at: "now".into(),
             release_policy: "prefer-stable",
@@ -125,6 +142,11 @@ mod tests {
             },
         };
         let output = text(&report).unwrap();
+        let session = crate::application::session_mocks::MockCommandSession::new();
+        assert!(present(&session, &report, true, false).is_ok());
+        assert!(present(&session, &report, true, true).is_err());
+        report.joint.declarations_complete = true;
+        assert!(present(&session, &report, true, true).is_ok());
         assert!(output.contains("Required provider closure: validated"));
         assert!(output.contains("Declared incompatibility list complete: false"));
         assert!(

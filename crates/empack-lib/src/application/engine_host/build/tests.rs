@@ -71,6 +71,35 @@ fn zip_bytes(path: &Path, member: &str) -> Vec<u8> {
 async fn native_build_host_preserves_preview_decline_and_publishes_current_bytes() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
+    // This fixture deliberately retains an authored bundled profile across the default change.
+    let project = root.path().join("project");
+    let decoded = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
+    let resolved = DocumentCodec
+        .decode_lock(
+            &fs::read(project.join("empack.lock")).unwrap(),
+            &decoded,
+            "test",
+        )
+        .unwrap();
+    let mut intent = resolved.intent().clone();
+    intent
+        .distribution
+        .profiles
+        .get_mut("prism")
+        .unwrap()
+        .recipe = Recipe::PRISM_BUNDLED;
+    crate::testing::write_authoring(&project.join("empack.yml"), &intent).unwrap();
+    let revision = crate::testing::read_authoring(&project.join("empack.yml"))
+        .unwrap()
+        .semantic_revision();
+    let mut lock = resolved.lock().clone();
+    lock.intent_revision = revision;
+    let resolved = empack_core::model::ResolvedProject::validate(intent, lock, revision).unwrap();
+    fs::write(
+        project.join("empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
     let before = snapshot(root.path());
     for (yes, dry) in [(true, true), (false, false)] {
         run(root.path(), &args(), yes, dry).await.unwrap();
@@ -197,7 +226,7 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
         assert_eq!(built.outputs.as_slice().len(), 2);
         assert_eq!(
             built.outputs.as_slice()[0].artifact.as_str(),
-            format!("Native Pack-1.0-prism-bundled.{extension}")
+            format!("Native Pack-1.0-prism-references.{extension}")
         );
         assert_eq!(
             built.outputs.as_slice()[1].artifact.as_str(),
@@ -376,6 +405,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
     .unwrap();
     let options = BuildArgs {
         targets: vec!["prism".into()],
+        delivery: Some("bundled".into()),
         ..Default::default()
     };
     let before = snapshot(root.path());
@@ -839,13 +869,13 @@ async fn consumer_overrides_preserve_delivery_and_reject_lossy_policies() {
             ..Default::default()
         };
         let snapshot = request(parsed.intent(), &options, BuildDecisions::default()).unwrap();
-        assert_eq!(snapshot.outputs.as_slice()[0].target, bundled);
-        options.delivery = Some("references".into());
-        let referenced = request(parsed.intent(), &options, BuildDecisions::default()).unwrap();
-        assert_eq!(referenced.outputs.as_slice()[0].target, references);
+        assert_eq!(snapshot.outputs.as_slice()[0].target, references);
+        options.delivery = Some("bundled".into());
+        let explicit = request(parsed.intent(), &options, BuildDecisions::default()).unwrap();
+        assert_eq!(explicit.outputs.as_slice()[0].target, bundled);
         assert_ne!(
             snapshot.outputs.as_slice()[0].artifact,
-            referenced.outputs.as_slice()[0].artifact
+            explicit.outputs.as_slice()[0].artifact
         );
         options.environment = Some("both".into());
         assert!(request(parsed.intent(), &options, BuildDecisions::default()).is_err());

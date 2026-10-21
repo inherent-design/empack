@@ -297,6 +297,7 @@ pub struct InitArgs {
 
 Without selectors, use build.default from empack.yml.
 A consumer selects its unique configured profile; use --ad-hoc for a new recipe.
+New projects and ad-hoc Prism/server recipes default to reference delivery.
 Use --profile NAME when multiple profiles have the same consumer.
 Use --explain (and optionally --json) to inspect the exact configuration without building.
 Use --delivery references for a Prism/server snapshot installed by empack.
@@ -790,6 +791,9 @@ Updates infer the installed side/layout. update --check checks before applying."
 
     /// Assess provider versions without changing the author workspace
     Outdated {
+        /// Return a failing exit status after reporting incomplete assessment
+        #[arg(long)]
+        strict: bool,
         /// Emit versioned evidence and joint dependency assessment as JSON
         #[arg(long)]
         json: bool,
@@ -803,7 +807,7 @@ Updates infer the installed side/layout. update --check checks before applying."
         /// Provider version policy; exact author pins remain exact
         #[arg(long, value_enum)]
         release_policy: Option<CliReleasePolicy>,
-        /// Publish verified independent groups and report failures without discarding prior content
+        /// After catalog resolution succeeds, publish independent groups and report preparation failures
         #[arg(long)]
         continue_independent: bool,
         /// Exact logical keys from empack.yml or empack.lock
