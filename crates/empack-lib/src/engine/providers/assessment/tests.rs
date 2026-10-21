@@ -658,3 +658,92 @@ async fn invalid_provider_identity_and_kind_do_not_stop_independent_roots() {
         assert!(!report.is_complete());
     }
 }
+
+#[tokio::test]
+async fn empty_modrinth_files_are_local_evidence_failures_with_shared_limits() {
+    for exhausted in [false, true] {
+        let mut server = Server::new_async().await;
+        let first = json!({"id":"Project1","slug":"Project1","title":"Project1","project_type":"resourcepack"}).to_string();
+        server
+            .mock("GET", "/project/Project1")
+            .with_body(first.clone())
+            .create_async()
+            .await;
+        let mut malformed = version("Project1", "Version1", "1.20.1", json!([]));
+        malformed["files"] = json!([]);
+        let page = json!([malformed]).to_string();
+        server
+            .mock("GET", "/project/Project1/version")
+            .match_query(Matcher::Any)
+            .with_body(page.clone())
+            .create_async()
+            .await;
+        records(&mut server, "Project2", "Version2", json!([])).await;
+        let mut limits = ClosureLimits::default();
+        if exhausted {
+            let second = json!({"id":"Project2","slug":"Project2","title":"Project2","project_type":"resourcepack"}).to_string();
+            limits.selection.catalog.transfer_bytes =
+                (first.len() + page.len() + second.len() - 1) as u64;
+        }
+        let report = assess_with_limits(
+            &server,
+            fixture(
+                &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+                &["a", "b"],
+                &[],
+                true,
+            ),
+            limits,
+        )
+        .await;
+        assert_eq!(
+            report.dependencies[0].reasons,
+            [UpdateReason::InvalidEvidence]
+        );
+        if exhausted {
+            assert_eq!(report.dependencies[1].reasons, [UpdateReason::CatalogLimit]);
+        } else {
+            assert!(report.dependencies[1].catalog_complete);
+            assert_eq!(report.dependencies[1].state, "unchanged");
+        }
+        assert!(!report.is_complete());
+        assert_eq!(report.joint.state, "not-assessed");
+    }
+}
+
+#[tokio::test]
+async fn provider_access_and_service_failures_still_stop_later_roots() {
+    for (status, reason) in [
+        (401, UpdateReason::Unauthorized),
+        (500, UpdateReason::ProviderUnavailable),
+    ] {
+        let mut server = Server::new_async().await;
+        server
+            .mock("GET", "/project/Project1")
+            .with_status(status)
+            .create_async()
+            .await;
+        let skipped = server
+            .mock("GET", "/project/Project2")
+            .expect(0)
+            .create_async()
+            .await;
+        let report = assess(
+            &server,
+            fixture(
+                &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+                &["a", "b"],
+                &[],
+                true,
+            ),
+        )
+        .await;
+        assert_eq!(report.dependencies[0].reasons, [reason]);
+        assert_eq!(
+            report.dependencies[1].reasons,
+            [UpdateReason::NotAssessedAfterFailure]
+        );
+        assert!(!report.is_complete());
+        skipped.assert_async().await;
+    }
+}

@@ -24,6 +24,38 @@ pub enum PathSyntax {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortableRelPath(String);
 
+/// An exact relative name inside an opaque archive, not an extraction destination.
+///
+/// Native reserved names and punctuation are retained. Absolute/drive-prefixed names,
+/// traversal, empty components, backslashes and controls are rejected. Native placement
+/// requires a separate `PortableRelPath` validation; this type grants no file access.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArchiveMemberName(String);
+
+impl ArchiveMemberName {
+    /// Parse an archive namespace without normalization or native filesystem access.
+    pub fn parse(input: &str) -> Result<Self, PathError> {
+        let bytes = input.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return Err(PathError::InvalidCharacter);
+        }
+        for component in input.split('/') {
+            if matches!(component, "" | "." | "..") {
+                return Err(PathError::EmptyOrTraversal);
+            }
+            if component.chars().any(|c| c.is_control() || c == '\\') {
+                return Err(PathError::InvalidCharacter);
+            }
+        }
+        Ok(Self(String::from(input)))
+    }
+
+    /// The exact member spelling; it has not been validated as a destination.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Why an input cannot represent a portable file path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathError {

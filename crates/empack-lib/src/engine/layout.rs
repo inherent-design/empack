@@ -134,14 +134,25 @@ impl CollisionIndex {
     }
 
     pub fn insert_file(&mut self, path: &PortableRelPath) -> Result<()> {
-        self.insert(path, true)
+        self.insert(path.as_str(), true)
     }
     pub fn insert_directory(&mut self, path: &PortableRelPath) -> Result<()> {
-        self.insert(path, false)
+        self.insert(path.as_str(), false)
     }
-    fn insert(&mut self, path: &PortableRelPath, file: bool) -> Result<()> {
+    pub(super) fn insert_member(
+        &mut self,
+        path: &empack_core::path::ArchiveMemberName,
+        directory: bool,
+    ) -> Result<()> {
+        ensure!(
+            self.exact,
+            "Opaque members require exact namespace comparison"
+        );
+        self.insert(path.as_str(), !directory)
+    }
+    fn insert(&mut self, path: &str, file: bool) -> Result<()> {
         let mut prefix = String::new();
-        let mut parts = path.components().peekable();
+        let mut parts = path.split('/').peekable();
         while let Some(part) = parts.next() {
             if !prefix.is_empty() {
                 prefix.push('/');

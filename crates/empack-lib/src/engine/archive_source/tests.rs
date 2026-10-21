@@ -362,7 +362,7 @@ fn member_observations_keep_the_original_container_assurance_without_digest_upgr
 }
 
 #[tokio::test]
-async fn opaque_mod_inspection_accepts_case_distinct_jvm_members() {
+async fn opaque_mod_inspection_accepts_case_distinct_and_native_reserved_jvm_members() {
     use crate::engine::{
         addition::{FileKindPolicy, validate_file_kind},
         mrpack::AcquiredBuildFile,
@@ -374,6 +374,7 @@ async fn opaque_mod_inspection_accepts_case_distinct_jvm_members() {
             ("META-INF/mods.toml", b"modLoader = 'javafml'"),
             ("org/example/A.class", b"one"),
             ("org/example/a.class", b"two"),
+            ("example/con.class", b"three"),
         ])),
         permissions: FilePermissions {
             readonly: false,
@@ -422,6 +423,11 @@ fn opaque_inspection_keeps_namespace_integrity_and_bounded_verification() {
     assert!(ZipContentSource::open(&content(&good), ArchiveLimits::default(), &cancel).is_err());
     for entries in [
         vec![("../escape", b"x".as_slice())],
+        vec![("/absolute", b"x".as_slice())],
+        vec![("C:/drive", b"x".as_slice())],
+        vec![("a\\b", b"x".as_slice())],
+        vec![("a/./b", b"x".as_slice())],
+        vec![("a//b", b"x".as_slice())],
         vec![("same", b"x".as_slice()), ("same/child", b"x".as_slice())],
     ] {
         assert!(
@@ -464,4 +470,55 @@ fn opaque_inspection_keeps_namespace_integrity_and_bounded_verification() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn opaque_members_do_not_inherit_native_destination_restrictions() {
+    let cancel = Cancellation::default();
+    for name in [
+        "example/con.class",
+        "aux.txt",
+        "data/name.",
+        "data/name ",
+        "data/a:b?*<>\"|",
+    ] {
+        let source = content(&archive(&[(name, b"payload")]));
+        let names = ZipContentSource::inspect_opaque(&source, ArchiveLimits::default(), &cancel)
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        assert_eq!(names[0].as_str(), name);
+        assert!(
+            ZipContentSource::open(&source, ArchiveLimits::default(), &cancel).is_err(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn opaque_inspection_validates_directories_and_rejects_linked_members() {
+    let cancel = Cancellation::default();
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .add_directory("con/", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer
+        .start_file("con/member", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(b"payload").unwrap();
+    let source = content(&writer.finish().unwrap().into_inner());
+    assert_eq!(
+        ZipContentSource::inspect_opaque(&source, ArchiveLimits::default(), &cancel).unwrap()[0]
+            .as_str(),
+        "con/member"
+    );
+    assert!(ZipContentSource::open(&source, ArchiveLimits::default(), &cancel).is_err());
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .add_symlink(
+            "con",
+            "../outside",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    let source = content(&writer.finish().unwrap().into_inner());
+    assert!(ZipContentSource::inspect_opaque(&source, ArchiveLimits::default(), &cancel).is_err());
 }
