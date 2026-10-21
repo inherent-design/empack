@@ -18,7 +18,11 @@ a device-loss guarantee. See the [transaction lifecycle and durability contract]
 
 Web Locks coordinate same-origin owners, including workers; expected-head
 comparison still occurs inside the metadata transaction. Notifications do not
-establish ownership. Without a supported coordination path, storage opens read-only.
+establish ownership. A busy project writer permits read-only project access only
+when shared storage retention and reader coordination are available. If storage
+coordination cannot be established, managed-content access is unavailable; disabling
+edits does not protect readers from collection. A separately safe metadata-only
+inspection may report diagnostics but cannot issue content leases or verify exports.
 See [Web Locks](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API).
 
 Persistent-storage requests may be denied. Browser storage estimates are not

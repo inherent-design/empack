@@ -141,7 +141,12 @@ boundary checks pass. Restack dependent PRs as their prerequisites merge.
 The published baseline is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
 (`e8ae54a`). Extraction starts from merged [main at `f26e0ae`](https://github.com/inherent-design/empack/commit/f26e0ae0b0e1599e45cc21b10ea6e488b23d5026),
 which also contains [#137](https://github.com/inherent-design/empack/pull/137).
-Its v0.8.2 package version is not a published-release claim. Preserve these
+Its v0.8.2 package version is not a published-release claim.
+[Native corrections in #138](https://github.com/inherent-design/empack/pull/138)
+complete opaque member-name validation and empty Modrinth file-list classification.
+These are intentional corrections to the pinned baseline, not behavior to preserve
+from `f26e0ae`. Incorporate their accepted implementation before qualifying extracted
+workflows. Preserve these
 contracts across native and portable interpretation:
 
 | Boundary | Required behavior |
