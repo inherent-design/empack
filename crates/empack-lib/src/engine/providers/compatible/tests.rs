@@ -222,6 +222,53 @@ fn malformed_dates_wrong_ownership_and_entry_overflow_cannot_select_a_file() {
         .is_err()
     );
 }
+#[test]
+fn malformed_version_diagnostics_identify_the_record_or_missing_field() {
+    let project = mr_project();
+    let request = request(&project, ReleasePolicy::Any);
+    let original = version(
+        "assets01",
+        "release",
+        "2025-01-01T00:00:00Z",
+        "1.20.1",
+        "fabric",
+    );
+    for file_error in [false, true] {
+        let mut bad = original.clone();
+        if file_error {
+            bad["files"][0]["filename"] = Value::Null;
+        } else {
+            bad["date_published"] = Value::Null;
+        }
+        let error = parse_page(
+            &project,
+            &request,
+            &serde_json::to_vec(&vec![bad]).unwrap(),
+            0,
+            1,
+            &Cancellation::default(),
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(
+            error.downcast_ref::<CatalogError>(),
+            Some(CatalogError::InvalidRecord)
+        ));
+        let diagnostic = format!("{error:#}");
+        if file_error {
+            assert!(
+                diagnostic.contains("Invalid Modrinth version assets01"),
+                "{diagnostic}"
+            );
+            assert!(diagnostic.contains("AANobbMI"), "{diagnostic}");
+        } else {
+            assert!(
+                diagnostic.contains("Invalid provider field date_published"),
+                "{diagnostic}"
+            );
+        }
+    }
+}
 fn cf_project() -> Value {
     json!({"data":{"id":123,"gameId":432,"slug":"assets","name":"Assets","classId":6}})
 }
