@@ -34,6 +34,9 @@ be reported as the newest selection. Authentication, throttling, malformed
 records and unavailable providers remain unknown evidence. Root-local invalid
 records, identity mismatches and unsupported content leave that row unknown while
 later roots retain the same cumulative transfer allowance and absolute deadline.
+Provider parsers classify malformed external records at their input boundary,
+including a listed Modrinth version with an empty file list. Internal model errors
+are not globally reclassified as provider evidence failures.
 Authentication, throttling, exhausted bounds and transport failures stop subsequent
 queries. No failure resets the allowance. Joint validation requires all necessary
 root evidence. `outdated --strict` prints the report and fails when its assessment

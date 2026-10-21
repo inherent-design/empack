@@ -103,8 +103,14 @@ assertions, choices, supplied files and destination observations before publicat
 ## Opaque archive inspection
 
 Direct JAR and ZIP content is inspected within its case-sensitive archive namespace.
-Case-distinct JVM members remain distinct because inspection does not extract them
-onto a filesystem. Duplicate names, file/ancestor conflicts, unsafe paths, links,
+Internal names use `ArchiveMemberName`, preserving exact spelling without native
+destination restrictions. Case-distinct JVM members and names such as
+`example/con.class` remain valid for opaque inspection. They do not become native
+files. `PortableRelPath` remains the stricter extraction/placement boundary; an
+inspected name must pass that validation before it can name a destination.
+
+Opaque names reject empty, absolute, drive-prefixed and traversal paths, backslashes
+and control characters. Duplicate names, file/ancestor conflicts, links,
 encryption, CRC failures and bounded expansion remain rejected. A separate inspection
 entry point returns member names after verification and grants no extraction access.
 World/import member extraction retains portable caseless destination checks.
