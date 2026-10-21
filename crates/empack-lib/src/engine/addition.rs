@@ -587,12 +587,14 @@ pub(in crate::engine) mod tests {
             &[("root", "library")],
             true,
         );
+        let error = candidate(&current, &request).err().unwrap();
         assert_eq!(
-            candidate(&current, &request)
-                .err()
-                .unwrap()
-                .downcast_ref::<AdditionError>(),
+            error.downcast_ref::<AdditionError>(),
             Some(&AdditionError::RetainedSelectionConflict(key("existing")))
+        );
+        assert_eq!(
+            error.to_string(),
+            "Required selection conflicts with retained content: existing; resolve its update explicitly"
         );
         let request = fixture(
             &[("existing", "Project2", "Version2")],
@@ -600,12 +602,14 @@ pub(in crate::engine) mod tests {
             &[],
             true,
         );
+        let error = candidate(&current, &request).err().unwrap();
         assert_eq!(
-            candidate(&current, &request)
-                .err()
-                .unwrap()
-                .downcast_ref::<AdditionError>(),
+            error.downcast_ref::<AdditionError>(),
             Some(&AdditionError::OccupiedKey(key("existing")))
+        );
+        assert_eq!(
+            error.to_string(),
+            "Dependency label already names another selection: existing"
         );
     }
     #[test]
@@ -619,9 +623,11 @@ pub(in crate::engine) mod tests {
             &[],
             true,
         );
+        let error = AdditionGroup::from_resolved(&request).unwrap_err();
+        assert_eq!(error, AdditionError::UnrequestedSelection(key("hidden")));
         assert_eq!(
-            AdditionGroup::from_resolved(&request).unwrap_err(),
-            AdditionError::UnrequestedSelection(key("hidden"))
+            error.to_string(),
+            "Unrequested installation in addition: hidden"
         );
         let current = fixture(&[], &[], &[], true);
         let request = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
@@ -634,12 +640,14 @@ pub(in crate::engine) mod tests {
             .unwrap();
         lock.intent_revision = decoded.semantic_revision();
         let request = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+        let error = candidate(&current, &request).err().unwrap();
         assert_eq!(
-            candidate(&current, &request)
-                .err()
-                .unwrap()
-                .downcast_ref::<AdditionError>(),
+            error.downcast_ref::<AdditionError>(),
             Some(&AdditionError::RuntimeMismatch)
+        );
+        assert_eq!(
+            error.to_string(),
+            "Addition was resolved for a different runtime or compatibility policy"
         );
     }
     #[test]

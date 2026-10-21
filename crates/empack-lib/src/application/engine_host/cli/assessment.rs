@@ -111,7 +111,9 @@ fn text(report: &UpdateAssessment) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::providers::{DeclaredIncompatibility, JointAssessment};
+    use crate::engine::providers::{
+        DeclaredIncompatibility, DependencyAssessment, JointAssessment,
+    };
 
     #[test]
     fn text_separates_required_closure_from_candidate_compatibility() {
@@ -153,5 +155,25 @@ mod tests {
             output.contains("Candidate compatibility (including retained inventory): not-assessed")
         );
         assert!(output.contains("modrinth:ProjectA@Version1 -> modrinth:ProjectB@Version1 (client/server coexistence not assessed)"));
+
+        report.dependencies.push(DependencyAssessment {
+            release_policy: "prefer-stable",
+            key: "menu".into(),
+            name: "Menu".into(),
+            current: Some(pin("ProjectA")),
+            permitted: None,
+            compatible: None,
+            upstream: None,
+            state: "invalid-evidence",
+            catalog_complete: false,
+            observed_records: None,
+            diagnostic: Some("Invalid provider field date_published in menu".into()),
+            reasons: Vec::new(),
+        });
+        let output = text(&report).unwrap();
+        assert!(output.contains("Assessment complete: false"));
+        assert!(output.contains("Invalid provider field date_published in menu"));
+        assert!(present(&session, &report, false, false).is_ok());
+        assert!(present(&session, &report, false, true).is_err());
     }
 }
