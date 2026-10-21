@@ -624,3 +624,37 @@ fn surviving_catalog_budget_keeps_its_original_deadline() {
     let budget = transport::RequestBudget::new(CatalogLimits::default()).unwrap();
     assert_eq!(budget.deadline(), budget.clone().deadline());
 }
+
+#[tokio::test]
+async fn invalid_provider_identity_and_kind_do_not_stop_independent_roots() {
+    for (id, kind) in [("invalid", "resourcepack"), ("Project1", "unsupported")] {
+        let mut server = Server::new_async().await;
+        server
+            .mock("GET", "/project/Project1")
+            .with_body(
+                json!({"id":id,"slug":"first","title":"First","project_type":kind}).to_string(),
+            )
+            .create_async()
+            .await;
+        records(&mut server, "Project2", "Version2", json!([])).await;
+        let report = assess(
+            &server,
+            fixture(
+                &[("a", "Project1", "Version1"), ("b", "Project2", "Version2")],
+                &["a", "b"],
+                &[],
+                true,
+            ),
+        )
+        .await;
+        assert_eq!(
+            report.dependencies[0].reasons,
+            [UpdateReason::InvalidEvidence],
+            "{id}/{kind}"
+        );
+        assert!(report.dependencies[1].catalog_complete, "{id}/{kind}");
+        assert_eq!(report.dependencies[1].state, "unchanged");
+        assert_eq!(report.joint.state, "not-assessed");
+        assert!(!report.is_complete());
+    }
+}
