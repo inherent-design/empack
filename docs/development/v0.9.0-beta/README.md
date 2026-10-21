@@ -2,7 +2,8 @@
 
 The release target is a portable modpack engine, native and browser adapters, and
 an SDK acceptance harness. These are target contracts, not capabilities supplied
-by v0.8.1-beta. Public signatures become callable only with their implementation.
+by the native baseline. Public signatures become callable only with their
+implementation.
 
 A project can retain unfinished work, including invalid author text and missing
 custom files. Export requires globally valid authoring semantics and an immutable selection of inputs. The native
@@ -40,7 +41,7 @@ silently downgrading a required platform.
 | Raw document editing, bindings and custom sources | Required, including invalid-text persistence |
 | Local project save/reopen and portable round-trip | Required |
 | Local JAR/configuration input and safe ZIP inspection | Required |
-| Prism bundled snapshot ZIP | Required, with independently checked inventory |
+| Prism snapshot ZIP | Required for reference delivery and explicit bundled delivery, with independently checked inventories |
 | Modrinth catalog, exact content and dependency resolution | Required on tested routes, including browser-visible rate information and bounded fallback |
 | Fresh runtime resolution | Required Minecraft/Fabric catalog path without a preloaded lock; other loader routes explicitly classified |
 | Restricted-file association | Required using exact obligations, original assertions and fresh preparation |
@@ -101,7 +102,7 @@ must not introduce those effects through transitive dependencies.
 
 | Concern | Target choice |
 | --- | --- |
-| Baseline | Preserve v0.8.1 authoring/identity/evidence semantics and native guarantees |
+| Baseline | Preserve the native behavior and format meanings in the extraction baseline below |
 | Author formats | Keep author schema 5, bindings schema 1 and lock schema 2 unless a separately reviewed semantic change requires otherwise |
 | Raw documents | Authoritative bytes; invalid text is saveable, but export requires whole-document semantic validation |
 | Assets | Logical asset identity separate from immutable content identity and session access tokens |
@@ -135,8 +136,40 @@ starts with its scoped contract and acceptance gates; its existence does not mea
 the implementation is complete. Merge only after its native regression and portable
 boundary checks pass. Restack dependent PRs as their prerequisites merge.
 
-The extraction starts from `v0.8.1-beta` (`e8ae54a`). The source boundaries below
-identify what must be separated, not public APIs to preserve indefinitely.
+### Extraction baseline
+
+The published baseline is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
+(`e8ae54a`). Extraction starts from merged [main at `f26e0ae`](https://github.com/inherent-design/empack/commit/f26e0ae0b0e1599e45cc21b10ea6e488b23d5026),
+which also contains [#137](https://github.com/inherent-design/empack/pull/137).
+Its v0.8.2 package version is not a published-release claim. Preserve these
+contracts across native and portable interpretation:
+
+| Boundary | Required behavior |
+| --- | --- |
+| New profiles | Initialization, import and ad-hoc Modrinth, Prism and server recipes prefer references; generated workflows use the authored profiles |
+| Existing profiles | Schema-5 `prism` and `server` string presets keep their bundled snapshot meaning; expanded profiles retain authored delivery and update policies |
+| Recipe explanation | Show included content, update authority and recipient requirements from the same effective recipe used for execution |
+| Archive inspection | Opaque JARs may contain case-distinct members; extraction and portable destination collision checks remain strict |
+| Assessment | Root-local malformed provider evidence is isolated under one shared byte/deadline allowance; unavailable evidence is not an up-to-date result |
+| Diagnostics | Strict assessment emits its report before failure; updates distinguish checked, changed and retained selections; text names dependencies and JSON retains exact details |
+
+Reference delivery can still include authored assets and prepared runtime files,
+and can require author-side acquisition for verification. It is not a permission
+or redistribution guarantee. Reference Prism/server recipients require empack;
+preparing their archives in a browser does not imply browser execution of Java.
+A missing preparation capability produces a diagnostic, never a silent switch to
+bundled delivery or a different installation recipe.
+
+New SDK/harness profiles follow the same explicit reference defaults. Existing
+shorthand must not be reserialized as a reference recipe merely because defaults
+for newly generated profiles changed. The required Prism suite exercises both the
+reference default and an explicitly selected bundled fixture. Other browser
+consumers remain capability-gated under the release scope above.
+
+### Source boundaries
+
+The source boundaries below identify what must be separated, not public APIs to
+preserve indefinitely.
 
 | Current source under `crates/empack-lib/src/` | Extraction boundary |
 | --- | --- |
