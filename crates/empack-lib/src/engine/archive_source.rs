@@ -244,11 +244,11 @@ fn index_zip<N: Ord>(
         } else {
             decoded_name.as_ref()
         };
-        let path = member_name(name, entry.is_dir())?;
         ensure!(
             name.split('/').count() <= limits.depth,
             "Source archive member exceeds depth limit"
         );
+        let path = member_name(name, entry.is_dir())?;
         if entry.is_dir() {
             ensure!(entry.size() == 0, "Source archive directory contains bytes");
             ensure!(

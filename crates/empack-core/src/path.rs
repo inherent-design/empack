@@ -7,7 +7,7 @@ use core::fmt;
 pub enum PathSyntax {
     /// A file beneath a project content root.
     ProjectContent,
-    /// A regular file member of an archive.
+    /// A portable member path used for extraction or archive output.
     ArchiveMember,
     /// One component used to derive an artifact filename.
     ArtifactName,

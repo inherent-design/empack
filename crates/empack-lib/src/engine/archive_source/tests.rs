@@ -522,3 +522,20 @@ fn opaque_inspection_validates_directories_and_rejects_linked_members() {
     let source = content(&writer.finish().unwrap().into_inner());
     assert!(ZipContentSource::inspect_opaque(&source, ArchiveLimits::default(), &cancel).is_err());
 }
+
+#[test]
+fn namespace_indexing_never_precedes_archive_depth_admission() {
+    let bytes = archive(&[("too/deep/member", b"payload")]);
+    let length = bytes.len() as u64;
+    let result = index_zip(
+        Box::new(Cursor::new(bytes)),
+        length,
+        ArchiveLimits {
+            depth: 1,
+            ..ArchiveLimits::default()
+        },
+        &Cancellation::default(),
+        |_, _| -> Result<PortableRelPath> { panic!("over-depth input reached namespace indexing") },
+    );
+    assert!(result.is_err());
+}
