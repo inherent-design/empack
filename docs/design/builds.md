@@ -61,7 +61,7 @@ including when a mixed-consumer invocation requests another format.
 
 `build --explain` and `build --explain --json` resolve the same effective profiles
 and output names as execution without acquiring content or changing state. The
-schema-1 report identifies value origins, recipient requirements, optional policy,
+schema-2 report identifies value origins, recipient requirements, optional policy,
 lock status and declared manual inputs. A missing or stale lock leaves input facts
 unknown. This report does not verify downloads or prove build readiness.
 
@@ -70,8 +70,10 @@ same profile are collapsed; distinct profiles with colliding output paths fail
 before acquisition. Saved continuation retains effective recipes, paths and formats.
 Author or binding edits invalidate the saved context instead of changing its recipes.
 
-Initialization and imports default to Modrinth references, bundled Prism and bundled
-server snapshots. Native reference consumers require an explicit stable pack identity
+Initialization, imports and ad-hoc builds default to reference delivery for
+Modrinth, Prism and server snapshots. Schema-5 authored `prism` and `server` string
+presets retain their bundled meaning; new scaffolds write explicit reference
+profiles. Existing profiles and generated workflows remain author-owned. Native reference consumers require an explicit stable pack identity
 and Java requirement; those values are not inferred from display names. Selecting a
 valid policy does not establish a platform association or publisher trust. Consumer
 activation binds the relevant evidence. Empack-managed native, Prism and server exports require

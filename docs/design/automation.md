@@ -2,7 +2,11 @@
 
 Generated GitHub workflows validate and publish the author’s selected distribution profiles.
 The workflows and their Python helper are editable project files. Existing copies remain
-user-owned; installing a newer empack executable does not replace them.
+user-owned; installing a newer empack executable does not replace them. New projects
+select Modrinth, Prism and server reference profiles. The workflow builds those
+profiles without overriding delivery; bundling requires an explicit author choice.
+Reference outputs can include authored assets and prepared runtime files. They do
+not establish redistribution permission for those files.
 
 ## Inputs and outputs
 
@@ -23,7 +27,7 @@ not upload to Modrinth or CurseForge or advance native empack subscription chann
 ## Execution contract
 
 The checked-in `.github/scripts/empack-ci.py` helper uses `build --explain --json`
-to read schema-1 profile names, artifact paths, pack version and lock status. It requires
+to read schema-2 profile names, artifact paths, pack version and lock status. It requires
 a current lock and binds execution to those exact profile names. Explanation verifies
 configuration, not download availability. Build must complete before staging starts.
 Restricted downloads or absent provider credentials fail the unattended job; workflows

@@ -19,6 +19,7 @@ supplies them.
 | `upstream` | Most recently published available selection in the observed project catalog |
 | `catalog_complete` | The bounded available catalog was read completely |
 | `reasons` | Stable codes for pins, policy, incompatibility or unavailable evidence |
+| `diagnostic` | Keyed failure context without credentials or download locations |
 
 Compatible ranking prefers the primary Minecraft version, then explicitly accepted
 alternatives in order, then publication time. `prefer-stable` ranks stable releases
@@ -30,8 +31,13 @@ An exact pin remains the permitted selection even when upstream has newer files.
 The scan shares a transfer allowance and deadline across roots and the joint
 closure check. Exceeding a catalog bound fails the scan; a partial page set cannot
 be reported as the newest selection. Authentication, throttling, malformed
-records and unavailable providers remain unknown evidence. After a failed scan,
-later queries are not given a fresh allowance. Manual sources have no implicit
+records and unavailable providers remain unknown evidence. Root-local invalid
+records, identity mismatches and unsupported content leave that row unknown while
+later roots retain the same cumulative transfer allowance and absolute deadline.
+Authentication, throttling, exhausted bounds and transport failures stop subsequent
+queries. No failure resets the allowance. Joint validation requires all necessary
+root evidence. `outdated --strict` prints the report and fails when its assessment
+is incomplete; ordinary inspection still returns the partial evidence successfully. Manual sources have no implicit
 provider update. Reports contain an observation time and no credentials or download
 locators.
 

@@ -10,6 +10,7 @@ changes that are not yet available in a published binary.
 | [Getting started](../README.md) | Installation and a first modpack |
 | [Manifest](manifest.md) | Sources, selection policy, pins and output profiles |
 | [Usage](usage.md) | Authoring, build profiles, pending downloads and instances |
+| [Troubleshooting](troubleshooting.md) | Partial assessments, retained selections, runtime evidence and older projects |
 | [Running a server](servers.md) | Console and GUI launchers, Java and troubleshooting |
 | [Publishing](publishing.md) | Signing keys, hosting and pack update channels |
 

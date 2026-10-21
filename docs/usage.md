@@ -150,13 +150,13 @@ build:
   profiles:
     launcher:
       target: prism
-      delivery: bundled
+      delivery: references
       environment: client
       updates: snapshot
       format: zip
     dedicated:
       target: server
-      delivery: bundled
+      delivery: references
       environment: server
       updates: snapshot
       format: tar.gz
@@ -172,7 +172,7 @@ empack build --ad-hoc empack --environment server --delivery references
 
 A consumer argument selects its unique configured profile. If several profiles use
 that consumer, select a name. `--ad-hoc` explicitly starts from built-in snapshot
-policies: Modrinth/CurseForge/empack references and bundled Prism/server content.
+policies with reference delivery for every consumer.
 `--delivery`, `--environment`, `--updates` and `--format` override selected values
 without editing the manifest. Modrinth and CurseForge require ZIP. Explanation
 shows each effective value and its origin, recipient requirements and known manual
