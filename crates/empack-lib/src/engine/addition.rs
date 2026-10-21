@@ -693,6 +693,31 @@ pub(in crate::engine) mod tests {
         );
     }
     #[test]
+    fn blocked_update_names_each_required_dependent_but_not_unrelated_roots() {
+        let current = fixture(
+            &[
+                ("root", "Project1", "Version1"),
+                ("menu", "Project2", "Version2"),
+                ("renderer", "Project3", "Version3"),
+                ("unrelated", "Project4", "Version4"),
+            ],
+            &["root", "menu", "renderer", "unrelated"],
+            &[("renderer", "root"), ("menu", "root")],
+            true,
+        );
+        let request = fixture(&[("root", "Project1", "Version2")], &["root"], &[], true);
+        let error = candidate(&current, &request).err().unwrap();
+        let error = error.downcast_ref::<AdditionError>().unwrap();
+        assert_eq!(
+            error,
+            &AdditionError::RequiredBy(vec![key("menu"), key("renderer")])
+        );
+        assert_eq!(
+            error.to_string(),
+            "Selection update has retained required dependents: menu, renderer; include these keys in the same update request"
+        );
+    }
+    #[test]
     fn explicit_pin_intent_survives_canonical_alias_binding() {
         let current = fixture(
             &[("existing", "Project1", "Version1")],
