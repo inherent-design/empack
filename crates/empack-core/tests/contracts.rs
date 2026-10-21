@@ -82,3 +82,37 @@ fn build_selection_is_unique_and_stable_for_every_short_request() {
         }
     }
 }
+
+#[test]
+fn opaque_archive_names_preserve_spelling_without_granting_portable_destinations() {
+    use empack_core::path::ArchiveMemberName;
+    for name in [
+        "example/con.class",
+        "data/trailing.",
+        "data/trailing ",
+        "data/a:b?*<>\"|",
+        "é/A.class",
+        "e\u{301}/a.class",
+    ] {
+        assert_eq!(ArchiveMemberName::parse(name).unwrap().as_str(), name);
+    }
+    for name in [
+        "",
+        ".",
+        "..",
+        "/root",
+        "a//b",
+        "a/../b",
+        "a/./b",
+        "a/",
+        "C:/root",
+        "c:relative",
+        "a\\b",
+        "a\0b",
+        "a\nb",
+    ] {
+        assert!(ArchiveMemberName::parse(name).is_err(), "{name:?}");
+    }
+    assert!(ArchiveMemberName::parse("example/con.class").is_ok());
+    assert!(InstallDestination::parse("example/con.class").is_err());
+}

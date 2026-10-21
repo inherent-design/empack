@@ -159,6 +159,7 @@ fn checked_version(pin: &ResolvedPin, bytes: &[u8]) -> Result<Version> {
     Ok(version)
 }
 fn version_files(input: Vec<File>) -> Result<NonEmpty<ProviderFile>> {
+    ensure!(!input.is_empty(), CatalogError::InvalidRecord);
     ensure!(
         input.iter().filter(|file| file.primary).count() <= 1,
         CatalogError::InvalidRecord

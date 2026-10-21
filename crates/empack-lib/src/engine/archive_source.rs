@@ -9,7 +9,7 @@ use anyhow::{Context, Result, ensure};
 use empack_core::{
     files::FilePermissions,
     model::ExpectedContent,
-    path::{PathSyntax, PortableRelPath},
+    path::{ArchiveMemberName, PathSyntax, PortableRelPath},
 };
 use std::{
     collections::BTreeMap,
@@ -43,7 +43,6 @@ impl ZipContentSource {
             content.lease().len(),
             limits,
             cancel,
-            false,
         )?;
         source.evidence = Some(super::content::ArchiveEvidence::captured(content));
         Ok(source)
@@ -54,16 +53,27 @@ impl ZipContentSource {
         content: &AcquiredContent,
         limits: ArchiveLimits,
         cancel: &Cancellation,
-    ) -> Result<Vec<PortableRelPath>> {
-        let mut archive = Self::from_reader(
+    ) -> Result<Vec<ArchiveMemberName>> {
+        let mut collisions = CollisionIndex::exact_members();
+        let mut indexed = index_zip(
             Box::new(content.lease().open()),
             content.lease().len(),
             limits,
             cancel,
-            true,
+            |name, directory| {
+                let name = ArchiveMemberName::parse(name)?;
+                collisions.insert_member(&name, directory)?;
+                Ok(name)
+            },
         )?;
-        archive.verify_members(cancel)?;
-        Ok(archive.files.into_keys().collect())
+        verify_members(
+            &mut indexed.archive,
+            indexed.files.values(),
+            limits,
+            &mut 0,
+            cancel,
+        )?;
+        Ok(indexed.files.into_keys().collect())
     }
     /// Read a captured native archive without duplicating its compressed bytes in scratch.
     /// The owning workflow must retain and revalidate the snapshot before publishing members.
@@ -79,86 +89,27 @@ impl ZipContentSource {
             expected.size.expect("captured size"),
             limits,
             cancel,
-            false,
         )
     }
     fn from_reader(
-        mut reader: Box<dyn ArchiveRead + Send>,
+        reader: Box<dyn ArchiveRead + Send>,
         bytes: u64,
         limits: ArchiveLimits,
         cancel: &Cancellation,
-        opaque: bool,
     ) -> Result<Self> {
-        ensure!(
-            bytes <= limits.compressed_bytes,
-            "Source archive exceeds compressed byte limit"
-        );
-        preflight_zip(&mut reader, bytes, limits, cancel)?;
-        reader.rewind()?;
-        let mut archive = zip::ZipArchive::new(reader)?;
-        ensure!(
-            archive.len() <= limits.entries,
-            "Source archive exceeds entry limit"
-        );
-        let mut files = BTreeMap::new();
-        let mut collisions = if opaque {
-            CollisionIndex::exact_members()
-        } else {
-            CollisionIndex::default()
-        };
-        let mut total = 0u64;
-        for index in 0..archive.len() {
-            cancel.check()?;
-            let entry = archive.by_index(index)?;
-            ensure!(
-                !entry.encrypted() && !entry.is_symlink(),
-                "Encrypted or linked source member is unsupported"
-            );
-            let decoded_name = entry.name().context("Invalid source archive member name")?;
-            let name = if entry.is_dir() {
-                decoded_name
-                    .strip_suffix('/')
-                    .context("Nonportable source directory name")?
-            } else {
-                decoded_name.as_ref()
-            };
+        let mut collisions = CollisionIndex::default();
+        let indexed = index_zip(reader, bytes, limits, cancel, |name, directory| {
             let path = PortableRelPath::parse(name, PathSyntax::ArchiveMember)?;
-            ensure!(
-                path.components().count() <= limits.depth,
-                "Source archive member exceeds depth limit"
-            );
-            if entry.is_dir() {
-                ensure!(entry.size() == 0, "Source archive directory contains bytes");
-                ensure!(
-                    entry
-                        .unix_mode()
-                        .is_none_or(|mode| matches!(mode & 0o170000, 0 | 0o040000)),
-                    "Source directory has another file kind"
-                );
+            if directory {
                 collisions.insert_directory(&path)?;
-                continue;
+            } else {
+                collisions.insert_file(&path)?;
             }
-            collisions.insert_file(&path)?;
-            let permissions = modes(entry.unix_mode().unwrap_or(0o644))?;
-            total = total
-                .checked_add(entry.size())
-                .context("Source archive expanded-size overflow")?;
-            ensure!(
-                entry.size() <= limits.file_bytes && total <= limits.total_bytes,
-                "Source archive exceeds expanded byte limit"
-            );
-            files.insert(
-                path,
-                ArchiveMember {
-                    index,
-                    bytes: entry.size(),
-                    permissions,
-                },
-            );
-        }
+            Ok(path)
+        })?;
         Ok(Self {
-            archive,
-            files,
+            archive: indexed.archive,
+            files: indexed.files,
             limits,
             extracted: 0,
             evidence: None,
@@ -173,38 +124,13 @@ impl ZipContentSource {
     /// Read every member through the decoder and CRC verifier without extracting to disk.
     /// These reads share the extraction allowance; an error cannot reset consumed work.
     pub fn verify_members(&mut self, cancel: &Cancellation) -> Result<()> {
-        for member in self.files.values() {
-            cancel.check()?;
-            ensure!(
-                member.bytes <= self.limits.total_bytes.saturating_sub(self.extracted),
-                "Source archive verification allowance exhausted"
-            );
-            let mut entry = self.archive.by_index(member.index)?;
-            let mut input = CountedRead {
-                input: &mut entry,
-                count: 0,
-            };
-            let result = super::io::copy_bounded(&mut input, &mut io::sink(), member.bytes, cancel);
-            let charged = if result.is_err() {
-                input.count.max(member.bytes)
-            } else {
-                input.count
-            };
-            self.extracted = self
-                .extracted
-                .checked_add(charged)
-                .context("Source archive verified-size overflow")?;
-            ensure!(
-                self.extracted <= self.limits.total_bytes,
-                "Source archive exceeds actual verification allowance"
-            );
-            let (_, bytes) = result?;
-            ensure!(
-                bytes == member.bytes,
-                "Source member size differs from its directory record"
-            );
-        }
-        Ok(())
+        verify_members(
+            &mut self.archive,
+            self.files.values(),
+            self.limits,
+            &mut self.extracted,
+            cancel,
+        )
     }
     /// Actual reads, including failed attempts, consume the extraction allowance. A member is
     /// usable only after CRC, all source declarations and size checks pass in private storage.
@@ -278,6 +204,121 @@ impl ZipContentSource {
         Ok((content, observed.permissions))
     }
 }
+struct IndexedArchive<N> {
+    archive: zip::ZipArchive<Box<dyn ArchiveRead + Send>>,
+    files: BTreeMap<N, ArchiveMember>,
+}
+
+fn index_zip<N: Ord>(
+    mut reader: Box<dyn ArchiveRead + Send>,
+    bytes: u64,
+    limits: ArchiveLimits,
+    cancel: &Cancellation,
+    mut member_name: impl FnMut(&str, bool) -> Result<N>,
+) -> Result<IndexedArchive<N>> {
+    ensure!(
+        bytes <= limits.compressed_bytes,
+        "Source archive exceeds compressed byte limit"
+    );
+    preflight_zip(&mut reader, bytes, limits, cancel)?;
+    reader.rewind()?;
+    let mut archive = zip::ZipArchive::new(reader)?;
+    ensure!(
+        archive.len() <= limits.entries,
+        "Source archive exceeds entry limit"
+    );
+    let mut files = BTreeMap::new();
+    let mut total = 0u64;
+    for index in 0..archive.len() {
+        cancel.check()?;
+        let entry = archive.by_index(index)?;
+        ensure!(
+            !entry.encrypted() && !entry.is_symlink(),
+            "Encrypted or linked source member is unsupported"
+        );
+        let decoded_name = entry.name().context("Invalid source archive member name")?;
+        let name = if entry.is_dir() {
+            decoded_name
+                .strip_suffix('/')
+                .context("Nonportable source directory name")?
+        } else {
+            decoded_name.as_ref()
+        };
+        let path = member_name(name, entry.is_dir())?;
+        ensure!(
+            name.split('/').count() <= limits.depth,
+            "Source archive member exceeds depth limit"
+        );
+        if entry.is_dir() {
+            ensure!(entry.size() == 0, "Source archive directory contains bytes");
+            ensure!(
+                entry
+                    .unix_mode()
+                    .is_none_or(|mode| matches!(mode & 0o170000, 0 | 0o040000)),
+                "Source directory has another file kind"
+            );
+            continue;
+        }
+        let permissions = modes(entry.unix_mode().unwrap_or(0o644))?;
+        total = total
+            .checked_add(entry.size())
+            .context("Source archive expanded-size overflow")?;
+        ensure!(
+            entry.size() <= limits.file_bytes && total <= limits.total_bytes,
+            "Source archive exceeds expanded byte limit"
+        );
+        files.insert(
+            path,
+            ArchiveMember {
+                index,
+                bytes: entry.size(),
+                permissions,
+            },
+        );
+    }
+    Ok(IndexedArchive { archive, files })
+}
+
+fn verify_members<'a>(
+    archive: &mut zip::ZipArchive<Box<dyn ArchiveRead + Send>>,
+    members: impl Iterator<Item = &'a ArchiveMember>,
+    limits: ArchiveLimits,
+    extracted: &mut u64,
+    cancel: &Cancellation,
+) -> Result<()> {
+    for member in members {
+        cancel.check()?;
+        ensure!(
+            member.bytes <= limits.total_bytes.saturating_sub(*extracted),
+            "Source archive verification allowance exhausted"
+        );
+        let mut entry = archive.by_index(member.index)?;
+        let mut input = CountedRead {
+            input: &mut entry,
+            count: 0,
+        };
+        let result = super::io::copy_bounded(&mut input, &mut io::sink(), member.bytes, cancel);
+        let charged = if result.is_err() {
+            input.count.max(member.bytes)
+        } else {
+            input.count
+        };
+        *extracted = extracted
+            .checked_add(charged)
+            .context("Source archive verified-size overflow")?;
+        ensure!(
+            *extracted <= limits.total_bytes,
+            "Source archive exceeds actual verification allowance"
+        );
+        let (_, bytes) = result?;
+        ensure!(
+            bytes == member.bytes,
+            "Source member size differs from its directory record"
+        );
+    }
+    Ok(())
+}
+
 struct CountedRead<'a> {
     input: &'a mut dyn Read,
     count: u64,
