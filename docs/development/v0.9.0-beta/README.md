@@ -224,3 +224,4 @@ results, implementation status and review findings belong in those PRs and CI.
 
 - [Drafts and portable ports](drafts-and-ports.md)
 - [Native host and CLI](native.md)
+- [Portable project format](project-format.md)
