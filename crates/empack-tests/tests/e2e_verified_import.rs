@@ -145,6 +145,52 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
         2
     );
     run(&imported, &["build", "prism", "--optional-defaults"]);
+    let mut referenced = zip::ZipArchive::new(
+        fs::File::open(assert_dist_artifact_suffix(
+            &imported,
+            "prism-references.zip",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let release = empack_lib::engine::release::DecodedRelease::decode(&member(
+        &mut referenced,
+        ".minecraft/.empack-consumer/release.json",
+    ))
+    .unwrap();
+    let released = release
+        .document()
+        .files
+        .iter()
+        .find(|file| file.destination == "resourcepacks/declared.zip")
+        .unwrap();
+    assert!(released.asset.is_none());
+    assert!(matches!(
+        released.source,
+        empack_lib::engine::release::ReleaseSource::Url { .. }
+    ));
+    assert!(
+        released
+            .assertions
+            .iter()
+            .any(|digest| digest.algorithm == algorithm && digest.value == hash)
+    );
+    assert!(
+        referenced
+            .by_name(".minecraft/resourcepacks/declared.zip")
+            .is_err()
+    );
+    // Bundled bytes remain an explicit override of the imported reference profile.
+    run(
+        &imported,
+        &[
+            "build",
+            "prism",
+            "--delivery",
+            "bundled",
+            "--optional-defaults",
+        ],
+    );
     let mut client = zip::ZipArchive::new(
         fs::File::open(assert_dist_artifact_suffix(&imported, "prism-bundled.zip")).unwrap(),
     )
