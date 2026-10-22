@@ -145,6 +145,13 @@ hash-prefixed lines with an actionable diagnostic. Comment handling and continua
 must preserve effective lifecycle settings: text ignored by validation must also be
 ignorable by the consumer. Shared fixtures cover hash-prefixed open quotes and
 trailing continuations under both supported formats, with semicolon controls.
+Structural padding is ASCII space/tab only; Unicode whitespace must not normalize
+into a canonical key, section or comment. Accept LF and CRLF line endings and an
+unterminated final line; reject bare CR and other raw controls. Preserve Unicode in
+user-facing values, trimming only space/tab at value boundaries. Shared fixtures
+cover U+00A0 around keys, U+2003 before keys, structural controls and Unicode names.
+Whitespace, comments, quoting, continuations, key encoding and section rules belong
+to one shared accepted grammar, not separate native and browser interpretations.
 Missing markers, shadowed settings or multiline quoting cannot select a different
 consumer interpretation after validation. Exercise the shared fixtures with Prism's
 actual parser as well as the engine; text-field comparison alone is insufficient.
