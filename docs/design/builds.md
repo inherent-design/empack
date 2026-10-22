@@ -82,10 +82,15 @@ check the enrolled channel before launch; exported keys never create trust. Refe
 and bundled delivery both use native ownership when `updates: empack`, with bundled
 bytes carried as verified release assets. Snapshot bundles remain independent of
 empack at runtime. Artifact names distinguish subscribed and snapshot recipes.
-Subscribed custom Prism configurations retain the generated command settings;
-subscribed server launch scripts retain the generated lifecycle. Incompatible
-replacements fail preparation instead of silently removing update checks. Other
-captured settings and content remain customizable.
+Every managed Prism or server recipe requires its preparation and launch integration:
+reference snapshots and all `updates: empack` recipes. Custom Prism configurations
+retain the generated `OverrideCommands`, `PreLaunchCommand` and `WrapperCommand`
+settings. Custom server entry points must match the generated scripts exactly;
+shell text is not interpreted to certify an alternative lifecycle. Incompatible
+replacements fail preparation without rewriting the template or publishing an
+artifact. Names, icons, memory settings, server properties and other unrelated
+content remain customizable. Bundled snapshots retain standalone command and
+script customization. There is no implicit custom-integration bypass.
 
 ## Build data flow
 
@@ -207,8 +212,13 @@ must stop launch. Subsequent preparation retains the active release and saved
 choices; it cannot reinstall the archive's original release over an update. The
 launcher profile must still match the active runtime.
 
-Captured user configurations remain user input; their arbitrary commands are not
-certified as native prelaunch integration. Preserve argument boundaries, prelaunch
+Managed `instance.cfg` templates must preserve the generated preparation and
+wrapper commands, even when no subscription is configured. Use the
+`INSTANCE_PREPARE_COMMAND` and `INSTANCE_WRAPPER_COMMAND` template values with
+`ini_quote`, and keep `OverrideCommands=true`. Removing the custom `instance.cfg`
+lets the builder supply the generated configuration. A bundled snapshot may use
+standalone commands; arbitrary user commands are not certified as native prelaunch
+integration. Preserve argument boundaries, prelaunch
 exit status and runtime-component requirements. Do not allow platform and empack
 updaters to manage the same files without an explicit authority transfer. Real
 launcher import and execution tests establish compatibility, not only JSON parsing.

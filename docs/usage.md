@@ -420,6 +420,13 @@ must be `v` followed by the version in `empack.yml`. The release attaches every 
 distribution and `SHA256SUMS`, using normalized download filenames. It does not upload
 to provider platforms. Existing workflow files are not automatically upgraded.
 
+Reference Prism exports and all `updates: empack` Prism profiles require
+`OverrideCommands=true` and the generated preparation/wrapper commands. Keep the
+`INSTANCE_PREPARE_COMMAND` and `INSTANCE_WRAPPER_COMMAND` template expressions when
+customizing `instance.cfg`; unrelated names, icons and memory settings are editable.
+A template that removes required integration fails preparation without being rewritten.
+For server entry points, see [custom scripts](servers.md#existing-exports-and-custom-scripts).
+
 Prism inherits the recipient’s launcher memory settings by default. To set an instance
 heap, add `OverrideMemory=true`, `MinMemAlloc=512` and an appropriate `MaxMemAlloc` value
 in MiB to `templates/client/instance.cfg.template`.
