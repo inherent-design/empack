@@ -228,6 +228,23 @@ pub(super) fn prepare_client_archive(
                 "Game content collides with a reserved Prism control path"
             );
         }
+        // Prism writes the game-root icon before running its preparation hook.
+        // This consumer rule does not relax policy for other images or directories.
+        for destination in game
+            .files()
+            .keys()
+            .filter(|p| p.as_str().eq_ignore_ascii_case("icon.png"))
+        {
+            ensure!(
+                release_options.policies.get(destination)
+                    != Some(&crate::engine::release::FilePolicy::Managed),
+                "Prism rewrites game-root icon.png before preparation; set policies: {{icon.png: seed}} in empack.bindings.yml instead of managed"
+            );
+            release_options.policies.insert(
+                destination.clone(),
+                crate::engine::release::FilePolicy::Seed,
+            );
+        }
         let release = NativeReleasePlan::prepare_selected(&game, release_options)?;
         files.insert(
             path(".minecraft/.empack-consumer/release.json")?,

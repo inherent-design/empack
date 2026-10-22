@@ -285,6 +285,17 @@ group or Windows job has no active processes. A kill request alone cannot clear
 runtime evidence. Failure to establish retirement within the bounded cleanup period
 retains recovery evidence and blocks publication.
 
+On Unix, an inherited console attached to the controlling terminal transfers
+foreground ownership to the runtime's separate process group before exec. Console
+input and terminal-generated Ctrl-C therefore reach the runtime; Ctrl-C can run
+its normal shutdown handler. Empack restores its prior foreground group and
+terminal settings after retirement, including cancellation, runtime failure and
+spawn failure. A background caller must first return to the foreground or redirect
+all console streams; empack does not steal another foreground group's terminal.
+Fully redirected runtimes and captured build-tool processes do not acquire terminal
+ownership. Explicit operation cancellation retains the existing process-tree
+termination behavior; it is not a request for Minecraft's graceful `stop` command.
+
 The host chooses the runtime and remains responsible for its compatibility and
 external resource use. Empack's acquisition grant does not sandbox the runtime's
 network or filesystem access. Independently started processes are outside this

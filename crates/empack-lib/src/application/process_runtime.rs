@@ -200,6 +200,11 @@ pub(crate) async fn execute_inherited(
     if let Err(error) = cancellation.check() {
         return Ok(RetiredRuntime(Err(error)));
     }
+    #[cfg(unix)]
+    let mut terminal = match terminal::ForegroundTerminal::capture() {
+        Ok(terminal) => terminal,
+        Err(error) => return Ok(RetiredRuntime(Err(error))),
+    };
     let mut command = tokio::process::Command::from(command);
     command
         .kill_on_drop(true)
@@ -208,6 +213,11 @@ pub(crate) async fn execute_inherited(
         .stderr(std::process::Stdio::inherit());
     #[cfg(unix)]
     command.process_group(0);
+    #[cfg(unix)]
+    if let Some(terminal) = &terminal {
+        terminal.configure_child(&mut command);
+    }
+
     #[cfg(unix)]
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -240,6 +250,10 @@ pub(crate) async fn execute_inherited(
     }
     termination?;
     tree.wait_retired().await?;
+    #[cfg(unix)]
+    if let Some(terminal) = &mut terminal {
+        terminal.restore()?;
+    }
     Ok(RetiredRuntime(result))
 }
 
@@ -634,3 +648,9 @@ mod async_tests {
         assert!(began.elapsed() < Duration::from_secs(3));
     }
 }
+
+#[cfg(all(test, unix))]
+mod terminal_tests;
+
+#[cfg(unix)]
+mod terminal;
