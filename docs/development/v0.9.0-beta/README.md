@@ -226,3 +226,4 @@ results, implementation status and review findings belong in those PRs and CI.
 - [Native host and CLI](native.md)
 - [Portable project format](project-format.md)
 - [Browser host and persistence](browser-host.md)
+- [Bounded codecs and artifact delivery](export.md)
