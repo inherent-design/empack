@@ -223,3 +223,4 @@ results, implementation status and review findings belong in those PRs and CI.
 ## Contract reference
 
 - [Drafts and portable ports](drafts-and-ports.md)
+- [Native host and CLI](native.md)
