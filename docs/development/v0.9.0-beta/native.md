@@ -37,6 +37,31 @@ Preparation that needs network or installers still requires the relevant grants.
 Native publication constructors remain internal. External clients cannot manufacture
 a file-level proof and bypass semantic preparation or authorization.
 
+## External authoring tools
+
+Native callers use the same typed preparation, inventory and instance services as
+the CLI. An external application may run its own generators or validation tools;
+this extraction does not provide a general process runner, HTTP companion or
+JavaScript native bridge. Callers must not rely on terminal prose as an API or
+bypass the existing authorization and publication boundaries.
+
+For isolated validation, use existing build and instance operations to establish a
+captured candidate in a separate destination. A preparation preview is insufficient
+to claim that exact files were executed. Keep the intended pack inventory distinct
+from an instrumented test inventory containing an exporter, test configuration or
+other additions. Record that delta, the tool identity, runtime and configuration
+inputs, and any world/test context in application-owned evidence. Tools receive
+private test copies or equivalent isolation; mutable live-instance files do not
+become immutable candidate inputs merely through a symlink.
+
+Installed observations identify the inspected root, observed content and coverage.
+They are separate from intended or generated content. An external tool's successful
+report cannot authorize applying its directory to a playtest instance. Applying a
+captured pack uses the native instance lifecycle, rechecks current observations and
+preserves world and unknown-neighbor protection. Existing unmanaged installations
+retain current ownership restrictions; inspection does not silently adopt them.
+Supporting an additional adoption or checkout-merge workflow needs a separate design.
+
 ## Extraction behavior
 
 Move semantic services into `empack-engine` and make existing callers forward to
@@ -169,3 +194,11 @@ acceptance repeats the complete restore path against the packaged candidate.
 Audit synchronous shared work during extraction against the execution classes and
 resource profiles. Moving parsing or template work behind an async API does not
 establish browser responsiveness or native worker retirement.
+
+Use a small native fixture with a private test copy and a synthetic observer.
+Verify that adding instrumentation changes only the test inventory and does not
+alter retained pack inputs. A changed live source fails the applicable observation
+check rather than being attributed to the captured candidate. Inspection of an
+unmanaged destination cannot confer installation authority. This checkpoint uses
+fixture inputs through existing native boundaries; real consumer artifacts remain
+checkpoint 5 evidence, and no game-specific exporter is a new release gate.
