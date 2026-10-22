@@ -2314,3 +2314,52 @@ async fn protected_world_retires_only_its_prior_local_overrides() {
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn legacy_managed_prism_icon_migrates_to_seed_without_conflict() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    // Recreate a completed pre-fix Prism record. New Prism preparations rightly
+    // reject this ownership, so construct the historical fixture from a neutral
+    // installation without weakening the current preparation boundary.
+    let mut legacy = apply(
+        &engine,
+        root.path(),
+        request(&[("icon", "icon.png", b"old", FilePolicy::Managed)]),
+    )
+    .await;
+    fs::rename(root.path().join("game"), root.path().join(".minecraft")).unwrap();
+    fs::write(
+        root.path().join(".minecraft/.empack-layout"),
+        b"empack-prism-layout-v1\n",
+    )
+    .unwrap();
+    legacy.layout = InstanceLayout::Prism;
+    fs::write(
+        root.path().join(".empack/instance.json"),
+        serde_json::to_vec(&legacy).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.path().join(".minecraft/icon.png"), b"launcher rewrite").unwrap();
+    let updated = apply(
+        &engine,
+        root.path(),
+        request(&[("icon", "icon.png", b"new publisher icon", FilePolicy::Seed)]),
+    )
+    .await;
+    assert_eq!(updated.layout, InstanceLayout::Prism);
+    assert!(updated.local_overrides.is_empty());
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/icon.png")).unwrap(),
+        b"launcher rewrite"
+    );
+    let mut repair = request(&[("icon", "icon.png", b"new publisher icon", FilePolicy::Seed)]);
+    repair.action = InstanceAction::Repair;
+    apply(&engine, root.path(), repair).await;
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/icon.png")).unwrap(),
+        b"launcher rewrite"
+    );
+    engine.shutdown().await;
+}

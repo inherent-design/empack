@@ -156,7 +156,16 @@ impl Drop for Pty {
 
 #[test]
 fn inherited_runtime_owns_terminal_and_restores_it() {
-    for mode in ["stop", "interrupt", "cancel", "failure", "spawn-failure"] {
+    for mode in [
+        "stop",
+        "interrupt",
+        "cancel",
+        "failure",
+        "spawn-failure",
+        "suspend-key",
+        "external-resume",
+        "cancel-stopped",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let mut pty = Pty::start(mode, root.path());
         if mode != "spawn-failure" {
@@ -171,6 +180,24 @@ fn inherited_runtime_owns_terminal_and_restores_it() {
                 "interrupt" => {
                     pty.send(&[3]);
                     pty.expect("INTERRUPTED_GRACEFULLY");
+                }
+                "suspend-key" => {
+                    pty.send(&[26, b'\n']);
+                    pty.expect("CONSOLE_INPUT=\u{1a}");
+                    pty.send(b"list\n");
+                    pty.expect("CONSOLE_INPUT=list");
+                    pty.send(b"stop\n");
+                }
+                "external-resume" => {
+                    pty.expect("RUNTIME_STOPPED");
+                    std::fs::write(root.path().join("resume"), b"resume").unwrap();
+                    pty.expect("RUNTIME_RESUMED");
+                    pty.send(b"list\n");
+                    pty.expect("CONSOLE_INPUT=list");
+                    pty.send(b"stop\n");
+                }
+                "cancel-stopped" => {
+                    pty.expect("RUNTIME_STOPPED");
                 }
                 "cancel" => std::fs::write(root.path().join("cancel"), b"cancel").unwrap(),
                 "failure" => pty.send(b"fail\n"),
@@ -191,6 +218,20 @@ fn terminal_host_fixture() {
     assert_eq!(group, unsafe { libc::getpgrp() });
     let mut before = unsafe { std::mem::zeroed::<libc::termios>() };
     assert_eq!(unsafe { libc::tcgetattr(0, &mut before) }, 0);
+    if mode == "stop" {
+        let owner = terminal::ForegroundTerminal::capture().unwrap().unwrap();
+        let error = terminal::ForegroundTerminal::capture()
+            .err()
+            .expect("duplicate tty owner");
+        assert!(format!("{error:#}").contains("already owns"));
+        drop(owner);
+        let status = fixture(CHILD, "background")
+            .process_group(0)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(unsafe { libc::tcgetpgrp(0) }, group);
+    }
     let command = if mode == "spawn-failure" {
         Command::new("/empack-missing-runtime")
     } else {
@@ -210,12 +251,53 @@ fn terminal_host_fixture() {
             }
             token.cancel();
         });
+        let stop_mode = mode.clone();
+        let stopped_cancel = cancel.clone();
+        let stop_task = tokio::spawn(async move {
+            if !matches!(stop_mode.as_str(), "external-resume" | "cancel-stopped") {
+                return;
+            }
+            while !std::path::Path::new("runtime-pid").exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            let pid: i32 = std::fs::read_to_string("runtime-pid")
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert_eq!(unsafe { libc::kill(-pid, libc::SIGSTOP) }, 0);
+            // Observe the direct child's stop without mistaking it for exit.
+            // The child cannot exit here until the test supplies input/resumes it.
+            let mut status = 0;
+            loop {
+                let observed =
+                    unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED | libc::WNOHANG) };
+                assert!(observed >= 0);
+                if observed == pid {
+                    assert!(libc::WIFSTOPPED(status));
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            assert_eq!(unsafe { libc::tcgetpgrp(0) }, pid);
+            println!("RUNTIME_STOPPED");
+            if stop_mode == "cancel-stopped" {
+                stopped_cancel.cancel();
+                return;
+            }
+            while !std::path::Path::new("resume").exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            assert_eq!(unsafe { libc::kill(-pid, libc::SIGCONT) }, 0);
+            assert_eq!(unsafe { libc::tcgetpgrp(0) }, pid);
+            println!("RUNTIME_RESUMED");
+        });
         let result = execute_inherited(command, cancel).await;
+        stop_task.await.unwrap();
         cancel_task.abort();
         result.unwrap().0
     });
     match mode.as_str() {
-        "cancel" => assert!(result.unwrap_err().is::<Interrupted>()),
+        "cancel" | "cancel-stopped" => assert!(result.unwrap_err().is::<Interrupted>()),
         "spawn-failure" => assert!(result.is_err()),
         "failure" => assert_eq!(result.unwrap().code(), Some(7)),
         _ => assert!(result.unwrap().success()),
@@ -236,6 +318,14 @@ extern "C" fn interrupt(_: libc::c_int) {
 }
 #[test]
 fn terminal_child_fixture() {
+    if std::env::var("EMPACK_PTY_ROLE").as_deref() == Ok("background") {
+        assert_ne!(unsafe { libc::tcgetpgrp(0) }, unsafe { libc::getpgrp() });
+        let error = terminal::ForegroundTerminal::capture()
+            .err()
+            .expect("background stole terminal");
+        assert!(format!("{error:#}").contains("background process group"));
+        return;
+    }
     if std::env::var("EMPACK_PTY_ROLE").as_deref() != Ok("child") {
         return;
     }
@@ -256,9 +346,12 @@ fn terminal_child_fixture() {
     );
     let mut settings = unsafe { std::mem::zeroed::<libc::termios>() };
     assert_eq!(unsafe { libc::tcgetattr(0, &mut settings) }, 0);
+    assert_eq!(settings.c_cc[libc::VSUSP], libc::_POSIX_VDISABLE);
     settings.c_lflag &= !libc::ECHO;
     assert_eq!(unsafe { libc::tcsetattr(0, libc::TCSANOW, &settings) }, 0);
     println!("CONSOLE_READY");
+    std::fs::write("runtime-pid.tmp", std::process::id().to_string()).unwrap();
+    std::fs::rename("runtime-pid.tmp", "runtime-pid").unwrap();
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {
         if INTERRUPTED.load(Ordering::SeqCst) {

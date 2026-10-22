@@ -66,11 +66,25 @@ impl ForegroundTerminal {
     }
     pub(super) fn configure_child(&self, command: &mut tokio::process::Command) {
         let fd = self.tty.as_raw_fd();
+        let mut runtime_settings = self.settings;
+        // This supervisor is not a shell job-control manager. Disable the tty's
+        // suspend characters while preserving interrupt/quit and input behavior.
+        runtime_settings.c_cc[libc::VSUSP] = libc::_POSIX_VDISABLE;
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
+        {
+            runtime_settings.c_cc[libc::VDSUSP] = libc::_POSIX_VDISABLE;
+        }
         // The group is created by process_group(0) before this hook. Transfer before
         // exec: a parent-side transfer races the child's first read or tcsetattr.
         // The inherited descriptor is close-on-exec; only libc calls run after fork.
         unsafe {
-            command.pre_exec(move || transfer(fd, libc::getpid(), None));
+            command.pre_exec(move || transfer(fd, libc::getpid(), Some(&runtime_settings)));
         }
     }
     pub(super) fn restore(&mut self) -> Result<()> {
@@ -123,5 +137,28 @@ fn transfer(
             return Err(io::Error::from_raw_os_error(code));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn failed_terminal_transfer_restores_the_calling_threads_signal_mask() {
+    unsafe {
+        let mut before = std::mem::zeroed();
+        let mut after = std::mem::zeroed();
+        assert_eq!(
+            libc::pthread_sigmask(libc::SIG_BLOCK, std::ptr::null(), &mut before),
+            0
+        );
+        let error = transfer(-1, libc::getpgrp(), None).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::EBADF));
+        assert_eq!(
+            libc::pthread_sigmask(libc::SIG_BLOCK, std::ptr::null(), &mut after),
+            0
+        );
+        assert_eq!(
+            libc::sigismember(&before, libc::SIGTTOU),
+            libc::sigismember(&after, libc::SIGTTOU)
+        );
     }
 }

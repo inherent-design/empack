@@ -11,6 +11,14 @@ fn enroll(key: &SigningKey) -> SubscriptionRequest {
     }
 }
 fn observe(key: &SigningKey, sequence: u64, release: &str) -> SubscriptionRequest {
+    observe_bounded(key, sequence, release, 1024)
+}
+fn observe_bounded(
+    key: &SigningKey,
+    sequence: u64,
+    release: &str,
+    maximum_bytes: u64,
+) -> SubscriptionRequest {
     let document = ChannelDocument {
         schema: 1,
         pack: "fixture".into(),
@@ -21,7 +29,7 @@ fn observe(key: &SigningKey, sequence: u64, release: &str) -> SubscriptionReques
         release: ChannelRelease {
             id: release.into(),
             url: "https://publisher.test/release.json".into(),
-            maximum_bytes: 1024,
+            maximum_bytes,
         },
     };
     SubscriptionRequest::Observe {
@@ -742,5 +750,225 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
             .unwrap()
             .is_some()
     );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn prism_channel_updates_require_seed_icons_from_native_producer() {
+    use crate::engine::{
+        content::{InitialObservation, SourceEvidencePolicy, verify_stream},
+        instance::{InstanceLayout, subscription::select_release},
+        mrpack::{
+            SourceFile,
+            tests::{explicitly_placed, project},
+        },
+        publication::RecoveryReader,
+        release::{
+            FilePolicy, ReleaseSource,
+            producer::{NativeReleaseOptions, NativeReleasePlan},
+        },
+    };
+    use empack_core::{
+        files::FilePermissions,
+        model::{ContentLayer, ExpectedContent},
+        path::InstallDestination,
+        requirements::{Requirement, Requirements},
+    };
+    // Use the same consumer-neutral producer as native exports, including its
+    // default policy calculation. Do not hand-author the incoming release policy.
+    let produce = |version: &str, seed: bool| {
+        let initial = project(false, false);
+        let mut intent = initial.intent().clone();
+        let mut lock = initial.lock().clone();
+        intent.roots.clear();
+        lock.dependencies.clear();
+        lock.coverage.clear();
+        intent.metadata.version = version.into();
+        intent.installation_policies.clear();
+        if seed {
+            intent.installation_policies.insert(
+                InstallDestination::parse("icon.png")
+                    .unwrap()
+                    .relative()
+                    .clone(),
+                empack_core::instance::FilePolicy::Seed,
+            );
+        }
+        let project = explicitly_placed(intent, lock);
+        let bytes = b"publisher icon";
+        let content = verify_stream(
+            &mut &bytes[..],
+            &ExpectedContent {
+                digests: None,
+                size: None,
+                accepted_observation: None,
+            },
+            bytes.len() as u64,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &Default::default(),
+        )
+        .unwrap();
+        let source = SourceFile {
+            label: "pack/icon.png".into(),
+            destination: InstallDestination::parse("icon.png").unwrap(),
+            layer: ContentLayer::Common,
+            requirements: Requirements {
+                client: Requirement::Required,
+                server: Requirement::Required,
+            },
+            permissions: FilePermissions {
+                readonly: false,
+                executable: false,
+            },
+            content,
+        };
+        NativeReleasePlan::prepare(
+            &project,
+            &BTreeMap::new(),
+            vec![source],
+            NativeReleaseOptions::from_project(&project).unwrap(),
+        )
+        .unwrap()
+    };
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let (engine, _) = super::super::tests::engine(state.clone());
+    let key = SigningKey::from_bytes(&[11; 32]);
+    apply(&engine, root.path(), enroll(&key)).await;
+    for (sequence, seed) in [(1, true), (2, false), (3, true)] {
+        let plan = produce(&sequence.to_string(), seed);
+        let document = plan.release();
+        assert_eq!(
+            document.document().files[0].policy,
+            if seed {
+                FilePolicy::Seed
+            } else {
+                FilePolicy::Managed
+            }
+        );
+        let original = document.bytes().to_vec();
+        let envelope = sign(EnvelopeKind::Release, &original, &[&key]).unwrap();
+        apply(
+            &engine,
+            root.path(),
+            observe_bounded(&key, sequence, document.id(), envelope.len() as u64),
+        )
+        .await;
+        let selected = select_release(
+            root.path(),
+            &envelope,
+            2_000_000_000,
+            &semver::Version::parse("0.8.0-beta").unwrap(),
+            RecoveryReader::new(state.clone()),
+            &Default::default(),
+        )
+        .unwrap();
+        let mut input = install(selected);
+        if sequence == 1 {
+            input.layout = Some(InstanceLayout::Prism);
+        }
+        for file in &document.document().files {
+            let ReleaseSource::Asset { path } = &file.source else {
+                panic!()
+            };
+            let asset = plan
+                .assets()
+                .iter()
+                .find(|(name, _)| name.as_str() == path)
+                .unwrap()
+                .1;
+            input
+                .supplied
+                .insert(file.key.clone(), asset.content.clone());
+        }
+        let result = engine.prepare(root.path().to_owned(), input).await;
+        if !seed {
+            let error = result
+                .err()
+                .expect("Prism accepted a managed icon from a signed native release");
+            let message = format!("{error:#}");
+            assert!(
+                message.contains("Prism") && message.contains("icon.png: seed"),
+                "{message}"
+            );
+            assert!(
+                !message.contains("SeedOwnership"),
+                "must fail before offering conflict decisions"
+            );
+            assert_eq!(
+                fs::read(root.path().join(".minecraft/icon.png")).unwrap(),
+                b"launcher icon"
+            );
+        } else {
+            let Preparation::Ready(prepared) = result.unwrap() else {
+                panic!()
+            };
+            let grant = ExecutionGrant {
+                plan: prepared.view().plan(),
+                replacement: prepared.view().replacement(),
+                network: NetworkPermission::Offline,
+                run_installer: false,
+                run_runtime: false,
+            };
+            let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+            assert!(matches!(
+                &*operation.wait().await,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(
+                    ExecutionReceipt::Instance(_)
+                ))
+            ));
+            engine.release_completed(operation.id());
+            if sequence == 1 {
+                fs::write(root.path().join(".minecraft/icon.png"), b"launcher icon").unwrap();
+            }
+            assert_eq!(
+                fs::read(root.path().join(".minecraft/icon.png")).unwrap(),
+                b"launcher icon"
+            );
+            // Launch preparation uses the persisted Prism layout and the same
+            // compatibility check; a launcher rewrite must not demand repair.
+            let launch = engine
+                .prepare(
+                    root.path().to_owned(),
+                    LaunchInstanceRequest {
+                        server: false,
+                        expected_release: Some(document.id().into()),
+                        program: std::env::current_exe().unwrap(),
+                        arguments: vec![
+                            "--exact".into(),
+                            "engine::api::launch::tests::runtime_fixture".into(),
+                            "--nocapture".into(),
+                        ],
+                    },
+                )
+                .await
+                .unwrap();
+            let Preparation::Ready(launch) = launch else {
+                panic!()
+            };
+            let grant = ExecutionGrant {
+                plan: launch.view().plan(),
+                replacement: launch.view().replacement(),
+                network: NetworkPermission::Offline,
+                run_installer: false,
+                run_runtime: true,
+            };
+            let mut running = engine.start(launch.authorize(grant).unwrap()).unwrap();
+            assert!(matches!(&*running.wait().await,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Launch(receipt))) if receipt.status.success()));
+            engine.release_completed(running.id());
+            assert_eq!(
+                fs::read(root.path().join(".minecraft/icon.png")).unwrap(),
+                b"launcher icon"
+            );
+        }
+        assert_eq!(
+            document.bytes(),
+            original,
+            "authenticated policy must never be rewritten"
+        );
+    }
     engine.shutdown().await;
 }

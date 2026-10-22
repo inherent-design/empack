@@ -130,7 +130,19 @@ their ordinary policies. Standalone bundled snapshots are unchanged.
 This rule affects newly built release descriptors. Updating the empack executable
 does not rewrite a previously published archive or its ownership policy. Rebuild
 old distributions with the intended icon policy and use the normal instance update
-workflow; modified managed files still require the existing conflict decisions.
+workflow. For an existing regular icon file, Managed → Seed preserves its current
+bytes, including launcher changes, without a conflict override. Seed → Managed
+normally raises an ownership conflict; Prism additionally rejects that incoming
+policy before conflict decisions. Managed → Managed retains the normal modified-file
+checks in consumer-neutral installations and is invalid for a Prism icon.
+
+Generic native exports remain consumer-neutral and can legitimately manage a root
+image. Authors publishing native releases to Prism channels must explicitly retain
+`policies: {icon.png: seed}` in their bindings. Every Prism installation, update,
+repair, rollback and launch preparation validates the selected release's effective
+icon policy. An incompatible managed icon is rejected with publishing guidance;
+authenticated release policies are never rewritten on the recipient. This also
+prevents a conflict override from reintroducing launcher-owned managed content.
 
 ## Build data flow
 
