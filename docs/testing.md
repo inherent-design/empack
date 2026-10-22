@@ -123,17 +123,21 @@ and value boundaries. Accept LF/CRLF and unterminated final lines; reject bare C
 unsupported controls. Unicode display-value fixtures remain accepted without changing
 author bytes. Semicolon controls preserve the effective lifecycle settings. Compare the
 same fixtures with Prism 11.1.1's actual `INIFile::loadFile` implementation, using
-a clean upstream checkout and Qt development tools. Consumer-parser execution is
-separate from launching Minecraft and must identify the source revision and Qt
-version in its receipt. The probe compiles upstream `INIFile.cpp` and `Json.cpp`
+a clean upstream checkout and Qt 6.4 or newer within major version 6, as required
+by that Prism revision. Qt is opt-in test tooling, not an empack runtime dependency.
+The probe rejects unsupported Qt versions before compilation. Earlier Qt 5 runs are
+supplemental diagnostics, not qualification of Prism 11.1.1. Consumer-parser execution
+is separate from launching Minecraft. Its receipt records application and empack
+revisions, dirty state, fixture SHA-256, platform/architecture, compile/runtime Qt
+versions, compiler identity and build configuration. The probe compiles upstream `INIFile.cpp` and `Json.cpp`
 without vendoring or changing their parsing code:
 
 ```sh
 python3 scripts/check-prism-config.py --prism-source /path/to/PrismLauncher-11.1.1 --qmake /path/to/qmake
 ```
 
-Use a clean checkout at `7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4` and Qt development
-tools plus `make`. The shared fixtures also run through empack's public build
+Use a clean checkout at `7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4` and supported Qt 6
+development tools plus `make`. The shared fixtures also run through empack's public build
 preparation. The probe verifies accepted settings and reproduces the legacy
 shadow and hash-prefixed quote/continuation counterexamples; it does not certify
 every rejected representation.
@@ -144,3 +148,25 @@ and directly execute the shell entry points with controlled fake external tools.
 Windows tests execute batch entry points with `EMPACK_NO_PAUSE=1`, checking full
 diagnostic text, empty syntax-error output and preserved exit status. Source
 permissions and authored bytes remain unchanged after candidate preparation.
+
+## Documentation checks
+
+The repository-relative validator checks inline local Markdown links and anchors,
+fenced blocks and selected prose rules. It does not check external URLs or claim to
+parse every Markdown extension. File checks work without Git metadata:
+
+```sh
+python3 scripts/check-docs.py docs/testing.md docs/design/builds.md
+```
+
+Git-dependent checks are explicit. After fetching the relevant branches, validate a
+stacked contract snapshot without switching the working tree:
+
+```sh
+python3 scripts/check-docs.py --ref origin/dev-v0.9-verified-export --base origin/dev-v0.9-browser-store --docs-only --strict-prose docs/development/v0.9.0-beta
+```
+
+This checks parent ancestry, changed-file scope and diff whitespace in addition to
+the selected snapshot's documents. Ref names are inputs; no developer-local branch
+list, fixed main revision or `.git/` helper is required. Documentation checks do not
+run the native or browser/device acceptance matrix.
