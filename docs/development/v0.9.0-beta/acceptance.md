@@ -154,7 +154,11 @@ subscribed lifecycle enforcement remain covered. Repeat the shared regression on
 the packaged native and browser paths; CLI-only validation is insufficient.
 
 Include missing/unsupported/duplicate Prism format markers, authority keys outside
-`[General]`, alternate spellings and multiline quoting. Run the shared accepted and
+`[General]`, alternate spellings and multiline quoting. Include hash-prefixed open
+quotes and trailing continuations under formats 1.2 and 1.3; the public preparation
+boundary rejects them without changing documents, templates or prior artifacts.
+Semicolon-comment controls retain effective lifecycle settings, and ordinary
+standalone customization remains supported. Run the shared accepted and
 counterexample fixtures through a pinned actual Prism parser, recording its source
 revision and Qt version. A parser-only pass is not launcher/gameplay acceptance.
 
