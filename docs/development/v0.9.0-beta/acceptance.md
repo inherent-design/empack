@@ -153,6 +153,19 @@ generated script copies remain valid. Bundled standalone customization and
 subscribed lifecycle enforcement remain covered. Repeat the shared regression on
 the packaged native and browser paths; CLI-only validation is insufficient.
 
+Include missing/unsupported/duplicate Prism format markers, authority keys outside
+`[General]`, alternate spellings and multiline quoting. Run the shared accepted and
+counterexample fixtures through a pinned actual Prism parser, recording its source
+revision and Qt version. A parser-only pass is not launcher/gameplay acceptance.
+
+Verify managed script output attributes independently of source-host permissions.
+Identical copies from executable, read-only and non-executable sources produce the
+recipe's intended modes without changing the source. Check supported ZIP/TAR.GZ/7z
+metadata, directly execute extracted Unix entry points with controlled tools, and
+verify Windows batch diagnostic text, syntax-error absence and preserved exit status.
+Repeat applicable fixtures on native and browser exporters with the same frozen
+inputs; a correct inventory cannot excuse unusable entry-point attributes.
+
 Report content inventory, consumer configuration, mandatory preparation/activation
 integration and observed consumer acceptance separately. Source-level command
 checks do not replace exercising the reference preparation hook in actual Prism.
