@@ -112,3 +112,19 @@ Server archive tests check both console and GUI launchers in ZIP, TAR and 7z out
 Native shell and Windows command fixtures verify the default `nogui` argument, its
 absence from GUI launchers, argument boundaries, preparation ordering and exit codes.
 Live runtime probes exercise console launchers; they do not certify desktop GUI rendering.
+
+## Managed consumer interpretation
+
+Managed Prism configuration tests include absent, unsupported, duplicated and
+misplaced version markers, command shadowing, and multiline quoting. Compare the
+same fixtures with Prism 11.1.1's actual `INIFile::loadFile` implementation, using
+a clean upstream checkout and Qt development tools. Consumer-parser execution is
+separate from launching Minecraft and must identify the source revision and Qt
+version in its receipt.
+
+Managed server tests check archive attributes in ZIP, TAR.GZ and 7z for identical
+scripts captured with and without executable source permissions. On Unix, extract
+and directly execute the shell entry points with controlled fake external tools.
+Windows tests execute batch entry points with `EMPACK_NO_PAUSE=1`, checking full
+diagnostic text, empty syntax-error output and preserved exit status. Source
+permissions and authored bytes remain unchanged after candidate preparation.
