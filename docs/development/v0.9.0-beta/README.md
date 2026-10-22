@@ -138,24 +138,24 @@ boundary checks pass. Restack dependent PRs as their prerequisites merge.
 
 ### Extraction baseline
 
-The published baseline is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
-(`e8ae54a`). Extraction starts from merged [main at `f26e0ae`](https://github.com/inherent-design/empack/commit/f26e0ae0b0e1599e45cc21b10ea6e488b23d5026),
-which also contains [#137](https://github.com/inherent-design/empack/pull/137).
-Its v0.8.2 package version is not a published-release claim.
-[Native corrections in #138](https://github.com/inherent-design/empack/pull/138)
-complete opaque member-name validation and empty Modrinth file-list classification.
-These are intentional corrections to the pinned baseline, not behavior to preserve
-from `f26e0ae`. Incorporate their accepted implementation before qualifying extracted
-workflows. Preserve these
-contracts across native and portable interpretation:
+The latest published release is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
+(`e8ae54a`). Extraction starts from merged [main at `978e80f`](https://github.com/inherent-design/empack/commit/978e80f915926cededa6765160ad4d0d53b89982),
+including [#137](https://github.com/inherent-design/empack/pull/137) and
+[#138](https://github.com/inherent-design/empack/pull/138). Its v0.8.2 package
+version remains an unreleased target.
+
+This source baseline includes the opaque archive-member distinction and typed
+rejection of empty Modrinth file lists. Their regressions are native behavior to
+preserve during extraction; browser execution remains a separate acceptance gate.
+Preserve these contracts across native and portable interpretation:
 
 | Boundary | Required behavior |
 | --- | --- |
 | New profiles | Initialization, import and ad-hoc Modrinth, Prism and server recipes prefer references; generated workflows use the authored profiles |
 | Existing profiles | Schema-5 `prism` and `server` string presets keep their bundled snapshot meaning; expanded profiles retain authored delivery and update policies |
 | Recipe explanation | Show included content, update authority and recipient requirements from the same effective recipe used for execution |
-| Archive inspection | Opaque JARs may contain case-distinct members; extraction and portable destination collision checks remain strict |
-| Assessment | Root-local malformed provider evidence is isolated under one shared byte/deadline allowance; unavailable evidence is not an up-to-date result |
+| Archive inspection | Opaque JARs may contain case-distinct members and native-reserved names; inspection grants no extraction authority, and portable destination checks remain strict |
+| Assessment | Root-local malformed provider evidence, including empty Modrinth file lists, is isolated under one shared byte/deadline allowance; internal failures are not globally relabeled as provider errors |
 | Diagnostics | Strict assessment emits its report before failure; updates distinguish checked, changed and retained selections; text names dependencies and JSON retains exact details |
 
 Reference delivery can still include authored assets and prepared runtime files,
