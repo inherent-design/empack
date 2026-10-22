@@ -27,6 +27,26 @@ and browser private-key custody are outside this release. Publishing an npm pack
 or deploying a public application is not required; the SDK archive is installable
 as a local package and does not depend on registry credentials.
 
+## Ongoing pack maintenance
+
+The same engine serves general pack editors and specialized authoring tools.
+Applications may coordinate recipes, documentation, configuration and local content
+without giving empack knowledge of a game's progression or mechanics. Empack owns
+pack interpretation, exact selections, inventories and native instance operations;
+applications own domain analysis and the meaning of their findings.
+
+Author sources, generated files, assembled candidates and observed installations
+remain distinguishable. Saving an unfinished change is useful before generation
+or export succeeds. An application can retain older validation and playtest results
+without presenting them as observations of the current draft. Domain-specific
+invalidation belongs to that application; empack supplies captured identities.
+
+Use existing projects through scoped inspection and explicit edits. Inspecting a
+checkout or instance does not enroll it, synchronize it, or authorize replacing
+user files. A portable project restore still creates a new workspace; merging it
+back into an existing checkout is outside this release. External tool integration
+adds no implicit generator hooks, gameplay framework or local companion service.
+
 ## Required browser scope
 
 Desktop Chromium, Firefox and Safari, iOS Safari, and Android Chrome are release
@@ -138,7 +158,7 @@ boundary checks pass. Restack dependent PRs as their prerequisites merge.
 
 ### Extraction baseline
 
-The extraction baseline is [v0.8.2-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.2-beta)
+The extraction baseline is [tagged v0.8.2-beta source](https://github.com/inherent-design/empack/tree/v0.8.2-beta)
 at [commit `f29064d`](https://github.com/inherent-design/empack/commit/f29064dcf9136d0cf4cb001222e00be63dbe9a9b).
 It includes reference defaults and diagnostics in
 [#137](https://github.com/inherent-design/empack/pull/137), archive and catalog
