@@ -521,12 +521,12 @@ fn native_input_and_future_installed_collisions_preserve_existing_distribution()
 }
 
 #[test]
-fn subscribed_custom_settings_cannot_disable_or_shadow_update_commands() {
+fn managed_custom_settings_cannot_disable_or_shadow_required_commands() {
     let expected =
         b"[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
-    verify_subscription_commands(expected, expected).unwrap();
+    verify_managed_commands(expected, expected).unwrap();
     let custom = b"[General]\nname=Custom name\nMaxMemAlloc=4096\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
-    verify_subscription_commands(custom, expected).unwrap();
+    verify_managed_commands(custom, expected).unwrap();
     for bad in [
         "[General]\nOverrideCommands=false\nPreLaunchCommand=prepare\nWrapperCommand=launch\n",
         "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\nWrapperCommand=other\n",
@@ -534,6 +534,137 @@ fn subscribed_custom_settings_cannot_disable_or_shadow_update_commands() {
         "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n%57rapperCommand=other\n",
         "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=other\n",
     ] {
-        assert!(verify_subscription_commands(bad.as_bytes(), expected).is_err());
+        assert!(verify_managed_commands(bad.as_bytes(), expected).is_err());
+    }
+}
+
+#[test]
+fn managed_prism_custom_templates_cannot_remove_required_integration() {
+    let template = include_str!("../../../../templates/client/instance.cfg.template");
+    for recipe in [
+        Recipe::PRISM_REFERENCES,
+        Recipe::PRISM_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        for custom in [
+            "[General]\nname=Custom Pack\nOverrideCommands=false\n".to_owned(),
+            template.replace("OverrideCommands=true", "OverrideCommands=false"),
+            template
+                .lines()
+                .filter(|line| !line.starts_with("PreLaunchCommand="))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            template
+                .lines()
+                .filter(|line| !line.starts_with("WrapperCommand="))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            let external = fixture(root.path());
+            put(
+                root.path(),
+                "templates/client/instance.cfg.template",
+                custom.as_bytes(),
+            );
+            put(root.path(), "dist/client.zip", b"previous artifact");
+            let manifest = fs::read(root.path().join("empack.yml")).unwrap();
+            let lock = fs::read(root.path().join("empack.lock")).unwrap();
+            let result = prepare_client_archive(
+                &capture(root.path(), host.path(), "client.zip"),
+                path("client.zip").unwrap(),
+                &external,
+                &options(DistributionArchive::Zip),
+                recipe,
+                &Cancellation::default(),
+            );
+            let error = result
+                .err()
+                .expect("managed configuration without required integration accepted");
+            assert!(format!("{error:#}").contains("Managed Prism"), "{error:#}");
+            assert_eq!(
+                fs::read(root.path().join("dist/client.zip")).unwrap(),
+                b"previous artifact"
+            );
+            assert_eq!(
+                fs::read(root.path().join("templates/client/instance.cfg.template")).unwrap(),
+                custom.as_bytes()
+            );
+            assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), manifest);
+            assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), lock);
+        }
+    }
+}
+
+#[test]
+fn managed_prism_templates_preserve_unrelated_custom_settings() {
+    for recipe in [
+        Recipe::PRISM_REFERENCES,
+        Recipe::PRISM_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        let custom = include_str!("../../../../templates/client/instance.cfg.template")
+            .replace("name={{ini_quote NAME}}", "name=Custom Pack")
+            .replace(
+                "OverrideMemory=false",
+                "OverrideMemory=true\nMaxMemAlloc=4096",
+            )
+            .replace("iconKey=empack_icon", "iconKey=custom_icon");
+        put(
+            root.path(),
+            "templates/client/instance.cfg.template",
+            custom.as_bytes(),
+        );
+        let mut candidate = prepare_client_archive(
+            &capture(root.path(), host.path(), "client.zip"),
+            path("client.zip").unwrap(),
+            &external,
+            &options(DistributionArchive::Zip),
+            recipe,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert!(candidate.user_configuration);
+        let mut zip = zip::ZipArchive::new(candidate.archive.archive.file()).unwrap();
+        let mut ini = String::new();
+        zip.by_name("instance.cfg")
+            .unwrap()
+            .read_to_string(&mut ini)
+            .unwrap();
+        for setting in [
+            "name=Custom Pack",
+            "OverrideMemory=true",
+            "MaxMemAlloc=4096",
+            "iconKey=custom_icon",
+            "OverrideCommands=true",
+            "instance prepare",
+            "instance launch",
+        ] {
+            assert!(ini.contains(setting), "missing {setting}: {ini}");
+        }
+        assert_eq!(
+            ini.contains("--check-updates"),
+            recipe.update_authority() == UpdateAuthority::Empack
+        );
+        assert_eq!(
+            ini.contains("--require-subscription"),
+            recipe.update_authority() == UpdateAuthority::Empack
+        );
+        assert!(
+            zip.by_name(".minecraft/.empack-consumer/release.json")
+                .is_ok()
+        );
     }
 }
