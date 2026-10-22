@@ -32,6 +32,29 @@ registered input → retained inbox asset → inspection → proposed tree edit
                                                     new draft
 ```
 
+## Coordinated author edits
+
+One edit proposal can replace multiple virtual-tree entries, such as source text,
+configuration and an explanatory note. Accept the complete proposal against one
+expected draft revision or leave the tree unchanged. Raw edits may preserve invalid
+text; structured edits still require valid interpretation. Undo restores the group
+as a new generation. This is a draft transaction, not a promise of atomic external
+generator execution or filesystem publication.
+
+Applications distinguish authored inputs from derived outputs using their own
+project files. Generation reads a captured input set and proposes output mappings;
+it does not mutate retained inputs. The host explicitly invokes any external tool.
+Applying generated outputs checks the expected current revision, so a late tool
+result cannot overwrite subsequent author edits. Native files still pass native
+observation, authorization and publication checks.
+
+Edited, generated, runtime-checked, installed and playtested are separate states
+associated with captured inputs, rather than one engine-owned readiness flag.
+Applications decide which inputs a domain analysis depends on. A content change
+can make an observation historical without deleting it; absent input coverage
+cannot establish that the observation remains applicable. User-authored claims and
+external-tool success do not construct engine verification proofs.
+
 ## Assets and leases
 
 `AssetId` identifies a logical source before its bytes are available. `ContentId`
@@ -185,6 +208,16 @@ synchronous operation's class. Byte limits alone do not prove responsiveness.
 The [resource profiles](feasibility.md) set admission and timing requirements;
 measure dense metadata and expensive allowed syntax as well as ordinary inputs.
 
+## Read-only integration views
+
+Expose captured revision, selected operation, exact selections, content evidence
+and scoped diagnostics through bounded read-only views. A proposal or metadata
+preview identifies unresolved inputs and verification state; it cannot masquerade
+as a verified candidate. The export checkpoint binds the final inventory to its
+captured inputs. Applications compare these views without reparsing lockfiles or
+inventing a second resolver. Access to a view grants neither publication authority
+nor execution permission.
+
 ## Interpretation shared by hosts
 
 Document analysis uses the same project-level satisfaction checks as reconciliation,
@@ -223,3 +256,9 @@ server profile with malformed configuration: analysis stops at semantic validati
 while an in-memory draft save/reopen preserves the exact text. Actual browser
 persistence and Prism export are tested at their consuming checkpoints. Test storage verification separately from execution verification,
 including a draft without a lock and a sealed object whose source assertion fails.
+
+Include a multi-file raw edit with one invalid document, an interrupted/rejected
+proposal leaving all mappings unchanged, and undo advancing the generation. A
+synthetic generator returns output for an older revision: retain its result as
+historical data and reject applying it to the current tree. In-memory fixtures
+establish these rules here; native publication and real artifacts remain later gates.
