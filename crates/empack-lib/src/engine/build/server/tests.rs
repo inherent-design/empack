@@ -817,3 +817,100 @@ fn windows_entry_points_keep_console_and_return_status() {
             .contains("set \"EMPACK_NO_PAUSE=1\"\r\ncall install_pack.bat")
     );
 }
+
+#[test]
+fn managed_server_templates_require_generated_entry_points() {
+    use empack_core::distribution::UpdateAuthority;
+    for recipe in [
+        Recipe::SERVER_REFERENCES,
+        Recipe::SERVER_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::SERVER_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        let cancel = Cancellation::default();
+        let runtime = prepared_fixture();
+        let prepare = || {
+            prepare_server_archive(
+                &capture(root.path(), host.path(), "server.zip"),
+                path("server.zip").unwrap(),
+                &external,
+                &options(DistributionArchive::Zip),
+                &runtime,
+                recipe,
+                &cancel,
+            )
+        };
+        let (mut baseline, _) = prepare().unwrap();
+        let mut zip = zip::ZipArchive::new(baseline.archive.file()).unwrap();
+        let scripts: Vec<_> = [
+            "start.sh",
+            "start.bat",
+            "start_gui.sh",
+            "start_gui.bat",
+            "install_pack.sh",
+            "install_pack.bat",
+        ]
+        .into_iter()
+        .map(|name| {
+            let mut bytes = Vec::new();
+            zip.by_name(name).unwrap().read_to_end(&mut bytes).unwrap();
+            (name, bytes)
+        })
+        .collect();
+        put(root.path(), "dist/server.zip", b"previous artifact");
+        let manifest = fs::read(root.path().join("empack.yml")).unwrap();
+        let lock = fs::read(root.path().join("empack.lock")).unwrap();
+        for (name, generated) in &scripts {
+            let mut same_size = generated.clone();
+            same_size[0] = b'X';
+            for bad in [b"custom script".to_vec(), same_size] {
+                let source = format!("templates/server/{name}");
+                put(root.path(), &source, &bad);
+                let error = prepare()
+                    .err()
+                    .expect("managed server custom script accepted");
+                let diagnostic = format!("{error:#}");
+                assert!(
+                    diagnostic.contains("Managed server") && diagnostic.contains(name),
+                    "{diagnostic}"
+                );
+                assert_eq!(fs::read(root.path().join(&source)).unwrap(), bad);
+                assert_eq!(
+                    fs::read(root.path().join("dist/server.zip")).unwrap(),
+                    b"previous artifact"
+                );
+                assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), manifest);
+                assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), lock);
+                fs::remove_file(root.path().join(source)).unwrap();
+            }
+        }
+        for (name, generated) in &scripts {
+            put(root.path(), &format!("templates/server/{name}"), generated);
+        }
+        put(
+            root.path(),
+            "templates/server/game/server.properties",
+            b"motd=Custom server\n",
+        );
+        let (mut accepted, evidence) = prepare().unwrap();
+        assert!(evidence.user_configuration);
+        let mut zip = zip::ZipArchive::new(accepted.archive.file()).unwrap();
+        for (name, expected) in &scripts {
+            let mut actual = Vec::new();
+            zip.by_name(name).unwrap().read_to_end(&mut actual).unwrap();
+            assert_eq!(&actual, expected);
+        }
+        let mut properties = String::new();
+        zip.by_name("game/server.properties")
+            .unwrap()
+            .read_to_string(&mut properties)
+            .unwrap();
+        assert_eq!(properties, "motd=Custom server\n");
+    }
+}

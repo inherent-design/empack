@@ -58,7 +58,8 @@ impl PreparedServerBuild {
     pub fn runtime(&self) -> &ServerRuntimeEvidence {
         &self.candidate.runtime
     }
-    /// Captured configuration or scripts are retained as user input, not certified executable behavior.
+    /// Captured configuration or scripts are retained as user input. Managed entry points
+    /// must match generated scripts; standalone bundled scripts are not certified behavior.
     pub fn uses_user_configuration(&self) -> bool {
         self.candidate.user_configuration
     }
@@ -272,8 +273,8 @@ pub(super) fn prepare_server_archive(
         target.consumer() == empack_core::distribution::Consumer::Server,
         "Server adapter requires an executable consumer recipe"
     );
-    let references = super::instance_managed(target);
-    let game = if references {
+    let managed = super::instance_managed(target);
+    let game = if managed {
         prepare_native_game_content(
             workspace,
             external,
@@ -294,7 +295,7 @@ pub(super) fn prepare_server_archive(
     };
     let templates = prepare_templates(workspace, target, &options.templates, cancel)?;
     let mut files = BTreeMap::new();
-    let release = if references {
+    let release = if managed {
         let mut release_options = NativeReleaseOptions::from_project(game.project())?;
         release_options.require_subscription =
             target.update_authority() == empack_core::distribution::UpdateAuthority::Empack;
@@ -324,7 +325,7 @@ pub(super) fn prepare_server_archive(
         files.insert(destination, file);
         Ok(())
     };
-    for (destination, file) in runtime.files().iter().filter(|_| !references) {
+    for (destination, file) in runtime.files().iter().filter(|_| !managed) {
         insert(
             path(&format!("game/{}", destination.as_str()))?,
             file.clone(),
@@ -366,12 +367,7 @@ pub(super) fn prepare_server_archive(
         (
             "start.sh",
             consumer_script(
-                runtime_start(
-                    runtime.launch(),
-                    references,
-                    false,
-                    ServerInterface::Console,
-                ),
+                runtime_start(runtime.launch(), managed, false, ServerInterface::Console),
                 target,
             )
             .into_bytes(),
@@ -380,7 +376,7 @@ pub(super) fn prepare_server_archive(
         (
             "start.bat",
             consumer_script(
-                runtime_start(runtime.launch(), references, true, ServerInterface::Console),
+                runtime_start(runtime.launch(), managed, true, ServerInterface::Console),
                 target,
             )
             .into_bytes(),
@@ -389,7 +385,7 @@ pub(super) fn prepare_server_archive(
         (
             "start_gui.sh",
             consumer_script(
-                runtime_start(runtime.launch(), references, false, ServerInterface::Gui),
+                runtime_start(runtime.launch(), managed, false, ServerInterface::Gui),
                 target,
             )
             .into_bytes(),
@@ -398,7 +394,7 @@ pub(super) fn prepare_server_archive(
         (
             "start_gui.bat",
             consumer_script(
-                runtime_start(runtime.launch(), references, true, ServerInterface::Gui),
+                runtime_start(runtime.launch(), managed, true, ServerInterface::Gui),
                 target,
             )
             .into_bytes(),
@@ -428,13 +424,10 @@ pub(super) fn prepare_server_archive(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(generated(&bytes, executable, cancel)?);
             }
-            std::collections::btree_map::Entry::Occupied(entry)
-                if target.update_authority()
-                    == empack_core::distribution::UpdateAuthority::Empack =>
-            {
+            std::collections::btree_map::Entry::Occupied(entry) if managed => {
                 ensure!(
                     entry.get().content.lease().len() == bytes.len() as u64,
-                    "Subscribed server templates must retain generated scripts"
+                    "Managed server template {name} must match the generated script; remove the replacement to restore required preparation and launch integration"
                 );
                 let mut actual = Vec::new();
                 entry
@@ -445,7 +438,7 @@ pub(super) fn prepare_server_archive(
                     .read_to_end(&mut actual)?;
                 ensure!(
                     actual == bytes,
-                    "Subscribed server templates must retain the generated preparation and launch scripts"
+                    "Managed server template {name} must match the generated script; remove the replacement to restore required preparation and launch integration"
                 );
             }
             _ => {}
@@ -465,7 +458,7 @@ pub(super) fn prepare_server_archive(
         entry.insert(generated(&bytes, false, cancel)?);
     }
     let mut collisions = CollisionIndex::default();
-    if references {
+    if managed {
         for destination in game.files().keys().chain(runtime.files().keys()) {
             collisions.insert_file(&path(&format!("game/{}", destination.as_str()))?)?;
         }

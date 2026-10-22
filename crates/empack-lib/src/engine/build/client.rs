@@ -53,7 +53,8 @@ impl PreparedClientBuild {
     pub fn inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
         &self.inventory
     }
-    /// A captured user configuration replaced the default. Its arbitrary commands remain user input.
+    /// A captured user configuration replaced the default. Managed command settings are checked;
+    /// standalone bundled commands remain user input, not certified launcher behavior.
     pub fn uses_user_configuration(&self) -> bool {
         self.user_configuration
     }
@@ -306,7 +307,7 @@ pub(super) fn prepare_client_archive(
     )?;
     if !user_configuration {
         files.insert(instance.clone(), generated(&default_instance, cancel)?);
-    } else if subscribed {
+    } else if managed {
         ensure!(
             files[&instance].content.lease().len() <= 16 << 20,
             "Launcher configuration exceeds limit"
@@ -317,7 +318,9 @@ pub(super) fn prepare_client_archive(
             .lease()
             .open()
             .read_to_end(&mut bytes)?;
-        verify_subscription_commands(&bytes, &default_instance)?;
+        verify_managed_commands(&bytes, &default_instance).context(
+            "Managed Prism instance.cfg must retain generated preparation and launch commands; restore the command template values or remove the custom instance.cfg",
+        )?;
     }
     let components = path("mmc-pack.json")?;
     if !files.contains_key(&components) {
@@ -401,7 +404,7 @@ mod tests;
 
 /// Require one unambiguous spelling of launcher authority settings while retaining
 /// unrelated names, icons and resource settings from user templates.
-fn verify_subscription_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
+fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
     fn commands(bytes: &[u8]) -> Result<BTreeMap<&str, &str>> {
         let mut general = false;
         let mut groups = BTreeSet::new();
@@ -412,7 +415,7 @@ fn verify_subscription_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
             }
             ensure!(
                 !line.ends_with('\\'),
-                "Subscribed launcher settings cannot use continued lines"
+                "Managed launcher settings cannot use continued lines"
             );
             if line.starts_with('[') {
                 let section = line
@@ -433,7 +436,7 @@ fn verify_subscription_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
             let key = key.trim();
             ensure!(
                 key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
-                "Encoded launcher setting keys are unsupported for subscribed consumers"
+                "Encoded launcher setting keys are unsupported for managed consumers"
             );
             if general
                 && matches!(
@@ -451,7 +454,7 @@ fn verify_subscription_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
     }
     ensure!(
         commands(actual)? == commands(generated)?,
-        "Subscribed Prism templates must retain generated preparation and update commands"
+        "Managed Prism templates must retain generated preparation and launch commands"
     );
     Ok(())
 }
