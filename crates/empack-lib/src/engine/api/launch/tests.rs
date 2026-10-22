@@ -9,6 +9,14 @@ use std::{fs, path::Path, time::Duration};
 #[test]
 fn runtime_fixture() {
     let current = std::env::current_dir().unwrap();
+    if current
+        .join("inject-terminal-restoration-failure")
+        .is_file()
+    {
+        fs::write(current.join("retired-pid"), std::process::id().to_string()).unwrap();
+        return;
+    }
+
     if !current.join("launch-fixture").is_file() {
         return;
     }
@@ -663,5 +671,54 @@ async fn java_validation_requires_approval_and_retires_before_rejecting_old_java
                 .is_ok()
         );
     }
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn terminal_cleanup_failure_clears_confirmed_runtime_ownership() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    install(&engine, root.path()).await;
+    let fault = root.path().join("game/inject-terminal-restoration-failure");
+    fs::write(&fault, b"fail after retirement").unwrap();
+    let prepared = prepare(&engine, root.path(), request()).await;
+    let granted = grant(&prepared, true);
+    let mut operation = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) = &*outcome
+    else {
+        panic!("terminal cleanup was not classified as a retired failure")
+    };
+    assert!(format!("{error:#}").contains("terminal cleanup failed"));
+    assert!(!error.is::<RuntimeRecoveryRequired>());
+    #[cfg(unix)]
+    {
+        let pid: i32 = fs::read_to_string(root.path().join("game/retired-pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(unsafe { libc::kill(-pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+    drop(outcome);
+    engine.release_completed(operation.id());
+    assert!(
+        engine
+            .prepare(root.path().to_owned(), AcknowledgeStoppedRuntime)
+            .await
+            .is_err()
+    );
+    fs::remove_file(fault).unwrap();
+    install(&engine, root.path()).await;
+    let prepared = prepare(&engine, root.path(), request()).await;
+    let granted = grant(&prepared, true);
+    let mut next = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    assert!(matches!(&*next.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Launch(receipt))) if receipt.status.success()));
+    engine.release_completed(next.id());
     engine.shutdown().await;
 }

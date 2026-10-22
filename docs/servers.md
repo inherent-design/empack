@@ -29,6 +29,13 @@ start scripts, and terminal Ctrl-C reaches Java's shutdown handler. Empack resto
 the terminal after the runtime exits. Prefer `stop` for an ordinary server shutdown;
 explicit operation cancellation still terminates the owned process tree.
 
+This console does not implement shell `fg`/`bg` job control. Terminal Ctrl-Z and
+delayed-suspend keys are disabled during the runtime and restored when it finishes.
+Use `stop` or Ctrl-C to finish normally. If an operator externally stops the process
+group, it remains owned until resumed with SIGCONT or retired by cancellation.
+A terminal-restoration error is reported separately from process retirement; confirmed
+retired processes do not need a false recovery acknowledgement for console cleanup.
+
 Run interactive launches in the foreground. Services can redirect all three console
 streams. This fix belongs to the recipient empack executable; it does not require
 changing mods or adding a Java wrapper. Existing custom workarounds should be

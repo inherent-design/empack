@@ -650,6 +650,15 @@ pub(super) fn plan(
         .map(|(key, value)| ChoiceSelection { key, value })
         .collect();
     let mut incoming = project_files(release, side, layout, &choices)?;
+    if layout == InstanceLayout::Prism {
+        for file in incoming.values() {
+            ensure!(
+                !file.destination.eq_ignore_ascii_case("icon.png")
+                    || file.policy == FilePolicy::Seed,
+                "Prism rewrites game-root icon.png before preparation; the selected release must publish it as seed (policies: {{icon.png: seed}} in empack.bindings.yml). Rebuild and publish a corrected release; a conflict override cannot authorize managed icon ownership"
+            );
+        }
+    }
     let (initialized_worlds, retired_world_targets, updated_snapshot) = worlds::protect(
         &root,
         layout,

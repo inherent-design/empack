@@ -33,6 +33,27 @@ route for `instance subscribe --key`; setup does not enroll any subscriber.
 Back up the private key securely. `instance trust --key` replaces a subscriber's
 enrolled keys during deliberate rotation.
 
+## Native releases delivered to Prism
+
+Keep the launcher-owned icon policy explicit in the author project's
+`empack.bindings.yml` when publishing native releases to Prism subscribers:
+
+```yaml
+policies:
+  icon.png: seed
+```
+
+The Prism exporter supplies this default for its own managed distributions; the
+generic native exporter remains consumer-neutral. A Prism instance rejects a
+native release that selects a managed game-root icon, including signed updates,
+repair and rollback. Rebuild and publish the corrected release rather than forcing
+an ownership conflict. The recipient never changes an authenticated policy.
+
+Updating an old managed icon to seed preserves an existing regular file's current
+bytes, including Prism's rewrite, without a conflict override. This does not relax
+ownership of other PNGs or authorize replacing directories/symlinks. Upgrading the
+executable alone does not alter already published release descriptors.
+
 ## Staging and deployment
 
 Extract a native export into `./export`, create the publisher directory, and stage

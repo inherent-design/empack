@@ -193,6 +193,22 @@ pub(crate) async fn execute_captured(
 /// There is no build-tool deadline or accumulated-output limit. The owning engine scope
 /// must retain this future and its instance lease until process-tree retirement.
 pub(crate) struct RetiredRuntime(pub Result<std::process::ExitStatus>);
+impl RetiredRuntime {
+    fn after_cleanup(result: Result<std::process::ExitStatus>, cleanup: Result<()>) -> Self {
+        Self(match cleanup {
+            Ok(()) => result,
+            Err(cleanup) => Err(match result {
+                Err(process) => cleanup.context(format!(
+                    "Runtime retired after process failure: {process:#}; terminal cleanup failed"
+                )),
+                Ok(status) => cleanup.context(format!(
+                    "Runtime retired with {status}, but terminal cleanup failed"
+                )),
+            }),
+        })
+    }
+}
+
 pub(crate) async fn execute_inherited(
     command: std::process::Command,
     cancellation: Cancellation,
@@ -200,6 +216,12 @@ pub(crate) async fn execute_inherited(
     if let Err(error) = cancellation.check() {
         return Ok(RetiredRuntime(Err(error)));
     }
+    // A per-fixture fault, compiled out of production, exercises the engine's
+    // ownership cleanup after process retirement independently of console loss.
+    #[cfg(test)]
+    let fail_terminal_restore = command
+        .get_current_dir()
+        .is_some_and(|root| root.join("inject-terminal-restoration-failure").is_file());
     #[cfg(unix)]
     let mut terminal = match terminal::ForegroundTerminal::capture() {
         Ok(terminal) => terminal,
@@ -222,9 +244,11 @@ pub(crate) async fn execute_inherited(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            return Ok(RetiredRuntime(Err(
-                anyhow::Error::from(error).context("Failed to start instance runtime")
-            )));
+            let cleanup = terminal.as_mut().map_or(Ok(()), |tty| tty.restore());
+            return Ok(RetiredRuntime::after_cleanup(
+                Err(anyhow::Error::from(error).context("Failed to start instance runtime")),
+                cleanup,
+            ));
         }
     };
     #[cfg(unix)]
@@ -250,11 +274,21 @@ pub(crate) async fn execute_inherited(
     }
     termination?;
     tree.wait_retired().await?;
+    // Retirement is established. Console cleanup cannot revoke that fact or
+    // leave the caller's runtime ownership record claiming a live process tree.
     #[cfg(unix)]
-    if let Some(terminal) = &mut terminal {
-        terminal.restore()?;
-    }
-    Ok(RetiredRuntime(result))
+    let cleanup = terminal.as_mut().map_or(Ok(()), |tty| tty.restore());
+    #[cfg(not(unix))]
+    let cleanup = Ok(());
+    #[cfg(test)]
+    let cleanup = if fail_terminal_restore {
+        Err(anyhow::anyhow!(
+            "Injected terminal restoration failure after confirmed retirement"
+        ))
+    } else {
+        cleanup
+    };
+    Ok(RetiredRuntime::after_cleanup(result, cleanup))
 }
 
 #[cfg(unix)]
@@ -654,3 +688,16 @@ mod terminal_tests;
 
 #[cfg(unix)]
 mod terminal;
+
+#[cfg(test)]
+#[test]
+fn terminal_cleanup_error_is_not_hidden_by_cancellation() {
+    let retired = RetiredRuntime::after_cleanup(
+        Err(Interrupted.into()),
+        Err(anyhow::anyhow!("terminal disappeared")),
+    );
+    let error = retired.0.unwrap_err();
+    assert!(!error.is::<Interrupted>());
+    let message = format!("{error:#}");
+    assert!(message.contains("terminal disappeared") && message.contains("process failure"));
+}

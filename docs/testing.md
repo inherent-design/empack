@@ -46,11 +46,18 @@ cargo test -p empack-lib --lib inherited_runtime_owns_terminal_and_restores_it -
 
 It supervises an isolated runtime process, checks foreground ownership before any
 console reads, sends input and terminal Ctrl-C, and verifies normal shutdown,
-cancellation, nonzero exit, failed exec, and restoration of terminal ownership and
+cancellation, nonzero exit, failed exec, disabled terminal suspend keys, external
+stop/resume, cancellation while stopped, and restoration of terminal ownership and
 settings. The fixture changes terminal settings to make restoration observable.
 It proves host process/terminal behavior; it is not Minecraft gameplay acceptance.
 Managed Prism tests separately verify the root icon's seed policy and rejection of
 an explicit managed policy before publication, while keeping other PNGs managed.
+Engine launch fault injection separately establishes that failed terminal cleanup
+after confirmed retirement reports the error without retaining runtime ownership;
+uncertain-retirement tests still require recovery. Signed-channel tests use the
+native release producer and a persisted Prism layout, reject managed icon updates,
+and preserve launcher bytes through corrected seed updates and launch preparation.
+Historical managed-icon fixtures verify migration to seed without conflict overrides.
 
 ## Strict external checks
 

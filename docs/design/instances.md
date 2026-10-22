@@ -290,7 +290,17 @@ foreground ownership to the runtime's separate process group before exec. Consol
 input and terminal-generated Ctrl-C therefore reach the runtime; Ctrl-C can run
 its normal shutdown handler. Empack restores its prior foreground group and
 terminal settings after retirement, including cancellation, runtime failure and
-spawn failure. A background caller must first return to the foreground or redirect
+spawn failure. Confirmed process retirement remains established if terminal cleanup
+fails: report that cleanup error and clear ordinary runtime ownership. Failure to
+retire processes or clear persisted ownership still requires recovery.
+
+The inherited console deliberately does not implement shell job suspension. Empack
+disables terminal suspend characters (Ctrl-Z and delayed suspend where available)
+before exec and restores them afterward; interrupt/quit behavior is preserved.
+A runtime that deliberately changes terminal modes owns those changes while running.
+An externally stopped group remains owned, may be resumed with SIGCONT by the
+operator, and can still be terminated by cancellation. A stop is never retirement.
+A background caller must first return to the foreground or redirect
 all console streams; empack does not steal another foreground group's terminal.
 Fully redirected runtimes and captured build-tool processes do not acquire terminal
 ownership. Explicit operation cancellation retains the existing process-tree
