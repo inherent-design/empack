@@ -219,3 +219,7 @@ preserve indefinitely.
 See [platform constraints](platforms.md) for researched boundaries. Checkpoint
 contracts are added alongside this overview as separate draft PRs. Run-specific
 results, implementation status and review findings belong in those PRs and CI.
+
+## Contract reference
+
+- [Drafts and portable ports](drafts-and-ports.md)
