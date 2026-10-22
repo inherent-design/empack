@@ -84,6 +84,30 @@ encoding; changes after capture do not alter the bundle. A bundle receipt names 
 revision and completeness. It may be valid even when its author documents cannot
 be parsed. Limits on document bytes, metadata, entries and paths still apply.
 
+## Authoring tools and derived content
+
+Explicitly selected authoring roots may contain recipe sources, generator source,
+configuration rationale and application-owned reports as ordinary project entries.
+They remain eligible for backup when excluded from distribution builds. Empack
+preserves their bytes and portable attributes without interpreting domain schemas.
+Opening a bundle never executes an included generator or installs a toolchain.
+
+Applications can store a versioned generation record beside those files. It names
+the captured source inputs and digests, generator identity/version, relevant options
+and environment, and output paths/digests. A validation record names its captured
+pack or test inventory, producer, context, coverage and findings. Such records are
+opaque author data to empack; restoring them preserves a claim, not its truth or
+current applicability. Missing tools, unobserved inputs and external context remain
+explicit in the producing application's record. No new executable manifest hook
+or project-container proof field is introduced for these records.
+
+Include these records through explicit backup scope. Do not sweep in local caches,
+logs, worlds or external tools just because a report mentions them. Portable records
+use logical paths/content references rather than live capabilities or host paths.
+A restored report can remain historical when referenced test context was deliberately
+excluded. Reopening does not silently regenerate outputs or reconcile source files
+with an existing checkout.
+
 ## Authority and disclosure
 
 Exclude host credentials, signing key stores, cookies, live browser permissions,
@@ -198,3 +222,9 @@ exportable; correct it or select the valid fixture before distribution export.
 Checkpoint 6 repeats the combined round-trip and export on the same immutable release
 candidate and required devices. These later gates do not defer this checkpoint's
 native restore/repack, wire validation or cooperative ZIP obligations.
+
+Extend the format fixture with an authored source excluded from builds, generated
+output, generator source, and an application-owned provenance/report file. Pack,
+restore and repack preserve those selected bytes and attributes without executing
+the generator. Deliberately exclude a referenced external test context and retain
+that absence; a restored report must not become an engine verification receipt.
