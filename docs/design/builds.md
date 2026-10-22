@@ -92,7 +92,10 @@ keys use their canonical spelling and appear only in that section. Legacy,
 unsupported, shadowed and multiline interpretations fail preparation. Other values
 must have balanced quotes on one physical line; escapes remain allowed inside
 quoted values. This bounded subset prevents consumer parser selection from changing
-the meaning of verified settings.
+the meaning of verified settings. Only semicolon-prefixed lines are comments in
+managed configurations. Hash-prefixed lines are rejected with a diagnostic directing
+authors to use `;`: QSettings can interpret them as active settings, including quotes
+and continuations that consume later lifecycle settings.
 
 Custom server entry points must match the generated scripts exactly;
 shell text is not interpreted to certify an alternative lifecycle. Incompatible

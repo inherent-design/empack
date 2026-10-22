@@ -424,7 +424,8 @@ Reference Prism exports and all `updates: empack` Prism profiles require
 `OverrideCommands=true` and the generated preparation/wrapper commands. Keep exactly
 one `ConfigVersion=1.2` or `ConfigVersion=1.3` in `[General]`, with these command keys
 only in that section. Legacy, duplicated or differently spelled authority settings
-are rejected. Keep values on one line with balanced quotes. Keep the
+are rejected. Keep values on one line with balanced quotes. Use `;` for comment
+lines; hash-prefixed lines are rejected because Prism can interpret them as settings. Keep the
 `INSTANCE_PREPARE_COMMAND` and `INSTANCE_WRAPPER_COMMAND` template expressions when
 customizing `instance.cfg`; unrelated names, icons and memory settings are editable.
 A template that removes required integration fails preparation without being rewritten.
