@@ -820,7 +820,8 @@ fn windows_entry_points_keep_console_and_return_status() {
 
 #[test]
 fn managed_server_templates_require_generated_entry_points() {
-    use empack_core::distribution::UpdateAuthority;
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use empack_core::{distribution::UpdateAuthority, model::NonEmpty};
     for recipe in [
         Recipe::SERVER_REFERENCES,
         Recipe::SERVER_REFERENCES
@@ -872,9 +873,20 @@ fn managed_server_templates_require_generated_entry_points() {
             for bad in [b"custom script".to_vec(), same_size] {
                 let source = format!("templates/server/{name}");
                 put(root.path(), &source, &bad);
-                let error = prepare()
-                    .err()
-                    .expect("managed server custom script accepted");
+                let error = prepare_build_batch(
+                    capture(root.path(), host.path(), "server.zip"),
+                    NonEmpty::new(vec![DistributionRequest::Server {
+                        recipe,
+                        artifact: path("server.zip").unwrap(),
+                        options: options(DistributionArchive::Zip),
+                        runtime: Box::new(prepared_fixture()),
+                    }])
+                    .unwrap(),
+                    &external,
+                    &cancel,
+                )
+                .err()
+                .expect("managed server custom script accepted");
                 let diagnostic = format!("{error:#}");
                 assert!(
                     diagnostic.contains("Managed server") && diagnostic.contains(name),

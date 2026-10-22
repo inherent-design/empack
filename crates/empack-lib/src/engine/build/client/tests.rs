@@ -540,6 +540,8 @@ fn managed_custom_settings_cannot_disable_or_shadow_required_commands() {
 
 #[test]
 fn managed_prism_custom_templates_cannot_remove_required_integration() {
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use empack_core::model::NonEmpty;
     let template = include_str!("../../../../templates/client/instance.cfg.template");
     for recipe in [
         Recipe::PRISM_REFERENCES,
@@ -575,12 +577,15 @@ fn managed_prism_custom_templates_cannot_remove_required_integration() {
             put(root.path(), "dist/client.zip", b"previous artifact");
             let manifest = fs::read(root.path().join("empack.yml")).unwrap();
             let lock = fs::read(root.path().join("empack.lock")).unwrap();
-            let result = prepare_client_archive(
-                &capture(root.path(), host.path(), "client.zip"),
-                path("client.zip").unwrap(),
+            let result = prepare_build_batch(
+                capture(root.path(), host.path(), "client.zip"),
+                NonEmpty::new(vec![DistributionRequest::Prism {
+                    recipe,
+                    artifact: path("client.zip").unwrap(),
+                    options: options(DistributionArchive::Zip),
+                }])
+                .unwrap(),
                 &external,
-                &options(DistributionArchive::Zip),
-                recipe,
                 &Cancellation::default(),
             );
             let error = result
