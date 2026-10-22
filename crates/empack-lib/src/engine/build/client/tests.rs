@@ -15,11 +15,17 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 fn fixture(root: &Path) -> BuildAcquisitions {
+    fixture_with_policies(root, BTreeMap::new())
+}
+fn fixture_with_policies(
+    root: &Path,
+    policies: BTreeMap<PortableRelPath, empack_core::instance::FilePolicy>,
+) -> BuildAcquisitions {
     let initial = project(false, false);
     let mut intent = initial.intent().clone();
     intent.metadata.id = "test.pack".into();
     intent.runtime.java_major = 21;
-    intent.installation_policies = BTreeMap::new();
+    intent.installation_policies = policies;
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     put(
         root,
@@ -776,4 +782,124 @@ fn standalone_prism_retains_hash_prefixed_configuration() {
         fs::read(root.path().join("templates/client/instance.cfg")).unwrap(),
         configuration
     );
+}
+
+#[test]
+fn managed_prism_icon_policy_is_launcher_owned_and_narrow() {
+    use crate::engine::release::{DecodedRelease, FilePolicy};
+    for recipe in [
+        Recipe::PRISM_REFERENCES,
+        Recipe::PRISM_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        for explicit_seed in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            let policies = if explicit_seed {
+                BTreeMap::from([(
+                    path("icon.png").unwrap(),
+                    empack_core::instance::FilePolicy::Seed,
+                )])
+            } else {
+                BTreeMap::new()
+            };
+            let external = fixture_with_policies(root.path(), policies);
+            for name in ["icon.png", "other.png", "images/icon.png"] {
+                put(
+                    root.path(),
+                    &format!("overrides/client/{name}"),
+                    b"image fixture",
+                );
+            }
+            let mut candidate = prepare_client_archive(
+                &capture(root.path(), host.path(), "client.zip"),
+                path("client.zip").unwrap(),
+                &external,
+                &options(DistributionArchive::Zip),
+                recipe,
+                &Cancellation::default(),
+            )
+            .unwrap();
+            let mut zip = zip::ZipArchive::new(candidate.archive.archive.file()).unwrap();
+            let mut bytes = Vec::new();
+            zip.by_name(".minecraft/.empack-consumer/release.json")
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+            let release = DecodedRelease::decode(&bytes).unwrap();
+            for name in ["icon.png", "other.png", "images/icon.png"] {
+                let file = release
+                    .document()
+                    .files
+                    .iter()
+                    .find(|f| f.destination == name)
+                    .unwrap();
+                assert_eq!(
+                    file.policy,
+                    if name == "icon.png" {
+                        FilePolicy::Seed
+                    } else {
+                        FilePolicy::Managed
+                    },
+                    "{name}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn managed_prism_rejects_explicit_managed_icon_before_publication() {
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use empack_core::{instance::FilePolicy, model::NonEmpty};
+    for recipe in [
+        Recipe::PRISM_REFERENCES,
+        Recipe::PRISM_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED,
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture_with_policies(
+            root.path(),
+            BTreeMap::from([(path("icon.png").unwrap(), FilePolicy::Managed)]),
+        );
+        put(root.path(), "overrides/client/icon.png", b"author icon");
+        put(root.path(), "dist/client.zip", b"previous archive");
+        let before = [
+            "empack.yml",
+            "empack.lock",
+            "overrides/client/icon.png",
+            "dist/client.zip",
+        ]
+        .map(|name| (name, fs::read(root.path().join(name)).unwrap()));
+        let result = prepare_build_batch(
+            capture(root.path(), host.path(), "client.zip"),
+            NonEmpty::new(vec![DistributionRequest::Prism {
+                recipe,
+                artifact: path("client.zip").unwrap(),
+                options: options(DistributionArchive::Zip),
+            }])
+            .unwrap(),
+            &external,
+            &Cancellation::default(),
+        );
+        if recipe == Recipe::PRISM_BUNDLED {
+            assert!(result.is_ok());
+        } else {
+            let error = result.err().expect("managed icon accepted");
+            assert!(format!("{error:#}").contains("icon.png: seed"), "{error:#}");
+        }
+        for (name, bytes) in before {
+            assert_eq!(fs::read(root.path().join(name)).unwrap(), bytes, "{name}");
+        }
+    }
 }

@@ -260,6 +260,57 @@ async fn launch_rejects_missing_modified_and_late_changed_installed_content() {
 }
 
 #[tokio::test]
+async fn launcher_rewritten_seed_icon_survives_preparation_and_launch() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = super::super::tests::engine(state.path().join("state"));
+    let mut input = install_request(b"publisher icon");
+    let mut document = input.release.release().document().clone();
+    document.files[0].destination = "icon.png".into();
+    document.files[0].policy = FilePolicy::Seed;
+    let release = DecodedRelease::encode(document).unwrap();
+    input.release = SelectedRelease::Snapshot(
+        trust::SelectedSnapshot::select(
+            release.bytes(),
+            release.id(),
+            &semver::Version::parse("0.8.0-beta").unwrap(),
+        )
+        .unwrap(),
+    );
+    // Prism writes its icon before the first preparation hook as well as later
+    // launches. Seed installation must retain that preexisting launcher content.
+    fs::create_dir_all(root.path().join("game")).unwrap();
+    fs::write(root.path().join("game/icon.png"), b"Prism icon").unwrap();
+    let prepared = prepare(&engine, root.path(), input).await;
+    let granted = grant(&prepared, false);
+    let mut installed = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    assert!(matches!(
+        &*installed.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+    ));
+    engine.release_completed(installed.id());
+    assert_eq!(
+        fs::read(root.path().join("game/icon.png")).unwrap(),
+        b"Prism icon"
+    );
+    fs::write(root.path().join("game/icon.png"), b"next Prism icon").unwrap();
+    let prepared = prepare(&engine, root.path(), request()).await;
+    let granted = grant(&prepared, true);
+    let mut launched = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    assert!(matches!(
+        &*launched.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Launch(receipt)))
+            if receipt.status.success()
+    ));
+    engine.release_completed(launched.id());
+    assert_eq!(
+        fs::read(root.path().join("game/icon.png")).unwrap(),
+        b"next Prism icon"
+    );
+    engine.shutdown().await;
+}
+
+#[tokio::test]
 async fn empty_native_installation_has_a_launchable_owned_directory() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();

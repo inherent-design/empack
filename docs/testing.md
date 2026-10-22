@@ -36,6 +36,22 @@ Formatting and Clippy apply to all targets/features. Native filesystem/process
 claims require real temporary roots and OS primitives; pure planner tests cannot
 prove link handling, locks or crash durability.
 
+### Inherited terminal regression
+
+On macOS and Linux, the normal native suite includes a real controlling-PTY test:
+
+```sh
+cargo test -p empack-lib --lib inherited_runtime_owns_terminal_and_restores_it -- --nocapture
+```
+
+It supervises an isolated runtime process, checks foreground ownership before any
+console reads, sends input and terminal Ctrl-C, and verifies normal shutdown,
+cancellation, nonzero exit, failed exec, and restoration of terminal ownership and
+settings. The fixture changes terminal settings to make restoration observable.
+It proves host process/terminal behavior; it is not Minecraft gameplay acceptance.
+Managed Prism tests separately verify the root icon's seed policy and rejection of
+an explicit managed policy before publication, while keeping other PNGs managed.
+
 ## Strict external checks
 
 ```sh

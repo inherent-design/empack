@@ -21,6 +21,19 @@ not JVM options.
 On the first run, Minecraft may stop until you review and accept its EULA in
 `game/eula.txt`. Empack never accepts the EULA for you.
 
+## Interactive Unix consoles
+
+With v0.8.3-beta, empack-supervised Java receives foreground terminal ownership
+before it starts. Console commands such as `list` and `stop` work through the normal
+start scripts, and terminal Ctrl-C reaches Java's shutdown handler. Empack restores
+the terminal after the runtime exits. Prefer `stop` for an ordinary server shutdown;
+explicit operation cancellation still terminates the owned process tree.
+
+Run interactive launches in the foreground. Services can redirect all three console
+streams. This fix belongs to the recipient empack executable; it does not require
+changing mods or adding a Java wrapper. Existing custom workarounds should be
+removed only after testing the corrected executable with that installation.
+
 ## Installation and updates
 
 Bundled snapshots already include their pack and runtime files. Their

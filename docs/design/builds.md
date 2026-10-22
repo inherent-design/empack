@@ -117,6 +117,21 @@ files are unchanged. This rule does not apply to unrelated `.sh` templates.
 Bundled snapshots retain standalone command and
 script customization. There is no implicit custom-integration bypass.
 
+### Prism-owned icon
+
+For managed Prism recipes, the selected game-root `icon.png` defaults to `seed`.
+Prism writes that file before running the preparation hook, so it cannot be enforced
+as immutable managed content. An explicit `seed` policy is preserved; an explicit
+`managed` policy fails preparation with guidance to set `policies: {icon.png: seed}`
+in `empack.bindings.yml`. The authored policy is not silently rewritten. Root-name
+case variants receive the same rule; nested `icon.png` and other PNG files retain
+their ordinary policies. Standalone bundled snapshots are unchanged.
+
+This rule affects newly built release descriptors. Updating the empack executable
+does not rewrite a previously published archive or its ownership policy. Rebuild
+old distributions with the intended icon policy and use the normal instance update
+workflow; modified managed files still require the existing conflict decisions.
+
 ## Build data flow
 
 Capture intent, lock, source layers, templates and exact runtime once. Resolve saved
