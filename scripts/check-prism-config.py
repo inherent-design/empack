@@ -59,7 +59,7 @@ unix:!macx:QMAKE_LFLAGS += -Wl,--gc-sections
         for index, case in enumerate(json.loads(FIXTURES.read_text())):
             config = case["configuration"].replace("@PREPARE@", json.dumps(prepare)).replace("@WRAPPER@", json.dumps(wrapper))
             path = work / f"{index}.ini"
-            path.write_text(config)
+            path.write_bytes(config.encode("utf-8"))
             actual = json.loads(checked(str(work / "prism-config-probe"), str(path)))
             integrated = (actual["loaded"] and actual["override"] and
                           actual["prepare"] == prepare and actual["wrapper"] == wrapper)
