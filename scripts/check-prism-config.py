@@ -67,6 +67,8 @@ unix:!macx:QMAKE_LFLAGS += -Wl,--gc-sections
                 raise AssertionError((case["name"], actual))
             if case["name"] == "legacy-shadow" and integrated:
                 raise AssertionError("The legacy shadow counterexample was not reproduced")
+            if "consumer_override" in case and actual["override"] != case["consumer_override"]:
+                raise AssertionError((case["name"], "unexpected consumer override", actual))
             observations.append({"fixture": case["name"], "supported": case["accepted"], "consumer": actual})
         print(json.dumps({"prism_commit": commit, "qt_version": qt,
                           "fixtures": observations, "gameplay_tested": False}, indent=2))
