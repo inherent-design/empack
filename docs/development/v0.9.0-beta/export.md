@@ -140,6 +140,11 @@ Required integration includes the supported consumer's effective interpretation
 and the output attributes needed to execute its entry points. Managed Prism inputs
 require an unambiguous supported `ConfigVersion` (`1.2` or `1.3`) in `[General]`,
 canonical authority keys confined to that section, and balanced single-line values.
+The restricted grammar treats only semicolon-prefixed lines as comments and rejects
+hash-prefixed lines with an actionable diagnostic. Comment handling and continuations
+must preserve effective lifecycle settings: text ignored by validation must also be
+ignorable by the consumer. Shared fixtures cover hash-prefixed open quotes and
+trailing continuations under both supported formats, with semicolon controls.
 Missing markers, shadowed settings or multiline quoting cannot select a different
 consumer interpretation after validation. Exercise the shared fixtures with Prism's
 actual parser as well as the engine; text-field comparison alone is insufficient.
