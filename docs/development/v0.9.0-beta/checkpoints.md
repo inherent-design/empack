@@ -48,6 +48,22 @@ and a thin real-browser adapter before checkpoint 4 executes browser bundles.
 Checkpoint 5 reuses that foundation for consumer recipes and delivery. Mandatory
 browser routes are probed early, then qualified again with the packaged SDK.
 
+## Authoring integration ownership
+
+Checkpoint 1 owns grouped draft edits, stale generated-output proposals and bounded
+read-only project views. Checkpoint 2 preserves native observation, isolated test
+inputs and instance authority using synthetic fixtures. Checkpoint 3 preserves
+selected author sources and opaque provenance/report files without executing tools.
+Checkpoint 4 reuses those entries in the existing save/reopen lifecycle; it needs
+no separate evidence store. Checkpoint 5 exposes scoped verified candidate inventory
+and identity. Checkpoint 6 carries those views through the SDK and repeats the
+combined synthetic authoring fixture.
+
+Applications own generation workflows, gameplay analysis, selective invalidation
+and their specialized UX. The checkpoint additions do not introduce implicit
+scripts, a general process API, a companion service, automatic instance adoption
+or merging portable projects into existing checkouts.
+
 ## Feasibility and freeze gates
 
 The [early experiment and resource profiles](feasibility.md) accompany checkpoint 1;

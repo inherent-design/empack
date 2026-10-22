@@ -24,6 +24,23 @@ stable diagnostic records and receipts; do not require consumers to parse CLI te
 JS handles are opaque, scoped to an epoch and explicitly releasable. The SDK owns
 no global UI state and implements no duplicate TypeScript dependency resolver.
 
+## Authoring application integration
+
+Expose grouped revision-checked edits and the shared read-only project/candidate
+views through typed client results. Keep partial metadata previews distinct from
+verified artifact inventories. A host can display source, generated, candidate and
+installation observations without assigning one readiness boolean to the project.
+The browser SDK reports native-only observation and application operations as
+unavailable; it does not supply a companion connection implicitly.
+
+Applications retain their own source-to-output relationships and domain findings as
+explicit project files. A file edit creates a new draft revision but does not make
+the engine decide whether a gameplay report or world survey is still relevant.
+Show historical or unknown coverage accurately using the identities supplied by
+the engine and the producer's declared inputs. Tool reports never grant native
+mutation or executable proof authority. Generic editors need not implement domain
+analysis, and specialized editors reuse the same pack semantics.
+
 ## Browser network contract
 
 Request construction, response parsing, canonical identity binding, release policy,
