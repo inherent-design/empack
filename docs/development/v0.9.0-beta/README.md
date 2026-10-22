@@ -139,20 +139,23 @@ boundary checks pass. Restack dependent PRs as their prerequisites merge.
 ### Extraction baseline
 
 The latest published release is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
-(`e8ae54a`). Extraction starts from merged [main at `6ccf349`](https://github.com/inherent-design/empack/commit/6ccf349ddd7814dee024d3b69ac64e0007c3ec15),
+(`e8ae54a`). Extraction starts from merged [main at `d2a6e79`](https://github.com/inherent-design/empack/commit/d2a6e79c60a37c5b70fa8f075ad40ad58d2cd031),
 including [#137](https://github.com/inherent-design/empack/pull/137) and
 [#138](https://github.com/inherent-design/empack/pull/138), plus the Tokio update in
 [#139](https://github.com/inherent-design/empack/pull/139) and managed-launch
-validation in [#140](https://github.com/inherent-design/empack/pull/140). Its v0.8.2 package
+validation in [#140](https://github.com/inherent-design/empack/pull/140), plus
+consumer parser and output-attribute checks in
+[#141](https://github.com/inherent-design/empack/pull/141). Its v0.8.2 package
 version remains an unreleased target.
 
 This source baseline includes the opaque archive-member distinction and typed
 rejection of empty Modrinth file lists. Their regressions are native behavior to
 preserve during extraction; browser execution remains a separate acceptance gate.
-The consumer interpretation/attribute correction in
-[#141](https://github.com/inherent-design/empack/pull/141) must also be accepted
+The managed Prism comment correction in
+[#142](https://github.com/inherent-design/empack/pull/142) must also be accepted
 before consumer parity qualification. Checkpoints 5 and 6 require effective Prism
-configuration and executable managed entry points, as well as retained commands.
+configuration, including comment and continuation semantics, and executable
+managed entry points, as well as retained commands.
 Preserve these contracts across native and portable interpretation:
 
 | Boundary | Required behavior |
