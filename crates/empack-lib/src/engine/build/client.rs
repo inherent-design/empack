@@ -411,9 +411,13 @@ fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
         let mut selected = BTreeMap::new();
         let mut version = None;
         for line in std::str::from_utf8(bytes)?.lines().map(str::trim) {
-            if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            if line.is_empty() || line.starts_with(';') {
                 continue;
             }
+            ensure!(
+                !line.starts_with('#'),
+                "Managed Prism settings do not support hash-prefixed lines. Use semicolon (;) comments"
+            );
             ensure!(
                 !line.ends_with('\\'),
                 "Managed launcher settings cannot use continued lines"

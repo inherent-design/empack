@@ -723,6 +723,13 @@ fn managed_prism_consumer_format_fixtures_use_public_preparation() {
                 &external,
                 &Cancellation::default(),
             );
+            if let Some(diagnostic) = fixture_case["diagnostic"].as_str() {
+                let error = result
+                    .as_ref()
+                    .err()
+                    .expect("invalid managed configuration");
+                assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
+            }
             assert_eq!(
                 result.is_ok(),
                 fixture_case["accepted"].as_bool().unwrap(),
@@ -735,4 +742,35 @@ fn managed_prism_consumer_format_fixtures_use_public_preparation() {
             }
         }
     }
+}
+
+#[test]
+fn standalone_prism_retains_hash_prefixed_configuration() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let external = fixture(root.path());
+    let configuration =
+        b"[General]\nConfigVersion=1.3\n# user-owned setting\nOverrideCommands=false\n";
+    put(root.path(), "templates/client/instance.cfg", configuration);
+    let mut candidate = prepare_client_archive(
+        &capture(root.path(), host.path(), "client.zip"),
+        path("client.zip").unwrap(),
+        &external,
+        &options(DistributionArchive::Zip),
+        Recipe::PRISM_BUNDLED,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert!(candidate.user_configuration);
+    let mut zip = zip::ZipArchive::new(candidate.archive.archive.file()).unwrap();
+    let mut actual = Vec::new();
+    zip.by_name("instance.cfg")
+        .unwrap()
+        .read_to_end(&mut actual)
+        .unwrap();
+    assert_eq!(actual, configuration);
+    assert_eq!(
+        fs::read(root.path().join("templates/client/instance.cfg")).unwrap(),
+        configuration
+    );
 }

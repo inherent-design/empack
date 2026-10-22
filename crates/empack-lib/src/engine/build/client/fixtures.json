@@ -128,5 +128,53 @@
     "name": "multiline-value",
     "configuration": "[General]\nConfigVersion=1.2\nNote=\"first\nsecond\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
     "accepted": false
+  },
+  {
+    "name": "hash-quote-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\n# note=\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false,
+    "diagnostic": "Use semicolon (;) comments",
+    "consumer_override": false
+  },
+  {
+    "name": "semicolon-quote-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\n; note=\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true
+  },
+  {
+    "name": "hash-continuation-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\n# note=ignored\\\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false,
+    "diagnostic": "Use semicolon (;) comments",
+    "consumer_override": false
+  },
+  {
+    "name": "semicolon-continuation-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\n; note=ignored\\\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true
+  },
+  {
+    "name": "hash-quote-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\n# note=\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false,
+    "diagnostic": "Use semicolon (;) comments",
+    "consumer_override": false
+  },
+  {
+    "name": "semicolon-quote-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\n; note=\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true
+  },
+  {
+    "name": "hash-continuation-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\n# note=ignored\\\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false,
+    "diagnostic": "Use semicolon (;) comments",
+    "consumer_override": false
+  },
+  {
+    "name": "semicolon-continuation-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\n; note=ignored\\\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true
   }
 ]
