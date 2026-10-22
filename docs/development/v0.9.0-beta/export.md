@@ -21,6 +21,33 @@ verification receipt and a retention lease. It cannot be manufactured from a wri
 success flag. The expected inventory comes from source selection and recipe rules,
 not the encoder's list of entries. Native and browser outputs share these rules.
 
+## Candidate information for external analysis
+
+Applications can inspect the captured inputs and verified inventory through bounded
+read-only access without acquiring an internal proof constructor. Identify the
+source revision, runtime resolution, selected profile/recipe, environment, optional
+choices and exact content. Inventory entries retain logical role, destination,
+content identity, size, participation and required attributes. Content identity must
+cover authored configuration and generated resources; a lock hash or pack version
+alone does not identify the assembled candidate.
+
+Provide an unambiguous, versioned identity for the scoped semantic inventory and
+its operation context. Canonical encoding excludes host paths, local workspace IDs
+and draft generation counters; report the captured draft revision alongside that
+identity. Freeze the encoding with shared fixtures when implementing this view. A
+separately named artifact digest identifies archive bytes. Equivalent frozen
+inventories can be compared across hosts without requiring byte-identical archives. Never identify a partial preview as a complete verified
+runtime inventory. Reference distribution inventory and a recipient's materialized
+inventory are different scopes; reference verification alone cannot claim what a
+game process loaded.
+
+External analysis records can refer to this identity and to a separately captured
+instrumented inventory. They cannot mutate the original retained inputs or turn a
+tool's result into engine verification. Native materialization and installation
+retain their own observations and authority. Verification of generated output proves
+its bytes and placement, not that its generator interpreted the author source
+correctly or that the game accepts its semantics.
+
 ## Recipe and recipient contract
 
 New profiles use the [reference defaults](README.md#extraction-baseline). Selection
@@ -223,3 +250,10 @@ conflicting replacements and unchanged generated copies, preserving custom serve
 properties. Keep bundled standalone overrides and subscribed lifecycle checks in
 the same regression family. Shared preparation must enforce this policy before
 native publication or browser delivery, rather than relying on CLI warnings.
+
+Expose the verified fixture inventory to a separate read-only consumer. Changing
+configuration or a generated resource while retaining the same lock must change
+the appropriate candidate identity. Equivalent frozen inputs yield equivalent
+inventory identities across native and browser hosts. Compare reference and
+materialized scopes explicitly; a reference archive must not certify an unobserved
+runtime. Add synthetic instrumentation only to a separately identified test copy.
