@@ -144,6 +144,19 @@ empack and verify the acquired inventory. Identify what was observed; import or
 startup does not establish gameplay. The CLI executable
 remains `empack`, and release archives keep their existing platform naming pattern.
 
+Consumer qualification includes customized reference snapshots. Verify unrelated
+Prism settings and server properties survive while required preparation and launch
+integration remains intact. Removing or disabling managed Prism commands, or
+replacing any managed shell/batch start, GUI-start or install script with different
+bytes, fails preparation without publishing or rewriting author input. Matching
+generated script copies remain valid. Bundled standalone customization and
+subscribed lifecycle enforcement remain covered. Repeat the shared regression on
+the packaged native and browser paths; CLI-only validation is insufficient.
+
+Report content inventory, consumer configuration, mandatory preparation/activation
+integration and observed consumer acceptance separately. Source-level command
+checks do not replace exercising the reference preparation hook in actual Prism.
+
 The release includes native binaries, an SDK archive, a static harness archive and
 checksums naming final downloadable filenames. Publish a machine-readable capability
 report plus a concise human summary of tested routes, formats, devices, sinks and
