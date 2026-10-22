@@ -116,7 +116,9 @@ Live runtime probes exercise console launchers; they do not certify desktop GUI 
 ## Managed consumer interpretation
 
 Managed Prism configuration tests include absent, unsupported, duplicated and
-misplaced version markers, command shadowing, and multiline quoting. Compare the
+misplaced version markers, command shadowing, multiline quoting, and hash-prefixed
+settings with open quotes or trailing continuations under both supported versions.
+Semicolon-comment controls must preserve the effective lifecycle settings. Compare the
 same fixtures with Prism 11.1.1's actual `INIFile::loadFile` implementation, using
 a clean upstream checkout and Qt development tools. Consumer-parser execution is
 separate from launching Minecraft and must identify the source revision and Qt
@@ -130,7 +132,8 @@ python3 scripts/check-prism-config.py --prism-source /path/to/PrismLauncher-11.1
 Use a clean checkout at `7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4` and Qt development
 tools plus `make`. The shared fixtures also run through empack's public build
 preparation. The probe verifies accepted settings and reproduces the legacy
-shadow counterexample; it does not certify every rejected legacy representation.
+shadow and hash-prefixed quote/continuation counterexamples; it does not certify
+every rejected representation.
 
 Managed server tests check archive attributes in ZIP, TAR.GZ and 7z for identical
 scripts captured with and without executable source permissions. On Unix, extract
