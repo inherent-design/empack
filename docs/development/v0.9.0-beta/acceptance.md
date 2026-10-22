@@ -158,7 +158,11 @@ Include missing/unsupported/duplicate Prism format markers, authority keys outsi
 quotes and trailing continuations under formats 1.2 and 1.3; the public preparation
 boundary rejects them without changing documents, templates or prior artifacts.
 Semicolon-comment controls retain effective lifecycle settings, and ordinary
-standalone customization remains supported. Run the shared accepted and
+standalone customization remains supported. Add space/tab controls, U+00A0 before
+and after keys, U+2003 prefixes, section/comment/value boundaries and raw controls
+under both supported versions. Verify LF/CRLF and unterminated final lines; reject
+bare CR. Unicode display values remain accepted and preserved in exported bytes.
+Run the shared accepted and
 counterexample fixtures through a pinned actual Prism parser, recording its source
 revision and Qt version. A parser-only pass is not launcher/gameplay acceptance.
 
