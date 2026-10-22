@@ -118,7 +118,10 @@ Live runtime probes exercise console launchers; they do not certify desktop GUI 
 Managed Prism configuration tests include absent, unsupported, duplicated and
 misplaced version markers, command shadowing, multiline quoting, and hash-prefixed
 settings with open quotes or trailing continuations under both supported versions.
-Semicolon-comment controls must preserve the effective lifecycle settings. Compare the
+Include ordinary space/tab controls and Unicode whitespace at key, section, comment
+and value boundaries. Accept LF/CRLF and unterminated final lines; reject bare CR and
+unsupported controls. Unicode display-value fixtures remain accepted without changing
+author bytes. Semicolon controls preserve the effective lifecycle settings. Compare the
 same fixtures with Prism 11.1.1's actual `INIFile::loadFile` implementation, using
 a clean upstream checkout and Qt development tools. Consumer-parser execution is
 separate from launching Minecraft and must identify the source revision and Qt

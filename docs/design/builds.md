@@ -97,6 +97,15 @@ managed configurations. Hash-prefixed lines are rejected with a diagnostic direc
 authors to use `;`: QSettings can interpret them as active settings, including quotes
 and continuations that consume later lifecycle settings.
 
+Structural padding uses only ASCII space (U+0020) and tab (U+0009). Line endings
+are LF or CRLF; the final line may omit its terminator. Bare CR and other control
+characters are rejected, including in comments. Unicode whitespace is not trimmed
+into a section, comment or canonical key. Keys and section names retain the restricted
+ASCII grammar; values may contain Unicode, including non-ASCII spaces in display
+names. Value padding removes only space and tab, so unsupported characters cannot
+be normalized into a required command or version. These are accepted-subset rules,
+not a claim to implement every QSettings syntax extension.
+
 Custom server entry points must match the generated scripts exactly;
 shell text is not interpreted to certify an alternative lifecycle. Incompatible
 replacements fail preparation without rewriting the template or publishing an
