@@ -410,7 +410,17 @@ fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
         let mut groups = BTreeSet::new();
         let mut selected = BTreeMap::new();
         let mut version = None;
-        for line in std::str::from_utf8(bytes)?.lines().map(str::trim) {
+        for physical_line in std::str::from_utf8(bytes)?.split_inclusive('\n') {
+            let line = if let Some(line) = physical_line.strip_suffix('\n') {
+                line.strip_suffix('\r').unwrap_or(line)
+            } else {
+                physical_line
+            };
+            ensure!(
+                line.chars().all(|ch| !ch.is_control() || ch == '\t'),
+                "Managed launcher settings require LF or CRLF line endings and no raw controls except tab"
+            );
+            let line = line.trim_matches([' ', '\t']);
             if line.is_empty() || line.starts_with(';') {
                 continue;
             }
@@ -439,19 +449,15 @@ fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
                 continue;
             }
             let (key, value) = line.split_once('=').context("Invalid launcher setting")?;
-            let key = key.trim();
+            let key = key.trim_matches([' ', '\t']);
             ensure!(
                 !key.is_empty() && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
-                "Encoded launcher setting keys are unsupported for managed consumers"
+                "Managed launcher keys require ASCII letters, digits or underscores with only space/tab padding"
             );
-            let value = value.trim();
+            let value = value.trim_matches([' ', '\t']);
             let mut quoted = false;
             let mut escaped = false;
             for ch in value.chars() {
-                ensure!(
-                    !ch.is_control() || ch == '\t',
-                    "Control characters in launcher settings are unsupported"
-                );
                 if escaped {
                     escaped = false;
                 } else if ch == '\\' {

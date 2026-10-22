@@ -621,7 +621,10 @@ fn managed_prism_templates_preserve_unrelated_custom_settings() {
         let host = tempfile::tempdir().unwrap();
         let external = fixture(root.path());
         let custom = include_str!("../../../../templates/client/instance.cfg.template")
-            .replace("name={{ini_quote NAME}}", "name=Custom Pack")
+            .replace(
+                "name={{ini_quote NAME}}",
+                "name=Custom Pack 世界\u{00a0}\u{2003}",
+            )
             .replace(
                 "OverrideMemory=false",
                 "OverrideMemory=true\nMaxMemAlloc=4096",
@@ -649,7 +652,7 @@ fn managed_prism_templates_preserve_unrelated_custom_settings() {
             .read_to_string(&mut ini)
             .unwrap();
         for setting in [
-            "name=Custom Pack",
+            "name=Custom Pack 世界\u{00a0}\u{2003}",
             "OverrideMemory=true",
             "MaxMemAlloc=4096",
             "iconKey=custom_icon",
