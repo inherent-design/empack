@@ -139,14 +139,18 @@ boundary checks pass. Restack dependent PRs as their prerequisites merge.
 ### Extraction baseline
 
 The latest published release is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
-(`e8ae54a`). Extraction starts from merged [main at `978e80f`](https://github.com/inherent-design/empack/commit/978e80f915926cededa6765160ad4d0d53b89982),
+(`e8ae54a`). Extraction starts from merged [main at `ad8b9ae`](https://github.com/inherent-design/empack/commit/ad8b9aeb36986d610559b3eab331f938c52c264a),
 including [#137](https://github.com/inherent-design/empack/pull/137) and
-[#138](https://github.com/inherent-design/empack/pull/138). Its v0.8.2 package
+[#138](https://github.com/inherent-design/empack/pull/138), plus the Tokio update in
+[#139](https://github.com/inherent-design/empack/pull/139). Its v0.8.2 package
 version remains an unreleased target.
 
 This source baseline includes the opaque archive-member distinction and typed
 rejection of empty Modrinth file lists. Their regressions are native behavior to
 preserve during extraction; browser execution remains a separate acceptance gate.
+The managed-launch correction in [#140](https://github.com/inherent-design/empack/pull/140)
+must also be accepted before consumer parity qualification. Checkpoints 5 and 6
+require customized reference recipes to retain preparation and launch integration.
 Preserve these contracts across native and portable interpretation:
 
 | Boundary | Required behavior |
