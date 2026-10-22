@@ -1,0 +1,132 @@
+[
+  {
+    "name": "supported-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true
+  },
+  {
+    "name": "supported-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true
+  },
+  {
+    "name": "unrelated-section",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nNote=\"custom value\"\n",
+    "accepted": true
+  },
+  {
+    "name": "legacy-shadow",
+    "configuration": "[General]\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nOverrideCommands=false\n",
+    "accepted": false
+  },
+  {
+    "name": "legacy-no-version",
+    "configuration": "[General]\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "unsupported-'1.1'",
+    "configuration": "[General]\nConfigVersion=1.1\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "unsupported-'2.0'",
+    "configuration": "[General]\nConfigVersion=2.0\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "unsupported-''",
+    "configuration": "[General]\nConfigVersion=\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "unsupported-'\"1.2\"'",
+    "configuration": "[General]\nConfigVersion=\"1.2\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "duplicate-version",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\nConfigVersion=1.2\n",
+    "accepted": false
+  },
+  {
+    "name": "misplaced-version",
+    "configuration": "[General]\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nConfigVersion=1.2\n",
+    "accepted": false
+  },
+  {
+    "name": "root-version",
+    "configuration": "ConfigVersion=1.2\n[General]\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "shadow-ConfigVersion",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nConfigVersion=different\n",
+    "accepted": false
+  },
+  {
+    "name": "case-ConfigVersion",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\nconfigversion=different\n",
+    "accepted": false
+  },
+  {
+    "name": "encoded-ConfigVersion",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n%43onfigVersion=different\n",
+    "accepted": false
+  },
+  {
+    "name": "shadow-OverrideCommands",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nOverrideCommands=different\n",
+    "accepted": false
+  },
+  {
+    "name": "case-OverrideCommands",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\noverridecommands=different\n",
+    "accepted": false
+  },
+  {
+    "name": "encoded-OverrideCommands",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n%4FverrideCommands=different\n",
+    "accepted": false
+  },
+  {
+    "name": "shadow-PreLaunchCommand",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nPreLaunchCommand=different\n",
+    "accepted": false
+  },
+  {
+    "name": "case-PreLaunchCommand",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\nprelaunchcommand=different\n",
+    "accepted": false
+  },
+  {
+    "name": "encoded-PreLaunchCommand",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n%50reLaunchCommand=different\n",
+    "accepted": false
+  },
+  {
+    "name": "shadow-WrapperCommand",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n[Other]\nWrapperCommand=different\n",
+    "accepted": false
+  },
+  {
+    "name": "case-WrapperCommand",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\nwrappercommand=different\n",
+    "accepted": false
+  },
+  {
+    "name": "encoded-WrapperCommand",
+    "configuration": "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n%57rapperCommand=different\n",
+    "accepted": false
+  },
+  {
+    "name": "unterminated-value",
+    "configuration": "[General]\nConfigVersion=1.2\nNote=\"open quote\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  },
+  {
+    "name": "multiline-value",
+    "configuration": "[General]\nConfigVersion=1.2\nNote=\"first\nsecond\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": false
+  }
+]

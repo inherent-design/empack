@@ -409,6 +409,7 @@ fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
         let mut general = false;
         let mut groups = BTreeSet::new();
         let mut selected = BTreeMap::new();
+        let mut version = None;
         for line in std::str::from_utf8(bytes)?.lines().map(str::trim) {
             if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
                 continue;
@@ -423,9 +424,10 @@ fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
                     .and_then(|v| v.strip_suffix(']'))
                     .context("Invalid launcher settings section")?;
                 ensure!(
-                    section
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                    !section.is_empty()
+                        && section
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
                         && groups.insert(section),
                     "Ambiguous launcher settings section"
                 );
@@ -435,21 +437,59 @@ fn verify_managed_commands(actual: &[u8], generated: &[u8]) -> Result<()> {
             let (key, value) = line.split_once('=').context("Invalid launcher setting")?;
             let key = key.trim();
             ensure!(
-                key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
+                !key.is_empty() && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
                 "Encoded launcher setting keys are unsupported for managed consumers"
             );
-            if general
-                && matches!(
-                    key,
-                    "OverrideCommands" | "PreLaunchCommand" | "WrapperCommand"
-                )
+            let value = value.trim();
+            let mut quoted = false;
+            let mut escaped = false;
+            for ch in value.chars() {
+                ensure!(
+                    !ch.is_control() || ch == '\t',
+                    "Control characters in launcher settings are unsupported"
+                );
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    quoted = !quoted;
+                }
+            }
+            ensure!(
+                !quoted && !escaped,
+                "Managed launcher settings require balanced single-line values"
+            );
+            if let Some(canonical) = [
+                "ConfigVersion",
+                "OverrideCommands",
+                "PreLaunchCommand",
+                "WrapperCommand",
+            ]
+            .into_iter()
+            .find(|name| name.eq_ignore_ascii_case(key))
             {
                 ensure!(
-                    selected.insert(key, value.trim()).is_none(),
-                    "Repeated launcher command setting"
+                    general && key == canonical,
+                    "Managed launcher authority settings must use canonical keys only in [General]"
                 );
+                if key == "ConfigVersion" {
+                    ensure!(
+                        version.replace(value).is_none(),
+                        "Repeated launcher ConfigVersion"
+                    );
+                } else {
+                    ensure!(
+                        selected.insert(key, value).is_none(),
+                        "Repeated launcher command setting"
+                    );
+                }
             }
         }
+        ensure!(
+            matches!(version, Some("1.2" | "1.3")),
+            "Managed Prism settings require one ConfigVersion=1.2 or ConfigVersion=1.3 in [General]"
+        );
         Ok(selected)
     }
     ensure!(
