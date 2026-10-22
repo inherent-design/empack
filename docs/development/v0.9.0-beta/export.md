@@ -155,6 +155,12 @@ to one shared accepted grammar, not separate native and browser interpretations.
 Missing markers, shadowed settings or multiline quoting cannot select a different
 consumer interpretation after validation. Exercise the shared fixtures with Prism's
 actual parser as well as the engine; text-field comparison alone is insufficient.
+Consumer-parser evidence identifies pinned application source and a dependency/runtime
+configuration supported by that application. For Prism 11.1.1, use Qt 6.4 or newer
+within major 6; unsupported Qt builds are supplemental diagnostics only. Record the
+platform, host/target architecture, compiler/build configuration, compile/runtime Qt
+versions, fixture-set digest and empack revision/dirty state. A supported headless
+probe qualifies the tested parser path, not graphical import or game launch.
 
 For byte-identical managed server entry points, output permissions come from the
 recipe: shell scripts are writable/executable and batch scripts writable without
