@@ -136,6 +136,23 @@ substrings do not establish shell semantics. A conflicting template fails
 preparation without rewriting author input or delivering an artifact. Bundled
 snapshots retain standalone command customization.
 
+Required integration includes the supported consumer's effective interpretation
+and the output attributes needed to execute its entry points. Managed Prism inputs
+require an unambiguous supported `ConfigVersion` (`1.2` or `1.3`) in `[General]`,
+canonical authority keys confined to that section, and balanced single-line values.
+Missing markers, shadowed settings or multiline quoting cannot select a different
+consumer interpretation after validation. Exercise the shared fixtures with Prism's
+actual parser as well as the engine; text-field comparison alone is insufficient.
+
+For byte-identical managed server entry points, output permissions come from the
+recipe: shell scripts are writable/executable and batch scripts writable without
+Unix executable bits. Normalize the candidate, leaving source bytes and attributes
+unchanged, including sources from Windows. This rule covers only the six owned
+entry points, not unrelated shell templates. Verify archive metadata in ZIP,
+TAR.GZ and 7z where supported, and directly execute extracted Unix entry points
+with controlled external tools. Native Windows acceptance checks emitted batch
+diagnostics and exit status under `cmd.exe`.
+
 Native and browser adapters use this same policy. An archive inventory pass does
 not establish that a custom launcher will prepare its referenced content. Record
 content inventory, consumer configuration, required preparation/activation
