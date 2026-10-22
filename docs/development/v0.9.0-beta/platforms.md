@@ -25,6 +25,15 @@ edits does not protect readers from collection. A separately safe metadata-only
 inspection may report diagnostics but cannot issue content leases or verify exports.
 See [Web Locks](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API).
 
+A queued exclusive request can prevent a later shared request from being granted.
+Nested shared acquisition is therefore unsafe for an owner waiting on its own
+child work. `ifAvailable` requests return without queueing when ownership cannot
+be granted. See the [Web Locks grantability and queue rules](https://w3c.github.io/web-locks/).
+
+The default OPFS sync access mode is exclusive. Shared read-only modes require
+feature and behavior tests; `readwrite-unsafe` permits concurrent mutation and is
+not an immutable-store solution. See [sync access handle modes](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createSyncAccessHandle).
+
 Persistent-storage requests may be denied. Browser storage estimates are not
 reservations, and deleting site data removes local work. SDK users need a portable
 backup path even after successful local saves. See [persistent storage requests](https://developer.mozilla.org/en-US/docs/Web/API/StorageManager/persist).

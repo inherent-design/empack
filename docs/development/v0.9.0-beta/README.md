@@ -6,9 +6,10 @@ by the native baseline. Public signatures become callable only with their
 implementation.
 
 A project can retain unfinished work, including invalid author text and missing
-custom files. Export requires globally valid authoring semantics and an immutable selection of inputs. The native
-CLI and browser SDK use the same interpretation of dependencies, bindings,
-templates, recipes and evidence.
+custom files. Distribution export requires globally valid authoring semantics and
+an immutable selection of inputs. Project backup preserves unfinished drafts.
+The native CLI and browser SDK use the same interpretation of dependencies,
+bindings, templates, recipes and evidence.
 
 ## Release surface
 
@@ -151,7 +152,7 @@ while feasibility runs; unresolved assumptions block the relevant interface free
 
 ## Development entry points
 
-Implementation checkpoints are separate from these target contracts. Each draft PR
+[Implementation checkpoints](checkpoints.md) are separate from these target contracts. Each draft PR
 starts with its scoped contract and acceptance gates; its existence does not mean
 the implementation is complete. Merge only after its native regression and portable
 boundary checks pass. Restack dependent PRs as their prerequisites merge.
@@ -227,3 +228,5 @@ results, implementation status and review findings belong in those PRs and CI.
 - [Portable project format](project-format.md)
 - [Browser host and persistence](browser-host.md)
 - [Bounded codecs and artifact delivery](export.md)
+- [SDK, network and harness](sdk-and-network.md)
+- [Release acceptance](acceptance.md)
