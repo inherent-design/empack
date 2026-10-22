@@ -125,6 +125,23 @@ must reflect that measured behavior. Do not advertise large streaming export on 
 route. The preferred fallback uses a retained OPFS-backed `File`, verified in each
 required browser, without assembling the archive in WASM linear memory.
 
+## Required consumer integration
+
+Shared consumer preparation checks mandatory integration for every managed recipe:
+reference snapshots and all empack-managed update recipes. Custom Prism settings
+retain the generated `OverrideCommands`, preparation and wrapper commands while
+preserving unrelated names, icons and memory settings. Managed server start,
+GUI-start and install entry points must match the generated scripts; command
+substrings do not establish shell semantics. A conflicting template fails
+preparation without rewriting author input or delivering an artifact. Bundled
+snapshots retain standalone command customization.
+
+Native and browser adapters use this same policy. An archive inventory pass does
+not establish that a custom launcher will prepare its referenced content. Record
+content inventory, consumer configuration, required preparation/activation
+integration and actual consumer acceptance as distinct evidence. Missing host
+capabilities cannot silently remove integration or change the selected recipe.
+
 ## Checkpoint acceptance
 
 Use a generated asset larger than the configured WASM processing-memory allowance,
@@ -163,3 +180,11 @@ metadata, graph expansion, many small inventory entries and expensive templates.
 Record cancellation acknowledgement separately from worker retirement and verify
 both against the selected profile. Include final serialization and verification;
 responsiveness during acquisition alone does not establish export responsiveness.
+
+Exercise generated reference configuration and compatible custom Prism settings,
+then remove or disable the preparation hook and wrapper separately. Require
+rejection without mutation. Test all managed server shell/batch entry points with
+conflicting replacements and unchanged generated copies, preserving custom server
+properties. Keep bundled standalone overrides and subscribed lifecycle checks in
+the same regression family. Shared preparation must enforce this policy before
+native publication or browser delivery, rather than relying on CLI warnings.
