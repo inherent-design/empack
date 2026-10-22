@@ -138,24 +138,25 @@ boundary checks pass. Restack dependent PRs as their prerequisites merge.
 
 ### Extraction baseline
 
-The latest published release is [v0.8.1-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.1-beta)
-(`e8ae54a`). Extraction starts from merged [main at `d2a6e79`](https://github.com/inherent-design/empack/commit/d2a6e79c60a37c5b70fa8f075ad40ad58d2cd031),
-including [#137](https://github.com/inherent-design/empack/pull/137) and
-[#138](https://github.com/inherent-design/empack/pull/138), plus the Tokio update in
-[#139](https://github.com/inherent-design/empack/pull/139) and managed-launch
-validation in [#140](https://github.com/inherent-design/empack/pull/140), plus
-consumer parser and output-attribute checks in
-[#141](https://github.com/inherent-design/empack/pull/141). Its v0.8.2 package
-version remains an unreleased target.
+The extraction baseline is [v0.8.2-beta](https://github.com/inherent-design/empack/releases/tag/v0.8.2-beta)
+at [commit `f29064d`](https://github.com/inherent-design/empack/commit/f29064dcf9136d0cf4cb001222e00be63dbe9a9b).
+It includes reference defaults and diagnostics in
+[#137](https://github.com/inherent-design/empack/pull/137), archive and catalog
+corrections in [#138](https://github.com/inherent-design/empack/pull/138), the Tokio
+update in [#139](https://github.com/inherent-design/empack/pull/139), managed-launch
+validation in [#140](https://github.com/inherent-design/empack/pull/140), consumer
+format and output-attribute checks in
+[#141](https://github.com/inherent-design/empack/pull/141), and restricted Prism
+grammar plus supported-dependency probe tooling in
+[#142](https://github.com/inherent-design/empack/pull/142).
 
 This source baseline includes the opaque archive-member distinction and typed
 rejection of empty Modrinth file lists. Their regressions are native behavior to
 preserve during extraction; browser execution remains a separate acceptance gate.
-The managed Prism comment correction in
-[#142](https://github.com/inherent-design/empack/pull/142) must also be accepted
-before consumer parity qualification. Checkpoints 5 and 6 require effective Prism
-configuration, including comment and continuation semantics, and executable
-managed entry points, as well as retained commands.
+Checkpoints 5 and 6 require effective Prism configuration, including comment,
+continuation and structural-whitespace semantics, and executable managed entry
+points. The supported headless parser probe does not establish actual consumer
+import/preparation, gameplay or browser acceptance.
 Preserve these contracts across native and portable interpretation:
 
 | Boundary | Required behavior |
