@@ -695,6 +695,10 @@ fn subscribed_server_scripts_require_enrollment_and_check_before_runtime() {
                 recipe,
             );
             assert!(launch.contains("instance launch --server --check-updates --"));
+            if windows {
+                assert!(!launch.replace("\r\n", "").contains('\n'));
+                assert!(launch.contains("\r\necho Server stopped. If Minecraft requested EULA acceptance, review game\\eula.txt before restarting.\r\n"));
+            }
             let install = consumer_script(
                 if windows {
                     install_batch(Some("digest"))
@@ -761,7 +765,13 @@ fn windows_bundled_entry_points_preserve_status_and_runtime_arguments() {
                     .output()
                     .unwrap();
                 assert_eq!(output.status.code(), Some(code), "{output:?}");
-                assert!(String::from_utf8_lossy(&output.stdout).contains("game\\eula.txt"));
+                assert!(String::from_utf8_lossy(&output.stdout).contains(
+                    "Server stopped. If Minecraft requested EULA acceptance, review game\\eula.txt before restarting."
+                ), "{output:?}");
+                assert!(
+                    output.stderr.is_empty(),
+                    "unexpected batch diagnostics: {output:?}"
+                );
                 let args = fs::read_to_string(root.path().join("game/arguments.txt")).unwrap();
                 assert_eq!(args.contains("nogui"), !argument.is_empty());
                 match launch {
@@ -917,6 +927,9 @@ fn managed_server_templates_require_generated_entry_points() {
             let mut actual = Vec::new();
             zip.by_name(name).unwrap().read_to_end(&mut actual).unwrap();
             assert_eq!(&actual, expected);
+            let attributes = evidence.inventory[&path(name).unwrap()].permissions;
+            assert_eq!(attributes.executable, name.ends_with(".sh"));
+            assert!(!attributes.readonly);
         }
         let mut properties = String::new();
         zip.by_name("game/server.properties")
@@ -924,5 +937,202 @@ fn managed_server_templates_require_generated_entry_points() {
             .read_to_string(&mut properties)
             .unwrap();
         assert_eq!(properties, "motd=Custom server\n");
+    }
+}
+
+#[test]
+fn managed_entry_points_normalize_output_attributes_across_formats() {
+    for (format, artifact) in [
+        (DistributionArchive::Zip, "server.zip"),
+        (DistributionArchive::TarGz, "server.tar.gz"),
+        (DistributionArchive::SevenZip, "server.7z"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        let runtime = prepared_fixture();
+        let cancel = Cancellation::default();
+        let (mut baseline, _) = prepare_server_archive(
+            &capture(root.path(), host.path(), "baseline.zip"),
+            path("baseline.zip").unwrap(),
+            &external,
+            &options(DistributionArchive::Zip),
+            &runtime,
+            Recipe::SERVER_REFERENCES,
+            &cancel,
+        )
+        .unwrap();
+        let mut zip = zip::ZipArchive::new(baseline.archive.file()).unwrap();
+        let names = [
+            "start.sh",
+            "start_gui.sh",
+            "install_pack.sh",
+            "start.bat",
+            "start_gui.bat",
+            "install_pack.bat",
+        ];
+        for name in names {
+            let mut bytes = Vec::new();
+            zip.by_name(name).unwrap().read_to_end(&mut bytes).unwrap();
+            put(root.path(), &format!("templates/server/{name}"), &bytes);
+        }
+        put(root.path(), "templates/server/unrelated.sh", b"custom");
+        for executable in [false, true] {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                for name in names {
+                    fs::set_permissions(
+                        root.path().join(format!("templates/server/{name}")),
+                        fs::Permissions::from_mode(if executable { 0o555 } else { 0o644 }),
+                    )
+                    .unwrap();
+                }
+            }
+            let before: Vec<_> = names
+                .iter()
+                .map(|name| {
+                    let source = root.path().join(format!("templates/server/{name}"));
+                    (
+                        source.clone(),
+                        fs::read(&source).unwrap(),
+                        fs::metadata(&source).unwrap().permissions(),
+                    )
+                })
+                .collect();
+            let (mut built, evidence) = prepare_server_archive(
+                &capture(root.path(), host.path(), artifact),
+                path(artifact).unwrap(),
+                &external,
+                &options(format),
+                &runtime,
+                Recipe::SERVER_REFERENCES,
+                &cancel,
+            )
+            .unwrap();
+            for name in names {
+                let permissions = evidence.inventory[&path(name).unwrap()].permissions;
+                assert_eq!(
+                    permissions.executable,
+                    name.ends_with(".sh"),
+                    "{name}, source executable={executable}"
+                );
+                assert!(!permissions.readonly);
+            }
+            assert!(
+                !evidence.inventory[&path("unrelated.sh").unwrap()]
+                    .permissions
+                    .executable
+            );
+            verify_archive(
+                built.archive.file(),
+                format,
+                &evidence.inventory,
+                ArchiveLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+            if format == DistributionArchive::Zip {
+                let mut archive = zip::ZipArchive::new(built.archive.file()).unwrap();
+                for name in names {
+                    assert_eq!(
+                        archive.by_name(name).unwrap().unix_mode().unwrap() & 0o777,
+                        if name.ends_with(".sh") { 0o755 } else { 0o644 }
+                    );
+                }
+            }
+            use std::io::{Seek, SeekFrom};
+            built.archive.file().seek(SeekFrom::Start(0)).unwrap();
+            if format == DistributionArchive::TarGz {
+                let mut archive =
+                    tar::Archive::new(flate2::read::GzDecoder::new(built.archive.file()));
+                let modes: BTreeMap<_, _> = archive
+                    .entries()
+                    .unwrap()
+                    .map(|entry| {
+                        let entry = entry.unwrap();
+                        (
+                            entry.path().unwrap().to_string_lossy().into_owned(),
+                            entry.header().mode().unwrap() & 0o777,
+                        )
+                    })
+                    .collect();
+                for name in names {
+                    assert_eq!(
+                        modes[name],
+                        if name.ends_with(".sh") { 0o755 } else { 0o644 }
+                    );
+                }
+            } else if format == DistributionArchive::SevenZip {
+                let archive = sevenz_rust2::ArchiveReader::new(
+                    built.archive.file(),
+                    sevenz_rust2::Password::empty(),
+                )
+                .unwrap();
+                for name in names {
+                    let entry = archive
+                        .archive()
+                        .files
+                        .iter()
+                        .find(|entry| entry.name == name)
+                        .unwrap();
+                    assert_eq!(
+                        (entry.windows_attributes >> 16) & 0o777,
+                        if name.ends_with(".sh") { 0o755 } else { 0o644 }
+                    );
+                }
+            }
+            #[cfg(unix)]
+            if format == DistributionArchive::Zip && !executable {
+                use std::os::unix::fs::PermissionsExt;
+                built.archive.file().seek(SeekFrom::Start(0)).unwrap();
+                let extracted = tempfile::tempdir().unwrap();
+                zip::ZipArchive::new(built.archive.file())
+                    .unwrap()
+                    .extract(extracted.path())
+                    .unwrap();
+                put(extracted.path(), "bin/empack", b"#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$EMPACK_TEST_LOG\"\ncase \"$*\" in *'instance launch'*) exit \"$EMPACK_TEST_EXIT\";; esac\n");
+                fs::set_permissions(
+                    extracted.path().join("bin/empack"),
+                    fs::Permissions::from_mode(0o755),
+                )
+                .unwrap();
+                let search =
+                    std::env::join_paths(std::iter::once(extracted.path().join("bin")).chain(
+                        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+                    ))
+                    .unwrap();
+                for name in ["start.sh", "start_gui.sh", "install_pack.sh"] {
+                    for status in [0, 9] {
+                        let log = extracted.path().join("calls.txt");
+                        fs::write(&log, b"").unwrap();
+                        let output = std::process::Command::new(extracted.path().join(name))
+                            .env("PATH", &search)
+                            .env("EMPACK_TEST_LOG", &log)
+                            .env("EMPACK_TEST_EXIT", status.to_string())
+                            .output()
+                            .unwrap();
+                        assert_eq!(
+                            output.status.code(),
+                            Some(if name == "install_pack.sh" { 0 } else { status }),
+                            "{output:?}"
+                        );
+                        let calls = fs::read_to_string(log).unwrap();
+                        assert!(calls.contains("instance prepare"));
+                        if name != "install_pack.sh" {
+                            assert!(
+                                calls.find("instance prepare").unwrap()
+                                    < calls.find("instance launch").unwrap()
+                            );
+                            assert_eq!(calls.contains("nogui"), name == "start.sh");
+                        }
+                    }
+                }
+            }
+            for (source, bytes, permissions) in before {
+                assert_eq!(fs::read(&source).unwrap(), bytes);
+                assert_eq!(fs::metadata(&source).unwrap().permissions(), permissions);
+            }
+        }
     }
 }

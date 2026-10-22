@@ -523,16 +523,16 @@ fn native_input_and_future_installed_collisions_preserve_existing_distribution()
 #[test]
 fn managed_custom_settings_cannot_disable_or_shadow_required_commands() {
     let expected =
-        b"[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
+        b"[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
     verify_managed_commands(expected, expected).unwrap();
-    let custom = b"[General]\nname=Custom name\nMaxMemAlloc=4096\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
+    let custom = b"[General]\nConfigVersion=1.2\nname=Custom name\nMaxMemAlloc=4096\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n";
     verify_managed_commands(custom, expected).unwrap();
     for bad in [
-        "[General]\nOverrideCommands=false\nPreLaunchCommand=prepare\nWrapperCommand=launch\n",
-        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\nWrapperCommand=other\n",
-        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n[General]\nWrapperCommand=other\n",
-        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n%57rapperCommand=other\n",
-        "[General]\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=other\n",
+        "[General]\nConfigVersion=1.2\nOverrideCommands=false\nPreLaunchCommand=prepare\nWrapperCommand=launch\n",
+        "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\nWrapperCommand=other\n",
+        "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n[General]\nConfigVersion=1.2\nWrapperCommand=other\n",
+        "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=launch\n%57rapperCommand=other\n",
+        "[General]\nConfigVersion=1.2\nOverrideCommands=true\nPreLaunchCommand=prepare\nWrapperCommand=other\n",
     ] {
         assert!(verify_managed_commands(bad.as_bytes(), expected).is_err());
     }
@@ -671,5 +671,68 @@ fn managed_prism_templates_preserve_unrelated_custom_settings() {
             zip.by_name(".minecraft/.empack-consumer/release.json")
                 .is_ok()
         );
+    }
+}
+
+#[test]
+fn managed_prism_consumer_format_fixtures_use_public_preparation() {
+    use crate::engine::build::batch::{DistributionRequest, prepare_build_batch};
+    use empack_core::model::NonEmpty;
+    let fixtures: Vec<Value> = serde_json::from_str(include_str!("fixtures.json")).unwrap();
+    for recipe in [
+        Recipe::PRISM_REFERENCES,
+        Recipe::PRISM_REFERENCES
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+        Recipe::PRISM_BUNDLED
+            .with_update_authority(UpdateAuthority::Empack)
+            .unwrap(),
+    ] {
+        for fixture_case in &fixtures {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            let external = fixture(root.path());
+            let configuration = fixture_case["configuration"]
+                .as_str()
+                .unwrap()
+                .replace("@PREPARE@", "{{ini_quote INSTANCE_PREPARE_COMMAND}}")
+                .replace("@WRAPPER@", "{{ini_quote INSTANCE_WRAPPER_COMMAND}}");
+            put(
+                root.path(),
+                "templates/client/instance.cfg.template",
+                configuration.as_bytes(),
+            );
+            put(root.path(), "dist/client.zip", b"prior artifact");
+            let before: Vec<_> = [
+                "empack.yml",
+                "empack.lock",
+                "templates/client/instance.cfg.template",
+                "dist/client.zip",
+            ]
+            .into_iter()
+            .map(|name| (name, fs::read(root.path().join(name)).unwrap()))
+            .collect();
+            let result = prepare_build_batch(
+                capture(root.path(), host.path(), "client.zip"),
+                NonEmpty::new(vec![DistributionRequest::Prism {
+                    recipe,
+                    artifact: path("client.zip").unwrap(),
+                    options: options(DistributionArchive::Zip),
+                }])
+                .unwrap(),
+                &external,
+                &Cancellation::default(),
+            );
+            assert_eq!(
+                result.is_ok(),
+                fixture_case["accepted"].as_bool().unwrap(),
+                "{}: {:?}",
+                fixture_case["name"],
+                result.err()
+            );
+            for (name, bytes) in before {
+                assert_eq!(fs::read(root.path().join(name)).unwrap(), bytes);
+            }
+        }
     }
 }

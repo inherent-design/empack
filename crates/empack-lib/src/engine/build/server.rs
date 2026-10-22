@@ -424,7 +424,7 @@ pub(super) fn prepare_server_archive(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(generated(&bytes, executable, cancel)?);
             }
-            std::collections::btree_map::Entry::Occupied(entry) if managed => {
+            std::collections::btree_map::Entry::Occupied(mut entry) if managed => {
                 ensure!(
                     entry.get().content.lease().len() == bytes.len() as u64,
                     "Managed server template {name} must match the generated script; remove the replacement to restore required preparation and launch integration"
@@ -440,6 +440,10 @@ pub(super) fn prepare_server_archive(
                     actual == bytes,
                     "Managed server template {name} must match the generated script; remove the replacement to restore required preparation and launch integration"
                 );
+                entry.get_mut().permissions = FilePermissions {
+                    readonly: false,
+                    executable,
+                };
             }
             _ => {}
         }

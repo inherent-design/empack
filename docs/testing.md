@@ -120,7 +120,17 @@ misplaced version markers, command shadowing, and multiline quoting. Compare the
 same fixtures with Prism 11.1.1's actual `INIFile::loadFile` implementation, using
 a clean upstream checkout and Qt development tools. Consumer-parser execution is
 separate from launching Minecraft and must identify the source revision and Qt
-version in its receipt.
+version in its receipt. The probe compiles upstream `INIFile.cpp` and `Json.cpp`
+without vendoring or changing their parsing code:
+
+```sh
+python3 scripts/check-prism-config.py --prism-source /path/to/PrismLauncher-11.1.1 --qmake /path/to/qmake
+```
+
+Use a clean checkout at `7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4` and Qt development
+tools plus `make`. The shared fixtures also run through empack's public build
+preparation. The probe verifies accepted settings and reproduces the legacy
+shadow counterexample; it does not certify every rejected legacy representation.
 
 Managed server tests check archive attributes in ZIP, TAR.GZ and 7z for identical
 scripts captured with and without executable source permissions. On Unix, extract
