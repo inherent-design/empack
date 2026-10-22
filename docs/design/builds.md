@@ -86,11 +86,23 @@ empack at runtime. Artifact names distinguish subscribed and snapshot recipes.
 Every managed Prism or server recipe requires its preparation and launch integration:
 reference snapshots and all `updates: empack` recipes. Custom Prism configurations
 retain the generated `OverrideCommands`, `PreLaunchCommand` and `WrapperCommand`
-settings. Custom server entry points must match the generated scripts exactly;
+settings. Managed `instance.cfg` uses the supported QSettings formats with exactly
+one `ConfigVersion=1.2` or `ConfigVersion=1.3` in `[General]`. Version and command
+keys use their canonical spelling and appear only in that section. Legacy,
+unsupported, shadowed and multiline interpretations fail preparation. Other values
+must have balanced quotes on one physical line; escapes remain allowed inside
+quoted values. This bounded subset prevents consumer parser selection from changing
+the meaning of verified settings.
+
+Custom server entry points must match the generated scripts exactly;
 shell text is not interpreted to certify an alternative lifecycle. Incompatible
 replacements fail preparation without rewriting the template or publishing an
 artifact. Names, icons, memory settings, server properties and other unrelated
-content remain customizable. Bundled snapshots retain standalone command and
+content remain customizable. For these six managed entry points, the candidate
+uses generated writable permissions: shell scripts are executable and batch scripts
+are not marked Unix-executable, regardless of source-host permissions. The source
+files are unchanged. This rule does not apply to unrelated `.sh` templates.
+Bundled snapshots retain standalone command and
 script customization. There is no implicit custom-integration bypass.
 
 ## Build data flow
