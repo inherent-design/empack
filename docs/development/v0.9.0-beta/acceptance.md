@@ -164,7 +164,12 @@ under both supported versions. Verify LF/CRLF and unterminated final lines; reje
 bare CR. Unicode display values remain accepted and preserved in exported bytes.
 Run the shared accepted and
 counterexample fixtures through a pinned actual Prism parser, recording its source
-revision and Qt version. A parser-only pass is not launcher/gameplay acceptance.
+revision and supported Qt dependency configuration. For Prism 11.1.1, Qt 6.4+
+within major 6 is required; Qt 5 results remain supplemental. The receipt includes
+compile/runtime Qt versions, platform/architecture, compiler and build flags,
+fixture digest and empack revision/dirty state. Reproduce the final parser evidence
+with the packaged candidate's inputs. A parser-only pass is not launcher/gameplay
+acceptance.
 
 Verify managed script output attributes independently of source-host permissions.
 Identical copies from executable, read-only and non-executable sources produce the
