@@ -34,6 +34,7 @@ The separated executable suites have explicit boundaries:
 | --- | --- |
 | `cli_arguments`, `cli_dependencies`, `cli_init` | Offline parsing, refusal and initialization |
 | `cli_build` | Offline artifact creation, metadata and cleanup |
+| `journey_import` | Pinned Modrinth/CurseForge archives, complete exported inventory and traversal refusal |
 | `journey_authoring` | Literal layered authoring, rebuild and removal |
 | `journey_pending` | Public build/sync inspection, verified manual association, retained partial inputs, restart, stale refusal and discard |
 | `journey_pending_import` | Public import selectors, retained-archive restart, exact exported bytes and changed-destination refusal |
@@ -75,6 +76,16 @@ and change trust. Assertions cover refused tampering and expiry, explicit confli
 resolution, replay floors, and preservation of player configuration and initialized
 worlds. These are the documented local-envelope routes. They do not execute hosted
 HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
+
+The [pinned import corpus](../tests/fixtures/import-corpus/README.md) uses small
+repository-owned archives with fixed hashes and separately reviewed expectations.
+Run `python3 scripts/check-import-corpus.py` or `mise run test:import:corpus` for
+that selection; it also runs in the ordinary CLI and deterministic suites.
+`scripts/survey-imports.py` deliberately resolves moving upstream packs. Its reports
+identify themselves as rolling observations, record acquired archive and executable
+digests, and cannot qualify the pinned corpus. `scripts/import-smoke-test.py` remains
+a compatibility entry point for the survey. The small synthetic corpus does not
+replace the broader pinned real-pack acceptance requirement.
 
 The executable harness lives in `empack-tests::harness::process`, outside the
 product dependency graph. Local runs may discover a binary and print the selected

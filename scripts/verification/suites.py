@@ -30,6 +30,7 @@ CLI = (
 SUITES = {
     "deterministic": Suite(),
     "cli": Suite(CLI),
+    "import-corpus": Suite(("journey_import",)),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
     "live-catalog": Suite(("live_cli_init", "runtime_catalog_smoke"), ignored=True),
     "live-provider": Suite(("live_provider_cli", "provider_catalog_smoke"), ignored=True,

@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "license": "Apache-2.0",
+  "source": "Original empack synthetic fixtures; no upstream mods or assets",
+  "cases": [
+    {
+      "id": "modrinth-layered",
+      "archive": "layered.mrpack",
+      "sha256": "50f63bde4740b3049bc63c96b95090bcaa2e0891d4b6a4527e0d9894c3faffaa",
+      "expected": {
+        "name": "local-fixture-pack",
+        "version": "2.1.0",
+        "dependencies": {
+          "minecraft": "1.21.1",
+          "fabric-loader": "0.15.11"
+        },
+        "files": {
+          "overrides/config/example.toml": "# shared configuration\nenabled = true\n",
+          "client-overrides/options.txt": "renderDistance:8\n",
+          "server-overrides/server.properties": "motd=Corpus server\n"
+        }
+      }
+    },
+    {
+      "id": "curseforge-overrides",
+      "archive": "overrides.zip",
+      "sha256": "68794a5d2f581f1de8fd8736f22417d15c20de78404f60840c82c03ef3ad8866",
+      "expected": {
+        "name": "curseforge-fixture-pack",
+        "version": "1.2.3",
+        "dependencies": {
+          "minecraft": "1.21.1",
+          "fabric-loader": "0.15.11"
+        },
+        "files": {
+          "overrides/config/example.toml": "# imported common configuration\nvalue = 42\n",
+          "overrides/options.txt": "renderDistance:10\n"
+        }
+      }
+    },
+    {
+      "id": "traversal-refused",
+      "archive": "traversal.mrpack",
+      "sha256": "cbdc270dcfc39b13c0589f0ddc2d032ed31dd7de55febfb154297170fb3affab",
+      "expected": {
+        "refused": true
+      }
+    }
+  ]
+}

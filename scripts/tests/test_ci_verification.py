@@ -148,6 +148,26 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
 
 
 class RequiredGate(unittest.TestCase):
+    def test_registry_bytes_are_stable_in_autocrlf_checkout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            def git(*args):
+                subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+            git("init", "-q")
+            git("config", "core.autocrlf", "true")
+            git("config", "core.safecrlf", "false")
+            attributes = SCRIPTS.parent / ".gitattributes"
+            (root / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.exists() else b"")
+            target = root / "tests/verification/test-bindings.json"
+            target.parent.mkdir(parents=True)
+            original = ci.CLASSIFICATION.read_bytes().replace(b"\r\n", b"\n")
+            target.write_bytes(original)
+            git("add", ".")
+            target.unlink()
+            git("checkout-index", "--all", "--force")
+            self.assertEqual(target.read_bytes(), original,
+                             "Evidence classification bytes changed under native checkout conversion")
+
     def test_consumer_source_dependency_and_fixture_identity_are_required(self):
         record = dict(empack_commit=REVISION, empack_dirty=False, prism_commit=ci.PRISM_COMMIT,
             evidence_scope="supported-dependency headless parser probe", fixture_sha256=sha256(ci.FIXTURES),

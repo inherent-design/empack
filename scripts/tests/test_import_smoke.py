@@ -1,5 +1,8 @@
 """Offline contracts for the native CLI smoke driver; live fixtures remain separate."""
 import importlib.util
+import hashlib
+import json
+import subprocess
 import os
 from pathlib import Path
 import sys
@@ -7,13 +10,38 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location("empack_import_smoke", Path(__file__).parents[1] / "import-smoke-test.py")
+SPEC = importlib.util.spec_from_file_location("empack_import_smoke", Path(__file__).parents[1] / "survey-imports.py")
 smoke = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = smoke
 SPEC.loader.exec_module(smoke)
 
 
 class NativeSmokeContracts(unittest.TestCase):
+    def test_legacy_survey_entrypoint_preserves_help_without_running_live_work(self):
+        for name in ("survey-imports.py", "import-smoke-test.py"):
+            with self.subTest(name=name):
+                result = subprocess.run([sys.executable, str(Path(__file__).parents[1] / name), "--help"],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("not pinned regression qualification", result.stdout)
+                self.assertIn("--profile", result.stdout)
+
+    def test_survey_report_retains_observations_without_becoming_qualification(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "empack"
+            binary.write_bytes(b"fixture executable")
+            layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+            observations = [{"import_result": {"success": False, "exit_code": 1}, "failure_reason": "upstream drift"}]
+            smoke.save_survey_report(observations, layout, "curated-latest", binary)
+            report = json.loads(layout.report_path.read_text())
+            self.assertEqual(report["kind"], "rolling-import-survey")
+            self.assertFalse(report["qualification"])
+            self.assertEqual(report["selection"], "curated-latest")
+            self.assertEqual(report["entries"], observations)
+            self.assertGreater(report["observed_at_unix"], 0)
+            self.assertEqual(report["executable"]["sha256"], hashlib.sha256(binary.read_bytes()).hexdigest())
+
     def test_native_errors_remain_visible_after_cursor_restoration(self):
         result = smoke.parse_import_output("\x1b[?25hError: source changed\r\n", "")
         self.assertEqual(result.warnings, ["Error: source changed"])
@@ -35,7 +63,7 @@ class NativeSmokeContracts(unittest.TestCase):
             previous = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.object(sys, "argv", ["import-smoke-test.py", "--profile", "curated", "--empack-bin", "empack"]), patch.object(smoke, "run_curated_mode", return_value=0) as run:
+                with patch.object(sys, "argv", ["survey-imports.py", "--profile", "curated", "--empack-bin", "empack"]), patch.object(smoke, "run_curated_mode", return_value=0) as run:
                     with self.assertRaises(SystemExit) as result:
                         smoke.main()
                     self.assertEqual(result.exception.code, 0)
@@ -75,7 +103,7 @@ class NativeSmokeContracts(unittest.TestCase):
             layout = smoke.RuntimeLayout(base, base / "packs", base, base / "cache", base / "report.json")
             responses = [smoke.CommandResult(success=True), smoke.CommandResult(success=True), smoke.CommandResult(stderr="not verified", exit_code=1)]
             with patch.object(smoke, "run_empack_command", side_effect=responses) as command:
-                result = smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                result = smoke.run_curated_build(smoke.CURATED_PACKS[0], base, base / "empack", layout, 10, False)
                 self.assertFalse(result.success)
                 self.assertEqual(command.call_count, 3)
                 self.assertIn("not verified", result.output_tail)
@@ -92,7 +120,7 @@ class NativeSmokeContracts(unittest.TestCase):
                     (base / document).write_bytes(b"changed")
                     return smoke.CommandResult(success=True)
                 with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
-                    smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                    smoke.run_curated_build(smoke.CURATED_PACKS[0], base, base / "empack", layout, 10, False)
                 command.assert_called_once()
 
     def test_sync_cannot_create_or_remove_bindings_unnoticed(self):
@@ -112,7 +140,7 @@ class NativeSmokeContracts(unittest.TestCase):
                         bindings.write_bytes(b"new")
                     return smoke.CommandResult(success=True)
                 with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
-                    smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                    smoke.run_curated_build(smoke.CURATED_PACKS[0], base, base / "empack", layout, 10, False)
                 command.assert_called_once()
 
 

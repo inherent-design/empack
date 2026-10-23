@@ -179,6 +179,13 @@
       ]
     },
     {
+      "id": "python::test_ci_verification.RequiredGate.test_registry_bytes_are_stable_in_autocrlf_checkout",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.RequiredGate.test_required_missing_failed_cancelled_and_skipped_are_not_passes",
       "boundary": "H",
       "requirements": [
@@ -239,6 +246,14 @@
       ]
     },
     {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_legacy_survey_entrypoint_preserves_help_without_running_live_work",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_import_smoke.NativeSmokeContracts.test_native_build_failure_is_reported_without_retry_or_legacy_fallback",
       "boundary": "H",
       "requirements": [
@@ -265,6 +280,14 @@
       "id": "python::test_import_smoke.NativeSmokeContracts.test_relative_executable_is_bound_before_child_workdir_changes",
       "boundary": "H",
       "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_survey_report_retains_observations_without_becoming_qualification",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
         "UX-088"
       ]
     },

@@ -221,13 +221,16 @@ jobs:
         with:
           tool: cargo-nextest@0.9.148
       - run: python3 scripts/verify.py import-survey --product-features telemetry
-      # Keep the existing script until pinned corpus and rolling survey are split.
-      - run: python3 scripts/import-smoke-test.py --profile pr --empack-bin "$GITHUB_WORKSPACE/target/verification-product/telemetry/debug/empack"
+      # Rolling observations are separate from the offline pinned corpus.
+      - run: python3 scripts/survey-imports.py --profile pr --empack-bin "$GITHUB_WORKSPACE/target/verification-product/telemetry/debug/empack"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: verification-survey
-          path: target/verification/
+          path: |
+            target/verification/
+            /tmp/empack-curated-smoke/report.json
+            /tmp/empack-survey/report.json
           if-no-files-found: error
           retention-days: 14
 

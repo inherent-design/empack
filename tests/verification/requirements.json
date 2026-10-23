@@ -381,7 +381,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-012.pinned-synthetic-import",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_import::journey_local_mrpack_import_reexport"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Input archive SHA-256 is pinned independently of the product and checked before execution",
+            "Public preview leaves destination absent; import and two syncs preserve author documents and exact runtime selection",
+            "Exported Modrinth metadata and complete override inventory match independent literal expectations"
+          ],
+          "remaining_group_evidence": "Remote/provider content, optional choices, conversions and real-pack qualification remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::acquisition/content/archive_source/import",
@@ -392,7 +415,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-013",
@@ -415,7 +438,30 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-013.pinned-synthetic-import",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_import::journey_pinned_curseforge_import_reexport_preserves_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Input archive SHA-256 is pinned independently of the product and checked before execution",
+            "Public preview leaves destination absent; import and two syncs preserve author documents and exact runtime selection",
+            "Exported Modrinth metadata and complete override inventory match independent literal expectations"
+          ],
+          "remaining_group_evidence": "Remote/provider content, optional choices, conversions and real-pack qualification remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::acquisition/content/archive_source/import",
@@ -426,7 +472,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable catalog interpretation; native/Fetch transport"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-014",
