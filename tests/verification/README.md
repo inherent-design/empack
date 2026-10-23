@@ -135,6 +135,15 @@ invocation's bytes and leaves unselected workspaces intact. A separate dry-run m
 checks whether an artifact is actually retained or removed. These complete the group's
 case decomposition; platform and product-feature observations still determine acceptance.
 
+Workspace-status cases pair ordinary executable JSON and human reports with literal
+malformed documents, absent/current/stale locks and mixed workspace markers. Their
+expected states come from the fixture edits, not the production document decoder.
+A current lock's displayed digest is checked against its raw bytes; modified payloads
+remain explicitly unverified. Host cases separately cover installed layouts, root
+binding, pending input, enrollment, active runtime ownership and Unix symlinks.
+Status case decomposition is complete; required platform and product observations
+remain necessary before the group can pass.
+
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a
 controlled child, changes its ownership record, sends a host interrupt, and checks

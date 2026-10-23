@@ -21,6 +21,13 @@ are not authenticated by status. Pending records are reported as present; resumi
 still validates them and requests fresh approval. Interrupted publication must be
 inspected with `recover inspect` before live documents can be interpreted.
 
+A successful status command means the inspection completed, not that its records
+are ready for a build or launch. In JSON schema 1, inspect `selected`, `contexts`
+and `findings`; `content_verified` is false. A valid author record can still have a
+missing, invalid or stale resolution lock. An ambiguous workspace has no automatic
+selection. `--context` chooses the context shown in the human report; JSON retains
+the other discovered contexts as well.
+
 Status does not verify installed content, authenticate a channel or establish that
 Minecraft will launch. `update` changes author dependency selections;
 `instance update` applies a published pack release. Neither updates empack itself.

@@ -445,7 +445,159 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-005.author-lock-states",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_status::cli_status_distinguishes_author_and_lock_states_without_repair"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Literal absent/invalid authoring and missing/invalid/current/stale locks produce distinct schema-1 and human reports without repair; current lock digest matches raw bytes, and modified payloads never become content-verified"
+          ]
+        },
+        {
+          "id": "UX-005.context-selection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_status::cli_status_requires_explicit_context_for_mixed_roots"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Missing explicit contexts and mixed malformed author/instance plus unauthenticated publisher records remain distinct; explicit selection removes ambiguity and selects the human context without rewriting records or creating storage"
+          ]
+        },
+        {
+          "id": "UX-005.host-contexts",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::status_detects_empty_mixed_and_explicit_contexts_without_creating_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Host inspection detects empty/mixed roots and explicit missing context without creating state"
+          ]
+        },
+        {
+          "id": "UX-005.instance-metadata",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::status_reports_native_instance_version_side_and_root_binding"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Game/server and Prism/client instance metadata reports retained release version/layout and rejects a mismatched root binding"
+          ]
+        },
+        {
+          "id": "UX-005.pending-presence",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::status_reports_pending_presence_without_validating_or_rewriting_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pending input is reported with a resume action while preserving the retained record and state tree"
+          ]
+        },
+        {
+          "id": "UX-005.runtime-ownership",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::status_keeps_runtime_retirement_evidence_and_never_releases_the_lease"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Status retains runtime retirement evidence and cannot release active runtime ownership"
+          ]
+        },
+        {
+          "id": "UX-005.symlink-confinement",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::status_rejects_symlinked_document_and_ancestor_without_following_them"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Symlinked documents and marker ancestors are invalid and cannot modify the external target"
+          ]
+        },
+        {
+          "id": "UX-005.enrollment-without-installation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::subscription_without_installation_reports_missing_instance_and_valid_enrollment"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A valid enrollment without installed records reports missing instance; malformed installed records report invalid without changing enrollment"
+          ]
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "engine::documents + application::engine_host::cli::manifest",
@@ -456,7 +608,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-006",
