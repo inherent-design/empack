@@ -1,0 +1,72 @@
+name: Scheduled compatibility
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probes:
+    if: github.repository == 'inherent-design/empack' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - uses: actions/setup-java@v5
+        id: java8
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Check pinned corpus and official services
+        env:
+          EMPACK_TEST_JAVA8_HOME: ${{ steps.java8.outputs.path }}
+          EMPACK_KEY_CURSEFORGE: ${{ secrets.EMPACK_KEY_CURSEFORGE }}
+        run: python3 scripts/check-live-compatibility.py --output target/compatibility
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scheduled-probes
+          path: target/compatibility/
+          if-no-files-found: error
+          retention-days: 30
+
+  rolling-survey:
+    if: github.repository == 'inherent-design/empack' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --release -p empack --target-dir target/survey-product
+      - name: Survey one rotating upstream pack
+        env:
+          EMPACK_KEY_CURSEFORGE: ${{ secrets.EMPACK_KEY_CURSEFORGE }}
+        run: python3 scripts/survey-imports.py --profile weekly --max-file-size 100 --download-timeout 60 --empack-bin "$GITHUB_WORKSPACE/target/survey-product/release/empack"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scheduled-rolling-survey
+          path: /tmp/empack-curated-smoke/report.json
+          if-no-files-found: error
+          retention-days: 30

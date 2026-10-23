@@ -88,6 +88,11 @@ description = "Run executable telemetry contracts against a telemetry product"
 run = "python3 scripts/verify.py telemetry"
 run_windows = "python scripts/verify.py telemetry"
 
+[tasks."test:compatibility"]
+description = "Run the dated official-service/runtime selection with retained evidence"
+run = "python3 scripts/check-live-compatibility.py"
+run_windows = "python scripts/check-live-compatibility.py"
+
 [tasks."test:import:corpus"]
 description = "Check pinned import archives and independent expected inventories"
 run = "python3 scripts/check-import-corpus.py"

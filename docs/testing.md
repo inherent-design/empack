@@ -87,6 +87,30 @@ digests, and cannot qualify the pinned corpus. `scripts/import-smoke-test.py` re
 a compatibility entry point for the survey. The small synthetic corpus does not
 replace the broader pinned real-pack acceptance requirement.
 
+Scheduled compatibility runs on the default branch each Monday. The shared runner
+selects the pinned corpus, official provider/catalog probes, and current runtime
+checks. During the first seven UTC dates of each month it substitutes the broader
+runtime suite, with both Java 8 and 21 installed. Missing credentials or prerequisites
+remain blocked evidence. `python3 scripts/check-live-compatibility.py --plan-only`
+writes the dated selection without claiming execution; omit that flag to run it.
+
+A separate job runs `scripts/survey-imports.py --profile weekly`, selecting one of
+the curated packs per UTC week without backfilling a failed slot. It admits at most
+100 MiB per pack archive and 60 seconds per archive transfer, checks the transfer
+deadline between bounded socket reads, and retains failed observations. Socket timeouts
+bound a blocked read; they do not make Python reads instantaneously cancellable.
+Manual fixture downloads have a 256-file/2-GiB total allowance and a 1-GiB per-file
+limit. Each empack command has a 600-second deadline. The probe and survey jobs have
+90- and 60-minute budgets respectively; no whole-command retry masks a failed mutation.
+
+Survey archive caches bind the exact provider/project/file/URL selection and retain
+an observed digest. Reuse verifies both identity and bytes and is labeled
+`retained-observation`, not fresh provider execution. A new upstream selection cannot
+reuse the previous version's bytes. The jobs upload reports even on failure and have
+read-only repository access; manual dispatch on another branch cannot obtain their
+credentials. This workflow is scheduled evidence, not a substitute for qualification
+of the exact release candidate. Broader pinned real-pack coverage remains outstanding.
+
 The executable harness lives in `empack-tests::harness::process`, outside the
 product dependency graph. Local runs may discover a binary and print the selected
 path. Qualification requires `EMPACK_QUALIFY=1`, an absolute `EMPACK_E2E_BIN`,

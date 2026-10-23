@@ -207,6 +207,38 @@
       ]
     },
     {
+      "id": "python::test_compatibility.CompatibilitySelection.test_each_week_selects_one_slot_and_wraps_across_year_boundaries",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_compatibility.CompatibilitySelection.test_monthly_historical_runtime_replaces_not_duplicates_current_selection",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_compatibility.CompatibilitySelection.test_plan_only_subprocess_has_no_execution_claim",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_compatibility.CompatibilitySelection.test_shared_runner_failure_is_returned_once_without_retry_or_pass_record",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_consumer_evidence.ConsumerEvidence.test_only_supported_qt_versions_qualify",
       "boundary": "U",
       "requirements": [
@@ -226,6 +258,30 @@
       "boundary": "N",
       "requirements": [
         "UX-087",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_actual_http_archive_stream_is_bounded_before_cache_publication",
+      "boundary": "N",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_cache_reuse_requires_intact_observed_bytes_and_retains_provenance",
+      "boundary": "N",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_declared_length_and_expired_deadline_do_not_publish_archive",
+      "boundary": "N",
+      "requirements": [
+        "UX-017",
         "UX-088"
       ]
     },
@@ -269,6 +325,14 @@
       ]
     },
     {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_new_provider_file_cannot_reuse_previous_pack_cache",
+      "boundary": "N",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_import_smoke.NativeSmokeContracts.test_only_exact_saved_restricted_obligations_allow_manual_downloads",
       "boundary": "U",
       "requirements": [
@@ -279,6 +343,21 @@
     {
       "id": "python::test_import_smoke.NativeSmokeContracts.test_relative_executable_is_bound_before_child_workdir_changes",
       "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_streamed_pack_limit_rejects_unknown_size_without_retaining_partial_file",
+      "boundary": "N",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_survey_report_redacts_credentials_and_signed_url_queries",
+      "boundary": "U",
       "requirements": [
         "UX-088"
       ]

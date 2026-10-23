@@ -11,6 +11,7 @@ Runs three top-level modes:
    - runs two no-op syncs, builds a full client and inspects the resulting ZIP
    - also supports:
      - `--profile pr` for one platform-selected CI smoke pack
+     - `--profile weekly` for one rotating pack, without replacing a failed slot
      - `--pack <curated-pack-id>` for one explicit curated pack
 
 2. Discovery survey mode (selected by explicit survey/filter flags):
@@ -81,6 +82,7 @@ Outputs:
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
@@ -91,8 +93,12 @@ import string
 import subprocess
 import sys
 import time
+import tempfile
 import zipfile
 from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime, timezone
+from verification.compatibility import weekly_index
+from verification.process import redact
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlparse
@@ -154,14 +160,21 @@ KNOWN_DATAPACK_LOADERS = {
 # API helpers
 # ---------------------------------------------------------------------------
 
+def request_json(request: Request, timeout: int = 30):
+    deadline = time.monotonic() + timeout
+    target = io.BytesIO()
+    with urlopen(request, timeout=timeout) as response:
+        copy_bounded_response(response, target, 8 * 1024 * 1024, deadline)
+    return json.loads(target.getvalue())
+
+
 def modrinth_get(path: str, params: dict | None = None) -> dict | list:
     url = f"{MODRINTH_API}{path}"
     if params:
         qs = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
         url = f"{url}?{qs}"
     req = Request(url, headers={"User-Agent": "empack-survey/1.0"})
-    with urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    return request_json(req)
 
 
 def curseforge_get(path: str, params: dict | None = None) -> dict:
@@ -173,8 +186,7 @@ def curseforge_get(path: str, params: dict | None = None) -> dict:
         "x-api-key": CURSEFORGE_API_KEY,
         "Accept": "application/json",
     })
-    with urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    return request_json(req)
 
 
 def curseforge_post(path: str, payload: dict, timeout: int = 30) -> dict:
@@ -189,22 +201,9 @@ def curseforge_post(path: str, payload: dict, timeout: int = 30) -> dict:
         },
         method="POST",
     )
-    with urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+    return request_json(req, timeout)
 
 
-def curseforge_download(project_id: int, file_id: int, dest: Path, timeout: int = 120) -> bool:
-    try:
-        data = curseforge_get(f"/mods/{project_id}/files/{file_id}/download-url")
-        dl_url = data.get("data", "")
-        if not dl_url:
-            return False
-        req = Request(dl_url, headers={"User-Agent": "empack-survey/1.0"})
-        with urlopen(req, timeout=timeout) as resp:
-            dest.write_bytes(resp.read())
-        return True
-    except (HTTPError, URLError, KeyError, socket.timeout):
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +242,8 @@ class PackCandidate:
     # filled after download
     local_path: str = ""
     format: str = ""  # "mrpack" or "cfzip"
+    acquisition: str = ""  # fresh-http or retained-observation; not a provider freshness proof
+    download_error: str = ""
 
 
 @dataclass
@@ -415,6 +416,8 @@ def select_curated_packs(args) -> list[CuratedPack]:
         return [CURATED_PACKS_BY_ID[args.pack]]
     if args.profile == "pr":
         return [current_ci_profile_pack()]
+    if args.profile == "weekly":
+        return [CURATED_PACKS[weekly_index(datetime.now(timezone.utc).date(), len(CURATED_PACKS))]]
     return CURATED_PACKS
 
 
@@ -555,43 +558,115 @@ def resolve_download_url(c: PackCandidate) -> bool:
 # Download
 # ---------------------------------------------------------------------------
 
-def download_pack(c: PackCandidate, layout: RuntimeLayout, timeout: int = 60) -> bool:
-    safe_name = f"{c.slug}_{c.mc_version}_{c.source}"
-    ext = ".mrpack" if c.format == "mrpack" else ".zip"
-    dest = layout.packs_dir / f"{safe_name}{ext}"
+def cache_identity(candidate: PackCandidate) -> dict:
+    return {key: getattr(candidate, key) for key in
+            ("source", "project_id", "file_id", "file_url", "format")}
 
-    if dest.exists() and dest.stat().st_size > 0:
-        c.local_path = str(dest)
+
+def cache_path(candidate: PackCandidate, layout: RuntimeLayout) -> Path:
+    identity = json.dumps(cache_identity(candidate), sort_keys=True).encode("utf-8")
+    suffix = ".mrpack" if candidate.format == "mrpack" else ".zip"
+    return layout.packs_dir / (hashlib.sha256(identity).hexdigest() + suffix)
+
+
+def retained_pack(candidate: PackCandidate, layout: RuntimeLayout, maximum_bytes: int) -> bool:
+    destination = cache_path(candidate, layout)
+    try:
+        metadata = json.loads(destination.with_suffix(destination.suffix + ".json").read_text())
+        size = destination.stat().st_size
+        if (metadata["schema"] != 1 or metadata["identity"] != cache_identity(candidate)
+                or not 0 < size <= maximum_bytes or metadata["bytes"] != size
+                or (candidate.file_size is not None and candidate.file_size != size)
+                or metadata["sha256"] != file_sha256(destination)):
+            return False
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    candidate.local_path = str(destination)
+    candidate.acquisition = "retained-observation"
+    return True
+
+
+def copy_bounded_response(response, destination, maximum_bytes: int, deadline: float) -> int:
+    """Bound admitted bytes and check one deadline between socket reads.
+
+    urlopen's socket timeout also bounds a blocked read. This does not claim that
+    a Python deadline can preempt a synchronous read at the exact deadline instant.
+    """
+    received = 0
+    while True:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("archive transfer deadline elapsed")
+        chunk = response.read(min(64 * 1024, maximum_bytes - received + 1))
+        if time.monotonic() >= deadline:
+            raise TimeoutError("archive transfer deadline elapsed")
+        if not chunk:
+            return received
+        received += len(chunk)
+        if received > maximum_bytes:
+            raise ValueError("archive exceeds admitted download bytes")
+        destination.write(chunk)
+
+
+def download_pack(c: PackCandidate, layout: RuntimeLayout, timeout: int = 60,
+                  maximum_bytes: int = 100 * 1024 * 1024) -> bool:
+    if timeout <= 0 or maximum_bytes <= 0:
+        raise ValueError("Download timeout and byte allowance must be positive")
+    c.local_path, c.acquisition, c.download_error = "", "", ""
+    if c.file_size is not None and not 0 < c.file_size <= maximum_bytes:
+        c.download_error = "declared archive size exceeds admitted bytes or is empty"
+        return False
+    if retained_pack(c, layout, maximum_bytes):
         return True
-
-    if c.source == "modrinth":
-        if not c.file_url:
-            return False
-        try:
-            req = Request(c.file_url, headers={"User-Agent": "empack-survey/1.0"})
-            with urlopen(req, timeout=timeout) as resp:
-                dest.write_bytes(resp.read())
-            c.local_path = str(dest)
-            return True
-        except (HTTPError, URLError, socket.timeout):
-            # Clean up partial download
-            if dest.exists():
-                dest.unlink()
-            return False
-
-    elif c.source == "curseforge":
-        if not c.file_id:
-            return False
-        ok = curseforge_download(int(c.project_id), int(c.file_id), dest, timeout=timeout)
-        if ok:
-            c.local_path = str(dest)
+    destination = cache_path(c, layout)
+    staging = None
+    deadline = time.monotonic() + timeout
+    try:
+        if c.source == "modrinth" and c.file_url:
+            url = c.file_url
+        elif c.source == "curseforge" and c.file_id:
+            url = curseforge_get(f"/mods/{int(c.project_id)}/files/{int(c.file_id)}/download-url").get("data")
         else:
-            # Clean up partial download
-            if dest.exists():
-                dest.unlink()
-        return ok
+            raise ValueError("archive lacks a supported exact provider selection")
+        if not url or time.monotonic() >= deadline:
+            raise ValueError("archive URL unavailable within download deadline")
+        request = Request(url, headers={"User-Agent": "empack-survey/1.0"})
+        with tempfile.NamedTemporaryFile(dir=layout.packs_dir, prefix=".download-", delete=False) as target:
+            staging = Path(target.name)
+            with urlopen(request, timeout=max(0.001, deadline - time.monotonic())) as response:
+                received = copy_bounded_response(response, target, maximum_bytes, deadline)
+        if received == 0 or (c.file_size is not None and received != c.file_size):
+            raise ValueError("archive length differs from the selected provider record")
+        digest = file_sha256(staging)
+        staging.replace(destination)
+        c.local_path, c.acquisition = str(destination), "fresh-http"
+        metadata = {"schema": 1, "identity": cache_identity(c), "candidate": asdict(c),
+                    "sha256": digest, "bytes": received}
+        # Missing/corrupt metadata never authorizes reuse, including after interruption.
+        destination.with_suffix(destination.suffix + ".json").write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+        return True
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        c.local_path, c.acquisition = "", ""
+        c.download_error = redact(f"{type(error).__name__}: {error}", os.environ)[:1000]
+        return False
+    finally:
+        if staging is not None:
+            staging.unlink(missing_ok=True)
 
-    return False
+
+def retained_candidates(layout: RuntimeLayout, maximum_bytes: int) -> list[PackCandidate]:
+    candidates = []
+    for path in sorted(layout.packs_dir.glob("*.json")):
+        try:
+            value = json.loads(path.read_text())
+            candidate = PackCandidate(**value["candidate"])
+            if path != cache_path(candidate, layout).with_suffix(cache_path(candidate, layout).suffix + ".json"):
+                continue
+            if retained_pack(candidate, layout, maximum_bytes):
+                candidates.append(candidate)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return candidates
 
 
 # ---------------------------------------------------------------------------
@@ -1188,7 +1263,10 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
     if project.exists():
         raise RuntimeError("incomplete import published its destination")
     pending = pending_import_associations(output)
+    if len(pending) > 256:
+        raise RuntimeError("manual fixture input count exceeds the 256-file survey allowance")
     associations = []
+    remaining_manual_bytes = 2 << 30
     supplied = layout.cache_dir / "manual-imports"
     supplied.mkdir(parents=True, exist_ok=True)
     for selector, mod_id, file_id in pending:
@@ -1197,13 +1275,14 @@ def run_curated_import(empack_bin: Path, archive: Path, project: Path,
             f"https://www.curseforge.com/api/v1/mods/{mod_id}/files/{file_id}/download",
             headers={"User-Agent": "empack-smoke/0.5"},
         )
-        received = 0
-        with urlopen(request, timeout=60) as response, destination.open("wb") as target:
-            while chunk := response.read(1 << 20):
-                received += len(chunk)
-                if received > 1 << 30:
-                    raise RuntimeError("manual fixture download exceeds 1 GiB")
-                target.write(chunk)
+        deadline = time.monotonic() + 60
+        try:
+            with urlopen(request, timeout=60) as response, destination.open("wb") as target:
+                received = copy_bounded_response(response, target, min(1 << 30, remaining_manual_bytes), deadline)
+        except (OSError, ValueError):
+            destination.unlink(missing_ok=True)
+            raise
+        remaining_manual_bytes -= received
         associations.extend(["--import-file", f"{selector}={destination}"])
     records = layout.cache_dir / "host-state" / "pending-imports"
     before = {p.name: p.read_bytes() for p in records.glob("*.json")}
@@ -1272,12 +1351,16 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def save_survey_report(entries: list[dict], layout: RuntimeLayout, selection: str, empack_bin: Path):
+def save_survey_report(entries: list[dict], layout: RuntimeLayout, selection: str, empack_bin: Path, *, limits=None):
     report = {"schema": 1, "kind": "rolling-import-survey", "qualification": False,
               "selection": selection, "observed_at_unix": int(time.time()),
               "executable": {"path": str(empack_bin), "sha256": file_sha256(empack_bin)},
-              "entries": entries}
-    layout.report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+              "driver_sha256": file_sha256(Path(__file__)), "python": sys.version,
+              "limits": limits, "entries": entries}
+    repository = Path(__file__).resolve().parents[1]
+    report["source_revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
+    report["worktree_dirty"] = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=repository, text=True).strip())
+    layout.report_path.write_text(redact(json.dumps(report, indent=2), os.environ) + "\n", encoding="utf-8")
     print(f"\nReport saved to {layout.report_path}")
 
 
@@ -1289,6 +1372,7 @@ def run_single_curated_pack(
     index: Optional[int] = None,
     total: Optional[int] = None,
     announce: bool = True,
+    maximum_bytes: int = 100 * 1024 * 1024,
 ) -> tuple[dict, Optional[str], bool]:
     layout.ensure_dirs()
 
@@ -1321,9 +1405,10 @@ def run_single_curated_pack(
             print(
                 f"{prefix}{pack.name} [{pack.source} {pack.loader} {pack.mc_version}]"
             )
-        if not download_pack(candidate, layout, timeout=download_timeout):
-            raise RuntimeError("download failed")
+        if not download_pack(candidate, layout, timeout=download_timeout, maximum_bytes=maximum_bytes):
+            raise RuntimeError(candidate.download_error or "download failed")
         verify_curated_download(pack, Path(candidate.local_path))
+        entry["resolved"] = asdict(candidate)
         entry["resolved"]["archive_sha256"] = file_sha256(Path(candidate.local_path))
 
         import_result, did_continue = run_curated_import(
@@ -1373,6 +1458,8 @@ def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
         print(f"Curated mode: running curated pack '{args.pack}'")
     elif args.profile == "pr":
         print("Curated mode: running platform-selected PR smoke profile")
+    elif args.profile == "weekly":
+        print("Curated mode: one UTC-week rotation slot; no substitute on failure")
     else:
         print(f"Curated mode: running {len(selected_packs)} rolling import/build flows")
 
@@ -1387,6 +1474,7 @@ def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
                 index=index,
                 total=len(selected_packs),
                 announce=True,
+                maximum_bytes=args.max_file_size * 1024 * 1024,
             )
         except Exception as exc:
             entry = {
@@ -1412,7 +1500,10 @@ def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
             print(f"      PASSED: {label}; native import continuation={did_continue}", flush=True)
         results.append(entry)
 
-    save_survey_report(results, layout, "curated-latest", empack_bin)
+    save_survey_report(results, layout, "weekly-latest" if args.profile == "weekly" else "curated-latest", empack_bin,
+                       limits={"selected_packs": len(selected_packs), "archive_bytes": args.max_file_size * 1024 * 1024,
+                               "archive_seconds": args.download_timeout, "manual_files": 256,
+                               "manual_bytes": 2 << 30, "manual_file_bytes": 1 << 30, "command_seconds": 600})
 
     actual_continue = set(actual_continue)
     if not expected_continue.issubset(actual_continue):
@@ -1598,6 +1689,7 @@ def run_internal_curated_pack(empack_bin: Path, args) -> None:
         args.download_timeout,
         layout,
         announce=False,
+        maximum_bytes=args.max_file_size * 1024 * 1024,
     )
     print(
         json.dumps(
@@ -1764,17 +1856,9 @@ def run_survey_mode(empack_bin: Path, args, layout: RuntimeLayout) -> None:
         downloaded = []
         skipped_download = 0
         for index, candidate in enumerate(resolved, start=1):
-            safe = f"{candidate.slug}_{candidate.mc_version}_{candidate.source}"
-            ext = ".mrpack" if candidate.format == "mrpack" else ".zip"
-            existing = layout.packs_dir / f"{safe}{ext}"
-            if existing.exists() and existing.stat().st_size > 0:
-                candidate.local_path = str(existing)
-                downloaded.append(candidate)
-                print(f"  [{index}/{len(resolved)}] {candidate.name}: cached")
-                continue
 
             print(f"  [{index}/{len(resolved)}] {candidate.name}...", end=" ", flush=True)
-            ok = download_pack(candidate, layout, timeout=args.download_timeout)
+            ok = download_pack(candidate, layout, timeout=args.download_timeout, maximum_bytes=max_file_size_bytes)
             if ok:
                 size_mb = Path(candidate.local_path).stat().st_size / (1024 * 1024)
                 print(f"{size_mb:.1f}MB")
@@ -1801,7 +1885,7 @@ def run_survey_mode(empack_bin: Path, args, layout: RuntimeLayout) -> None:
                     ):
                         continue
                 print(f"  [backfill] {candidate.name}...", end=" ", flush=True)
-                ok = download_pack(candidate, layout, timeout=args.download_timeout)
+                ok = download_pack(candidate, layout, timeout=args.download_timeout, maximum_bytes=max_file_size_bytes)
                 if ok:
                     size_mb = Path(candidate.local_path).stat().st_size / (1024 * 1024)
                     print(f"{size_mb:.1f}MB")
@@ -1815,32 +1899,8 @@ def run_survey_mode(empack_bin: Path, args, layout: RuntimeLayout) -> None:
 
         print(f"  Downloaded {len(downloaded)}/{len(resolved)} packs")
     else:
-        downloaded = [candidate for candidate in resolved if candidate.local_path and Path(candidate.local_path).exists()]
-        for archive in layout.packs_dir.iterdir():
-            if archive.suffix in (".mrpack", ".zip") and archive.stat().st_size > 0:
-                parts = archive.stem.split("_")
-                if len(parts) >= 3:
-                    existing = [
-                        candidate
-                        for candidate in downloaded
-                        if candidate.slug == parts[0] and candidate.mc_version == parts[1]
-                    ]
-                    if not existing:
-                        source = parts[-1]
-                        fmt = "mrpack" if archive.suffix == ".mrpack" else "cfzip"
-                        downloaded.append(
-                            PackCandidate(
-                                name=parts[0],
-                                mc_version=parts[1],
-                                source=source,
-                                slug=parts[0],
-                                project_id="",
-                                downloads=0,
-                                loader="unknown",
-                                format=fmt,
-                                local_path=str(archive),
-                            )
-                        )
+        downloaded = retained_candidates(layout, max_file_size_bytes)
+        print(f"  Reusing {len(downloaded)} identity-bound retained archive observations")
 
     print("\nPhase 4: Analyzing archives...")
 
@@ -1896,9 +1956,9 @@ def main():
     parser = argparse.ArgumentParser(description="Rolling empack import survey (not pinned regression qualification)")
     parser.add_argument(
         "--profile",
-        choices=["curated", "pr"],
+        choices=["curated", "pr", "weekly"],
         default=None,
-        help="Curated smoke profile: full curated set or platform-specific PR smoke",
+        help="Rolling selection: all curated packs, one platform pack, or one weekly rotation slot",
     )
     parser.add_argument(
         "--pack",
@@ -1929,6 +1989,9 @@ def main():
     parser.add_argument("--internal-curated-pack", type=str, default=None,
                         help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.download_timeout <= 0 or args.max_file_size <= 0 or args.limit <= 0:
+        parser.error("Timeout, byte limit and candidate count must be positive")
 
     if args.pack and args.profile is not None:
         parser.error("--pack cannot be combined with --profile")
