@@ -145,6 +145,15 @@ Other managed-integration cases still need public builder, executable and actual
 consumer evidence. Python tests of admission use explicitly synthetic records and
 are classified as helper/script evidence, never as consumer executions.
 
+Authoring-conformance cases use literal YAML through `manifest check --json` and
+human explanation. They compare shorthand and expanded provider, URL and local
+sources, check exact binding placement, and reject duplicate or competing authority.
+URLs require explicit assertions or an explicit first-observation policy. Readable
+flow syntax retains its editing limitations. Every case preserves author bytes and
+requires absent state/cache outputs. These executable cases complement editor-schema
+checks; they do not establish provider access, payload validity or complete schema
+coverage. `UX-006` remains partially bound while those other obligations are joined.
+
 Workspace-status cases pair ordinary executable JSON and human reports with literal
 malformed documents, absent/current/stale locks and mixed workspace markers. Their
 expected states come from the fixture edits, not the production document decoder.

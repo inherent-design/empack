@@ -630,7 +630,84 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-006.binding-placement",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_composes_bindings_and_rejects_competing_placement_authority"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Authored bindings produce the exact client-only destination/environment; competing inline placement fails without rewriting either document"
+          ]
+        },
+        {
+          "id": "UX-006.equivalent-sources",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_equivalent_source_forms_preserve_literal_authoring"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Literal provider-selector, URL assertion and local-file shorthand/expanded forms report the same normalized request and unsatisfied missing-lock facts; absent local payloads do not prevent metadata inspection"
+          ]
+        },
+        {
+          "id": "UX-006.invalid-authority",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Duplicate, unknown and conflicting author/binding fields and URLs without explicit evidence policy fail with stderr, no JSON stdout and no source or storage mutation"
+          ]
+        },
+        {
+          "id": "UX-006.observation-and-editability",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_reports_explicit_url_observation_and_editing_limits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit first-observation URL policy and readable flow-node editing limitations remain visible in JSON and human explanation; comments and original bytes survive"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::documents + application::engine_host::cli::manifest",
         "empack executable + empack-lib::application"
@@ -639,7 +716,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-007",
