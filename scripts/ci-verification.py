@@ -12,6 +12,7 @@ from verification.evidence import sha256, write_json
 from verification.suites import SUITES
 from verification.consumer import inspect_prism_evidence
 from verification.python_tests import inspect_python_evidence
+from verification.doctests import inspect_doctest_evidence
 from verification.requirements import case_results
 from verification.receipts import check_suite_receipt
 from verification.reporting import render_gate
@@ -139,12 +140,20 @@ def check_gate(plan, needs, artifacts):
     tooling = [inspect_python_evidence(python_paths[0], plan["source_revision"])]
     if tooling[0]["status"] != "PASS":
         raise ValueError("Required Python tooling execution did not pass")
-    evidence = []
+    evidence, doctests = [], []
     for target in plan["native_targets"]:
         for features, suites in NATIVE_SUITES.items():
             evidence.append(check_suite_receipt(artifacts / f"verification-{target}" / features,
                             suites, target, plan["source_revision"], features,
                             test_features=NATIVE_TEST_FEATURES[features]))
+        for graph in ("minimal", "all"):
+            paths = list((artifacts / f"verification-{target}" / f"doctest-{graph}").glob("*/receipt.json"))
+            if len(paths) != 1:
+                raise ValueError("Native gate requires exactly one rustdoc attempt per host and feature graph")
+            record = inspect_doctest_evidence(paths[0], plan["source_revision"])
+            if record["target"] != target or record["test_features"] != graph or record["status"] != "PASS":
+                raise ValueError("Required rustdoc execution failed or used another host/feature graph")
+            doctests.append(record)
     if plan["live_suites"]:
         evidence.append(check_suite_receipt(artifacts / "verification-live", plan["live_suites"],
                         TARGETS[0], plan["source_revision"], profile="release"))
@@ -163,6 +172,7 @@ def check_gate(plan, needs, artifacts):
     return {"schema": 1, "status": "PASS", "qualification": False,
             "source_revision": plan["source_revision"], "source_tree": plan["source_tree"],
             "required_jobs": plan["required_jobs"], "acceptance": acceptance, "consumer_evidence": consumers, "tooling_evidence": tooling,
+            "doctest_evidence": doctests,
             "suite_evidence": [{key: value for key, value in record.items() if key != "tests"}
                                for record in evidence]}
 

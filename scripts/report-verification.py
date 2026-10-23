@@ -9,6 +9,7 @@ import re
 from verification.evidence import aggregate_outcomes, sha256, write_json
 from verification.receipts import inspect_suite_receipt
 from verification.python_tests import inspect_python_evidence
+from verification.doctests import inspect_doctest_evidence
 from verification.reporting import render_attempts
 from verification.requirements import case_results
 
@@ -23,7 +24,7 @@ def report(paths, revision, version):
     requirements_path = ROOT / "tests/verification/requirements.json"
     classification_path = ROOT / "tests/verification/test-bindings.json"
     classification = json.loads(classification_path.read_text())
-    admitted, tooling, attempts, seen = [], [], [], set()
+    admitted, tooling, doctests, attempts, seen = [], [], [], [], set()
     for path in paths:
         digest = None
         try:
@@ -38,6 +39,11 @@ def report(paths, revision, version):
             if receipt.get("kind") == "python-suite-run":
                 result = inspect_python_evidence(path, revision)
                 tooling.append(result)
+                attempts.append({"admission": "ADMITTED", **{key: value for key, value in result.items() if key != "tests"}})
+                continue
+            if receipt.get("kind") == "doctest-suite-run":
+                result = inspect_doctest_evidence(path, revision)
+                doctests.append(result)
                 attempts.append({"admission": "ADMITTED", **{key: value for key, value in result.items() if key != "tests"}})
                 continue
             artifact = receipt.get("artifact")
@@ -63,7 +69,7 @@ def report(paths, revision, version):
     return {"schema": 1, "kind": "verification-attempt-report", "qualification": False,
             "status": aggregate_outcomes(row["status"] for row in attempts), "source_revision": revision,
             "version": version, "created_at": datetime.now(timezone.utc).isoformat(),
-            "attempts": attempts, "acceptance": acceptance, "tooling_evidence": tooling,
+            "attempts": attempts, "acceptance": acceptance, "tooling_evidence": tooling, "doctest_evidence": doctests,
             "suite_evidence": [{key: value for key, value in row.items() if key != "tests"} for row in admitted]}
 
 

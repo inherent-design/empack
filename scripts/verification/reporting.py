@@ -71,6 +71,18 @@ def _acceptance_lines(record):
                       f"  - Receipt SHA-256: {cell(tooling['receipt_sha256'])}"]
         lines += [""]
 
+    if record.get("doctest_evidence"):
+        lines += ["## Rustdoc observations", "",
+                  "Runtime examples, compile-only examples and expected compilation failures remain distinct. These do not establish product or consumer execution.", ""]
+        for evidence in record["doctest_evidence"]:
+            lines += [f"- {cell(evidence['target'])} / {cell(evidence['test_features'])}: {cell(evidence['status'])}",
+                      f"  - Rustdoc: {cell(evidence['rustdoc'])}; receipt: {cell(evidence['receipt_sha256'])}"]
+            for test in evidence["tests"]:
+                lines += [f"  - {cell(test['id'])}: {cell(test['mode'])}, {cell(test['status'])}"]
+            if evidence.get("parse_error"):
+                lines += [f"  - {cell(evidence['parse_error'])}"]
+        lines += [""]
+
     if record.get("consumer_evidence"):
         lines += ["## Consumer parser observations", "",
                   "These probes execute pinned consumer source. They do not execute empack or establish launcher import/startup.", ""]
@@ -140,6 +152,9 @@ def render_attempts(record):
             lines += [cell(attempt["reason"]), ""]
         if attempt["admission"] == "REJECTED":
             lines += ["No test outcomes from this receipt were admitted.", ""]
+            continue
+        if attempt.get("kind") == "doctest":
+            lines += [f"Recorded: {cell(attempt['created_at'])}; target: {cell(attempt['target'])}; test graph: {cell(attempt['test_features'])}.", ""]
             continue
         if attempt.get("kind") == "python":
             lines += [f"Recorded: {cell(attempt['created_at'])}; platform: {cell(attempt['platform'])}; "

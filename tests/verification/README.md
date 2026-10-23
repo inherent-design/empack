@@ -69,11 +69,21 @@ parser checks, controlled helper calls and actual script processes remain distin
 from executing empack or a consumer. CI rejects absent or failed tooling records;
 reports retain failed attempts alongside later passes.
 
-`doctest-bindings.json` records rustdoc identities and reviewed ignore policy.
+`doctest-bindings.json` records rustdoc identities, execution modes and reviewed ignore policy.
 Compile-only examples and expected constructor-access failures do not establish
 runtime behavior. Rustdoc source-line moves require an explicit binding update;
 they cannot silently remove a case. Binding checks reject unknown and vanished
-identities. Doctest execution admission remains separate unfinished work.
+identities. Run `python3 scripts/verify.py doctest --test-features minimal` and
+`python3 scripts/verify.py doctest --test-features all` to retain actual observations.
+The pinned stable rustdoc output is checked against compiler discovery, mode and
+ignore policy; missing, duplicate, filtered or unfamiliar output fails closed.
+Compile-only (`compile`) and expected rejection (`compile_fail`) are separate from
+executed examples (`run`). Records retain source, compiler, feature graph, bounded
+logs and per-example results. The native CI gate requires both graphs on each host.
+`scripts/report-verification.py` rechecks explicit receipts and retains failures
+alongside later passes. These observations do not establish a product executable,
+consumer launch or final-package qualification. Joining doctest modes to individual
+requirement cases and final candidate admission remains pending.
 
 ```bash
 python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings tests/verification/test-bindings.json --test-features all

@@ -494,6 +494,62 @@
       ]
     },
     {
+      "id": "python::test_doctest_evidence.RustdocAdmission.test_changed_source_toolchain_command_and_outcomes_are_rejected",
+      "boundary": "H",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAdmission.test_receipt_replays_exact_graph_modes_and_observations",
+      "boundary": "H",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAdmission.test_report_retains_failed_attempt_alongside_later_pass",
+      "boundary": "H",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocOutcomes.test_execution_compile_only_and_expected_failure_remain_distinct",
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocOutcomes.test_listing_is_not_execution_and_ignore_policy_is_explicit",
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocOutcomes.test_missing_duplicate_unknown_filtered_and_inconsistent_output_fails",
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocOutcomes.test_skip_failed_assertion_timeout_and_exit_failure_cannot_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_import_smoke.NativeSmokeContracts.test_actual_http_archive_stream_is_bounded_before_cache_publication",
       "boundary": "N",
       "requirements": [

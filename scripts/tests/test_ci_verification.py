@@ -18,6 +18,7 @@ from verification.evidence import selected_tests, sha256, write_json
 from verification.suites import SUITES, nextest_command
 from consumer_fixture import prism_record
 from test_python_evidence import fixture as python_fixture
+from test_doctest_evidence import fixture as doctest_fixture
 from verification.consumer import inspect_prism_record
 
 REVISION = "a" * 40
@@ -203,6 +204,8 @@ class RequiredGate(unittest.TestCase):
             for target in ci.TARGETS:
                 for features, suites in ci.NATIVE_SUITES.items():
                     fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
+                    graph = ci.NATIVE_TEST_FEATURES[features]
+                    doctest_fixture(root / f"verification-{target}" / f"doctest-{graph}" / "attempt", target, graph)
             path = root / "consumer-prism/prism.json"
             path.parent.mkdir()
             record = prism_record(REVISION)
@@ -271,8 +274,20 @@ class RequiredGate(unittest.TestCase):
             for target in ci.TARGETS:
                 for features, suites in ci.NATIVE_SUITES.items():
                     fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
+                    graph = ci.NATIVE_TEST_FEATURES[features]
+                    doctest_fixture(root / f"verification-{target}" / f"doctest-{graph}" / "attempt", target, graph)
             result = ci.check_gate(plan, successes(plan), root)
             self.assertEqual(len(result["suite_evidence"]), 6)
+            self.assertEqual(len(result["doctest_evidence"]), 6)
+            doc = root / f"verification-{ci.TARGETS[0]}" / "doctest-all" / "attempt" / "receipt.json"
+            original_doc = json.loads(doc.read_text())
+            doc.unlink()
+            with self.assertRaisesRegex(ValueError, "rustdoc attempt"):
+                ci.check_gate(plan, successes(plan), root)
+            write_json(doc, {**original_doc, "status": "FAIL", "exit_code": 101})
+            with self.assertRaisesRegex(ValueError, "rustdoc execution failed"):
+                ci.check_gate(plan, successes(plan), root)
+            write_json(doc, original_doc)
             self.assertFalse(result["qualification"])
             # Full receipts are admitted first. The join must retain every native
             # variant without presenting partial requirement decomposition as done.

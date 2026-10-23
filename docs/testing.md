@@ -21,7 +21,11 @@ mise run smoke
 suite (including executable tests), and doctests. `scripts/verify.py` is the shared
 local/CI runner. Rust suites build the ordinary product package in a separate target
 directory before compiling the workspace test graph. The `python` suite executes
-script contracts independently, without selecting an empack binary. Use Nextest 0.9.148 for these selections.
+script contracts independently, without selecting an empack binary. The `doctest`
+suite runs the pinned rustdoc in both workspace feature graphs and records whether
+each example ran, only compiled, or established an expected compilation failure.
+Native CI requires these records on each host; a listing or a successful build does
+not replace them. Use Nextest 0.9.148 for the executable and library selections.
 Also check library tests with minimal features so workspace feature unification
 cannot hide test-only dependencies. Architecture checks keep `empack-core` free of I/O/runtime dependencies.
 

@@ -230,9 +230,55 @@ def run_python(attempt, environment):
     return 0 if record["status"] == "PASS" else 1
 
 
+def run_doctests(attempt, environment, features):
+    from verification.doctests import BINDINGS, TARGETS, command, evaluate, inputs, inventory
+    # Do not permit inherited rustdoc options to select a different test set or
+    # replace the pinned rustdoc executable while retaining a nominal Cargo command.
+    environment = {key: value for key, value in environment.items() if key not in {
+        "RUSTDOC", "RUSTDOCFLAGS", "CARGO_ENCODED_RUSTDOCFLAGS", "RUSTC_BOOTSTRAP"}}
+    record = dict(schema=1, kind="doctest-suite-run", qualification=False, tests=[],
+                  created_at=datetime.now(timezone.utc).isoformat(), test_features=features,
+                  commands={action: command(features, action) for action in ("list", "ignored", "run")})
+    print(f"Rustdoc verification attempt: {attempt}", flush=True)
+    try:
+        record["source_revision"] = checked(["git", "rev-parse", "HEAD"], attempt, "revision", environment).strip()
+        record["worktree_dirty"] = bool(checked(["git", "status", "--porcelain"], attempt, "worktree", environment).strip())
+        snapshot = source_snapshot(attempt, environment)
+        write_json(attempt / "source-snapshot.json", snapshot)
+        record["inputs"] = inputs(ROOT)
+        record["rustc"] = checked(["rustc", "-vV"], attempt, "rustc-version", environment).strip()
+        record["rustdoc"] = checked(["rustdoc", "--version"], attempt, "rustdoc-version", environment).strip()
+        pin = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        if f"release: {pin}" not in record["rustc"].splitlines() or not record["rustdoc"].startswith(f"rustdoc {pin} "):
+            raise Blocked("Rustdoc verification requires the pinned compiler and rustdoc")
+        record["target"] = next(line.removeprefix("host: ") for line in record["rustc"].splitlines() if line.startswith("host: "))
+        record["platform"] = TARGETS[record["target"]]
+        listings = {}
+        for action in ("list", "ignored"):
+            listings[action] = checked(record["commands"][action], attempt, action, environment, timeout=1800)
+            (attempt / f"{action}.stdout").write_text(listings[action], encoding="utf-8")
+        expected = inventory(listings["list"], listings["ignored"], json.loads((ROOT / BINDINGS).read_text()))
+        code, output, timed_out = run(record["commands"]["run"], cwd=ROOT, env=environment,
+                                     log=attempt / "run.log", timeout=1800, separate_stdout=True)
+        (attempt / "run.stdout").write_text(output, encoding="utf-8")
+        record.update(exit_code=code, timed_out=timed_out)
+        record["tests"], record["status"], record["parse_error"] = evaluate(output, expected, code, timed_out)
+        record["evidence"] = {name: sha256(attempt / name) for name in (
+            "list.stdout", "ignored.stdout", "run.stdout", "run.log", "source-snapshot.json")}
+        if source_snapshot(attempt, environment) != snapshot:
+            raise RuntimeError("Source files changed during verification")
+    except (OSError, ValueError, RuntimeError, KeyError, StopIteration, KeyboardInterrupt, Blocked) as error:
+        record.update(status="FAIL", reason=str(error) or "Rustdoc verification interrupted", tests=[])
+    write_json(attempt / "receipt.json", record)
+    print(f"{record['status']}: {attempt / 'receipt.json'} ({len(record['tests'])} observations)", flush=True)
+    if record.get("reason") or record.get("parse_error"):
+        print(record.get("reason") or record["parse_error"], file=sys.stderr)
+    return 0 if record["status"] == "PASS" else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("suites", nargs="+", choices=[*SUITES, "python"])
+    parser.add_argument("suites", nargs="+", choices=[*SUITES, "python", "doctest"])
     parser.add_argument("--binary", help="Absolute path to an independently built product")
     parser.add_argument("--sha256")
     parser.add_argument("--version")
@@ -249,6 +295,9 @@ def main(argv=None):
     if "python" in args.suites and (args.suites != ["python"] or any((args.binary, args.sha256,
             args.version, args.target, args.product_features, args.product_profile)) or args.test_features != "all"):
         parser.error("Python is an independent tooling run; select it separately without product options")
+    if "doctest" in args.suites and (args.suites != ["doctest"] or any((args.binary, args.sha256,
+            args.version, args.target, args.product_features, args.product_profile))):
+        parser.error("Doctests run separately with a workspace test graph, without product options")
     args.output.mkdir(parents=True, exist_ok=True)
     attempt = args.output.resolve() / str(uuid.uuid4())
     attempt.mkdir(mode=0o700)
@@ -256,6 +305,8 @@ def main(argv=None):
     environment.update(CARGO_TERM_COLOR="never", NO_COLOR="1")
     if args.suites == ["python"]:
         return run_python(attempt, environment)
+    if args.suites == ["doctest"]:
+        return run_doctests(attempt, environment, args.test_features)
     receipt = {"schema": 1, "kind": "test-suite-run", "status": "NOT_RUN",
                "created_at": datetime.now(timezone.utc).isoformat(), "suites": [],
                "requested_suites": args.suites, "test_features": args.test_features,
