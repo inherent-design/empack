@@ -48,5 +48,7 @@ jobs:
       - uses: ./.github/actions/rust-toolchain
       - uses: jdx/mise-action@v5
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-nextest
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
       - run: mise run test

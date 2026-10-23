@@ -1,6 +1,6 @@
 //! Executable exit contracts exercise native documents, publication and cancellation.
 use empack_lib::EmpackExitCode;
-use empack_tests::e2e::TestProject;
+use empack_tests::harness::process::TestProject;
 use std::{
     fs,
     io::Write,
@@ -52,7 +52,7 @@ fn add_local(project: &TestProject) {
     );
 }
 #[test]
-fn e2e_parse_error_exits_two() {
+fn cli_parse_error_exits_two() {
     check(
         &output(&TestProject::new(), &["--definitely-invalid-flag"]),
         EmpackExitCode::Usage,
@@ -60,7 +60,7 @@ fn e2e_parse_error_exits_two() {
     );
 }
 #[test]
-fn e2e_uninitialized_build_exits_two() {
+fn cli_uninitialized_build_exits_two() {
     check(
         &output(&TestProject::new(), &["build", "modrinth"]),
         EmpackExitCode::Usage,
@@ -68,7 +68,7 @@ fn e2e_uninitialized_build_exits_two() {
     );
 }
 #[test]
-fn e2e_direct_zip_without_type_exits_two() {
+fn cli_direct_zip_without_type_exits_two() {
     check(
         &output(&fixture(), &["add", "https://example.invalid/pack.zip"]),
         EmpackExitCode::Usage,
@@ -76,7 +76,7 @@ fn e2e_direct_zip_without_type_exits_two() {
     );
 }
 #[test]
-fn e2e_unattended_build_requires_explicit_approval() {
+fn cli_unattended_build_requires_explicit_approval() {
     let project = fixture();
     let before = fs::read(project.dir().join("empack.lock")).unwrap();
     check(
@@ -88,7 +88,7 @@ fn e2e_unattended_build_requires_explicit_approval() {
     assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
 }
 #[test]
-fn e2e_malformed_intent_and_lock_exit_two() {
+fn cli_malformed_intent_and_lock_exit_two() {
     for name in ["empack.yml", "empack.lock"] {
         let project = fixture();
         let path = project.dir().join(name);
@@ -109,7 +109,7 @@ fn e2e_malformed_intent_and_lock_exit_two() {
     }
 }
 #[test]
-fn e2e_missing_authored_source_cannot_build_from_an_installed_copy() {
+fn cli_missing_authored_source_cannot_build_from_an_installed_copy() {
     let project = fixture();
     add_local(&project);
     assert!(project.dir().join("pack/mods/fixture.jar").is_file());
@@ -127,7 +127,7 @@ fn e2e_missing_authored_source_cannot_build_from_an_installed_copy() {
     );
 }
 #[test]
-fn e2e_tracked_local_parent_dir_validation_exits_two() {
+fn cli_tracked_local_parent_dir_validation_exits_two() {
     let project = fixture();
     add_local(&project);
     let sentinel = tempfile::NamedTempFile::new_in(project.dir().parent().unwrap()).unwrap();
@@ -148,7 +148,7 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
     assert_eq!(fs::read(sentinel.path()).unwrap(), b"outside bytes");
 }
 #[test]
-fn e2e_occupied_artifact_directory_fails_without_deletion() {
+fn cli_occupied_artifact_directory_fails_without_deletion() {
     let project = fixture();
     let artifact = project.dir().join("dist/exit-contract-1.0.0.mrpack");
     fs::create_dir_all(&artifact).unwrap();
@@ -164,7 +164,7 @@ fn proxy(command: &mut Command, address: &str) {
     command.env("NO_PROXY", "").env("no_proxy", "");
 }
 #[test]
-fn e2e_network_failure_exits_three() {
+fn cli_network_failure_exits_three() {
     let project = fixture();
     let mut cmd = command(&project);
     proxy(&mut cmd, "http://127.0.0.1:9");
@@ -177,7 +177,7 @@ fn e2e_network_failure_exits_three() {
 }
 #[cfg(unix)]
 #[test]
-fn e2e_interrupt_exits_130() {
+fn cli_interrupt_exits_130() {
     struct Child(std::process::Child);
     impl Drop for Child {
         fn drop(&mut self) {
@@ -248,7 +248,7 @@ fn e2e_interrupt_exits_130() {
 }
 
 #[test]
-fn e2e_unknown_native_build_target_exits_two() {
+fn cli_unknown_native_build_target_exits_two() {
     check(
         &output(&fixture(), &["build", "not-a-target", "--yes"]),
         EmpackExitCode::Usage,
@@ -257,7 +257,7 @@ fn e2e_unknown_native_build_target_exits_two() {
 }
 
 #[test]
-fn e2e_native_download_transport_failure_exits_three() {
+fn cli_native_download_transport_failure_exits_three() {
     let project = fixture();
     let before = fs::read(project.dir().join("empack.lock")).unwrap();
     let result = command(&project)
@@ -287,7 +287,7 @@ fn e2e_native_download_transport_failure_exits_three() {
 }
 
 #[test]
-fn e2e_invalid_consumer_delivery_exits_two_without_publication() {
+fn cli_invalid_consumer_delivery_exits_two_without_publication() {
     let project = fixture();
     let manifest = fs::read(project.dir().join("empack.yml")).unwrap();
     let lock = fs::read(project.dir().join("empack.lock")).unwrap();

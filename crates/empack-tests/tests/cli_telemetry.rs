@@ -1,32 +1,4 @@
-use empack_tests::e2e::{TestProject, empack_assert_cmd, empack_cmd};
-use predicates::prelude::*;
-
-#[test]
-fn e2e_version_output() {
-    let project = TestProject::new();
-    empack_assert_cmd(project.dir())
-        .arg("version")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            empack_tests::harness::process::expected_cli_version(),
-        ));
-}
-
-#[test]
-fn e2e_help_exits_zero() {
-    let project = TestProject::new();
-    empack_assert_cmd(project.dir())
-        .arg("--help")
-        .assert()
-        .success();
-}
-
-#[test]
-fn e2e_test_project_creates_tempdir() {
-    let project = TestProject::new();
-    assert!(project.dir().exists());
-}
+use empack_tests::harness::process::TestProject;
 
 fn telemetry_command(project: &TestProject, profile: &str) -> assert_cmd::Command {
     let mut cmd = project.cmd();
@@ -40,7 +12,7 @@ fn telemetry_command(project: &TestProject, profile: &str) -> assert_cmd::Comman
     cmd
 }
 
-fn verify_chrome_trace(project: &TestProject) -> bool {
+fn verify_chrome_trace(project: &TestProject) {
     telemetry_command(project, "chrome").assert().success();
     let trace = std::fs::read_dir(project.dir())
         .unwrap()
@@ -51,12 +23,10 @@ fn verify_chrome_trace(project: &TestProject) -> bool {
                 .to_str()
                 .is_some_and(|name| name.starts_with("trace-") && name.ends_with(".json"))
         });
-    if !empack_tests::e2e::prerequisite_available(
+    assert!(
         trace.is_some(),
-        "binary lacks telemetry feature; trace file not produced",
-    ) {
-        return false;
-    }
+        "selected binary lacks telemetry: no trace produced"
+    );
     let events: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(trace.unwrap().path()).unwrap())
             .expect("Chrome trace must be valid JSON after shutdown");
@@ -66,21 +36,20 @@ fn verify_chrome_trace(project: &TestProject) -> bool {
             .any(|event| event["name"] == "empack.command" && event["args"]["command"] == "sync"),
         "trace must contain the executed command span"
     );
-    true
 }
 
 #[test]
-fn e2e_telemetry_chrome_trace() {
+#[ignore = "requires a product executable built with telemetry"]
+fn cli_telemetry_chrome_trace() {
     let project = TestProject::workflow_fixture("chrome-trace", "fabric", "1.21.1");
     verify_chrome_trace(&project);
 }
 
 #[test]
-fn e2e_telemetry_otlp_exports_and_exits_when_collector_fails() {
+#[ignore = "requires a product executable built with telemetry"]
+fn cli_telemetry_otlp_exports_and_exits_when_collector_fails() {
     let project = TestProject::workflow_fixture("otlp-trace", "fabric", "1.21.1");
-    if !verify_chrome_trace(&project) {
-        return;
-    }
+    verify_chrome_trace(&project);
     for status in [200, 503] {
         let mut server = mockito::Server::new();
         let request = server
@@ -105,36 +74,9 @@ fn e2e_telemetry_otlp_exports_and_exits_when_collector_fails() {
     }
 }
 
-/// Runtime inspection describes native capabilities without installing tooling.
 #[test]
-fn e2e_requirements_describes_native_capabilities_without_bootstrap() {
-    let project = TestProject::new();
-    let output = empack_cmd(project.dir())
-        .env("EMPACK_PACKWIZ_BIN", project.dir().join("missing-backend"))
-        .arg("requirements")
-        .output()
-        .expect("spawn failed");
-    assert!(
-        output.status.success(),
-        "requirements failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("native engine; no external dependency manager required"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("ZIP, TAR.GZ and 7z"), "{stdout}");
-    assert!(
-        stdout.contains("CurseForge also requires an API key"),
-        "{stdout}"
-    );
-    assert!(!project.dir().join("pack").exists());
-    assert!(!project.dir().join("empack.yml").exists());
-}
-
-#[test]
-fn e2e_telemetry_failed_command_omits_private_selectors() {
+#[ignore = "requires a product executable built with telemetry"]
+fn cli_telemetry_failed_command_omits_private_selectors() {
     let project = TestProject::workflow_fixture("failed-trace", "fabric", "1.21.1");
     let private = "PRIVATE_SELECTOR_MUST_NOT_ENTER_TRACE";
     let output = project
@@ -153,10 +95,10 @@ fn e2e_telemetry_failed_command_omits_private_selectors() {
                 .to_str()
                 .is_some_and(|name| name.starts_with("trace-") && name.ends_with(".json"))
         });
-    if !empack_tests::e2e::prerequisite_available(trace.is_some(), "binary lacks telemetry feature")
-    {
-        return;
-    }
+    assert!(
+        trace.is_some(),
+        "selected binary lacks telemetry: no trace produced"
+    );
     let raw = std::fs::read_to_string(trace.unwrap().path()).unwrap();
     assert!(
         !raw.contains(private),

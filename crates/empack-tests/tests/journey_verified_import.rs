@@ -1,6 +1,6 @@
 //! Executable native import contracts; explicit files preserve the archive's source evidence.
 use empack_lib::engine::documents::DocumentCodec;
-use empack_tests::e2e::{TestProject, assert_dist_artifact_suffix, empack_cmd};
+use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, empack_cmd};
 use std::{fs, io::Read, path::Path};
 
 fn run(project: &Path, args: &[&str]) {
@@ -51,7 +51,7 @@ fn member(archive: &mut zip::ZipArchive<fs::File>, name: &str) -> Vec<u8> {
 }
 
 #[test]
-fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
+fn journey_verified_url_import_sync_export_and_remove_preserve_contract() {
     verified_url_lifecycle(
         "sha256",
         "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
@@ -59,7 +59,7 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
 }
 
 #[test]
-fn e2e_md5_import_preserves_weak_source_evidence_through_native_export() {
+fn journey_md5_import_preserves_weak_source_evidence_through_native_export() {
     verified_url_lifecycle("md5", "321c3cf486ed509164edec1e1981fec8");
 }
 
@@ -207,7 +207,7 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
 }
 
 #[test]
-fn e2e_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates() {
+fn journey_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates() {
     let project = TestProject::new();
     let archive = fixture(
         &project,

@@ -738,6 +738,11 @@ mod harness_tests {
     use super::*;
 
     #[test]
+    fn project_fixture_creates_temporary_root() {
+        assert!(TestProject::new().dir().exists());
+    }
+
+    #[test]
     fn coverage_uses_instrumented_binary_even_with_existing_debug_build() {
         let root = tempfile::tempdir().unwrap();
         for profile in ["debug", "release", "llvm-cov-target/debug"] {

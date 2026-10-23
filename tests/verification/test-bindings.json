@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "partial; complete inventory comparison must reject unclassified tests",
+  "status": "partial; external macOS inventory classified, workspace and platform union incomplete",
   "tests": [
     {
       "id": "empack-tests::cli_arguments::cli_matrix_add_requires_modpack",
@@ -95,6 +95,70 @@
       "boundary": "X"
     },
     {
+      "id": "empack-tests::cli_entry::cli_help_exits_zero",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_entry::cli_version_output",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_direct_zip_without_type_exits_two",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_interrupt_exits_130",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_invalid_consumer_delivery_exits_two_without_publication",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_malformed_intent_and_lock_exit_two",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_missing_authored_source_cannot_build_from_an_installed_copy",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_native_download_transport_failure_exits_three",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_network_failure_exits_three",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_occupied_artifact_directory_fails_without_deletion",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_parse_error_exits_two",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_tracked_local_parent_dir_validation_exits_two",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_unattended_build_requires_explicit_approval",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_uninitialized_build_exits_two",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_exit_codes::cli_unknown_native_build_target_exits_two",
+      "boundary": "X"
+    },
+    {
       "id": "empack-tests::cli_init::cli_init_datapack_folder_is_authored",
       "boundary": "X"
     },
@@ -123,11 +187,139 @@
       "boundary": "X"
     },
     {
+      "id": "empack-tests::cli_interactive::cli_pty_download_assistance_preview_and_decline_are_read_only",
+      "boundary": "I"
+    },
+    {
+      "id": "empack-tests::cli_interactive::cli_pty_init_accepts_author_decisions",
+      "boundary": "I"
+    },
+    {
+      "id": "empack-tests::cli_interactive::cli_pty_init_decline_preserves_absent_destination",
+      "boundary": "I"
+    },
+    {
+      "id": "empack-tests::cli_pending_build::cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_cleanup",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_pending_build::cli_restricted_mrpack_preserves_preview_and_resumes_only_verified_content",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_pending_build::cli_restricted_wait_interrupt_retains_recovery_state",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_pending_build::cli_restricted_wait_preserves_preview_and_resumes_verified_downloads",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_pending_build::cli_restricted_wait_refuses_a_replaced_recipe",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_pending_build::cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_telemetry::cli_telemetry_chrome_trace",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_telemetry::cli_telemetry_failed_command_omits_private_selectors",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_telemetry::cli_telemetry_otlp_exports_and_exits_when_collector_fails",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::fixtures::tests::test_workflow_project_fixture_artifact_paths_are_deterministic",
+      "boundary": "U"
+    },
+    {
+      "id": "empack-tests::fixtures::tests::test_workflow_project_fixture_writes_expected_layout",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::child_environment_excludes_host_configuration_and_test_authority",
+      "boundary": "U"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::coverage_uses_instrumented_binary_even_with_existing_debug_build",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::ordinary_runs_do_not_select_stale_coverage_binary",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::prerequisite_probe_requires_successful_exit",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::project_fixture_creates_temporary_root",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::qualification_checks_version_after_matching_bytes",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::harness::process::harness_tests::qualification_refuses_missing_relative_and_wrong_digest_inputs",
+      "boundary": "N"
+    },
+    {
+      "id": "empack-tests::host_commands::all_loader_families_keep_exact_runtime_and_generate_mrpack",
+      "boundary": "H"
+    },
+    {
+      "id": "empack-tests::host_commands::build_continue_missing_state_and_unknown_clean_scope_preserve_files",
+      "boundary": "H"
+    },
+    {
+      "id": "empack-tests::host_commands::client_full_archives_contain_current_content_for_every_format",
+      "boundary": "H"
+    },
+    {
+      "id": "empack-tests::host_commands::direct_content_matrix_preserves_selected_kind_destination_and_sync",
+      "boundary": "H"
+    },
+    {
+      "id": "empack-tests::host_commands::preview_matrix_never_mutates_project_or_runs_backend",
+      "boundary": "H"
+    },
+    {
+      "id": "empack-tests::host_commands::removal_batches_demote_without_erasing_and_require_unknown_acknowledgment",
+      "boundary": "H"
+    },
+    {
+      "id": "empack-tests::host_commands::selected_updates_preserve_intent_and_demoted_roles",
+      "boundary": "H"
+    },
+    {
       "id": "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency",
       "boundary": "X"
     },
     {
+      "id": "empack-tests::journey_import::journey_local_mrpack_import_reexport",
+      "boundary": "X"
+    },
+    {
       "id": "empack-tests::journey_local_exports::journey_local_content_export_prepare_preserves_bytes",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_verified_import::journey_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_verified_import::journey_md5_import_preserves_weak_source_evidence_through_native_export",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_verified_import::journey_verified_url_import_sync_export_and_remove_preserve_contract",
       "boundary": "X"
     },
     {
@@ -155,6 +347,34 @@
       "boundary": "L"
     },
     {
+      "id": "empack-tests::live_import_survey::live_cli_curseforge_import_reports_or_completes_required_input",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_import_survey::live_cli_curseforge_page_import_completes_or_preserves_pending_input",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_import_survey::live_import_and_build_fabulously_optimized",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_import_survey::live_init_from_cobblemon_updated",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_import_survey::live_init_from_fabulously_optimized",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_import_survey::live_rolling_import_modrinth_reexports_archive",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_manual_assistance::live_cli_manual_assistance_opens_exact_page_and_verifies_supplied_bytes",
+      "boundary": "L"
+    },
+    {
       "id": "empack-tests::live_provider_cli::live_cli_equivalent_provider_selectors_converge",
       "boundary": "L"
     },
@@ -169,6 +389,106 @@
     {
       "id": "empack-tests::live_server_cli::live_cli_local_server_export_prepare_preserves_bytes",
       "boundary": "L"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_adopt_sources_and_restore_missing_lock_without_installing_files",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_authored_sync_creates_missing_lock_and_preserves_failed_batches",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_build_explanation_is_json_and_preserves_missing_lock_workspace",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_dotenv_precedence_reaches_command_execution",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_forced_import_bad_crc_preserves_existing_project",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_forced_import_invalid_destination_preserves_existing_project",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_generated_workflow_builds_named_profiles_and_rejects_wrong_release_tag",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_headless_search_is_not_first_result_authorization",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_independent_add_preserves_unowned_directory_and_installs_unrelated_file",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_independent_add_publishes_successes_once_and_reports_preserved_failures",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_invalid_optional_flags_do_not_mutate_project",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_local_removal_cannot_delete_a_directory",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_local_removal_cannot_follow_a_symlinked_ancestor",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_malformed_dotenv_does_not_block_clap_help_or_version",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_malformed_dotenv_is_a_configuration_error",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_native_lifecycle_preserves_exact_files_across_sync_build_remove",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_native_preview_and_failed_batch_preserve_every_file",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_native_requirements_do_not_install_a_backend",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_outdated_json_and_runtime_plan_preserve_author_workspace",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_pending_list_is_read_only_json_without_an_author_project",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_recovery_inspection_needs_no_pack_and_creates_no_state",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_strict_outdated_accepts_complete_empty_assessment",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_sync_empty_project_is_successful_and_preserves_project",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_sync_manual_continuation_and_stale_cleanup",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::smoke::smoke_version_does_not_resolve_managed_tooling",
+      "boundary": "X"
     }
   ]
 }

@@ -17,10 +17,12 @@ mise run test
 mise run smoke
 ```
 
-`mise run test` builds the executable, runs Python script contracts, runs the
-workspace Nextest selection excluding E2E, and runs doctests. Also check library
-tests with minimal features so workspace feature unification cannot hide test-only
-dependencies. Architecture checks keep `empack-core` free of I/O/runtime dependencies.
+`mise run test` runs Python script contracts, the fixed deterministic workspace
+suite (including executable tests), and doctests. `scripts/verify.py` is the shared
+local/CI runner. It builds the ordinary product package in a separate target directory
+before compiling the workspace test graph. Use Nextest 0.9.148 for these selections.
+Also check library tests with minimal features so workspace feature unification
+cannot hide test-only dependencies. Architecture checks keep `empack-core` free of I/O/runtime dependencies.
 
 ```sh
 cargo nextest run -p empack-lib --lib --no-default-features
@@ -49,8 +51,11 @@ EMPACK_E2E_STRICT=1 cargo nextest run -p empack-tests --test live_cli_init --tes
 The resourcepack scenario shares its assertions between offline client exports and
 live server preparation. Missing Java cannot skip the offline client case. Component
 fixtures created through codecs are distinct from the literal authoring journey;
-neither proves that Minecraft or Prism consumed the resulting pack. Remaining
-legacy `e2e_` suites still await separation and shared-runner integration.
+neither proves that Minecraft or Prism consumed the resulting pack. `journey_import`
+and `journey_verified_import` cover controlled local import paths. `cli_interactive`
+uses real PTY/ConPTY sessions; `live_manual_assistance` adds an official provider
+lookup with a fixture desktop opener. Moving upstream pack inputs belong to
+`live_import_survey`, not the pinned regression corpus.
 
 The executable harness lives in `empack-tests::harness::process`, outside the
 product dependency graph. Local runs may discover a binary and print the selected
@@ -118,14 +123,53 @@ cleanup and actual process retirement.
 The `managed_runtime_exit_uses_empack_classification` host test runs a fixture child
 with exit statuses 0 and 7, then verifies managed CLI classification and the retained
 runtime-status diagnostic. It does not launch Java. The Unix
-`e2e_interrupt_exits_130` test sends SIGINT to the actual empack executable during
+`cli_interrupt_exits_130` test sends SIGINT to the actual empack executable during
 a bounded local HTTP request and checks both exit 130 and stderr. Run it against a
 freshly built binary to test executable wiring:
 
 ```sh
 cargo build -p empack --all-features
-cargo test -p empack-tests --all-features --test e2e_exit_codes e2e_interrupt_exits_130
+cargo test -p empack-tests --all-features --test cli_exit_codes cli_interrupt_exits_130
 ```
+
+## Shared suite runner
+
+```sh
+python3 scripts/verify.py deterministic
+python3 scripts/verify.py cli
+python3 scripts/verify.py telemetry
+python3 scripts/verify.py live-catalog live-provider server-cli
+```
+
+Fixed selections live in `scripts/verification/suites.py`. `mise run e2e` remains a
+compatibility alias for the offline executable suite. `mise run e2e:strict` explicitly
+selects live CLI routes and the rolling import survey as well. Telemetry checks are
+ignored by default and fail if an explicitly selected product cannot produce a trace;
+absence of the feature is not a successful test.
+
+Each invocation creates a fresh directory under `target/verification/` containing
+compiler discovery, Nextest JUnit, bounded redacted logs, a source-file digest manifest,
+and `receipt.json`. Every selected test must produce a passing outcome. Empty required
+binaries, missing results, skipped selected tests, retries, failed commands and changed
+source/binary bytes cannot yield a suite pass. Missing tools or prerequisites produce
+`BLOCKED`; a Unix-only desktop fixture on Windows produces `NOT_APPLICABLE`.
+
+The runner does not retry an attempt. Re-running it creates another record and retains
+the earlier failure. These are suite records, not final release qualification or proof
+that every requirement has a bound case. The full requirement/result gate remains under
+implementation. Python and doctest commands still run separately from the Rust receipts.
+
+To select an independently built executable, supply all identity fields explicitly:
+
+```sh
+python3 scripts/verify.py cli --binary /absolute/path/empack --sha256 EXPECTED_SHA256 --version EXPECTED_VERSION --target TARGET_TRIPLE --product-features default
+```
+
+The runner verifies digest and version. For an external executable, target and features
+are caller-supplied provenance; final release qualification must bind them to the build
+record. A locally built product records the runner's ordinary-package build selection.
+Neither mode establishes actual consumer startup, platform coverage elsewhere, or final
+archive installation.
 
 ## Strict external checks
 

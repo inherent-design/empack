@@ -1,4 +1,8 @@
-use empack_tests::e2e::{TestProject, empack_cmd, write_local_mrpack};
+//! Rolling upstream inputs; not a pinned regression corpus.
+use empack_tests::harness::process::{
+    TestProject, assert_dist_artifact_suffix, empack_cmd, read_project,
+};
+use std::time::Instant;
 
 const LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS: &str = "600";
 
@@ -80,7 +84,8 @@ fn download_featured_modrinth_mrpack(project_id: &str, dest: &std::path::Path) {
 }
 
 #[test]
-fn e2e_import_modrinth_and_build_mrpack() {
+#[ignore = "rolling upstream pack survey; requires live provider access"]
+fn live_rolling_import_modrinth_reexports_archive() {
     let project = TestProject::new();
     let mrpack_path = project.dir().join("fabulously-optimized.mrpack");
 
@@ -152,100 +157,11 @@ fn e2e_import_modrinth_and_build_mrpack() {
 }
 
 #[test]
-fn e2e_import_local_mrpack_and_build_mrpack() {
-    let project = TestProject::new();
-    let mrpack_path = project.dir().join("local-fixture.mrpack");
-
-    write_local_mrpack(
-        &mrpack_path,
-        "local-fixture-pack",
-        "2.1.0",
-        "1.21.1",
-        "fabric-loader",
-        "0.15.11",
-    )
-    .expect("failed to create local mrpack fixture");
-
-    let output = empack_cmd(project.dir())
-        .args([
-            "init",
-            "--from",
-            mrpack_path.to_str().unwrap(),
-            "--yes",
-            "--import-optional-default",
-            "true",
-            "--exclude-auxiliary",
-            "imported-pack",
-        ])
-        .output()
-        .expect("failed to spawn empack init --from");
-
-    assert!(
-        output.status.success(),
-        "empack init --from failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-
-    let pack_dir = project.dir().join("imported-pack");
-    let config =
-        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
-    assert!(
-        config.contains("name: local-fixture-pack"),
-        "empack.yml should import the mrpack pack name\n{config}"
-    );
-    let decoded = empack_lib::testing::read_authoring(&pack_dir.join("empack.yml")).unwrap();
-    assert_eq!(
-        decoded.intent().runtime.loader,
-        empack_core::model::LoaderKind::Fabric
-    );
-    assert_eq!(
-        decoded
-            .intent()
-            .runtime
-            .loader_version
-            .as_ref()
-            .unwrap()
-            .as_str(),
-        "0.15.11"
-    );
-    assert!(
-        pack_dir.join("empack.lock").is_file(),
-        "native lock not found after local import"
-    );
-
-    let build_output = empack_cmd(&pack_dir)
-        .args([
-            "--yes",
-            "build",
-            "modrinth",
-            "--allow-optional-metadata-loss",
-        ])
-        .output()
-        .expect("failed to spawn empack build modrinth");
-
-    assert!(
-        build_output.status.success(),
-        "empack build modrinth failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&build_output.stdout),
-        String::from_utf8_lossy(&build_output.stderr),
-    );
-
-    let dist = pack_dir.join("dist");
-    assert!(dist.is_dir(), "dist/ directory not found after build");
-
-    let imported_mrpack = dist.join("local-fixture-pack-2.1.0.mrpack");
-    assert!(
-        imported_mrpack.exists(),
-        "no imported .mrpack file found in dist/"
-    );
-}
-
-#[test]
-fn e2e_import_curseforge_and_check_restricted() {
+#[ignore = "rolling upstream pack survey; requires live provider access"]
+fn live_cli_curseforge_import_reports_or_completes_required_input() {
     empack_tests::skip_if_no_cf_key!();
 
-    let cf_key = empack_tests::e2e::curseforge_key();
+    let cf_key = empack_tests::harness::process::curseforge_key();
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
@@ -302,6 +218,10 @@ fn e2e_import_curseforge_and_check_restricted() {
     let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
         .env("EMPACK_STATE_DIR", &state)
+        .env(
+            "EMPACK_KEY_CURSEFORGE",
+            empack_tests::harness::process::curseforge_key(),
+        )
         .args([
             "init",
             "--from",
@@ -316,7 +236,7 @@ fn e2e_import_curseforge_and_check_restricted() {
         .expect("failed to spawn empack init --from (CF)");
 
     if !output.status.success() {
-        empack_tests::e2e::assert_pending_import_lifecycle(
+        empack_tests::harness::process::assert_pending_import_lifecycle(
             project.dir(),
             "cf-imported",
             &state,
@@ -333,6 +253,10 @@ fn e2e_import_curseforge_and_check_restricted() {
 
     let build_output = empack_cmd(&pack_dir)
         .env("EMPACK_STATE_DIR", &state)
+        .env(
+            "EMPACK_KEY_CURSEFORGE",
+            empack_tests::harness::process::curseforge_key(),
+        )
         .args(["--yes", "build", "prism", "--optional-defaults"])
         .output()
         .expect("failed to spawn empack build prism");
@@ -350,7 +274,10 @@ fn e2e_import_curseforge_and_check_restricted() {
         );
     }
     if build_output.status.success() {
-        empack_tests::e2e::assert_dist_artifact_suffix(&pack_dir, "-prism-bundled.zip");
+        empack_tests::harness::process::assert_dist_artifact_suffix(
+            &pack_dir,
+            "-prism-bundled.zip",
+        );
     } else {
         assert!(combined.contains("continuation was saved"));
         let records = std::fs::read_dir(state.join("pending-builds"))
@@ -373,11 +300,16 @@ fn e2e_import_curseforge_and_check_restricted() {
 }
 
 #[test]
-fn e2e_init_from_curseforge_url() {
+#[ignore = "rolling upstream pack survey; requires live provider access"]
+fn live_cli_curseforge_page_import_completes_or_preserves_pending_input() {
     let project = TestProject::new();
     let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
         .env("EMPACK_STATE_DIR", &state)
+        .env(
+            "EMPACK_KEY_CURSEFORGE",
+            empack_tests::harness::process::curseforge_key(),
+        )
         .args([
             "init",
             "--from",
@@ -392,7 +324,7 @@ fn e2e_init_from_curseforge_url() {
         .expect("failed to spawn empack init --from (CF URL)");
 
     if !output.status.success() {
-        empack_tests::e2e::assert_pending_import_lifecycle(
+        empack_tests::harness::process::assert_pending_import_lifecycle(
             project.dir(),
             "cf-url-imported",
             &state,
@@ -410,4 +342,174 @@ fn e2e_init_from_curseforge_url() {
         pack_dir.join("empack.lock").is_file(),
         "native lock not found after CF URL import"
     );
+}
+
+/// Live CurseForge URL import: Cobblemon Updated (~30 mods).
+///
+/// Requires live provider access; strict mode enforces external prerequisites.
+/// Runtime: 30-120s depending on network conditions.
+#[test]
+#[ignore = "rolling upstream pack survey; requires live provider access"]
+fn live_init_from_cobblemon_updated() {
+    empack_tests::skip_if_no_cf_key!();
+
+    let project = TestProject::new();
+    let start = Instant::now();
+    let state = project.dir().join("native-state");
+    let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
+        .env(
+            "EMPACK_KEY_CURSEFORGE",
+            empack_tests::harness::process::curseforge_key(),
+        )
+        .args([
+            "init",
+            "--from",
+            "https://www.curseforge.com/minecraft/modpacks/cobblemon-updated",
+            "--yes",
+            "cobblemon",
+        ])
+        .output()
+        .expect("spawn failed");
+    let elapsed = start.elapsed();
+
+    if !output.status.success() {
+        empack_tests::harness::process::assert_pending_import_lifecycle(
+            project.dir(),
+            "cobblemon",
+            &state,
+            &output,
+        );
+        return;
+    }
+    let resolved = read_project(&project.dir().join("cobblemon"));
+    let count = resolved.lock().dependencies.len();
+    assert!(count >= 5, "expected at least five imported declarations");
+    eprintln!(
+        "cobblemon import: {:.1}s ({count} dependencies)",
+        elapsed.as_secs_f64()
+    );
+}
+
+/// Live Modrinth URL import: Fabulously Optimized (~30 mods).
+///
+/// Requires live provider access; strict mode enforces external prerequisites.
+/// Runtime: 30-120s depending on network conditions.
+#[test]
+#[ignore = "rolling upstream pack survey; requires live provider access"]
+fn live_init_from_fabulously_optimized() {
+    let project = TestProject::new();
+    let start = Instant::now();
+    let output = empack_cmd(project.dir())
+        .args([
+            "init",
+            "--from",
+            "https://modrinth.com/modpack/fabulously-optimized",
+            "--yes",
+            "fabopt",
+        ])
+        .output()
+        .expect("spawn failed");
+    let elapsed = start.elapsed();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "fabopt import failed:\nstdout: {stdout}\nstderr: {stderr}",
+    );
+
+    let pack_dir = project.dir().join("fabopt");
+    let resolved = read_project(&pack_dir);
+    let count = resolved.lock().dependencies.len();
+    assert!(
+        count >= 5,
+        "expected imported content declarations, found {count}"
+    );
+    let intent = std::fs::read(pack_dir.join("empack.yml")).unwrap();
+    let lock = std::fs::read(pack_dir.join("empack.lock")).unwrap();
+    let bindings = std::fs::read(pack_dir.join("empack.bindings.yml")).ok();
+    for _ in 0..2 {
+        let sync = empack_cmd(&pack_dir)
+            .args(["--yes", "sync"])
+            .output()
+            .unwrap();
+        assert!(
+            sync.status.success(),
+            "{}",
+            String::from_utf8_lossy(&sync.stderr)
+        );
+        assert_eq!(std::fs::read(pack_dir.join("empack.yml")).unwrap(), intent);
+        assert_eq!(std::fs::read(pack_dir.join("empack.lock")).unwrap(), lock);
+        assert_eq!(
+            std::fs::read(pack_dir.join("empack.bindings.yml")).ok(),
+            bindings
+        );
+        let _ = read_project(&pack_dir);
+    }
+    eprintln!(
+        "fabopt import: {:.1}s ({count} dependencies)",
+        elapsed.as_secs_f64()
+    );
+}
+
+/// Live Modrinth URL import followed by mrpack build.
+///
+/// Validates the full init-from-URL then build-mrpack workflow end to end.
+/// Requires live provider access; strict mode enforces external prerequisites.
+/// Runtime: 60-180s depending on network conditions.
+#[test]
+#[ignore = "rolling upstream pack survey; requires live provider access"]
+fn live_import_and_build_fabulously_optimized() {
+    let project = TestProject::new();
+
+    let import = empack_cmd(project.dir())
+        .args([
+            "init",
+            "--from",
+            "https://modrinth.com/modpack/fabulously-optimized",
+            "--yes",
+            "fabopt",
+        ])
+        .output()
+        .expect("spawn failed");
+    assert!(
+        import.status.success(),
+        "import failed: {}",
+        String::from_utf8_lossy(&import.stderr)
+    );
+
+    let build = empack_cmd(&project.dir().join("fabopt"))
+        .env(
+            "EMPACK_PROCESS_TIMEOUT_SECS",
+            LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
+        )
+        .args([
+            "--yes",
+            "build",
+            "modrinth",
+            "--allow-optional-metadata-loss",
+        ])
+        .output()
+        .expect("spawn failed");
+    assert!(
+        build.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let artifact = assert_dist_artifact_suffix(&project.dir().join("fabopt"), ".mrpack");
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact).unwrap()).unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(manifest["name"], "Fabulously Optimized");
+    assert!(manifest["files"].as_array().unwrap().len() >= 5);
+    for file in manifest["files"].as_array().unwrap() {
+        assert!(
+            file["hashes"]["sha512"]
+                .as_str()
+                .is_some_and(|hash| hash.len() == 128)
+        );
+        assert!(file["fileSize"].as_u64().is_some_and(|bytes| bytes > 0));
+    }
 }

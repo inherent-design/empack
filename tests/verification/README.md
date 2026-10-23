@@ -57,11 +57,14 @@ python3 scripts/check-test-map.py --cli-inventory /tmp/empack-cli.json --cli-bin
 ```
 
 These checks validate structure and classification only. The complete bindings,
-case/variant result join, doctest discovery and qualification gate are still being
-implemented. A successful structural check does not qualify the release.
+requirement/case/variant result join, doctest discovery and final qualification gate
+are still being implemented. `scripts/verify.py` already joins selected compiler IDs
+to actual JUnit results and retains one receipt per attempt. A successful structural check does not qualify the release.
 
-`test-bindings.json` records the literal authoring journey and the separated
-argument, initialization, build, dependency and live suites, discovered by Nextest. The registry marks UX-047 partial and lists its remaining evidence.
-Comparing the complete workspace inventory with this partial file must fail on
-unclassified tests. Cases declare required platforms and product feature variants;
-those declarations do not establish that any variant ran.
+`test-bindings.json` records the compiled external test crate on macOS arm64,
+including fixture checks, controlled hosts, executable journeys, interactive cases
+and live probes. Other platform-only identities and the remaining workspace still
+need classification. The registry marks UX-047 partial and lists its remaining
+evidence. Comparing the complete workspace inventory with this partial file must
+fail on unclassified tests. Cases declare required platforms and product feature
+variants; those declarations do not establish that any variant ran.

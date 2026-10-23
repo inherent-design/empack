@@ -43,47 +43,41 @@ run_windows = "cargo run -p empack --release --"
 
 [tasks.test]
 alias = "t"
-depends = ["build:bin"]
-description = "Run script, unit and integration tests (excludes E2E)"
+description = "Run deterministic workspace, Python and doctest contracts"
 run = """
 python3 -m unittest discover -s scripts/tests
-cargo nextest run --workspace --all-features -E 'not test(~e2e_)'
-cargo test --workspace --all-features --doc
+python3 scripts/verify.py deterministic
+cargo test --locked --workspace --all-features --doc
 """
 run_windows = [
     'python -m unittest discover -s scripts/tests',
-    'cargo nextest run --workspace --all-features -E "not test(~e2e_)"',
-    'cargo test --workspace --all-features --doc',
+    'python scripts/verify.py deterministic',
+    'cargo test --locked --workspace --all-features --doc',
 ]
 
 [tasks.e2e]
 alias = "e"
-depends = ["build:bin"]
-description = "Run E2E tests"
-run = "cargo nextest run -p empack-tests --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)'"
-run_windows = 'cargo nextest run -p empack-tests --run-ignored all -E "test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)"'
+description = "Compatibility alias: run offline executable contracts"
+run = "python3 scripts/verify.py cli"
+run_windows = "python scripts/verify.py cli"
 
 [tasks."e2e:filter"]
 alias = "fe"
 depends = ["build:bin"]
-description = "Run filtered E2E tests"
-usage = 'arg "filter" help="nextest filter expression"'
-run = """
-cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
-"""
+description = "Run a local exploratory test filter (not a qualification suite)"
+usage = 'arg "filter" help="nextest test-name substring"'
+run = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
 run_windows = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
 
 [tasks."e2e:strict"]
-description = "Build telemetry CLI and require all live E2E prerequisites"
-env = { EMPACK_E2E_STRICT = "1", EMPACK_RUN_LIVE_TESTS = "1" }
-run = """
-cargo build -p empack --features telemetry
-cargo nextest run -p empack-tests --features empack-lib/telemetry --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)'
-"""
-run_windows = [
-    'cargo build -p empack --features telemetry',
-    'cargo nextest run -p empack-tests --features empack-lib/telemetry --run-ignored all -E "test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)"',
-]
+description = "Explicit live CLI qualification, including rolling imports"
+run = "python3 scripts/verify.py cli telemetry live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry"
+run_windows = "python scripts/verify.py cli telemetry live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry"
+
+[tasks."test:telemetry"]
+description = "Run executable telemetry contracts against a telemetry product"
+run = "python3 scripts/verify.py telemetry"
+run_windows = "python scripts/verify.py telemetry"
 
 [tasks."smoke:import:pr"]
 depends = ["build:bin"]

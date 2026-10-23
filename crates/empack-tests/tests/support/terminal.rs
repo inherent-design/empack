@@ -7,9 +7,24 @@ pub fn spawn(command: std::process::Command) -> expectrl::session::OsSession {
 #[cfg(windows)]
 pub fn spawn(command: std::process::Command) -> expectrl::Session<conpty::Process, Stream> {
     // ConPTY constructs its own command line and environment rather than using Command::spawn.
-    // Quote each argument and carry the inherited environment explicitly.
+    let mut process = conpty::Process::spawn(conpty_command(&command)).unwrap();
+    let stream = Stream {
+        reader: process.output().unwrap(),
+        writer: process.input().unwrap(),
+    };
+    expectrl::Session::new(process, stream).unwrap()
+}
+
+#[cfg(windows)]
+fn conpty_command(command: &std::process::Command) -> std::process::Command {
+    // The external harness has already selected a complete isolated environment.
+    // Adding ambient variables here would undo its allowlist and env_clear().
     let mut native = std::process::Command::new(quote(command.get_program()));
-    native.envs(std::env::vars_os());
+    native.env_clear();
+    assert!(
+        command.get_envs().any(|(_, value)| value.is_some()),
+        "ConPTY requires an explicit nonempty environment to prevent inheritance"
+    );
     for (key, value) in command.get_envs() {
         match value {
             Some(value) => {
@@ -24,12 +39,18 @@ pub fn spawn(command: std::process::Command) -> expectrl::Session<conpty::Proces
         native.current_dir(directory);
     }
     native.args(command.get_args().map(quote));
-    let mut process = conpty::Process::spawn(native).unwrap();
-    let stream = Stream {
-        reader: process.output().unwrap(),
-        writer: process.input().unwrap(),
-    };
-    expectrl::Session::new(process, stream).unwrap()
+    native
+}
+
+#[cfg(windows)]
+#[test]
+fn conpty_preserves_only_the_explicit_environment() {
+    let mut command = std::process::Command::new("fixture.exe");
+    command.env_clear().env("ONLY_FIXTURE", "value");
+    let native = conpty_command(&command);
+    let environment = native.get_envs().collect::<Vec<_>>();
+    assert_eq!(environment, command.get_envs().collect::<Vec<_>>());
+    assert_eq!(environment.len(), 1);
 }
 
 #[cfg(windows)]

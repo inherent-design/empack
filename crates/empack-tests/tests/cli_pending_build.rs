@@ -52,7 +52,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 
 #[test]
-fn e2e_restricted_mrpack_preserves_preview_and_resumes_only_verified_content() {
+fn cli_restricted_mrpack_preserves_preview_and_resumes_only_verified_content() {
     let project = fixture("restricted-mrpack");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -108,7 +108,7 @@ fn e2e_restricted_mrpack_preserves_preview_and_resumes_only_verified_content() {
 }
 
 #[test]
-fn e2e_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_cleanup() {
+fn cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_cleanup() {
     let project = fixture("restricted-all");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -140,7 +140,7 @@ fn e2e_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_c
 }
 
 #[test]
-fn e2e_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
+fn cli_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
     let project = fixture("restricted-wait");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -234,7 +234,7 @@ fn e2e_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
 }
 
 #[test]
-fn e2e_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
+fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
     let project = fixture("restricted-wait-timeout");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -273,7 +273,7 @@ fn e2e_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
 }
 
 #[test]
-fn e2e_restricted_wait_refuses_a_replaced_recipe() {
+fn cli_restricted_wait_refuses_a_replaced_recipe() {
     let project = fixture("restricted-wait-replacement");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -326,7 +326,7 @@ fn e2e_restricted_wait_refuses_a_replaced_recipe() {
 
 #[cfg(unix)]
 #[test]
-fn e2e_restricted_wait_interrupt_retains_recovery_state() {
+fn cli_restricted_wait_interrupt_retains_recovery_state() {
     let project = fixture("restricted-wait-interrupt");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
