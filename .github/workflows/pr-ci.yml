@@ -108,7 +108,10 @@ jobs:
     needs: [plan, lint]
     if: needs.plan.outputs.native == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 45 || 30 }}
+    # Linux's full default run measured ~18m including compilation. Leave room
+    # for the independently built telemetry product and CLI run as on Windows.
+    # Individual suite/process limits remain enforced by the shared executor.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
