@@ -12,24 +12,25 @@ fn telemetry_command(project: &TestProject, profile: &str) -> assert_cmd::Comman
     cmd
 }
 
-fn verify_chrome_trace(project: &TestProject) {
-    telemetry_command(project, "chrome").assert().success();
-    let trace = std::fs::read_dir(project.dir())
+fn chrome_trace(project: &TestProject) -> String {
+    let traces: Vec<_> = std::fs::read_dir(project.dir())
         .unwrap()
-        .filter_map(Result::ok)
-        .find(|entry| {
+        .map(Result::unwrap)
+        .filter(|entry| {
             entry
                 .file_name()
                 .to_str()
                 .is_some_and(|name| name.starts_with("trace-") && name.ends_with(".json"))
-        });
-    assert!(
-        trace.is_some(),
-        "selected binary lacks telemetry: no trace produced"
-    );
-    let events: Vec<serde_json::Value> =
-        serde_json::from_slice(&std::fs::read(trace.unwrap().path()).unwrap())
-            .expect("Chrome trace must be valid JSON after shutdown");
+        })
+        .collect();
+    assert_eq!(traces.len(), 1, "telemetry must flush one trace");
+    std::fs::read_to_string(traces[0].path()).unwrap()
+}
+
+fn verify_chrome_trace(project: &TestProject) {
+    telemetry_command(project, "chrome").assert().success();
+    let events: Vec<serde_json::Value> = serde_json::from_str(&chrome_trace(project))
+        .expect("Chrome trace must be valid JSON after shutdown");
     assert!(
         events
             .iter()
@@ -86,20 +87,7 @@ fn cli_telemetry_failed_command_omits_private_selectors() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let trace = std::fs::read_dir(project.dir())
-        .unwrap()
-        .filter_map(Result::ok)
-        .find(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.starts_with("trace-") && name.ends_with(".json"))
-        });
-    assert!(
-        trace.is_some(),
-        "selected binary lacks telemetry: no trace produced"
-    );
-    let raw = std::fs::read_to_string(trace.unwrap().path()).unwrap();
+    let raw = chrome_trace(&project);
     assert!(
         !raw.contains(private),
         "command tracing leaked the input selector"
@@ -114,5 +102,57 @@ fn cli_telemetry_failed_command_omits_private_selectors() {
         events
             .iter()
             .any(|event| event["args"]["outcome"] == "failure")
+    );
+}
+
+#[test]
+#[ignore = "requires a product executable built with telemetry"]
+fn cli_telemetry_json_report_keeps_logs_and_private_configuration_out_of_payload() {
+    let project = TestProject::workflow_fixture("json-trace", "fabric", "1.21.1");
+    let secret = "PRIVATE_API_KEY_MUST_NOT_ENTER_OUTPUT";
+    let output = project
+        .cmd()
+        .env("EMPACK_PROFILE", "chrome")
+        .env("EMPACK_KEY_MODRINTH", secret)
+        .env("EMPACK_KEY_CURSEFORGE", secret)
+        .args([
+            "--color",
+            "always",
+            "--log-level",
+            "4",
+            "--log-format",
+            "json",
+            "--log-output",
+            "stdout",
+            "status",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["selected"], "author");
+    assert_eq!(report["content_verified"], false);
+    assert!(!output.stdout.contains(&0x1b));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Logger initialized successfully"));
+    for line in stderr.lines() {
+        serde_json::from_str::<serde_json::Value>(line).expect("diagnostic log must be JSON");
+    }
+    assert!(!String::from_utf8(output.stdout).unwrap().contains(secret));
+    assert!(!stderr.contains(secret));
+    let raw = chrome_trace(&project);
+    assert!(!raw.contains(secret));
+    let events: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event["name"] == "empack.command" && event["args"]["command"] == "status")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event["args"]["outcome"] == "success")
     );
 }

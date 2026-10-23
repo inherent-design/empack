@@ -51,6 +51,130 @@ fn add_local(project: &TestProject) {
         String::from_utf8_lossy(&result.stderr)
     );
 }
+/// Report stdout remains a single JSON value even when diagnostic logging is enabled.
+#[test]
+fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
+    let project = TestProject::new();
+    fs::write(
+        project.dir().join("empack.yml"),
+        include_str!("../../../tests/fixtures/authoring/empack.yml"),
+    )
+    .unwrap();
+    assert!(output(&project, &["--yes", "sync"]).status.success());
+    let author = fs::read(project.dir().join("empack.yml")).unwrap();
+    let lock = fs::read(project.dir().join("empack.lock")).unwrap();
+    let routes: &[&[&str]] = &[
+        &["status", "--json"],
+        &["manifest", "check", "--json"],
+        &["manifest", "diff", "--json"],
+        &["pending", "list", "--json"],
+        &["outdated", "--json"],
+        &["build", "--explain", "--json"],
+        &[
+            "migrate",
+            "--plan",
+            "--json",
+            "--minecraft",
+            "1.21.1",
+            "--loader",
+            "vanilla",
+        ],
+    ];
+    for color in ["never", "always", "auto"] {
+        for format in ["text", "json", "yaml"] {
+            for stream in ["stderr", "stdout"] {
+                for route in routes {
+                    let result = command(&project)
+                        .args([
+                            "--color",
+                            color,
+                            "--log-level",
+                            "2",
+                            "--log-format",
+                            format,
+                            "--log-output",
+                            stream,
+                        ])
+                        .args(*route)
+                        .output()
+                        .unwrap();
+                    let context = format!(
+                        "{route:?} color={color} format={format} stream={stream}: {result:?}"
+                    );
+                    assert!(result.status.success(), "{context}");
+                    let value: serde_json::Value = serde_json::from_slice(&result.stdout)
+                        .unwrap_or_else(|error| panic!("{error}: {context}"));
+                    assert!(value.is_object(), "{context}");
+                    assert!(!result.stdout.contains(&0x1b), "{context}");
+                    assert!(
+                        String::from_utf8_lossy(&result.stderr)
+                            .contains("Logger initialized successfully"),
+                        "logging must remain observable: {context}"
+                    );
+                    assert_eq!(fs::read(project.dir().join("empack.yml")).unwrap(), author);
+                    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
+                    assert!(!project.dir().join("dist").exists());
+                }
+            }
+        }
+    }
+    // Human output still honors an explicit log destination.
+    for stream in ["stderr", "stdout"] {
+        let result = command(&project)
+            .args([
+                "--color",
+                "never",
+                "--log-level",
+                "2",
+                "--log-output",
+                stream,
+                "status",
+            ])
+            .output()
+            .unwrap();
+        assert!(result.status.success());
+        let stdout = String::from_utf8(result.stdout).unwrap();
+        let stderr = String::from_utf8(result.stderr).unwrap();
+        assert_eq!(
+            stdout.contains("Logger initialized successfully"),
+            stream == "stdout"
+        );
+        assert_eq!(
+            stderr.contains("Logger initialized successfully"),
+            stream == "stderr"
+        );
+        assert!(stdout.contains("Metadata inspection only"));
+    }
+    // A refused JSON request has diagnostics, not a spurious successful payload.
+    for route in [
+        vec!["manifest", "explain", "unknown-key", "--json"],
+        vec!["pending", "show", "unknown-key", "--json"],
+    ] {
+        let result = command(&project)
+            .args([
+                "--color",
+                "never",
+                "--log-level",
+                "2",
+                "--log-output",
+                "stdout",
+            ])
+            .args(&route)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty(), "{result:?}");
+        let diagnostic = String::from_utf8(result.stderr).unwrap();
+        assert!(diagnostic.contains("Error:"), "{diagnostic}");
+        assert!(
+            diagnostic.contains("Logger initialized successfully"),
+            "{diagnostic}"
+        );
+        assert_eq!(fs::read(project.dir().join("empack.yml")).unwrap(), author);
+        assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
+    }
+}
+
 #[test]
 fn cli_parse_error_exits_two() {
     check(

@@ -979,6 +979,26 @@ impl std::str::FromStr for SearchPlatform {
 }
 
 impl Commands {
+    /// JSON reports reserve stdout for their payload; diagnostics use stderr.
+    pub fn emits_json(&self) -> bool {
+        matches!(
+            self,
+            Self::Status { json: true, .. }
+                | Self::Outdated { json: true, .. }
+                | Self::Migrate(MigrationArgs { json: true, .. })
+                | Self::Build(BuildArgs { json: true, .. })
+                | Self::Manifest {
+                    command: ManifestCommand::Check { json: true }
+                        | ManifestCommand::Diff { json: true }
+                        | ManifestCommand::Explain { json: true, .. },
+                }
+                | Self::Pending {
+                    command: PendingCommand::List { json: true }
+                        | PendingCommand::Show { json: true, .. },
+                }
+        )
+    }
+
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {

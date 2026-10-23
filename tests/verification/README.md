@@ -175,6 +175,17 @@ binding, pending input, enrollment, active runtime ownership and Unix symlinks.
 Status case decomposition is complete; required platform and product observations
 remain necessary before the group can pass.
 
+Presentation cases parse complete executable stdout across the three color modes,
+three log formats and both requested log streams. Status, manifest, pending,
+assessment, build explanation and migration-plan reports remain JSON; logs remain
+observable on stderr. Refused JSON lookups emit diagnostics without a false payload,
+and human reports retain their selected log stream. The telemetry suite separately
+executes a telemetry product, checks flushed command/outcome spans and rejects test
+API-key sentinels in its report, logs and trace. These cases reuse the existing
+finalizer and Unix interruption evidence without treating a constructed result as
+an actual process transition. `UX-008` remains partial pending its other platform,
+interactive and final-package evidence.
+
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a
 controlled child, changes its ownership record, sends a host interrupt, and checks

@@ -6,6 +6,19 @@ input paths resolve from the directory where you invoked empack, not `--workdir`
 This guide follows the current native CLI; `empack <command> --help` lists the
 options in your installed version.
 
+## Reports, logs and exit status
+
+Commands with `--json` reserve stdout for their report. Logs go to stderr for those
+commands even if `--log-output stdout` is configured. `--log-format` changes logs,
+not the report schema; `--color always` does not add terminal escapes to JSON reports.
+Human-readable commands continue to honor the selected log destination.
+
+Check the exit status as well as the report. A failed command can return a useful
+partial report, such as `outdated --strict`; its diagnostic goes to stderr. A failure
+before a report is available does not produce a successful empty report. Cancellation
+requests do not replace the completed result: cleanup and recovery failures remain
+visible, and an operation that already completed successfully remains successful.
+
 ## Workspace status
 
 Run `empack --workdir ./pack status` before choosing an author, publisher or instance

@@ -828,7 +828,100 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-008.finalizer-outcomes",
+          "boundary": "U",
+          "test_ids": [
+            "empack::bin/empack::tests::cancellation_does_not_suppress_terminal_failure_details",
+            "empack::bin/empack::tests::clean_interruption_reports_no_recovery_warning",
+            "empack::bin/empack::tests::completed_success_survives_late_cancellation",
+            "empack::bin/empack::tests::interrupted_status_still_renders_attached_failure_context"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Constructed completed errors retain full diagnostics and typed exit status despite a cancellation request",
+            "Clean interruption has no invented recovery warning; late cancellation does not change completed success"
+          ],
+          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+        },
+        {
+          "id": "UX-008.executable-interruption",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery",
+            "empack-tests::cli_exit_codes::cli_interrupt_exits_130"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An ordinary CLI launches a controlled child and handles an actual host SIGINT",
+            "Known retirement with failed ownership cleanup reaches actual stderr with the recovery action even when exit status is 130",
+            "Clean interruption clears ownership without a false recovery warning; nonzero child status remains diagnostic with empack status 1"
+          ],
+          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+        },
+        {
+          "id": "UX-008.report-streams",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_json_reports_separate_logging_and_preserve_author_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Seven executable JSON report routes remain single JSON values without ANSI across color/log-format/log-stream combinations",
+            "Diagnostic logs remain observable on stderr; human output honors its chosen log stream",
+            "Failed JSON lookups retain stderr diagnostics without a successful payload; author and lock bytes remain unchanged"
+          ],
+          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+        },
+        {
+          "id": "UX-008.telemetry-results",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_telemetry::cli_telemetry_chrome_trace",
+            "empack-tests::cli_telemetry::cli_telemetry_failed_command_omits_private_selectors",
+            "empack-tests::cli_telemetry::cli_telemetry_json_report_keeps_logs_and_private_configuration_out_of_payload",
+            "empack-tests::cli_telemetry::cli_telemetry_otlp_exports_and_exits_when_collector_fails"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual telemetry product flushes static command and terminal outcome spans; private selector and API-key sentinels are absent",
+            "A JSON report remains independent of diagnostic JSON and trace output",
+            "A controlled OTLP collector receives the command span; failed collection does not replace successful execution"
+          ],
+          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "api::launch + process_runtime + runtime lease; server_runtime/installer"
@@ -837,7 +930,7 @@
         "empack-cli",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-009",
