@@ -144,7 +144,7 @@ cargo test -p empack-tests --all-features --test cli_exit_codes cli_interrupt_ex
 python3 scripts/verify.py deterministic
 python3 scripts/verify.py cli
 python3 scripts/verify.py telemetry
-python3 scripts/verify.py live-catalog live-provider server-cli
+python3 scripts/verify.py live-catalog live-provider-cli live-modrinth server-cli
 ```
 
 Fixed selections live in `scripts/verification/suites.py`. `mise run e2e` remains a
@@ -152,6 +152,13 @@ compatibility alias for the offline executable suite. `mise run e2e:strict` expl
 selects live CLI routes and the rolling import survey as well. Telemetry checks are
 ignored by default and fail if an explicitly selected product cannot produce a trace;
 absence of the feature is not a successful test.
+
+`live-provider` includes both providers and requires `EMPACK_KEY_CURSEFORGE`.
+The separate `live-modrinth` and `live-curseforge` selections name exact discovered
+provider tests. `runtime-current` selects the managed vanilla and NeoForge launcher
+checks plus the Fabric classpath check. `live-runtime` retains the full historical
+matrix and additionally requires `EMPACK_TEST_JAVA8_HOME`. Missing named tests or
+prerequisites cannot silently reduce one of these selections.
 
 Each invocation creates a fresh directory under `target/verification/` containing
 compiler discovery, Nextest JUnit, bounded redacted logs, a source-file digest manifest,
@@ -176,6 +183,48 @@ are caller-supplied provenance; final release qualification must bind them to th
 record. A locally built product records the runner's ordinary-package build selection.
 Neither mode establishes actual consumer startup, platform coverage elsewhere, or final
 archive installation.
+
+## PR selection and final gate
+
+PR CI starts for every PR, including documentation and stacked branches.
+`scripts/ci-verification.py` compares immutable base/head revisions with renames
+disabled, so moving code into a documentation path cannot hide its removal. Markdown
+and editor-schema changes run Python, registry structure, Markdown and executable
+schema checks. Other changes also select the deterministic native matrix, feature
+checks, ARM64 compilation and one deterministic coverage run.
+Each native target runs the deterministic suite against the ordinary default product,
+then the offline CLI and telemetry suites against a separately built telemetry product.
+The gate requires both product variants; a telemetry build cannot stand in for the default.
+
+Provider, runtime and managed-client paths select additional relevant probes.
+Shared dependency/toolchain or verification changes select representative routes
+across those boundaries. Changes to the CurseForge adapter or its mixed-provider
+probe require the credentialed suite as well. This is change-based PR evidence;
+it does not replace the complete provider/loader matrix required for a candidate.
+
+Live and consumer jobs run only on repository branches or a maintainer's manual
+dispatch. Forks use GitHub-hosted runners for secretless checks, receive no provider
+or coverage credentials, and cannot satisfy a required live job by skipping it.
+The final gate reports the missing trusted execution. A maintainer can review and
+test the change on a repository branch; the workflow does not use
+`pull_request_target` to execute fork code with secrets. The selected CurseForge
+job expects the `EMPACK_KEY_CURSEFORGE` repository or organization secret and records
+`BLOCKED` if unavailable.
+
+Manual dispatch also runs the rolling import survey and the existing import-smoke
+driver. Broad surveys are excluded from ordinary PRs and instrumented coverage.
+The pinned corpus split and scheduled rotations remain separate work; an upstream
+survey is not a stable regression oracle.
+
+Use `verification-gate` as the required PR status. It requires every selected job
+to succeed, including the complete native matrix, and checks each uploaded suite
+receipt against its compiler inventory and JUnit: source revision, target, product
+features, selected identities, first-attempt results and evidence digests must agree.
+Missing, cancelled, skipped, blocked or inconsistent evidence fails the gate.
+The resulting record has `qualification: false`: Python/schema/doctest job results
+and PR suite receipts do not yet constitute the complete requirement-to-variant or
+final-package qualification record. Selecting this required status in repository
+branch protection is an administrative step; changing workflow YAML does not set it.
 
 ## Strict external checks
 

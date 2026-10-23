@@ -10,10 +10,15 @@ class Suite:
     unix_only: bool = False
     java: bool = False
     timeout: int = 1800
+    cases: tuple[str, ...] = ()
+    required_env: tuple[str, ...] = ()
 
     @property
     def filter(self):
-        return " | ".join(f"binary(={name})" for name in self.binaries) or "all()"
+        binaries = " | ".join(f"binary(={name})" for name in self.binaries) or "all()"
+        if self.cases:
+            return f"({binaries}) & (" + " | ".join(f"test(={name})" for name in self.cases) + ")"
+        return binaries
 
 
 CLI = (
@@ -26,9 +31,22 @@ SUITES = {
     "cli": Suite(CLI),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
     "live-catalog": Suite(("live_cli_init", "runtime_catalog_smoke"), ignored=True),
-    "live-provider": Suite(("live_provider_cli", "provider_catalog_smoke"), ignored=True),
+    "live-provider": Suite(("live_provider_cli", "provider_catalog_smoke"), ignored=True,
+                           required_env=("EMPACK_KEY_CURSEFORGE",)),
+    "live-provider-cli": Suite(("live_provider_cli",), ignored=True),
+    "live-modrinth": Suite(("provider_catalog_smoke",), ignored=True, cases=(
+        "modrinth_mod_identity_and_exact_bytes", "modrinth_resource_pack_identity_and_exact_bytes",
+        "modrinth_compatible_selection_and_bytes", "modrinth_mixed_project_selects_datapack_bytes",
+        "modrinth_required_closure_and_all_selected_bytes")),
+    "live-curseforge": Suite(("provider_catalog_smoke",), ignored=True, cases=(
+        "curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes"),
+        required_env=("EMPACK_KEY_CURSEFORGE",)),
     "server-cli": Suite(("live_server_cli",), ignored=True, java=True),
-    "live-runtime": Suite(("runtime_server_smoke",), ignored=True, java=True, timeout=3600),
+    "live-runtime": Suite(("runtime_server_smoke",), ignored=True, java=True, timeout=3600,
+                          required_env=("EMPACK_TEST_JAVA8_HOME",)),
+    "runtime-current": Suite(("runtime_server_smoke",), ignored=True, java=True, timeout=1800,
+                             cases=("runtime_managed_server_vanilla", "runtime_managed_server_neoforge",
+                                    "runtime_server_fabric_classpath")),
     "live-assistance": Suite(("live_manual_assistance",), ignored=True, unix_only=True),
     "import-survey": Suite(("live_import_survey",), ignored=True, timeout=3600),
 }

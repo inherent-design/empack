@@ -1,21 +1,8 @@
 name: PR CI
 
+# No path/base filter: docs-only and stacked PRs need a terminal required check.
 on:
   pull_request:
-    branches: [dev, main]
-    paths:
-      [
-        crates/**,
-        scripts/**,
-        tests/**,
-        Cargo.toml,
-        Cargo.lock,
-        .github/workflows/**,
-        .github/actions/**,
-        rust-toolchain.toml,
-        mise.toml,
-        .config/**,
-      ]
   workflow_dispatch:
 
 permissions:
@@ -26,95 +13,223 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.select.outputs.native }}
+      trusted: ${{ steps.select.outputs.trusted }}
+      live: ${{ steps.select.outputs.live }}
+      live_suites: ${{ steps.select.outputs.live_suites }}
+      consumer: ${{ steps.select.outputs.consumer }}
+      survey: ${{ steps.select.outputs.survey }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: select
+        run: python3 scripts/ci-verification.py plan --output .git/plan.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verification-plan
+          path: .git/plan.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  tooling:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.5"
+      - run: python3 -m unittest discover -s scripts/tests
+      - run: python3 scripts/check-test-map.py
+      - run: python3 scripts/check-docs.py README.md docs tests/verification
+      - run: cargo build --locked -p empack --target-dir target/verification-tools
+      - run: uv run scripts/check-authoring-schema.py target/verification-tools/debug/empack
+
   lint:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: plan
+    if: needs.plan.outputs.native == 'true'
+    runs-on: ${{ needs.plan.outputs.trusted == 'true' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
       - run: python3 scripts/check-core-boundary.py
-      - run: cargo check --workspace --all-targets
-      - run: cargo clippy -p empack-lib --lib --tests --no-default-features -- -D warnings
-      - run: cargo check --workspace --all-targets --features telemetry
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy --workspace --all-targets --features telemetry -- -D warnings
+      - run: cargo check --locked --workspace --all-targets
+      - run: cargo clippy --locked -p empack-lib --lib --tests --no-default-features -- -D warnings
+      - run: cargo check --locked --workspace --all-targets --features telemetry
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo clippy --locked --workspace --all-targets --features telemetry -- -D warnings
 
   cross-build:
-    needs: lint
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [plan, lint]
+    if: needs.plan.outputs.native == 'true'
+    runs-on: ${{ needs.plan.outputs.trusted == 'true' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
         with:
           targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cross
+      # Compilation evidence only; ARM64 execution remains a release obligation.
       - run: cross build --release -p empack --locked --target aarch64-unknown-linux-gnu
 
   test:
-    name: test (${{ matrix.os }})
-    needs: lint
+    name: test (${{ matrix.target }})
+    needs: [plan, lint]
+    if: needs.plan.outputs.native == 'true'
     runs-on: ${{ matrix.os }}
-    # A cold Windows build plus verified tests and cache save can exceed 30 minutes.
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix:
-        os: [blacksmith-4vcpu-ubuntu-2404, macos-26, windows-latest]
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-26
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
-      - uses: jdx/mise-action@v5
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
-      - run: python -m unittest discover -s scripts/tests
-      - run: python scripts/verify.py deterministic telemetry --product-features telemetry
+      - run: python scripts/verify.py deterministic --product-features default --output target/verification/default
+      - run: python scripts/verify.py cli telemetry --product-features telemetry --output target/verification/telemetry
       - run: cargo test --locked --workspace --all-features --doc
-      - run: python scripts/verify.py live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: verification-${{ matrix.os }}
+          name: verification-${{ matrix.target }}
           path: target/verification/
           if-no-files-found: error
           retention-days: 14
 
-  import-smoke:
-    name: import-smoke (${{ matrix.os }})
-    needs: test
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [blacksmith-4vcpu-ubuntu-2404, macos-26, windows-latest]
+  live:
+    needs: [plan, lint]
+    if: needs.plan.outputs.live == 'true' && needs.plan.outputs.trusted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
-      - uses: jdx/mise-action@v5
       - uses: Swatinem/rust-cache@v2
-      - run: mise run build:bin
-      - run: python3 scripts/import-smoke-test.py --profile pr
-        if: runner.os != 'Windows'
-      - run: python scripts/import-smoke-test.py --profile pr
-        if: runner.os == 'Windows'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - name: Run relevant official-service and runtime checks
+        env:
+          LIVE_SUITES: ${{ needs.plan.outputs.live_suites }}
+          EMPACK_KEY_CURSEFORGE: ${{ secrets.EMPACK_KEY_CURSEFORGE }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, subprocess
+          suites = json.loads(os.environ["LIVE_SUITES"])
+          subprocess.run(["python3", "scripts/verify.py", *suites,
+                          "--product-features", "telemetry"], check=True)
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-live
+          path: target/verification/
+          if-no-files-found: error
+          retention-days: 14
+
+  consumer:
+    needs: plan
+    if: needs.plan.outputs.consumer == 'true' && needs.plan.outputs.trusted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: PrismLauncher/PrismLauncher
+          ref: 7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4
+          path: .git/prism-source
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+      - name: Supported Qt parser evidence (not graphical import or gameplay)
+        run: python3 scripts/check-prism-config.py --prism-source .git/prism-source --qmake qmake6 > .git/prism.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: consumer-prism
+          path: .git/prism.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  survey:
+    needs: plan
+    if: needs.plan.outputs.survey == 'true' && needs.plan.outputs.trusted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - run: python3 scripts/verify.py import-survey --product-features telemetry
+      # Keep the existing script until pinned corpus and rolling survey are split.
+      - run: python3 scripts/import-smoke-test.py --profile pr --empack-bin "$GITHUB_WORKSPACE/target/verification-product/telemetry/debug/empack"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-survey
+          path: target/verification/
+          if-no-files-found: error
+          retention-days: 14
 
   coverage:
-    needs: lint
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [plan, lint]
+    if: needs.plan.outputs.native == 'true'
+    runs-on: ${{ needs.plan.outputs.trusted == 'true' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 30
     permissions:
       contents: read
-      pull-requests: write
-      id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
         with:
           components: llvm-tools-preview
@@ -122,11 +237,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov,cargo-nextest@0.9.148
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
       - run: mise run coverage
         env:
           EMPACK_E2E_STRICT: "1"
-          EMPACK_RUN_LIVE_TESTS: "1"
       - name: Coverage summary
         run: |
           cargo llvm-cov report --failure-mode all --summary-only | tee coverage-summary.txt
@@ -149,8 +263,34 @@ jobs:
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: codecov/codecov-action@v7
+        if: needs.plan.outputs.trusted == 'true'
         with:
           files: lcov.info
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  gate:
+    name: verification-gate
+    needs: [plan, tooling, lint, test, cross-build, coverage, live, consumer, survey]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/verification-evidence
+      - name: Verify selected jobs and exact suite outcomes
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-verification.py gate --artifacts "$RUNNER_TEMP/verification-evidence" --output .git/gate.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-gate
+          path: .git/gate.json
+          include-hidden-files: true
+          if-no-files-found: error

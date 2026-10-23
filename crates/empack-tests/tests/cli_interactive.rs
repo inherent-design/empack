@@ -118,7 +118,12 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
     terminal.expect(Regex("(?i)apply this build plan")).unwrap();
     terminal.send_line("n").unwrap();
     terminal.expect(Regex("(?i)not applied")).unwrap();
+    #[cfg(not(windows))]
     terminal.expect(expectrl::Eof).unwrap();
+    // ConPTY's output pipe remains owned by the console host after the child exits.
+    // Wait on the actual process handle instead of mistaking pipe lifetime for work.
+    #[cfg(windows)]
+    assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
     assert_eq!(files::snapshot(project.dir()), before);
     assert_eq!(files::snapshot(&state), retained);
     assert_eq!(fs::read(&input).unwrap(), b"payload");

@@ -10,20 +10,13 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-PRISM_COMMIT = "7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4"  # Prism 11.1.1
+from verification.consumer import PRISM_COMMIT, require_supported_qt
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "crates/empack-lib/src/engine/build/client/fixtures.json"
 
 
 def checked(*args, **kwargs):
     return subprocess.check_output(args, text=True, **kwargs).strip()
-
-
-def require_supported_qt(version):
-    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
-    if not match or int(match[1]) != 6 or int(match[2]) < 4:
-        raise ValueError(f"Prism 11.1.1 requires Qt 6.4+ within major 6; got {version}. "
-                         "Unsupported builds are supplemental only; choose a supported --qmake.")
 
 
 def qpath(path):

@@ -10,8 +10,8 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def selected_tests(document, ignored, required_binaries=()):
-    selected, all_ids, matched_binaries = [], set(), set()
+def selected_tests(document, ignored, required_binaries=(), required_cases=()):
+    selected, all_ids, matched_binaries, matched_cases = [], set(), set(), set()
     for binary, suite in document["rust-suites"].items():
         # Nextest omits discovery of binaries excluded by an exact binary filter.
         # That is permitted only outside this fixed suite's declared selection.
@@ -31,11 +31,13 @@ def selected_tests(document, ignored, required_binaries=()):
             if match == "matches" and case["ignored"] == ignored:
                 selected.append(identity)
                 matched_binaries.add(suite["binary-name"])
+                matched_cases.add(name)
     if len(all_ids) != document["test-count"]:
         raise ValueError("Compiler discovery count mismatch")
     missing = set(required_binaries) - matched_binaries
-    if missing or not selected:
-        raise ValueError(f"Empty required selection: {sorted(missing)}")
+    missing_cases = set(required_cases) - matched_cases
+    if missing or missing_cases or not selected:
+        raise ValueError(f"Empty required selection: binaries={sorted(missing)}, cases={sorted(missing_cases)}")
     return sorted(selected), all_ids
 
 
@@ -75,5 +77,5 @@ def read_results(path, selected, all_ids):
 def write_json(path, document):
     path = Path(path)
     staging = path.with_suffix(path.suffix + ".tmp")
-    staging.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    staging.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     staging.replace(path)

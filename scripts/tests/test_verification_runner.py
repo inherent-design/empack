@@ -21,6 +21,13 @@ class SuiteEvidence(unittest.TestCase):
         self.assertEqual(selected, ["pkg::cli::checks_output"])
         self.assertEqual(all_ids, set(selected))
 
+    def test_required_case_retains_module_path(self):
+        inventory = self.inventory()
+        cases = inventory["rust-suites"]["pkg::cli"]["testcases"]
+        cases["module::checks_output"] = cases.pop("checks_output")
+        selected, _ = selected_tests(inventory, False, ("cli",), ("module::checks_output",))
+        self.assertEqual(selected, ["pkg::cli::module::checks_output"])
+
     def test_empty_or_ignored_selection_is_not_success(self):
         for inventory, ignored, binaries in [
             (self.inventory(), False, ("misspelled",)),
@@ -83,6 +90,23 @@ class SuiteEvidence(unittest.TestCase):
 
 
 class CommandEvidence(unittest.TestCase):
+    def test_unicode_command_logs_ignore_the_host_file_encoding(self):
+        from unittest.mock import patch
+        original = Path.write_text
+        def windows_encoding(path, data, encoding=None, errors=None, newline=None):
+            return original(path, data, encoding=encoding or "cp1252", errors=errors, newline=newline)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            text = "Nextest ──── 日誌\n"
+            with patch.object(Path, "write_text", windows_encoding):
+                status, output, expired = run(
+                    [sys.executable, "-c", "import os; os.write(1, " + repr(text.encode("utf-8")) + ")"],
+                    cwd=root, env=dict(os.environ), log=root / "log", timeout=10)
+            self.assertEqual(status, 0)
+            self.assertFalse(expired)
+            self.assertEqual(output, text)
+            self.assertEqual((root / "log").read_bytes(), text.encode("utf-8"))
+
     def test_credentials_and_url_queries_are_redacted(self):
         text = 'token=secret-value https://user:pass@example.org/download?signature=private#anchor'
         clean = redact(text, {"PROVIDER_TOKEN": "secret-value"})
@@ -124,6 +148,27 @@ class CommandEvidence(unittest.TestCase):
 
 
 class AttemptPolicy(unittest.TestCase):
+    def test_java_home_selects_the_probed_executable_without_path_fallback(self):
+        from unittest.mock import patch
+        from verify import Blocked, java_probe
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            java = root / "jdk" / "bin" / ("java.exe" if os.name == "nt" else "java")
+            java.parent.mkdir(parents=True)
+            java.write_bytes(b"fixture executable identity")
+            environment = {"JAVA_HOME": str(java.parent.parent), "PATH": "wrong-java"}
+            def checked(command, attempt, name, env, timeout):
+                self.assertEqual(command, [str(java.resolve()), "-version"])
+                self.assertEqual(env, environment)
+                (attempt / (name + ".log")).write_text('openjdk version "21.0.13"\n')
+            with patch("verify.checked", side_effect=checked):
+                result = java_probe(root, environment)
+            self.assertEqual(result["path"], str(java.resolve()))
+            self.assertIn("21.0.13", result["version"])
+            java.unlink()
+            with self.assertRaisesRegex(Blocked, "Java prerequisite unavailable"):
+                java_probe(root, environment)
+
     def test_empty_and_inapplicable_runs_are_not_passes(self):
         from verify import aggregate_status
         self.assertEqual(aggregate_status([]), 'NOT_RUN')

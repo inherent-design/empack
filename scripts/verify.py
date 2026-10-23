@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import sys
 import tomllib
 import uuid
@@ -88,17 +89,36 @@ def product(args, attempt, environment, host):
             "target": target, "features": features, "provenance": provenance}
 
 
+def java_probe(attempt, environment, label="java", home_variable="JAVA_HOME"):
+    executable = "java.exe" if os.name == "nt" else "java"
+    home = environment.get(home_variable)
+    path = Path(home) / "bin" / executable if home else shutil.which(executable, path=environment.get("PATH"))
+    if not path or not Path(path).is_file():
+        raise Blocked(f"Java prerequisite unavailable: {home_variable or 'PATH'}")
+    path = Path(path).resolve()
+    try:
+        checked([str(path), "-version"], attempt, f"{label}-version", environment, timeout=15)
+    except (OSError, RuntimeError) as error:
+        raise Blocked(f"{label} prerequisite unavailable; no runtime tests executed") from error
+    version = (attempt / f"{label}-version.log").read_text().strip()
+    if label == "java8" and not re.search(r'version "1\.8\.', version):
+        raise Blocked("Historical runtime suite requires Java 8 at EMPACK_TEST_JAVA8_HOME")
+    return {"path": str(path), "sha256": sha256(path), "version": version}
+
+
 def run_suite(name, suite, attempt, environment, artifact, record):
     if suite.unix_only and os.name == "nt":
         record.update(status="NOT_APPLICABLE", reason="This desktop-opener fixture is Unix-only")
         return record
     if suite.telemetry and artifact["features"] != "telemetry":
         raise Blocked("Telemetry suite requires a telemetry product artifact")
+    missing = [name for name in suite.required_env if not environment.get(name)]
+    if missing:
+        raise Blocked("Required suite prerequisites unavailable: " + ", ".join(missing))
     if suite.java:
-        try:
-            checked(["java", "-version"], attempt, "java-version", environment, timeout=15)
-        except (OSError, RuntimeError) as error:
-            raise Blocked("Java prerequisite unavailable; no runtime tests executed") from error
+        record["java"] = java_probe(attempt, environment)
+        if "EMPACK_TEST_JAVA8_HOME" in suite.required_env:
+            record["java8"] = java_probe(attempt, environment, "java8", "EMPACK_TEST_JAVA8_HOME")
     suite_dir = attempt / name
     suite_dir.mkdir()
     junit = suite_dir / "junit.xml"
@@ -121,7 +141,7 @@ junit.store-failure-output = false
                       "--message-format", "json"], suite_dir, "discovery", environment, timeout=1800)
     inventory = json.loads(output)
     write_json(suite_dir / "inventory.json", inventory)
-    selected, all_ids = selected_tests(inventory, suite.ignored, suite.binaries)
+    selected, all_ids = selected_tests(inventory, suite.ignored, suite.binaries, suite.cases)
     record["selected"] = selected
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")
     run_env = dict(environment, EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
