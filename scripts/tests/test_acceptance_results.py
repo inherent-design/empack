@@ -106,18 +106,53 @@ class AcceptanceResults(unittest.TestCase):
         validate_requirements(self.document)
 
     def test_repeated_evidence_does_not_multiply_cases_or_erase_a_first_failure(self):
-        duplicate = copy.deepcopy(self.evidence[0])
-        duplicate["receipt_sha256"] = "f" * 64
-        self.evidence.append(duplicate)
-        variant = self.result()["requirements"][0]["cases"][0]["variants"][0]
+        first = copy.deepcopy(self.evidence[0])
+        first["receipt_sha256"] = "f" * 64
+        first["tests"][0]["status"] = "FAIL"
+        self.evidence.insert(0, first)
+        report = self.result()["requirements"][0]
+        self.assertEqual(report["status"], "FAIL")
+        variant = report["cases"][0]["variants"][0]
         self.assertEqual(len(variant["tests"]), 2)
-        self.assertEqual(len(variant["tests"][0]["receipts"]), 2)
-        duplicate["tests"][0]["status"] = "FAIL"
-        with self.assertRaisesRegex(ValueError, "Conflicting"):
-            self.result()
-        duplicate["tests"][0]["status"] = "PASS"
+        test = variant["tests"][0]
+        self.assertEqual(test["status"], "FAIL")
+        self.assertEqual({a["status"] for a in test["attempts"]}, {"PASS", "FAIL"})
+        self.assertEqual({a["receipt_sha256"] for a in test["attempts"]}, {"0" * 64, "f" * 64})
+        self.evidence.reverse()
+        self.assertEqual(self.result()["requirements"][0], report, "input order cannot select a passing retry")
+
+    def test_distinct_executables_and_duplicate_receipts_keep_their_identity(self):
+        duplicate = copy.deepcopy(self.evidence[0])
+        self.evidence.append(duplicate)
+        test = self.result()["requirements"][0]["cases"][0]["variants"][0]["tests"][0]
+        self.assertEqual(len(test["attempts"]), 1)
         duplicate["artifact_sha256"] = "e" * 64
-        with self.assertRaisesRegex(ValueError, "Conflicting"):
+        with self.assertRaisesRegex(ValueError, "Conflicting receipt"):
+            self.result()
+        duplicate["receipt_sha256"] = "f" * 64
+        test = self.result()["requirements"][0]["cases"][0]["variants"][0]["tests"][0]
+        self.assertEqual({a["artifact_sha256"] for a in test["attempts"]}, {"4" * 64, "e" * 64})
+        self.assertNotIn("artifact_sha256", test, "different binaries must not be presented as one")
+
+    def test_overlapping_suites_retain_distinct_executions_in_one_receipt(self):
+        record = self.evidence[0]
+        for test in record["tests"]:
+            test["suite"] = "deterministic"
+        second = dict(record["tests"][0], suite="cli", status="FAIL")
+        record["tests"].append(second)
+        test = self.result()["requirements"][0]["cases"][0]["variants"][0]["tests"][0]
+        self.assertEqual(test["status"], "FAIL")
+        self.assertEqual(len(test["receipts"]), 1)
+        self.assertEqual({a["suite"] for a in test["attempts"]}, {"cli", "deterministic"})
+        self.assertEqual({a["status"] for a in test["attempts"]}, {"PASS", "FAIL"})
+
+    def test_duplicate_test_rows_and_unknown_status_cannot_hide_a_failure(self):
+        self.evidence[0]["tests"].append(copy.deepcopy(self.evidence[0]["tests"][0]))
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            self.result()
+        self.evidence[0]["tests"].pop()
+        self.evidence[0]["tests"][0]["status"] = "WAIVED"
+        with self.assertRaisesRegex(ValueError, "Unexpected acceptance test status"):
             self.result()
 
 

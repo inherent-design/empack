@@ -1,5 +1,6 @@
 """Acceptance cases and required variants, independent of suite scheduling."""
 from .classification import BOUNDARIES
+from .evidence import aggregate_outcomes
 
 
 def validate_requirements(document):
@@ -45,9 +46,15 @@ def case_results(document, classification, evidence, revision):
     bindings = {row["id"]: row for row in classification["tests"]}
     targets = classification["targets"]
     observed = {}
+    receipts = {}
     for record in evidence:
         if record["source_revision"] != revision:
             raise ValueError("Acceptance evidence belongs to another revision")
+        digest = record["receipt_sha256"]
+        if digest in receipts and receipts[digest] != record:
+            raise ValueError(f"Conflicting receipt evidence: {digest}")
+        receipts[digest] = record
+        seen_tests = set()
         platform = targets[record["target"]]
         features = record["features"]
         if features not in {"default", "telemetry"}:
@@ -57,23 +64,36 @@ def case_results(document, classification, evidence, revision):
             raise ValueError("Unknown acceptance test feature graph")
         for test in record["tests"]:
             identity = test["id"]
+            run_key = (identity, test.get("suite", ""))
+            if run_key in seen_tests:
+                raise ValueError(f"Duplicate test in receipt: {identity}")
+            seen_tests.add(run_key)
             if (identity not in bindings or platform not in bindings[identity]["platforms"]
                     or graph not in bindings[identity]["test_features"]):
                 raise ValueError(f"Acceptance evidence has an unclassified test variant: {identity}")
             if test["status"] not in {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}:
                 raise ValueError(f"Unexpected acceptance test status: {identity}")
             key = (identity, platform, features)
-            outcome = {"status": test["status"], "artifact_sha256": record["artifact_sha256"], "test_features": graph}
-            if key in observed and observed[key]["outcome"] != outcome:
-                raise ValueError(f"Conflicting acceptance evidence: {identity}")
-            entry = observed.setdefault(key, {"outcome": outcome, "receipts": set()})
-            entry["receipts"].add(record["receipt_sha256"])
+            outcome = {"status": test["status"], "artifact_sha256": record["artifact_sha256"],
+                       "test_features": graph, "receipt_sha256": digest}
+            if "created_at" in record:
+                outcome["created_at"] = record["created_at"]
+            if "suite" in test:
+                outcome["suite"] = test["suite"]
+            observed.setdefault(key, {})[(digest, test.get("suite", ""))] = outcome
 
-    def status(outcomes):
-        for value in ("FAIL", "BLOCKED", "NOT_RUN"):
-            if value in outcomes:
-                return value
-        return "PASS" if outcomes else "NOT_RUN"
+    def test_result(identity, platform, features):
+        entries = observed.get((identity, platform, features), {})
+        attempts = [entries[key] for key in sorted(entries)]
+        result = {"id": identity, "status": aggregate_outcomes(a["status"] for a in attempts),
+                  "receipts": sorted({key[0] for key in entries}), "attempts": attempts}
+        # Retain the compact representation only when every attempt agrees on
+        # product identity and graph. Reports must not select an arbitrary winner.
+        for field in ("artifact_sha256", "test_features"):
+            values = {a[field] for a in attempts}
+            if len(values) == 1:
+                result[field] = values.pop()
+        return result
 
     requirements = []
     for row in document["requirements"]:
@@ -90,18 +110,16 @@ def case_results(document, classification, evidence, revision):
                 for features in case["required_product_features"]:
                     tests = []
                     for identity in case["test_ids"]:
-                        entry = observed.get((identity, platform, features))
-                        tests.append({"id": identity, **(entry["outcome"] if entry else {"status": "NOT_RUN"}),
-                                      "receipts": sorted(entry["receipts"]) if entry else []})
+                        tests.append(test_result(identity, platform, features))
                     variants.append({"platform": platform, "features": features, "tests": tests,
-                                     "status": status([test["status"] for test in tests])})
+                                     "status": aggregate_outcomes([test["status"] for test in tests])})
             cases.append({"id": case["id"], "boundary": case["boundary"], "variants": variants,
-                          "status": status([variant["status"] for variant in variants])})
+                          "status": aggregate_outcomes([variant["status"] for variant in variants])})
         states = [case["status"] for case in cases]
         if row["case_bindings_status"] != "complete":
             states.append("NOT_RUN")
         requirements.append({"id": row["id"], "title": row.get("title", row["id"]), "scope": row["scope"], "risk": row["risk"],
                              "case_bindings_status": row["case_bindings_status"],
-                             "status": status(states), "cases": cases})
+                             "status": aggregate_outcomes(states), "cases": cases})
     return {"source_revision": revision, "qualification": False, "requirements": requirements}
 

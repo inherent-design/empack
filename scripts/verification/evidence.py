@@ -79,3 +79,16 @@ def write_json(path, document):
     staging = path.with_suffix(path.suffix + ".tmp")
     staging.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     staging.replace(path)
+
+
+def aggregate_outcomes(outcomes):
+    """Preserve failure before missing work; applicability never invents a pass."""
+    states = set(outcomes)
+    if not states <= {"PASS", "FAIL", "BLOCKED", "NOT_RUN", "NOT_APPLICABLE"}:
+        raise ValueError("Unexpected evidence status")
+    for state in ("FAIL", "BLOCKED", "NOT_RUN"):
+        if state in states:
+            return state
+    if not states:
+        return "NOT_RUN"
+    return "PASS" if "PASS" in states else "NOT_APPLICABLE"

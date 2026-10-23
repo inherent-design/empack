@@ -10,6 +10,20 @@
       ]
     },
     {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_distinct_executables_and_duplicate_receipts_keep_their_identity",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_duplicate_test_rows_and_unknown_status_cannot_hide_a_failure",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_acceptance_results.AcceptanceResults.test_each_required_variant_retains_its_exact_tests_artifact_and_receipt",
       "boundary": "U",
       "requirements": [
@@ -25,6 +39,13 @@
     },
     {
       "id": "python::test_acceptance_results.AcceptanceResults.test_missing_test_host_or_product_feature_is_not_a_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_overlapping_suites_retain_distinct_executions_in_one_receipt",
       "boundary": "U",
       "requirements": [
         "UX-086"
@@ -47,6 +68,55 @@
     {
       "id": "python::test_acceptance_results.AcceptanceResults.test_repeated_evidence_does_not_multiply_cases_or_erase_a_first_failure",
       "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptAdmission.test_changed_inputs_or_evidence_cannot_reuse_earlier_pass_rows",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptAdmission.test_failed_junit_is_retained_but_never_accepted_by_strict_gate",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptAdmission.test_preflight_records_blocker_without_fabricating_an_executable",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptAdmission.test_timeout_without_junit_cannot_supply_passing_tests",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptAdmission.test_unstarted_suites_do_not_hide_failed_or_blocked_suites",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptReportCommand.test_blocked_and_rejected_inputs_remain_distinct_and_escaped",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptReportCommand.test_failed_then_passing_attempt_retains_both_in_executable_report",
+      "boundary": "H",
       "requirements": [
         "UX-086"
       ]
@@ -937,6 +1007,13 @@
       "requirements": [
         "UX-085",
         "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_failure_and_blocked_prerequisites_remain_visible_with_unstarted_suites",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
       ]
     },
     {

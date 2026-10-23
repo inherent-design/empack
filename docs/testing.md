@@ -323,8 +323,8 @@ features, selected identities, first-attempt results and evidence digests must a
 Missing, cancelled, skipped, blocked or inconsistent evidence fails the gate.
 For admitted Rust receipts, its `acceptance` section retains each bound case's exact
 tests, required host/product variants, artifact digests and supporting receipt digests.
-It rejects substituted evidence boundaries, mismatched revisions and conflicting
-results. All 109 requirement groups remain in the report, including undecomposed
+It rejects substituted evidence boundaries, mismatched revisions and contradictory
+records claiming the same receipt identity. All 109 requirement groups remain in the report, including undecomposed
 native work and staged portable work. A passing selected CI suite does not make those
 groups complete. The report and source registry digests travel together.
 
@@ -340,6 +340,32 @@ The resulting record has `qualification: false`: the remaining case decompositio
 non-Rust/consumer/device evidence and final-package checks are not yet a complete
 release qualification record. Selecting this required status in repository
 branch protection is an administrative step; changing workflow YAML does not set it.
+
+To inspect failed runs alongside later attempts, supply each receipt explicitly:
+
+```sh
+python3 scripts/report-verification.py --revision FULL_COMMIT_SHA --version 0.8.4-beta --receipt /path/to/first/receipt.json --receipt /path/to/second/receipt.json --output /path/to/new-report
+```
+
+This command writes `attempts.json` and `attempts.md` after rechecking the selected
+receipts against their retained inventories, JUnit and the checkout's classification.
+Keep each attempt directory intact. Use the source revision and product version
+actually recorded by the selected runs; this command does not execute tests or qualify
+a different candidate. Select all relevant attempts explicitly: it cannot discover
+omitted history. Identical receipt files are counted once. Distinct attempts retain
+their dates, suite names, test graph and executable hashes. A failed test followed by
+a pass stays failed in the combined view, including when two suites execute that test
+within one receipt. Missing tests remain unexecuted.
+
+A blocked preflight can explain the missing prerequisite without supplying an
+executable or passing tests. Unreadable, malformed, mismatched or changed evidence
+is listed as rejected and contributes no acceptance results. Failure of the runner's
+final source or product check invalidates its earlier test results. Reports preserve
+failed and blocked outcomes ahead of unstarted suites; they never turn an incomplete
+run into success. Exit status is `0` for passing selected attempts, `2` for a blocked
+selection, and `1` otherwise. Even `0` does not establish release qualification.
+Strict CI and archive gates still require one complete passing attempt per selected
+configuration. The report does not grant waivers or replace those gates.
 
 ## Strict external checks
 

@@ -13,7 +13,7 @@ import tomllib
 import uuid
 
 from verification.classification import compare_rust_inventory
-from verification.evidence import read_results, selected_tests, sha256, write_json
+from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
 from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
@@ -191,16 +191,7 @@ def source_snapshot(attempt, environment):
 
 
 def aggregate_status(results):
-    statuses = {row["status"] for row in results}
-    if not statuses or "NOT_RUN" in statuses:
-        return "NOT_RUN"
-    if "FAIL" in statuses:
-        return "FAIL"
-    if "BLOCKED" in statuses:
-        return "BLOCKED"
-    if not statuses <= {"PASS", "NOT_APPLICABLE"}:
-        raise ValueError("Unexpected suite status")
-    return "NOT_APPLICABLE" if statuses == {"NOT_APPLICABLE"} else "PASS"
+    return aggregate_outcomes(row["status"] for row in results)
 
 
 def main(argv=None):
@@ -226,7 +217,9 @@ def main(argv=None):
     environment.update(CARGO_TERM_COLOR="never", NO_COLOR="1")
     receipt = {"schema": 1, "kind": "test-suite-run", "status": "NOT_RUN",
                "created_at": datetime.now(timezone.utc).isoformat(), "suites": [],
-               "requested_suites": args.suites, "test_features": args.test_features, "platform": platform.platform(),
+               "requested_suites": args.suites, "test_features": args.test_features,
+               "requested_product_features": args.product_features or ("telemetry" if any(SUITES[s].telemetry for s in args.suites) else "default"),
+               "requested_product_profile": args.product_profile or "dev", "platform": platform.platform(),
                "architecture": platform.machine(), "qualification": False}
     print(f"Verification attempt: {attempt}", flush=True)
     try:

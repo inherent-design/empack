@@ -25,6 +25,11 @@ def render_gate(record):
                   "Retain the job artifacts for failed attempts, skipped prerequisites and detailed diagnostics.", ""]
         return "\n".join(lines)
 
+    return "\n".join(lines + _acceptance_lines(record))
+
+
+def _acceptance_lines(record):
+    lines = []
     acceptance = record["acceptance"]
     if acceptance.get("source_revision") != record.get("source_revision") or acceptance.get("qualification") is not False:
         raise ValueError("Acceptance view disagrees with the CI source or qualification state")
@@ -46,7 +51,7 @@ def render_gate(record):
                      ("id", "title", "scope", "risk", "case_bindings_status", "status")) + " |")
 
     lines += ["", "## Admitted suite receipts", "",
-              "Each receipt was checked against compiler discovery and JUnit before this view was produced.", ""]
+              "Executed test rows were checked against compiler discovery and JUnit. Preflight failures supply no passing tests.", ""]
     for suite in record["suite_evidence"]:
         lines += [f"### {cell(suite['target'])} / {cell(suite['features'])}", "",
                   f"Product profile: {cell(suite['profile'])}; test graph: {cell(suite['test_features'])}.", "",
@@ -70,7 +75,16 @@ def render_gate(record):
             for variant in case["variants"]:
                 for test in variant["tests"]:
                     lines += [f"- {cell(variant['platform'])} / {cell(variant['features'])}: {cell(test['id'])} — {cell(test['status'])}"]
-                    if test["receipts"]:
+                    if test.get("attempts"):
+                        for attempt in test["attempts"]:
+                            lines += [f"  - Attempt: {cell(attempt['status'])}; receipt: {cell(attempt['receipt_sha256'])}",
+                                      f"    - Test graph: {cell(attempt['test_features'])}; executable: {cell(attempt['artifact_sha256'])}"]
+                            if attempt.get("suite"):
+                                lines += [f"    - Suite: {cell(attempt['suite'])}"]
+                            if attempt.get("created_at"):
+                                lines += [f"    - Recorded: {cell(attempt['created_at'])}"]
+                    elif test["receipts"]:
+                        # Render earlier admitted schema-1 reports too.
                         lines += [f"  - Test graph: {cell(test['test_features'])}; executable: {cell(test['artifact_sha256'])}",
                                   f"  - Receipts: {cell(', '.join(test['receipts']))}"]
                     else:
@@ -80,4 +94,35 @@ def render_gate(record):
               "This CI report does not apply waivers or certify the release. Complete case decomposition,",
               "non-Rust and actual-consumer evidence, required devices and final archive execution remain",
               "separate obligations. No result is inferred from the number or names of discovered tests.", ""]
-    return "\n".join(lines)
+    return lines
+
+
+def render_attempts(record):
+    if (record.get("schema") != 1 or record.get("kind") != "verification-attempt-report"
+            or record.get("qualification") is not False
+            or record.get("status") not in {"PASS", "FAIL", "BLOCKED", "NOT_RUN", "NOT_APPLICABLE"}):
+        raise ValueError("Expected a nonqualifying attempt report")
+    lines = ["# Verification attempts", "",
+             f"Selected attempts: **{record['status']}**. This is not release qualification.", "",
+             "All supplied attempts remain visible. A later pass does not erase a failed attempt.", "",
+             f"Expected source: {cell(record['source_revision'])}", "",
+             f"Expected product version: {cell(record['version'])}", ""]
+    for attempt in record["attempts"]:
+        lines += [f"## Receipt {cell(attempt['receipt_sha256'])}", "",
+                  f"Admission: {cell(attempt['admission'])}; outcome: {cell(attempt['status'])}.", ""]
+        if attempt.get("path"):
+            lines += [f"Input: {cell(attempt['path'])}", ""]
+        if attempt.get("reason"):
+            lines += [cell(attempt["reason"]), ""]
+        if attempt["admission"] == "REJECTED":
+            lines += ["No test outcomes from this receipt were admitted.", ""]
+            continue
+        lines += [f"Recorded: {cell(attempt['created_at'])}; target: {cell(attempt['target'])}; product: {cell(attempt['features'])}.", ""]
+        for suite in attempt["suite_outcomes"]:
+            lines += [f"- {cell(suite['suite'])}: {cell(suite['status'])}"]
+            if suite.get("reason"):
+                lines += [f"  - {cell(suite['reason'])}"]
+        lines += [""]
+    lines += ["## Admitted observations", "",
+              "These rows preserve observed test results, including failures. They do not approve the selected runs or the release.", ""]
+    return "\n".join(lines + _acceptance_lines(record))

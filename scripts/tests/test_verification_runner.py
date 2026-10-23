@@ -176,6 +176,13 @@ class AttemptPolicy(unittest.TestCase):
         self.assertEqual(aggregate_status([{'status': 'PASS'}, {'status': 'BLOCKED'}]), 'BLOCKED')
         self.assertEqual(aggregate_status([{'status': 'FAIL'}, {'status': 'PASS'}]), 'FAIL')
 
+    def test_failure_and_blocked_prerequisites_remain_visible_with_unstarted_suites(self):
+        from verify import aggregate_status
+        self.assertEqual(aggregate_status([{'status': 'FAIL'}, {'status': 'NOT_RUN'}]), 'FAIL')
+        self.assertEqual(aggregate_status([{'status': 'BLOCKED'}, {'status': 'NOT_RUN'}]), 'BLOCKED')
+        with self.assertRaises(ValueError):
+            aggregate_status([{'status': 'FAIL'}, {'status': 'unknown'}])
+
     def test_external_artifact_requires_complete_identity(self):
         from types import SimpleNamespace
         from verify import Blocked, product

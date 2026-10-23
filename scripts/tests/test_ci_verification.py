@@ -109,6 +109,7 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
     attempt.mkdir(parents=True)
     write_json(attempt / "source-snapshot.json", {"fixture": "unit-test, not real acceptance"})
     receipt = dict(schema=1, kind="test-suite-run", status="PASS", source_revision=REVISION, worktree_dirty=False,
+                   created_at="2026-10-23T00:00:00+00:00",
                    source_snapshot_sha256=sha256(attempt / "source-snapshot.json"),
                    requested_suites=suites, suites=[], test_features=test_features,
                    artifact=dict(target=target, features=features, profile="dev", sha256="c" * 64))
@@ -234,7 +235,13 @@ class RequiredGate(unittest.TestCase):
             for requirement in acceptance:
                 self.assertEqual(requirement["status"], "NOT_RUN")
                 for case in requirement["cases"]:
-                    self.assertEqual(case["status"], "PASS")
+                    # This plan selects native suites, not the independently bound
+                    # live-provider case. Only selected execution can pass it.
+                    missing = [test for variant in case["variants"] for test in variant["tests"]
+                               if not test["receipts"]]
+                    self.assertEqual(case["status"], "NOT_RUN" if missing else "PASS")
+                    if case["id"] == "UX-026.live-pinned-update":
+                        self.assertEqual(case["status"], "NOT_RUN")
                     actual = [(v["platform"], v["features"]) for v in case["variants"]]
                     self.assertEqual(set(actual), declared[case["id"]])
                     self.assertEqual(len(actual), len(set(actual)))
