@@ -154,6 +154,18 @@ requires absent state/cache outputs. These executable cases complement editor-sc
 checks; they do not establish provider access, payload validity or complete schema
 coverage. `UX-006` remains partially bound while those other obligations are joined.
 
+Manifest explanation cases distinguish a stale document revision from an unsatisfied
+selection. Literal local sources exercise source, automatic-directory and binding
+edits through JSON/human inspection, materialized synchronization and a second
+converged synchronization. Provider host cases cover pins, selector identity,
+automatic selection and retained required dependencies using controlled catalog
+records. Expected identities and destinations are literal assertions; they are not
+computed by the planner under test. Inspection preserves input/storage bytes, and
+unknown-key diagnostics stay on stderr. A missing declared source names the attempted
+path and preserves the prior lock/materialized files. Native acquisition tests retain
+the underlying I/O error and verify resource release for missing files and parents.
+These checks do not claim provider freshness.
+
 Workspace-status cases pair ordinary executable JSON and human reports with literal
 malformed documents, absent/current/stale locks and mixed workspace markers. Their
 expected states come from the fixture edits, not the production document decoder.

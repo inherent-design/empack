@@ -737,7 +737,65 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-007.local-satisfaction",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Literal populated local authoring distinguishes a stale document revision from satisfied selections; source, automatic layout and binding changes agree across JSON/human diff and explanation, materialized sync and repeated convergence; inspection and unknown-key errors preserve bytes and keep diagnostics off JSON stdout; a missing declared source leaves the previous lock and materialized files intact when resolution fails"
+          ]
+        },
+        {
+          "id": "UX-007.provider-satisfaction",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::dependencies::tests::inspection::host_manifest_provider_constraints_match_recorded_synchronization"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled provider records retain exact root/transitive identities across display edits and automatic selection; pin and selector changes report unsatisfied constraints and refuse recorded synchronization without changing author or host storage; retained entries are not deletion authority"
+          ]
+        },
+        {
+          "id": "UX-007.editing-limitations",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_reports_explicit_url_observation_and_editing_limits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Readable flow-node editing limitations and explicit URL evidence policy remain visible in JSON/human explanation without source rewrites or state/cache creation"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::documents + application::engine_host::cli::manifest",
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
@@ -746,7 +804,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-008",

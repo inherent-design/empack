@@ -198,3 +198,175 @@ fn cli_manifest_reports_explicit_url_observation_and_editing_limits() {
     assert!(text.contains("Editing limitations (input remains readable):"));
     assert!(text.contains("Local metadata only: no provider queries or file verification."));
 }
+
+#[test]
+fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs() {
+    use std::io::{Cursor, Write};
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    archive
+        .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
+        .unwrap();
+    let jar = archive.finish().unwrap().into_inner();
+    for change in [
+        "unchanged",
+        "display",
+        "source",
+        "missing-source",
+        "layout",
+        "binding",
+    ] {
+        let project = TestProject::new();
+        let root = project.dir();
+        // Runtime journals may change even for converged publication. Compare
+        // author/project bytes independently from the host's operation storage.
+        let storage = tempfile::tempdir().unwrap();
+        let sync = || {
+            offline_command(root)
+                .env("EMPACK_STATE_DIR", storage.path().join("state"))
+                .env("EMPACK_CACHE_DIR", storage.path().join("cache"))
+                .args(["--yes", "sync", "--materialize"])
+                .assert()
+        };
+        fs::create_dir(root.join("vendor")).unwrap();
+        fs::write(root.join("vendor/original.jar"), &jar).unwrap();
+        fs::write(root.join("vendor/alternate.jar"), &jar).unwrap();
+        let author = format!("{HEADER}dependencies:\n  example:\n    path: vendor/original.jar\n");
+        fs::write(root.join("empack.yml"), &author).unwrap();
+        sync().success();
+        let original_lock = fs::read(root.join("empack.lock")).unwrap();
+        assert_eq!(fs::read(root.join("pack/mods/original.jar")).unwrap(), jar);
+        let changed_author = match change {
+            "display" => author.replace("name: Literal Pack", "name: Renamed Pack"),
+            "source" => author.replace("vendor/original.jar", "vendor/alternate.jar"),
+            "missing-source" => author.replace("vendor/original.jar", "vendor/missing.jar"),
+            "layout" => format!("{author}layout:\n  mod: custom-mods\n"),
+            _ => author.clone(),
+        };
+        fs::write(root.join("empack.yml"), &changed_author).unwrap();
+        let binding = "# Preserve this author-owned binding.\nschema: 1\nbindings:\n  example:\n    placement:\n      - destination: mods/renamed.jar\n        layer: common\n        environment: {client: required, server: required}\n";
+        if change == "binding" {
+            fs::write(root.join("empack.bindings.yml"), binding).unwrap();
+        }
+        let satisfied = matches!(change, "unchanged" | "display");
+        let output = inspect(root, &["diff", "--json"]);
+        assert!(output.status.success(), "{change}: {output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        let diff: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            diff["lock_status"],
+            if change == "unchanged" {
+                "current"
+            } else {
+                "stale"
+            },
+            "{change}: {diff}"
+        );
+        // A display edit invalidates the recorded document revision without
+        // invalidating the exact dependency selection; sync may rebind it.
+        assert_eq!(diff["lock_reason"].is_null(), change == "unchanged");
+        assert_eq!(diff["runtime_satisfied"], true);
+        assert_eq!(diff["dependencies"].as_array().unwrap().len(), 1);
+        let expected_row = &diff["dependencies"][0];
+        assert_eq!(expected_row["key"], "example");
+        assert_eq!(
+            expected_row["selection_satisfied"], satisfied,
+            "{change}: {diff}"
+        );
+        assert_eq!(expected_row["reason"].is_null(), satisfied);
+        let output = inspect(root, &["explain", "example", "--json"]);
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+            *expected_row
+        );
+        for args in [&["diff"][..], &["explain", "example"][..]] {
+            let output = inspect(root, args);
+            assert!(output.status.success(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+            let text = String::from_utf8(output.stdout).unwrap();
+            assert!(
+                text.contains("Local metadata only: no provider queries or file verification.")
+            );
+            if let Some(reason) = expected_row["reason"].as_str() {
+                assert!(text.contains(reason), "{change}: {text}");
+            }
+            if args == ["diff"]
+                && let Some(reason) = diff["lock_reason"].as_str()
+            {
+                assert!(text.contains(reason), "{change}: {text}");
+            }
+        }
+        let output = inspect(root, &["explain", "absent-key", "--json"]);
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("Unknown dependency key")
+        );
+        if change == "missing-source" {
+            let before = files::snapshot(root);
+            let failed = sync().failure();
+            assert!(
+                String::from_utf8_lossy(&failed.get_output().stderr).contains("missing.jar"),
+                "{failed:?}"
+            );
+            assert_eq!(
+                files::snapshot(root),
+                before,
+                "failed resolution changed project bytes"
+            );
+            continue;
+        }
+        sync().success();
+        assert_eq!(
+            fs::read_to_string(root.join("empack.yml")).unwrap(),
+            changed_author
+        );
+        if change == "binding" {
+            assert_eq!(
+                fs::read_to_string(root.join("empack.bindings.yml")).unwrap(),
+                binding
+            );
+        }
+        let destination = match change {
+            "source" => "pack/mods/alternate.jar",
+            "layout" => "pack/custom-mods/original.jar",
+            "binding" => "pack/mods/renamed.jar",
+            _ => "pack/mods/original.jar",
+        };
+        assert_eq!(fs::read(root.join(destination)).unwrap(), jar, "{change}");
+        if !satisfied {
+            assert!(!root.join("pack/mods/original.jar").exists(), "{change}");
+        }
+        if change == "unchanged" {
+            assert_eq!(
+                fs::read(root.join("empack.lock")).unwrap(),
+                original_lock,
+                "{change}"
+            );
+        } else {
+            assert_ne!(
+                fs::read(root.join("empack.lock")).unwrap(),
+                original_lock,
+                "{change}"
+            );
+        }
+        let output = inspect(root, &["diff", "--json"]);
+        assert!(output.status.success(), "{output:?}");
+        let diff: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(diff["lock_status"], "current", "{change}: {diff}");
+        assert_eq!(diff["dependencies"][0]["selection_satisfied"], true);
+        let stable = files::snapshot(root);
+        sync().success();
+        assert_eq!(
+            files::snapshot(root),
+            stable,
+            "{change}: repeated sync changed bytes"
+        );
+    }
+}
