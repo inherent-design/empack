@@ -1,72 +1,11 @@
-use empack_tests::e2e::{
-    TestProject, assert_locked_loader_version_prefix, assert_locked_minecraft_version,
-    assert_project_datapack_folder, assert_project_initialized, assert_project_loader,
-    assert_project_minecraft_version,
+//! Initialization contracts that require no external catalog.
+use empack_tests::harness::process::{
+    TestProject, assert_project_datapack_folder, assert_project_initialized,
+    assert_project_loader_absent, assert_project_minecraft_version,
 };
 
 #[test]
-fn e2e_init_yes_fabric() {
-    let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
-        "init",
-        "--yes",
-        "--modloader",
-        "fabric",
-        "--mc-version",
-        "1.21.1",
-        "test-pack",
-    ]);
-    assert!(output.status.success(), "{:?}", output);
-
-    let pack_dir = project.dir().join("test-pack");
-    assert_project_initialized(&pack_dir);
-    assert_project_loader(&pack_dir, "fabric");
-    assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_locked_minecraft_version(&pack_dir, "1.21.1");
-}
-
-#[test]
-fn e2e_init_yes_neoforge() {
-    let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
-        "init",
-        "--yes",
-        "--modloader",
-        "neoforge",
-        "--mc-version",
-        "1.21.1",
-        "test-pack",
-    ]);
-    assert!(output.status.success(), "{:?}", output);
-
-    let pack_dir = project.dir().join("test-pack");
-    assert_project_loader(&pack_dir, "neoforge");
-    assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_locked_loader_version_prefix(&pack_dir, "neoforge", "21.1.");
-}
-
-#[test]
-fn e2e_init_yes_neoforge_legacy_1_20_1() {
-    let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
-        "init",
-        "--yes",
-        "--modloader",
-        "neoforge",
-        "--mc-version",
-        "1.20.1",
-        "test-pack",
-    ]);
-    assert!(output.status.success(), "{:?}", output);
-
-    let pack_dir = project.dir().join("test-pack");
-    assert_project_loader(&pack_dir, "neoforge");
-    assert_project_minecraft_version(&pack_dir, "1.20.1");
-    assert_locked_loader_version_prefix(&pack_dir, "neoforge", "47.1.");
-}
-
-#[test]
-fn e2e_init_yes_missing_modloader() {
+fn cli_init_missing_loader_reports_usage() {
     let project = TestProject::new();
     let output = project
         .cmd()
@@ -83,13 +22,13 @@ fn e2e_init_yes_missing_modloader() {
 }
 
 #[test]
-fn e2e_init_existing_project() {
+fn cli_init_existing_project_requires_replacement_decision() {
     let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
+    let output = project.run_output(&[
         "init",
         "--yes",
         "--modloader",
-        "fabric",
+        "none",
         "--mc-version",
         "1.21.1",
         "test-pack",
@@ -104,7 +43,7 @@ fn e2e_init_existing_project() {
             "init",
             "--yes",
             "--modloader",
-            "fabric",
+            "none",
             "--mc-version",
             "1.21.1",
             "test-pack",
@@ -124,7 +63,7 @@ fn e2e_init_existing_project() {
 }
 
 #[test]
-fn e2e_init_force_overwrites() {
+fn cli_init_forced_replacement_preserves_unowned_content() {
     let project = TestProject::new();
     let status = project
         .cmd()
@@ -132,7 +71,7 @@ fn e2e_init_force_overwrites() {
             "init",
             "--yes",
             "--modloader",
-            "fabric",
+            "none",
             "--mc-version",
             "1.21.1",
             "test-pack",
@@ -140,31 +79,60 @@ fn e2e_init_force_overwrites() {
         .status()
         .expect("failed to spawn");
     assert!(status.success());
+    let notes = project.dir().join("test-pack/notes.txt");
+    let custom = project.dir().join("test-pack/research/author.properties");
+    std::fs::create_dir_all(custom.parent().unwrap()).unwrap();
+    std::fs::write(&notes, b"author notes").unwrap();
+    std::fs::write(&custom, b"keep=custom").unwrap();
+    // Forced initialization replaces the captured source roots, unlike unrelated
+    // root files and directories. Make that destructive scope visible in preview.
+    let owned = project
+        .dir()
+        .join("test-pack/pack/config/previous.properties");
+    std::fs::create_dir_all(owned.parent().unwrap()).unwrap();
+    std::fs::write(&owned, b"old=source").unwrap();
+    let preview = project.run_output(&[
+        "init",
+        "--yes",
+        "--force",
+        "--dry-run",
+        "--modloader",
+        "none",
+        "--mc-version",
+        "1.21.1",
+        "test-pack",
+    ]);
+    assert!(preview.status.success(), "{preview:?}");
+    assert!(String::from_utf8_lossy(&preview.stdout).contains("previous.properties"));
+    assert_eq!(std::fs::read(&owned).unwrap(), b"old=source");
 
-    let output = project.run_output_with_retry(&[
+    let output = project.run_output(&[
         "init",
         "--yes",
         "--force",
         "--modloader",
-        "fabric",
+        "none",
         "--mc-version",
         "1.21.1",
         "test-pack",
     ]);
     assert!(
         output.status.success(),
-        "init --force failed on existing project"
+        "init --force failed on existing project: {output:?}"
     );
+    assert_eq!(std::fs::read(notes).unwrap(), b"author notes");
+    assert_eq!(std::fs::read(custom).unwrap(), b"keep=custom");
+    assert!(!owned.exists());
 }
 
 #[test]
-fn e2e_init_scaffolds_templates() {
+fn cli_init_emits_versioned_automation_and_templates() {
     let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
+    let output = project.run_output(&[
         "init",
         "--yes",
         "--modloader",
-        "fabric",
+        "none",
         "--mc-version",
         "1.21.1",
         "test-pack",
@@ -177,11 +145,7 @@ fn e2e_init_scaffolds_templates() {
         let bytes = std::fs::read_to_string(pack_dir.join(format!(".github/workflows/{name}.yml")))
             .unwrap();
         let workflow: serde_json::Value = serde_saphyr::from_str(&bytes).unwrap();
-        let version = if env!("CARGO_PKG_VERSION") == "0.0.0-dev" {
-            "0.8.0-beta"
-        } else {
-            env!("CARGO_PKG_VERSION")
-        };
+        let version = empack_tests::harness::process::expected_automation_version();
         assert_eq!(workflow["env"]["EMPACK_VERSION"], format!("v{version}"));
         assert!(!bytes.contains("__EMPACK_RELEASE_TAG__"));
         assert!(bytes.contains(&format!("python3 .github/scripts/empack-ci.py {name}")));
@@ -203,13 +167,13 @@ fn e2e_init_scaffolds_templates() {
 }
 
 #[test]
-fn e2e_init_datapack_folder() {
+fn cli_init_datapack_folder_is_authored() {
     let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
+    let output = project.run_output(&[
         "init",
         "--yes",
         "--modloader",
-        "fabric",
+        "none",
         "--mc-version",
         "1.20.1",
         "--datapack-folder",
@@ -220,21 +184,20 @@ fn e2e_init_datapack_folder() {
 
     let pack_dir = project.dir().join("test-pack");
     assert_project_initialized(&pack_dir);
-    assert_project_loader(&pack_dir, "fabric");
+    assert_project_loader_absent(&pack_dir);
     assert_project_minecraft_version(&pack_dir, "1.20.1");
     assert_project_datapack_folder(&pack_dir, "datapacks");
-    assert_locked_minecraft_version(&pack_dir, "1.20.1");
 }
 
 #[test]
-fn e2e_init_dry_run_exits_zero() {
+fn cli_init_preview_preserves_absent_destination() {
     let project = TestProject::new();
-    let output = project.run_output_with_retry(&[
+    let output = project.run_output(&[
         "init",
         "--dry-run",
         "--yes",
         "--modloader",
-        "fabric",
+        "none",
         "--mc-version",
         "1.20.1",
         "test-dry-run",
@@ -244,4 +207,5 @@ fn e2e_init_dry_run_exits_zero() {
         "init --dry-run should exit 0: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(!project.dir().join("test-dry-run").exists());
 }

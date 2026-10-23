@@ -24,5 +24,5 @@ slow-timeout = { period = "60s", terminate-after = 4 }
 [profile.ci]
 # Don't fail fast in CI either to see all failures
 fail-fast = false
-# Retry failed tests once in CI environment for flaky test resilience
-retries = 1
+# Preserve the first failure; scenario retries require a fresh fixture.
+retries = 0

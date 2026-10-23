@@ -3,16 +3,23 @@ use predicates::prelude::*;
 
 #[test]
 fn e2e_version_output() {
-    empack_assert_cmd()
+    let project = TestProject::new();
+    empack_assert_cmd(project.dir())
         .arg("version")
         .assert()
         .success()
-        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+        .stdout(predicate::str::contains(
+            empack_tests::harness::process::expected_cli_version(),
+        ));
 }
 
 #[test]
 fn e2e_help_exits_zero() {
-    empack_assert_cmd().arg("--help").assert().success();
+    let project = TestProject::new();
+    empack_assert_cmd(project.dir())
+        .arg("--help")
+        .assert()
+        .success();
 }
 
 #[test]

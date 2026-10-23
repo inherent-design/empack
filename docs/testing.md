@@ -4,6 +4,10 @@ The [acceptance contracts](design/verification.md) define the current release ta
 Tests verify the checked-out implementation; a contract or test count is not evidence
 that an unwired capability works. Record run-specific results in CI and PRs.
 
+The v0.8.4 overhaul tracks the complete requirement denominator and compiled
+discovery in the [verification registry](../tests/verification/README.md). Its
+unbound requirements remain incomplete; structural validation is not a pass rate.
+
 ## Local checks
 
 ```sh
@@ -21,6 +25,26 @@ dependencies. Architecture checks keep `empack-core` free of I/O/runtime depende
 ```sh
 cargo nextest run -p empack-lib --lib --no-default-features
 ```
+
+Local initialization contracts are in `cli_init`; official catalog resolution is
+in the ignored `live_cli_init` binary. Select that live obligation explicitly:
+
+```sh
+cargo nextest run -p empack-tests --test live_cli_init --run-ignored ignored-only
+```
+
+The executable harness lives in `empack-tests::harness::process`, outside the
+product dependency graph. Local runs may discover a binary and print the selected
+path. Qualification requires `EMPACK_QUALIFY=1`, an absolute `EMPACK_E2E_BIN`,
+`EMPACK_EXPECT_BINARY_SHA256`, and `EMPACK_EXPECT_VERSION`. Wrong bytes or version
+fail before the scenario. This is executable selection, not full package
+qualification; target/features and consumer evidence still need the release record.
+
+Children receive a positive environment allowlist and fixture-local home, cache,
+state and temporary paths. Tests explicitly add any needed fixture tools or product
+settings. Harness controls and ambient credentials are not forwarded. A failed
+mutating command is not replayed after matching a timeout diagnostic. Nextest CI
+retries are disabled so the original failure remains visible.
 
 After building the executable, compare the editor schemas with the actual CLI:
 

@@ -83,7 +83,8 @@ macro_rules! e2e_bad_flag_value {
     ($name:ident, args: [$($arg:expr),+], stderr_contains: $expected:expr) => {
         #[test]
         fn $name() {
-            let mut cmd = empack_assert_cmd();
+            let project = TestProject::new();
+            let mut cmd = empack_assert_cmd(project.dir());
             $(cmd.arg($arg);)+
             cmd.assert()
                 .failure()
@@ -195,7 +196,8 @@ macro_rules! e2e_no_args_succeeds {
     ($name:ident, args: [$($arg:expr),+]) => {
         #[test]
         fn $name() {
-            empack_assert_cmd()
+            let project = TestProject::new();
+            empack_assert_cmd(project.dir())
                 .args([$($arg),+])
                 .assert()
                 .success();

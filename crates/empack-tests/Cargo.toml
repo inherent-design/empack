@@ -9,10 +9,12 @@ version.workspace = true
 [dependencies]
 anyhow.workspace = true
 assert_cmd.workspace = true
+clap.workspace = true
 empack-core.workspace = true
 empack-lib = { workspace = true, features = ["test-utils"] }
 reqwest.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 serde-saphyr.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

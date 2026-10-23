@@ -76,7 +76,7 @@ jobs:
       - run: python -m unittest discover -s scripts/tests
       - run: cargo nextest run --workspace --all-features -E 'not test(~e2e_)'
       - run: cargo test --workspace --all-features --doc
-      - run: cargo nextest run --workspace --all-features -E 'test(~e2e_)'
+      - run: cargo nextest run --workspace --all-features --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init)'
         env:
           EMPACK_E2E_STRICT: "1"
           EMPACK_RUN_LIVE_TESTS: "1"

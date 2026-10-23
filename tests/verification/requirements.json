@@ -1,0 +1,3664 @@
+{
+  "schema": 1,
+  "status": "requirements; not execution evidence",
+  "source": {
+    "native_review": "51558534b5e13aadb8d979619560ce4b5db9355d",
+    "adopted_baseline": "edc013f508a4b74617faf632e024c0aad0049a43",
+    "portable_specs": "8d42f697"
+  },
+  "gates": {
+    "critical_applicable_obligations": "100% pass on required evidence boundaries",
+    "public_surface_mapping": "100% leaf commands/options classified; zero unknown tests/unknown capability exclusions",
+    "overall_applicable_obligations": "target 100%; at least 98% with only low-risk, owner-approved, expiring waivers",
+    "do_not_infer_current_percentage": true
+  },
+  "requirements": [
+    {
+      "id": "UX-001",
+      "family": "Entry and inspection",
+      "title": "Shipped executable identity and help",
+      "public_surface": "--help; --version; version; every command --help",
+      "api_ids": [
+        "CLI",
+        "PACKAGE"
+      ],
+      "required_assertions": "Correct version/help outside repository; no state/cache/network; unknown commands exit usage; help works despite broken unrelated dotenv.",
+      "required_work": "Run all recursive help leaves on final archives and bind version/digest to receipt.",
+      "evidence_tiers": [
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "release",
+      "scope": "stable",
+      "variant_axes": "five native target triples; clean/hostile env; paths with spaces",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "release.yml and external process harness"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "CLI archive and SDK client/worker packages"
+      ]
+    },
+    {
+      "id": "UX-002",
+      "family": "Entry and inspection",
+      "title": "Arguments, precedence and workspace selection",
+      "public_surface": "global flags; --workdir; .env; .env.local; environment",
+      "api_ids": [
+        "CLI"
+      ],
+      "required_assertions": "Documented precedence and literal argument boundaries; selected root only; errors before unintended mutation.",
+      "required_work": "Extend precedence fixture to state/cache roots, relative paths, Unicode, invalid config, no-subcommand behavior.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-003",
+      "family": "Entry and inspection",
+      "title": "Headless, affirmative and declined decisions",
+      "public_surface": "--yes; piped stdin; EOF; prompts",
+      "api_ids": [
+        "CLI",
+        "LIFE"
+      ],
+      "required_assertions": "No first-result search authorization; EOF/decline do not mutate; headless invocation provides next action; no hanging prompt.",
+      "required_work": "Table-drive decisions across init/add/conflict/pending/recovery, not only init.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "I"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "engine::api + runtime + resources"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
+      ]
+    },
+    {
+      "id": "UX-004",
+      "family": "Entry and inspection",
+      "title": "Tool requirements are observational",
+      "public_surface": "requirements",
+      "api_ids": [
+        "CLI",
+        "RUN"
+      ],
+      "required_assertions": "Report absent Java/tools accurately without installing backend or creating state; no broad compatibility claim from PATH alone.",
+      "required_work": "Package test with empty controlled PATH and explicit supported/unsupported Java probe fixtures.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "important",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-005",
+      "family": "Entry and inspection",
+      "title": "Workspace status is truthful",
+      "public_surface": "status --context author|publisher|instance --json",
+      "api_ids": [
+        "CLI",
+        "DOC",
+        "INST"
+      ],
+      "required_assertions": "Absent/corrupt/stale/current lock and mixed-root ambiguity reported; no writes; machine schema and human distinctions agree.",
+      "required_work": "Add literal malformed and mixed-role workspaces to executable fixture.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "important",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "engine::documents + application::engine_host::cli::manifest",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "empack-engine codecs/inspection + CLI renderer",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-006",
+      "family": "Entry and inspection",
+      "title": "Author and binding conformance",
+      "public_surface": "manifest check --json",
+      "api_ids": [
+        "DOC",
+        "CLI"
+      ],
+      "required_assertions": "Short/expanded equivalent forms agree; unknown/duplicate/conflicting fields fail; no silent first-observation URL fallback; invalid content not rewritten.",
+      "required_work": "Run editor/CLI conformance automatically; add YAML duplicates/comments and docs examples.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::documents + application::engine_host::cli::manifest",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "empack-engine codecs/inspection + CLI renderer",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-007",
+      "family": "Entry and inspection",
+      "title": "Explanation matches project satisfaction",
+      "public_surface": "manifest explain KEY; manifest diff",
+      "api_ids": [
+        "DOC",
+        "DEP"
+      ],
+      "required_assertions": "Pin/source/automatic layout/binding changes yield the same satisfaction result as sync; editing limitations visible; JSON/stdout separate from errors.",
+      "required_work": "Populated hand-authored fixture with exact expected facts, no production-generated oracle.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "important",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::documents + application::engine_host::cli::manifest",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
+      ],
+      "owner_09": [
+        "empack-engine codecs/inspection + CLI renderer",
+        "portable planners and engine; CLI request mapping; native effects"
+      ]
+    },
+    {
+      "id": "UX-008",
+      "family": "Entry and inspection",
+      "title": "Presentation and final exit outcomes",
+      "public_surface": "all terminal outcomes; --color; logging/telemetry modes",
+      "api_ids": [
+        "CLI",
+        "RUN"
+      ],
+      "required_assertions": "Errors/cleanup/uncertain retirement/partial success survive cancellation; clean interruption and late success distinguished; secrets absent; no ANSI in machine output.",
+      "required_work": "Connect one real process interruption to binary stderr/status; test actual default and telemetry builds separately.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "I",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-009",
+      "family": "Initialization and import",
+      "title": "Literal new authoring project",
+      "public_surface": "init noninteractive and interactive",
+      "api_ids": [
+        "INIT",
+        "DOC",
+        "CLI"
+      ],
+      "required_assertions": "Author files, bindings defaults, templates, pack identity and runtime intent are coherent; second invocation explains refusal.",
+      "required_work": "Use written literals and public command construction; verify resulting files independently, not only decoder roundtrip.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "I",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::documents + application::engine_host::cli::manifest",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "empack-engine codecs/inspection + CLI renderer",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-010",
+      "family": "Initialization and import",
+      "title": "Loader-family initialization",
+      "public_surface": "init --modloader --mc-version --loader-version --java",
+      "api_ids": [
+        "INIT",
+        "CAT"
+      ],
+      "required_assertions": "Vanilla, Fabric, Quilt, legacy/modern Forge and early/current NeoForge select correct coordinates and preserve exact pins.",
+      "required_work": "Separate deterministic catalog contract from small official-runtime CLI live probes.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "important",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "provider catalog fixture; exact and automatic versions; Java 8/21 where needed",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::providers + runtime_catalog + networking::rate_budget"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "portable catalog interpretation; native/Fetch transport"
+      ]
+    },
+    {
+      "id": "UX-011",
+      "family": "Initialization and import",
+      "title": "Forced replacement is prepared before destruction",
+      "public_surface": "init --force; init --from --force",
+      "api_ids": [
+        "INIT",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Preview/decline/invalid archive/digest mismatch/collisions leave entire existing managed and unrelated tree unchanged; valid replacement scope explicit.",
+      "required_work": "Parameterize failures before and after capture with source/template/dist/world sentinels.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-012",
+      "family": "Initialization and import",
+      "title": "Local mrpack round-trip",
+      "public_surface": "init --from local.mrpack \u2192 build modrinth",
+      "api_ids": [
+        "INIT",
+        "IO",
+        "BUILD"
+      ],
+      "required_assertions": "Runtime, common/client/server layers, URLs/assertions, optional choices and explicit conversions preserved.",
+      "required_work": "Replace file-exists-only end condition with complete independent semantic inventory.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::acquisition/content/archive_source/import",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "portable evidence/codecs; content/transport host ports",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-013",
+      "family": "Initialization and import",
+      "title": "CurseForge manifest and mixed content import",
+      "public_surface": "init --from local.zip",
+      "api_ids": [
+        "INIT",
+        "IO",
+        "CAT"
+      ],
+      "required_assertions": "Exact file ownership, restrictions and embedded overrides retained; unsupported conversions block before project publication.",
+      "required_work": "Pinned small fixture with provider records plus manual bytes; actual credentialed route checked separately.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::acquisition/content/archive_source/import",
+        "engine::providers + runtime_catalog + networking::rate_budget"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "portable evidence/codecs; content/transport host ports",
+        "portable catalog interpretation; native/Fetch transport"
+      ]
+    },
+    {
+      "id": "UX-014",
+      "family": "Initialization and import",
+      "title": "Remote acquisition limits and failure",
+      "public_surface": "init --from HTTPS; direct URL sources",
+      "api_ids": [
+        "IO",
+        "INIT"
+      ],
+      "required_assertions": "Count streaming bytes; stalled header/body timeout; cancellation; redirects/auth scoping; partial download never becomes project.",
+      "required_work": "Controlled transport failures at engine seam plus genuine executable HTTPS sentinel; no production arbitrary-provider endpoint env.",
+      "evidence_tiers": [
+        "H",
+        "N",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::acquisition/content/archive_source/import",
+        "engine_host::initialize; engine::api::project_change"
+      ],
+      "owner_09": [
+        "portable evidence/codecs; content/transport host ports",
+        "shared initialization/import semantics + native publication"
+      ]
+    },
+    {
+      "id": "UX-015",
+      "family": "Initialization and import",
+      "title": "Archive hazards and opaque nested JARs",
+      "public_surface": "all archive inspections/imports",
+      "api_ids": [
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Reject unsafe extracted paths, duplicates/collisions/limits/corruption; permit legal opaque JAR member names that are never extraction authority.",
+      "required_work": "Cross-host adversarial shared corpus and malformed-header/ZIP64 arithmetic tests.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-016",
+      "family": "Initialization and import",
+      "title": "Import decisions and custom destinations",
+      "public_surface": "init optional/auxiliary decisions; --datapack-folder; --world-folder",
+      "api_ids": [
+        "INIT",
+        "IO",
+        "DOC"
+      ],
+      "required_assertions": "No implicit metadata loss; optional required/unsupported distinctions survive; custom datapack/world routing explicit.",
+      "required_work": "Write fixture expectations for supported conversions and rejected combinations.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "important",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::acquisition/content/archive_source/import",
+        "engine::documents + application::engine_host::cli::manifest"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "portable evidence/codecs; content/transport host ports",
+        "empack-engine codecs/inspection + CLI renderer"
+      ]
+    },
+    {
+      "id": "UX-017",
+      "family": "Initialization and import",
+      "title": "Pinned real-pack import acceptance",
+      "public_surface": "init \u2192 pending resolution \u2192 sync twice \u2192 build",
+      "api_ids": [
+        "INIT",
+        "IO",
+        "BUILD"
+      ],
+      "required_assertions": "Every expected required file and exclusion verified against immutable selected fixture; no-op convergence and fresh content established.",
+      "required_work": "Separate pinned corpus from rolling survey; enforce complete inventory; sanitize artifacts and licenses.",
+      "evidence_tiers": [
+        "X",
+        "L"
+      ],
+      "risk": "important",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::initialize; engine::api::project_change",
+        "engine::acquisition/content/archive_source/import",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "shared initialization/import semantics + native publication",
+        "portable evidence/codecs; content/transport host ports",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-018",
+      "family": "Dependencies and resolution",
+      "title": "Canonical provider selectors",
+      "public_surface": "add --platform slug|id|URL",
+      "api_ids": [
+        "CAT",
+        "DEP"
+      ],
+      "required_assertions": "Equivalent selectors produce same canonical identity; re-add under alias does not duplicate; pin belongs to project.",
+      "required_work": "Shared deterministic selector permutations plus small live executable sentinel per provider.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
+      ],
+      "owner_09": [
+        "portable catalog interpretation; native/Fetch transport",
+        "portable planners and engine; CLI request mapping; native effects"
+      ]
+    },
+    {
+      "id": "UX-019",
+      "family": "Dependencies and resolution",
+      "title": "Search and deliberate selection",
+      "public_surface": "add query; search prompted by add",
+      "api_ids": [
+        "CAT",
+        "CLI",
+        "DEP"
+      ],
+      "required_assertions": "Ranking is only suggestion; ambiguity, denied credentials, outage and not-found remain distinct; headless does not install first result.",
+      "required_work": "Interactive search-choice fixture and error-to-next-action assertions.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "I",
+        "L"
+      ],
+      "risk": "important",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "empack executable + empack-lib::application",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
+      ],
+      "owner_09": [
+        "portable catalog interpretation; native/Fetch transport",
+        "empack-cli",
+        "portable planners and engine; CLI request mapping; native effects"
+      ]
+    },
+    {
+      "id": "UX-020",
+      "family": "Dependencies and resolution",
+      "title": "Custom local JAR source ownership",
+      "public_surface": "add ./vendor/mod.jar",
+      "api_ids": [
+        "DEP",
+        "IO"
+      ],
+      "required_assertions": "Authored source retained; install copy verified; repeated sync no-op; removal cannot delete source/directory/outside target.",
+      "required_work": "Include path with spaces and changed-source adoption in one journey.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-021",
+      "family": "Dependencies and resolution",
+      "title": "Direct URL integrity choices",
+      "public_surface": "add HTTPS; authored URL assertions / accept-observed",
+      "api_ids": [
+        "DEP",
+        "IO",
+        "DOC"
+      ],
+      "required_assertions": "Both syntax forms enforce same evidence policy; changed bytes rejected; acquired observation not independent authentication.",
+      "required_work": "Controlled changed response + persisted lock + repeat sync; preview performs no mutation.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::acquisition/content/archive_source/import",
+        "engine::documents + application::engine_host::cli::manifest"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "portable evidence/codecs; content/transport host ports",
+        "empack-engine codecs/inspection + CLI renderer"
+      ]
+    },
+    {
+      "id": "UX-022",
+      "family": "Dependencies and resolution",
+      "title": "Content kinds and explicit roles",
+      "public_surface": "add --type; --file-plan; multi-file dependency",
+      "api_ids": [
+        "DEP",
+        "IO",
+        "DOC"
+      ],
+      "required_assertions": "Mods/shaders/resource packs/datapacks/worlds routed correctly; primary/companion roles survive version filename changes; ambiguity blocks.",
+      "required_work": "Use one primary-renamed multi-file provider fixture across add/sync/update/adopt.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::acquisition/content/archive_source/import",
+        "engine::documents + application::engine_host::cli::manifest"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "portable evidence/codecs; content/transport host ports",
+        "empack-engine codecs/inspection + CLI renderer"
+      ]
+    },
+    {
+      "id": "UX-023",
+      "family": "Dependencies and resolution",
+      "title": "Side and optionality semantics",
+      "public_surface": "side/bindings/choice keys",
+      "api_ids": [
+        "DEP",
+        "BUILD",
+        "INST"
+      ],
+      "required_assertions": "Client-only absent server; server-only absent client; per-file requirements honored; optional selected bytes mandatory; invalid choices fail.",
+      "required_work": "Pairwise and targeted triple interactions; retain world grouping; assert both selected inventories.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-024",
+      "family": "Dependencies and resolution",
+      "title": "Exact pin and unpin document edits",
+      "public_surface": "pin KEY...; unpin KEY...",
+      "api_ids": [
+        "DOC",
+        "DEP",
+        "CLI"
+      ],
+      "required_assertions": "Keep exact installed bytes; retain comments/aliases; pin ownership checked; unpin does not automatically upgrade; preference behavior explained.",
+      "required_work": "Full CLI source/bindings/lock diff and second sync; multi-key invalid input must preserve all.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::documents + application::engine_host::cli::manifest",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "empack-engine codecs/inspection + CLI renderer",
+        "portable planners and engine; CLI request mapping; native effects",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-025",
+      "family": "Dependencies and resolution",
+      "title": "Convergent synchronization",
+      "public_surface": "sync; sync --materialize",
+      "api_ids": [
+        "DEP",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Valid lock reused; missing lock resolved; all required retained content survives; exact materialization verified; repeated sync makes no semantic change.",
+      "required_work": "Populated fixture, not just empty pack; absent/stale/corrupt lock cases separately.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-026",
+      "family": "Dependencies and resolution",
+      "title": "Selected automatic update",
+      "public_surface": "update KEY... --release-policy",
+      "api_ids": [
+        "CAT",
+        "DEP"
+      ],
+      "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
+      "required_work": "Deterministic candidate fixture plus spawned binary live sentinel; compare resulting inventory and report.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
+      ],
+      "owner_09": [
+        "portable catalog interpretation; native/Fetch transport",
+        "portable planners and engine; CLI request mapping; native effects"
+      ]
+    },
+    {
+      "id": "UX-027",
+      "family": "Dependencies and resolution",
+      "title": "Incompatibility with retained content",
+      "public_surface": "add/update candidate validation",
+      "api_ids": [
+        "CAT",
+        "DEP"
+      ],
+      "required_assertions": "Known negative assertions compare full retained active candidate, respect environment separation; no auto-delete; retained evidence preserved.",
+      "required_work": "Old/new/reverse/exact-version/disjoint-client-server cases; simultaneous valid updates grouped correctly.",
+      "evidence_tiers": [
+        "U",
+        "H"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
+      ],
+      "owner_09": [
+        "portable catalog interpretation; native/Fetch transport",
+        "portable planners and engine; CLI request mapping; native effects"
+      ]
+    },
+    {
+      "id": "UX-028",
+      "family": "Dependencies and resolution",
+      "title": "Independent batch semantics",
+      "public_surface": "add/update --continue-independent",
+      "api_ids": [
+        "DEP",
+        "CLI",
+        "PUB"
+      ],
+      "required_assertions": "Default all-or-none versus explicit independent groups; dependent/conflicting roots coupled; partial result exits nonzero and identifies successes.",
+      "required_work": "Snapshot every file and retry already-successful groups; no duplicate publication.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "empack executable + empack-lib::application",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "empack-cli",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-029",
+      "family": "Dependencies and resolution",
+      "title": "Accept tracked changes without reinstalling",
+      "public_surface": "adopt KEY...",
+      "api_ids": [
+        "DEP",
+        "DOC"
+      ],
+      "required_assertions": "Explicit observation updates lock and evidence; preview unchanged; missing lock path truthful; payload not rewritten as part of adoption.",
+      "required_work": "Alter local bytes; verify preserved source and copied content; reject missing/incompatible identity.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::documents + application::engine_host::cli::manifest"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "empack-engine codecs/inspection + CLI renderer"
+      ]
+    },
+    {
+      "id": "UX-030",
+      "family": "Dependencies and resolution",
+      "title": "Adopt previously untracked content",
+      "public_surface": "adopt --from local|URL|provider; --file-plan",
+      "api_ids": [
+        "DEP",
+        "IO",
+        "CAT"
+      ],
+      "required_assertions": "Installed target must exist and match chosen source/assertions; no fresh latest selection disguised as observation.",
+      "required_work": "Cover provider exact pin, local source and ambiguous candidate at handler seam; real CLI local case.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "important",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::acquisition/content/archive_source/import",
+        "engine::providers + runtime_catalog + networking::rate_budget"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "portable evidence/codecs; content/transport host ports",
+        "portable catalog interpretation; native/Fetch transport"
+      ]
+    },
+    {
+      "id": "UX-031",
+      "family": "Dependencies and resolution",
+      "title": "Physical removal and forgetting",
+      "public_surface": "remove; --forget; --acknowledge-unknown",
+      "api_ids": [
+        "DEP",
+        "PUB"
+      ],
+      "required_assertions": "Correct canonical target under alias; retained dependents block; forget retains bytes; sources/worlds/unowned dirs untouched.",
+      "required_work": "Cross-command add\u2192alias/re-add\u2192sync\u2192remove; explicit unknown graph decisions and unsupported --deps.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable planners and engine; CLI request mapping; native effects",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-032",
+      "family": "Dependencies and resolution",
+      "title": "Outdated evidence and strict mode",
+      "public_surface": "outdated --json --strict",
+      "api_ids": [
+        "CAT",
+        "CLI",
+        "DOC"
+      ],
+      "required_assertions": "Populated current/permitted/compatible/upstream/pinned/manual/failed rows; shared budget; report rendered before strict failure; no mutation.",
+      "required_work": "Add independent expected reports incl retained inventory and incomplete provider evidence; empty smoke alone insufficient.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "important",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "empack executable + empack-lib::application",
+        "engine::documents + application::engine_host::cli::manifest"
+      ],
+      "owner_09": [
+        "portable catalog interpretation; native/Fetch transport",
+        "empack-cli",
+        "empack-engine codecs/inspection + CLI renderer"
+      ]
+    },
+    {
+      "id": "UX-033",
+      "family": "Dependencies and resolution",
+      "title": "Runtime migration with full retained inventory",
+      "public_surface": "migrate --plan/--json; application; --replace; --materialize",
+      "api_ids": [
+        "CAT",
+        "DEP",
+        "PUB"
+      ],
+      "required_assertions": "Plan/application share candidate; whole active lock assessed incl no-longer-required libraries; local sources explicit; incompatible retained content requires decision.",
+      "required_work": "Client/server and populated A\u2192B runtime fixture, profile drift, changed filenames; verify published outputs and report before/after.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable catalog interpretation; native/Fetch transport",
+        "portable planners and engine; CLI request mapping; native effects",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-034",
+      "family": "Missing input and pending work",
+      "title": "Read pending work without side effects",
+      "public_surface": "pending list/show --json",
+      "api_ids": [
+        "PEND",
+        "CLI"
+      ],
+      "required_assertions": "Exact selected operation and requirements; missing/corrupt/stale distinctions; no reads interpreted as verification; no network/durable writes.",
+      "required_work": "All build/import/sync/instance record families and ambiguous IDs.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "important",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::pending + workflow-specific persisted records; application::engine_host",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "shared pending semantics + native/browser retention and UI",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-035",
+      "family": "Missing input and pending work",
+      "title": "Verified manual association",
+      "public_surface": "pending resume ID --file KEY=PATH",
+      "api_ids": [
+        "PEND",
+        "IO",
+        "LIFE"
+      ],
+      "required_assertions": "Wrong bytes/same filename rejected; correct bytes/new filename accepted; ambiguous role rejected; receipt retains original evidence.",
+      "required_work": "Use public printed keys; never discover private state schema to perform UX step.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "I",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::pending + workflow-specific persisted records; application::engine_host",
+        "engine::acquisition/content/archive_source/import",
+        "engine::api + runtime + resources"
+      ],
+      "owner_09": [
+        "shared pending semantics + native/browser retention and UI",
+        "portable evidence/codecs; content/transport host ports",
+        "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
+      ]
+    },
+    {
+      "id": "UX-036",
+      "family": "Missing input and pending work",
+      "title": "Continue across executable restart",
+      "public_surface": "pending resume; legacy continuations",
+      "api_ids": [
+        "PEND",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Already verified content retained; source/recipe changes invalidate plan; resume obtains fresh approval; process restart not same in-memory continuation.",
+      "required_work": "Exercise build, import, sync, instance dialect parity under shared journey, retain documented aliases.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::pending + workflow-specific persisted records; application::engine_host",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "shared pending semantics + native/browser retention and UI",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-037",
+      "family": "Missing input and pending work",
+      "title": "Browser/download-folder assistance",
+      "public_surface": "--open-downloads; --downloads-dir; --wait-downloads",
+      "api_ids": [
+        "PEND",
+        "CAT",
+        "CLI"
+      ],
+      "required_assertions": "Exact permitted provider page; no opener on preview/decline; bounds/timeout; verified scans do not use uniqueness as identity.",
+      "required_work": "Controlled opener and renamed files; real provider page lookup separately; Windows supported behavior explicit.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "I",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::pending + workflow-specific persisted records; application::engine_host",
+        "engine::providers + runtime_catalog + networking::rate_budget",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "shared pending semantics + native/browser retention and UI",
+        "portable catalog interpretation; native/Fetch transport",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-038",
+      "family": "Missing input and pending work",
+      "title": "Discard and retained-content cleanup",
+      "public_surface": "pending discard; clean continuation/import/sync/retained",
+      "api_ids": [
+        "PEND",
+        "PUB"
+      ],
+      "required_assertions": "Only exact unchanged saved record discarded; user downloads/current instance/recovery records preserved; active owners protected.",
+      "required_work": "Race stale record and pending-content owner; clean dry-run then apply; reopen surviving work.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::pending + workflow-specific persisted records; application::engine_host",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "shared pending semantics + native/browser retention and UI",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-039",
+      "family": "Missing input and pending work",
+      "title": "Public recovery instructions actually work",
+      "public_surface": "error message \u2192 pending or recover command",
+      "api_ids": [
+        "CLI",
+        "PEND"
+      ],
+      "required_assertions": "Copyable public next step completes selected workflow; no undocumented file edits; partial successes not called complete.",
+      "required_work": "Task script intentionally uses only stdout/stderr and help; independent reviewer checks discoverability.",
+      "evidence_tiers": [
+        "X",
+        "I",
+        "M"
+      ],
+      "risk": "important",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "engine::pending + workflow-specific persisted records; application::engine_host"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "shared pending semantics + native/browser retention and UI"
+      ]
+    },
+    {
+      "id": "UX-040",
+      "family": "Builds and consumer artifacts",
+      "title": "Configured profile selection and explanation",
+      "public_surface": "build --explain --json; --profile; consumer; --ad-hoc",
+      "api_ids": [
+        "BUILD",
+        "DOC",
+        "CLI"
+      ],
+      "required_assertions": "Configured defaults/unique shorthand/ambiguous shorthand/ad-hoc rules agree with execution; effective recipient requirements visible.",
+      "required_work": "Literal manifest with nondefault update authority and formats; no accidental preset reversion.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::documents + application::engine_host::cli::manifest",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "empack-engine codecs/inspection + CLI renderer",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-041",
+      "family": "Builds and consumer artifacts",
+      "title": "Reference Prism snapshot",
+      "public_surface": "build prism --delivery references --updates snapshot",
+      "api_ids": [
+        "BUILD",
+        "INST",
+        "RUN"
+      ],
+      "required_assertions": "Exact descriptor/hash/assets and mandatory prelaunch/wrapper retained; instance prepare materializes correct bytes.",
+      "required_work": "Independent archive inspection then generated integration with actual binary; actual Prism import separately.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::instance + api::instance; empack-core::instance",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable inventory/ownership semantics; native instance effects",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-042",
+      "family": "Builds and consumer artifacts",
+      "title": "Bundled Prism snapshot",
+      "public_surface": "build prism --delivery bundled --updates snapshot",
+      "api_ids": [
+        "BUILD"
+      ],
+      "required_assertions": "Selected client bytes present; no needless empack hooks; client-only projection correct; vanilla assets not falsely claimed bundled.",
+      "required_work": "Pinned customized project + inventory oracle + actual Prism import; config rebuild without version bump.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-043",
+      "family": "Builds and consumer artifacts",
+      "title": "Reference and bundled server exports",
+      "public_surface": "build server delivery variants",
+      "api_ids": [
+        "BUILD",
+        "RUN",
+        "INST"
+      ],
+      "required_assertions": "Runtime/content/launch args and game root correct; Java/EULA explicit; reference preparation precedes launch; managed status policy distinguished.",
+      "required_work": "Synthetic runtime/script tests all OS; official loader startup matrix separate.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P",
+        "L",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-044",
+      "family": "Builds and consumer artifacts",
+      "title": "Modrinth distribution",
+      "public_surface": "build modrinth",
+      "api_ids": [
+        "BUILD",
+        "IO"
+      ],
+      "required_assertions": "Manifest relationships, original assertions, required files, side layers and acknowledged losses match independent expectation.",
+      "required_work": "Do not stop at .mrpack suffix or one mod; actual consumer imports independently pinned case.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "P",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-045",
+      "family": "Builds and consumer artifacts",
+      "title": "CurseForge distribution",
+      "public_surface": "build curseforge",
+      "api_ids": [
+        "BUILD",
+        "IO"
+      ],
+      "required_assertions": "Required project/file references and overrides valid; unsupported sources/conversions rejected before replacing prior artifact.",
+      "required_work": "Consumer-format oracle and actual supported importer; hosting eligibility stated separately.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-046",
+      "family": "Builds and consumer artifacts",
+      "title": "Native release distribution",
+      "public_surface": "build empack delivery variants",
+      "api_ids": [
+        "BUILD",
+        "REL"
+      ],
+      "required_assertions": "Exact release identity, integrity and optional choices retained; references versus included assets distinguished; pack identity/Java required.",
+      "required_work": "Install extracted result via public instance command, with wrong descriptor digest negative.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::release + api::release_publication/subscription"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "shared release meaning/signature verification + native signing custody and publication"
+      ]
+    },
+    {
+      "id": "UX-047",
+      "family": "Builds and consumer artifacts",
+      "title": "Layered custom content",
+      "public_surface": "config, client options.txt, server.properties, menu assets, instance-wide datapack files",
+      "api_ids": [
+        "BUILD",
+        "DOC",
+        "IO"
+      ],
+      "required_assertions": "Relative game-directory placement and side isolation; meaningful bytes unchanged; source files never edited by renderer.",
+      "required_work": "One synthetic real-world-style fixture contains all these; consumer startup only claims actual features tested.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::documents + application::engine_host::cli::manifest",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "empack-engine codecs/inspection + CLI renderer",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-048",
+      "family": "Builds and consumer artifacts",
+      "title": "Templates and encoders",
+      "public_surface": "templates/common|client|server and template modes",
+      "api_ids": [
+        "BUILD"
+      ],
+      "required_assertions": "Copy/text/binary behavior; missing variables, output bounds, shell/INI/properties quoting; collision before publication.",
+      "required_work": "Adversarial names/newlines/non-ASCII and literal file copy; check generated consumer meaning.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-049",
+      "family": "Builds and consumer artifacts",
+      "title": "Optional choices and explicit lossy conversions",
+      "public_surface": "build --optional / --optional-defaults / conversion flags",
+      "api_ids": [
+        "BUILD",
+        "INST"
+      ],
+      "required_assertions": "Chosen optional file becomes required obligation; exclusive/group choices valid; disabled content absent; metadata loss requires deliberate flag.",
+      "required_work": "Positive/negative per consumer supported recipe class, plus choice state in installed instance.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-050",
+      "family": "Builds and consumer artifacts",
+      "title": "Archive formats and complete inventories",
+      "public_surface": "ZIP, TAR.GZ, 7z; applicable recipe combinations",
+      "api_ids": [
+        "BUILD",
+        "IO"
+      ],
+      "required_assertions": "Independent member set, bytes, permissions and sizes; no stale/missing/unexpected members; unsupported consumer/format explicit.",
+      "required_work": "Codec contract once plus each valid recipe format; actual consumer only formats it supports.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "P",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-051",
+      "family": "Builds and consumer artifacts",
+      "title": "Freshness and multi-output failure",
+      "public_surface": "rebuild; build multiple profiles; --clean",
+      "api_ids": [
+        "BUILD",
+        "PUB"
+      ],
+      "required_assertions": "Config/template change with same version changes content; any candidate failure preserves previous published artifacts; clean only allowed outputs.",
+      "required_work": "Inject second-recipe failure and stale cached export; assert exact prior bytes and source preservation.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-052",
+      "family": "Builds and consumer artifacts",
+      "title": "Missing content cannot become successful export",
+      "public_surface": "all consumers; references and bundled",
+      "api_ids": [
+        "BUILD",
+        "IO"
+      ],
+      "required_assertions": "Required obligation missing or download fails \u2192 no complete output; reference assertion is not materialized-byte evidence.",
+      "required_work": "Deliberately omit one provider/local/URL/embedded item after planning; independent oracle catches writer omissions.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-053",
+      "family": "Builds and consumer artifacts",
+      "title": "Managed custom-launch integration",
+      "public_surface": "custom instance.cfg / managed server scripts",
+      "api_ids": [
+        "BUILD",
+        "RUN"
+      ],
+      "required_assertions": "Reference snapshot and subscribed recipes retain mandatory hooks; accepted custom syntax matches actual supported consumer parser; standalone flexibility preserved.",
+      "required_work": "Shared malicious/comment/whitespace fixture corpus through real builders and pinned Prism+supported Qt; script attributes.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-054",
+      "family": "Publisher and trust",
+      "title": "Create publisher signing material safely",
+      "public_surface": "release init --key-file",
+      "api_ids": [
+        "REL",
+        "PUB",
+        "CLI"
+      ],
+      "required_assertions": "Explicit private directory; no overwrite; secrets absent from logs/project/output; failure leaves truthful key state.",
+      "required_work": "Executable protected path/permissions/decline and duplicate-init cases.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine::native/snapshot/staging/verification/publication",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "native effects and recovery in empack-native; expected inventories remain shared",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-055",
+      "family": "Publisher and trust",
+      "title": "Stage immutable signed release",
+      "public_surface": "release stage EXPORT --key-file",
+      "api_ids": [
+        "REL",
+        "BUILD",
+        "PUB"
+      ],
+      "required_assertions": "Verified source/inventory; exact ID; no undeclared uploads; signing context and old immutable content protected.",
+      "required_work": "Public CLI stage of locally built release; independent envelope verification and tampered assets.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-056",
+      "family": "Publisher and trust",
+      "title": "Publish hosted channel only after verification",
+      "public_surface": "release publish-channel",
+      "api_ids": [
+        "REL",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Hosted release and assets exact; sequence/expiry/previous keys validated; pointer cannot precede assets; local publication versus network deployment clear.",
+      "required_work": "Controlled verified HTTPS host at engine seam; public CLI approved hosting sentinel; deterministic fault table.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-057",
+      "family": "Publisher and trust",
+      "title": "Enroll publisher without installing content",
+      "public_surface": "instance subscribe",
+      "api_ids": [
+        "REL",
+        "INST"
+      ],
+      "required_assertions": "Explicit pack/channel/URL/key; no implicit trust import; correct existing installation; preview and decline preserve state.",
+      "required_work": "Spawned instance command + exact before/after trust files using public observations, not editing private state.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-058",
+      "family": "Publisher and trust",
+      "title": "Authenticate channel observation",
+      "public_surface": "instance check-updates / observe-channel",
+      "api_ids": [
+        "REL",
+        "IO",
+        "INST"
+      ],
+      "required_assertions": "Pack/channel mismatch, altered signature, expiry and sequence replay fail; fresh observation saved even if later content update fails.",
+      "required_work": "Local signed envelope via supported public argument makes deterministic executable test possible.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine::acquisition/content/archive_source/import",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable evidence/codecs; content/transport host ports",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-059",
+      "family": "Publisher and trust",
+      "title": "Rotate and revoke keys",
+      "public_surface": "instance trust --key / --revoke-all",
+      "api_ids": [
+        "REL",
+        "INST"
+      ],
+      "required_assertions": "Preserve replay floor; new/old signatures handled per explicit policy; no reset by local rollback or revocation.",
+      "required_work": "Full CLI trust change then observe/update across executable restart.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-060",
+      "family": "Publisher and trust",
+      "title": "A-to-B publisher/player journey",
+      "public_surface": "stage \u2192 subscribe \u2192 check-updates \u2192 update",
+      "api_ids": [
+        "REL",
+        "INST",
+        "BUILD"
+      ],
+      "required_assertions": "Exact released content and runtime, local changes, choices, restrictions and rollback context compose correctly.",
+      "required_work": "One deterministic signed A/B/C fixture driven entirely through public commands; hosted route supplementary.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::release + api::release_publication/subscription",
+        "engine::instance + api::instance; empack-core::instance",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable inventory/ownership semantics; native instance effects",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-061",
+      "family": "Installed instances",
+      "title": "First exact snapshot installation",
+      "public_surface": "instance install --sha256 --side --layout",
+      "api_ids": [
+        "INST",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Digest-checked descriptor; game/prism and client/server placements; no adoption of unrelated directory; invalid hash no mutation.",
+      "required_work": "Native/Prism client and server fixture variants, supplied-file obligations, rerun behavior.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-062",
+      "family": "Installed instances",
+      "title": "Preparation does not roll back a newer installation",
+      "public_surface": "instance prepare",
+      "api_ids": [
+        "INST",
+        "REL",
+        "RUN"
+      ],
+      "required_assertions": "Initial descriptor bootstraps once; active later release repaired, not downgraded; required subscription enforced; wrapper blocks Java on invalid input.",
+      "required_work": "Generated descriptor then signed update then repeated prepare; tamper exact hash negative.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::release + api::release_publication/subscription",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "shared release meaning/signature verification + native signing custody and publication",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-063",
+      "family": "Installed instances",
+      "title": "Inspect completed state",
+      "public_surface": "instance inspect; status --context instance",
+      "api_ids": [
+        "INST",
+        "CLI"
+      ],
+      "required_assertions": "Release/choices/history versus pending/uncertain state distinguishable; read-only; no corruption normalized away.",
+      "required_work": "Machine/human reports and malformed state schema; role ambiguity.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "important",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-064",
+      "family": "Installed instances",
+      "title": "Update exact release with inferred instance context",
+      "public_surface": "instance update; --check; local envelope",
+      "api_ids": [
+        "INST",
+        "REL",
+        "IO"
+      ],
+      "required_assertions": "Stored side/layout retained; explicit contradictory override rejected; fresh check separate from apply approval; failed B preserves A.",
+      "required_work": "Restarted CLI, client/server, game/Prism; verify bytes and history.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::release + api::release_publication/subscription",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-065",
+      "family": "Installed instances",
+      "title": "Conflicts and explicit local deviations",
+      "public_surface": "--preserve / --replace / --merge PATH=FILE",
+      "api_ids": [
+        "INST",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "Three-way prior/current/incoming; only exact authorized conflict changes; merge bytes local evidence not publisher signature.",
+      "required_work": "Inspect diagnostics then follow public advice; repeat repair and update with accepted override.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "I"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-066",
+      "family": "Installed instances",
+      "title": "Instance optional choices",
+      "public_surface": "instance options [--choice]",
+      "api_ids": [
+        "INST",
+        "IO"
+      ],
+      "required_assertions": "Read-only inspection; selected alternatives add/retire only owned content; saved choices retained on update; missing bytes become pending.",
+      "required_work": "CLI switches plus release introducing/removing choice keys; world and unrelated config untouched.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-067",
+      "family": "Installed instances",
+      "title": "Repair exact active release",
+      "public_surface": "instance repair",
+      "api_ids": [
+        "INST",
+        "IO",
+        "PUB"
+      ],
+      "required_assertions": "No upstream refresh; managed corruption addressed explicitly; deviations and seed/world content preserved.",
+      "required_work": "Alter managed/config/world files independently; offline cache hit/miss; failed repair not healthy.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-068",
+      "family": "Installed instances",
+      "title": "Rollback without undoing trust or user worlds",
+      "public_surface": "instance rollback RELEASE",
+      "api_ids": [
+        "INST",
+        "REL",
+        "PUB"
+      ],
+      "required_assertions": "Retained release selected exactly; local conflicts handled; sequence floor unchanged; no time travel of world save data.",
+      "required_work": "A/B history through fresh processes; unknown release/choice decisions negative.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::release + api::release_publication/subscription",
+        "engine::native/snapshot/staging/verification/publication"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "shared release meaning/signature verification + native signing custody and publication",
+        "native effects and recovery in empack-native; expected inventories remain shared"
+      ]
+    },
+    {
+      "id": "UX-069",
+      "family": "Installed instances",
+      "title": "Instance continuation and discard",
+      "public_surface": "instance continue / discard-pending; unified pending",
+      "api_ids": [
+        "INST",
+        "PEND",
+        "IO"
+      ],
+      "required_assertions": "Exact missing input, fresh approval, preserved completed instance and options; unrelated pending record not discarded.",
+      "required_work": "Wrong/renamed files, revised release, restart, stale record and explicit discard.",
+      "evidence_tiers": [
+        "H",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine::pending + workflow-specific persisted records; application::engine_host",
+        "engine::acquisition/content/archive_source/import"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "shared pending semantics + native/browser retention and UI",
+        "portable evidence/codecs; content/transport host ports"
+      ]
+    },
+    {
+      "id": "UX-070",
+      "family": "Installed instances",
+      "title": "World groups and launcher-owned icons",
+      "public_surface": "world seeds; Prism root icon; custom world folders",
+      "api_ids": [
+        "INST",
+        "BUILD"
+      ],
+      "required_assertions": "Once initialized, world group never gap-filled during update/repair/rollback; Prism root icon seed constraint before overrides; unrelated PNG managed.",
+      "required_work": "Member added to played world plus managed\u2192seed and seed\u2192managed transitions through native signed release producer.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-071",
+      "family": "Installed instances",
+      "title": "Runtime and launcher profile transitions",
+      "public_surface": "instance update with Minecraft/loader changes",
+      "api_ids": [
+        "INST",
+        "RUN",
+        "BUILD"
+      ],
+      "required_assertions": "Prepared runtime/profile and content published consistently; unrelated Prism components preserved; prelaunch cannot mutate loaded plan unsafely.",
+      "required_work": "A/B runtime fixture + actual consumer restart checks; failure preserves old runnable instance.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::instance + api::instance; empack-core::instance",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "portable inventory/ownership semantics; native instance effects",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-072",
+      "family": "Runtime and recovery",
+      "title": "Launch host-selected command with coordination",
+      "public_surface": "instance launch -- PROGRAM ARGS",
+      "api_ids": [
+        "RUN",
+        "INST",
+        "CLI"
+      ],
+      "required_assertions": "Literal args/cwd; no remote executable authority; runtime lease blocks cooperating mutation; stale release/preparation rejected.",
+      "required_work": "Real child and concurrent update; paths with spaces/non-ASCII; shell metacharacters treated literally.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "N",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine::instance + api::instance; empack-core::instance",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "portable inventory/ownership semantics; native instance effects",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-073",
+      "family": "Runtime and recovery",
+      "title": "Server Java policy and scripts",
+      "public_surface": "instance launch --server; generated console/GUI entry points",
+      "api_ids": [
+        "RUN",
+        "BUILD"
+      ],
+      "required_assertions": "Local Java selection/probe, minimum policy and args truthful; reference prepare ordering; GUI/console nogui differences; EULA not accepted automatically.",
+      "required_work": "Fake Java/empack checks on three OS plus pinned official loader starts.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-074",
+      "family": "Runtime and recovery",
+      "title": "Foreground terminal lifecycle",
+      "public_surface": "generated start \u2192 instance launch through PTY",
+      "api_ids": [
+        "RUN",
+        "CLI"
+      ],
+      "required_assertions": "Input, Ctrl-C, disabled terminal suspension, external stop/resume, cancelled stopped group, restore termios/pgrp, background refusal.",
+      "required_work": "Retain real PTY tests; add thin final binary wrapper chain, distinct Windows console/job tests.",
+      "evidence_tiers": [
+        "N",
+        "X",
+        "I"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-075",
+      "family": "Runtime and recovery",
+      "title": "Cleanup and final diagnostics after cancellation",
+      "public_surface": "binary finalization after execution",
+      "api_ids": [
+        "RUN",
+        "CLI"
+      ],
+      "required_assertions": "Known retirement+cleanup failure not uncertain process; persistence cleanup failure recovery-visible; no error suppression by token; actual status policy stated.",
+      "required_work": "One OS\u2192engine\u2192binary stderr test; inject remainder at test-only host seam.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "N",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-076",
+      "family": "Runtime and recovery",
+      "title": "Runtime ownership recovery",
+      "public_surface": "instance recover-runtime --acknowledge-stopped",
+      "api_ids": [
+        "RUN",
+        "INST"
+      ],
+      "required_assertions": "Requires explicit stopped acknowledgement; cannot silently claim group death; stale/unknown identity conflicts explained.",
+      "required_work": "Actual stopped/retired/corrupt-evidence variants and subsequent launch.",
+      "evidence_tiers": [
+        "H",
+        "N",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-077",
+      "family": "Runtime and recovery",
+      "title": "Explicit offline launch policy",
+      "public_surface": "instance launch --check-updates [--allow-offline]",
+      "api_ids": [
+        "RUN",
+        "REL",
+        "INST"
+      ],
+      "required_assertions": "Only allowed connection failure can fall back; invalid signature/replay/corrupt release never downgraded to offline success.",
+      "required_work": "Controlled fault taxonomy + public CLI local auth cases; no credential forwarding.",
+      "evidence_tiers": [
+        "H",
+        "X",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+external",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine::release + api::release_publication/subscription",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "shared release meaning/signature verification + native signing custody and publication",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-078",
+      "family": "Runtime and recovery",
+      "title": "Publication inspection and finish/restore",
+      "public_surface": "recover inspect|finish|restore --operation",
+      "api_ids": [
+        "PUB",
+        "CLI"
+      ],
+      "required_assertions": "Exact selected operation; expected-old conflict; before/after/neither; no read-only creation; real crash/restart and no false healthy mixed tree.",
+      "required_work": "Crash matrix at durable boundaries plus one spawned CLI recovery story, test-only fault driver separate binary.",
+      "evidence_tiers": [
+        "H",
+        "N",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::native/snapshot/staging/verification/publication",
+        "empack executable + empack-lib::application"
+      ],
+      "owner_09": [
+        "native effects and recovery in empack-native; expected inventories remain shared",
+        "empack-cli"
+      ]
+    },
+    {
+      "id": "UX-079",
+      "family": "Runtime and recovery",
+      "title": "Storage cleanup preserves ownership",
+      "public_surface": "clean builds/cache/continuation/import/sync/retained/all",
+      "api_ids": [
+        "PUB",
+        "IO",
+        "PEND"
+      ],
+      "required_assertions": "Known ownership only; custom sources/active leases/unknown neighboring files/pending recovery survive; preview no deletion.",
+      "required_work": "Each target + busy root + symlink/permission failure + interrupted cleanup/re-ingestion.",
+      "evidence_tiers": [
+        "H",
+        "N",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::native/snapshot/staging/verification/publication",
+        "engine::acquisition/content/archive_source/import",
+        "engine::pending + workflow-specific persisted records; application::engine_host"
+      ],
+      "owner_09": [
+        "native effects and recovery in empack-native; expected inventories remain shared",
+        "portable evidence/codecs; content/transport host ports",
+        "shared pending semantics + native/browser retention and UI"
+      ]
+    },
+    {
+      "id": "UX-080",
+      "family": "Runtime and recovery",
+      "title": "Resource limits and cancellation are end-to-end",
+      "public_surface": "global budgets; operations; archive processing",
+      "api_ids": [
+        "LIFE",
+        "IO",
+        "PUB",
+        "RUN"
+      ],
+      "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
+      "required_work": "Long fixture with explicit small bounds; no sleeps as deadline proof; fake-clock unit + actual IO integration.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::api + runtime + resources",
+        "engine::acquisition/content/archive_source/import",
+        "engine::native/snapshot/staging/verification/publication",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "portable lifecycle in empack-engine; scheduling/effects in native/wasm",
+        "portable evidence/codecs; content/transport host ports",
+        "native effects and recovery in empack-native; expected inventories remain shared",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-081",
+      "family": "Automation and distribution tooling",
+      "title": "Generated validation workflow",
+      "public_surface": "init \u2192 .github/scripts/empack-ci.py validate",
+      "api_ids": [
+        "AUTO",
+        "CLI",
+        "BUILD"
+      ],
+      "required_assertions": "Real named profiles, exact artifacts/checksums, stale artifact excluded; authoritative manifest version; spaces and protected paths.",
+      "required_work": "Execute generated helper with extracted release binary; no tests importing version from harness build.",
+      "evidence_tiers": [
+        "U",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+release",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::initialize generated files + scripts/tests",
+        "empack executable + empack-lib::application",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "shared scaffold generation + native/script acceptance",
+        "empack-cli",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-082",
+      "family": "Automation and distribution tooling",
+      "title": "Generated pack release workflow",
+      "public_surface": "generated release helper",
+      "api_ids": [
+        "AUTO",
+        "REL"
+      ],
+      "required_assertions": "Wrong tag/build failure/tampered downloaded executable fails before publication; draft then uploads then reveal; no arbitrary dist glob.",
+      "required_work": "Python mocked gh protocol + one sandbox publication manual candidate; never production tokens on untrusted PR.",
+      "evidence_tiers": [
+        "U",
+        "X",
+        "M"
+      ],
+      "risk": "critical",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine::initialize generated files + scripts/tests",
+        "engine::release + api::release_publication/subscription"
+      ],
+      "owner_09": [
+        "shared scaffold generation + native/script acceptance",
+        "shared release meaning/signature verification + native signing custody and publication"
+      ]
+    },
+    {
+      "id": "UX-083",
+      "family": "Automation and distribution tooling",
+      "title": "Actual consumer configuration interpretation",
+      "public_surface": "Prism INI fixtures and supported Qt probe",
+      "api_ids": [
+        "BUILD",
+        "RUN"
+      ],
+      "required_assertions": "Accepted custom configuration has required meaning in real supported consumer source/runtime; rejected syntax does not mutate artifact.",
+      "required_work": "Pinned source+Qt+fixture digest receipt; separate actual import/startup from headless parser.",
+      "evidence_tiers": [
+        "H",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "consumer-change+candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
+      ]
+    },
+    {
+      "id": "UX-084",
+      "family": "Automation and distribution tooling",
+      "title": "Actual consumer import and launch",
+      "public_surface": "Prism archive / mrpack / CF; server scripts",
+      "api_ids": [
+        "BUILD",
+        "RUN",
+        "INST"
+      ],
+      "required_assertions": "Independent consumer reads inventory; reference hooks run and abort invalid descriptors before Java; platform snapshots do not require empack.",
+      "required_work": "Disposable actual launcher profile; human-authenticated startup only where licensed; no gameplay certification inferred.",
+      "evidence_tiers": [
+        "C",
+        "M"
+      ],
+      "risk": "critical",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "engine_host::build/profiles; engine::build; templates/artifacts",
+        "api::launch + process_runtime + runtime lease; server_runtime/installer",
+        "engine::instance + api::instance; empack-core::instance"
+      ],
+      "owner_09": [
+        "shared recipes/template/archive verification in empack-engine + sink capabilities",
+        "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+        "portable inventory/ownership semantics; native instance effects"
+      ]
+    },
+    {
+      "id": "UX-085",
+      "family": "Automation and distribution tooling",
+      "title": "Packaged native archive execution",
+      "public_surface": "all five published targets",
+      "api_ids": [
+        "PACKAGE",
+        "CLI",
+        "BUILD"
+      ],
+      "required_assertions": "Extracted real binary executes offline journey; checksums, permissions, arch, dynamic dependencies and default features recorded; no workspace fallback.",
+      "required_work": "Build/version/package once; native runner for ARM64 or label unavailable blocker; publish exact tested bytes.",
+      "evidence_tiers": [
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "release",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "release.yml and external process harness",
+        "empack executable + empack-lib::application",
+        "engine_host::build/profiles; engine::build; templates/artifacts"
+      ],
+      "owner_09": [
+        "CLI archive and SDK client/worker packages",
+        "empack-cli",
+        "shared recipes/template/archive verification in empack-engine + sink capabilities"
+      ]
+    },
+    {
+      "id": "UX-086",
+      "family": "Automation and distribution tooling",
+      "title": "Production/test build boundary",
+      "public_surface": "release cargo graph; runtime env",
+      "api_ids": [
+        "PACKAGE",
+        "LIFE"
+      ],
+      "required_assertions": "No harness/test-control entry point in product; ordinary backend/endpoint policies unchanged; production executable ignores harness selector.",
+      "required_work": "Audit transitive normal features; build -p empack isolated locked graph; no debug_assertions shortcut; compare default vs telemetry.",
+      "evidence_tiers": [
+        "U",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "pr+release",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "release.yml and external process harness",
+        "engine::api + runtime + resources"
+      ],
+      "owner_09": [
+        "CLI archive and SDK client/worker packages",
+        "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
+      ]
+    },
+    {
+      "id": "UX-087",
+      "family": "Automation and distribution tooling",
+      "title": "Executable documentation and new-user task cards",
+      "public_surface": "README/manifest/usage/server/publishing examples",
+      "api_ids": [
+        "CLI",
+        "AUTO"
+      ],
+      "required_assertions": "Documented commands parse/run against appropriate fixture; user can finish without private state knowledge; terminology and expected output clear.",
+      "required_work": "Fresh-user task review recorded separately from automated correctness; every public leaf has owner and tests.",
+      "evidence_tiers": [
+        "X",
+        "M"
+      ],
+      "risk": "important",
+      "run_gate": "candidate",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "empack executable + empack-lib::application",
+        "engine::initialize generated files + scripts/tests"
+      ],
+      "owner_09": [
+        "empack-cli",
+        "shared scaffold generation + native/script acceptance"
+      ]
+    },
+    {
+      "id": "UX-088",
+      "family": "Automation and distribution tooling",
+      "title": "Harness isolation and evidence integrity",
+      "public_surface": "runner and test tooling, not product commands",
+      "api_ids": [
+        "PACKAGE"
+      ],
+      "required_assertions": "Each attempt uses clean home/state/cache; expected network mode enforced; no automatic mutation replay; logs redacted; missing prerequisite not passed.",
+      "required_work": "Self-tests for classifier, inventory, retry policy, receipt tamper, wrong binary, stale coverage and unknown tests.",
+      "evidence_tiers": [
+        "U",
+        "X"
+      ],
+      "risk": "critical",
+      "run_gate": "pr",
+      "scope": "stable",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "release.yml and external process harness"
+      ],
+      "owner_09": [
+        "CLI archive and SDK client/worker packages"
+      ]
+    },
+    {
+      "id": "PORT-001",
+      "family": "0.9 portable authoring",
+      "title": "Portable crate and constructor boundary",
+      "public_surface": "#131",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Native and wasm target compile; normal dependency graph excludes forbidden effects; external client cannot forge proof/approval; no unsafe Send for JS handles.",
+      "required_work": "Compile-fail/external-crate probes and concrete local-future adapters.",
+      "evidence_tiers": [
+        "U",
+        "H"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-002",
+      "family": "0.9 portable authoring",
+      "title": "Valid and invalid editable draft",
+      "public_surface": "seed/edit/save revision",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Invalid raw YAML preserved exactly; structured edits cannot overwrite stale invalid text; safe virtual paths despite invalid authoring.",
+      "required_work": "Shared byte-preservation and diagnostic fixtures, new generations for undo A\u2192B\u2192A.",
+      "evidence_tiers": [
+        "U",
+        "H"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-003",
+      "family": "0.9 portable authoring",
+      "title": "Grouped source/generated edits",
+      "public_surface": "proposal\u2192apply/undo/redo",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "All-or-none expected revision; retain new assets; explicit removals only; stale tool result cannot delete later authored files.",
+      "required_work": "Generator input/output/config note fixture; retention and rejection tests.",
+      "evidence_tiers": [
+        "U",
+        "H"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-004",
+      "family": "0.9 portable authoring",
+      "title": "Assets, external references and undo retention",
+      "public_surface": "import/select/drop sources",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Logical asset vs content identity vs live authority; permission/missing/corrupt state; dedup does not merge provenance; immutable lease holds bytes.",
+      "required_work": "External changed file, undo limits, pending-plan retention; no giant copies.",
+      "evidence_tiers": [
+        "H",
+        "N",
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-005",
+      "family": "0.9 portable authoring",
+      "title": "Native incomplete draft restore",
+      "public_surface": "project pack/inspect/unpack public routes",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Invalid text/no lock/missing custom source/unresolved decision restored without weakening initialization; file and metadata recovery coherent.",
+      "required_work": "Crash every directory/host-metadata boundary; reopen/repack; source discovery unknown distinct.",
+      "evidence_tiers": [
+        "H",
+        "N",
+        "X",
+        "P"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-006",
+      "family": "0.9 portable authoring",
+      "title": "Portable project wire format",
+      "public_surface": "native/browser bundle roundtrip",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Versioned metadata and objects bounded, safe, integrity-checked; exact author bytes/templates/profiles/bindings preserved; no secrets/grants/OS authority restored.",
+      "required_work": "Independent container verifier; unknown version; partial vs complete/offline modes.",
+      "evidence_tiers": [
+        "U",
+        "H",
+        "X",
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-007",
+      "family": "0.9 portable authoring",
+      "title": "Cooperative shared codecs",
+      "public_surface": "ZIP project and Prism artifacts",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Bounded steps and real task queue yield; entries/ZIP64/range limits; no entire archive buffering; native/browser inventories agree.",
+      "required_work": "Thin actual browser adapter before persistence completion; cancellation and many-small/large files.",
+      "evidence_tiers": [
+        "H",
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-008",
+      "family": "0.9 portable authoring",
+      "title": "Browser invalid-text save/reopen",
+      "public_surface": "worker + OPFS + IndexedDB",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Bytes retained before committed metadata; exact saved revision; old snapshot save does not clear newer dirty state; lost ack is idempotent.",
+      "required_work": "Real browser reload/worker kill before and after commit; actual storage, not memory mock.",
+      "evidence_tiers": [
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-009",
+      "family": "0.9 portable authoring",
+      "title": "Storage ownership and concurrent immutable registration",
+      "public_surface": "browser sessions/save/collector",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Inherited shared leases avoid nested-lock deadlock; ready immutable mapping never partial; two writers cannot mutate winner.",
+      "required_work": "Two tabs, collector waiting, same-content race, failed writer, independent reader.",
+      "evidence_tiers": [
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-010",
+      "family": "0.9 portable authoring",
+      "title": "Content retirement and quota recovery",
+      "public_surface": "GC and storage failures",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Physical backing retirement journal; same digest new backing protected; unknown files not deletion authority; quota and corruption truthful.",
+      "required_work": "Kill at each GC transition, re-ingest, quota injection plus actual supported storage behavior.",
+      "evidence_tiers": [
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-011",
+      "family": "0.9 portable authoring",
+      "title": "Multi-tab read-only and upgrades",
+      "public_surface": "project ownership/DB version",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Writer busy permits protected reads; missing storage coordination does not; expected-head CAS; blocked upgrades preserve work.",
+      "required_work": "Real two-tab lock/upgrade/transfer/suspended-owner fixtures.",
+      "evidence_tiers": [
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-012",
+      "family": "0.9 portable authoring",
+      "title": "Worker protocol and stale background results",
+      "public_surface": "SDK client\u2194worker",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Epoch/request/operation/revision validation; dropped progress not lost terminal outcome; idempotency; no serialized grants; safe JS integer ranges.",
+      "required_work": "Late result after edit/restart; message reordering/loss; cancel and query, retained outputs.",
+      "evidence_tiers": [
+        "U",
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-013",
+      "family": "0.9 portable authoring",
+      "title": "Native/browser semantic export equivalence",
+      "public_surface": "shared frozen fixtures",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Independent expected inventory, attributes and roles agree across hosts; writer/verifier cannot share omission oracle; reference versus materialized scopes explicit.",
+      "required_work": "Configuration change with unchanged lock affects correct inventory; compression bytes need not match.",
+      "evidence_tiers": [
+        "H",
+        "W",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-014",
+      "family": "0.9 portable authoring",
+      "title": "Browser delivery and partial outputs",
+      "public_surface": "save picker / staged download",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Verified artifact distinct from committed destination/download requested/finalization unknown; transient activation; backpressure and permission revocation.",
+      "required_work": "Actual write, close failure, no picker, staged retrieval and retry; no false durable-save receipt.",
+      "evidence_tiers": [
+        "W",
+        "M"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-015",
+      "family": "0.9 portable authoring",
+      "title": "Mandatory real browser catalog routes",
+      "public_surface": "Modrinth and Minecraft/Fabric",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Readable CORS bodies/headers/redirect policies; no opaque success or shipped shared secret; endpoint identification requirements honored.",
+      "required_work": "Fresh uncached route on actual browser/device; native HTTP success not substitute.",
+      "evidence_tiers": [
+        "W",
+        "L"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-016",
+      "family": "0.9 portable authoring",
+      "title": "Browser manual restricted input",
+      "public_surface": "drop correct/wrong/renamed content",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Exact obligations verified and retained locally; no implicit remote upload; reprepare after revision changes; no filename authorization.",
+      "required_work": "Same pending scenario as CLI through SDK; real browser File and storage.",
+      "evidence_tiers": [
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-017",
+      "family": "0.9 portable authoring",
+      "title": "Read-only candidate views and opaque reports",
+      "public_surface": "authoring integrations",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Scoped inventory IDs/bytes available without public unchecked mutation; report hashes not retention roots; historical report not executable proof.",
+      "required_work": "Report retained with and without explicitly retained input; rejected stale grouped edit.",
+      "evidence_tiers": [
+        "H",
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-018",
+      "family": "0.9 portable authoring",
+      "title": "Isolated native instrumented copy",
+      "public_surface": "native test materialization",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Writable test copy cannot mutate immutable candidate via hardlinks; intended/test/pre/post observations separate; no adoption by inspection.",
+      "required_work": "Synthetic tool mutates copy; candidate unchanged; scoped report stays historical.",
+      "evidence_tiers": [
+        "H",
+        "N"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-019",
+      "family": "0.9 portable authoring",
+      "title": "SDK and worker package installation",
+      "public_surface": "published JS/WASM artifacts",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Client/worker/WASM compatible versions and assets; static harness runs from unpacked package; cache stale versions explicit.",
+      "required_work": "Package manifest/hash receipt; wrong worker version rejected; CSP/no inline imported code.",
+      "evidence_tiers": [
+        "P",
+        "W"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-020",
+      "family": "0.9 portable authoring",
+      "title": "Actual devices and resource envelope",
+      "public_surface": "desktop Chrome/Firefox/Safari; iOS; Android",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Required devices complete the semantic flow within declared limits; Playwright WebKit is supplemental; unavailable device is not pass.",
+      "required_work": "Freeze versions/device/OS/sink/storage/resource profile; actual file retrieval and reload.",
+      "evidence_tiers": [
+        "W",
+        "M"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    },
+    {
+      "id": "PORT-021",
+      "family": "0.9 portable authoring",
+      "title": "Full cross-host authoring story",
+      "public_surface": "native\u2192bundle\u2192browser edit/save\u2192bundle\u2192native export",
+      "api_ids": [
+        "PORT"
+      ],
+      "required_assertions": "Author work and incomplete states retained; raw bytes vs semantics distinguished; final consumer inventory independent and matching.",
+      "required_work": "One canonical fixture family plus edited-invalid/missing-source variants, no production-generated oracle.",
+      "evidence_tiers": [
+        "X",
+        "W",
+        "P",
+        "C"
+      ],
+      "risk": "critical",
+      "run_gate": "owning-checkpoint+release",
+      "scope": "v0.9-new",
+      "variant_axes": "",
+      "cases": [],
+      "owner_now": [
+        "proposed in #131\u2013136; not implemented baseline"
+      ],
+      "owner_09": [
+        "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
+      ]
+    }
+  ],
+  "api_routes": {
+    "CLI": {
+      "owner_now": "empack executable + empack-lib::application",
+      "owner_09": "empack-cli",
+      "route": "CliConfig::load_for_process \u2192 execute_command / execute_command_with_session \u2192 engine_host \u2192 finish_command; classify_error and EmpackExitCode",
+      "sources": [
+        "S11",
+        "S19",
+        "S34"
+      ]
+    },
+    "DOC": {
+      "owner_now": "engine::documents + application::engine_host::cli::manifest",
+      "owner_09": "empack-engine codecs/inspection + CLI renderer",
+      "route": "DocumentCodec \u2192 decode_authoring/inspect_authoring/replace_intent \u2192 normalized ProjectIntent and raw/semantic revisions; JSON Schema is a separate checker",
+      "sources": [
+        "S11",
+        "S29",
+        "S33"
+      ]
+    },
+    "LIFE": {
+      "owner_now": "engine::api + runtime + resources",
+      "owner_09": "portable lifecycle in empack-engine; scheduling/effects in native/wasm",
+      "route": "Engine::prepare \u2192 Preparation \u2192 PreparedOperation::authorize(ExecutionGrant) \u2192 Engine::start \u2192 OperationHandle::wait \u2192 ExecutionOutcome; release_completed/shutdown",
+      "sources": [
+        "S18",
+        "S20"
+      ]
+    },
+    "INIT": {
+      "owner_now": "engine_host::initialize; engine::api::project_change",
+      "owner_09": "shared initialization/import semantics + native publication",
+      "route": "InitArgs \u2192 InitializeRequest / ImportRequest \u2192 project-change preparation \u2192 verified new-root or replacement publication",
+      "sources": [
+        "S11",
+        "S15",
+        "S18"
+      ]
+    },
+    "CAT": {
+      "owner_now": "engine::providers + runtime_catalog + networking::rate_budget",
+      "owner_09": "portable catalog interpretation; native/Fetch transport",
+      "route": "ProjectSelector; ProviderCatalog selector/pin lookup, identify_file, resolve_compatible, resolve_required_closure, assess_updates; RuntimeCatalog game/loader discovery; HostBudgetRegistry",
+      "sources": [
+        "S22",
+        "S23",
+        "S24"
+      ]
+    },
+    "DEP": {
+      "owner_now": "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
+      "owner_09": "portable planners and engine; CLI request mapping; native effects",
+      "route": "AddRequest / DependencyBatchRequest / UpdateRequest / AdoptObservedRequest / RemoveRequest / SyncRequest \u2192 AdditionPlan, RemovalPlan, SynchronizationResolution \u2192 candidate validation/publication",
+      "sources": [
+        "S16",
+        "S18",
+        "S19",
+        "S22"
+      ]
+    },
+    "IO": {
+      "owner_now": "engine::acquisition/content/archive_source/import",
+      "owner_09": "portable evidence/codecs; content/transport host ports",
+      "route": "HttpAcquisition::acquire, DownloadRequest, verify_stream, AcquiredContent/ContentLease, inspect_import, ImportContentPlan::{resolve,acquire}, ZipContentSource",
+      "sources": [
+        "S23",
+        "S26",
+        "S27"
+      ]
+    },
+    "PEND": {
+      "owner_now": "engine::pending + workflow-specific persisted records; application::engine_host",
+      "owner_09": "shared pending semantics + native/browser retention and UI",
+      "route": "PendingCommand::{List,Show,Resume,Discard} \u2192 selected unchanged workflow record \u2192 exact input association \u2192 reprepare \u2192 fresh grant; legacy build/import/sync/instance continuation adapters",
+      "sources": [
+        "S11",
+        "S12",
+        "S14"
+      ]
+    },
+    "BUILD": {
+      "owner_now": "engine_host::build/profiles; engine::build; templates/artifacts",
+      "owner_09": "shared recipes/template/archive verification in empack-engine + sink capabilities",
+      "route": "BuildRequest/BuildPreparationRequest \u2192 captured BuildOutput recipes \u2192 BuiltDistribution \u2192 independent expected inventory / artifact verification \u2192 publication receipt",
+      "sources": [
+        "S13",
+        "S18",
+        "S32",
+        "S38"
+      ]
+    },
+    "PUB": {
+      "owner_now": "engine::native/snapshot/staging/verification/publication",
+      "owner_09": "native effects and recovery in empack-native; expected inventories remain shared",
+      "route": "ProjectReadRoot/NativeSnapshot \u2192 MutableStage/freeze \u2192 VerifiedFileChange \u2192 private Publisher \u2192 durable intent/progress \u2192 RecoveryReader/RecoverRequest; expected-old checks",
+      "sources": [
+        "S20",
+        "S21",
+        "S33"
+      ]
+    },
+    "REL": {
+      "owner_now": "engine::release + api::release_publication/subscription",
+      "owner_09": "shared release meaning/signature verification + native signing custody and publication",
+      "route": "StageReleaseRequest / PublishChannelRequest / SubscriptionRequest; ReleaseDocument; authenticated release/channel envelopes; stored sequence floors; PublisherSetup",
+      "sources": [
+        "S11",
+        "S18",
+        "S39"
+      ]
+    },
+    "INST": {
+      "owner_now": "engine::instance + api::instance; empack-core::instance",
+      "owner_09": "portable inventory/ownership semantics; native instance effects",
+      "route": "InstallInstanceRequest \u2192 selected release/environment/choices \u2192 prior/current/incoming reconciliation \u2192 FileDecision/conflict policy \u2192 instance receipt; prepare/repair/rollback/options route through same semantics",
+      "sources": [
+        "S11",
+        "S18",
+        "S33",
+        "S39"
+      ]
+    },
+    "RUN": {
+      "owner_now": "api::launch + process_runtime + runtime lease; server_runtime/installer",
+      "owner_09": "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
+      "route": "LaunchInstanceRequest / AcknowledgeStoppedRuntime; execute_inherited/execute_async, Cancellation, RetiredRuntime; generated shell/cmd entry points; runtime observation and lease.complete",
+      "sources": [
+        "S25",
+        "S34",
+        "S35",
+        "S40"
+      ]
+    },
+    "AUTO": {
+      "owner_now": "engine::initialize generated files + scripts/tests",
+      "owner_09": "shared scaffold generation + native/script acceptance",
+      "route": "init \u2192 generated validate/release workflows and empack-ci.py \u2192 profile explanation/build \u2192 exact artifact staging/checksums \u2192 gh draft/upload/publish ordering",
+      "sources": [
+        "S12",
+        "S15",
+        "S30"
+      ]
+    },
+    "PACKAGE": {
+      "owner_now": "release.yml and external process harness",
+      "owner_09": "CLI archive and SDK client/worker packages",
+      "route": "final versioned build \u2192 archive \u2192 extract outside checkout \u2192 explicit executable selection \u2192 public CLI journeys \u2192 digest-bound qualification \u2192 publication",
+      "sources": [
+        "S01",
+        "S02",
+        "S07"
+      ]
+    },
+    "PORT": {
+      "owner_now": "proposed in #131\u2013136; not implemented baseline",
+      "owner_09": "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness",
+      "route": "ProjectDraft/immutable asset ports \u2192 revision-bound proposals/plans \u2192 native restore or OPFS+IndexedDB commit \u2192 verified artifact \u2192 delivery receipt; type names proposed",
+      "sources": []
+    }
+  },
+  "sources": {
+    "S01": {
+      "title": "Executable dependency graph",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack/Cargo.toml"
+    },
+    "S02": {
+      "title": "Harness binary selection and environment",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/src/e2e.rs"
+    },
+    "S03": {
+      "title": "Harness crate dependencies",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/Cargo.toml"
+    },
+    "S04": {
+      "title": "Library feature graph",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/Cargo.toml"
+    },
+    "S05": {
+      "title": "Local tasks",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/mise.toml"
+    },
+    "S06": {
+      "title": "PR workflow",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/.github/workflows/pr-ci.yml"
+    },
+    "S07": {
+      "title": "Release workflow",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/.github/workflows/release.yml"
+    },
+    "S08": {
+      "title": "Branch workflow",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/.github/workflows/branch-ci.yml"
+    },
+    "S09": {
+      "title": "Post-merge workflow",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/.github/workflows/post-merge-ci.yml"
+    },
+    "S10": {
+      "title": "Nextest selection and retry config",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/.config/nextest.toml"
+    },
+    "S11": {
+      "title": "CLI command tree",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/application/cli.rs"
+    },
+    "S12": {
+      "title": "Offline executable contracts",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/tests/smoke.rs"
+    },
+    "S13": {
+      "title": "CLI build checks",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/tests/e2e_build.rs"
+    },
+    "S14": {
+      "title": "Interactive checks",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/tests/e2e_interactive.rs"
+    },
+    "S15": {
+      "title": "Initialization checks",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/tests/e2e_init.rs"
+    },
+    "S16": {
+      "title": "Provider add checks",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/tests/e2e_add.rs"
+    },
+    "S17": {
+      "title": "Mixed local/live import checks",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-tests/tests/e2e_import_build.rs"
+    },
+    "S18": {
+      "title": "Engine operation API",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/api.rs"
+    },
+    "S19": {
+      "title": "Dispatch tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/application/commands.test.rs"
+    },
+    "S20": {
+      "title": "Engine lifecycle tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/api/tests.rs"
+    },
+    "S21": {
+      "title": "Native publication tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/publication/tests.rs"
+    },
+    "S22": {
+      "title": "Migration host tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/application/engine_host/cli/migration/tests.rs"
+    },
+    "S23": {
+      "title": "Official provider probes",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/provider_catalog_smoke.rs"
+    },
+    "S24": {
+      "title": "Official runtime catalog probes",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/runtime_catalog_smoke.rs"
+    },
+    "S25": {
+      "title": "Official runtime and launcher probes",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/runtime_server_smoke.rs"
+    },
+    "S26": {
+      "title": "Local external archive probes",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/import_archive_smoke.rs"
+    },
+    "S27": {
+      "title": "External archive acquisition probes",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/import_content_smoke.rs"
+    },
+    "S28": {
+      "title": "Curated and rolling survey script",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/scripts/import-smoke-test.py"
+    },
+    "S29": {
+      "title": "Author schema versus executable conformance",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/scripts/check-authoring-schema.py"
+    },
+    "S30": {
+      "title": "Generated automation tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/scripts/tests/test_project_automation.py"
+    },
+    "S31": {
+      "title": "Core boundary check",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/scripts/check-core-boundary.py"
+    },
+    "S32": {
+      "title": "Verification guide",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/docs/testing.md"
+    },
+    "S33": {
+      "title": "Normative verification obligations",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/docs/design/verification.md"
+    },
+    "S34": {
+      "title": "Executable result handling",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack/src/main.rs"
+    },
+    "S35": {
+      "title": "Inherited supervisor and terminal",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/application/process_runtime.rs"
+    },
+    "S36": {
+      "title": "Prism configuration probe",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/scripts/check-prism-config.py"
+    },
+    "S37": {
+      "title": "Shared Prism configuration fixtures",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/build/client/fixtures.json"
+    },
+    "S38": {
+      "title": "Shared consumer builders",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/build/batch.rs"
+    },
+    "S39": {
+      "title": "Public subscription API/tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/api/subscription/tests.rs"
+    },
+    "S40": {
+      "title": "Public launch API/tests",
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/src/engine/api/launch/tests.rs"
+    }
+  }
+}
