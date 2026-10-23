@@ -69,6 +69,18 @@ does not establish a live provider's restricted-download policy. Instance contin
 parity and remaining interactive/corrupt-record variants are still separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
 
+The populated migration host journey starts from literal authoring and bindings,
+materializes controlled provider JARs, and updates an automatic root alongside an
+exact pin. It captures the displayed JSON plan before migrating, then compares it
+with application and independently expected client/server native archive contents.
+A primary file role survives provider filename changes. A retained library must be
+compatible with the new runtime; local sources keep dependency uncertainty explicit.
+Preview, refusal and repeated synchronization check source preservation. These are
+in-process host checks with controlled services. `live_provider_cli` separately
+exercises ordinary CLI pin/update commands against Modrinth and checks the retained
+selection report. Neither boundary claims actual consumer startup or complete
+migration qualification.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,

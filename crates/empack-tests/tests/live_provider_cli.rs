@@ -117,3 +117,82 @@ fn live_cli_equivalent_provider_selectors_converge() {
         lock
     );
 }
+
+#[test]
+#[ignore = "requires live Modrinth catalog and downloads"]
+fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
+    use empack_core::model::DependencySelection;
+    let project = TestProject::workflow_fixture("provider-update", "fabric", "1.21.1");
+    run(
+        &project,
+        &["--yes", "add", "--platform", "modrinth", "sodium"],
+    );
+    let initial = read_project(project.dir());
+    let key = initial.intent().roots.keys().next().unwrap();
+    let selected = initial.lock().dependencies[key].selected.clone().unwrap();
+    run(&project, &["--yes", "pin", key.as_str()]);
+    let pinned = read_project(project.dir());
+    assert_eq!(
+        pinned.intent().roots[key].selection,
+        DependencySelection::ProviderPin(selected.selection.clone())
+    );
+    let before_preview = snapshot(project.dir());
+    let before = author_snapshot(project.dir());
+    run(
+        &project,
+        &[
+            "--yes",
+            "--dry-run",
+            "update",
+            key.as_str(),
+            "--release-policy",
+            "any",
+        ],
+    );
+    assert_eq!(
+        snapshot(project.dir()),
+        before_preview,
+        "preview must not publish author changes"
+    );
+    let output = run(
+        &project,
+        &["--yes", "update", key.as_str(), "--release-policy", "any"],
+    );
+    let rendered = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        rendered.contains("0 selections changed, 1 retained"),
+        "{rendered}"
+    );
+    let updated = read_project(project.dir());
+    assert_eq!(updated.intent(), pinned.intent());
+    assert_eq!(
+        updated.lock().dependencies[key],
+        pinned.lock().dependencies[key]
+    );
+    assert_eq!(
+        updated.lock().dependencies[key].selected.as_ref(),
+        Some(&selected)
+    );
+    assert_eq!(
+        author_snapshot(project.dir()),
+        before,
+        "checking an exact pin must preserve author files and content"
+    );
+    for _ in 0..2 {
+        run(&project, &["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), before);
+    }
+}
+
+// The harness keeps native recovery journals under the fixture root. Those are
+// host bookkeeping, not authored project files; applying a no-op may retire them.
+fn author_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    snapshot(root)
+        .into_iter()
+        .filter(|(path, _)| !path.starts_with(".host-state"))
+        .collect()
+}

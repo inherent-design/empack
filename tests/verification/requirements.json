@@ -892,7 +892,50 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-026.selected-host-update",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Selected automatic root advances while an exact pin with a newer available version stays exact; dry-run preserves the project",
+            "Primary-role destination survives changed provider filenames; materialized bytes match independently supplied content"
+          ],
+          "remaining_group_evidence": "Other release policies, full changed/retained report variants and live automatic-selection coverage remain required"
+        },
+        {
+          "id": "UX-026.live-pinned-update",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_selected_update_preserves_exact_pin_and_authoring"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Ordinary CLI pin and update against Modrinth retain the selected exact version under release-policy any",
+            "Actual output reports zero changed and one retained selection; preview, application and repeated sync preserve author files"
+          ],
+          "remaining_group_evidence": "A pinned live update does not establish all automatic candidate or incompatibility cases"
+        }
+      ],
       "owner_now": [
         "engine::providers + runtime_catalog + networking::rate_budget",
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
@@ -901,7 +944,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-027",
@@ -1119,7 +1162,50 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-033.populated-host-candidate",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Captured JSON from plan, dry-run and application agrees for automatic root, exact pin, client-only mod, retained library and local source",
+            "Runtime and filename change preserve primary-role placement, comments, bindings and local bytes; incomplete local dependency evidence remains explicit",
+            "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges"
+          ],
+          "remaining_group_evidence": "Executable migration, live runtime selection, profile drift and additional replacement/refusal cases remain separate; native archive inspection does not establish consumer startup"
+        },
+        {
+          "id": "UX-033.retained-library-refusal",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_refuses_incompatible_retained_library_without_edits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Plan, dry-run and application refuse a retained library incompatible with the proposed runtime without modifying project files"
+          ],
+          "remaining_group_evidence": "Executable migration, live runtime selection, profile drift and additional replacement/refusal cases remain separate; native archive inspection does not establish consumer startup"
+        }
+      ],
       "owner_now": [
         "engine::providers + runtime_catalog + networking::rate_budget",
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
@@ -1130,7 +1216,7 @@
         "portable planners and engine; CLI request mapping; native effects",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-034",
