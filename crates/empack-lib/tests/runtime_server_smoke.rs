@@ -101,15 +101,18 @@ async fn verify_live_distribution(
         .unwrap_or_else(|| executable.into());
     let root = tempfile::tempdir()?;
     package_runtime(runtime, java.clone(), root.path(), managed).await?;
-    let mut command = if cfg!(windows) {
-        let mut command = std::process::Command::new("cmd.exe");
-        command.args(["/D", "/C", "start.bat"]);
-        command
-    } else {
-        let mut command = std::process::Command::new("bash");
-        command.arg("start.sh");
-        command
+    let entrypoint = |name: &str| {
+        if cfg!(windows) {
+            let mut command = std::process::Command::new("cmd.exe");
+            command.args(["/D", "/C"]).arg(format!("{name}.bat"));
+            command
+        } else {
+            let mut command = std::process::Command::new("bash");
+            command.arg(format!("{name}.sh"));
+            command
+        }
     };
+    let mut command = entrypoint("start");
     if java.is_absolute() {
         command.env(
             "JAVA_HOME",
@@ -149,10 +152,52 @@ async fn verify_live_distribution(
     }
     let historical = matches!(game, "1.12.2" | "1.7.10");
     command.env("EMPACK_NO_PAUSE", "1").current_dir(root.path());
+    if managed {
+        // First installation verifies/copies the complete native inventory. It is
+        // not Minecraft startup, and must finish before measuring that boundary.
+        // Retain a separate finite budget and test the generated installer itself.
+        let mut install = entrypoint("install_pack");
+        install.current_dir(root.path());
+        for (key, value) in command.get_envs() {
+            match value {
+                Some(value) => {
+                    install.env(key, value);
+                }
+                None => {
+                    install.env_remove(key);
+                }
+            }
+        }
+        let started = std::time::Instant::now();
+        let installed = probe_launcher(install, Duration::from_secs(300))
+            .await
+            .context("Generated first-installation phase failed")?;
+        anyhow::ensure!(
+            installed.success,
+            "Generated installer failed: {}",
+            installed.error_output()
+        );
+        anyhow::ensure!(
+            root.path().join(".empack/instance.json").is_file(),
+            "Installer omitted completed ownership"
+        );
+        anyhow::ensure!(
+            fs::read(root.path().join("game/config/runtime-check.txt"))? == b"current content",
+            "Installer omitted selected content"
+        );
+        eprintln!(
+            "Generated first installation completed in {:?}",
+            started.elapsed()
+        );
+    }
     if !historical {
         command.arg("--help");
     }
-    let output = probe_launcher(command, Duration::from_secs(90)).await?;
+    let started = std::time::Instant::now();
+    let output = probe_launcher(command, Duration::from_secs(90))
+        .await
+        .context("Generated server startup phase failed")?;
+    eprintln!("Generated startup completed in {:?}", started.elapsed());
     anyhow::ensure!(
         output.success,
         "Actual server launcher failed: {}",

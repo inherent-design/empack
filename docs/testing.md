@@ -84,7 +84,12 @@ mutating command is not replayed after matching a timeout diagnostic. Nextest CI
 retries are disabled so the original failure remains visible. Live runtime probes
 retain bounded, best-effort launcher output on timeout, with at most 64 KiB per
 stream. These tails help diagnose the failure; they do not turn a timeout into a
-pass or replace complete successful output assertions.
+pass or replace complete successful output assertions. Managed runtime probes execute
+the generated installer first (300-second bound), require completed ownership and
+selected content, then execute the generated start script (90-second bound). Startup
+still invokes preparation again, exercising convergence before reaching Minecraft.
+Installation failure cannot be counted as startup evidence. These help/EULA probes
+are separate from interactive console and gameplay acceptance.
 
 After building the executable, compare the editor schemas with the actual CLI:
 
