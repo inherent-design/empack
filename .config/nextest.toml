@@ -16,9 +16,9 @@ filter = "test(e2e_import_modrinth_and_build_mrpack) | test(e2e_import_and_build
 slow-timeout = { period = "60s", terminate-after = 10 }
 
 [[profile.default.overrides]]
-# Archive build E2Es are local but can still run slowly on Linux CI runners
-# when Java startup and compression are both expensive.
-filter = "test(e2e_build_mrpack) | test(e2e_build_client_tar_gz) | test(e2e_build_server_sevenz)"
+# Build and preparation contracts can run slowly on CI; live runtime acquisition
+# is selected separately from offline archive creation.
+filter = "binary(=cli_build) | binary(=live_server_cli) | binary(=journey_local_exports)"
 slow-timeout = { period = "60s", terminate-after = 4 }
 
 [profile.ci]

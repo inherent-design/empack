@@ -1,7 +1,8 @@
 //! Initialization contracts that require no external catalog.
 use empack_tests::harness::process::{
-    TestProject, assert_project_datapack_folder, assert_project_initialized,
-    assert_project_loader_absent, assert_project_minecraft_version,
+    TestProject, assert_locked_minecraft_version, assert_project_datapack_folder,
+    assert_project_initialized, assert_project_loader_absent, assert_project_minecraft_version,
+    offline_command,
 };
 
 #[test]
@@ -208,4 +209,26 @@ fn cli_init_preview_preserves_absent_destination() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!project.dir().join("test-dry-run").exists());
+}
+
+#[test]
+fn cli_init_vanilla_binds_minecraft_without_loader() {
+    let project = TestProject::new();
+    offline_command(project.dir())
+        .args([
+            "init",
+            "--yes",
+            "--modloader",
+            "none",
+            "--mc-version",
+            "1.21.1",
+            "test-none",
+        ])
+        .assert()
+        .success();
+    let pack_dir = project.dir().join("test-none");
+    assert_project_initialized(&pack_dir);
+    assert_project_loader_absent(&pack_dir);
+    assert_project_minecraft_version(&pack_dir, "1.21.1");
+    assert_locked_minecraft_version(&pack_dir, "1.21.1");
 }

@@ -26,12 +26,31 @@ dependencies. Architecture checks keep `empack-core` free of I/O/runtime depende
 cargo nextest run -p empack-lib --lib --no-default-features
 ```
 
-Local initialization contracts are in `cli_init`; official catalog resolution is
-in the ignored `live_cli_init` binary. Select that live obligation explicitly:
+The separated executable suites have explicit boundaries:
+
+| Test binary | Evidence |
+| --- | --- |
+| `cli_arguments`, `cli_dependencies`, `cli_init` | Offline parsing, refusal and initialization |
+| `cli_build` | Offline artifact creation, metadata and cleanup |
+| `journey_authoring` | Literal layered authoring, rebuild and removal |
+| `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
+| `live_cli_init` | Official loader catalog resolution |
+| `live_provider_cli` | Modrinth identity, acquisition and convergence |
+| `live_server_cli` | Server acquisition/export and instance preparation; no game startup |
+
+Live binaries contain ignored tests so a default run cannot silently claim their
+coverage. Select them explicitly with strict prerequisites:
 
 ```sh
-cargo nextest run -p empack-tests --test live_cli_init --run-ignored ignored-only
+cargo nextest run -p empack-tests --test cli_arguments --test cli_dependencies --test cli_init --test cli_build --test journey_authoring --test journey_local_exports
+EMPACK_E2E_STRICT=1 cargo nextest run -p empack-tests --test live_cli_init --test live_provider_cli --test live_server_cli --run-ignored ignored-only --test-threads 2
 ```
+
+The resourcepack scenario shares its assertions between offline client exports and
+live server preparation. Missing Java cannot skip the offline client case. Component
+fixtures created through codecs are distinct from the literal authoring journey;
+neither proves that Minecraft or Prism consumed the resulting pack. Remaining
+legacy `e2e_` suites still await separation and shared-runner integration.
 
 The executable harness lives in `empack-tests::harness::process`, outside the
 product dependency graph. Local runs may discover a binary and print the selected

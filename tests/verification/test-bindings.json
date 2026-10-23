@@ -3,8 +3,172 @@
   "status": "partial; complete inventory comparison must reject unclassified tests",
   "tests": [
     {
+      "id": "empack-tests::cli_arguments::cli_matrix_add_requires_modpack",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_bad_archive_format",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_bad_platform",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_bad_project_type",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_build_requires_modpack",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_add",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_build",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_clean",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_init",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_remove",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_requirements",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_help_sync",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_remove_requires_modpack",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_sync_requires_modpack",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_arguments::cli_matrix_version",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_build::cli_build_modrinth_creates_named_artifact",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_build::cli_build_prism_references_records_runtime",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_build::cli_build_prism_references_tar_gz_creates_named_artifact",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_build::cli_build_relative_workdir_writes_expected_mrpack_metadata",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_build::cli_clean_builds_removes_generated_artifacts",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_dependencies::cli_add_uninitialized_leaves_project_absent",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_dependencies::cli_headless_search_requires_explicit_selection",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_datapack_folder_is_authored",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_emits_versioned_automation_and_templates",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_existing_project_requires_replacement_decision",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_forced_replacement_preserves_unowned_content",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_missing_loader_reports_usage",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_preview_preserves_absent_destination",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::cli_init::cli_init_vanilla_binds_minecraft_without_loader",
+      "boundary": "X"
+    },
+    {
       "id": "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency",
       "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_local_exports::journey_local_content_export_prepare_preserves_bytes",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::live_cli_init::live_cli_init_early_neoforge_binds_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_cli_init::live_cli_init_fabric_binds_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_cli_init::live_cli_init_forge_binds_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_cli_init::live_cli_init_neoforge_binds_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_cli_init::live_cli_init_neoforge_explicit_version_binds_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_cli_init::live_cli_init_quilt_binds_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_provider_cli::live_cli_equivalent_provider_selectors_converge",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_server_cli::live_cli_build_server_references_7z_creates_named_artifact",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_server_cli::live_cli_build_server_references_records_runtime",
+      "boundary": "L"
+    },
+    {
+      "id": "empack-tests::live_server_cli::live_cli_local_server_export_prepare_preserves_bytes",
+      "boundary": "L"
     }
   ]
 }

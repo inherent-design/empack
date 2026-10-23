@@ -1,5 +1,5 @@
 use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
-use empack_tests::e2e::{TestProject, read_project};
+use empack_tests::harness::process::{TestProject, read_project};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -37,25 +37,8 @@ fn run(project: &TestProject, args: &[&str]) -> std::process::Output {
     output
 }
 #[test]
-fn e2e_add_to_uninitialized() {
-    let project = TestProject::new();
-    let output = project
-        .cmd()
-        .args(["--yes", "add", "--platform", "modrinth", "sodium"])
-        .output()
-        .expect("spawn empack");
-    assert!(!output.status.success());
-    assert!(!project.dir().join("empack.yml").exists());
-    assert!(!project.dir().join("pack").exists());
-}
-#[test]
-fn e2e_add_sodium_live() {
-    if !empack_tests::e2e::prerequisite_available(
-        std::env::var_os("EMPACK_RUN_LIVE_TESTS").is_some(),
-        "set EMPACK_RUN_LIVE_TESTS=1 to run live network tests",
-    ) {
-        return;
-    }
+#[ignore = "requires live Modrinth catalog and downloads"]
+fn live_cli_equivalent_provider_selectors_converge() {
     let project = TestProject::workflow_fixture("provider-add", "fabric", "1.21.1");
     run(
         &project,
@@ -132,21 +115,5 @@ fn e2e_add_sodium_live() {
     assert_eq!(
         std::fs::read(project.dir().join("empack.lock")).unwrap(),
         lock
-    );
-}
-#[test]
-fn e2e_headless_add_requires_deliberate_provider_selection() {
-    let project = TestProject::workflow_fixture("headless-add", "fabric", "1.21.1");
-    let before = std::fs::read(project.dir().join("empack.yml")).unwrap();
-    let output = project
-        .cmd()
-        .args(["--yes", "add", "xyznonexistentmod12345"])
-        .output()
-        .expect("spawn empack");
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("deliberate choice"));
-    assert_eq!(
-        std::fs::read(project.dir().join("empack.yml")).unwrap(),
-        before
     );
 }

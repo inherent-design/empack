@@ -60,8 +60,8 @@ These checks validate structure and classification only. The complete bindings,
 case/variant result join, doctest discovery and qualification gate are still being
 implemented. A successful structural check does not qualify the release.
 
-`test-bindings.json` starts with the literal authoring journey, discovered by
-Nextest. The registry marks UX-047 partial and lists its remaining evidence.
+`test-bindings.json` records the literal authoring journey and the separated
+argument, initialization, build, dependency and live suites, discovered by Nextest. The registry marks UX-047 partial and lists its remaining evidence.
 Comparing the complete workspace inventory with this partial file must fail on
 unclassified tests. Cases declare required platforms and product feature variants;
 those declarations do not establish that any variant ran.

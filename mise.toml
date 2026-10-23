@@ -60,8 +60,8 @@ run_windows = [
 alias = "e"
 depends = ["build:bin"]
 description = "Run E2E tests"
-run = "cargo nextest run -p empack-tests --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init)'"
-run_windows = 'cargo nextest run -p empack-tests --run-ignored all -E "test(~e2e_) | binary(=live_cli_init)"'
+run = "cargo nextest run -p empack-tests --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)'"
+run_windows = 'cargo nextest run -p empack-tests --run-ignored all -E "test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)"'
 
 [tasks."e2e:filter"]
 alias = "fe"
@@ -78,11 +78,11 @@ description = "Build telemetry CLI and require all live E2E prerequisites"
 env = { EMPACK_E2E_STRICT = "1", EMPACK_RUN_LIVE_TESTS = "1" }
 run = """
 cargo build -p empack --features telemetry
-cargo nextest run -p empack-tests --features empack-lib/telemetry --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init)'
+cargo nextest run -p empack-tests --features empack-lib/telemetry --run-ignored all -E 'test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)'
 """
 run_windows = [
     'cargo build -p empack --features telemetry',
-    'cargo nextest run -p empack-tests --features empack-lib/telemetry --run-ignored all -E "test(~e2e_) | binary(=live_cli_init)"',
+    'cargo nextest run -p empack-tests --features empack-lib/telemetry --run-ignored all -E "test(~e2e_) | binary(=live_cli_init) | binary(=live_provider_cli) | binary(=live_server_cli)"',
 ]
 
 [tasks."smoke:import:pr"]
