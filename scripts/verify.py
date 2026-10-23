@@ -12,6 +12,7 @@ import sys
 import tomllib
 import uuid
 
+from verification.classification import compare_rust_inventory
 from verification.evidence import read_results, selected_tests, sha256, write_json
 from verification.process import run
 from verification.suites import SUITES
@@ -142,6 +143,10 @@ junit.store-failure-output = false
     inventory = json.loads(output)
     write_json(suite_dir / "inventory.json", inventory)
     selected, all_ids = selected_tests(inventory, suite.ignored, suite.binaries, suite.cases)
+    bindings = json.loads((ROOT / "tests/verification/test-bindings.json").read_text(encoding="utf-8"))
+    requirements = json.loads((ROOT / "tests/verification/requirements.json").read_text(encoding="utf-8"))
+    compare_rust_inventory(inventory, bindings, requirements["api_routes"], suite.binaries)
+    record["classification_sha256"] = sha256(ROOT / "tests/verification/test-bindings.json")
     record["selected"] = selected
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")
     run_env = dict(environment, EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",

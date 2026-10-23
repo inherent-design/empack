@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 
+from verification.classification import compare_rust_inventory
 from verification.evidence import read_results, selected_tests, sha256, write_json
 from verification.suites import SUITES
 from verification.consumer import PRISM_COMMIT, require_supported_qt
@@ -14,6 +15,9 @@ from verification.consumer import PRISM_COMMIT, require_supported_qt
 TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
 NATIVE_SUITES = {"default": ["deterministic"], "telemetry": ["cli", "telemetry"]}
 JOBS = ("tooling", "lint", "test", "cross-build", "coverage", "live", "consumer", "survey")
+ROOT = Path(__file__).resolve().parents[1]
+CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
+REQUIREMENTS = ROOT / "tests/verification/requirements.json"
 FIXTURES = Path(__file__).resolve().parents[1] / "crates/empack-lib/src/engine/build/client/fixtures.json"
 
 
@@ -122,7 +126,14 @@ def check_suite_receipt(directory, expected_suites, target, revision, features="
         junit = path.parent / row["suite"] / "junit.xml"
         if sha256(inventory) != row["inventory_sha256"] or sha256(junit) != row["junit_sha256"]:
             raise ValueError(f"Changed test evidence: {row['suite']}")
-        selected, all_ids = selected_tests(json.loads(inventory.read_text()), suite.ignored, suite.binaries, suite.cases)
+        if row.get("classification_sha256") != sha256(CLASSIFICATION):
+            raise ValueError(f"Changed Rust classification: {row['suite']}")
+        discovered = json.loads(inventory.read_text())
+        compare_rust_inventory(discovered, json.loads(CLASSIFICATION.read_text()),
+                               json.loads(REQUIREMENTS.read_text())["api_routes"], suite.binaries)
+        if discovered["rust-build-meta"]["platforms"]["host"]["platform"]["triple"] != target:
+            raise ValueError(f"Inventory target disagrees with required target: {row['suite']}")
+        selected, all_ids = selected_tests(discovered, suite.ignored, suite.binaries, suite.cases)
         results = read_results(junit, selected, all_ids)
         if selected != row["selected"] or results != row["tests"] or any(r["status"] != "PASS" for r in results):
             raise ValueError(f"Incomplete or inconsistent test outcomes: {row['suite']}")

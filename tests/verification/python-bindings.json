@@ -59,6 +59,13 @@
       ]
     },
     {
+      "id": "python::test_ci_verification.RequiredGate.test_inventory_host_cannot_be_relabelled_by_artifact_provenance",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.RequiredGate.test_missing_credentials_are_blocked_before_discovery_or_execution",
       "boundary": "H",
       "requirements": [
@@ -353,6 +360,55 @@
     },
     {
       "id": "python::test_test_map.RequirementBindings.test_partial_bindings_remain_structurally_valid",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_actual_target_selects_required_membership_without_waiving_unknown_targets",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_corrupt_policy_cannot_make_unknown_ids_applicable",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_cross_compilation_does_not_substitute_for_host_inventory",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_empty_or_incomplete_listing_is_not_a_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_fixed_subset_may_skip_other_binaries_but_not_its_own",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_new_test_and_changed_ignore_policy_require_review",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_required_test_or_whole_binary_cannot_vanish",
       "boundary": "U",
       "requirements": [
         "UX-088"

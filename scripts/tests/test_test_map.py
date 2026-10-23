@@ -174,3 +174,95 @@ class DoctestDiscovery(unittest.TestCase):
             checker.compare_doctests(inventory, bindings, {"UX-086"})
         with self.assertRaisesRegex(ValueError, "requirement owner"):
             checker.compare_doctests(inventory, bindings, {"UX-001"})
+
+
+class RustPlatformBindings(unittest.TestCase):
+    def setUp(self):
+        self.bindings = {"schema": 2, "selection": "workspace-all-features",
+            "targets": {"aarch64-apple-darwin": "macos", "x86_64-pc-windows-msvc": "windows"},
+            "tests": [
+                {"id": "engine::portable", "binary": "engine", "binary_name": "engine",
+                 "boundary": "H", "api": "LIFE", "platforms": ["macos", "windows"], "ignored": False},
+                {"id": "engine::unix_only", "binary": "engine", "binary_name": "engine",
+                 "boundary": "N", "api": "LIFE", "platforms": ["macos"], "ignored": True},
+                {"id": "console::terminal", "binary": "console", "binary_name": "console",
+                 "boundary": "I", "api": "CLI", "platforms": ["macos", "windows"], "ignored": False},
+            ]}
+        self.inventory = {"test-count": 3, "rust-build-meta": {"platforms": {
+            "host": {"platform": {"triple": "aarch64-apple-darwin"}}, "targets": []}},
+            "rust-suites": {
+                "engine": {"binary-name": "engine", "status": "listed", "testcases": {
+                    "portable": {"ignored": False}, "unix_only": {"ignored": True}}},
+                "console": {"binary-name": "console", "status": "listed", "testcases": {
+                    "terminal": {"ignored": False}}}}}
+
+    def check(self, binaries=()):
+        return checker.compare_rust_inventory(self.inventory, self.bindings, {"LIFE", "CLI"}, binaries)
+
+    def test_actual_target_selects_required_membership_without_waiving_unknown_targets(self):
+        self.assertEqual(len(self.check()), 3)
+        self.inventory["rust-build-meta"]["platforms"]["host"]["platform"]["triple"] = "x86_64-pc-windows-msvc"
+        self.inventory["rust-suites"]["engine"]["testcases"].pop("unix_only")
+        self.inventory["test-count"] = 2
+        self.assertEqual(len(self.check()), 2)
+        self.inventory["rust-build-meta"]["platforms"]["host"]["platform"]["triple"] = "unreviewed-target"
+        with self.assertRaisesRegex(ValueError, "Unclassified Rust target"):
+            self.check()
+
+    def test_required_test_or_whole_binary_cannot_vanish(self):
+        for binary, case in (("engine", "portable"), ("console", None)):
+            with self.subTest(binary=binary):
+                changed = copy.deepcopy(self.inventory)
+                if case:
+                    changed["rust-suites"][binary]["testcases"].pop(case)
+                else:
+                    changed["rust-suites"].pop(binary)
+                changed["test-count"] -= 1
+                with self.assertRaisesRegex(ValueError, "missing="):
+                    checker.compare_rust_inventory(changed, self.bindings, {"LIFE", "CLI"})
+
+    def test_new_test_and_changed_ignore_policy_require_review(self):
+        self.inventory["rust-suites"]["engine"]["testcases"]["new_test"] = {"ignored": False}
+        self.inventory["test-count"] += 1
+        with self.assertRaisesRegex(ValueError, "unclassified="):
+            self.check()
+        self.inventory["rust-suites"]["engine"]["testcases"].pop("new_test")
+        self.inventory["test-count"] -= 1
+        self.inventory["rust-suites"]["engine"]["testcases"]["portable"]["ignored"] = True
+        with self.assertRaisesRegex(ValueError, "ignore policy changed"):
+            self.check()
+
+    def test_fixed_subset_may_skip_other_binaries_but_not_its_own(self):
+        self.inventory["rust-suites"]["engine"].update(status="skipped", testcases={})
+        self.inventory["test-count"] = 1
+        self.assertEqual(len(self.check(("console",))), 1)
+        with self.assertRaisesRegex(ValueError, "was not listed"):
+            self.check()
+        with self.assertRaisesRegex(ValueError, "absent from Rust classification"):
+            self.check(("misspelled",))
+
+    def test_cross_compilation_does_not_substitute_for_host_inventory(self):
+        self.inventory["rust-build-meta"]["platforms"]["targets"] = ["another-target"]
+        with self.assertRaisesRegex(ValueError, "Cross-compiled"):
+            self.check()
+
+    def test_corrupt_policy_cannot_make_unknown_ids_applicable(self):
+        original = copy.deepcopy(self.bindings)
+        for field, value in (("api", "typo"), ("boundary", "fake-browser"),
+                             ("platforms", []), ("platforms", ["unreviewed"]),
+                             ("platforms", ["macos", "macos"]), ("ignored", "false"),
+                             ("binary", "renamed")):
+            self.bindings = copy.deepcopy(original)
+            self.bindings["tests"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.check()
+        self.bindings = copy.deepcopy(original)
+        self.bindings["tests"].append(dict(self.bindings["tests"][0]))
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            self.check()
+
+    def test_empty_or_incomplete_listing_is_not_a_pass(self):
+        self.inventory["rust-suites"] = {}
+        self.inventory["test-count"] = 0
+        with self.assertRaisesRegex(ValueError, "empty"):
+            self.check()

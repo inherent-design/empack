@@ -115,17 +115,31 @@ def fixture_attempt(directory, target, features="telemetry", suites=None):
     for name in suites:
         suite_dir = attempt / name
         suite_dir.mkdir()
-        binaries = SUITES[name].binaries or ("empack-core",)
-        identities = sorted(binary + "::fixture" for binary in binaries)
-        inventory = {"test-count": len(binaries), "rust-suites": {binary: {
-            "status": "listed", "binary-name": binary, "testcases": {
-                "fixture": {"ignored": SUITES[name].ignored, "filter-match": {"status": "matches"}}}
-            } for binary in binaries}}
+        policy = json.loads(ci.CLASSIFICATION.read_text())
+        platform = policy["targets"][target]
+        rows = [row for row in policy["tests"] if platform in row["platforms"]
+                and (not SUITES[name].binaries or row["binary_name"] in SUITES[name].binaries)]
+        inventory = {"test-count": len(rows), "rust-build-meta": {"platforms": {
+            "host": {"platform": {"triple": target}}, "targets": []}}, "rust-suites": {}}
+        for row in rows:
+            binary = row["binary"]
+            test = row["id"].removeprefix(binary + "::")
+            suite = inventory["rust-suites"].setdefault(binary, {
+                "status": "listed", "binary-name": row["binary_name"], "testcases": {}})
+            suite["testcases"][test] = {"ignored": row["ignored"], "filter-match": {"status": "matches"}}
         write_json(suite_dir / "inventory.json", inventory)
-        rows = ''.join(f'<testsuite name="{binary}"><testcase classname="{binary}" name="fixture"/></testsuite>' for binary in binaries)
-        (suite_dir / "junit.xml").write_text(f'<testsuites tests="{len(binaries)}">{rows}</testsuites>')
+        identities, _ = ci.selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries)
+        # Synthetic successful rows test gate mechanics; these are not executions
+        # of the real test IDs used to construct the expected receipt shape.
+        xml = []
+        for binary, suite in inventory["rust-suites"].items():
+            cases = ''.join(f'<testcase classname="{binary}" name="{test}"/>'
+                            for test in suite["testcases"] if f'{binary}::{test}' in identities)
+            xml.append(f'<testsuite name="{binary}">{cases}</testsuite>')
+        (suite_dir / "junit.xml").write_text(f'<testsuites tests="{len(identities)}">' + ''.join(xml) + '</testsuites>')
         receipt["suites"].append(dict(suite=name, status="PASS", exit_code=0, timed_out=False, attempt=1,
             selected=identities, tests=[dict(id=identity, status="PASS") for identity in identities],
+            classification_sha256=sha256(ci.CLASSIFICATION),
             inventory_sha256=sha256(suite_dir / "inventory.json"), junit_sha256=sha256(suite_dir / "junit.xml")))
     write_json(attempt / "receipt.json", receipt)
     return attempt, receipt
@@ -202,6 +216,7 @@ class RequiredGate(unittest.TestCase):
                 lambda r: r["suites"][0].update(status="BLOCKED"),
                 lambda r: r["suites"][0].update(tests=[]),
                 lambda r: r["suites"][0].update(attempt=2),
+                lambda r: r["suites"][0].update(classification_sha256="e" * 64),
                 lambda r: r.update(requested_suites=["deterministic"]),
             ):
                 modified = copy.deepcopy(receipt)
@@ -213,6 +228,21 @@ class RequiredGate(unittest.TestCase):
             (attempt / "telemetry" / "junit.xml").write_text("changed")
             with self.assertRaisesRegex(ValueError, "Changed test evidence"):
                 ci.check_suite_receipt(root, ["deterministic", "telemetry"], ci.TARGETS[0], REVISION)
+
+    def test_inventory_host_cannot_be_relabelled_by_artifact_provenance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            attempt, receipt = fixture_attempt(root, ci.TARGETS[0], suites=["telemetry"])
+            inventory_path = attempt / "telemetry" / "inventory.json"
+            inventory = json.loads(inventory_path.read_text())
+            # Telemetry has the same identities on both hosts. Its compiler host
+            # still cannot be relabelled by the caller's artifact target field.
+            inventory["rust-build-meta"]["platforms"]["host"]["platform"]["triple"] = ci.TARGETS[1]
+            write_json(inventory_path, inventory)
+            receipt["suites"][0]["inventory_sha256"] = sha256(inventory_path)
+            write_json(attempt / "receipt.json", receipt)
+            with self.assertRaisesRegex(ValueError, "Inventory target disagrees"):
+                ci.check_suite_receipt(root, ["telemetry"], ci.TARGETS[0], REVISION)
 
     def test_selected_case_missing_from_discovery_cannot_be_substituted(self):
         from verification.evidence import selected_tests

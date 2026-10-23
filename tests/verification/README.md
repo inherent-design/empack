@@ -37,7 +37,8 @@ do not execute the acceptance cases.
 
 A Rust identity is `BINARY_ID::TEST_NAME`, using both values exactly as Nextest
 reports them. Python identities use `python::MODULE.CLASS.METHOD`. Classification
-files contain a `tests` array with `id` and `boundary`. The boundary vocabulary is:
+files contain a `tests` array with exact identities and evidence boundaries. The
+boundary vocabulary is:
 
 | Code | Evidence boundary |
 | --- | --- |
@@ -68,32 +69,41 @@ source-line moves require an explicit binding update; they cannot silently remov
 a case. Binding checks reject unknown and vanished identities.
 
 ```bash
-python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings path/to/rust-bindings.json
+python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings tests/verification/test-bindings.json
 python3 scripts/check-test-map.py --python-inventory /tmp/empack-python-tests.json --python-bindings tests/verification/python-bindings.json
 python3 scripts/check-test-map.py --cli-inventory /tmp/empack-cli.json --cli-bindings tests/verification/cli-bindings.json
 ```
 
-These checks validate structure and classification only. CLI, Python and doctest
-bindings are checked against their discovered inventories. Complete Rust workspace
-and platform bindings, the requirement/case/variant result join, and final
-qualification remain in progress. `scripts/verify.py` already joins selected compiler IDs
-to actual JUnit results and retains one receipt per attempt. A successful structural
-check does not qualify the release.
+`test-bindings.json` classifies the complete all-features Rust test graph across
+macOS arm64, Linux x86_64 and Windows x86_64. Each exact Nextest identity has its
+binary ID/name, boundary, owning API responsibility, required platforms and reviewed
+ignore policy. The registry contains expectations, not execution results. Its
+platform union comes from compiler discovery; new platform-neutral tests explicitly
+require every listed host before those variants have run. The `api` field identifies
+implementation responsibility, not measured call coverage or completion of every
+requirement routed through that API.
 
-`test-bindings.json` records the compiled external test crate on macOS arm64,
-including fixture checks, controlled hosts, executable journeys, interactive cases
-and live probes. Other platform-only identities and the remaining workspace still
-need classification. The registry marks the bound authoring and pending
-build/import/synchronization groups partial and lists their remaining evidence.
-Synchronization exercises public association keys, partial
-retention after cache eviction, restart, exact materialized bytes, stale drafts and
-explicit cleanup. Import uses a real unsupported-transport obligation and public
-diagnostics, rejects wrong/ambiguous associations, resumes after deleting the original
-archive, and verifies exact exported bytes. It preserves the public distinction
-between saved input and a complete assessment of missing requirements. This offline
-fixture does not establish a live provider's restricted-download policy. Instance
-pending journeys, corrupt/ambiguous records and interactive import approval remain
-separate obligations.
-Comparing the complete workspace inventory with this partial file must fail on
-unclassified tests. Cases declare required platforms and product feature
-variants; those declarations do not establish that any variant ran.
+The runner checks this classification before executing every fixed Rust suite. Full
+workspace discovery must include every expected host test and binary. Narrow suites
+may omit only binaries outside their explicit selection; test filters still require
+complete discovery within the selected binaries. Unknown targets, tests, ignore-policy
+changes and vanished tests fail. CI rechecks the inventory and classification digest
+alongside the JUnit join. Cross compilation cannot substitute for host discovery.
+The current registry does not classify the separate minimal-feature graph or claim
+execution on the two additional release-archive targets.
+
+These checks validate structure and classification only. CLI, Python and doctest
+bindings are also checked against actual discovery. Requirement decomposition,
+case/variant execution joins and final qualification remain in progress. A successful
+structural check does not qualify a release.
+
+The bound authoring and pending build/import/synchronization groups remain partial.
+Synchronization exercises public association keys, partial retention after cache
+eviction, restart, exact materialized bytes, stale drafts and explicit cleanup.
+Import uses a real unsupported-transport obligation and public diagnostics, rejects
+wrong/ambiguous associations, resumes after deleting the original archive, and verifies
+exact exported bytes. It preserves the distinction between saved input and a complete
+assessment of missing requirements. This offline fixture does not establish a live
+provider's restricted-download policy. Instance pending journeys, corrupt/ambiguous
+records and interactive import approval remain separate obligations. Required platform
+and product-feature declarations do not establish that those variants ran.

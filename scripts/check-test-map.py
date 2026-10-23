@@ -6,11 +6,11 @@ import os
 import sys
 from pathlib import Path
 
+from verification.classification import BOUNDARIES, compare_rust_inventory
 from verification.discovery import rustdoc_tests
 from verification.process import run
 
 ROOT = Path(__file__).resolve().parents[1]
-BOUNDARIES = {"U", "H", "N", "X", "I", "L", "C", "P", "W", "M"}
 
 
 def discovered_tests(inventory):
@@ -195,7 +195,8 @@ def main():
         if not args.bindings:
             parser.error("--inventory requires --bindings or explicit --discover")
         bindings = json.loads(args.bindings.read_text(encoding="utf-8"))
-        discovered = compare_inventory(inventory, bindings)
+        discovered = (compare_rust_inventory(inventory, bindings, requirements["api_routes"])
+                      if bindings.get("schema") == 2 else compare_inventory(inventory, bindings))
         for requirement in requirements["requirements"]:
             for case in requirement["cases"]:
                 missing = set(case["test_ids"]) - discovered.keys()

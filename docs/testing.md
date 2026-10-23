@@ -172,10 +172,13 @@ prerequisites cannot silently reduce one of these selections.
 
 Each invocation creates a fresh directory under `target/verification/` containing
 compiler discovery, Nextest JUnit, bounded redacted logs, a source-file digest manifest,
-and `receipt.json`. Every selected test must produce a passing outcome. Empty required
-binaries, missing results, skipped selected tests, retries, failed commands and changed
-source/binary bytes cannot yield a suite pass. Missing tools or prerequisites produce
-`BLOCKED`; a Unix-only desktop fixture on Windows produces `NOT_APPLICABLE`.
+and `receipt.json`. The all-features Rust inventory must match the reviewed platform
+classification, including ignore policy, before execution. Every selected test must
+produce a passing outcome. Empty required binaries, missing results, skipped selected
+tests, retries, failed commands and changed
+source/binary bytes cannot yield a suite pass. The final CI gate also checks the
+classification digest and the compiler inventory's actual host target. Missing tools
+or prerequisites produce `BLOCKED`; a Unix-only desktop fixture on Windows produces `NOT_APPLICABLE`.
 
 The runner does not retry an attempt. Re-running it creates another record and retains
 the earlier failure. These are suite records, not final release qualification or proof
