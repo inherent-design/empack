@@ -247,6 +247,239 @@ fn cli_interrupt_exits_130() {
     assert!(!project.dir().join("pack/mods").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
+    use empack_tests::harness::process::{
+        assert_dist_artifact_suffix, empack_cmd, offline_command,
+    };
+    use predicates::str::contains;
+    use sha2::{Digest, Sha256};
+
+    struct Runtime {
+        host: std::process::Child,
+        pid: Option<String>,
+    }
+    impl Drop for Runtime {
+        fn drop(&mut self) {
+            if let Some(pid) = &self.pid {
+                let _ = Command::new("/bin/kill")
+                    .args(["-KILL", pid])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            let _ = self.host.kill();
+            let _ = self.host.wait();
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let author = root.path().join("author");
+    fs::create_dir_all(author.join("pack")).unwrap();
+    fs::write(author.join("pack/managed.txt"), b"publisher content").unwrap();
+    fs::write(
+        author.join("empack.yml"),
+        r#"schema: 5
+pack:
+  id: verification.runtime
+  name: Runtime Fixture
+  version: '1.0.0'
+runtime:
+  minecraft: '1.21.1'
+  loader: vanilla
+  java: 21
+dependencies: {}
+build:
+  default: [native]
+  profiles:
+    native:
+      target: empack
+      delivery: bundled
+      environment: client
+      updates: snapshot
+      format: zip
+"#,
+    )
+    .unwrap();
+    offline_command(&author)
+        .args(["--yes", "sync"])
+        .assert()
+        .success();
+    offline_command(&author)
+        .args(["--yes", "build"])
+        .assert()
+        .success();
+    let archive = assert_dist_artifact_suffix(&author, "-empack-bundled-client.empack");
+    let export = root.path().join("release");
+    fs::create_dir(&export).unwrap();
+    zip::ZipArchive::new(fs::File::open(archive).unwrap())
+        .unwrap()
+        .extract(&export)
+        .unwrap();
+    let payload = fs::read(export.join("release.json")).unwrap();
+    let id: String = Sha256::digest(&payload)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+
+    for interfere_with_cleanup in [false, true] {
+        let instance = root
+            .path()
+            .join(format!("instance-{interfere_with_cleanup}"));
+        fs::create_dir(&instance).unwrap();
+        offline_command(&instance)
+            .args(["--yes", "instance", "install"])
+            .arg(export.join("release.json"))
+            .args(["--sha256", &id])
+            .assert()
+            .success();
+        let stderr = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+        let mut runtime = Runtime {
+            host: empack_cmd(&instance)
+                .args([
+                    "--yes",
+                    "instance",
+                    "launch",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    // One child, blocked on inherited input; no Java/network/fault switch.
+                    "printf '%s\\n' \"$$\" > runtime-pid; read -r line",
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(stderr.reopen().unwrap()))
+                .spawn()
+                .unwrap(),
+            pid: None,
+        };
+        let pid_file = instance.join("game/runtime-pid");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Ok(pid) = fs::read_to_string(&pid_file)
+                && pid.trim().parse::<u32>().is_ok_and(|pid| pid > 1)
+            {
+                runtime.pid = Some(pid.trim().to_owned());
+                break;
+            }
+            assert!(Instant::now() < deadline, "Runtime did not start");
+            assert!(
+                runtime.host.try_wait().unwrap().is_none(),
+                "{}",
+                fs::read_to_string(stderr.path()).unwrap()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let markers = fs::read_dir(instance.join(".host-state"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path().join("runtime.json"))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        assert_eq!(markers.len(), 1, "One owned runtime must have one marker");
+        let marker = &markers[0];
+        if interfere_with_cleanup {
+            // Controlled external edit to real ownership evidence, not a product hook.
+            fs::write(marker, b"externally changed runtime evidence").unwrap();
+        }
+        assert!(
+            Command::new("/bin/kill")
+                .args(["-INT", &runtime.host.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let status = loop {
+            if let Some(status) = runtime.host.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Host cancellation did not retire"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let pid = runtime.pid.as_ref().unwrap();
+        let remaining = Command::new("/bin/kill")
+            .args(["-0", "--", &format!("-{pid}")])
+            .env("LC_ALL", "C")
+            .output()
+            .unwrap();
+        assert!(!remaining.status.success(), "Owned runtime group survived");
+        assert!(
+            String::from_utf8_lossy(&remaining.stderr).contains("No such process"),
+            "{remaining:?}"
+        );
+        runtime.pid = None;
+        assert_eq!(status.code(), Some(130));
+        let diagnostic = fs::read_to_string(stderr.path()).unwrap();
+        assert!(diagnostic.contains("Operation interrupted"), "{diagnostic}");
+        if interfere_with_cleanup {
+            assert!(
+                diagnostic.contains("Runtime evidence changed before retirement"),
+                "{diagnostic}"
+            );
+            assert!(
+                diagnostic.contains("recovery evidence could not be cleared"),
+                "{diagnostic}"
+            );
+            assert!(
+                diagnostic.contains("instance recover-runtime --acknowledge-stopped"),
+                "{diagnostic}"
+            );
+            assert_eq!(
+                fs::read(marker).unwrap(),
+                b"externally changed runtime evidence"
+            );
+            offline_command(&instance)
+                .args([
+                    "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 0",
+                ])
+                .assert()
+                .failure()
+                .stderr(contains("retirement is unconfirmed"));
+            offline_command(&instance)
+                .args(["--yes", "instance", "recover-runtime"])
+                .assert()
+                .failure()
+                .stderr(contains("--acknowledge-stopped"));
+            assert!(marker.is_file());
+            offline_command(&instance)
+                .args([
+                    "--yes",
+                    "instance",
+                    "recover-runtime",
+                    "--acknowledge-stopped",
+                ])
+                .assert()
+                .success();
+        } else {
+            assert!(!diagnostic.contains("recovery is required"), "{diagnostic}");
+        }
+        assert!(!marker.exists());
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 0",
+            ])
+            .assert()
+            .success();
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 7",
+            ])
+            .assert()
+            .code(1)
+            .stderr(contains("Instance runtime exited with exit status: 7"));
+        assert!(!marker.exists());
+        assert_eq!(
+            fs::read(instance.join("game/managed.txt")).unwrap(),
+            b"publisher content"
+        );
+        assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    }
+}
+
 #[test]
 fn cli_unknown_native_build_target_exits_two() {
     check(

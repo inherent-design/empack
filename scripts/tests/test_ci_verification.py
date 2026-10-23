@@ -226,11 +226,18 @@ class RequiredGate(unittest.TestCase):
             # variant without presenting partial requirement decomposition as done.
             acceptance = result["acceptance"]["requirements"]
             self.assertEqual(len(acceptance), 109)
+            declared = {case["id"]: {(platform, features)
+                        for platform in case["required_platforms"]
+                        for features in case["required_product_features"]}
+                        for row in json.loads(ci.REQUIREMENTS.read_text())["requirements"]
+                        for case in row["cases"]}
             for requirement in acceptance:
                 self.assertEqual(requirement["status"], "NOT_RUN")
                 for case in requirement["cases"]:
                     self.assertEqual(case["status"], "PASS")
-                    self.assertEqual(len(case["variants"]), 6)
+                    actual = [(v["platform"], v["features"]) for v in case["variants"]]
+                    self.assertEqual(set(actual), declared[case["id"]])
+                    self.assertEqual(len(actual), len(set(actual)))
             (root / f"verification-{ci.TARGETS[1]}" / "default" / "one-attempt" / "receipt.json").unlink()
             with self.assertRaisesRegex(ValueError, "exactly one attempt"):
                 ci.check_gate(plan, successes(plan), root)

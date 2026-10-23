@@ -111,6 +111,14 @@ case's declared evidence. This report is not final release qualification: remain
 decomposition, non-Rust/consumer/device evidence and final-archive acceptance still
 need their required evidence. A successful structural check does not qualify a release.
 
+Cancellation and recovery bindings distinguish constructed finalizer results, real
+engine ownership, and an ordinary Unix executable chain. The latter launches a
+controlled child, changes its ownership record, sends a host interrupt, and checks
+actual stderr, status, refusal of another launch, and explicit recovery. It also
+checks clean interruption and classified nonzero child status. Those cases remain
+partial: actual terminal loss at the executable, Windows cancellation wiring and
+consumer Java behavior need their own evidence.
+
 The bound authoring and pending build/import/synchronization groups remain partial.
 Synchronization exercises public association keys, partial retention after cache
 eviction, restart, exact materialized bytes, stale drafts and explicit cleanup.

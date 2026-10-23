@@ -3035,7 +3035,134 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-075.retired-cleanup-result",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::application::process_runtime::terminal_cleanup_error_is_not_hidden_by_cancellation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A retired result with a terminal-cleanup error preserves both cleanup and process-failure details instead of plain interruption"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        },
+        {
+          "id": "UX-075.finalizer-retains-outcome",
+          "boundary": "U",
+          "test_ids": [
+            "empack::bin/empack::tests::cancellation_does_not_suppress_terminal_failure_details",
+            "empack::bin/empack::tests::clean_interruption_reports_no_recovery_warning",
+            "empack::bin/empack::tests::completed_success_survives_late_cancellation",
+            "empack::bin/empack::tests::interrupted_status_still_renders_attached_failure_context"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Constructed completed errors retain full diagnostics and typed exit status despite a cancellation request",
+            "Clean interruption has no invented recovery warning; late cancellation does not change completed success"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        },
+        {
+          "id": "UX-075.known-retirement-clears-ownership",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::terminal_cleanup_failure_clears_confirmed_runtime_ownership"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real child retires before a test-only terminal-restoration failure",
+            "No false recovery acknowledgement is required; another installation and launch can proceed"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        },
+        {
+          "id": "UX-075.failed-ownership-cleanup",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::cancellation_cannot_discard_failed_runtime_evidence_cleanup"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Cancellation after an external ownership-record edit retains genuine recovery evidence and a typed recovery-required result"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        },
+        {
+          "id": "UX-075.retained-launch-headline",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::launch_failure_summary_preserves_runtime_phase_and_cause"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Retained host errors preserve exact startup, unsuccessful exit and terminal-restoration phase messages"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        },
+        {
+          "id": "UX-075.executable-cancellation-recovery",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An ordinary CLI launches a controlled child and handles an actual host SIGINT",
+            "Known retirement with failed ownership cleanup reaches actual stderr with the recovery action even when exit status is 130",
+            "Clean interruption clears ownership without a false recovery warning; nonzero child status remains diagnostic with empack status 1"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        }
+      ],
       "owner_now": [
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
         "empack executable + empack-lib::application"
@@ -3044,7 +3171,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-076",
@@ -3066,7 +3193,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-076.executable-explicit-recovery",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Changed ownership evidence survives cancellation and blocks a subsequent ordinary launch",
+            "Recovery without explicit acknowledgement is refused; acknowledgement clears the record and permits a later launch",
+            "The source release and installed publisher bytes remain unchanged"
+          ],
+          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        }
+      ],
       "owner_now": [
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
         "engine::instance + api::instance; empack-core::instance"
@@ -3075,7 +3224,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-077",
