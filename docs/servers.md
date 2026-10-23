@@ -60,8 +60,18 @@ See [publishing](publishing.md) for publisher enrollment and
 
 The install and start batch scripts keep their console open when they finish so
 errors and EULA messages remain visible. Set `EMPACK_NO_PAUSE=1` for unattended
-operation. The scripts preserve the installation or server exit code. If startup
-fails, report the preceding console output and the Java version you selected.
+operation. If startup fails, report the preceding console output and the Java
+version you selected.
+
+## Exit status
+
+The scripts preserve the status returned by the command they invoke.
+Standalone bundled start scripts invoke Java directly and return its status.
+Managed start scripts invoke empack and return its classified status. An ordinary
+nonzero runtime exit, such as Java exiting 7, produces empack exit code 1 with the
+original runtime status in the diagnostic. A clean interruption of the empack host
+returns 130. Preparation, verification and recovery failures use empack's own error
+categories. This distinction also applies to the Unix start scripts.
 
 ## Existing exports and custom scripts
 

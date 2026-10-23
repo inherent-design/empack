@@ -193,10 +193,11 @@ fn e2e_interrupt_exits_130() {
         &mut cmd,
         &format!("http://{}", listener.local_addr().unwrap()),
     );
+    let stderr = tempfile::NamedTempFile::new().unwrap();
     let mut child = Child(
         cmd.args(["add", "--yes", "--platform", "modrinth", "sodium"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::from(stderr.reopen().unwrap()))
             .spawn()
             .unwrap(),
     );
@@ -237,6 +238,11 @@ fn e2e_interrupt_exits_130() {
         std::thread::sleep(Duration::from_millis(10));
     };
     assert_eq!(status.code(), Some(EmpackExitCode::Interrupted.as_i32()));
+    let diagnostic = fs::read_to_string(stderr.path()).unwrap();
+    assert!(
+        diagnostic.contains("Error: Operation interrupted"),
+        "Cancellation must reach executable error rendering: {diagnostic}"
+    );
     drop(connection);
     assert!(!project.dir().join("pack/mods").exists());
 }

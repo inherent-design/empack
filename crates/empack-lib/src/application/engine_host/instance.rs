@@ -822,11 +822,7 @@ async fn launch(
             let ExecutionReceipt::Launch(receipt) = receipt else {
                 anyhow::bail!("Unexpected runtime receipt")
             };
-            ensure!(
-                receipt.status.success(),
-                "Instance runtime exited with {}",
-                receipt.status
-            );
+            require_runtime_success(receipt.status)?;
             Ok(format!("Runtime completed for release {}", receipt.release))
         })
         .await
@@ -834,6 +830,11 @@ async fn launch(
     .await;
     engine.shutdown().await;
     result
+}
+
+fn require_runtime_success(status: std::process::ExitStatus) -> Result<()> {
+    ensure!(status.success(), "Instance runtime exited with {status}");
+    Ok(())
 }
 
 fn conflict_resolutions(
@@ -1068,4 +1069,42 @@ async fn inspect_optional(
         scope.accept(work.wait().await?)?.transpose()
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn managed_runtime_exit_uses_empack_classification() {
+        for code in [0, 7] {
+            // A real child supplies the same status value used by the launch receipt.
+            // This tests CLI classification, not Java or generated-script acceptance.
+            #[cfg(windows)]
+            let status = std::process::Command::new("cmd")
+                .args(["/d", "/c", &format!("exit /b {code}")])
+                .status()
+                .unwrap();
+            #[cfg(not(windows))]
+            let status = std::process::Command::new("/bin/sh")
+                .args(["-c", &format!("exit {code}")])
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(code));
+            match require_runtime_success(status) {
+                Ok(()) => assert_eq!(code, 0),
+                Err(error) => {
+                    assert_eq!(code, 7);
+                    assert_eq!(
+                        crate::application::classify_error(&error),
+                        crate::application::EmpackExitCode::General
+                    );
+                    assert_eq!(
+                        format!("{error:#}"),
+                        format!("Instance runtime exited with {status}")
+                    );
+                }
+            }
+        }
+    }
 }
