@@ -52,6 +52,9 @@ def case_results(document, classification, evidence, revision):
         features = record["features"]
         if features not in {"default", "telemetry"}:
             raise ValueError("Unknown acceptance product feature variant")
+        graph = record["test_features"]
+        if graph not in {"minimal", "all"}:
+            raise ValueError("Unknown acceptance test feature graph")
         for test in record["tests"]:
             identity = test["id"]
             if identity not in bindings or platform not in bindings[identity]["platforms"]:
@@ -59,7 +62,7 @@ def case_results(document, classification, evidence, revision):
             if test["status"] not in {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}:
                 raise ValueError(f"Unexpected acceptance test status: {identity}")
             key = (identity, platform, features)
-            outcome = {"status": test["status"], "artifact_sha256": record["artifact_sha256"]}
+            outcome = {"status": test["status"], "artifact_sha256": record["artifact_sha256"], "test_features": graph}
             if key in observed and observed[key]["outcome"] != outcome:
                 raise ValueError(f"Conflicting acceptance evidence: {identity}")
             entry = observed.setdefault(key, {"outcome": outcome, "receipts": set()})

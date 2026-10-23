@@ -183,8 +183,13 @@ installer/startup deadlines or retry a failed operation.
 
 Each invocation creates a fresh directory under `target/verification/` containing
 compiler discovery, Nextest JUnit, bounded redacted logs, a source-file digest manifest,
-and `receipt.json`. The all-features Rust inventory must match the reviewed platform
-classification, including ignore policy, before execution. Every selected test must
+and `receipt.json`. The Rust inventory must match the reviewed platform and test-feature membership,
+including ignore policy, before execution. `--test-features minimal` uses the
+workspace with `--no-default-features`; `--test-features all` uses `--all-features`.
+The harness still requests its explicit `test-utils` dependency in the minimal
+graph. These flags describe the test graph, not the separately built product.
+Receipts retain both discovery and execution commands; the gate checks their exact
+selection and graph rather than trusting a feature label. Every selected test must
 produce a passing outcome. Empty required binaries, missing results, skipped selected
 tests, retries, failed commands and changed
 source/binary bytes cannot yield a suite pass. The final CI gate also checks the
@@ -230,8 +235,10 @@ Lockfile, toolchain and verification changes therefore select fresh checks. ARM6
 cross-build remains compilation evidence only.
 
 Each native target runs the deterministic suite against the ordinary default product,
-then the offline CLI and telemetry suites against a separately built telemetry product.
-The gate requires both product variants; a telemetry build cannot stand in for the default.
+under the minimal workspace graph, then repeats the deterministic suite plus telemetry
+contracts under the all-features graph against a separately built telemetry product.
+The gate requires both product/graph pairs; a telemetry build or an all-features
+inventory cannot stand in for the default product and minimal test graph.
 
 Provider, runtime and managed-client paths select additional relevant probes.
 Shared dependency/toolchain or verification changes select representative routes

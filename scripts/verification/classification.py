@@ -3,9 +3,11 @@
 BOUNDARIES = {"U", "H", "N", "X", "I", "L", "C", "P", "W", "M"}
 
 
-def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=()):
-    if bindings.get("schema") != 2 or bindings.get("selection") != "workspace-all-features":
-        raise ValueError("Expected workspace-all-features Rust classification")
+def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=(), test_features="all"):
+    if bindings.get("schema") != 3 or bindings.get("selection") != "workspace-feature-graphs":
+        raise ValueError("Expected workspace feature-graph Rust classification")
+    if test_features not in {"all", "minimal"}:
+        raise ValueError("Unclassified Rust test feature graph")
     targets = bindings["targets"]
     if not targets or not set(targets.values()) <= {"macos", "linux", "windows"}:
         raise ValueError("Unknown Rust platform policy")
@@ -32,13 +34,16 @@ def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=()):
             raise ValueError(f"Missing Rust ignore policy: {identity}")
         if not row["binary_name"] or names.setdefault(row["binary"], row["binary_name"]) != row["binary_name"]:
             raise ValueError(f"Inconsistent Rust binary name: {identity}")
+        graphs = row["test_features"]
+        if not graphs or len(set(graphs)) != len(graphs) or not set(graphs) <= {"all", "minimal"}:
+            raise ValueError(f"Unknown or empty Rust test feature membership: {identity}")
         classified[identity] = row
     if not classified:
         raise ValueError("Rust classification must be nonempty")
     if selected_binaries - set(names.values()):
         raise ValueError("Required binary is absent from Rust classification")
     expected = {identity: row for identity, row in classified.items()
-                if platform in row["platforms"]
+                if platform in row["platforms"] and test_features in row["test_features"]
                 and (not selected_binaries or row["binary_name"] in selected_binaries)}
     discovered = {}
     for binary, suite in inventory["rust-suites"].items():

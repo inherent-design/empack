@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from verification.classification import BOUNDARIES, compare_rust_inventory
+from verification.suites import TEST_FEATURES
 from verification.discovery import rustdoc_tests
 from verification.requirements import case_results, validate_requirements
 from verification.process import run
@@ -141,6 +142,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--requirements", type=Path,
                         default=ROOT / "tests/verification/requirements.json")
+    parser.add_argument("--test-features", choices=TEST_FEATURES, default="all")
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--bindings", type=Path)
     parser.add_argument("--python-inventory", type=Path)
@@ -173,8 +175,8 @@ def main():
         if not args.bindings:
             parser.error("--inventory requires --bindings or explicit --discover")
         bindings = json.loads(args.bindings.read_text(encoding="utf-8"))
-        discovered = (compare_rust_inventory(inventory, bindings, requirements["api_routes"])
-                      if bindings.get("schema") == 2 else compare_inventory(inventory, bindings))
+        discovered = (compare_rust_inventory(inventory, bindings, requirements["api_routes"], test_features=args.test_features)
+                      if bindings.get("schema") == 3 else compare_inventory(inventory, bindings))
         for requirement in requirements["requirements"]:
             for case in requirement["cases"]:
                 missing = set(case["test_ids"]) - discovered.keys()

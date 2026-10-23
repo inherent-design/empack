@@ -131,8 +131,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
-      - run: python scripts/verify.py deterministic --product-features default --output target/verification/default
-      - run: python scripts/verify.py cli telemetry --product-features telemetry --output target/verification/telemetry
+      - run: python scripts/verify.py deterministic --test-features minimal --product-features default --output target/verification/default
+      - run: python scripts/verify.py deterministic telemetry --test-features all --product-features telemetry --output target/verification/telemetry
       - run: cargo test --locked --workspace --all-features --doc
       - uses: actions/upload-artifact@v7
         if: always()

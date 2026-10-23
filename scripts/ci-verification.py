@@ -14,7 +14,8 @@ from verification.requirements import case_results
 from verification.receipts import check_suite_receipt
 
 TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
-NATIVE_SUITES = {"default": ["deterministic"], "telemetry": ["cli", "telemetry"]}
+NATIVE_TEST_FEATURES = {"default": "minimal", "telemetry": "all"}
+NATIVE_SUITES = {"default": ["deterministic"], "telemetry": ["deterministic", "telemetry"]}
 JOBS = ("tooling", "lint", "test", "cross-build", "coverage", "live", "consumer", "survey")
 ROOT = Path(__file__).resolve().parents[1]
 CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
@@ -150,7 +151,8 @@ def check_gate(plan, needs, artifacts):
     for target in plan["native_targets"]:
         for features, suites in NATIVE_SUITES.items():
             evidence.append(check_suite_receipt(artifacts / f"verification-{target}" / features,
-                            suites, target, plan["source_revision"], features))
+                            suites, target, plan["source_revision"], features,
+                            test_features=NATIVE_TEST_FEATURES[features]))
     if plan["live_suites"]:
         evidence.append(check_suite_receipt(artifacts / "verification-live", plan["live_suites"],
                         TARGETS[0], plan["source_revision"], profile="release"))

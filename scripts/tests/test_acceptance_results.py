@@ -25,7 +25,7 @@ class AcceptanceResults(unittest.TestCase):
                                    for identity in self.case["test_ids"]]}
         self.evidence = [{"source_revision": REVISION, "receipt_sha256": str(index) * 64,
                           "artifact_sha256": str(index + 4) * 64, "target": platform + "-target",
-                          "features": features, "tests": [{"id": identity, "status": "PASS"}
+                          "features": features, "test_features": "minimal" if features == "default" else "all", "tests": [{"id": identity, "status": "PASS"}
                             for identity in self.case["test_ids"]]}
                          for index, (platform, features) in enumerate(
                              (p, f) for p in ("linux", "windows") for f in ("default", "telemetry"))]
@@ -44,6 +44,7 @@ class AcceptanceResults(unittest.TestCase):
             self.assertEqual([test["id"] for test in variant["tests"]], self.case["test_ids"])
             for test in variant["tests"]:
                 self.assertEqual(test["artifact_sha256"], evidence["artifact_sha256"])
+                self.assertEqual(test["test_features"], evidence["test_features"])
                 self.assertEqual(test["receipts"], [evidence["receipt_sha256"]])
 
     def test_missing_test_host_or_product_feature_is_not_a_pass(self):

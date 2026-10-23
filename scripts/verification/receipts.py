@@ -5,14 +5,14 @@ import re
 
 from .classification import compare_rust_inventory
 from .evidence import read_results, selected_tests, sha256
-from .suites import SUITES
+from .suites import SUITES, nextest_command
 
 ROOT = Path(__file__).resolve().parents[2]
 CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
 REQUIREMENTS = ROOT / "tests/verification/requirements.json"
 
 
-def check_suite_receipt(directory, expected_suites, target, revision, features="telemetry", version=None, profile="dev"):
+def check_suite_receipt(directory, expected_suites, target, revision, features="telemetry", version=None, profile="dev", test_features="all"):
     receipts = list(directory.glob("*/receipt.json"))
     if len(receipts) != 1:
         raise ValueError(f"Expected exactly one attempt in {directory.name}; found {len(receipts)}")
@@ -22,6 +22,8 @@ def check_suite_receipt(directory, expected_suites, target, revision, features="
             or receipt.get("worktree_dirty") is not False
             or receipt.get("kind") != "test-suite-run" or receipt.get("schema") != 1):
         raise ValueError(f"Failed or unrelated suite attempt: {path}")
+    if receipt.get("test_features") != test_features:
+        raise ValueError(f"Wrong workspace test feature graph: {path}")
     artifact = receipt["artifact"]
     if artifact["target"] != target or artifact["features"] != features:
         raise ValueError(f"Wrong target or product features: {path}")
@@ -40,6 +42,10 @@ def check_suite_receipt(directory, expected_suites, target, revision, features="
         if row["status"] != "PASS" or row["exit_code"] != 0 or row["timed_out"] or row["attempt"] != 1:
             raise ValueError(f"Suite did not pass its first attempt: {row['suite']}")
         suite = SUITES[row["suite"]]
+        for action, key in (("list", "discovery_command"), ("run", "command")):
+            command = row.get(key, [])
+            if len(command) < 5 or command != nextest_command(action, suite, command[4], test_features):
+                raise ValueError(f"Test command does not establish its feature graph/selection: {row['suite']}")
         inventory = path.parent / row["suite"] / "inventory.json"
         junit = path.parent / row["suite"] / "junit.xml"
         if sha256(inventory) != row["inventory_sha256"] or sha256(junit) != row["junit_sha256"]:
@@ -48,7 +54,7 @@ def check_suite_receipt(directory, expected_suites, target, revision, features="
             raise ValueError(f"Changed Rust classification: {row['suite']}")
         discovered = json.loads(inventory.read_text())
         compare_rust_inventory(discovered, json.loads(CLASSIFICATION.read_text()),
-                               json.loads(REQUIREMENTS.read_text())["api_routes"], suite.binaries)
+                               json.loads(REQUIREMENTS.read_text())["api_routes"], suite.binaries, test_features)
         if discovered["rust-build-meta"]["platforms"]["host"]["platform"]["triple"] != target:
             raise ValueError(f"Inventory target disagrees with required target: {row['suite']}")
         selected, all_ids = selected_tests(discovered, suite.ignored, suite.binaries, suite.cases)
@@ -56,7 +62,7 @@ def check_suite_receipt(directory, expected_suites, target, revision, features="
         if selected != row["selected"] or results != row["tests"] or any(r["status"] != "PASS" for r in results):
             raise ValueError(f"Incomplete or inconsistent test outcomes: {row['suite']}")
     return {"receipt_sha256": sha256(path), "target": target, "features": features, "profile": profile,
-            "artifact_sha256": artifact["sha256"], "suites": expected_suites,
+            "artifact_sha256": artifact["sha256"], "suites": expected_suites, "test_features": test_features,
             "source_snapshot_sha256": receipt["source_snapshot_sha256"],
             "source_revision": revision, "tests": [test for row in suites for test in row["tests"]]}
 

@@ -15,7 +15,7 @@ SPEC = importlib.util.spec_from_file_location("ci_verification", SCRIPTS / "ci-v
 ci = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ci)
 from verification.evidence import selected_tests, sha256, write_json
-from verification.suites import SUITES
+from verification.suites import SUITES, nextest_command
 
 REVISION = "a" * 40
 
@@ -103,21 +103,21 @@ def successes(plan):
     return {job: {"result": "success"} for job in ["plan", *plan["required_jobs"]]}
 
 
-def fixture_attempt(directory, target, features="telemetry", suites=None):
+def fixture_attempt(directory, target, features="telemetry", suites=None, test_features="all"):
     suites = suites or ["deterministic", "telemetry"]
     attempt = directory / "one-attempt"
     attempt.mkdir(parents=True)
     write_json(attempt / "source-snapshot.json", {"fixture": "unit-test, not real acceptance"})
     receipt = dict(schema=1, kind="test-suite-run", status="PASS", source_revision=REVISION, worktree_dirty=False,
                    source_snapshot_sha256=sha256(attempt / "source-snapshot.json"),
-                   requested_suites=suites, suites=[],
+                   requested_suites=suites, suites=[], test_features=test_features,
                    artifact=dict(target=target, features=features, profile="dev", sha256="c" * 64))
     for name in suites:
         suite_dir = attempt / name
         suite_dir.mkdir()
         policy = json.loads(ci.CLASSIFICATION.read_text())
         platform = policy["targets"][target]
-        rows = [row for row in policy["tests"] if platform in row["platforms"]
+        rows = [row for row in policy["tests"] if platform in row["platforms"] and test_features in row["test_features"]
                 and (not SUITES[name].binaries or row["binary_name"] in SUITES[name].binaries)]
         inventory = {"test-count": len(rows), "rust-build-meta": {"platforms": {
             "host": {"platform": {"triple": target}}, "targets": []}}, "rust-suites": {}}
@@ -140,6 +140,8 @@ def fixture_attempt(directory, target, features="telemetry", suites=None):
         receipt["suites"].append(dict(suite=name, status="PASS", exit_code=0, timed_out=False, attempt=1,
             selected=identities, tests=[dict(id=identity, status="PASS") for identity in identities],
             classification_sha256=sha256(ci.CLASSIFICATION),
+            discovery_command=nextest_command("list", SUITES[name], suite_dir / "nextest.toml", test_features),
+            command=nextest_command("run", SUITES[name], suite_dir / "nextest.toml", test_features),
             inventory_sha256=sha256(suite_dir / "inventory.json"), junit_sha256=sha256(suite_dir / "junit.xml")))
     write_json(attempt / "receipt.json", receipt)
     return attempt, receipt
@@ -196,7 +198,7 @@ class RequiredGate(unittest.TestCase):
             root = Path(temp)
             for target in ci.TARGETS:
                 for features, suites in ci.NATIVE_SUITES.items():
-                    fixture_attempt(root / f"verification-{target}" / features, target, features, suites)
+                    fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
             result = ci.check_gate(plan, successes(plan), root)
             self.assertEqual(len(result["suite_evidence"]), 6)
             self.assertFalse(result["qualification"])
@@ -239,6 +241,27 @@ class RequiredGate(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Changed test evidence"):
                 ci.check_suite_receipt(root, ["deterministic", "telemetry"], ci.TARGETS[0], REVISION)
 
+    def test_minimal_graph_cannot_be_replaced_by_relabelled_all_features_commands(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            attempt, receipt = fixture_attempt(root, ci.TARGETS[0], "default", ["deterministic"], "minimal")
+            result = ci.check_suite_receipt(root, ["deterministic"], ci.TARGETS[0], REVISION,
+                                            "default", test_features="minimal")
+            self.assertEqual(result["test_features"], "minimal")
+            for key in ("discovery_command", "command"):
+                modified = copy.deepcopy(receipt)
+                command = modified["suites"][0][key]
+                command[command.index("--no-default-features")] = "--all-features"
+                write_json(attempt / "receipt.json", modified)
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError, "feature graph/selection"):
+                    ci.check_suite_receipt(root, ["deterministic"], ci.TARGETS[0], REVISION,
+                                           "default", test_features="minimal")
+            receipt["test_features"] = "all"
+            write_json(attempt / "receipt.json", receipt)
+            with self.assertRaisesRegex(ValueError, "Wrong workspace test feature graph"):
+                ci.check_suite_receipt(root, ["deterministic"], ci.TARGETS[0], REVISION,
+                                       "default", test_features="minimal")
+
     def test_inventory_host_cannot_be_relabelled_by_artifact_provenance(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -266,7 +289,7 @@ class RequiredGate(unittest.TestCase):
         from verify import Blocked, run_suite
         for name in ("live-provider", "live-curseforge", "live-runtime"):
             with self.subTest(name=name), self.assertRaisesRegex(Blocked, "prerequisites unavailable"):
-                run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry"}, {})
+                run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry"}, {}, "all")
 
 
 class PushPlanning(unittest.TestCase):

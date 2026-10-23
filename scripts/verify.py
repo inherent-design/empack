@@ -15,7 +15,7 @@ import uuid
 from verification.classification import compare_rust_inventory
 from verification.evidence import read_results, selected_tests, sha256, write_json
 from verification.process import run
-from verification.suites import SUITES
+from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
 ROOT = Path(__file__).resolve().parents[1]
 NEXTEST_VERSION = "0.9.148"
@@ -111,7 +111,7 @@ def java_probe(attempt, environment, label="java", home_variable="JAVA_HOME"):
     return {"path": str(path), "sha256": sha256(path), "version": version}
 
 
-def run_suite(name, suite, attempt, environment, artifact, record):
+def run_suite(name, suite, attempt, environment, artifact, record, test_features):
     if suite.unix_only and os.name == "nt":
         record.update(status="NOT_APPLICABLE", reason="This desktop-opener fixture is Unix-only")
         return record
@@ -138,28 +138,22 @@ junit.report-skipped = "all"
 junit.store-success-output = false
 junit.store-failure-output = false
 ''')
-    cargo = ["--locked", "--workspace", "--all-features"]
-    common = ["--config-file", str(config), "--user-config-file", "none", "--profile", "verification"]
-    selection = ["-E", suite.filter, "--ignore-default-filter",
-                 "--run-ignored", "ignored-only" if suite.ignored else "default"]
-    output = checked(["cargo", "nextest", "list", *common, *cargo, *selection,
-                      "--message-format", "json"], suite_dir, "discovery", environment, timeout=1800)
+    discovery_command = nextest_command("list", suite, config, test_features)
+    record["discovery_command"] = discovery_command
+    output = checked(discovery_command, suite_dir, "discovery", environment, timeout=1800)
     inventory = json.loads(output)
     write_json(suite_dir / "inventory.json", inventory)
     selected, all_ids = selected_tests(inventory, suite.ignored, suite.binaries, suite.cases)
     bindings = json.loads((ROOT / "tests/verification/test-bindings.json").read_text(encoding="utf-8"))
     requirements = json.loads((ROOT / "tests/verification/requirements.json").read_text(encoding="utf-8"))
-    compare_rust_inventory(inventory, bindings, requirements["api_routes"], suite.binaries)
+    compare_rust_inventory(inventory, bindings, requirements["api_routes"], suite.binaries, test_features)
     record["classification_sha256"] = sha256(ROOT / "tests/verification/test-bindings.json")
     record["selected"] = selected
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")
     run_env = dict(environment, EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
                    EMPACK_E2E_BIN=artifact["path"], EMPACK_EXPECT_BINARY_SHA256=artifact["sha256"],
                    EMPACK_EXPECT_VERSION=artifact["version"])
-    command = ["cargo", "nextest", "run", *common, *cargo, *selection,
-               "--no-tests", "fail", "--retries", "0", "--no-fail-fast"]
-    if suite.ignored:
-        command += ["--test-threads", "2"]
+    command = nextest_command("run", suite, config, test_features)
     record["command"] = command
     code, _, timed_out = run(command, cwd=ROOT, env=run_env,
                              log=suite_dir / "run.log", timeout=suite.timeout)
@@ -219,6 +213,8 @@ def main(argv=None):
     parser.add_argument("--product-features", choices=("default", "telemetry"))
     parser.add_argument("--product-profile", choices=("dev", "release"),
                         help="Product build profile (default dev); required for an external binary")
+    parser.add_argument("--test-features", choices=TEST_FEATURES, default="all",
+                        help="Workspace test graph; independent of the separately built product")
     parser.add_argument("--output", type=Path, default=ROOT / "target/verification")
     args = parser.parse_args(argv)
     if len(set(args.suites)) != len(args.suites):
@@ -230,7 +226,7 @@ def main(argv=None):
     environment.update(CARGO_TERM_COLOR="never", NO_COLOR="1")
     receipt = {"schema": 1, "kind": "test-suite-run", "status": "NOT_RUN",
                "created_at": datetime.now(timezone.utc).isoformat(), "suites": [],
-               "requested_suites": args.suites, "platform": platform.platform(),
+               "requested_suites": args.suites, "test_features": args.test_features, "platform": platform.platform(),
                "architecture": platform.machine(), "qualification": False}
     print(f"Verification attempt: {attempt}", flush=True)
     try:
@@ -255,7 +251,7 @@ def main(argv=None):
         for name in args.suites:
             result = {"suite": name, "status": "NOT_RUN", "tests": [], "attempt": 1}
             try:
-                run_suite(name, SUITES[name], attempt, environment, artifact, result)
+                run_suite(name, SUITES[name], attempt, environment, artifact, result, args.test_features)
             except Blocked as error:
                 result.update(status="BLOCKED", reason=str(error))
             except (OSError, ValueError, RuntimeError, KeyError) as error:

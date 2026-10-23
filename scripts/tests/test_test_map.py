@@ -178,7 +178,7 @@ class DoctestDiscovery(unittest.TestCase):
 
 class RustPlatformBindings(unittest.TestCase):
     def setUp(self):
-        self.bindings = {"schema": 2, "selection": "workspace-all-features",
+        self.bindings = {"schema": 3, "selection": "workspace-feature-graphs",
             "targets": {"aarch64-apple-darwin": "macos", "x86_64-pc-windows-msvc": "windows"},
             "tests": [
                 {"id": "engine::portable", "binary": "engine", "binary_name": "engine",
@@ -188,6 +188,8 @@ class RustPlatformBindings(unittest.TestCase):
                 {"id": "console::terminal", "binary": "console", "binary_name": "console",
                  "boundary": "I", "api": "CLI", "platforms": ["macos", "windows"], "ignored": False},
             ]}
+        for row in self.bindings["tests"]:
+            row["test_features"] = ["minimal", "all"]
         self.inventory = {"test-count": 3, "rust-build-meta": {"platforms": {
             "host": {"platform": {"triple": "aarch64-apple-darwin"}}, "targets": []}},
             "rust-suites": {
@@ -198,6 +200,21 @@ class RustPlatformBindings(unittest.TestCase):
 
     def check(self, binaries=()):
         return checker.compare_rust_inventory(self.inventory, self.bindings, {"LIFE", "CLI"}, binaries)
+
+    def test_minimal_and_all_feature_membership_is_independently_checked(self):
+        self.bindings["tests"][1]["test_features"] = ["all"]
+        self.assertEqual(len(self.check()), 3)
+        with self.assertRaisesRegex(ValueError, "unclassified="):
+            checker.compare_rust_inventory(self.inventory, self.bindings, {"LIFE", "CLI"}, test_features="minimal")
+        self.inventory["rust-suites"]["engine"]["testcases"].pop("unix_only")
+        self.inventory["test-count"] -= 1
+        self.assertEqual(len(checker.compare_rust_inventory(
+            self.inventory, self.bindings, {"LIFE", "CLI"}, test_features="minimal")), 2)
+        with self.assertRaisesRegex(ValueError, "missing="):
+            self.check()
+        self.bindings["tests"][0]["test_features"] = []
+        with self.assertRaisesRegex(ValueError, "feature membership"):
+            self.check()
 
     def test_actual_target_selects_required_membership_without_waiving_unknown_targets(self):
         self.assertEqual(len(self.check()), 3)

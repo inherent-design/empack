@@ -150,6 +150,14 @@
       ]
     },
     {
+      "id": "python::test_ci_verification.RequiredGate.test_minimal_graph_cannot_be_replaced_by_relabelled_all_features_commands",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.RequiredGate.test_missing_credentials_are_blocked_before_discovery_or_execution",
       "boundary": "H",
       "requirements": [
@@ -641,6 +649,14 @@
       "id": "python::test_test_map.RustPlatformBindings.test_fixed_subset_may_skip_other_binaries_but_not_its_own",
       "boundary": "U",
       "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RustPlatformBindings.test_minimal_and_all_feature_membership_is_independently_checked",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
         "UX-088"
       ]
     },

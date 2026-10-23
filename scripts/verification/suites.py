@@ -50,3 +50,23 @@ SUITES = {
     "live-assistance": Suite(("live_manual_assistance",), ignored=True, unix_only=True),
     "import-survey": Suite(("live_import_survey",), ignored=True, timeout=3600),
 }
+
+
+TEST_FEATURES = {"minimal": ("--no-default-features",), "all": ("--all-features",)}
+
+
+def nextest_command(action, suite, config, test_features):
+    """One reviewed discovery/execution selection, including its feature graph."""
+    if action not in {"list", "run"} or test_features not in TEST_FEATURES:
+        raise ValueError("Unknown test action or feature graph")
+    command = ["cargo", "nextest", action, "--config-file", str(config),
+               "--user-config-file", "none", "--profile", "verification",
+               "--locked", "--workspace", *TEST_FEATURES[test_features],
+               "-E", suite.filter, "--ignore-default-filter", "--run-ignored",
+               "ignored-only" if suite.ignored else "default"]
+    if action == "list":
+        return command + ["--message-format", "json"]
+    command += ["--no-tests", "fail", "--retries", "0", "--no-fail-fast"]
+    if suite.ignored:
+        command += ["--test-threads", "2"]
+    return command
