@@ -254,3 +254,13 @@ explains replacement refusal. Host state is isolated outside the author tree.
 The package case repeats these checks on all five final archives; local execution
 does not satisfy that case. Generated workflow presence/version checks remain
 separate from execution of those workflows under UX-081/UX-082.
+
+Loader-family initialization separates exact declarations, controlled discovery and
+fresh official routes. The former ignored explicit NeoForge CLI test made no
+catalog request; its assertions now belong to the deterministic exact-pin matrix
+in `cli_init`, covering every loader family with an empty executable search path
+and an observed proxy. Live CLI cases omit a required version, use fresh isolated
+projects and compare authored intent with the resolved lock. Host fixtures cover
+stable/prerelease selection, historical coordinates and failure preservation.
+Java 8/21 in these cases is an authored requirement, not evidence that Java ran.
+Runtime acquisition and consumer startup remain separate obligations.

@@ -1118,7 +1118,99 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "provider catalog fixture; exact and automatic versions; Java 8/21 where needed",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-010.catalog-selection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::initialize::tests::initialization_catalog_matrix_selects_matching_coordinates_without_authored_pins"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled official-shaped catalogs cover vanilla, Fabric, Quilt, legacy/modern Forge and early/current NeoForge; each selected game/loader coordinate is independently asserted",
+            "Automatic selection prefers compatible stable versions, preserves historical coordinate normalization and omits an authored loader pin",
+            "Preview performs discovery without publication; approved initialization writes coherent Java declarations and exact runtime lock"
+          ]
+        },
+        {
+          "id": "UX-010.selection-and-failure",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::initialize::tests::initialization_discovery_preserves_unpinned_intent_and_provider_failures_publish_nothing",
+            "empack-lib::application::engine_host::initialize::tests::historical_initialization_menu_offers_only_catalog_supported_loaders"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit interactive prerelease selection remains an observed lock choice rather than an authored pin",
+            "Authorization failure publishes nothing and historical loader choices remain limited to observed compatible families; mock host decisions are not terminal evidence"
+          ]
+        },
+        {
+          "id": "UX-010.exact-pins",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_init::cli_init_exact_loader_families_preserve_pins_without_catalog_or_java"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public initialization across every loader family preserves independently specified exact game/loader pins and Java 8/21 requirements, including legacy Forge suffix normalization",
+            "PATH is empty and the ordinary configured proxy observes no acquisition; exact declaration does not claim runtime availability or Java execution",
+            "Invalid Java 7 is rejected as usage before mutation and does not touch the existing project"
+          ]
+        },
+        {
+          "id": "UX-010.fresh-catalogs",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_cli_init::live_cli_init_vanilla_discovers_latest_game",
+            "empack-tests::live_cli_init::live_cli_init_fabric_binds_runtime",
+            "empack-tests::live_cli_init::live_cli_init_quilt_binds_runtime",
+            "empack-tests::live_cli_init::live_cli_init_forge_binds_runtime",
+            "empack-tests::live_cli_init::live_cli_init_legacy_forge_binds_runtime",
+            "empack-tests::live_cli_init::live_cli_init_early_neoforge_binds_runtime",
+            "empack-tests::live_cli_init::live_cli_init_neoforge_binds_runtime",
+            "empack-lib::runtime_catalog_smoke::live_runtime_catalogs_preserve_supported_loader_families_and_historical_coordinates"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh isolated CLI projects omit the Minecraft version for vanilla or loader version for modded families, requiring ordinary official catalog discovery",
+            "Persisted intent remains unpinned while the lock records the observed exact choice and game-family boundaries",
+            "Catalog evidence does not establish downloaded Java/installers, successful startup or actual-consumer acceptance"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::providers + runtime_catalog + networking::rate_budget"
@@ -1127,7 +1219,7 @@
         "shared initialization/import semantics + native publication",
         "portable catalog interpretation; native/Fetch transport"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-011",

@@ -5,6 +5,8 @@ mod files;
 mod initialization;
 #[path = "support/replacement.rs"]
 mod replacement;
+#[path = "support/runtime_selection.rs"]
+mod runtime_selection;
 use empack_tests::harness::process::{
     TestProject, assert_project_datapack_folder, assert_project_initialized,
     assert_project_loader_absent, assert_project_minecraft_version, offline_command,
@@ -25,6 +27,100 @@ fn cli_init_missing_loader_reports_usage() {
         stderr.contains("--modloader") || stderr.contains("requires"),
         "stderr did not mention --modloader or requires\n{stderr}"
     );
+}
+
+#[test]
+fn cli_init_exact_loader_families_preserve_pins_without_catalog_or_java() {
+    use std::{io::ErrorKind, net::TcpListener};
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let address = format!("http://{}", proxy.local_addr().unwrap());
+    for (family, game, supplied, stored, java) in [
+        ("none", "1.21.1", None, None, "21"),
+        ("fabric", "1.21.1", Some("0.16.9"), Some("0.16.9"), "21"),
+        ("quilt", "1.21.1", Some("0.27.1"), Some("0.27.1"), "21"),
+        (
+            "forge",
+            "1.7.10",
+            Some("10.13.4.1614-1.7.10"),
+            Some("10.13.4.1614"),
+            "8",
+        ),
+        ("forge", "1.21.1", Some("52.0.0"), Some("52.0.0"), "21"),
+        (
+            "neoforge",
+            "1.20.1",
+            Some("47.1.100"),
+            Some("47.1.100"),
+            "21",
+        ),
+        (
+            "neoforge",
+            "1.21.1",
+            Some("21.1.224"),
+            Some("21.1.224"),
+            "21",
+        ),
+    ] {
+        let project = TestProject::new();
+        let command = || {
+            let mut command = offline_command(project.dir());
+            for key in [
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "ALL_PROXY",
+                "http_proxy",
+                "https_proxy",
+                "all_proxy",
+            ] {
+                command.env(key, &address);
+            }
+            command
+                .env("NO_PROXY", "")
+                .env("no_proxy", "")
+                .env("PATH", "");
+            command
+        };
+        let mut args = vec![
+            "init",
+            "--yes",
+            "--modloader",
+            family,
+            "--mc-version",
+            game,
+            "--java",
+            java,
+            "--author",
+            "Fixture Author",
+            "pack",
+        ];
+        if let Some(supplied) = supplied {
+            args.extend(["--loader-version", supplied]);
+        }
+        command().args(&args).assert().success();
+        let pack = project.dir().join("pack");
+        runtime_selection::assert_selection(
+            &pack,
+            game,
+            if family == "none" { "vanilla" } else { family },
+            stored,
+            java.parse().unwrap(),
+        );
+        // Declaring Java requirements and exact pins does not run Java or certify
+        // upstream availability. The ordinary proxy must observe no acquisition.
+        assert!(matches!(proxy.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
+        let before = files::snapshot(project.dir());
+        args[7] = "7";
+        let rejected = command().args(&args).output().unwrap();
+        assert_eq!(rejected.status.code(), Some(2));
+        assert!(
+            String::from_utf8_lossy(&rejected.stderr)
+                .contains("invalid value '7' for '--java <JAVA>'"),
+            "{rejected:?}"
+        );
+        assert_eq!(files::snapshot(project.dir()), before);
+        assert!(matches!(proxy.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
+    }
 }
 
 #[test]

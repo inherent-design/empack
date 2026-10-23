@@ -398,6 +398,112 @@ async fn initialization_discovery_preserves_unpinned_intent_and_provider_failure
 }
 
 #[tokio::test]
+async fn initialization_catalog_matrix_selects_matching_coordinates_without_authored_pins() {
+    for (family, game, java, endpoint, payload, selected) in [
+        ("none", "1.21.1", 21, None, "", None),
+        (
+            "fabric",
+            "1.21.1",
+            21,
+            Some("/fabric/1.21.1"),
+            r#"[{"loader":{"version":"0.17.0-beta.1","stable":false},"intermediary":{"version":"1.21.1"}},{"loader":{"version":"0.16.9","stable":true},"intermediary":{"version":"1.21.1"}}]"#,
+            Some("0.16.9"),
+        ),
+        (
+            "quilt",
+            "1.21.1",
+            21,
+            Some("/quilt/1.21.1"),
+            r#"[{"loader":{"version":"0.28.0-beta.1","stable":false},"intermediary":{"version":"1.21.1"}},{"loader":{"version":"0.27.1","stable":true},"intermediary":{"version":"1.21.1"}}]"#,
+            Some("0.27.1"),
+        ),
+        (
+            "forge",
+            "1.7.10",
+            8,
+            Some("/forge"),
+            r#"{"1.7.10":["1.7.10-10.13.2.1291","1.7.10-10.13.4.1614-1.7.10"],"1.21.1":["1.21.1-52.0.0"]}"#,
+            Some("10.13.4.1614"),
+        ),
+        (
+            "forge",
+            "1.21.1",
+            21,
+            Some("/forge"),
+            r#"{"1.7.10":["1.7.10-10.13.4.1614-1.7.10"],"1.21.1":["1.21.1-52.0.0","1.21.1-52.0.1"]}"#,
+            Some("52.0.1"),
+        ),
+        (
+            "neoforge",
+            "1.20.1",
+            21,
+            Some("/legacy-neoforge"),
+            r#"{"versions":["1.20-46.0.0","1.20.1-47.1.99","1.20.1-47.1.100"]}"#,
+            Some("47.1.100"),
+        ),
+        (
+            "neoforge",
+            "1.21.1",
+            21,
+            Some("/neoforge"),
+            r#"{"versions":["21.1.224","21.1.225-beta","21.10.1"]}"#,
+            Some("21.1.224"),
+        ),
+    ] {
+        let mut server = mockito::Server::new_async().await;
+        let games = server.mock("GET", "/games").with_status(200)
+            .with_body(serde_json::json!({"latest":{"release":game},"versions":[{"id":game,"type":"release"}]}).to_string())
+            .expect(2).create_async().await;
+        let loaders = if let Some(endpoint) = endpoint {
+            Some(
+                server
+                    .mock("GET", endpoint)
+                    .with_status(200)
+                    .with_body(payload)
+                    .expect(2)
+                    .create_async()
+                    .await,
+            )
+        } else {
+            None
+        };
+        let root = tempfile::tempdir().unwrap();
+        let mut options = args();
+        options.mc_version = None;
+        options.modloader = Some(family.into());
+        options.java = Some(java);
+        let catalog = RuntimeCatalog::for_loopback_tests(&server.url());
+        initialize_with_catalog(&session(root.path(), true, true), &options, catalog.clone())
+            .await
+            .unwrap();
+        assert!(snapshot(root.path()).is_empty(), "preview {family}/{game}");
+        initialize_with_catalog(&session(root.path(), true, false), &options, catalog)
+            .await
+            .unwrap();
+        let project = root.path().join("pack");
+        let author: serde_json::Value =
+            serde_saphyr::from_str(&fs::read_to_string(project.join("empack.yml")).unwrap())
+                .unwrap();
+        let lock: serde_json::Value =
+            serde_saphyr::from_str(&fs::read_to_string(project.join("empack.lock")).unwrap())
+                .unwrap();
+        let loader = if family == "none" { "vanilla" } else { family };
+        assert_eq!(
+            author["runtime"],
+            serde_json::json!({"java": java,"minecraft":game,"loader":loader})
+        );
+        assert_eq!(
+            lock["runtime"],
+            serde_json::json!({"minecraft":game,"loader":loader,"loader-version":selected})
+        );
+        games.assert_async().await;
+        if let Some(loaders) = loaders {
+            loaders.assert_async().await;
+        }
+    }
+}
+
+#[tokio::test]
 async fn historical_initialization_menu_offers_only_catalog_supported_loaders() {
     let mut server = mockito::Server::new_async().await;
     let fabric = server

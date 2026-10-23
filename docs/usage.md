@@ -68,6 +68,14 @@ recipient Java version (default 21); adjust it for your game and loader. A displ
 name or version change preserves the pack ID. See the [manifest guide](manifest.md)
 for source-specific declarations and author-only projects.
 
+With explicit Minecraft and loader versions, initialization records those exact
+choices without consulting a catalog or running Java. Legacy Forge 1.7.10 loader
+versions may include the `-1.7.10` suffix; empack stores the canonical loader version.
+When a required version is omitted, initialization uses official catalog discovery. A chosen
+loader version is recorded in the lock without adding an authored pin. These steps
+do not prove that runtime downloads are available or that the server will start;
+build and launch verify their own requirements.
+
 `init --force` and `init --from ARCHIVE --force` prepare a replacement before
 changing an existing project. Add `--dry-run` to inspect the affected files first.
 An invalid candidate or a declined plan leaves the existing project unchanged.
