@@ -1644,7 +1644,8 @@
             "empack-lib::engine::acquisition::tests::cancellation_retires_the_blocking_verifier_and_response",
             "empack-lib::engine::acquisition::tests::dropping_acquisition_future_closes_and_retires_its_verifier",
             "empack-lib::engine::acquisition::tests::mirror_retry_counts_partial_bytes_from_the_failed_attempt",
-            "empack-lib::engine::acquisition::tests::verified_bytes_keep_reservations_until_the_last_reader_retires"
+            "empack-lib::engine::acquisition::tests::verified_bytes_keep_reservations_until_the_last_reader_retires",
+            "empack-lib::engine::api::tests::failure_order_preserves_actual_errors_when_cancellation_races"
           ],
           "required_platforms": [
             "linux",
@@ -1658,7 +1659,8 @@
           "assertions": [
             "Streamed bytes and partial failed mirrors consume the original allowance; headers, digests, HTTP status and source policy cannot substitute for verified bytes",
             "Stalled headers and bodies meet the transfer deadline without waiting for EOF; cancellation and caller abandonment retire the socket and release resource reservations",
-            "A surviving reader retains verified bytes and their resource reservation until it retires; worker outcomes and socket closure are checked separately"
+            "A surviving reader retains verified bytes and their resource reservation until it retires; worker outcomes and socket closure are checked separately",
+            "Cancellation-invalidated worker results map to interruption at the engine outcome boundary; a stale result without cancellation remains a failure"
           ],
           "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
         },

@@ -1551,6 +1551,16 @@ async fn clean_build_rejects_symlinked_artifacts_without_touching_outside_bytes(
 
 #[test]
 fn failure_order_preserves_actual_errors_when_cancellation_races() {
+    assert!(matches!(
+        ExecutionOutcome::failed(RuntimeError::StaleResult.into(), true),
+        ExecutionOutcome::InterruptedBeforePublication
+    ));
+    assert!(matches!(
+        ExecutionOutcome::failed(RuntimeError::StaleResult.into(), false),
+        ExecutionOutcome::FailedBeforePublication(ref cause)
+            if matches!(cause.downcast_ref(), Some(RuntimeError::StaleResult))
+    ));
+
     let error = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
     let outcome = ExecutionOutcome::failed(error, true);
     assert!(

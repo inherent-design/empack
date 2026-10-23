@@ -264,7 +264,12 @@ async fn cancellation_retires_the_blocking_verifier_and_response() {
         OperationOutcome::Completed(Err(error)) => assert!(
             error
                 .downcast_ref::<crate::application::process_runtime::Interrupted>()
-                .is_some(),
+                .is_some()
+                // After this test explicitly cancels the operation, owner-side
+                // acceptance can reject an already-retired worker as stale.
+                // ExecutionOutcome maps that combination to interruption, but
+                // must preserve an unrelated stale result as a failure.
+                || matches!(error.downcast_ref(), Some(crate::engine::runtime::RuntimeError::StaleResult)),
             "{error:#}"
         ),
         OperationOutcome::Failed(crate::engine::runtime::RuntimeError::Cancelled) => (),
