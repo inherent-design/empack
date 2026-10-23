@@ -35,7 +35,8 @@ The separated executable suites have explicit boundaries:
 | `cli_arguments`, `cli_dependencies`, `cli_init` | Offline parsing, refusal and initialization |
 | `cli_build` | Offline artifact creation, metadata and cleanup |
 | `journey_authoring` | Literal layered authoring, rebuild and removal |
-| `journey_pending` | Public pending inspection, verified manual association, restart, stale refusal and discard |
+| `journey_pending` | Public build/sync inspection, verified manual association, retained partial inputs, restart, stale refusal and discard |
+| `journey_pending_import` | Public import selectors, retained-archive restart, exact exported bytes and changed-destination refusal |
 | `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
 | `live_cli_init` | Official loader catalog resolution |
 | `live_provider_cli` | Modrinth identity, acquisition and convergence |
@@ -59,8 +60,11 @@ lookup with a fixture desktop opener. The pending-build journey starts with a co
 and association keys only from `pending list/show --json`. Fresh executable invocations
 reject wrong bytes, resume renamed verified content and refuse stale drafts; terminal
 coverage checks fresh approval. State snapshots assert preservation without interpreting
-private continuation records. Import, sync and instance continuation parity remain
-separate obligations. Moving upstream pack inputs belong to
+private continuation records. Synchronization also checks partial retention across
+cache eviction. Import resumes a retained archive after deleting the original and
+keeps incomplete requirement discovery explicit. Its unsupported-transport fixture
+does not establish a live provider's restricted-download policy. Instance continuation
+parity and remaining interactive/corrupt-record variants are still separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
 
 The executable harness lives in `empack-tests::harness::process`, outside the
@@ -69,12 +73,18 @@ path. Qualification requires `EMPACK_QUALIFY=1`, an absolute `EMPACK_E2E_BIN`,
 `EMPACK_EXPECT_BINARY_SHA256`, and `EMPACK_EXPECT_VERSION`. Wrong bytes or version
 fail before the scenario. This is executable selection, not full package
 qualification; target/features and consumer evidence still need the release record.
+Resolve and verify the selected product before starting an observer or interaction
+deadline. Hashing a large debug executable is harness setup, not time spent waiting
+for a running command to reach its prompt.
 
 Children receive a positive environment allowlist and fixture-local home, cache,
 state and temporary paths. Tests explicitly add any needed fixture tools or product
 settings. Harness controls and ambient credentials are not forwarded. A failed
 mutating command is not replayed after matching a timeout diagnostic. Nextest CI
-retries are disabled so the original failure remains visible.
+retries are disabled so the original failure remains visible. Live runtime probes
+retain bounded, best-effort launcher output on timeout, with at most 64 KiB per
+stream. These tails help diagnose the failure; they do not turn a timeout into a
+pass or replace complete successful output assertions.
 
 After building the executable, compare the editor schemas with the actual CLI:
 

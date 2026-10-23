@@ -100,6 +100,8 @@ fn cli_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
         .success();
     assert_eq!(snapshot(project.dir()), before);
     assert!(!state.exists());
+    // Resolve and qualify the product before starting the observer deadline.
+    let mut waiting = command(&project, &state);
     let watched_state = state.clone();
     let destination = downloads.join("renamed-download.bin");
     let producer = std::thread::spawn(move || {
@@ -126,7 +128,7 @@ fn cli_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
         }
         fs::write(destination, b"payload").unwrap();
     });
-    command(&project, &state)
+    waiting
         .args([
             "build",
             "modrinth",
@@ -209,6 +211,8 @@ fn cli_restricted_wait_refuses_a_replaced_recipe() {
     let downloads = host.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
     let before = snapshot(project.dir());
+    // Resolve and qualify the product before starting the observer deadline.
+    let mut waiting = command(&project, &state);
     let watched_state = state.clone();
     let destination = downloads.join("payload.bin");
     let replace = std::thread::spawn(move || {
@@ -236,7 +240,7 @@ fn cli_restricted_wait_refuses_a_replaced_recipe() {
         fs::write(destination, b"payload").unwrap();
         (record, replacement)
     });
-    command(&project, &state)
+    waiting
         .args([
             "build",
             "modrinth",

@@ -1,7 +1,11 @@
-//! Explicit live runtime probes. Missing HTTP/Java prerequisites fail this opt-in suite.
+//! Live runtime probes and bounded launcher diagnostics. Missing HTTP/Java prerequisites fail opt-in checks.
+use anyhow::Context;
 use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
 use empack_lib::{
-    application::process_runtime::{Cancellation, execute_async},
+    application::{
+        process_runtime::{Cancellation, execute_async},
+        session::{ProcessOutput, ProcessStream},
+    },
     engine::{
         acquisition::{HttpAcquisition, TransferLimits},
         artifacts::ArchiveLimits,
@@ -13,6 +17,60 @@ use empack_lib::{
     },
 };
 use std::{fs, path::PathBuf, time::Duration};
+// Keep bounded, best-effort progress on failure: execute_async correctly reports
+// retirement/timeout, but its failed result does not contain captured output.
+async fn probe_launcher(
+    command: std::process::Command,
+    deadline: Duration,
+) -> anyhow::Result<ProcessOutput> {
+    let (sender, receiver) = std::sync::mpsc::sync_channel::<(ProcessStream, Vec<u8>)>(64);
+    let observer = std::thread::spawn(move || {
+        let mut tails = [Vec::new(), Vec::new()];
+        for (stream, bytes) in receiver {
+            let index = match stream {
+                ProcessStream::Stdout => 0,
+                ProcessStream::Stderr => 1,
+            };
+            let tail = &mut tails[index];
+            tail.extend_from_slice(&bytes);
+            let excess = tail.len().saturating_sub(64 * 1024);
+            tail.drain(..excess);
+        }
+        tails
+    });
+    let result = execute_async(command, deadline, Cancellation::default(), Some(sender)).await;
+    let tails = observer
+        .join()
+        .expect("launcher progress observer panicked");
+    result.with_context(|| {
+        format!(
+            "Launcher failed; best-effort progress tails (at most 64 KiB per stream)\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&tails[0]),
+            String::from_utf8_lossy(&tails[1]),
+        )
+    })
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn native_runtime_probe_timeout_retains_partial_output() {
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args([
+        "-c",
+        "printf 'launcher starting\\n'; printf 'runtime pending\\n' >&2; exec sleep 10",
+    ]);
+    let error = probe_launcher(command, Duration::from_secs(1))
+        .await
+        .unwrap_err();
+    let diagnostic = format!("{error:#}");
+    assert!(
+        diagnostic.contains("timed out after 1 seconds"),
+        "{diagnostic}"
+    );
+    assert!(diagnostic.contains("launcher starting"), "{diagnostic}");
+    assert!(diagnostic.contains("runtime pending"), "{diagnostic}");
+}
+
 async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> anyhow::Result<()> {
     verify_live_distribution(game, loader, false).await
 }
@@ -94,13 +152,7 @@ async fn verify_live_distribution(
     if !historical {
         command.arg("--help");
     }
-    let output = execute_async(
-        command,
-        Duration::from_secs(90),
-        Cancellation::default(),
-        None,
-    )
-    .await?;
+    let output = probe_launcher(command, Duration::from_secs(90)).await?;
     anyhow::ensure!(
         output.success,
         "Actual server launcher failed: {}",
