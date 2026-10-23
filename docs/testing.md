@@ -351,6 +351,7 @@ workflow joins this evidence to the corresponding build record. It executes each
 the five archives on its native target, including ARM64 Linux; cross-compilation alone
 does not satisfy execution. The gate rechecks source, version, profile, features,
 archive/executable digests and the underlying compiler inventory and JUnit results.
+Unix packaging excludes host filesystem metadata, including macOS AppleDouble entries.
 Only those tested archives enter the publication payload. Publication verifies its
 checksums and the gate's evidence digest again, without rebuilding.
 

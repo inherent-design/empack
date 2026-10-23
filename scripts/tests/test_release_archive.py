@@ -1,8 +1,10 @@
 """Archive admission tests use inert fixture bytes, not a release executable."""
 import importlib.util
 import io
+import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -61,6 +63,37 @@ class ReleaseArchiveAdmission(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     package.extract_binary(self.tar(entries), Path(output), "x86_64-unknown-linux-gnu")
                 self.assertFalse((self.root / "outside").exists())
+
+    @unittest.skipIf(sys.platform == "win32", "Unix archive packaging uses the Unix release job")
+    def test_unix_workflow_packaging_excludes_host_metadata(self):
+        # Execute the workflow's actual shell block against a disposable fixture.
+        # On macOS the xattr reproduces tar's extra AppleDouble member without
+        # relying on a particular runner's inherited file metadata.
+        target = "aarch64-apple-darwin" if sys.platform == "darwin" else "x86_64-unknown-linux-gnu"
+        binary = self.root / "target" / target / "release/empack"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"inert packaging fixture")
+        binary.chmod(0o755)
+        if sys.platform == "darwin":
+            subprocess.run(["xattr", "-w", "com.empack.fixture", "must not enter distribution", str(binary)],
+                           check=True, timeout=15)
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
+        block = workflow.split("      - name: Package archive (Unix)\n", 1)[1]
+        block = block.split("      - name: Package archive (Windows)\n", 1)[0].split("        run: |\n", 1)[1]
+        script = "\n".join(line.removeprefix("          ") for line in block.splitlines())
+        for key, value in {"steps.version.outputs.clean": "0.8.4-beta", "matrix.target": target,
+                           "matrix.archive_ext": "tar.gz", "matrix.binary_ext": ""}.items():
+            script = script.replace("${{ " + key + " }}", value)
+        subprocess.run(["bash", "-e", "-c", script], cwd=self.root,
+                       env=dict(os.environ, BINARY_NAME="empack", GITHUB_ENV=str(self.root / "environment")),
+                       capture_output=True, text=True, check=True, timeout=15)
+        archive = self.root / f"empack-0.8.4-beta-{target}.tar.gz"
+        extracted, _, _ = package.extract_binary(archive, self.destination, target)
+        self.assertEqual(extracted.read_bytes(), binary.read_bytes())
+        if sys.platform == "darwin":
+            self.assertEqual(subprocess.check_output(
+                ["xattr", "-p", "com.empack.fixture", str(binary)], timeout=15).strip(),
+                b"must not enter distribution")
 
     def test_windows_zip_is_exact_and_crc_checked(self):
         path = self.root / "fixture.zip"

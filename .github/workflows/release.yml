@@ -107,7 +107,7 @@ jobs:
           rm -rf package
           mkdir -p package
           cp "target/${{ matrix.target }}/release/${BINARY_NAME}${{ matrix.binary_ext }}" "package/${BINARY_NAME}${{ matrix.binary_ext }}"
-          tar -czf "$archive" -C package .
+          COPYFILE_DISABLE=1 tar -czf "$archive" -C package .
           echo "ARCHIVE_NAME=$archive" >> "$GITHUB_ENV"
           echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
 
