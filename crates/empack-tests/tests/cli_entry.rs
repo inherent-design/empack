@@ -2,7 +2,9 @@
 #[path = "support/files.rs"]
 mod files;
 
-use empack_tests::harness::process::{TestProject, expected_cli_version, offline_command};
+use empack_tests::harness::process::{
+    TestProject, empack_bin, expected_cli_version, offline_command,
+};
 use std::{collections::BTreeSet, fs, io::ErrorKind, net::TcpListener, path::PathBuf};
 
 struct EntryFixture {
@@ -127,6 +129,10 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
         .map(|row| row["id"].as_str().unwrap())
         .collect();
     assert!(routes.contains(&"empack") && routes.contains(&"empack instance launch"));
+    // Clap uses argv[0]'s filename for usage, including .exe on Windows.
+    // Keep command routes independent of the observed help output.
+    let binary = empack_bin();
+    let binary_name = binary.file_name().unwrap().to_str().unwrap();
     for filename in [None, Some(".env"), Some(".env.local")] {
         let fixture = EntryFixture::new(filename.is_some());
         if let Some(filename) = filename {
@@ -141,6 +147,8 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
                 "Usage: {} ",
                 route
                     .split_ascii_whitespace()
+                    .enumerate()
+                    .map(|(index, part)| if index == 0 { binary_name } else { part })
                     .filter(|part| *part != "help")
                     .collect::<Vec<_>>()
                     .join(" ")
