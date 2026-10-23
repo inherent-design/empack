@@ -187,8 +187,11 @@ or prerequisites produce `BLOCKED`; a Unix-only desktop fixture on Windows produ
 
 The runner does not retry an attempt. Re-running it creates another record and retains
 the earlier failure. These are suite records, not final release qualification or proof
-that every requirement has a bound case. The full requirement/result gate remains under
-implementation. Python and doctest commands still run separately from the Rust receipts.
+that every requirement has a bound case. The CI report joins validated Rust results to
+the concrete cases and required platform/product-feature variants in the registry.
+Missing variants remain `NOT_RUN`; a partial or pending decomposition cannot qualify
+its requirement even when its existing cases pass. Python and doctest commands still
+run separately from the Rust receipts.
 
 To select an independently built executable, supply all identity fields explicitly:
 
@@ -249,9 +252,16 @@ to succeed, including the complete native matrix, and checks each uploaded suite
 receipt against its compiler inventory and JUnit: source revision, target, product
 features, selected identities, first-attempt results and evidence digests must agree.
 Missing, cancelled, skipped, blocked or inconsistent evidence fails the gate.
-The resulting record has `qualification: false`: Python/schema/doctest job results
-and PR suite receipts do not yet constitute the complete requirement-to-variant or
-final-package qualification record. Selecting this required status in repository
+For admitted Rust receipts, its `acceptance` section retains each bound case's exact
+tests, required host/product variants, artifact digests and supporting receipt digests.
+It rejects substituted evidence boundaries, mismatched revisions and conflicting
+results. All 109 requirement groups remain in the report, including undecomposed
+native work and staged portable work. A passing selected CI suite does not make those
+groups complete. The report and source registry digests travel together.
+
+The resulting record has `qualification: false`: the remaining case decomposition,
+non-Rust/consumer/device evidence and final-package checks are not yet a complete
+release qualification record. Selecting this required status in repository
 branch protection is an administrative step; changing workflow YAML does not set it.
 
 ## Strict external checks

@@ -93,9 +93,16 @@ The current registry does not classify the separate minimal-feature graph or cla
 execution on the two additional release-archive targets.
 
 These checks validate structure and classification only. CLI, Python and doctest
-bindings are also checked against actual discovery. Requirement decomposition,
-case/variant execution joins and final qualification remain in progress. A successful
-structural check does not qualify a release.
+bindings are also checked against actual discovery. After revalidating each selected
+Rust receipt against its compiler inventory and JUnit, the CI gate joins exact test
+outcomes to the concrete cases and required platform/product-feature variants.
+Each variant retains its artifact and receipt digests. A missing variant is `NOT_RUN`;
+conflicting results cannot erase a failed attempt. All requirements stay visible,
+and a partial or pending case decomposition cannot become a passing requirement.
+Neither source ownership nor a nearby test at another boundary can substitute for a
+case's declared evidence. This report is not final release qualification: remaining
+decomposition, non-Rust/consumer/device evidence and final-archive acceptance still
+need their required evidence. A successful structural check does not qualify a release.
 
 The bound authoring and pending build/import/synchronization groups remain partial.
 Synchronization exercises public association keys, partial retention after cache

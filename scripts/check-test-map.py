@@ -8,6 +8,7 @@ from pathlib import Path
 
 from verification.classification import BOUNDARIES, compare_rust_inventory
 from verification.discovery import rustdoc_tests
+from verification.requirements import case_results, validate_requirements
 from verification.process import run
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,34 +30,6 @@ def discovered_tests(inventory):
     if len(result) != inventory["test-count"]:
         raise ValueError("Compiler inventory count does not match discovered tests")
     return result
-
-
-def validate_requirements(document):
-    if document["schema"] != 1:
-        raise ValueError("Unsupported requirement schema")
-    requirements, cases = set(), set()
-    for row in document["requirements"]:
-        if row["id"] in requirements:
-            raise ValueError(f"Duplicate requirement: {row['id']}")
-        requirements.add(row["id"])
-        state = row["case_bindings_status"]
-        if state not in {"pending", "partial", "complete"}:
-            raise ValueError(f"Unknown binding status: {row['id']}")
-        if (state == "pending") != (not row["cases"]):
-            raise ValueError(f"Binding status disagrees with concrete cases: {row['id']}")
-        if not row["evidence_tiers"] or not set(row["evidence_tiers"]) <= BOUNDARIES:
-            raise ValueError(f"Unknown evidence boundary: {row['id']}")
-        for case in row["cases"]:
-            if case["id"] in cases:
-                raise ValueError(f"Duplicate case: {case['id']}")
-            cases.add(case["id"])
-            if case["boundary"] not in row["evidence_tiers"]:
-                raise ValueError(f"Case uses an unrelated evidence boundary: {case['id']}")
-            if not case["required_platforms"] or not case["required_product_features"]:
-                raise ValueError(f"Case has no required execution variants: {case['id']}")
-            if not case["test_ids"] or len(set(case["test_ids"])) != len(case["test_ids"]):
-                raise ValueError(f"Case has no concrete tests: {case['id']}")
-    return requirements, cases
 
 
 def compare_inventory(inventory, bindings):
@@ -183,6 +156,11 @@ def main():
     args = parser.parse_args()
     requirements = json.loads(args.requirements.read_text(encoding="utf-8"))
     owners, cases = validate_requirements(requirements)
+    # Validate every declared boundary and platform even before selecting a host
+    # inventory. An empty evidence set deliberately cannot qualify any case.
+    case_results(requirements,
+                 json.loads((ROOT / "tests/verification/test-bindings.json").read_text(encoding="utf-8")),
+                 [], "unexecuted-structural-check")
     if args.discover_tooling:
         counts = discover_tooling(args.discover_tooling, owners)
         print(f"Classified {counts['cli']} CLI surfaces, {counts['python']} Python tests "

@@ -11,6 +11,7 @@ from verification.classification import compare_rust_inventory
 from verification.evidence import read_results, selected_tests, sha256, write_json
 from verification.suites import SUITES
 from verification.consumer import PRISM_COMMIT, require_supported_qt
+from verification.requirements import case_results
 
 TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
 NATIVE_SUITES = {"default": ["deterministic"], "telemetry": ["cli", "telemetry"]}
@@ -158,7 +159,8 @@ def check_suite_receipt(directory, expected_suites, target, revision, features="
         if selected != row["selected"] or results != row["tests"] or any(r["status"] != "PASS" for r in results):
             raise ValueError(f"Incomplete or inconsistent test outcomes: {row['suite']}")
     return {"receipt_sha256": sha256(path), "target": target, "features": features,
-            "artifact_sha256": artifact["sha256"], "suites": expected_suites}
+            "artifact_sha256": artifact["sha256"], "suites": expected_suites,
+            "source_revision": revision, "tests": [test for row in suites for test in row["tests"]]}
 
 
 def check_consumer(record, revision):
@@ -202,9 +204,15 @@ def check_gate(plan, needs, artifacts):
     if plan["consumer"]:
         record = json.loads((artifacts / "consumer-prism" / "prism.json").read_text())
         check_consumer(record, plan["source_revision"])
+    acceptance = case_results(json.loads(REQUIREMENTS.read_text()), json.loads(CLASSIFICATION.read_text()),
+                              evidence, plan["source_revision"])
+    acceptance["requirements_sha256"] = sha256(REQUIREMENTS)
+    acceptance["classification_sha256"] = sha256(CLASSIFICATION)
     return {"schema": 1, "status": "PASS", "qualification": False,
             "source_revision": plan["source_revision"], "source_tree": plan["source_tree"],
-            "required_jobs": plan["required_jobs"], "suite_evidence": evidence}
+            "required_jobs": plan["required_jobs"], "acceptance": acceptance,
+            "suite_evidence": [{key: value for key, value in record.items() if key != "tests"}
+                               for record in evidence]}
 
 
 def main():

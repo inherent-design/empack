@@ -3,6 +3,55 @@
   "status": "unittest identities classified; fixture/helper checks are not consumer or final-package execution",
   "tests": [
     {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_case_variants_and_concrete_membership_must_be_unambiguous",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_each_required_variant_retains_its_exact_tests_artifact_and_receipt",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_failure_and_blocked_outcomes_survive_incomplete_decomposition",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_missing_test_host_or_product_feature_is_not_a_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_partial_or_empty_decomposition_cannot_qualify_a_requirement",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_receipt_cannot_substitute_another_revision_boundary_or_platform",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_repeated_evidence_does_not_multiply_cases_or_erase_a_first_failure",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.ChangeSelection.test_actual_git_rename_from_code_to_docs_still_requires_native_checks",
       "boundary": "N",
       "requirements": [

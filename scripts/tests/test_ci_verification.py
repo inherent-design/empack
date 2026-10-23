@@ -200,6 +200,15 @@ class RequiredGate(unittest.TestCase):
             result = ci.check_gate(plan, successes(plan), root)
             self.assertEqual(len(result["suite_evidence"]), 6)
             self.assertFalse(result["qualification"])
+            # Full receipts are admitted first. The join must retain every native
+            # variant without presenting partial requirement decomposition as done.
+            acceptance = result["acceptance"]["requirements"]
+            self.assertEqual(len(acceptance), 109)
+            for requirement in acceptance:
+                self.assertEqual(requirement["status"], "NOT_RUN")
+                for case in requirement["cases"]:
+                    self.assertEqual(case["status"], "PASS")
+                    self.assertEqual(len(case["variants"]), 6)
             (root / f"verification-{ci.TARGETS[1]}" / "default" / "one-attempt" / "receipt.json").unlink()
             with self.assertRaisesRegex(ValueError, "exactly one attempt"):
                 ci.check_gate(plan, successes(plan), root)
