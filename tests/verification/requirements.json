@@ -227,9 +227,29 @@
             "telemetry"
           ],
           "assertions": [
-            "Unlike display flags, the version command loads configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
+            "Unlike display flags, the version command and no-subcommand invocation load configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
           ],
-          "remaining_group_evidence": "Precedence, selected workspace, literal arguments, state/cache roots and no-subcommand behavior still need complete bindings and execution evidence"
+          "remaining_group_evidence": "Precedence, selected workspace, literal arguments and state/cache roots still need complete bindings and execution evidence"
+        },
+        {
+          "id": "UX-002.no-command-guidance",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_no_command_guides_without_mutation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "No-subcommand invocation exits successfully with help guidance, without modifying invalid author documents or clean/hostile isolated state and cache paths"
+          ],
+          "remaining_group_evidence": "Precedence, selected workspace, literal arguments and state/cache roots still need complete bindings and execution evidence"
         }
       ],
       "owner_now": [

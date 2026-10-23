@@ -121,7 +121,10 @@ observes ordinary HTTP transport attempts; it is not an OS network sandbox. Pack
 evidence additionally requires archive admission on each of the five native targets.
 Complete decomposition does not mean those execution variants have passed. Ordinary
 commands still load configuration: the separate malformed-dotenv case asserts that
-`version` reports configuration errors while help/version display flags remain usable.
+`version` and no-subcommand invocations report configuration errors while help/version
+display flags remain usable. With valid configuration, invoking no command returns
+help guidance without creating state. Recursive help checks each selected command's
+own usage line, so mistakenly returning root help cannot satisfy a leaf's case.
 
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a

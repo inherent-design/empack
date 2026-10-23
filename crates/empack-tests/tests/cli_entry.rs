@@ -137,6 +137,14 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
             .unwrap();
         }
         for route in &routes {
+            let expected_usage = format!(
+                "Usage: {} ",
+                route
+                    .split_ascii_whitespace()
+                    .filter(|part| *part != "help")
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
             let mut args: Vec<_> = route.split_ascii_whitespace().collect();
             assert_eq!(args.remove(0), "empack");
             // Generated `help ...` routes already request display; adding
@@ -146,7 +154,10 @@ fn cli_registered_help_routes_ignore_unrelated_dotenv() {
             }
             let output = fixture.invoke(&args, 0);
             let stdout = String::from_utf8(output.stdout).unwrap();
-            assert!(stdout.contains("Usage: empack"), "{route}: {stdout}");
+            assert!(
+                stdout.lines().any(|line| line.starts_with(&expected_usage)),
+                "{route}: expected {expected_usage:?} in {stdout}"
+            );
             assert!(output.stderr.is_empty(), "{route}: {:?}", output.stderr);
         }
         for args in [["-h"], ["--version"], ["-V"]] {
@@ -177,6 +188,20 @@ fn cli_unknown_commands_report_usage_without_mutation() {
 }
 
 #[test]
+fn cli_no_command_guides_without_mutation() {
+    for hostile in [false, true] {
+        let fixture = EntryFixture::new(hostile);
+        let output = fixture.invoke(&[], 0);
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("Run 'empack --help' for usage information"),
+            "{stdout}"
+        );
+        assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    }
+}
+
+#[test]
 fn cli_malformed_dotenv_reports_configuration_error_without_mutation() {
     for filename in [".env", ".env.local"] {
         let fixture = EntryFixture::new(false);
@@ -185,9 +210,11 @@ fn cli_malformed_dotenv_reports_configuration_error_without_mutation() {
             b"EMPACK_DRY_RUN='unterminated\n",
         )
         .unwrap();
-        let output = fixture.invoke(&["version"], 2);
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains("Error:"), "{stderr}");
+        for args in [vec!["version"], vec![]] {
+            let output = fixture.invoke(&args, 2);
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(stderr.contains("Error:"), "{stderr}");
+        }
     }
 }
 
