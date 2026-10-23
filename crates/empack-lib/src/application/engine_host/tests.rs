@@ -269,3 +269,29 @@ fn cli_budget_admits_installer_with_retained_build_inputs() {
     drop((assembly, output, acquired, prepared));
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[test]
+fn launch_failure_summary_preserves_runtime_phase_and_cause() {
+    for phase in [
+        "Runtime did not start",
+        "Runtime exited unsuccessfully",
+        "Runtime retired, but terminal restoration failed",
+    ] {
+        let cause = anyhow::Error::new(std::io::Error::other("fixture failure")).context(phase);
+        let outcome = std::sync::Arc::new(OperationOutcome::Completed(
+            ExecutionOutcome::FailedBeforePublication(cause),
+        ));
+        let error = RetainedExecutionError {
+            message: failure_summary("Instance launch", true),
+            outcome,
+        };
+        assert_eq!(
+            format!("{:#}", anyhow::Error::new(error)),
+            format!("Instance launch failed: {phase}: fixture failure")
+        );
+    }
+    assert_eq!(
+        failure_summary("Addition", false),
+        "Addition was not applied"
+    );
+}

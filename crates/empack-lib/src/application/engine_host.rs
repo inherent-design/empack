@@ -342,6 +342,10 @@ async fn execute_approved(
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
     session.process().check_cancelled()?;
+    let runs_runtime = matches!(
+        prepared.view(),
+        crate::engine::api::OperationPreview::Launch(_)
+    );
     let grant = ExecutionGrant {
         plan: prepared.view().plan(),
         replacement: prepared.view().replacement(),
@@ -351,10 +355,7 @@ async fn execute_approved(
             NetworkPermission::Offline
         },
         run_installer: prepared.view().runs_installer(),
-        run_runtime: matches!(
-            prepared.view(),
-            crate::engine::api::OperationPreview::Launch(_)
-        ),
+        run_runtime: runs_runtime,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
@@ -382,7 +383,7 @@ async fn execute_approved(
             ))
         }
         OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_)) => Err(
-            retained_failure(outcome.clone(), format!("{label} was not applied")),
+            retained_failure(outcome.clone(), failure_summary(label, runs_runtime)),
         ),
         OperationOutcome::Completed(ExecutionOutcome::ExecutionUncertain(_)) => {
             Err(retained_failure(
@@ -409,6 +410,16 @@ async fn execute_approved(
     };
     engine.release_completed(handle.id());
     result
+}
+
+// A launch can fail after the runtime ran and retired. Publication wording must
+// not imply that no runtime effects occurred; the retained cause explains the phase.
+fn failure_summary(label: &str, runs_runtime: bool) -> String {
+    if runs_runtime {
+        format!("{label} failed")
+    } else {
+        format!("{label} was not applied")
+    }
 }
 
 // The operation registry can release its entry while the reported error still owns
