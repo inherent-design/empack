@@ -1,4 +1,4 @@
-//! Command matrices use native roots, exact documents and real archive bytes.
+//! In-process command-host matrices use native roots, exact documents and archive bytes.
 use anyhow::Result;
 use empack_lib::{
     application::{

@@ -40,7 +40,8 @@
       "owner_09": [
         "empack-cli",
         "CLI archive and SDK client/worker packages"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-002",
@@ -67,7 +68,8 @@
       ],
       "owner_09": [
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-003",
@@ -97,7 +99,8 @@
       "owner_09": [
         "empack-cli",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-004",
@@ -127,7 +130,8 @@
       "owner_09": [
         "empack-cli",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-005",
@@ -159,7 +163,8 @@
         "empack-cli",
         "empack-engine codecs/inspection + CLI renderer",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-006",
@@ -189,7 +194,8 @@
       "owner_09": [
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-007",
@@ -218,7 +224,8 @@
       "owner_09": [
         "empack-engine codecs/inspection + CLI renderer",
         "portable planners and engine; CLI request mapping; native effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-008",
@@ -250,7 +257,8 @@
       "owner_09": [
         "empack-cli",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-009",
@@ -284,7 +292,8 @@
         "shared initialization/import semantics + native publication",
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-010",
@@ -314,7 +323,8 @@
       "owner_09": [
         "shared initialization/import semantics + native publication",
         "portable catalog interpretation; native/Fetch transport"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-011",
@@ -347,7 +357,8 @@
         "shared initialization/import semantics + native publication",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-012",
@@ -380,7 +391,8 @@
         "shared initialization/import semantics + native publication",
         "portable evidence/codecs; content/transport host ports",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-013",
@@ -413,7 +425,8 @@
         "shared initialization/import semantics + native publication",
         "portable evidence/codecs; content/transport host ports",
         "portable catalog interpretation; native/Fetch transport"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-014",
@@ -444,7 +457,8 @@
       "owner_09": [
         "portable evidence/codecs; content/transport host ports",
         "shared initialization/import semantics + native publication"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-015",
@@ -474,7 +488,8 @@
       "owner_09": [
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-016",
@@ -506,7 +521,8 @@
         "shared initialization/import semantics + native publication",
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-017",
@@ -538,7 +554,8 @@
         "shared initialization/import semantics + native publication",
         "portable evidence/codecs; content/transport host ports",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-018",
@@ -569,7 +586,8 @@
       "owner_09": [
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-019",
@@ -603,7 +621,8 @@
         "portable catalog interpretation; native/Fetch transport",
         "empack-cli",
         "portable planners and engine; CLI request mapping; native effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-020",
@@ -633,7 +652,8 @@
       "owner_09": [
         "portable planners and engine; CLI request mapping; native effects",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-021",
@@ -666,7 +686,8 @@
         "portable planners and engine; CLI request mapping; native effects",
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-022",
@@ -699,7 +720,8 @@
         "portable planners and engine; CLI request mapping; native effects",
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-023",
@@ -732,7 +754,8 @@
         "portable planners and engine; CLI request mapping; native effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-024",
@@ -765,7 +788,8 @@
         "empack-engine codecs/inspection + CLI renderer",
         "portable planners and engine; CLI request mapping; native effects",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-025",
@@ -799,7 +823,8 @@
         "portable planners and engine; CLI request mapping; native effects",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-026",
@@ -829,7 +854,8 @@
       "owner_09": [
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-027",
@@ -858,7 +884,8 @@
       "owner_09": [
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-028",
@@ -891,7 +918,8 @@
         "portable planners and engine; CLI request mapping; native effects",
         "empack-cli",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-029",
@@ -920,7 +948,8 @@
       "owner_09": [
         "portable planners and engine; CLI request mapping; native effects",
         "empack-engine codecs/inspection + CLI renderer"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-030",
@@ -953,7 +982,8 @@
         "portable planners and engine; CLI request mapping; native effects",
         "portable evidence/codecs; content/transport host ports",
         "portable catalog interpretation; native/Fetch transport"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-031",
@@ -984,7 +1014,8 @@
       "owner_09": [
         "portable planners and engine; CLI request mapping; native effects",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-032",
@@ -1017,7 +1048,8 @@
         "portable catalog interpretation; native/Fetch transport",
         "empack-cli",
         "empack-engine codecs/inspection + CLI renderer"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-033",
@@ -1051,7 +1083,8 @@
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-034",
@@ -1080,7 +1113,8 @@
       "owner_09": [
         "shared pending semantics + native/browser retention and UI",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-035",
@@ -1114,7 +1148,8 @@
         "shared pending semantics + native/browser retention and UI",
         "portable evidence/codecs; content/transport host ports",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-036",
@@ -1146,7 +1181,8 @@
         "shared pending semantics + native/browser retention and UI",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-037",
@@ -1180,7 +1216,8 @@
         "shared pending semantics + native/browser retention and UI",
         "portable catalog interpretation; native/Fetch transport",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-038",
@@ -1210,7 +1247,8 @@
       "owner_09": [
         "shared pending semantics + native/browser retention and UI",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-039",
@@ -1240,7 +1278,8 @@
       "owner_09": [
         "empack-cli",
         "shared pending semantics + native/browser retention and UI"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-040",
@@ -1273,7 +1312,8 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-041",
@@ -1307,7 +1347,8 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable inventory/ownership semantics; native instance effects",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-042",
@@ -1335,7 +1376,8 @@
       ],
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-043",
@@ -1370,7 +1412,8 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-044",
@@ -1402,7 +1445,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-045",
@@ -1433,7 +1477,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-046",
@@ -1463,7 +1508,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "shared release meaning/signature verification + native signing custody and publication"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-047",
@@ -1487,7 +1533,32 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-047.literal-layered-authoring",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "assertions": [
+            "Private JAR placement and source retention through public add/sync/remove",
+            "Exact Prism bundled and mrpack member sets with independent byte expectations",
+            "Client override precedence and server-only exclusion from client output",
+            "Fresh configuration exported without changing pack version or lock",
+            "Literal binding and author comments survive no-op synchronization; unrelated author files survive removal"
+          ],
+          "remaining_group_evidence": "Actual server output/startup, reference preparation, additional content-kind/choice cases and final packaged variants remain required",
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::documents + application::engine_host::cli::manifest",
@@ -1497,7 +1568,8 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-engine codecs/inspection + CLI renderer",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-048",
@@ -1525,7 +1597,8 @@
       ],
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-049",
@@ -1555,7 +1628,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-050",
@@ -1587,7 +1661,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-051",
@@ -1617,7 +1692,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-052",
@@ -1647,7 +1723,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-053",
@@ -1677,7 +1754,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-054",
@@ -1710,7 +1788,8 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-055",
@@ -1743,7 +1822,8 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-056",
@@ -1776,7 +1856,8 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-057",
@@ -1805,7 +1886,8 @@
       "owner_09": [
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-058",
@@ -1838,7 +1920,8 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable evidence/codecs; content/transport host ports",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-059",
@@ -1868,7 +1951,8 @@
       "owner_09": [
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-060",
@@ -1902,7 +1986,8 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-061",
@@ -1936,7 +2021,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-062",
@@ -1970,7 +2056,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared release meaning/signature verification + native signing custody and publication",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-063",
@@ -1999,7 +2086,8 @@
       "owner_09": [
         "portable inventory/ownership semantics; native instance effects",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-064",
@@ -2032,7 +2120,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared release meaning/signature verification + native signing custody and publication",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-065",
@@ -2066,7 +2155,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-066",
@@ -2096,7 +2186,8 @@
       "owner_09": [
         "portable inventory/ownership semantics; native instance effects",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-067",
@@ -2129,7 +2220,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-068",
@@ -2162,7 +2254,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared release meaning/signature verification + native signing custody and publication",
         "native effects and recovery in empack-native; expected inventories remain shared"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-069",
@@ -2194,7 +2287,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared pending semantics + native/browser retention and UI",
         "portable evidence/codecs; content/transport host ports"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-070",
@@ -2225,7 +2319,8 @@
       "owner_09": [
         "portable inventory/ownership semantics; native instance effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-071",
@@ -2259,7 +2354,8 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-072",
@@ -2293,7 +2389,8 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-073",
@@ -2324,7 +2421,8 @@
       "owner_09": [
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-074",
@@ -2354,7 +2452,8 @@
       "owner_09": [
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-075",
@@ -2385,7 +2484,8 @@
       "owner_09": [
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-076",
@@ -2415,7 +2515,8 @@
       "owner_09": [
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-077",
@@ -2448,7 +2549,8 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-078",
@@ -2478,7 +2580,8 @@
       "owner_09": [
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-cli"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-079",
@@ -2511,7 +2614,8 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "portable evidence/codecs; content/transport host ports",
         "shared pending semantics + native/browser retention and UI"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-080",
@@ -2547,7 +2651,8 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-081",
@@ -2580,7 +2685,8 @@
         "shared scaffold generation + native/script acceptance",
         "empack-cli",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-082",
@@ -2610,7 +2716,8 @@
       "owner_09": [
         "shared scaffold generation + native/script acceptance",
         "shared release meaning/signature verification + native signing custody and publication"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-083",
@@ -2639,7 +2746,8 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-084",
@@ -2671,7 +2779,8 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-085",
@@ -2702,7 +2811,8 @@
         "CLI archive and SDK client/worker packages",
         "empack-cli",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-086",
@@ -2731,7 +2841,8 @@
       "owner_09": [
         "CLI archive and SDK client/worker packages",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-087",
@@ -2760,7 +2871,8 @@
       "owner_09": [
         "empack-cli",
         "shared scaffold generation + native/script acceptance"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "UX-088",
@@ -2786,7 +2898,8 @@
       ],
       "owner_09": [
         "CLI archive and SDK client/worker packages"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-001",
@@ -2812,7 +2925,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-002",
@@ -2838,7 +2952,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-003",
@@ -2864,7 +2979,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-004",
@@ -2891,7 +3007,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-005",
@@ -2919,7 +3036,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-006",
@@ -2947,7 +3065,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-007",
@@ -2973,7 +3092,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-008",
@@ -2998,7 +3118,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-009",
@@ -3023,7 +3144,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-010",
@@ -3048,7 +3170,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-011",
@@ -3073,7 +3196,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-012",
@@ -3099,7 +3223,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-013",
@@ -3126,7 +3251,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-014",
@@ -3152,7 +3278,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-015",
@@ -3178,7 +3305,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-016",
@@ -3203,7 +3331,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-017",
@@ -3229,7 +3358,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-018",
@@ -3255,7 +3385,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-019",
@@ -3281,7 +3412,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-020",
@@ -3307,7 +3439,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     },
     {
       "id": "PORT-021",
@@ -3335,7 +3468,8 @@
       ],
       "owner_09": [
         "empack-core + empack-engine + empack-native/empack-wasm + SDK/harness"
-      ]
+      ],
+      "case_bindings_status": "pending"
     }
   ],
   "api_routes": {

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -6,6 +7,34 @@ spec = importlib.util.spec_from_file_location(
     "test_map", Path(__file__).resolve().parents[1] / "check-test-map.py")
 checker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(checker)
+
+
+class RequirementBindings(unittest.TestCase):
+    def setUp(self):
+        self.document = json.loads((Path(__file__).resolve().parents[2] /
+            "tests/verification/requirements.json").read_text())
+        self.row = next(row for row in self.document["requirements"] if row["cases"])
+
+    def test_partial_bindings_remain_structurally_valid(self):
+        requirements, cases = checker.validate_requirements(self.document)
+        self.assertIn(self.row["id"], requirements)
+        self.assertIn(self.row["cases"][0]["id"], cases)
+
+    def test_empty_cases_cannot_claim_completed_bindings(self):
+        self.row["cases"] = []
+        self.row["case_bindings_status"] = "complete"
+        with self.assertRaisesRegex(ValueError, "Binding status"):
+            checker.validate_requirements(self.document)
+
+    def test_case_requires_positive_test_membership(self):
+        self.row["cases"][0]["test_ids"] = []
+        with self.assertRaisesRegex(ValueError, "concrete tests"):
+            checker.validate_requirements(self.document)
+
+    def test_case_cannot_substitute_another_host_boundary(self):
+        self.row["cases"][0]["boundary"] = "W"
+        with self.assertRaisesRegex(ValueError, "unrelated evidence"):
+            checker.validate_requirements(self.document)
 
 
 class TestDiscoveryBinding(unittest.TestCase):

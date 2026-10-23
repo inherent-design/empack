@@ -9,22 +9,12 @@ use std::{
 };
 
 fn command(project: &TestProject) -> assert_cmd::Command {
-    let mut cmd = project.cmd();
-    cmd.env_remove("EMPACK_WORKDIR")
-        .env_remove("EMPACK_DRY_RUN")
-        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
-        .env(
-            "EMPACK_PACKWIZ_BIN",
-            project.dir().join("must-not-be-executed"),
-        )
-        .env("EMPACK_COLOR", "never")
-        .env("EMPACK_NET_TIMEOUT", "1")
-        .env("HTTP_PROXY", "http://127.0.0.1:9")
-        .env("HTTPS_PROXY", "http://127.0.0.1:9")
-        .env("ALL_PROXY", "http://127.0.0.1:9")
-        .env("NO_PROXY", "");
-    let mut cmd = assert_cmd::Command::from_std(cmd);
-    cmd.timeout(Duration::from_secs(15));
+    let mut cmd = empack_tests::harness::process::offline_command(project.dir());
+    cmd.env(
+        "EMPACK_PACKWIZ_BIN",
+        project.dir().join("must-not-be-executed"),
+    )
+    .timeout(Duration::from_secs(15));
     cmd
 }
 fn initialized() -> TestProject {

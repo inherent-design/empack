@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "status": "partial; complete inventory comparison must reject unclassified tests",
+  "tests": [
+    {
+      "id": "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency",
+      "boundary": "X"
+    }
+  ]
+}

@@ -351,6 +351,21 @@ pub fn empack_assert_cmd(workdir: &Path) -> assert_cmd::Command {
     assert_cmd::Command::from_std(empack_cmd(workdir))
 }
 
+/// Bound offline CLI fixtures and reject accidental external acquisition through
+/// the product's ordinary proxy configuration. This is not an OS network sandbox.
+pub fn offline_command(workdir: &Path) -> assert_cmd::Command {
+    let mut command = empack_assert_cmd(workdir);
+    command
+        .env("EMPACK_COLOR", "never")
+        .env("EMPACK_NET_TIMEOUT", "1")
+        .env("HTTP_PROXY", "http://127.0.0.1:9")
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("ALL_PROXY", "http://127.0.0.1:9")
+        .env("NO_PROXY", "")
+        .timeout(std::time::Duration::from_secs(30));
+    command
+}
+
 /// Expected artifact version, independent of the test crate's Cargo version.
 /// Qualification supplies the expectation; local runs probe their selected executable.
 pub fn expected_cli_version() -> String {

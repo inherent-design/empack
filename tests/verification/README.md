@@ -2,7 +2,8 @@
 
 `requirements.json` contains the stable UX and planned portable-authoring
 obligations adopted for the v0.8.4 test overhaul. Requirements are not execution
-evidence. Empty `cases` lists identify work that still needs concrete bindings;
+evidence. `case_bindings_status` distinguishes pending, partial and complete
+decomposition. Empty `cases` lists identify work that still needs concrete bindings;
 they must not contribute passing coverage. Portable requirements remain assigned
 to the v0.9 implementation checkpoints.
 
@@ -58,3 +59,9 @@ python3 scripts/check-test-map.py --cli-inventory /tmp/empack-cli.json --cli-bin
 These checks validate structure and classification only. The complete bindings,
 case/variant result join, doctest discovery and qualification gate are still being
 implemented. A successful structural check does not qualify the release.
+
+`test-bindings.json` starts with the literal authoring journey, discovered by
+Nextest. The registry marks UX-047 partial and lists its remaining evidence.
+Comparing the complete workspace inventory with this partial file must fail on
+unclassified tests. Cases declare required platforms and product feature variants;
+those declarations do not establish that any variant ran.
