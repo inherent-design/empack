@@ -84,10 +84,16 @@ check does not qualify the release.
 including fixture checks, controlled hosts, executable journeys, interactive cases
 and live probes. Other platform-only identities and the remaining workspace still
 need classification. The registry marks the bound authoring and pending
-build/synchronization groups partial and lists their remaining evidence.
+build/import/synchronization groups partial and lists their remaining evidence.
 Synchronization exercises public association keys, partial
 retention after cache eviction, restart, exact materialized bytes, stale drafts and
-explicit cleanup. Import and instance pending journeys remain separate obligations.
+explicit cleanup. Import uses a real unsupported-transport obligation and public
+diagnostics, rejects wrong/ambiguous associations, resumes after deleting the original
+archive, and verifies exact exported bytes. It preserves the public distinction
+between saved input and a complete assessment of missing requirements. This offline
+fixture does not establish a live provider's restricted-download policy. Instance
+pending journeys, corrupt/ambiguous records and interactive import approval remain
+separate obligations.
 Comparing the complete workspace inventory with this partial file must fail on
 unclassified tests. Cases declare required platforms and product feature
 variants; those declarations do not establish that any variant ran.

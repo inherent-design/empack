@@ -1149,6 +1149,28 @@
             "Inspection preserves author, state and cache bytes; retained bytes remain explicitly unverified until resume; changed author text reports stale"
           ],
           "remaining_group_evidence": "Import/instance families, corrupt records and ambiguous IDs remain required"
+        },
+        {
+          "id": "UX-034.import-public-inspection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector",
+            "empack-tests::journey_pending_import::journey_pending_import_rejects_changed_destination_and_discards_without_overwrite"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public list/show agree on saved import identity and honestly mark undiscovered input requirements incomplete",
+            "Inspection preserves invocation, destination, state and cache; a changed destination reports stale"
+          ],
+          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
         }
       ],
       "owner_now": [
@@ -1226,6 +1248,27 @@
             "Correct renamed inputs materialize the independent complete two-file inventory"
           ],
           "remaining_group_evidence": "Import/instance families, ambiguous multi-role selections and interactive/package evidence remain required"
+        },
+        {
+          "id": "UX-035.import-manual-association",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact association selector comes from the initial public diagnostic, not private continuation storage",
+            "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory"
+          ],
+          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
         }
       ],
       "owner_now": [
@@ -1327,6 +1370,28 @@
             "Repeated synchronization converges; changed author bytes prevent stale resume"
           ],
           "remaining_group_evidence": "Import/instance families and their restart/staleness variants remain required"
+        },
+        {
+          "id": "UX-036.import-retained-archive-restart",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector",
+            "empack-tests::journey_pending_import::journey_pending_import_rejects_changed_destination_and_discards_without_overwrite"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "After the original archive is deleted, a fresh process resumes using retained archive bytes and the public next command",
+            "Explicit local-source persistence, two convergent synchronizations and exact export inventory preserve the imported file and overrides; a changed destination refuses resume"
+          ],
+          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
         }
       ],
       "owner_now": [
@@ -1439,6 +1504,27 @@
             "Explicit public discard and legacy sync cleanup both remove the saved obligation while preserving authored content"
           ],
           "remaining_group_evidence": "Import/instance families and interrupted discard evidence remain required"
+        },
+        {
+          "id": "UX-038.import-explicit-discard",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_rejects_changed_destination_and_discards_without_overwrite"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Dry-run discard preserves the changed destination and saved state",
+            "Explicit discard removes the pending import without overwriting the externally created destination"
+          ],
+          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
         }
       ],
       "owner_now": [

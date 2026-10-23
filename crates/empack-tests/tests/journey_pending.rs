@@ -4,7 +4,7 @@ use empack_tests::{
     fixtures::restricted::fixture,
     harness::{
         archive::zip_members,
-        process::{TestProject, assert_dist_artifact_suffix, offline_command},
+        process::{TestProject, assert_dist_artifact_suffix},
     },
 };
 use serde_json::{Value, json};
@@ -14,45 +14,19 @@ use std::{fs, path::Path};
 mod files;
 use files::snapshot;
 
+#[path = "support/pending.rs"]
+mod public_pending;
+
 fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
-    let mut command = offline_command(project.dir());
-    command
-        .arg("--state-dir")
-        .arg(state)
-        .arg("--cache-dir")
-        .arg(state.with_extension("cache"))
-        .arg("--yes");
-    command
+    public_pending::command(project.dir(), project.dir(), state)
 }
 
 fn report(project: &TestProject, state: &Path, args: &[&str]) -> Value {
-    let before_project = snapshot(project.dir());
-    let before_state = state.exists().then(|| snapshot(state));
-    let cache = state.with_extension("cache");
-    let before_cache = cache.exists().then(|| snapshot(&cache));
-    let output = command(project, state)
-        .args(args)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    assert_eq!(snapshot(project.dir()), before_project);
-    assert_eq!(state.exists().then(|| snapshot(state)), before_state);
-    assert_eq!(cache.exists().then(|| snapshot(&cache)), before_cache);
-    serde_json::from_slice(&output).unwrap()
+    public_pending::report(project.dir(), project.dir(), state, args)
 }
 
 fn pending(project: &TestProject, state: &Path, kind: &str) -> Value {
-    let listed = report(project, state, &["pending", "list", "--json"]);
-    assert_eq!(listed["schema"], 1);
-    assert_eq!(listed["operations"].as_array().unwrap().len(), 1);
-    let operation = listed["operations"][0].clone();
-    let id = operation["id"].as_str().unwrap();
-    let shown = report(project, state, &["pending", "show", id, "--json"]);
-    assert_eq!(shown["operations"], json!([operation]));
-    assert_eq!(operation["kind"], kind);
-    operation
+    public_pending::single(project.dir(), project.dir(), state, kind)
 }
 
 #[test]

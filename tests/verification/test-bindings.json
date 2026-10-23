@@ -327,6 +327,14 @@
       "boundary": "X"
     },
     {
+      "id": "empack-tests::journey_pending_import::journey_pending_import_rejects_changed_destination_and_discards_without_overwrite",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector",
+      "boundary": "X"
+    },
+    {
       "id": "empack-tests::journey_verified_import::journey_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates",
       "boundary": "X"
     },
