@@ -244,3 +244,13 @@ Digest/transfer failures use controlled host transport, not a live provider clai
 Unix link confinement is a separate platform case. These bindings complete the
 replacement group's case decomposition; each required host/feature still needs its
 own admitted execution evidence.
+
+New-project initialization uses a literal author-document expectation shared by
+unattended and PTY/ConPTY checks. It compares the complete document and scaffold
+inventory, exact empty runtime lock, reference defaults and template integration
+fields without calling the production document decoder. Empty bindings stay absent.
+Repeated synchronization preserves authored bytes and identity; a second initialization
+explains replacement refusal. Host state is isolated outside the author tree.
+The package case repeats these checks on all five final archives; local execution
+does not satisfy that case. Generated workflow presence/version checks remain
+separate from execution of those workflows under UX-081/UX-082.

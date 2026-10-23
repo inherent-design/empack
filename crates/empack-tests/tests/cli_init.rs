@@ -1,10 +1,13 @@
 //! Initialization contracts that require no external catalog.
+#[path = "support/files.rs"]
+mod files;
+#[path = "support/initialization.rs"]
+mod initialization;
 #[path = "support/replacement.rs"]
 mod replacement;
 use empack_tests::harness::process::{
-    TestProject, assert_locked_minecraft_version, assert_project_datapack_folder,
-    assert_project_initialized, assert_project_loader_absent, assert_project_minecraft_version,
-    offline_command,
+    TestProject, assert_project_datapack_folder, assert_project_initialized,
+    assert_project_loader_absent, assert_project_minecraft_version, offline_command,
 };
 
 #[test]
@@ -22,47 +25,6 @@ fn cli_init_missing_loader_reports_usage() {
         stderr.contains("--modloader") || stderr.contains("requires"),
         "stderr did not mention --modloader or requires\n{stderr}"
     );
-}
-
-#[test]
-fn cli_init_existing_project_requires_replacement_decision() {
-    let project = TestProject::new();
-    let output = project.run_output(&[
-        "init",
-        "--yes",
-        "--modloader",
-        "none",
-        "--mc-version",
-        "1.21.1",
-        "test-pack",
-    ]);
-    assert!(output.status.success(), "{:?}", output);
-
-    let document = project.dir().join("test-pack/empack.yml");
-    let before = std::fs::read(&document).unwrap();
-    let output = project
-        .cmd()
-        .args([
-            "init",
-            "--yes",
-            "--modloader",
-            "none",
-            "--mc-version",
-            "1.21.1",
-            "test-pack",
-        ])
-        .output()
-        .expect("failed to spawn");
-    assert!(!output.status.success());
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}{stderr}");
-    assert!(
-        combined.contains("replacement requires an explicit decision"),
-        "output did not explain the required replacement decision\nstdout: {stdout}\nstderr: {stderr}"
-    );
-    assert_eq!(std::fs::read(document).unwrap(), before);
 }
 
 #[test]
@@ -152,22 +114,85 @@ fn cli_init_preview_preserves_absent_destination() {
 
 #[test]
 fn cli_init_vanilla_binds_minecraft_without_loader() {
-    let project = TestProject::new();
-    offline_command(project.dir())
-        .args([
+    let mut identities = std::collections::BTreeSet::new();
+    for (destination, name, version, author) in [
+        (Some("test-none"), "test-none", "1.0.0", ""),
+        (
+            Some("authored pack Ω"),
+            "Workshop Ω: recipes",
+            "2.3.0",
+            "Fixture Author",
+        ),
+        (None, "Current directory", "0.1.0", "Local Author"),
+    ] {
+        let project = TestProject::new();
+        let host = tempfile::tempdir().unwrap();
+        let command = |directory: &std::path::Path| {
+            let mut command = offline_command(directory);
+            command
+                .env("EMPACK_STATE_DIR", host.path().join("state"))
+                .env("EMPACK_CACHE_DIR", host.path().join("cache"));
+            command
+        };
+        let mut args = vec![
             "init",
             "--yes",
             "--modloader",
             "none",
             "--mc-version",
             "1.21.1",
-            "test-none",
-        ])
-        .assert()
-        .success();
-    let pack_dir = project.dir().join("test-none");
-    assert_project_initialized(&pack_dir);
-    assert_project_loader_absent(&pack_dir);
-    assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_locked_minecraft_version(&pack_dir, "1.21.1");
+            "--author",
+            author,
+        ];
+        if !author.is_empty() {
+            args.extend(["--pack-name", name, "--pack-version", version]);
+        }
+        if let Some(destination) = destination {
+            args.push(destination);
+        }
+        command(project.dir()).args(&args).assert().success();
+        let pack = destination.map_or_else(
+            || project.dir().to_path_buf(),
+            |dir| project.dir().join(dir),
+        );
+        let authors = if author.is_empty() {
+            vec![]
+        } else {
+            vec![author]
+        };
+        let id = initialization::assert_new_project(&pack, name, version, &authors);
+        assert!(
+            identities.insert(id.clone()),
+            "separate new projects need separate identities"
+        );
+        let before = files::snapshot(&pack);
+        for _ in 0..2 {
+            command(&pack).args(["sync", "--yes"]).assert().success();
+            assert_eq!(
+                files::snapshot(&pack),
+                before,
+                "empty sync must preserve authored identity and scaffolding"
+            );
+        }
+        let output = command(project.dir()).args(&args).output().unwrap();
+        assert!(!output.status.success());
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            diagnostic.contains("replacement requires an explicit decision"),
+            "{diagnostic}"
+        );
+        assert_eq!(
+            files::snapshot(&pack),
+            before,
+            "refused second initialization must preserve every file"
+        );
+        assert_eq!(
+            initialization::assert_new_project(&pack, name, version, &authors),
+            id
+        );
+    }
 }

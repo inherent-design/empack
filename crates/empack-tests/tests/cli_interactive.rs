@@ -1,11 +1,13 @@
 //! Native prompt and desktop assistance contracts. No fake packwiz or installer output.
-use empack_tests::harness::process::{TestProject, assert_project_initialized, empack_cmd};
+use empack_tests::harness::process::{TestProject, empack_cmd};
 use expectrl::{Expect, Regex};
 #[cfg(unix)]
 #[path = "support/desktop_assistance.rs"]
 mod desktop_assistance;
 #[path = "support/files.rs"]
 mod files;
+#[path = "support/initialization.rs"]
+mod initialization;
 #[path = "support/terminal.rs"]
 mod terminal;
 #[cfg(unix)]
@@ -37,16 +39,18 @@ fn cli_pty_init_accepts_author_decisions() {
         .unwrap();
     terminal.send_line("y").unwrap();
     terminal.expect(Regex("(?i)initialized")).unwrap();
+    #[cfg(not(windows))]
+    terminal.expect(expectrl::Eof).unwrap();
+    #[cfg(windows)]
+    assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
     let pack = project.dir().join("interactive-test");
-    assert_project_initialized(&pack);
-    let intent = fs::read_to_string(pack.join("empack.yml")).unwrap();
-    assert!(intent.contains("my-test-pack"));
-    assert!(intent.contains("Test Author"));
+    initialization::assert_new_project(&pack, "my-test-pack", "1.0.0", &["Test Author"]);
 }
 
 #[test]
 fn cli_pty_init_decline_preserves_absent_destination() {
     let project = TestProject::new();
+    let before = files::snapshot(project.dir());
     let mut cmd = empack_cmd(project.dir());
     cmd.args([
         "init",
@@ -69,7 +73,12 @@ fn cli_pty_init_decline_preserves_absent_destination() {
         .unwrap();
     terminal.send_line("n").unwrap();
     terminal.expect(Regex("(?i)not applied")).unwrap();
+    #[cfg(not(windows))]
+    terminal.expect(expectrl::Eof).unwrap();
+    #[cfg(windows)]
+    assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
     assert!(!project.dir().join("declined").exists());
+    assert_eq!(files::snapshot(project.dir()), before);
 }
 
 #[test]

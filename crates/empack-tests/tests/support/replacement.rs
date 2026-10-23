@@ -1,6 +1,5 @@
 //! Replacement assertions through the real executable, with literal incoming data.
-#[path = "files.rs"]
-mod files;
+use super::files;
 #[path = "terminal.rs"]
 mod terminal;
 

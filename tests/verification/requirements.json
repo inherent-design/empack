@@ -953,8 +953,139 @@
       "risk": "critical",
       "run_gate": "pr",
       "scope": "stable",
-      "variant_axes": "",
-      "cases": [],
+      "variant_axes": "Unattended defaults and explicit Unicode metadata; new directory and current directory; PTY/ConPTY acceptance/decline; five extracted native archives",
+      "cases": [
+        {
+          "id": "UX-009.host-coherence",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::initialize::tests::initialized_project_syncs_twice_and_builds_current_scaffolding_through_engine",
+            "empack-lib::application::engine_host::initialize::tests::initialization_host_validates_options_and_interactive_indices_before_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Empty initialization can synchronize twice without changing author inputs and build the current client template through the engine",
+            "Invalid options and out-of-range interactive choices publish nothing; host evidence does not substitute for terminal interaction"
+          ]
+        },
+        {
+          "id": "UX-009.authored-project",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_init::cli_init_vanilla_binds_minecraft_without_loader"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unattended initialization with defaults, explicit Unicode metadata and current-directory destination matches independent literal author semantics and exact scaffold inventory",
+            "New identities are distinct; empty bindings are absent, runtime intent agrees with the exact lock, and new Prism/server defaults explicitly use reference snapshots",
+            "Repeated sync preserves every authored byte; a second initialization explains replacement refusal and preserves every project file"
+          ]
+        },
+        {
+          "id": "UX-009.automation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_init::cli_init_emits_versioned_automation_and_templates"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Generated validation/release workflows select the artifact-under-test compatibility version and the delivered helper; no unresolved release placeholder or foreign packwiz control file remains",
+            "Scaffold publication alone does not prove generated automation execution, which remains owned by UX-081/UX-082"
+          ]
+        },
+        {
+          "id": "UX-009.preview",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_init::cli_init_preview_preserves_absent_destination"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Initialization preview succeeds without creating the proposed project destination"
+          ]
+        },
+        {
+          "id": "UX-009.terminal-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_pty_init_accepts_author_decisions",
+            "empack-tests::cli_interactive::cli_pty_init_decline_preserves_absent_destination"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual PTY/ConPTY prompts retain selected name, author and version and produce the same literal author/scaffold expectations as unattended initialization",
+            "Declined publication leaves the destination absent and fixture files unchanged; wait for the actual terminal child to finish before checking outputs"
+          ]
+        },
+        {
+          "id": "UX-009.packaged-initialization",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_init::cli_init_vanilla_binds_minecraft_without_loader",
+            "empack-tests::cli_init::cli_init_emits_versioned_automation_and_templates",
+            "empack-tests::cli_init::cli_init_preview_preserves_absent_destination"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat independent author/scaffold, stable identity, replacement refusal, preview and automation-version assertions using the extracted final executable",
+            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::documents + application::engine_host::cli::manifest",
@@ -965,7 +1096,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-010",
