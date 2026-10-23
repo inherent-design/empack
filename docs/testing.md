@@ -74,6 +74,16 @@ does not establish a live provider's restricted-download policy. Instance contin
 parity and remaining interactive/corrupt-record variants are still separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
 
+The mixed CurseForge host fixture uses controlled provider records with no download
+URL plus embedded author overrides. It resumes after the original archive is gone,
+rejects mismatched supplied bytes, and retains exact provider identity separately
+from local override ownership. Converting the provider file into a local or URL
+source is refused before publication, even with valid supplied bytes. Re-export
+checks the complete literal manifest and override inventory: supplied restricted bytes remain provider references. Optional
+metadata loss requires a separate export acknowledgement, and refusal preserves
+prior artifacts. This is controlled host evidence; the public pinned archive fixture
+and actual credentialed provider checks establish different parts of the workflow.
+
 The populated migration host journey starts from literal authoring and bindings,
 materializes controlled provider JARs, and updates an automatic root alongside an
 exact pin. It captures the displayed JSON plan before migrating, then compares it

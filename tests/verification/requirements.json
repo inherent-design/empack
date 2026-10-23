@@ -1575,6 +1575,30 @@
             "Exported Modrinth metadata and complete override inventory match independent literal expectations"
           ],
           "remaining_group_evidence": "Remote/provider content, optional choices, conversions and real-pack qualification remain separate cases"
+        },
+        {
+          "id": "UX-013.restricted-provider-and-overrides",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::import::tests::restricted_curseforge_import_requires_explicit_bytes_before_any_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled CurseForge records with no download URL require explicit verified bytes; preview and wrong bytes preserve the destination and pending state",
+            "Saved import resumes after deleting the original archive, retaining exact provider project/file selection, MD5 assertion, optional participation and separately owned embedded overrides",
+            "Explicit local or URL conversion of manually supplied provider bytes is rejected before project publication, preserving the saved continuation and all prior files",
+            "CurseForge export refuses unacknowledged optional metadata loss without changing author inputs or prior artifacts",
+            "Acknowledged export matches a literal manifest and complete override inventory; restricted provider bytes stay references rather than embedded overrides"
+          ],
+          "remaining_group_evidence": "Controlled provider HTTP is host evidence only; the actual credentialed provider route and broader public conversion cases remain unqualified"
         }
       ],
       "owner_now": [

@@ -599,7 +599,23 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     let root = tempfile::tempdir().unwrap();
     let mut server = mockito::Server::new_async().await;
     let manifest = serde_json::to_vec(&json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"Imported","version":"1","files":[{"projectID":123,"fileID":456,"required":false}],"minecraft":{"version":"1.21.1","modLoaders":[]},"overrides":"overrides"})).unwrap();
-    let bytes = archive_with_manifest("manifest.json", &manifest, &[]);
+    // Provider-owned bytes remain restricted even when the archive also contains
+    // locally authored overrides. Resume must retain both after the input is gone.
+    let overrides = [
+        ("config/common.toml", b"enabled=true\n".as_slice()),
+        (
+            "kubejs/server_scripts/recipes.js",
+            b"// authored recipe\n".as_slice(),
+        ),
+    ];
+    let bytes = archive_with_manifest(
+        "manifest.json",
+        &manifest,
+        &[
+            ("overrides/config/common.toml", overrides[0].1),
+            ("overrides/kubejs/server_scripts/recipes.js", overrides[1].1),
+        ],
+    );
     source(root.path(), &bytes);
     let project = server
         .mock("GET", "/mods/123")
@@ -607,10 +623,10 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
             json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"fixture","name":"Fixture"}})
                 .to_string(),
         )
-        .expect(5)
+        .expect(7)
         .create_async()
         .await;
-    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(5).create_async().await;
+    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(7).create_async().await;
     let original = super::super::tests::snapshot(root.path());
     let preview = import_with_services(
         &session(root.path(), true, true),
@@ -657,7 +673,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         project: identity,
     };
     let key = ImportContentKey::Provider {
-        pin,
+        pin: pin.clone(),
         filename: "fixture.jar".into(),
     };
     let before_resume = super::super::tests::snapshot(root.path());
@@ -673,22 +689,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     assert!(preview.is_err());
     assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
     let mut wrong = request(ImportSource::Saved, false);
-    wrong.supplied.insert(
-        key.clone(),
-        crate::engine::content::verify_stream(
-            &mut b"changed".as_slice(),
-            &ExpectedContent {
-                digests: None,
-                size: None,
-                accepted_observation: None,
-            },
-            7,
-            SourceEvidencePolicy::Compatibility,
-            InitialObservation::Accepted,
-            &crate::application::process_runtime::Cancellation::default(),
-        )
-        .unwrap(),
-    );
+    wrong.supplied.insert(key.clone(), observed(b"changed"));
     let wrong = import_with_services(
         &session(root.path(), true, false),
         wrong,
@@ -701,66 +702,93 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     assert!(wrong.is_err());
     assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
     let mut selected = request(ImportSource::Saved, false);
-    selected.supplied.insert(
-        key.clone(),
-        crate::engine::content::verify_stream(
-            &mut b"payload".as_slice(),
-            &ExpectedContent {
-                digests: None,
-                size: None,
-                accepted_observation: None,
+    selected.supplied.insert(key.clone(), observed(b"payload"));
+    let decide = |content: &VerifiedImportContent| -> Result<ImportCandidateOptions> {
+        assert_eq!(content.content().len(), 3);
+        assert_eq!(content.plan().imported().overrides.len(), 2);
+        let mut options = ImportCandidateOptions {
+            java_major: 21,
+            metadata: PackMetadata {
+                id: "test-pack".into(),
+                name: "Imported".into(),
+                version: "1".into(),
+                authors: (None).into_iter().collect(),
+                description: None,
             },
-            7,
-            SourceEvidencePolicy::Compatibility,
-            InitialObservation::Accepted,
-            &crate::application::process_runtime::Cancellation::default(),
+            loader: None,
+            acceptable_versions: vec![],
+            layout: BTreeMap::new(),
+            distribution: DistributionIntent::from_recipes(
+                NonEmpty::new(vec![Recipe::MODRINTH])?,
+                DistributionArchive::Zip,
+            ),
+            files: BTreeMap::new(),
+            exclude_auxiliary_members: false,
+        };
+        let optional = Requirement::Optional(OptionalChoice {
+            key: ChoiceKey::parse("fixture")?,
+            default_enabled: false,
+            description: Some("Imported optional file".into()),
+        });
+        options.files.insert(
+            key.clone(),
+            ImportFileDecision {
+                key: DependencyKey::parse("fixture")?,
+                kind: ContentKind::Mod,
+                requirements: Requirements {
+                    client: optional.clone(),
+                    server: optional,
+                },
+                persistence: ImportPersistence::Provider,
+                provider_destination: Some(InstallDestination::parse("mods/fixture.jar")?),
+            },
+        );
+        for (index, _) in content.plan().imported().overrides.iter().enumerate() {
+            options.files.insert(
+                ImportContentKey::Override(index),
+                ImportFileDecision {
+                    key: DependencyKey::parse(&format!("override-{index}"))?,
+                    kind: ContentKind::Config,
+                    requirements: Requirements {
+                        client: Requirement::Required,
+                        server: Requirement::Required,
+                    },
+                    persistence: ImportPersistence::Local,
+                    provider_destination: None,
+                },
+            );
+        }
+        Ok(options)
+    };
+    // Supplying restricted bytes grants no permission to discard their provider
+    // identity. Neither a local-file nor URL conversion may publish the draft.
+    for persistence in [ImportPersistence::Local, ImportPersistence::Url] {
+        let mut invalid = request(ImportSource::Saved, false);
+        invalid.supplied.insert(key.clone(), observed(b"payload"));
+        let rejected = import_with_services(
+            &session(root.path(), true, false),
+            invalid,
+            |content| {
+                let mut options = decide(content)?;
+                options.files.get_mut(&key).unwrap().persistence = persistence;
+                Ok(options)
+            },
+            ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+            HttpAcquisition::for_loopback_tests(),
+            ImportLimits::default(),
         )
-        .unwrap(),
-    );
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{rejected:#}").contains("Provider imports must preserve canonical identity"),
+            "{rejected:#}"
+        );
+        assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+    }
     import_with_services(
         &session(root.path(), true, false),
         selected,
-        move |content| {
-            assert_eq!(content.content().len(), 1);
-            let mut options = ImportCandidateOptions {
-                java_major: 21,
-                metadata: PackMetadata {
-                    id: "test-pack".into(),
-                    name: "Imported".into(),
-                    version: "1".into(),
-                    authors: (None).into_iter().collect(),
-                    description: None,
-                },
-                loader: None,
-                acceptable_versions: vec![],
-                layout: BTreeMap::new(),
-                distribution: DistributionIntent::from_recipes(
-                    NonEmpty::new(vec![Recipe::MODRINTH])?,
-                    DistributionArchive::Zip,
-                ),
-                files: BTreeMap::new(),
-                exclude_auxiliary_members: false,
-            };
-            let optional = Requirement::Optional(OptionalChoice {
-                key: ChoiceKey::parse("fixture")?,
-                default_enabled: false,
-                description: Some("Imported optional file".into()),
-            });
-            options.files.insert(
-                key,
-                ImportFileDecision {
-                    key: DependencyKey::parse("fixture")?,
-                    kind: ContentKind::Mod,
-                    requirements: Requirements {
-                        client: optional.clone(),
-                        server: optional,
-                    },
-                    persistence: ImportPersistence::Provider,
-                    provider_destination: Some(InstallDestination::parse("mods/fixture.jar")?),
-                },
-            );
-            Ok(options)
-        },
+        decide,
         ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
         HttpAcquisition::for_loopback_tests(),
         ImportLimits::default(),
@@ -771,17 +799,141 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     let file = &resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()]
         .files
         .as_slice()[0];
-    assert!(matches!(
-        file.placements.as_slice()[0].requirements.client,
-        Requirement::Optional(_)
-    ));
+    let optional = Requirement::Optional(OptionalChoice {
+        key: ChoiceKey::parse("fixture").unwrap(),
+        default_enabled: false,
+        description: Some("Imported optional file".into()),
+    });
+    assert_eq!(
+        file.placements.as_slice()[0].requirements,
+        Requirements {
+            client: optional.clone(),
+            server: optional,
+        }
+    );
     assert_eq!(
         file.expected.digests.as_ref().unwrap().values()[0].algorithm(),
         empack_core::digest::DigestAlgorithm::Md5
     );
     assert_eq!(
+        file.expected.digests.as_ref().unwrap().values()[0].hex(),
+        "321c3cf486ed509164edec1e1981fec8"
+    );
+    assert_eq!(
         fs::read(root.path().join("project/pack/mods/fixture.jar")).unwrap(),
         b"payload"
+    );
+    let project_root = root.path().join("project");
+    assert_eq!(resolved.lock().dependencies.len(), 3);
+    assert_eq!(
+        resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()].identity,
+        empack_core::model::ResolvedIdentity::Provider(pin.project.clone())
+    );
+    assert_eq!(
+        resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()].selected,
+        Some(pin)
+    );
+    for (index, (destination, expected)) in overrides.iter().enumerate() {
+        let dependency = &resolved.lock().dependencies
+            [&DependencyKey::parse(&format!("override-{index}")).unwrap()];
+        assert!(matches!(
+            dependency.identity,
+            empack_core::model::ResolvedIdentity::Local(_)
+        ));
+        assert_eq!(dependency.files.as_slice().len(), 1);
+        assert_eq!(
+            dependency.files.as_slice()[0].placements.as_slice()[0]
+                .destination
+                .relative()
+                .as_str(),
+            *destination
+        );
+        assert_eq!(
+            fs::read(project_root.join("overrides/common").join(destination)).unwrap(),
+            *expected
+        );
+    }
+
+    // Acknowledging import optionality does not implicitly authorize losing its
+    // default/group on export. A failed build must preserve even prior artifacts.
+    fs::create_dir_all(project_root.join("dist")).unwrap();
+    fs::write(project_root.join("dist/previous.zip"), b"prior artifact").unwrap();
+    let before_build = super::super::tests::snapshot(&project_root);
+    let args = BuildArgs {
+        targets: vec!["curseforge".into()],
+        ad_hoc: true,
+        ..Default::default()
+    };
+    let rejected = super::super::build(
+        &session(root.path(), true, false),
+        &args,
+        super::super::BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{rejected:#}").contains("optional group/default metadata"),
+        "{rejected:#}"
+    );
+    assert_eq!(super::super::tests::snapshot(&project_root), before_build);
+    super::super::build(
+        &session(root.path(), true, false),
+        &args,
+        super::super::BuildDecisions {
+            mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
+            ..Default::default()
+        },
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut exported = zip::ZipArchive::new(
+        fs::File::open(project_root.join("dist/Imported-1-curseforge.zip")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(exported.len(), 7);
+    assert_eq!(
+        exported
+            .file_names()
+            .map(|name| name.unwrap().into_owned())
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(
+            [
+                "manifest.json",
+                "overrides/",
+                "overrides/config/",
+                "overrides/config/common.toml",
+                "overrides/kubejs/",
+                "overrides/kubejs/server_scripts/",
+                "overrides/kubejs/server_scripts/recipes.js",
+            ]
+            .map(str::to_owned)
+        ),
+        "complete inventory must retain restricted provider bytes as references"
+    );
+    let actual: Value = serde_json::from_slice(&member(&mut exported, "manifest.json")).unwrap();
+    assert_eq!(
+        actual,
+        json!({
+            "manifestType":"minecraftModpack", "manifestVersion":1,
+            "name":"Imported", "version":"1", "author":"",
+            "minecraft":{"version":"1.21.1", "modLoaders":[]},
+            "files":[{"projectID":123,"fileID":456,"required":false}],
+            "overrides":"overrides"
+        })
+    );
+    for (path, expected) in overrides {
+        assert_eq!(
+            member(&mut exported, &format!("overrides/{path}")),
+            expected
+        );
+    }
+    let mut after_build = super::super::tests::snapshot(&project_root);
+    after_build.remove(Path::new("dist/Imported-1-curseforge.zip"));
+    assert_eq!(
+        after_build, before_build,
+        "export must not rewrite authoring or supplied bytes"
     );
     assert!(
         records().is_empty(),
