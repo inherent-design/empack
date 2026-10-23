@@ -442,6 +442,54 @@
       ]
     },
     {
+      "id": "python::test_release_inputs.ReleaseInputs.test_deterministic_stamping_retains_external_lock_records_and_comments",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_inputs.ReleaseInputs.test_dirty_source_is_not_a_release_input",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_inputs.ReleaseInputs.test_missing_stale_or_ambiguous_workspace_lock_records_fail",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_inputs.ReleaseInputs.test_stamped_workspace_builds_locked_without_dependency_resolution",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_inputs.ReleaseInputs.test_supported_release_suffixes_are_explicit",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_inputs.ReleaseInputs.test_wrong_target_and_invalid_versions_fail_before_any_write",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
       "id": "python::test_release_workflow.ReleaseChannelContracts.test_numbered_and_unnumbered_prereleases_are_not_stable",
       "boundary": "N",
       "requirements": [

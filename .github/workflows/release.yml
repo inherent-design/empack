@@ -53,9 +53,20 @@ jobs:
         shell: bash
         run: echo "clean=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Set version from tag
+      - name: Stamp reviewed workspace versions without changing dependencies
         shell: bash
-        run: sed -i.bak "s/^version = .*/version = \"${{ steps.version.outputs.clean }}\"/" Cargo.toml
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.clean }}
+        run: |
+          python3 scripts/prepare-release.py --version "$RELEASE_VERSION" --output .git/release-inputs.json
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          record = json.loads(Path(".git/release-inputs.json").read_text())
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              print("GIT_HASH=" + record["source_revision"], file=output)
+              print("BUILD_DATE=" + record["build_date"], file=output)
+          PYTHON
 
       - uses: ./.github/actions/rust-toolchain
         with:
@@ -69,17 +80,11 @@ jobs:
 
       - name: Build with cargo
         if: ${{ !matrix.use_cross }}
-        env:
-          GIT_HASH: ${{ github.sha }}
-          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: cargo build --release -p empack --target ${{ matrix.target }}
+        run: cargo build --locked --release -p empack --target ${{ matrix.target }}
 
       - name: Build with cross
         if: ${{ matrix.use_cross }}
-        env:
-          GIT_HASH: ${{ github.sha }}
-          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: cross build --release -p empack --target ${{ matrix.target }}
+        run: cross build --locked --release -p empack --target ${{ matrix.target }}
 
       - name: Package archive (Unix)
         if: ${{ matrix.archive_ext == 'tar.gz' }}

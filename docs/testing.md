@@ -341,9 +341,18 @@ receipt, compiler inventory, JUnit and bounded logs per attempt. Archive and exe
 digests are rechecked afterward. A changed, failed or unexecuted archive cannot pass.
 The record distinguishes the test-source revision from the product's caller-supplied
 identity; it does not establish the product's build provenance. This is a bounded
-package check, not complete release qualification. Deterministic version stamping,
-build records, full candidate acceptance and publication of those same tested bytes
-still need to be integrated into the release workflow.
+package check, not complete release qualification. Build records, full candidate
+acceptance and publication of those same tested bytes still need to be connected
+to these package results in the release workflow.
+
+Release builds now run `scripts/prepare-release.py` in a clean disposable checkout.
+The requested version must match the reviewed workspace release target. Stamping
+changes only the workspace version and its local package entries in `Cargo.lock`;
+external dependencies and their checksums remain unchanged. The input record retains
+the source commit/tree, original and stamped Cargo-file digests and toolchain digest.
+Build metadata uses the source commit's date, and both Cargo and cross build with
+`--locked`. A new dependency or an ambiguous lockfile shape requires a source change,
+not implicit dependency resolution during publication.
 
 ## Coverage and release qualification
 
