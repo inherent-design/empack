@@ -152,7 +152,7 @@ junit.store-failure-output = false
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")
     run_env = dict(environment, EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
                    EMPACK_E2E_BIN=artifact["path"], EMPACK_EXPECT_BINARY_SHA256=artifact["sha256"],
-                   EMPACK_EXPECT_VERSION=artifact["version"])
+                   EMPACK_EXPECT_VERSION=artifact["version"], EMPACK_TEST_PYTHON=sys.executable)
     command = nextest_command("run", suite, config, test_features)
     record["command"] = command
     code, _, timed_out = run(command, cwd=ROOT, env=run_env,

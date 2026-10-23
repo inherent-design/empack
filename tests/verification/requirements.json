@@ -4537,15 +4537,142 @@
       "required_assertions": "Real named profiles, exact artifacts/checksums, stale artifact excluded; authoritative manifest version; spaces and protected paths.",
       "required_work": "Execute generated helper with extracted release binary; no tests importing version from harness build.",
       "evidence_tiers": [
-        "U",
+        "H",
+        "N",
         "X",
         "P"
       ],
       "risk": "critical",
       "run_gate": "pr+release",
       "scope": "stable",
-      "variant_axes": "",
-      "cases": [],
+      "variant_axes": "Direct Python helper I/O; actual emitted helper; default and explicit profiles; spaces in paths/artifact names; five extracted native archives",
+      "cases": [
+        {
+          "id": "UX-081.helper-staging",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_build_selects_exact_profiles_and_stages_only_expected_outputs",
+            "python::test_project_automation.ProjectAutomation.test_stale_lock_rejected",
+            "python::test_project_automation.ProjectAutomation.test_workflows_share_helper_and_pin_actions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Direct helper execution checks current-lock admission, selected profile arguments, filename collisions and dist confinement",
+            "Generated workflows use the shared helper and pinned actions with read-only validation permissions; mocked subprocess calls do not establish executable behavior"
+          ]
+        },
+        {
+          "id": "UX-081.download-integrity",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_missing_digest_prevents_download",
+            "python::test_project_automation.ProjectAutomation.test_digest_mismatch_prevents_execution"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Missing/ambiguous digest evidence prevents download and a digest mismatch prevents executable invocation",
+            "Verified archive handling extracts only the executable and exports its location; this mocked protocol does not download an actual release"
+          ]
+        },
+        {
+          "id": "UX-081.linked-output",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_symlinked_ancestor_rejected"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Actual Unix symlink ancestry is refused before staging"
+          ]
+        },
+        {
+          "id": "UX-081.emitted-helper",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_automation::cli_generated_validation_stages_only_selected_exact_artifacts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Run the helper emitted by public init with the selected actual empack executable and isolated Python/home/state environment",
+            "Default and explicit named profile selection stage exactly the expected files and independently recomputed SHA-256 checksums; stale dist output is excluded and preserved",
+            "Paths and artifact names contain spaces; staged bytes match produced bytes and the client archive contains the authored configuration; author and lock bytes remain unchanged"
+          ]
+        },
+        {
+          "id": "UX-081.packaged-helper",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_automation::cli_generated_validation_stages_only_selected_exact_artifacts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat emitted-helper execution using the final extracted executable with its independently verified identity",
+            "Exact staging, profile selection, checksums and preserved author inputs must hold on all five shipping targets; test-harness compilation does not choose the product version"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        },
+        {
+          "id": "UX-081.native-artifact-paths",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_unsafe_paths_and_name_collisions_rejected",
+            "python::test_project_automation.ProjectAutomation.test_verified_archive_installs_only_binary_and_exports_path"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Native helper staging rejects escaping/missing paths and filename collisions before copying assets",
+            "Verified archive extraction creates only the regular executable and writes its path; the recorded invocation is mocked, not a runtime launch"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::initialize generated files + scripts/tests",
         "empack executable + empack-lib::application",
@@ -4556,7 +4683,7 @@
         "empack-cli",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-082",
@@ -4570,15 +4697,121 @@
       "required_assertions": "Wrong tag/build failure/tampered downloaded executable fails before publication; draft then uploads then reveal; no arbitrary dist glob.",
       "required_work": "Python mocked gh protocol + one sandbox publication manual candidate; never production tokens on untrusted PR.",
       "evidence_tiers": [
-        "U",
+        "H",
+        "N",
         "X",
         "M"
       ],
       "risk": "critical",
       "run_gate": "candidate",
       "scope": "stable",
-      "variant_axes": "",
-      "cases": [],
+      "variant_axes": "Generated Ubuntu workflow; real empack plus recorded GitHub command boundary; actual sandbox publication remains outstanding",
+      "cases": [
+        {
+          "id": "UX-082.helper-failure-order",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_mismatched_tag_fails_before_build_or_publication",
+            "python::test_project_automation.ProjectAutomation.test_build_failure_never_stages_or_publishes",
+            "python::test_project_automation.ProjectAutomation.test_failed_upload_keeps_release_draft",
+            "python::test_project_automation.ProjectAutomation.test_publication_reveals_release_only_after_upload"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Wrong tags and failed builds prevent staging/publication; failed upload prevents reveal; successful upload precedes visibility change",
+            "Direct helper tests use mocked GitHub commands and do not establish an actual hosted release"
+          ],
+          "remaining_group_evidence": "An authorized actual sandbox GitHub publication with retained candidate identity, upload and reveal evidence remains required; no recorder or mocked result satisfies M."
+        },
+        {
+          "id": "UX-082.download-integrity",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_missing_digest_prevents_download",
+            "python::test_project_automation.ProjectAutomation.test_digest_mismatch_prevents_execution"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Digest admission prevents unverified downloaded executable use before the later build/publication steps; mocked download protocol only"
+          ],
+          "remaining_group_evidence": "An authorized actual sandbox GitHub publication with retained candidate identity, upload and reveal evidence remains required; no recorder or mocked result satisfies M."
+        },
+        {
+          "id": "UX-082.emitted-refusals",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_automation::cli_generated_release_refuses_stale_tags_and_failed_builds_before_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Run the generated helper and actual empack with wrong tag, stale lock and invalid template cases",
+            "The intended phase diagnostic reaches stderr; no GitHub command or staged payload exists and all project bytes remain unchanged"
+          ],
+          "remaining_group_evidence": "An authorized actual sandbox GitHub publication with retained candidate identity, upload and reveal evidence remains required; no recorder or mocked result satisfies M."
+        },
+        {
+          "id": "UX-082.emitted-publication-order",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_automation::cli_generated_release_reveals_only_after_recorded_upload_success"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual emitted helper builds selected artifacts and passes exactly those staged bytes and checksums to a test-only GitHub executable recorder",
+            "Creation includes draft, verified-tag and prerelease flags; create failure prevents edit, edit failure remains failed, and success reveals only after creation",
+            "The generated workflow runs on Ubuntu; this POSIX recorder covers its command boundary on Linux/macOS, not GitHub network behavior"
+          ],
+          "remaining_group_evidence": "An authorized actual sandbox GitHub publication with retained candidate identity, upload and reveal evidence remains required; no recorder or mocked result satisfies M."
+        },
+        {
+          "id": "UX-082.native-artifact-paths",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_project_automation.ProjectAutomation.test_unsafe_paths_and_name_collisions_rejected",
+            "python::test_project_automation.ProjectAutomation.test_verified_archive_installs_only_binary_and_exports_path"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Native helper staging rejects escaping/missing paths and filename collisions before copying assets",
+            "Verified archive extraction creates only the regular executable and writes its path; the recorded invocation is mocked, not a runtime launch"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::initialize generated files + scripts/tests",
         "engine::release + api::release_publication/subscription"
@@ -4587,7 +4820,7 @@
         "shared scaffold generation + native/script acceptance",
         "shared release meaning/signature verification + native signing custody and publication"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-083",

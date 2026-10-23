@@ -264,3 +264,17 @@ projects and compare authored intent with the resolved lock. Host fixtures cover
 stable/prerelease selection, historical coordinates and failure preservation.
 Java 8/21 in these cases is an authored requirement, not evidence that Java ran.
 Runtime acquisition and consumer startup remain separate obligations.
+
+Generated automation has separate helper, executable and package evidence. Direct
+Python tests use mocked commands and real filesystem I/O, classified as H or N
+according to the asserted boundary rather than as pure U checks. `cli_automation` runs the script emitted by `init` with the
+selected product and an isolated environment. The shared runner supplies its exact
+Python interpreter to that test harness; the product receives no test selector.
+Validation checks named profiles, exact staged bytes/checksums and stale-output
+exclusion on native hosts and, separately, all five extracted archives.
+
+The generated publication workflow targets Ubuntu. Linux/macOS tests run its helper
+with the real product and a POSIX GitHub command recorder, checking early refusal,
+upload failure and reveal ordering. These tests have no publisher credentials and
+cannot contact GitHub. They do not complete UX-082: actual authorized sandbox
+publication evidence remains a distinct manual-candidate obligation.
