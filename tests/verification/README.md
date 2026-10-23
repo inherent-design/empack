@@ -233,3 +233,14 @@ Their shared-runner outcomes join ordinary feature cases; only archive admission
 satisfy package cases. `check-auxiliary-build.py` produces the telemetry bundle and
 `qualify-release.py --auxiliary` rechecks it. Synthetic admission fixtures are helper
 evidence; actual telemetry execution requires the producer's retained suite results.
+
+Replacement cases join host preparation, public commands and native publication.
+Malformed archives, path collisions and invalid initialization options run against a
+populated existing project. Preview and terminal decline compare file bytes, empty
+directories and native attributes; approved replacement checks its explicit source
+scope and preserves templates, prior artifacts and unrelated world sentinels. Native
+capture tests retain intervening edits and reject stale read sets or cancellation.
+Digest/transfer failures use controlled host transport, not a live provider claim.
+Unix link confinement is a separate platform case. These bindings complete the
+replacement group's case decomposition; each required host/feature still needs its
+own admitted execution evidence.

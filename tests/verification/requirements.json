@@ -1013,13 +1013,157 @@
       "evidence_tiers": [
         "H",
         "X",
-        "N"
+        "N",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-011.host-preparation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::import::tests::import_preview_decline_and_failed_replacement_preserve_the_entire_tree",
+            "empack-lib::application::engine_host::import::tests::remote_archive_acquisition_enforces_bytes_and_source_assertions_before_replacement",
+            "empack-lib::application::engine_host::initialize::tests::initialization_host_preserves_preview_decline_and_exact_replacement_footprints"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Preview, declined conversion and refused replacement preserve a populated author tree",
+            "Archive byte limits and declared digest mismatches fail before replacing source, templates, artifacts or world sentinels; controlled transport, not live-provider evidence"
+          ]
+        },
+        {
+          "id": "UX-011.initialization-capture",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::initialize_tests::forced_initialize_keeps_templates_and_requires_exact_replacement_approval",
+            "empack-lib::engine::api::initialize_tests::initialize_rejects_changed_templates_before_any_publication",
+            "empack-lib::engine::api::initialize_tests::initialization_rejects_a_new_common_template_after_preparation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Replacement needs the exact operation grant",
+            "Changed or newly shadowing templates invalidate prepared initialization before author documents are published"
+          ]
+        },
+        {
+          "id": "UX-011.invalid-inputs",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_init::replacement::cli_forced_import_rejects_invalid_candidates_without_mutation",
+            "empack-tests::cli_init::replacement::cli_forced_initialization_rejects_invalid_options_without_mutation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed ZIP/JSON, traversal, caseless and ancestor collisions cannot modify an existing project even with force",
+            "Invalid initialization options preserve all fixture bytes, entries and permissions in both preview and apply modes"
+          ]
+        },
+        {
+          "id": "UX-011.replacement-scope",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_init::replacement::cli_forced_replacement_preview_and_publication_keep_unowned_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Both empty initialization and local import preview describe removed managed sources without changing any fixture bytes or attributes",
+            "Approved replacement removes old pack/override content, publishes valid author/lock files, and retains templates, prior artifacts, unrelated worlds, notes and input archives"
+          ]
+        },
+        {
+          "id": "UX-011.declined-replacement",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_init::replacement::cli_pty_forced_replacement_decline_preserves_existing_project"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real terminal decline for both initialization and import preserves the populated project, empty directories, input archive and native attributes after process exit"
+          ]
+        },
+        {
+          "id": "UX-011.stale-read-set",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::project_change::tests::source_changes_after_preparation_block_the_whole_replacement"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "After capture, author document edits, file membership/policy changes, changed managed bytes or cancellation refuse publication",
+            "Keep the latest external edits and template/artifact/world sentinels; no new lock or overrides are published"
+          ]
+        },
+        {
+          "id": "UX-011.linked-inputs",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::project_change::tests::replacement_capture_rejects_symlink_ancestors_without_touching_outside_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unix symlink ancestors are rejected without touching outside bytes or creating host state"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::acquisition/content/archive_source/import",
@@ -1030,7 +1174,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-012",

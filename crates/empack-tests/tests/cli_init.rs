@@ -1,4 +1,6 @@
 //! Initialization contracts that require no external catalog.
+#[path = "support/replacement.rs"]
+mod replacement;
 use empack_tests::harness::process::{
     TestProject, assert_locked_minecraft_version, assert_project_datapack_folder,
     assert_project_initialized, assert_project_loader_absent, assert_project_minecraft_version,
@@ -61,69 +63,6 @@ fn cli_init_existing_project_requires_replacement_decision() {
         "output did not explain the required replacement decision\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert_eq!(std::fs::read(document).unwrap(), before);
-}
-
-#[test]
-fn cli_init_forced_replacement_preserves_unowned_content() {
-    let project = TestProject::new();
-    let status = project
-        .cmd()
-        .args([
-            "init",
-            "--yes",
-            "--modloader",
-            "none",
-            "--mc-version",
-            "1.21.1",
-            "test-pack",
-        ])
-        .status()
-        .expect("failed to spawn");
-    assert!(status.success());
-    let notes = project.dir().join("test-pack/notes.txt");
-    let custom = project.dir().join("test-pack/research/author.properties");
-    std::fs::create_dir_all(custom.parent().unwrap()).unwrap();
-    std::fs::write(&notes, b"author notes").unwrap();
-    std::fs::write(&custom, b"keep=custom").unwrap();
-    // Forced initialization replaces the captured source roots, unlike unrelated
-    // root files and directories. Make that destructive scope visible in preview.
-    let owned = project
-        .dir()
-        .join("test-pack/pack/config/previous.properties");
-    std::fs::create_dir_all(owned.parent().unwrap()).unwrap();
-    std::fs::write(&owned, b"old=source").unwrap();
-    let preview = project.run_output(&[
-        "init",
-        "--yes",
-        "--force",
-        "--dry-run",
-        "--modloader",
-        "none",
-        "--mc-version",
-        "1.21.1",
-        "test-pack",
-    ]);
-    assert!(preview.status.success(), "{preview:?}");
-    assert!(String::from_utf8_lossy(&preview.stdout).contains("previous.properties"));
-    assert_eq!(std::fs::read(&owned).unwrap(), b"old=source");
-
-    let output = project.run_output(&[
-        "init",
-        "--yes",
-        "--force",
-        "--modloader",
-        "none",
-        "--mc-version",
-        "1.21.1",
-        "test-pack",
-    ]);
-    assert!(
-        output.status.success(),
-        "init --force failed on existing project: {output:?}"
-    );
-    assert_eq!(std::fs::read(notes).unwrap(), b"author notes");
-    assert_eq!(std::fs::read(custom).unwrap(), b"keep=custom");
-    assert!(!owned.exists());
 }
 
 #[test]

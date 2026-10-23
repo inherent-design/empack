@@ -68,6 +68,14 @@ recipient Java version (default 21); adjust it for your game and loader. A displ
 name or version change preserves the pack ID. See the [manifest guide](manifest.md)
 for source-specific declarations and author-only projects.
 
+`init --force` and `init --from ARCHIVE --force` prepare a replacement before
+changing an existing project. Add `--dry-run` to inspect the affected files first.
+An invalid candidate or a declined plan leaves the existing project unchanged.
+An approved replacement can remove captured content under `pack/` and `overrides/`;
+it preserves existing custom templates, prior `dist/` artifacts and unrelated root
+files or directories. Worlds placed inside a replaced source root are author content
+in that scope; this command is not an installed-instance update.
+
 Modrinth public resolution needs no API key. For CurseForge, provide your client key
 through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version
 control. Resolution and referenced downloads require network access.

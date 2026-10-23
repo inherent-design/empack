@@ -331,6 +331,19 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
 #[tokio::test]
 async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree() {
     let root = tempfile::tempdir().unwrap();
+    for (name, bytes) in [
+        ("empack.yml", "broken: ["),
+        ("empack.lock", "old lock bytes"),
+        ("pack/config/old", "old"),
+        ("notes.txt", "user notes"),
+        ("templates/client/instance.cfg.template", "author template"),
+        ("dist/previous.zip", "previous artifact"),
+        ("worlds/playtest/level.dat", "player world"),
+    ] {
+        let path = root.path().join("project").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
     let bytes = archive(&[("overrides/config/example.toml", b"new")], false);
     let input = source(root.path(), &bytes);
     let before = super::super::tests::snapshot(root.path());
@@ -350,10 +363,6 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     .await
     .unwrap();
     assert_eq!(super::super::tests::snapshot(root.path()), before);
-    fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
-    fs::write(root.path().join("project/pack/config/old"), b"old").unwrap();
-    fs::write(root.path().join("project/notes.txt"), b"user notes").unwrap();
-    let before = super::super::tests::snapshot(root.path());
     assert!(
         import(
             &session(root.path(), true, false),
@@ -386,6 +395,17 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
         fs::read(root.path().join("project/notes.txt")).unwrap(),
         b"user notes"
     );
+    for name in [
+        "templates/client/instance.cfg.template",
+        "dist/previous.zip",
+        "worlds/playtest/level.dat",
+    ] {
+        let relative = Path::new("project").join(name);
+        assert_eq!(
+            fs::read(root.path().join(&relative)).unwrap(),
+            before[&relative]
+        );
+    }
 }
 
 #[tokio::test]
@@ -393,6 +413,17 @@ async fn remote_archive_acquisition_enforces_bytes_and_source_assertions_before_
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("project/pack")).unwrap();
     fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
+    for name in [
+        "empack.yml",
+        "empack.lock",
+        "templates/custom",
+        "dist/previous.zip",
+        "worlds/playtest/level.dat",
+    ] {
+        let path = root.path().join("project").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"retained on acquisition failure").unwrap();
+    }
     let original = super::super::tests::snapshot(root.path());
     let mut server = mockito::Server::new_async().await;
     let bytes = archive(&[("overrides/config/a", b"downloaded")], false);

@@ -142,13 +142,25 @@ async fn forced_replacement_is_read_only_until_verified_publication_and_reexport
 }
 #[tokio::test]
 async fn source_changes_after_preparation_block_the_whole_replacement() {
-    for change in ["document", "membership", "policy", "cancel"] {
+    for change in ["document", "membership", "policy", "content", "cancel"] {
         let temp = tempfile::tempdir().unwrap();
         let project = temp.path().join("project");
         let host = temp.path().join("state");
         fs::create_dir_all(project.join("pack")).unwrap();
         fs::write(project.join("empack.yml"), "old").unwrap();
         fs::write(project.join("pack/old.txt"), "old content").unwrap();
+        let retained = [
+            "templates/custom",
+            "dist/previous.zip",
+            "worlds/playtest/level.dat",
+            "research/notes",
+        ];
+        for name in retained {
+            let path = project.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, name.as_bytes()).unwrap();
+        }
+        fs::create_dir_all(project.join("research/empty")).unwrap();
         let cancel = Cancellation::default();
         let reader = ProjectReader::new(RecoveryReader::new(host.clone()));
         let captured = reader
@@ -165,6 +177,7 @@ async fn source_changes_after_preparation_block_the_whole_replacement() {
             "document" => fs::write(project.join("empack.yml"), "edited").unwrap(),
             "membership" => fs::write(project.join("pack/new.txt"), "new").unwrap(),
             "policy" => fs::write(project.join("pack/.packwizignore"), "*.jar").unwrap(),
+            "content" => fs::write(project.join("pack/old.txt"), "external edit").unwrap(),
             _ => cancel.cancel(),
         }
         assert!(
@@ -175,8 +188,27 @@ async fn source_changes_after_preparation_block_the_whole_replacement() {
         );
         assert_eq!(
             fs::read_to_string(project.join("pack/old.txt")).unwrap(),
-            "old content"
+            if change == "content" {
+                "external edit"
+            } else {
+                "old content"
+            }
         );
+        assert_eq!(
+            fs::read_to_string(project.join("empack.yml")).unwrap(),
+            if change == "document" {
+                "edited"
+            } else {
+                "old"
+            }
+        );
+        if change == "membership" {
+            assert_eq!(fs::read(project.join("pack/new.txt")).unwrap(), b"new");
+        }
+        for name in retained {
+            assert_eq!(fs::read(project.join(name)).unwrap(), name.as_bytes());
+        }
+        assert!(project.join("research/empty").is_dir());
         assert!(!project.join("empack.lock").exists());
         assert!(!project.join("overrides").exists());
     }
