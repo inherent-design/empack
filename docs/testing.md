@@ -197,14 +197,24 @@ record. A locally built product records the runner's ordinary-package build sele
 Neither mode establishes actual consumer startup, platform coverage elsewhere, or final
 archive installation.
 
-## PR selection and final gate
+## Change selection and final gate
 
-PR CI starts for every PR, including documentation and stacked branches.
+The Verification workflow starts for every PR, including documentation and stacked
+branches, and for pushes to `main` or `dev`. The former branch and post-merge
+workflows are consolidated into this path. Pushes compare the exact before/after
+trees; a new branch selects every tracked path. A missing comparison revision or
+checkout mismatch fails planning. There is no path filter that can suppress the
+terminal gate.
 `scripts/ci-verification.py` compares immutable base/head revisions with renames
 disabled, so moving code into a documentation path cannot hide its removal. Markdown
 and editor-schema changes run Python, registry structure, Markdown and executable
 schema checks. Other changes also select the deterministic native matrix, feature
 checks, ARM64 compilation and one deterministic coverage run.
+Each event gets fresh evidence for its checked-out revision. No PR-result reuse is
+implemented; even an equivalent-looking merge is not treated as previously tested.
+Lockfile, toolchain and verification changes therefore select fresh checks. ARM64
+cross-build remains compilation evidence only.
+
 Each native target runs the deterministic suite against the ordinary default product,
 then the offline CLI and telemetry suites against a separately built telemetry product.
 The gate requires both product variants; a telemetry build cannot stand in for the default.
@@ -212,7 +222,7 @@ The gate requires both product variants; a telemetry build cannot stand in for t
 Provider, runtime and managed-client paths select additional relevant probes.
 Shared dependency/toolchain or verification changes select representative routes
 across those boundaries. Changes to the CurseForge adapter or its mixed-provider
-probe require the credentialed suite as well. This is change-based PR evidence;
+probe require the credentialed suite as well. This is change-based PR/branch evidence;
 it does not replace the complete provider/loader matrix required for a candidate.
 
 Live and consumer jobs run only on repository branches or a maintainer's manual

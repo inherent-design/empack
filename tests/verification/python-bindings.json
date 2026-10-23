@@ -45,6 +45,41 @@
       ]
     },
     {
+      "id": "python::test_ci_verification.PushPlanning.test_checkout_mismatch_and_untrusted_or_deleted_refs_fail_closed",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.PushPlanning.test_docs_push_gets_tooling_and_a_terminal_gate",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.PushPlanning.test_new_branch_selects_all_paths_without_inventing_a_prior_tree",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.PushPlanning.test_removed_code_in_a_push_still_requires_the_native_matrix",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.PushPlanning.test_unavailable_before_revision_cannot_become_docs_only_success",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.RequiredGate.test_consumer_source_dependency_and_fixture_identity_are_required",
       "boundary": "H",
       "requirements": [

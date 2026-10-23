@@ -259,5 +259,85 @@ class RequiredGate(unittest.TestCase):
                 run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry"}, {})
 
 
+class PushPlanning(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.git("init", "-q")
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        (self.root / "README.md").write_text("original\n")
+        self.commit("initial")
+        self.base = self.git("rev-parse", "HEAD")
+
+    def git(self, *args):
+        return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
+
+    def commit(self, message):
+        self.git("add", ".")
+        self.git("commit", "-qm", message)
+
+    def plan(self, **overrides):
+        event = dict(before=self.base, after=self.git("rev-parse", "HEAD"),
+                     ref="refs/heads/main", deleted=False,
+                     repository={"full_name": "fixture/upstream"})
+        event.update(overrides)
+        event_path = self.root / ".git/event.json"
+        event_path.write_text(json.dumps(event))
+        result = subprocess.run([sys.executable, str(SCRIPTS / "ci-verification.py"),
+            "plan", "--output", str(self.root / ".git/plan.json")], cwd=self.root,
+            capture_output=True, text=True, env=dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
+                GITHUB_EVENT_NAME="push", GITHUB_REPOSITORY="fixture/upstream",
+                GITHUB_OUTPUT=str(self.root / ".git/outputs")))
+        if result.returncode:
+            return result, None
+        return result, json.loads((self.root / ".git/plan.json").read_text())
+
+    def test_docs_push_gets_tooling_and_a_terminal_gate(self):
+        (self.root / "README.md").write_text("changed\n")
+        self.commit("docs")
+        result, plan = self.plan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(plan["required_jobs"], ["tooling"])
+        self.assertEqual(plan["changed_paths"], ["README.md"])
+        self.assertEqual(plan["source_revision"], self.git("rev-parse", "HEAD"))
+        self.assertTrue(plan["trusted"])
+
+    def test_removed_code_in_a_push_still_requires_the_native_matrix(self):
+        (self.root / "source.rs").write_text("source\n")
+        self.commit("code")
+        self.base = self.git("rev-parse", "HEAD")
+        self.git("mv", "source.rs", "source.md")
+        self.commit("rename")
+        result, plan = self.plan(ref="refs/heads/dev")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(plan["changed_paths"], ["source.md", "source.rs"])
+        self.assertEqual(plan["native_targets"], list(ci.TARGETS))
+
+    def test_new_branch_selects_all_paths_without_inventing_a_prior_tree(self):
+        (self.root / "Cargo.lock").write_text("fixture dependency inputs\n")
+        self.commit("new dev snapshot")
+        result, plan = self.plan(before="0" * 40, ref="refs/heads/dev")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(plan["changed_paths"], ["Cargo.lock", "README.md"])
+        self.assertIn("live", plan["required_jobs"])
+        self.assertTrue(plan["consumer"])
+
+    def test_checkout_mismatch_and_untrusted_or_deleted_refs_fail_closed(self):
+        for values in (dict(after="f" * 40), dict(before="not-a-revision"),
+                       dict(ref="refs/heads/unreviewed"), dict(deleted=True),
+                       dict(repository={"full_name": "fixture/fork"})):
+            with self.subTest(values=values):
+                result, plan = self.plan(**values)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIsNone(plan)
+
+    def test_unavailable_before_revision_cannot_become_docs_only_success(self):
+        result, plan = self.plan(before="f" * 40)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIsNone(plan)
+
+
 if __name__ == "__main__":
     unittest.main()

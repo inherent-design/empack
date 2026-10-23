@@ -1,8 +1,11 @@
-name: PR CI
+name: Verification
 
-# No path/base filter: docs-only and stacked PRs need a terminal required check.
+# No path/base filter: docs/schema and stacked PRs need a terminal required check.
+# Main/dev pushes use the same executor on the actual pushed tree; no PR-result reuse.
 on:
   pull_request:
+  push:
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:

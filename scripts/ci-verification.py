@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select fixed PR checks and reject missing job or suite evidence at the final gate."""
+"""Select change-based checks and reject missing job or suite evidence at the final gate."""
 import argparse
 import json
 import os
@@ -88,6 +88,26 @@ def make_plan(event, event_name, repository):
         ]).decode("utf-8").split("\0")
         trusted = pr["head"]["repo"]["full_name"] == repository
         plan = selection(filter(None, paths), trusted=trusted)
+        plan.update(base_revision=base, head_revision=head)
+    elif event_name == "push":
+        if (event.get("ref") not in {"refs/heads/main", "refs/heads/dev"}
+                or event.get("deleted")
+                or event.get("repository", {}).get("full_name") != repository):
+            raise ValueError("Only trusted main/dev pushes select branch verification")
+        base, head = event["before"], event["after"]
+        if not all(re.fullmatch("[0-9a-f]{40}", revision) for revision in (base, head)) or head == "0" * 40:
+            raise ValueError("Expected immutable push revisions")
+        if git("rev-parse", "HEAD") != head:
+            raise ValueError("Checked-out tree differs from pushed revision")
+        if base == "0" * 40:
+            # A new dev branch has no earlier tree; every tracked path is changed.
+            command = ["git", "ls-tree", "-r", "--name-only", "-z", head]
+        else:
+            # Two endpoints, not a merge base: verify the actual main/dev change,
+            # including removals and force-push changes. Missing objects fail closed.
+            command = ["git", "diff", "--name-only", "--no-renames", "-z", base, head, "--"]
+        paths = subprocess.check_output(command).decode("utf-8").split("\0")
+        plan = selection(filter(None, paths), trusted=True)
         plan.update(base_revision=base, head_revision=head)
     elif event_name == "workflow_dispatch":
         # Dispatch executes a repository ref selected by a maintainer, never a PR checkout.
