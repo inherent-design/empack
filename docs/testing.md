@@ -319,6 +319,32 @@ Curated large-pack workflows run through the production CLI and resource profile
 Inspect inventory and selected bytes, not only artifact size or exit status. Compare
 repeated sync and rebuild behavior with unchanged version labels.
 
+## Extracted archive checks
+
+Run the fixed offline CLI suite against an existing distribution archive on its
+native execution host:
+
+```sh
+python3 scripts/check-release-archive.py --archive /absolute/path/empack-0.8.4-beta-aarch64-apple-darwin.tar.gz --sha256 EXPECTED_ARCHIVE_SHA256 --version 0.8.4-beta --target aarch64-apple-darwin
+```
+
+The checker captures and hashes the archive before extraction, admits only the
+expected regular executable, checks Unix executable attributes, and extracts outside
+the checkout into a path containing spaces. It invokes the shared `cli` suite with
+the extracted executable's exact digest and version, without discovery or rebuilding
+the product. Each public command still uses the harness's isolated home, state and
+cache. Missing native execution support is `BLOCKED`; cross compilation is not a
+substitute. The test harness itself is compiled from the current test checkout.
+
+`target/verification-packages/` retains one package record and the underlying suite
+receipt, compiler inventory, JUnit and bounded logs per attempt. Archive and executable
+digests are rechecked afterward. A changed, failed or unexecuted archive cannot pass.
+The record distinguishes the test-source revision from the product's caller-supplied
+identity; it does not establish the product's build provenance. This is a bounded
+package check, not complete release qualification. Deterministic version stamping,
+build records, full candidate acceptance and publication of those same tested bytes
+still need to be integrated into the release workflow.
+
 ## Coverage and release qualification
 
 Measure production-source coverage separately from inline test bodies where tooling

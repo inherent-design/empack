@@ -89,8 +89,10 @@ may omit only binaries outside their explicit selection; test filters still requ
 complete discovery within the selected binaries. Unknown targets, tests, ignore-policy
 changes and vanished tests fail. CI rechecks the inventory and classification digest
 alongside the JUnit join. Cross compilation cannot substitute for host discovery.
-The current registry does not classify the separate minimal-feature graph or claim
-execution on the two additional release-archive targets.
+The two additional release execution targets (Intel macOS and ARM64 Linux) require
+the corresponding OS membership too. These are expectations awaiting discovery and
+execution on those hosts, not inferred passing evidence. The current registry does
+not classify the separate minimal-feature graph.
 
 These checks validate structure and classification only. CLI, Python and doctest
 bindings are also checked against actual discovery. After revalidating each selected

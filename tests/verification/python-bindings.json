@@ -394,6 +394,54 @@
       ]
     },
     {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_capture_and_uncompressed_binary_have_independent_bounds",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_capture_checks_the_bytes_it_copies_and_cannot_overwrite_an_existing_output",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_expected_tar_layout_preserves_executable_bytes_and_mode",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_extra_members_traversal_links_and_non_executable_tar_are_rejected",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_windows_zip_is_exact_and_crc_checked",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_zip_rejects_links_duplicates_and_other_member_names",
+      "boundary": "H",
+      "requirements": [
+        "UX-086",
+        "UX-087"
+      ]
+    },
+    {
       "id": "python::test_release_workflow.ReleaseChannelContracts.test_numbered_and_unnumbered_prereleases_are_not_stable",
       "boundary": "N",
       "requirements": [
