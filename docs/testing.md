@@ -361,8 +361,14 @@ table. Report generation time is not an execution timestamp. The renderer does n
 revalidate standalone JSON, apply waivers, or calculate coverage from test counts;
 the JSON and original job artifacts remain the evidence to inspect.
 
-The resulting record has `qualification: false`: the remaining case decomposition,
-doctest, script, consumer and device evidence and final-package checks are not yet a complete
+Doctest cases retain their required mode (`run`, `compile`, or `compile_fail`) and
+workspace test graph independently of product features. The release candidate gate
+admits both graphs from each native host using the same observed-rustdoc verifier.
+Compiler-only examples cannot replace executed examples, and failed attempts remain
+visible even when a later run passes.
+
+The resulting CI record has `qualification: false`: the remaining case decomposition,
+script, consumer and device evidence and final-package checks are not yet a complete
 release qualification record. Selecting this required status in repository
 branch protection is an administrative step; changing workflow YAML does not set it.
 

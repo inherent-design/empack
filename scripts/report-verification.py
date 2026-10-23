@@ -64,7 +64,7 @@ def report(paths, revision, version):
         except (ValueError, OSError, KeyError, TypeError, AttributeError, IndexError, StopIteration) as error:
             attempts.append({"admission": "REJECTED", "receipt_sha256": digest,
                              "path": str(path), "status": "FAIL", "reason": str(error) or "Missing attempt identity"})
-    acceptance = case_results(json.loads(requirements_path.read_text()), classification, admitted, revision, tooling_evidence=tooling)
+    acceptance = case_results(json.loads(requirements_path.read_text()), classification, admitted, revision, tooling_evidence=tooling, doctest_evidence=doctests)
     acceptance.update(requirements_sha256=sha256(requirements_path), classification_sha256=sha256(classification_path))
     return {"schema": 1, "kind": "verification-attempt-report", "qualification": False,
             "status": aggregate_outcomes(row["status"] for row in attempts), "source_revision": revision,

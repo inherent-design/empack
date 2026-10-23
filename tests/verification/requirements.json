@@ -4959,7 +4959,36 @@
       "run_gate": "pr+release",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-086.private-constructor-examples",
+          "boundary": "U",
+          "test_ids": [
+            "doctest::crates/empack-core/src/path.rs - path::PortableRelPath (line 20)",
+            "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 12)",
+            "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 6)",
+            "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 9)"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "required_test_features": [
+            "minimal",
+            "all"
+          ],
+          "doctest_mode": "compile_fail",
+          "assertions": [
+            "The documented attempts to construct a portable path or import private publication, staging and verification types are rejected by the pinned compiler",
+            "Expected compilation failures establish constructor/import refusal, not product execution or normal dependency-graph purity"
+          ],
+          "remaining_group_evidence": "These rustdoc observations supplement, and cannot replace, the required ordinary-product/package checks or executable documentation and fresh-user review."
+        }
+      ],
       "owner_now": [
         "release.yml and external process harness",
         "engine::api + runtime + resources"
@@ -4968,7 +4997,7 @@
         "CLI archive and SDK client/worker packages",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-087",
@@ -4982,6 +5011,7 @@
       "required_assertions": "Documented commands parse/run against appropriate fixture; user can finish without private state knowledge; terminology and expected output clear.",
       "required_work": "Fresh-user task review recorded separately from automated correctness; every public leaf has owner and tests.",
       "evidence_tiers": [
+        "U",
         "X",
         "M"
       ],
@@ -4989,7 +5019,64 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-087.api-examples-compile",
+          "boundary": "U",
+          "test_ids": [
+            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 737)",
+            "doctest::crates/empack-lib/src/lib.rs - (line 18)"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "required_test_features": [
+            "minimal",
+            "all"
+          ],
+          "doctest_mode": "compile",
+          "assertions": [
+            "The documented API examples compile in both workspace feature graphs",
+            "no_run examples do not establish preparation, publication, runtime effects or a successful author journey"
+          ],
+          "remaining_group_evidence": "These rustdoc observations supplement, and cannot replace, the required ordinary-product/package checks or executable documentation and fresh-user review."
+        },
+        {
+          "id": "UX-087.rustdoc-examples-execute",
+          "boundary": "U",
+          "test_ids": [
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 23)",
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 66)",
+            "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 98)",
+            "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::pairs (line 41)",
+            "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::table (line 26)",
+            "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 15)"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "required_test_features": [
+            "minimal",
+            "all"
+          ],
+          "doctest_mode": "run",
+          "assertions": [
+            "The documented display and supported-boundary examples compile and execute their rustdoc wrappers in both feature graphs",
+            "These examples do not establish terminal appearance, invocation of every shown API, actual consumer use or new-user task completion"
+          ],
+          "remaining_group_evidence": "These rustdoc observations supplement, and cannot replace, the required ordinary-product/package checks or executable documentation and fresh-user review."
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "engine::initialize generated files + scripts/tests"
@@ -4998,7 +5085,7 @@
         "empack-cli",
         "shared scaffold generation + native/script acceptance"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-088",

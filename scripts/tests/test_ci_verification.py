@@ -293,9 +293,10 @@ class RequiredGate(unittest.TestCase):
             # variant without presenting partial requirement decomposition as done.
             acceptance = result["acceptance"]["requirements"]
             self.assertEqual(len(acceptance), 109)
-            declared = {case["id"]: {(platform, features)
+            declared = {case["id"]: {(platform, features, graph)
                         for platform in case.get("required_targets", case["required_platforms"])
-                        for features in case["required_product_features"]}
+                        for features in case["required_product_features"]
+                        for graph in case.get("required_test_features", [None])}
                         for row in json.loads(ci.REQUIREMENTS.read_text())["requirements"]
                         for case in row["cases"]}
             for requirement in acceptance:
@@ -312,7 +313,7 @@ class RequiredGate(unittest.TestCase):
                     self.assertEqual(case["status"], "NOT_RUN" if missing else "PASS")
                     if case["id"] == "UX-026.live-pinned-update":
                         self.assertEqual(case["status"], "NOT_RUN")
-                    actual = [(v.get("target", v["platform"]), v["features"]) for v in case["variants"]]
+                    actual = [(v.get("target", v["platform"]), v["features"], v.get("test_features")) for v in case["variants"]]
                     self.assertEqual(set(actual), declared[case["id"]])
                     self.assertEqual(len(actual), len(set(actual)))
             (root / f"verification-{ci.TARGETS[1]}" / "default" / "one-attempt" / "receipt.json").unlink()

@@ -4,6 +4,7 @@ from .consumer import PRISM_TEST, PRISM_BINDING
 from .evidence import aggregate_outcomes
 import json
 from .python_tests import ROOT, BINDINGS, PLATFORMS
+from .doctests import BINDINGS as DOCTEST_BINDINGS, MODES, TARGETS as DOCTEST_TARGETS
 
 
 def validate_requirements(document):
@@ -35,8 +36,20 @@ def validate_requirements(document):
                             or features == ["independent"] and case["boundary"] == "C"
                             and case["test_ids"] == [PRISM_TEST]
                             or features == ["independent"] and case["boundary"] in {"U", "H", "N", "X"}
-                            and all(identity.startswith("python::") for identity in case["test_ids"]))):
+                            and all(identity.startswith("python::") for identity in case["test_ids"])
+                            or features == ["independent"] and case["boundary"] == "U"
+                            and all(identity.startswith("doctest::") for identity in case["test_ids"]))):
                 raise ValueError(f"Case has no required execution variants: {case['id']}")
+            doctest = any(identity.startswith("doctest::") for identity in case["test_ids"])
+            if doctest:
+                graphs = case.get("required_test_features", [])
+                if (features != ["independent"] or case["boundary"] != "U"
+                        or not all(identity.startswith("doctest::") for identity in case["test_ids"])
+                        or not graphs or len(set(graphs)) != len(graphs) or not set(graphs) <= {"minimal", "all"}
+                        or case.get("doctest_mode") not in MODES.values()):
+                    raise ValueError("Doctest cases require explicit modes and test graphs, independent of product builds")
+            elif "required_test_features" in case or "doctest_mode" in case:
+                raise ValueError("Rustdoc mode/graph selectors require a doctest case")
             if "required_targets" in case:
                 targets = case["required_targets"]
                 if (case["boundary"] != "P" or not targets or len(set(targets)) != len(targets)):
@@ -50,7 +63,7 @@ def validate_requirements(document):
     return requirements, cases
 
 
-def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=()):
+def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=()):
     """Join already validated suite evidence; no test counts imply group coverage.
 
     The CI gate authenticates revision/cleanliness and re-reads inventory/JUnit
@@ -71,6 +84,11 @@ def case_results(document, classification, evidence, revision, *, package_receip
     for binding in python_bindings:
         if binding["id"] in bindings or not binding["id"].startswith("python::"):
             raise ValueError("Python tooling identity conflicts with product classification")
+        bindings[binding["id"]] = dict(binding, platforms=list(PLATFORMS))
+    doctest_bindings = json.loads((ROOT / DOCTEST_BINDINGS).read_text(encoding="utf-8"))["tests"]
+    for binding in doctest_bindings:
+        if binding["id"] in bindings or not binding["id"].startswith("doctest::"):
+            raise ValueError("Doctest identity conflicts with other classification")
         bindings[binding["id"]] = dict(binding, platforms=list(PLATFORMS))
     targets = classification["targets"]
     observed = {}
@@ -145,10 +163,42 @@ def case_results(document, classification, evidence, revision, *, package_receip
                            python_version=record["python_version"], interpreter_sha256=record["interpreter_sha256"])
             observed.setdefault((identity, record["platform"], "independent"), {})[(digest, "python")] = outcome
 
-    def test_result(identity, platform, features, target, packaged):
+    for record in doctest_evidence:
+        if (record["source_revision"] != revision or record["kind"] != "doctest"
+                or record["platform"] != DOCTEST_TARGETS.get(record["target"])
+                or record["test_features"] not in {"minimal", "all"}
+                or record["status"] not in {"PASS", "FAIL", "NOT_RUN"}):
+            raise ValueError("Unrelated rustdoc observation")
+        digest = record["receipt_sha256"]
+        if digest in receipts and receipts[digest] != record:
+            raise ValueError("Conflicting rustdoc receipt evidence")
+        receipts[digest] = record
+        seen = set()
+        for test in record["tests"]:
+            identity = test["id"]
+            if (identity in seen or identity not in bindings or not identity.startswith("doctest::")
+                    or test["mode"] != bindings[identity]["mode"]
+                    or test["status"] not in {"PASS", "FAIL", "NOT_RUN"}):
+                raise ValueError("Unclassified, duplicate or wrong-mode rustdoc observation")
+            seen.add(identity)
+        # A failed run (including unparsed compiler diagnostics) cannot supply
+        # passing fragments to cases, nor vanish when a later attempt passes.
+        by_id = {test["id"]: test for test in record["tests"]}
+        for binding in doctest_bindings:
+            identity = binding["id"]
+            test = by_id.get(identity)
+            status = "FAIL" if record["status"] == "FAIL" else test["status"] if test else "NOT_RUN"
+            outcome = dict(status=status, receipt_sha256=digest, created_at=record["created_at"],
+                           test_features=record["test_features"], producer="rustdoc", mode=binding["mode"],
+                           target=record["target"], rustdoc=record["rustdoc"], run_status=record["status"],
+                           source_snapshot_sha256=record["source_snapshot_sha256"])
+            observed.setdefault((identity, record["platform"], "independent"), {})[(digest, "rustdoc")] = outcome
+
+    def test_result(identity, platform, features, target, packaged, graph=None):
         entries = {key: value for key, value in observed.get((identity, platform, features), {}).items()
                    if (not target or value["target"] == target)
-                   and (not packaged or key[0] in package_receipts)}
+                   and (not packaged or key[0] in package_receipts)
+                   and (graph is None or value["test_features"] == graph)}
         attempts = [entries[key] for key in sorted(entries)]
         result = {"id": identity, "status": aggregate_outcomes(a["status"] for a in attempts),
                   "receipts": sorted({key[0] for key in entries}), "attempts": attempts}
@@ -169,6 +219,8 @@ def case_results(document, classification, evidence, revision, *, package_receip
                 if binding is None or not (binding["boundary"] == case["boundary"]
                         or case["boundary"] == "P" and binding["boundary"] == "X"):
                     raise ValueError(f"Acceptance case lacks its required test boundary: {case['id']} / {identity}")
+                if identity.startswith("doctest::") and case["doctest_mode"] != binding["mode"]:
+                    raise ValueError(f"Case requires a different rustdoc execution mode: {case['id']}")
                 if not set(case["required_platforms"]) <= set(binding["platforms"]):
                     raise ValueError(f"Acceptance case requires an unclassified platform: {case['id']}")
             variants = []
@@ -180,13 +232,16 @@ def case_results(document, classification, evidence, revision, *, package_receip
                 (platform, None) for platform in case["required_platforms"]]
             for platform, target in hosts:
                 for features in case["required_product_features"]:
-                    tests = [test_result(identity, platform, features, target, case["boundary"] == "P")
-                             for identity in case["test_ids"]]
-                    variant = {"platform": platform, "features": features, "tests": tests,
-                               "status": aggregate_outcomes(test["status"] for test in tests)}
-                    if target:
-                        variant["target"] = target
-                    variants.append(variant)
+                    for graph in case.get("required_test_features", [None]):
+                        tests = [test_result(identity, platform, features, target, case["boundary"] == "P", graph)
+                                 for identity in case["test_ids"]]
+                        variant = {"platform": platform, "features": features, "tests": tests,
+                                   "status": aggregate_outcomes(test["status"] for test in tests)}
+                        if target:
+                            variant["target"] = target
+                        if graph is not None:
+                            variant.update(test_features=graph, doctest_mode=case["doctest_mode"])
+                        variants.append(variant)
             cases.append({"id": case["id"], "boundary": case["boundary"], "variants": variants,
                           "status": aggregate_outcomes([variant["status"] for variant in variants])})
         states = [case["status"] for case in cases]

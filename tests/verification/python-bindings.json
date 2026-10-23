@@ -150,6 +150,15 @@
       ]
     },
     {
+      "id": "python::test_candidate_qualification.CandidateCommand.test_command_admits_doctest_graphs_but_rejects_failed_attempts",
+      "boundary": "X",
+      "requirements": [
+        "UX-086",
+        "UX-087",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_candidate_qualification.CandidateCommand.test_parser_evidence_joins_without_qualifying_missing_consumer_journeys",
       "boundary": "X",
       "requirements": [
@@ -186,6 +195,15 @@
       "requirements": [
         "UX-085",
         "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_doctest_graphs_and_failures_participate_in_candidate_qualification",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-087",
+        "UX-088"
       ]
     },
     {
@@ -491,6 +509,42 @@
       "requirements": [
         "UX-084",
         "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAcceptance.test_case_cannot_omit_graph_or_substitute_mode_product_or_boundary",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-087",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAcceptance.test_each_host_and_test_graph_is_required_without_claiming_a_product",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-087",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAcceptance.test_failed_attempt_with_no_parseable_rows_survives_a_later_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-087",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAcceptance.test_mode_source_graph_identity_and_receipt_conflicts_are_rejected",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-087",
+        "UX-088"
       ]
     },
     {

@@ -265,6 +265,15 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
+      - run: python scripts/verify.py doctest --test-features minimal --output .git/candidate-doctest/minimal
+      - run: python scripts/verify.py doctest --test-features all --output .git/candidate-doctest/all
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: candidate-doctest-${{ matrix.os }}
+          path: .git/candidate-doctest/
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Build a separate feature variant and retain its execution proof
         shell: bash
         run: python3 scripts/check-auxiliary-build.py --version "${RELEASE_VERSION#v}" --output .git/auxiliary
@@ -309,6 +318,10 @@ jobs:
         with:
           pattern: candidate-auxiliary-*
           path: .git/candidate-auxiliary
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-doctest-*
+          path: .git/candidate-doctest
       - name: Require native and consumer evidence for the exact tested payload
         id: qualify
         shell: bash
@@ -320,9 +333,13 @@ jobs:
           test "${#python_receipts[@]}" -eq 1
           auxiliary_records=(.git/candidate-auxiliary/candidate-auxiliary-*/*/build.json)
           test "${#auxiliary_records[@]}" -eq 3
+          doctest_records=(.git/candidate-doctest/candidate-doctest-*/*/*/receipt.json)
+          test "${#doctest_records[@]}" -eq 6
+          doctest_args=()
+          for record in "${doctest_records[@]}"; do doctest_args+=(--doctest "$record"); done
           auxiliary_args=()
           for record in "${auxiliary_records[@]}"; do auxiliary_args+=(--auxiliary "$record"); done
-          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" --tooling "${python_receipts[0]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" "${doctest_args[@]}" --tooling "${python_receipts[0]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
           python3 - <<'PYTHON'
           import hashlib, os
           from pathlib import Path

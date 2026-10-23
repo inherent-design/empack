@@ -96,12 +96,17 @@ def _acceptance_lines(record):
               "Missing evidence stays NOT_RUN. A pure, host, or parser check cannot replace another case's required boundary.", ""]
     for row in requirements:
         for case in row["cases"]:
+            columns = [("platform", "Platform"), ("target", "Target"), ("features", "Product features")]
+            if any("doctest_mode" in variant for variant in case["variants"]):
+                columns += [("test_features", "Test graph"), ("doctest_mode", "Rustdoc mode")]
+            columns += [("status", "Result")]
             lines += [f"### {cell(case['id'])}", "",
                       f"Boundary: {cell(case['boundary'])}; case result: {cell(case['status'])}.", "",
-                      "| Platform | Target | Product features | Result |", "| --- | --- | --- | --- |"]
+                      "| " + " | ".join(title for _, title in columns) + " |",
+                      "| " + " | ".join("---" for _ in columns) + " |"]
             for variant in case["variants"]:
-                lines.append("| " + " | ".join(cell(variant.get(k, "any classified target"))
-                             for k in ("platform", "target", "features", "status")) + " |")
+                lines.append("| " + " | ".join(cell(variant.get(k, "any classified target" if k == "target" else "—"))
+                             for k, _ in columns) + " |")
             lines += ["", "<details>", "<summary>Exact tests and evidence identities</summary>", ""]
             for variant in case["variants"]:
                 for test in variant["tests"]:
@@ -112,7 +117,10 @@ def _acceptance_lines(record):
                                       f"    - Test graph: {cell(attempt['test_features'])}; " +
                                       (f"Python interpreter: {cell(attempt['interpreter_sha256'])}" if "interpreter_sha256" in attempt
                                        else f"consumer probe: {cell(attempt['probe_sha256'])}" if "probe_sha256" in attempt
+                                       else f"rustdoc: {cell(attempt['rustdoc'])}; mode: {cell(attempt['mode'])}" if "rustdoc" in attempt
                                        else f"empack executable: {cell(attempt['artifact_sha256'])}")]
+                            if attempt.get("producer") == "rustdoc":
+                                lines += [f"    - Rustdoc run: {cell(attempt['run_status'])}; source snapshot: {cell(attempt['source_snapshot_sha256'])}"]
                             if attempt.get("target"):
                                 lines += [f"    - Target: {cell(attempt['target'])}"]
                             if attempt.get("suite"):

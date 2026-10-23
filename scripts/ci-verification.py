@@ -166,7 +166,7 @@ def check_gate(plan, needs, artifacts):
         if consumers[0]["status"] != "PASS":
             raise ValueError("Required consumer parser observations failed")
     acceptance = case_results(json.loads(REQUIREMENTS.read_text()), json.loads(CLASSIFICATION.read_text()),
-                              evidence, plan["source_revision"], consumer_evidence=consumers, tooling_evidence=tooling)
+                              evidence, plan["source_revision"], consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests)
     acceptance["requirements_sha256"] = sha256(REQUIREMENTS)
     acceptance["classification_sha256"] = sha256(CLASSIFICATION)
     return {"schema": 1, "status": "PASS", "qualification": False,

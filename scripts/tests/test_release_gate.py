@@ -30,6 +30,12 @@ class ReleaseArchiveGate(unittest.TestCase):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())
+        from verification.doctests import inputs as doctest_inputs
+        for name in doctest_inputs():
+            path = self.root / name
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())
         self.git("add", "tests", "scripts", "crates")
         self.git("commit", "-qm", "fixture registry")
         self.revision = self.git("rev-parse", "HEAD")

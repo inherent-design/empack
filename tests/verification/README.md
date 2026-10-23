@@ -82,8 +82,15 @@ executed examples (`run`). Records retain source, compiler, feature graph, bound
 logs and per-example results. The native CI gate requires both graphs on each host.
 `scripts/report-verification.py` rechecks explicit receipts and retains failures
 alongside later passes. These observations do not establish a product executable,
-consumer launch or final-package qualification. Joining doctest modes to individual
-requirement cases and final candidate admission remains pending.
+consumer launch or final-package qualification. Doctest cases declare their required
+mode and both workspace feature graphs separately from product features. Reports
+retain each host/graph result and source snapshot; an all-features pass cannot fill
+a missing minimal run. A failed attempt remains a failure even when its compiler
+output cannot supply individual rows. The candidate gate rechecks the same records
+through `--doctest`; release jobs produce both graphs on Linux, macOS and Windows.
+These unit-level observations supplement the package-boundary and executable-docs
+requirements. They cannot complete fresh-user acceptance or prove the documented
+engine operations actually ran merely because a `no_run` example compiled.
 
 ```bash
 python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings tests/verification/test-bindings.json --test-features all

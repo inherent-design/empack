@@ -43,6 +43,14 @@ class ReleaseChannelContracts(unittest.TestCase):
         self.assertIn('needs: [archive-gate, consumer, auxiliary]', gate)
         self.assertIn('name: consumer-prism', gate)
         self.assertIn('--consumer .git/candidate-consumer/prism.json', gate)
+        auxiliary = release.split('  auxiliary:', 1)[1].split('  candidate-gate:', 1)[0]
+        for graph in ('minimal', 'all'):
+            self.assertIn(f'scripts/verify.py doctest --test-features {graph} --output .git/candidate-doctest/{graph}', auxiliary)
+        self.assertIn('name: candidate-doctest-${{ matrix.os }}', auxiliary)
+        self.assertIn('pattern: candidate-doctest-*', gate)
+        self.assertIn('test "${#doctest_records[@]}" -eq 6', gate)
+        self.assertIn('doctest_args+=(--doctest "$record")', gate)
+        self.assertIn('"${doctest_args[@]}"', gate)
 
 
 if __name__ == "__main__":

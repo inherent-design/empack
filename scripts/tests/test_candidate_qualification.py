@@ -51,6 +51,23 @@ class CandidatePolicy(unittest.TestCase):
         self.assertFalse(result["qualification"])
         self.assertEqual(result["applicable_requirements"], sorted(NATIVE | PORTABLE))
 
+    def test_doctest_graphs_and_failures_participate_in_candidate_qualification(self):
+        from test_doctest_evidence import RustdocAcceptance
+        fixture = RustdocAcceptance()
+        fixture.setUp()
+        for record in fixture.records:
+            record["receipt_sha256"] = "d" + record["receipt_sha256"][1:]
+        row = next(row for row in self.document["requirements"] if row["id"] == "UX-086")
+        row.update(evidence_tiers=["U"], cases=[fixture.case])
+        def evaluate(records):
+            return evaluate_requirements(self.document, self.classification, self.evidence,
+                REVISION, "0.8.4-beta", self.package_proofs, doctest_evidence=records)
+        self.assertEqual(evaluate([])["status"], "BLOCKED")
+        self.assertTrue(evaluate(fixture.records)["qualification"], "synthetic gate mechanics only")
+        self.assertFalse(evaluate(fixture.records[:-1])["qualification"])
+        failed = dict(fixture.records[0], status="FAIL", tests=[], receipt_sha256="f" * 64)
+        self.assertEqual(evaluate([*fixture.records, failed])["status"], "FAIL")
+
     def test_partial_mapping_and_missing_consumer_boundary_block_even_with_passing_cases(self):
         row = next(r for r in self.document["requirements"] if r["id"] == "UX-084")
         row["evidence_tiers"].append("C")
@@ -129,6 +146,41 @@ class CandidateCommand(unittest.TestCase):
     git = archive_fixtures.ReleaseArchiveGate.git
     setUp = archive_fixtures.ReleaseArchiveGate.setUp
     admit = archive_fixtures.ReleaseArchiveGate.admit
+
+    def test_command_admits_doctest_graphs_but_rejects_failed_attempts(self):
+        from test_doctest_evidence import fixture as doctest_fixture
+        self.admit()
+        output = self.root / ".git/doctest-candidate.json"
+        command = [sys.executable, str(SCRIPTS / "qualify-release.py"), "gate",
+                   "--payload", str(self.output), "--archive-evidence-sha256", sha256(self.output / "archive-evidence.json"),
+                   "--revision", self.revision, "--version", self.version, "--output", str(output)]
+        receipts = []
+        for target in ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"):
+            for graph in ("minimal", "all"):
+                directory = self.root / ".git/doctest-fixtures" / target / graph
+                record = doctest_fixture(directory, target, graph, source=self.root)
+                record["source_revision"] = self.revision
+                path = directory / "receipt.json"
+                write_json(path, record)
+                receipts.append(path)
+                command += ["--doctest", str(path)]
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 2, process.stderr)
+        result = json.loads(output.read_text())
+        self.assertEqual(len(result["doctest_evidence"]), 6)
+        row = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-087")
+        self.assertEqual(row["status"], "NOT_RUN", "synthetic passing examples cannot complete fresh-user acceptance")
+        self.assertTrue(all(case["status"] == "PASS" for case in row["cases"]))
+        failed = json.loads(receipts[0].read_text())
+        failed.update(status="FAIL", exit_code=101)
+        write_json(receipts[0], failed)
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 1, process.stderr)
+        self.assertEqual(json.loads(output.read_text())["status"], "FAIL")
+        receipts[0].unlink()
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 1, process.stderr)
+        self.assertIn("reason", json.loads(output.read_text()))
 
     def test_real_registry_and_archives_cannot_skip_unimplemented_consumer_obligations(self):
         self.admit()
