@@ -264,6 +264,10 @@ jobs:
         with:
           name: consumer-prism
           path: .git/candidate-consumer
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: python3 scripts/verify.py python --output .git/candidate-python
       - name: Require native and consumer evidence for the exact tested payload
         id: qualify
         shell: bash
@@ -271,7 +275,9 @@ jobs:
           RELEASE_REVISION: ${{ github.sha }}
           ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
         run: |
-          python3 scripts/qualify-release.py gate --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python_receipts=(.git/candidate-python/*/receipt.json)
+          test "${#python_receipts[@]}" -eq 1
+          python3 scripts/qualify-release.py gate --tooling "${python_receipts[0]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
           python3 - <<'PYTHON'
           import hashlib, os
           from pathlib import Path
@@ -292,6 +298,10 @@ jobs:
           path: |
             .git/candidate.json
             .git/candidate.md
+            .git/candidate-python/*/receipt.json
+            .git/candidate-python/*/inventory.json
+            .git/candidate-python/*/events.json
+            .git/candidate-python/*/run.log
           include-hidden-files: true
           if-no-files-found: error
 

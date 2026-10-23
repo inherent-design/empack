@@ -17,6 +17,7 @@ SPEC.loader.exec_module(ci)
 from verification.evidence import selected_tests, sha256, write_json
 from verification.suites import SUITES, nextest_command
 from consumer_fixture import prism_record
+from test_python_evidence import fixture as python_fixture
 from verification.consumer import inspect_prism_record
 
 REVISION = "a" * 40
@@ -103,6 +104,11 @@ def bound(plan):
 
 def successes(plan):
     return {job: {"result": "success"} for job in ["plan", *plan["required_jobs"]]}
+
+
+def tooling_attempt(directory):
+    classification = json.loads((ci.ROOT / "tests/verification/python-bindings.json").read_text())
+    return python_fixture(ci.ROOT, directory / "verification-python/one-attempt", classification)
 
 
 def fixture_attempt(directory, target, features="telemetry", suites=None, test_features="all"):
@@ -193,6 +199,7 @@ class RequiredGate(unittest.TestCase):
         plan = bound(ci.selection(["scripts/check-prism-config.py"], trusted=True))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            tooling_attempt(root)
             for target in ci.TARGETS:
                 for features, suites in ci.NATIVE_SUITES.items():
                     fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
@@ -217,7 +224,26 @@ class RequiredGate(unittest.TestCase):
         plan = bound(ci.selection(["docs/testing.md"], trusted=False))
         needs = successes(plan)
         needs["test"] = {"result": "skipped"}
-        self.assertEqual(ci.check_gate(plan, needs, Path("unused"))["status"], "PASS")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tooling_attempt(root)
+            result = ci.check_gate(plan, needs, root)
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["tooling_evidence"][0]["features"], "independent")
+
+    def test_green_tooling_job_requires_observed_python_results(self):
+        plan = bound(ci.selection(["docs/testing.md"], trusted=False))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with self.assertRaisesRegex(ValueError, "Python execution receipt"):
+                ci.check_gate(plan, successes(plan), root)
+            record = tooling_attempt(root)
+            path = root / "verification-python/one-attempt/receipt.json"
+            record["timed_out"] = True
+            record["status"] = "FAIL"
+            write_json(path, record)
+            with self.assertRaisesRegex(ValueError, "did not pass"):
+                ci.check_gate(plan, successes(plan), root)
 
     def test_required_missing_failed_cancelled_and_skipped_are_not_passes(self):
         plan = bound(ci.selection(["README.md"], trusted=True))
@@ -241,6 +267,7 @@ class RequiredGate(unittest.TestCase):
         plan = bound(ci.selection(["crates/empack/src/main.rs"], trusted=True))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            tooling_attempt(root)
             for target in ci.TARGETS:
                 for features, suites in ci.NATIVE_SUITES.items():
                     fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])

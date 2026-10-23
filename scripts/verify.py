@@ -194,9 +194,45 @@ def aggregate_status(results):
     return aggregate_outcomes(row["status"] for row in results)
 
 
+def run_python(attempt, environment):
+    from verification.python_tests import BINDINGS, compare_inventory, inputs, outcomes
+    record = dict(schema=1, kind="python-suite-run", status="NOT_RUN", qualification=False,
+                  created_at=datetime.now(timezone.utc).isoformat(), features="independent",
+                  platform={"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()],
+                  architecture=platform.machine(), python_version=platform.python_version(),
+                  interpreter_sha256=sha256(Path(sys.executable).resolve()), tests=[])
+    print(f"Python verification attempt: {attempt}", flush=True)
+    try:
+        record["source_revision"] = checked(["git", "rev-parse", "HEAD"], attempt, "revision", environment).strip()
+        record["worktree_dirty"] = bool(checked(["git", "status", "--porcelain"], attempt, "worktree", environment).strip())
+        snapshot = source_snapshot(attempt, environment)
+        record["inputs"] = inputs(ROOT)
+        record["classification_sha256"] = sha256(ROOT / BINDINGS)
+        home = attempt / "worker-home"
+        home.mkdir()
+        code, _, timed_out = run([sys.executable, str(ROOT / "scripts/python-test-driver.py"), "--output", str(attempt)],
+            cwd=ROOT, env=isolated_environment(home), log=attempt / "run.log", timeout=900)
+        record.update(exit_code=code, timed_out=timed_out)
+        inventory = json.loads((attempt / "inventory.json").read_text(encoding="utf-8"))
+        compare_inventory(inventory, json.loads((ROOT / BINDINGS).read_text(encoding="utf-8")))
+        events = json.loads((attempt / "events.json").read_text(encoding="utf-8"))
+        record["inventory_sha256"] = sha256(attempt / "inventory.json")
+        record["events_sha256"] = sha256(attempt / "events.json")
+        record["tests"], record["status"] = outcomes(inventory, events)
+        if code or timed_out:
+            record["status"] = "FAIL"
+        if source_snapshot(attempt, environment) != snapshot:
+            raise RuntimeError("Source files changed during verification")
+    except (OSError, ValueError, RuntimeError, KeyError, KeyboardInterrupt) as error:
+        record.update(status="FAIL", reason=str(error) or "Python verification interrupted")
+    write_json(attempt / "receipt.json", record)
+    print(f"{record['status']}: {attempt / 'receipt.json'} ({len(record['tests'])} tests)", flush=True)
+    return 0 if record["status"] == "PASS" else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("suites", nargs="+", choices=SUITES)
+    parser.add_argument("suites", nargs="+", choices=[*SUITES, "python"])
     parser.add_argument("--binary", help="Absolute path to an independently built product")
     parser.add_argument("--sha256")
     parser.add_argument("--version")
@@ -210,11 +246,16 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if len(set(args.suites)) != len(args.suites):
         parser.error("A suite may be selected only once per attempt")
+    if "python" in args.suites and (args.suites != ["python"] or any((args.binary, args.sha256,
+            args.version, args.target, args.product_features, args.product_profile)) or args.test_features != "all"):
+        parser.error("Python is an independent tooling run; select it separately without product options")
     args.output.mkdir(parents=True, exist_ok=True)
     attempt = args.output.resolve() / str(uuid.uuid4())
     attempt.mkdir(mode=0o700)
     environment = {key: value for key, value in os.environ.items() if not key.startswith("NEXTEST_")}
     environment.update(CARGO_TERM_COLOR="never", NO_COLOR="1")
+    if args.suites == ["python"]:
+        return run_python(attempt, environment)
     receipt = {"schema": 1, "kind": "test-suite-run", "status": "NOT_RUN",
                "created_at": datetime.now(timezone.utc).isoformat(), "suites": [],
                "requested_suites": args.suites, "test_features": args.test_features,

@@ -121,7 +121,7 @@ class SurfaceBindings(unittest.TestCase):
             checker.compare_surfaces(self.inventory, self.bindings, {"UX-041"})
 
     def test_python_identity_is_classified_without_a_rust_wrapper(self):
-        inventory = {"source": "unittest-loader", "tests": [
+        inventory = {"schema": 1, "source": "unittest-loader", "tests": [
             {"id": "test_fixture.Checks.test_failure", "ignored": True}]}
         bindings = {"tests": [{"id": "python::test_fixture.Checks.test_failure", "boundary": "U"}]}
         result = checker.compare_python(inventory, bindings)
@@ -130,7 +130,7 @@ class SurfaceBindings(unittest.TestCase):
 
 class ToolingOwnership(unittest.TestCase):
     def test_python_owner_must_be_nonempty_and_known(self):
-        inventory = {"source": "unittest-loader", "tests": [
+        inventory = {"schema": 1, "source": "unittest-loader", "tests": [
             {"id": "module.Checks.test_fixture", "ignored": False}]}
         row = {"id": "python::module.Checks.test_fixture", "boundary": "H"}
         for owners in (None, [], ["UX-typo"]):

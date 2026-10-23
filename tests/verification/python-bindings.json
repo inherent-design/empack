@@ -130,6 +130,13 @@
       ]
     },
     {
+      "id": "python::test_candidate_qualification.CandidateCommand.test_python_observations_are_independent_and_cannot_qualify_missing_products",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_candidate_qualification.CandidateCommand.test_real_registry_and_archives_cannot_skip_unimplemented_consumer_obligations",
       "boundary": "H",
       "requirements": [
@@ -287,6 +294,13 @@
     },
     {
       "id": "python::test_ci_verification.RequiredGate.test_docs_gate_allows_deliberately_unselected_jobs",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_green_tooling_job_requires_observed_python_results",
       "boundary": "H",
       "requirements": [
         "UX-088"
@@ -688,6 +702,55 @@
     },
     {
       "id": "python::test_python_discovery.PythonDiscovery.test_loader_lists_skipped_tests_without_executing",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonAdmission.test_classification_rejects_unknown_duplicate_or_consumer_identities",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonAdmission.test_identity_and_artifact_tampering_cannot_be_admitted",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonAdmission.test_replays_observations_instead_of_claimed_pass",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonLifecycle.test_actual_callbacks_keep_subtest_failure_skip_and_expected_failure",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonLifecycle.test_class_setup_failure_cannot_become_empty_success",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonLifecycle.test_duplicate_unstarted_and_incomplete_callbacks_do_not_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonReport.test_executable_report_keeps_failed_then_passing_tooling_attempts",
       "boundary": "H",
       "requirements": [
         "UX-088"

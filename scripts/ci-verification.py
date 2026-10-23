@@ -11,6 +11,7 @@ import subprocess
 from verification.evidence import sha256, write_json
 from verification.suites import SUITES
 from verification.consumer import inspect_prism_evidence
+from verification.python_tests import inspect_python_evidence
 from verification.requirements import case_results
 from verification.receipts import check_suite_receipt
 from verification.reporting import render_gate
@@ -132,6 +133,12 @@ def check_gate(plan, needs, artifacts):
     for job in ["plan", *plan["required_jobs"]]:
         if job not in {"plan", *JOBS} or needs.get(job, {}).get("result") != "success":
             raise ValueError(f"Required job {job} is missing, failed, cancelled or skipped")
+    python_paths = list((artifacts / "verification-python").glob("*/receipt.json"))
+    if len(python_paths) != 1:
+        raise ValueError("Tooling requires exactly one Python execution receipt")
+    tooling = [inspect_python_evidence(python_paths[0], plan["source_revision"])]
+    if tooling[0]["status"] != "PASS":
+        raise ValueError("Required Python tooling execution did not pass")
     evidence = []
     for target in plan["native_targets"]:
         for features, suites in NATIVE_SUITES.items():
@@ -150,12 +157,12 @@ def check_gate(plan, needs, artifacts):
         if consumers[0]["status"] != "PASS":
             raise ValueError("Required consumer parser observations failed")
     acceptance = case_results(json.loads(REQUIREMENTS.read_text()), json.loads(CLASSIFICATION.read_text()),
-                              evidence, plan["source_revision"], consumer_evidence=consumers)
+                              evidence, plan["source_revision"], consumer_evidence=consumers, tooling_evidence=tooling)
     acceptance["requirements_sha256"] = sha256(REQUIREMENTS)
     acceptance["classification_sha256"] = sha256(CLASSIFICATION)
     return {"schema": 1, "status": "PASS", "qualification": False,
             "source_revision": plan["source_revision"], "source_tree": plan["source_tree"],
-            "required_jobs": plan["required_jobs"], "acceptance": acceptance, "consumer_evidence": consumers,
+            "required_jobs": plan["required_jobs"], "acceptance": acceptance, "consumer_evidence": consumers, "tooling_evidence": tooling,
             "suite_evidence": [{key: value for key, value in record.items() if key != "tests"}
                                for record in evidence]}
 

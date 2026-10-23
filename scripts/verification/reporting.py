@@ -62,6 +62,15 @@ def _acceptance_lines(record):
     if not record["suite_evidence"]:
         lines += ["No native suite receipts were selected or admitted by this gate.", ""]
 
+    if record.get("tooling_evidence"):
+        lines += ["## Python tooling observations", "",
+                  "These unittest observations exercise verification helpers and scripts, independently of product builds.", ""]
+        for tooling in record["tooling_evidence"]:
+            lines += [f"- {cell(tooling['platform'])}: {cell(tooling['status'])}; Python {cell(tooling['python_version'])}",
+                      f"  - Interpreter SHA-256: {cell(tooling['interpreter_sha256'])}",
+                      f"  - Receipt SHA-256: {cell(tooling['receipt_sha256'])}"]
+        lines += [""]
+
     if record.get("consumer_evidence"):
         lines += ["## Consumer parser observations", "",
                   "These probes execute pinned consumer source. They do not execute empack or establish launcher import/startup.", ""]
@@ -89,7 +98,8 @@ def _acceptance_lines(record):
                         for attempt in test["attempts"]:
                             lines += [f"  - Attempt: {cell(attempt['status'])}; receipt: {cell(attempt['receipt_sha256'])}",
                                       f"    - Test graph: {cell(attempt['test_features'])}; " +
-                                      (f"consumer probe: {cell(attempt['probe_sha256'])}" if "probe_sha256" in attempt
+                                      (f"Python interpreter: {cell(attempt['interpreter_sha256'])}" if "interpreter_sha256" in attempt
+                                       else f"consumer probe: {cell(attempt['probe_sha256'])}" if "probe_sha256" in attempt
                                        else f"empack executable: {cell(attempt['artifact_sha256'])}")]
                             if attempt.get("target"):
                                 lines += [f"    - Target: {cell(attempt['target'])}"]
@@ -130,6 +140,10 @@ def render_attempts(record):
             lines += [cell(attempt["reason"]), ""]
         if attempt["admission"] == "REJECTED":
             lines += ["No test outcomes from this receipt were admitted.", ""]
+            continue
+        if attempt.get("kind") == "python":
+            lines += [f"Recorded: {cell(attempt['created_at'])}; platform: {cell(attempt['platform'])}; "
+                      f"Python: {cell(attempt['python_version'])}. No empack artifact identity is established by this record.", ""]
             continue
         lines += [f"Recorded: {cell(attempt['created_at'])}; target: {cell(attempt['target'])}; product: {cell(attempt['features'])}.", ""]
         for suite in attempt["suite_outcomes"]:

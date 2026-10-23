@@ -8,6 +8,7 @@ import re
 
 from verification.evidence import aggregate_outcomes, sha256, write_json
 from verification.receipts import inspect_suite_receipt
+from verification.python_tests import inspect_python_evidence
 from verification.reporting import render_attempts
 from verification.requirements import case_results
 
@@ -22,7 +23,7 @@ def report(paths, revision, version):
     requirements_path = ROOT / "tests/verification/requirements.json"
     classification_path = ROOT / "tests/verification/test-bindings.json"
     classification = json.loads(classification_path.read_text())
-    admitted, attempts, seen = [], [], set()
+    admitted, tooling, attempts, seen = [], [], [], set()
     for path in paths:
         digest = None
         try:
@@ -34,6 +35,11 @@ def report(paths, revision, version):
             receipt = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(receipt, dict):
                 raise ValueError("Expected a suite receipt object")
+            if receipt.get("kind") == "python-suite-run":
+                result = inspect_python_evidence(path, revision)
+                tooling.append(result)
+                attempts.append({"admission": "ADMITTED", **{key: value for key, value in result.items() if key != "tests"}})
+                continue
             artifact = receipt.get("artifact")
             # Preflight may stop before producing a binary. The compiler identity
             # can identify its host but cannot manufacture executable evidence.
@@ -52,12 +58,12 @@ def report(paths, revision, version):
         except (ValueError, OSError, KeyError, TypeError, AttributeError, IndexError, StopIteration) as error:
             attempts.append({"admission": "REJECTED", "receipt_sha256": digest,
                              "path": str(path), "status": "FAIL", "reason": str(error) or "Missing attempt identity"})
-    acceptance = case_results(json.loads(requirements_path.read_text()), classification, admitted, revision)
+    acceptance = case_results(json.loads(requirements_path.read_text()), classification, admitted, revision, tooling_evidence=tooling)
     acceptance.update(requirements_sha256=sha256(requirements_path), classification_sha256=sha256(classification_path))
     return {"schema": 1, "kind": "verification-attempt-report", "qualification": False,
             "status": aggregate_outcomes(row["status"] for row in attempts), "source_revision": revision,
             "version": version, "created_at": datetime.now(timezone.utc).isoformat(),
-            "attempts": attempts, "acceptance": acceptance,
+            "attempts": attempts, "acceptance": acceptance, "tooling_evidence": tooling,
             "suite_evidence": [{key: value for key, value in row.items() if key != "tests"} for row in admitted]}
 
 

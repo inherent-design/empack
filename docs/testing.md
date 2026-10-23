@@ -19,8 +19,9 @@ mise run smoke
 
 `mise run test` runs Python script contracts, the fixed deterministic workspace
 suite (including executable tests), and doctests. `scripts/verify.py` is the shared
-local/CI runner. It builds the ordinary product package in a separate target directory
-before compiling the workspace test graph. Use Nextest 0.9.148 for these selections.
+local/CI runner. Rust suites build the ordinary product package in a separate target
+directory before compiling the workspace test graph. The `python` suite executes
+script contracts independently, without selecting an empack binary. Use Nextest 0.9.148 for these selections.
 Also check library tests with minimal features so workspace feature unification
 cannot hide test-only dependencies. Architecture checks keep `empack-core` free of I/O/runtime dependencies.
 
@@ -257,8 +258,28 @@ the earlier failure. These are suite records, not final release qualification or
 that every requirement has a bound case. The CI report joins validated Rust results to
 the concrete cases and required platform/product-feature variants in the registry.
 Missing variants remain `NOT_RUN`; a partial or pending decomposition cannot qualify
-its requirement even when its existing cases pass. Python and doctest commands still
-run separately from the Rust receipts.
+its requirement even when its existing cases pass.
+
+Run Python tooling through the same entry point:
+
+```sh
+python3 scripts/verify.py python --output target/verification-python
+```
+
+This fixed suite uses unittest discovery, an isolated worker environment and a
+15-minute deadline. It records each test's lifecycle alongside discovery, source,
+classification and interpreter identities. Admission replays those events: subtest
+failures, expected failures, skipped assertions, setup errors and incomplete runs
+cannot become passing cases. Missing or repeated identities are rejected. PR CI
+requires this record even for documentation-only changes; a green tooling job alone
+is insufficient. Python cases use the `independent` feature variant and cannot
+substitute for empack, packaged artifacts or actual consumers. Raw `unittest` remains
+useful for focused debugging but does not produce an admissible receipt.
+
+Doctests are discovered and executed separately; their execution receipts are not
+yet joined to acceptance. Source-edited or interrupted tooling attempts remain
+nonqualifying. `report-verification.py --receipt` accepts both native and Python
+records and preserves earlier failed attempts.
 
 To select an independently built executable, supply all identity fields explicitly:
 
@@ -337,7 +358,7 @@ revalidate standalone JSON, apply waivers, or calculate coverage from test count
 the JSON and original job artifacts remain the evidence to inspect.
 
 The resulting record has `qualification: false`: the remaining case decomposition,
-non-Rust/consumer/device evidence and final-package checks are not yet a complete
+doctest, script, consumer and device evidence and final-package checks are not yet a complete
 release qualification record. Selecting this required status in repository
 branch protection is an administrative step; changing workflow YAML does not set it.
 
@@ -503,6 +524,10 @@ is rejected; an accurately recorded failure remains failed. This evidence contri
 only to the parser case, independently of product features. It cannot qualify actual
 Prism import/startup or any missing native case. The release workflow runs the same
 parser action as PR CI and requires its record before candidate evaluation.
+Repeated `--tooling` inputs admit the fixed Python producer for the same clean source.
+The candidate workflow runs it before evaluation and retains its discovery, lifecycle,
+log and receipt files. It contributes only to explicitly bound tooling cases; it does
+not supply product-feature, archive or consumer proof.
 The command returns `0` only for full qualification, `2` for missing obligations and
 `1` for failed or rejected evidence.
 

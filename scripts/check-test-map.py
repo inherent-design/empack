@@ -8,6 +8,7 @@ from pathlib import Path
 
 from verification.classification import BOUNDARIES, compare_rust_inventory
 from verification.consumer import PRISM_TEST
+from verification.python_tests import compare_inventory as compare_python_inventory
 from verification.suites import TEST_FEATURES
 from verification.discovery import rustdoc_tests
 from verification.requirements import case_results, validate_requirements
@@ -53,17 +54,12 @@ def compare_inventory(inventory, bindings):
 
 
 def compare_python(inventory, bindings, requirements=None):
-    if inventory.get("source") != "unittest-loader":
-        raise ValueError("Expected unittest loader discovery")
-    discovered = {row["id"]: row for row in inventory["tests"]}
-    if not discovered or len(discovered) != len(inventory["tests"]):
-        raise ValueError("Python identities must be unique and nonempty")
+    result = compare_python_inventory(inventory, bindings)
     if requirements is not None:
         for entry in bindings["tests"]:
             if not entry.get("requirements") or not set(entry["requirements"]) <= requirements:
                 raise ValueError(f"Python test has no valid requirement owner: {entry['id']}")
-    return compare_inventory({"test-count": len(discovered), "rust-suites": {
-        "python": {"status": "listed", "testcases": discovered}}}, bindings)
+    return result
 
 
 def compare_surfaces(inventory, bindings, requirements):
@@ -182,7 +178,7 @@ def main():
             for case in requirement["cases"]:
                 # The fixed parser producer is validated by case_results above;
                 # it is observed by Qt, never discovered by the Rust compiler.
-                missing = set(case["test_ids"]) - {PRISM_TEST} - discovered.keys()
+                missing = {identity for identity in case["test_ids"] if not identity.startswith("python::")} - {PRISM_TEST} - discovered.keys()
                 if missing:
                     raise ValueError(f"Case {case['id']} selects absent tests: {sorted(missing)}")
     for inventory_path, binding_path, label, compare in [

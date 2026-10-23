@@ -2,6 +2,8 @@
 from .classification import BOUNDARIES
 from .consumer import PRISM_TEST, PRISM_BINDING
 from .evidence import aggregate_outcomes
+import json
+from .python_tests import ROOT, BINDINGS, PLATFORMS
 
 
 def validate_requirements(document):
@@ -31,7 +33,9 @@ def validate_requirements(document):
                     or not set(platforms) <= {"linux", "macos", "windows"}
                     or not (set(features) <= {"default", "telemetry"}
                             or features == ["independent"] and case["boundary"] == "C"
-                            and case["test_ids"] == [PRISM_TEST])):
+                            and case["test_ids"] == [PRISM_TEST]
+                            or features == ["independent"] and case["boundary"] in {"U", "H", "N", "X"}
+                            and all(identity.startswith("python::") for identity in case["test_ids"]))):
                 raise ValueError(f"Case has no required execution variants: {case['id']}")
             if "required_targets" in case:
                 targets = case["required_targets"]
@@ -39,12 +43,14 @@ def validate_requirements(document):
                     raise ValueError(f"Exact target variants require a package case: {case['id']}")
             if not case["test_ids"] or len(set(case["test_ids"])) != len(case["test_ids"]):
                 raise ValueError(f"Case has no concrete tests: {case['id']}")
+            if any(identity.startswith("python::") for identity in case["test_ids"]) and features != ["independent"]:
+                raise ValueError("Python tooling cannot stand in for a product feature build")
             if PRISM_TEST in case["test_ids"] and features != ["independent"]:
                 raise ValueError("Consumer parser evidence is independent of product feature builds")
     return requirements, cases
 
 
-def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=()):
+def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=()):
     """Join already validated suite evidence; no test counts imply group coverage.
 
     The CI gate authenticates revision/cleanliness and re-reads inventory/JUnit
@@ -61,6 +67,11 @@ def case_results(document, classification, evidence, revision, *, package_receip
     if PRISM_TEST in bindings:
         raise ValueError("Consumer parser cannot be classified as a Rust test")
     bindings[PRISM_TEST] = PRISM_BINDING
+    python_bindings = json.loads((ROOT / BINDINGS).read_text(encoding="utf-8"))["tests"]
+    for binding in python_bindings:
+        if binding["id"] in bindings or not binding["id"].startswith("python::"):
+            raise ValueError("Python tooling identity conflicts with product classification")
+        bindings[binding["id"]] = dict(binding, platforms=list(PLATFORMS))
     targets = classification["targets"]
     observed = {}
     receipts = {}
@@ -113,6 +124,26 @@ def case_results(document, classification, evidence, revision, *, package_receip
         outcome.update(test_features="independent", producer="prism-parser",
                        prism_commit=record["prism_commit"], qt_version=record["qt_version"])
         observed.setdefault((PRISM_TEST, record["platform"], "independent"), {})[(digest, "prism-parser")] = outcome
+
+    for record in tooling_evidence:
+        if (record["source_revision"] != revision or record["kind"] != "python"
+                or record["features"] != "independent" or record["platform"] not in PLATFORMS):
+            raise ValueError("Unrelated Python tooling observation")
+        digest = record["receipt_sha256"]
+        if digest in receipts and receipts[digest] != record:
+            raise ValueError("Conflicting Python receipt evidence")
+        receipts[digest] = record
+        seen = set()
+        for test in record["tests"]:
+            identity = test["id"]
+            if (identity in seen or identity not in bindings or not identity.startswith("python::")
+                    or test["status"] not in {"PASS", "FAIL", "NOT_RUN"}):
+                raise ValueError("Unclassified or duplicate Python test observation")
+            seen.add(identity)
+            outcome = dict(status=test["status"], receipt_sha256=digest,
+                           created_at=record["created_at"], test_features="independent", producer="python",
+                           python_version=record["python_version"], interpreter_sha256=record["interpreter_sha256"])
+            observed.setdefault((identity, record["platform"], "independent"), {})[(digest, "python")] = outcome
 
     def test_result(identity, platform, features, target, packaged):
         entries = {key: value for key, value in observed.get((identity, platform, features), {}).items()

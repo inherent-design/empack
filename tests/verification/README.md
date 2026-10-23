@@ -61,12 +61,19 @@ values are never included. Generated help routes belong to the help obligation;
 classifying those routes does not qualify the operations they describe.
 
 `python-bindings.json` assigns each unittest identity an evidence boundary and
-requirement owner. Pure parser checks, controlled helper calls and actual script
-processes remain distinct from executing empack or a consumer. `doctest-bindings.json`
-records rustdoc identities and reviewed ignore policy. Compile-only examples and
-expected constructor-access failures do not establish runtime behavior. Rustdoc
-source-line moves require an explicit binding update; they cannot silently remove
-a case. Binding checks reject unknown and vanished identities.
+requirement owner. `scripts/verify.py python` executes that fixed inventory and retains
+lifecycle callbacks, including subtest and setup failures. Admission checks exact
+source/input/classification identities, interpreter version/digest and complete
+outcomes. Python cases use `independent`, with no empack executable identity. Pure
+parser checks, controlled helper calls and actual script processes remain distinct
+from executing empack or a consumer. CI rejects absent or failed tooling records;
+reports retain failed attempts alongside later passes.
+
+`doctest-bindings.json` records rustdoc identities and reviewed ignore policy.
+Compile-only examples and expected constructor-access failures do not establish
+runtime behavior. Rustdoc source-line moves require an explicit binding update;
+they cannot silently remove a case. Binding checks reject unknown and vanished
+identities. Doctest execution admission remains separate unfinished work.
 
 ```bash
 python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings tests/verification/test-bindings.json --test-features all

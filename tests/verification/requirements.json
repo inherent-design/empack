@@ -4418,14 +4418,35 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-088.python-lifecycle",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_python_evidence.PythonLifecycle.test_actual_callbacks_keep_subtest_failure_skip_and_expected_failure",
+            "python::test_python_evidence.PythonLifecycle.test_class_setup_failure_cannot_become_empty_success",
+            "python::test_python_evidence.PythonLifecycle.test_duplicate_unstarted_and_incomplete_callbacks_do_not_pass"
+          ],
+          "required_platforms": [
+            "linux"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Unittest callbacks retain subtest failures, expected failures and skipped assertions instead of a green summary",
+            "Setup failure and incomplete or duplicate executions cannot supply passing test evidence"
+          ],
+          "remaining_group_evidence": "This helper evidence does not execute empack, a consumer, generated workflows or final archives; other harness obligations remain separate."
+        }
+      ],
       "owner_now": [
         "release.yml and external process harness"
       ],
       "owner_09": [
         "CLI archive and SDK client/worker packages"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "PORT-001",

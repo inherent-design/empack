@@ -13,6 +13,7 @@ import test_release_inputs as input_fixtures
 from verification.evidence import sha256, write_json
 from verification import release
 from verification.consumer import INPUTS
+from verification.python_tests import PRODUCER_INPUTS
 
 
 class ReleaseArchiveGate(unittest.TestCase):
@@ -23,9 +24,9 @@ class ReleaseArchiveGate(unittest.TestCase):
         input_fixtures.ReleaseInputs.setUp(self)
         registry = self.root / "tests/verification"
         registry.mkdir(parents=True)
-        for name in ("requirements.json", "test-bindings.json"):
+        for name in ("requirements.json", "test-bindings.json", "python-bindings.json"):
             (registry / name).write_bytes((ci_fixtures.SCRIPTS.parent / "tests/verification" / name).read_bytes())
-        for name in INPUTS:
+        for name in (*INPUTS, *PRODUCER_INPUTS):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())

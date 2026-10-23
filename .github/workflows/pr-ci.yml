@@ -53,7 +53,17 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.13.5"
-      - run: python3 -m unittest discover -s scripts/tests
+      - run: python3 scripts/verify.py python --output target/verification-python
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-python
+          path: |
+            target/verification-python/*/receipt.json
+            target/verification-python/*/inventory.json
+            target/verification-python/*/events.json
+            target/verification-python/*/run.log
+          if-no-files-found: error
       - run: python3 scripts/check-test-map.py --discover-tooling target/verification-inventory
       - uses: actions/upload-artifact@v7
         if: always()

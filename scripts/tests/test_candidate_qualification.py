@@ -192,6 +192,34 @@ class CandidateCommand(unittest.TestCase):
             else:
                 self.assertIn("status disagrees", result["reason"])
 
+    def test_python_observations_are_independent_and_cannot_qualify_missing_products(self):
+        from test_python_evidence import fixture
+        self.admit()
+        output = self.root / ".git/python"
+        classification = json.loads((self.root / "tests/verification/python-bindings.json").read_text())
+        data = fixture(self.root, output, classification)
+        data["source_revision"] = self.revision
+        path = output / "receipt.json"
+        write_json(path, data)
+        candidate = self.root / ".git/candidate.json"
+        command = [sys.executable, str(SCRIPTS / "qualify-release.py"), "gate",
+                   "--payload", str(self.output), "--archive-evidence-sha256", sha256(self.output / "archive-evidence.json"),
+                   "--tooling", str(path), "--revision", self.revision, "--version", self.version, "--output", str(candidate)]
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 2, process.stderr)
+        result = json.loads(candidate.read_text())
+        self.assertFalse(result["qualification"])
+        tooling = result["tooling_evidence"][0]
+        self.assertEqual(tooling["features"], "independent")
+        self.assertNotIn("artifact_sha256", tooling)
+        case = next(c for r in result["acceptance"]["requirements"] for c in r["cases"] if c["id"] == "UX-088.python-lifecycle")
+        self.assertEqual(case["status"], "PASS")
+        data["features"] = "telemetry"
+        write_json(path, data)
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 1, process.stderr)
+        self.assertEqual(json.loads(candidate.read_text())["status"], "FAIL")
+
     def test_supplemental_suite_cannot_substitute_another_product_or_unclean_source(self):
         self.admit()
         from verification.qualification import qualify
