@@ -1,0 +1,170 @@
+{
+  "description": "Original synthetic stored ZIP fixtures: one writable, non-executable empty file named empty. No production archive encoder is used. Invalid cases patch one structural field or truncate the end record.",
+  "source": "PKWARE APPNOTE 6.3.10 sections 4.3.7, 4.3.12 and 4.3.14\u20134.3.16",
+  "valid": [
+    {
+      "id": "ordinary",
+      "hex": "504b03041400000000000000210000000000000000000000000005000000656d707479504b0102140314000000000000002100000000000000000000000000050000000000000000000000a48100000000656d707479504b0506000000000100010033000000230000000000"
+    },
+    {
+      "id": "zip64",
+      "hex": "504b03041400000000000000210000000000000000000000000005000000656d707479504b0102140314000000000000002100000000000000000000000000050000000000000000000000a48100000000656d707479504b06062c000000000000002d002d0000000000000000000100000000000000010000000000000033000000000000002300000000000000504b060700000000560000000000000001000000504b050600000000ffffffffffffffffffffffff0000"
+    }
+  ],
+  "invalid": [
+    {
+      "id": "ordinary-multi-disk",
+      "base": "ordinary",
+      "offset": 90,
+      "hex": "0100"
+    },
+    {
+      "id": "ordinary-central-signature",
+      "base": "ordinary",
+      "offset": 35,
+      "hex": "00000000"
+    },
+    {
+      "id": "ordinary-name-overrun",
+      "base": "ordinary",
+      "offset": 63,
+      "hex": "ffff"
+    },
+    {
+      "id": "ordinary-extra-overrun",
+      "base": "ordinary",
+      "offset": 65,
+      "hex": "ffff"
+    },
+    {
+      "id": "ordinary-comment-overrun",
+      "base": "ordinary",
+      "offset": 67,
+      "hex": "ffff"
+    },
+    {
+      "id": "ordinary-truncated-end",
+      "base": "ordinary",
+      "truncate": 107
+    },
+    {
+      "id": "zip64-multi-disk",
+      "base": "zip64",
+      "offset": 166,
+      "hex": "0100"
+    },
+    {
+      "id": "zip64-central-signature",
+      "base": "zip64",
+      "offset": 35,
+      "hex": "00000000"
+    },
+    {
+      "id": "zip64-name-overrun",
+      "base": "zip64",
+      "offset": 63,
+      "hex": "ffff"
+    },
+    {
+      "id": "zip64-extra-overrun",
+      "base": "zip64",
+      "offset": 65,
+      "hex": "ffff"
+    },
+    {
+      "id": "zip64-comment-overrun",
+      "base": "zip64",
+      "offset": 67,
+      "hex": "ffff"
+    },
+    {
+      "id": "zip64-truncated-end",
+      "base": "zip64",
+      "truncate": 183
+    },
+    {
+      "id": "ordinary-count-mismatch",
+      "base": "ordinary",
+      "offset": 96,
+      "hex": "0000"
+    },
+    {
+      "id": "ordinary-directory-bounds",
+      "base": "ordinary",
+      "offset": 102,
+      "hex": "57000000"
+    },
+    {
+      "id": "zip64-locator-signature",
+      "base": "zip64",
+      "offset": 142,
+      "hex": "00000000"
+    },
+    {
+      "id": "zip64-locator-disks",
+      "base": "zip64",
+      "offset": 158,
+      "hex": "02000000"
+    },
+    {
+      "id": "zip64-record-outside-source",
+      "base": "zip64",
+      "offset": 150,
+      "hex": "ffffffffffffffff"
+    },
+    {
+      "id": "zip64-record-signature",
+      "base": "zip64",
+      "offset": 86,
+      "hex": "00000000"
+    },
+    {
+      "id": "zip64-record-disks",
+      "base": "zip64",
+      "offset": 102,
+      "hex": "01000000"
+    },
+    {
+      "id": "zip64-entry-limit",
+      "base": "zip64",
+      "offset": 118,
+      "hex": "ffffffffffffffff"
+    },
+    {
+      "id": "zip64-metadata-limit",
+      "base": "zip64",
+      "offset": 126,
+      "hex": "0100000100000000"
+    },
+    {
+      "id": "zip64-directory-overflow",
+      "base": "zip64",
+      "offset": 134,
+      "hex": "ffffffffffffffff"
+    },
+    {
+      "id": "zip64-directory-bounds",
+      "base": "zip64",
+      "offset": 134,
+      "hex": "ba00000000000000"
+    },
+    {
+      "id": "zip64-count-mismatch",
+      "base": "zip64",
+      "offset": 118,
+      "hex": "0000000000000000"
+    },
+    {
+      "id": "zip64-short-end-record",
+      "base": "zip64",
+      "offset": 90,
+      "hex": "0000000000000000"
+    },
+    {
+      "id": "zip64-overflowing-end-record",
+      "base": "zip64",
+      "offset": 90,
+      "hex": "ffffffffffffffff"
+    }
+  ]
+}

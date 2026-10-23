@@ -1743,7 +1743,82 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-015.namespace-authority",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::contracts::portable_paths_reject_host_dependent_or_ambiguous_names",
+            "empack-core::contracts::opaque_archive_names_preserve_spelling_without_granting_portable_destinations",
+            "empack-lib::engine::layout::tests::collision_policy_preserves_spelling_and_rejects_aliases_on_every_host"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Portable extraction paths reject traversal, host-dependent names and aliases; opaque archive spelling does not grant filesystem destination authority"
+          ],
+          "remaining_group_evidence": "Native captured-input/publication fault cases and complete cross-platform observations remain separate; these fixtures do not establish browser codec behavior"
+        },
+        {
+          "id": "UX-015.bounded-member-inspection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::archive_source::tests::metadata_and_raw_duplicate_checks_cover_unselected_members_before_extraction",
+            "empack-lib::engine::archive_source::tests::failed_digest_and_crc_reads_never_return_content_or_reset_the_extraction_allowance",
+            "empack-lib::engine::archive_source::tests::linked_and_nonportable_directory_members_are_refused_without_panicking",
+            "empack-lib::engine::archive_source::tests::whole_archive_verification_checks_crc_and_consumes_one_bounded_read_pass",
+            "empack-lib::engine::archive_source::tests::opaque_mod_inspection_accepts_case_distinct_and_native_reserved_jvm_members",
+            "empack-lib::engine::archive_source::tests::opaque_inspection_keeps_namespace_integrity_and_bounded_verification",
+            "empack-lib::engine::archive_source::tests::opaque_members_do_not_inherit_native_destination_restrictions",
+            "empack-lib::engine::archive_source::tests::opaque_inspection_validates_directories_and_rejects_linked_members",
+            "empack-lib::engine::archive_source::tests::namespace_indexing_never_precedes_archive_depth_admission"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "All members, including unselected ones, undergo namespace, type, depth, count and declared-size checks before extraction authority is available",
+            "Failed digest/CRC reads consume the existing allowance; exact opaque JAR names remain distinct from portable extraction paths"
+          ],
+          "remaining_group_evidence": "Native captured-input/publication fault cases and complete cross-platform observations remain separate; these fixtures do not establish browser codec behavior"
+        },
+        {
+          "id": "UX-015.zip-header-and-metadata-admission",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::headers::literal_zip_headers_agree_across_source_opaque_and_artifact_readers",
+            "empack-lib::engine::artifacts::tests::headers::zip64_extension_data_shares_the_metadata_budget"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Literal ordinary ZIP and ZIP64 bytes yield one exact empty file with the required attributes across source, opaque and artifact readers",
+            "Malformed signatures, locator/record boundaries, counts, variable-length headers and overflowing ZIP64 arithmetic fail before parser allocation",
+            "ZIP64 extension data and the central directory share the 16 MiB metadata budget; an exact-boundary file succeeds and the next byte is rejected"
+          ],
+          "remaining_group_evidence": "Native captured-input/publication fault cases and complete cross-platform observations remain separate; these fixtures do not establish browser codec behavior"
+        }
+      ],
       "owner_now": [
         "engine::acquisition/content/archive_source/import",
         "engine::native/snapshot/staging/verification/publication"
@@ -1752,7 +1827,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-016",

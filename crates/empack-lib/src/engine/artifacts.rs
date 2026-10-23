@@ -358,6 +358,8 @@ pub(super) fn preflight_zip(
     let mut central_size = u64::from(u32_at(12));
     let mut central = u64::from(u32_at(16));
     let end_position = size - count as u64 + eocd as u64;
+    let mut directory_boundary = end_position;
+    let mut zip64_extension_bytes = 0;
     if entries == u64::from(u16::MAX)
         || central_size == u64::from(u32::MAX)
         || central == u64::from(u32::MAX)
@@ -372,15 +374,33 @@ pub(super) fn preflight_zip(
                 && u32::from_le_bytes(locator[16..20].try_into().unwrap()) == 1,
             "Invalid ZIP64 locator"
         );
-        source.seek(SeekFrom::Start(u64::from_le_bytes(
-            locator[8..16].try_into().unwrap(),
-        )))?;
+        let record_position = u64::from_le_bytes(locator[8..16].try_into().unwrap());
+        let locator_position = end_position - 20;
+        ensure!(
+            record_position
+                .checked_add(56)
+                .is_some_and(|end| end <= locator_position),
+            "ZIP64 end record exceeds locator bounds"
+        );
+        source.seek(SeekFrom::Start(record_position))?;
         let mut record = [0u8; 56];
         source.read_exact(&mut record)?;
         ensure!(
             record[..4] == *b"PK\x06\x06" && record[16..24] == [0; 8],
             "Invalid ZIP64 end record"
         );
+        let record_size = u64::from_le_bytes(record[4..12].try_into().unwrap());
+        ensure!(record_size >= 44, "ZIP64 end record is too short");
+        let record_end = record_position
+            .checked_add(12)
+            .and_then(|position| position.checked_add(record_size))
+            .context("ZIP64 end record size overflow")?;
+        ensure!(
+            record_end == locator_position,
+            "ZIP64 end record length disagrees with its locator"
+        );
+        zip64_extension_bytes = record_size - 44;
+        directory_boundary = record_position;
         entries = u64::from_le_bytes(record[32..40].try_into().unwrap());
         central_size = u64::from_le_bytes(record[40..48].try_into().unwrap());
         central = u64::from_le_bytes(record[48..56].try_into().unwrap());
@@ -389,16 +409,19 @@ pub(super) fn preflight_zip(
         entries <= limits.entries as u64,
         "Archive exceeds entry limit"
     );
-    // Bound parser metadata before ZipArchive allocates its name index.
+    // Bound both the name index input and ZIP64 extensible data before
+    // ZipArchive allocates either. Compressed-byte admission is not a metadata bound.
     ensure!(
-        central_size <= 16 * 1024 * 1024,
+        central_size
+            .checked_add(zip64_extension_bytes)
+            .is_some_and(|bytes| bytes <= 16 * 1024 * 1024),
         "ZIP metadata exceeds 16 MiB limit"
     );
     let central_end = central
         .checked_add(central_size)
         .ok_or_else(|| anyhow::anyhow!("ZIP directory overflow"))?;
     ensure!(
-        central_end <= end_position,
+        central_end <= directory_boundary,
         "ZIP directory extends beyond its end record"
     );
     source.seek(SeekFrom::Start(central))?;

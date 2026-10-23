@@ -84,6 +84,15 @@ use the existing private origin mapping to exercise authenticated same-origin an
 cross-origin redirects. These are controlled wire checks, not live TLS/provider or
 public-executable HTTPS qualification.
 
+The [archive header corpus](../tests/fixtures/archives/README.md) supplies literal
+ordinary ZIP and ZIP64 bytes to source inspection, opaque inspection, and artifact
+verification. It covers malformed record arithmetic and metadata admission in
+addition to the existing member-name, CRC, and extraction-budget tests. Boundary
+cases retain valid ZIP64 extension data at the combined metadata limit and reject
+the next byte. The fixture driver uses no production archive encoder to construct
+its expected inventory. Native captured-input faults and future browser execution
+remain distinct evidence obligations.
+
 The mixed CurseForge host fixture uses controlled provider records with no download
 URL plus embedded author overrides. It resumes after the original archive is gone,
 rejects mismatched supplied bytes, and retains exact provider identity separately
