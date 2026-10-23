@@ -181,7 +181,7 @@ class AttemptPolicy(unittest.TestCase):
         from verify import Blocked, product
         with tempfile.TemporaryDirectory() as directory:
             args = SimpleNamespace(binary='relative', sha256=None, version=None,
-                                   target=None, product_features=None)
+                                   target=None, product_features=None, product_profile=None)
             with self.assertRaisesRegex(Blocked, 'requires --sha256'):
                 product(args, Path(directory), {}, 'host')
 
@@ -195,13 +195,41 @@ class AttemptPolicy(unittest.TestCase):
             binary = root / 'empack'
             binary.write_bytes(b'fixture binary; never executed')
             args = SimpleNamespace(binary=str(binary), sha256='0' * 64, version='1',
-                                   target='fixture-target', product_features='default')
+                                   target='fixture-target', product_features='default', product_profile='dev')
             with self.assertRaisesRegex(Blocked, 'SHA-256'):
                 product(args, root, {}, 'host')
             args.sha256 = sha256(binary)
             with patch('verify.checked', return_value='empack 2\n'):
                 with self.assertRaisesRegex(Blocked, 'expected version'):
                     product(args, root, {}, 'host')
+
+    def test_release_profile_builds_and_executes_the_separate_product(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from verify import product
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "empack/src").mkdir(parents=True)
+            (root / "Cargo.toml").write_text(
+                '[workspace]\nmembers = ["empack"]\nresolver = "2"\n'
+                '[workspace.package]\nversion = "1.2.3"\n')
+            (root / "Cargo.lock").write_text(
+                'version = 4\n[[package]]\nname = "empack"\nversion = "1.2.3"\n')
+            (root / "empack/Cargo.toml").write_text(
+                '[package]\nname = "empack"\nversion.workspace = true\nedition = "2024"\n')
+            (root / "empack/src/main.rs").write_text(
+                'fn main() { println!("empack {}", env!("CARGO_PKG_VERSION")); }\n')
+            attempt = root / "attempt"
+            attempt.mkdir()
+            args = SimpleNamespace(binary=None, sha256=None, version=None, target=None,
+                                   product_features="default", product_profile="release", suites=["cli"])
+            with patch("verify.ROOT", root):
+                artifact = product(args, attempt, dict(os.environ), "fixture-host")
+            self.assertEqual(artifact["profile"], "release")
+            self.assertEqual(Path(artifact["path"]).parent.name, "release")
+            self.assertEqual(artifact["version"], "1.2.3")
+            self.assertIn("release", (attempt / "product-build.log").read_text())
+            self.assertEqual((attempt / "product-version.log").read_text().strip(), "empack 1.2.3")
 
     def test_malformed_xml_is_not_a_command_success(self):
         with tempfile.TemporaryDirectory() as directory:

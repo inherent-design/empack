@@ -4,12 +4,23 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Reviewed release target to build and test without publishing
+        type: string
+        required: true
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   BINARY_NAME: empack
+  RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
 jobs:
   build:
@@ -48,10 +59,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - id: version
         shell: bash
-        run: echo "clean=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: echo "clean=${RELEASE_VERSION#v}" >> "$GITHUB_OUTPUT"
 
       - name: Stamp reviewed workspace versions without changing dependencies
         shell: bash
@@ -111,15 +124,116 @@ jobs:
           "ARCHIVE_NAME=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ARCHIVE_PATH=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Bind built executable, archive and immutable inputs
+        shell: bash
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILDER: ${{ matrix.use_cross && 'cross' || 'cargo' }}
+        run: python3 scripts/release-artifacts.py record --inputs .git/release-inputs.json --archive "$ARCHIVE_PATH" --target "$BUILD_TARGET" --builder "$BUILDER" --output .git/release-build
+
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.ARCHIVE_NAME }}
-          path: ${{ env.ARCHIVE_PATH }}
+          name: release-build-${{ matrix.target }}
+          path: .git/release-build/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  test-archives:
+    name: Execute archive ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-26-intel
+          - target: aarch64-apple-darwin
+            os: macos-26
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-build-${{ matrix.target }}
+          path: .git/release-build
+      - name: Run fixed CLI journeys against the extracted final archive
+        shell: bash
+        env:
+          EXECUTION_TARGET: ${{ matrix.target }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          root = Path(".git/release-build")
+          build = json.loads((root / "build.json").read_text())
+          subprocess.run([sys.executable, "scripts/check-release-archive.py",
+              "--archive", str((root / build["archive"]["name"]).resolve()),
+              "--sha256", build["archive"]["sha256"], "--version", build["version"],
+              "--target", os.environ["EXECUTION_TARGET"]], check=True)
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-test-${{ matrix.target }}
+          path: target/verification-packages/
+          if-no-files-found: error
+
+  archive-gate:
+    name: Verify every final archive and stage the same bytes
+    needs: [build, test-archives]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      evidence_sha256: ${{ steps.admit.outputs.evidence_sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: .git/release-evidence
+      - name: Revalidate all five build and execution records
+        id: admit
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+        run: |
+          python3 scripts/release-artifacts.py gate --artifacts .git/release-evidence --version "${RELEASE_VERSION#v}" --revision "$RELEASE_REVISION" --output .git/publish
+          python3 - <<'PYTHON'
+          import hashlib, os
+          from pathlib import Path
+          digest = hashlib.sha256(Path(".git/publish/archive-evidence.json").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("evidence_sha256=" + digest, file=output)
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checked-native-archives
+          path: .git/publish/
+          include-hidden-files: true
           if-no-files-found: error
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: archive-gate
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 60
 
@@ -151,8 +265,15 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
+          name: checked-native-archives
           path: dist
-          merge-multiple: true
+
+      - name: Recheck payload before publication
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+        run: python3 scripts/release-artifacts.py verify-payload --directory dist --version "${RELEASE_VERSION#v}" --revision "$RELEASE_REVISION" --evidence-sha256 "$EVIDENCE_SHA256"
 
       - name: Generate release notes
         id: changelog

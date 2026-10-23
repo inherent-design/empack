@@ -16,14 +16,8 @@ import zipfile
 
 import verify
 from verification.evidence import sha256, write_json
+from verification.release import TARGETS
 
-TARGETS = {
-    "x86_64-unknown-linux-gnu": ("tar.gz", "empack"),
-    "aarch64-unknown-linux-gnu": ("tar.gz", "empack"),
-    "x86_64-apple-darwin": ("tar.gz", "empack"),
-    "aarch64-apple-darwin": ("tar.gz", "empack"),
-    "x86_64-pc-windows-msvc": ("zip", "empack.exe"),
-}
 MAX_ARCHIVE = 512 * 1024 * 1024
 MAX_BINARY = 256 * 1024 * 1024
 
@@ -102,6 +96,8 @@ def main(argv=None):
     parser.add_argument("--sha256", required=True, help="Expected archive SHA-256")
     parser.add_argument("--version", required=True)
     parser.add_argument("--target", choices=TARGETS, required=True)
+    parser.add_argument("--profile", choices=("dev", "release"), default="release",
+                        help="Release builds are required for publication; dev is diagnostic only")
     parser.add_argument("--output", type=Path, default=verify.ROOT / "target/verification-packages")
     args = parser.parse_args(argv)
     archive = args.archive.absolute()
@@ -111,7 +107,7 @@ def main(argv=None):
     record = {"schema": 1, "kind": "extracted-release-archive", "status": "NOT_RUN",
               "qualification": False, "created_at": datetime.now(timezone.utc).isoformat(),
               "archive": {"name": archive.name, "sha256": args.sha256},
-              "version": args.version, "target": args.target, "features": "default",
+              "version": args.version, "target": args.target, "features": "default", "profile": args.profile,
               "scope": "fixed offline CLI suite on extracted bytes; not full release qualification"}
     try:
         extension, _ = TARGETS[args.target]
@@ -134,6 +130,7 @@ def main(argv=None):
             suite_root = attempt / "suite"
             code = verify.main(["cli", "--binary", str(executable), "--sha256", digest,
                                 "--version", args.version, "--target", args.target,
+                                "--product-profile", args.profile,
                                 "--product-features", "default", "--output", str(suite_root)])
             receipts = list(suite_root.glob("*/receipt.json"))
             if len(receipts) != 1:
@@ -143,7 +140,7 @@ def main(argv=None):
             record.update(test_source_revision=result["source_revision"],
                           test_source_snapshot_sha256=result["source_snapshot_sha256"],
                           test_worktree_dirty=result["worktree_dirty"],
-                          suite_receipt=str(receipt.relative_to(attempt)),
+                          suite_receipt=receipt.relative_to(attempt).as_posix(),
                           suite_receipt_sha256=sha256(receipt))
             if code or result["status"] != "PASS":
                 record["status"] = "BLOCKED" if result["status"] == "BLOCKED" else "FAIL"

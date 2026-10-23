@@ -14,7 +14,7 @@ sys.path.insert(0, str(SCRIPTS))
 SPEC = importlib.util.spec_from_file_location("ci_verification", SCRIPTS / "ci-verification.py")
 ci = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ci)
-from verification.evidence import sha256, write_json
+from verification.evidence import selected_tests, sha256, write_json
 from verification.suites import SUITES
 
 REVISION = "a" * 40
@@ -111,7 +111,7 @@ def fixture_attempt(directory, target, features="telemetry", suites=None):
     receipt = dict(schema=1, kind="test-suite-run", status="PASS", source_revision=REVISION, worktree_dirty=False,
                    source_snapshot_sha256=sha256(attempt / "source-snapshot.json"),
                    requested_suites=suites, suites=[],
-                   artifact=dict(target=target, features=features, sha256="c" * 64))
+                   artifact=dict(target=target, features=features, profile="dev", sha256="c" * 64))
     for name in suites:
         suite_dir = attempt / name
         suite_dir.mkdir()
@@ -128,7 +128,7 @@ def fixture_attempt(directory, target, features="telemetry", suites=None):
                 "status": "listed", "binary-name": row["binary_name"], "testcases": {}})
             suite["testcases"][test] = {"ignored": row["ignored"], "filter-match": {"status": "matches"}}
         write_json(suite_dir / "inventory.json", inventory)
-        identities, _ = ci.selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries)
+        identities, _ = selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries)
         # Synthetic successful rows test gate mechanics; these are not executions
         # of the real test IDs used to construct the expected receipt shape.
         xml = []
@@ -222,6 +222,7 @@ class RequiredGate(unittest.TestCase):
                 lambda r: r.update(worktree_dirty=True),
                 lambda r: r["artifact"].update(target=ci.TARGETS[1]),
                 lambda r: r["artifact"].update(features="default"),
+                lambda r: r["artifact"].update(profile="release"),
                 lambda r: r["suites"][0].update(status="BLOCKED"),
                 lambda r: r["suites"][0].update(tests=[]),
                 lambda r: r["suites"][0].update(attempt=2),

@@ -442,6 +442,62 @@
       ]
     },
     {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_all_five_exact_archives_are_staged_without_rebuilding",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_changed_bytes_or_prepared_dependency_inputs_cannot_be_published",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_cross_build_without_native_execution_is_not_a_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_downloaded_payload_is_bound_to_the_gate_digest_and_exact_file_set",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_mutated_junit_is_rechecked_instead_of_trusting_a_pass_label",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_other_version_source_features_and_dirty_execution_are_rejected",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_workflow_requires_five_native_execution_hosts_and_never_rebuilds_for_publication",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_release_inputs.ReleaseInputs.test_deterministic_stamping_retains_external_lock_records_and_comments",
       "boundary": "H",
       "requirements": [
@@ -735,6 +791,14 @@
       "boundary": "H",
       "requirements": [
         "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_release_profile_builds_and_executes_the_separate_product",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
         "UX-088"
       ]
     },

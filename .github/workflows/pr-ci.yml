@@ -169,7 +169,7 @@ jobs:
           import json, os, subprocess
           suites = json.loads(os.environ["LIVE_SUITES"])
           subprocess.run(["python3", "scripts/verify.py", *suites,
-                          "--product-features", "telemetry"], check=True)
+                          "--product-features", "telemetry", "--product-profile", "release"], check=True)
           PYTHON
       - uses: actions/upload-artifact@v7
         if: always()

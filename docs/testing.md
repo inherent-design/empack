@@ -159,7 +159,7 @@ cargo test -p empack-tests --all-features --test cli_exit_codes cli_interrupt_ex
 python3 scripts/verify.py deterministic
 python3 scripts/verify.py cli
 python3 scripts/verify.py telemetry
-python3 scripts/verify.py live-catalog live-provider-cli live-modrinth server-cli
+python3 scripts/verify.py live-catalog live-provider-cli live-modrinth server-cli --product-profile release
 ```
 
 Fixed selections live in `scripts/verification/suites.py`. `mise run e2e` remains a
@@ -173,7 +173,13 @@ The separate `live-modrinth` and `live-curseforge` selections name exact discove
 provider tests. `runtime-current` selects the managed vanilla and NeoForge launcher
 checks plus the Fabric classpath check. `live-runtime` retains the full historical
 matrix and additionally requires `EMPACK_TEST_JAVA8_HOME`. Missing named tests or
-prerequisites cannot silently reduce one of these selections.
+prerequisites cannot silently reduce one of these selections. CI live probes and
+`e2e:strict` build an independent release-profile product; normal deterministic and
+CLI checks retain their development-profile builds. The test driver remains separate
+from that product. Use `--product-profile release` for comparable local live evidence.
+The receipt records the selected profile, and the CI gate rejects a development
+artifact as a substitute for the live release-profile run. This does not change
+installer/startup deadlines or retry a failed operation.
 
 Each invocation creates a fresh directory under `target/verification/` containing
 compiler discovery, Nextest JUnit, bounded redacted logs, a source-file digest manifest,
@@ -196,10 +202,10 @@ run separately from the Rust receipts.
 To select an independently built executable, supply all identity fields explicitly:
 
 ```sh
-python3 scripts/verify.py cli --binary /absolute/path/empack --sha256 EXPECTED_SHA256 --version EXPECTED_VERSION --target TARGET_TRIPLE --product-features default
+python3 scripts/verify.py cli --binary /absolute/path/empack --sha256 EXPECTED_SHA256 --version EXPECTED_VERSION --target TARGET_TRIPLE --product-features default --product-profile release
 ```
 
-The runner verifies digest and version. For an external executable, target and features
+The runner verifies digest and version. For an external executable, target, features and build profile
 are caller-supplied provenance; final release qualification must bind them to the build
 record. A locally built product records the runner's ordinary-package build selection.
 Neither mode establishes actual consumer startup, platform coverage elsewhere, or final
@@ -340,10 +346,20 @@ substitute. The test harness itself is compiled from the current test checkout.
 receipt, compiler inventory, JUnit and bounded logs per attempt. Archive and executable
 digests are rechecked afterward. A changed, failed or unexecuted archive cannot pass.
 The record distinguishes the test-source revision from the product's caller-supplied
-identity; it does not establish the product's build provenance. This is a bounded
-package check, not complete release qualification. Build records, full candidate
-acceptance and publication of those same tested bytes still need to be connected
-to these package results in the release workflow.
+identity; it does not establish the product's build provenance by itself. The release
+workflow joins this evidence to the corresponding build record. It executes each of
+the five archives on its native target, including ARM64 Linux; cross-compilation alone
+does not satisfy execution. The gate rechecks source, version, profile, features,
+archive/executable digests and the underlying compiler inventory and JUnit results.
+Only those tested archives enter the publication payload. Publication verifies its
+checksums and the gate's evidence digest again, without rebuilding.
+
+`workflow_dispatch` accepts the reviewed version and exercises this pipeline without
+publishing. Tag pushes additionally publish the checked payload. These archive checks
+are not complete candidate qualification: the remaining native/consumer requirement
+results and approved-waiver policy still need their own gate. Missing platform
+execution remains a failure, not a cross-build pass. A configured workflow is not
+proof that its five-host execution has succeeded.
 
 Release builds now run `scripts/prepare-release.py` in a clean disposable checkout.
 The requested version must match the reviewed workspace release target. Stamping
@@ -352,7 +368,13 @@ external dependencies and their checksums remain unchanged. The input record ret
 the source commit/tree, original and stamped Cargo-file digests and toolchain digest.
 Build metadata uses the source commit's date, and both Cargo and cross build with
 `--locked`. A new dependency or an ambiguous lockfile shape requires a source change,
-not implicit dependency resolution during publication.
+not implicit dependency resolution during publication. `Cross.toml` forwards only the
+public `GIT_HASH` and `BUILD_DATE` stamping variables into the cross-build container.
+
+Build artifacts retain `build.json`; execution artifacts retain the package and suite
+receipts. `scripts/release-artifacts.py gate` validates their complete five-target set
+and writes `archive-evidence.json` plus `SHA256SUMS` alongside the unchanged archives.
+The evidence explicitly records that full candidate qualification remains separate.
 
 ## Coverage and release qualification
 

@@ -51,9 +51,10 @@ def isolated_environment(root):
 
 def product(args, attempt, environment, host):
     features = args.product_features
+    profile = args.product_profile
     if args.binary:
-        if not all((args.sha256, args.version, args.target, features)):
-            raise Blocked("--binary requires --sha256, --version, --target and --product-features")
+        if not all((args.sha256, args.version, args.target, features, profile)):
+            raise Blocked("--binary requires --sha256, --version, --target, --product-features and --product-profile")
         path = Path(args.binary)
         if not path.is_absolute() or not path.is_file():
             raise Blocked("--binary must identify an existing absolute file")
@@ -66,16 +67,19 @@ def product(args, attempt, environment, host):
         if any((args.sha256, args.version, args.target)):
             raise Blocked("Artifact identity overrides require --binary")
         features = features or ("telemetry" if any(SUITES[s].telemetry for s in args.suites) else "default")
+        profile = profile or "dev"
         target = host
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         # A distinct target directory keeps product compilation outside the additive
         # workspace test feature graph. Build the ordinary product package only.
         target_dir = ROOT / "target" / "verification-product" / features
         command = ["cargo", "build", "--locked", "-p", "empack", "--target-dir", str(target_dir)]
+        if profile == "release":
+            command += ["--release"]
         if features == "telemetry":
             command += ["--features", "telemetry"]
-        checked(command, attempt, "product-build", environment, timeout=1800)
-        path = target_dir / "debug" / ("empack.exe" if os.name == "nt" else "empack")
+        checked(command, attempt, "product-build", environment, timeout=1800, cwd=ROOT)
+        path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
         digest = sha256(path)
         provenance = "built by this runner from the ordinary product package"
     if sha256(path) != digest:
@@ -87,7 +91,7 @@ def product(args, attempt, environment, host):
     if output.strip() != f"empack {version}":
         raise Blocked("Selected binary does not match the expected version")
     return {"path": str(path), "sha256": digest, "version": version,
-            "target": target, "features": features, "provenance": provenance}
+            "target": target, "features": features, "profile": profile, "provenance": provenance}
 
 
 def java_probe(attempt, environment, label="java", home_variable="JAVA_HOME"):
@@ -213,6 +217,8 @@ def main(argv=None):
     parser.add_argument("--version")
     parser.add_argument("--target")
     parser.add_argument("--product-features", choices=("default", "telemetry"))
+    parser.add_argument("--product-profile", choices=("dev", "release"),
+                        help="Product build profile (default dev); required for an external binary")
     parser.add_argument("--output", type=Path, default=ROOT / "target/verification")
     args = parser.parse_args(argv)
     if len(set(args.suites)) != len(args.suites):
