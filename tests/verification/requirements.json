@@ -1127,6 +1127,28 @@
             "Inspection preserves project and pending-state bytes; stale drafts remain distinguishable"
           ],
           "remaining_group_evidence": "Import/sync/instance families, corrupt records and ambiguous IDs remain required"
+        },
+        {
+          "id": "UX-034.sync-public-inspection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh executable list/show agree on complete synchronization requirements, exact provider identities, digests and lengths",
+            "Inspection preserves author, state and cache bytes; retained bytes remain explicitly unverified until resume; changed author text reports stale"
+          ],
+          "remaining_group_evidence": "Import/instance families, corrupt records and ambiguous IDs remain required"
         }
       ],
       "owner_now": [
@@ -1183,6 +1205,27 @@
             "Correct renamed bytes are retained in the independently inspected artifact"
           ],
           "remaining_group_evidence": "Other record families, ambiguous multi-role selections and interactive/package evidence remain required"
+        },
+        {
+          "id": "UX-035.sync-manual-association",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Association keys come from public exact-provider selections; equal-length wrong bytes leave project and saved operation unchanged",
+            "Correct renamed inputs materialize the independent complete two-file inventory"
+          ],
+          "remaining_group_evidence": "Import/instance families, ambiguous multi-role selections and interactive/package evidence remain required"
         }
       ],
       "owner_now": [
@@ -1261,6 +1304,29 @@
             "Declining preserves the author workspace, pending record and supplied file"
           ],
           "remaining_group_evidence": "Other record families and acceptance after approval remain required"
+        },
+        {
+          "id": "UX-036.sync-partial-restart",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A separate executable retains the first verified input while the second is missing without publishing a partial project",
+            "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
+            "Repeated synchronization converges; changed author bytes prevent stale resume"
+          ],
+          "remaining_group_evidence": "Import/instance families and their restart/staleness variants remain required"
         }
       ],
       "owner_now": [
@@ -1352,6 +1418,27 @@
             "Discarded ID cannot be resumed"
           ],
           "remaining_group_evidence": "Race/active-owner, other record-family and recovery-journal preservation cases remain required"
+        },
+        {
+          "id": "UX-038.sync-explicit-discard",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A genuinely captured stale synchronization remains inspectable; dry-run discard and legacy cleanup preserve all bytes",
+            "Explicit public discard and legacy sync cleanup both remove the saved obligation while preserving authored content"
+          ],
+          "remaining_group_evidence": "Import/instance families and interrupted discard evidence remain required"
         }
       ],
       "owner_now": [

@@ -16,13 +16,20 @@ use files::snapshot;
 
 fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
     let mut command = offline_command(project.dir());
-    command.arg("--state-dir").arg(state).arg("--yes");
+    command
+        .arg("--state-dir")
+        .arg(state)
+        .arg("--cache-dir")
+        .arg(state.with_extension("cache"))
+        .arg("--yes");
     command
 }
 
 fn report(project: &TestProject, state: &Path, args: &[&str]) -> Value {
     let before_project = snapshot(project.dir());
     let before_state = state.exists().then(|| snapshot(state));
+    let cache = state.with_extension("cache");
+    let before_cache = cache.exists().then(|| snapshot(&cache));
     let output = command(project, state)
         .args(args)
         .assert()
@@ -32,10 +39,11 @@ fn report(project: &TestProject, state: &Path, args: &[&str]) -> Value {
         .clone();
     assert_eq!(snapshot(project.dir()), before_project);
     assert_eq!(state.exists().then(|| snapshot(state)), before_state);
+    assert_eq!(cache.exists().then(|| snapshot(&cache)), before_cache);
     serde_json::from_slice(&output).unwrap()
 }
 
-fn pending(project: &TestProject, state: &Path) -> Value {
+fn pending(project: &TestProject, state: &Path, kind: &str) -> Value {
     let listed = report(project, state, &["pending", "list", "--json"]);
     assert_eq!(listed["schema"], 1);
     assert_eq!(listed["operations"].as_array().unwrap().len(), 1);
@@ -43,7 +51,7 @@ fn pending(project: &TestProject, state: &Path) -> Value {
     let id = operation["id"].as_str().unwrap();
     let shown = report(project, state, &["pending", "show", id, "--json"]);
     assert_eq!(shown["operations"], json!([operation]));
-    assert_eq!(operation["kind"], "build");
+    assert_eq!(operation["kind"], kind);
     operation
 }
 
@@ -66,7 +74,7 @@ fn journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes() {
         .stderr(predicates::str::contains("continuation was saved"));
     assert_eq!(snapshot(project.dir()), before);
 
-    let operation = pending(&project, &state);
+    let operation = pending(&project, &state, "build");
     assert_ne!(operation["state"], "stale");
     assert_eq!(operation["inputs"].as_array().unwrap().len(), 1);
     let input = &operation["inputs"][0];
@@ -108,7 +116,7 @@ fn journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes() {
         command(&project, &state).args(args).assert().failure();
         assert_eq!(snapshot(project.dir()), before);
         assert_eq!(snapshot(&state), retained);
-        assert_eq!(pending(&project, &state), operation);
+        assert_eq!(pending(&project, &state, "build"), operation);
     }
 
     fs::write(&supplied, b"payload").unwrap();
@@ -154,7 +162,7 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
         .args(["build", "modrinth"])
         .assert()
         .failure();
-    let operation = pending(&project, &state);
+    let operation = pending(&project, &state, "build");
     let id = operation["id"].as_str().unwrap();
     let supplied = host.path().join("renamed.bin");
     fs::write(&supplied, b"payload").unwrap();
@@ -168,7 +176,7 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
     fs::write(&author_path, format!("# Edited after suspension\n{author}")).unwrap();
     let before = snapshot(project.dir());
     let retained = snapshot(&state);
-    let stale = pending(&project, &state);
+    let stale = pending(&project, &state, "build");
     assert_eq!(stale["id"], id);
     assert_eq!(stale["state"], "stale");
     command(&project, &state)
@@ -198,4 +206,250 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
         .failure()
         .stderr(predicates::str::contains("No pending operation"));
     assert_eq!(snapshot(project.dir()), before);
+}
+
+/// Select by the public exact provider identity; the association key is opaque.
+fn sync_input(operation: &Value, project: &str) -> Value {
+    operation["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|input| input["provider_selection"]["project"] == project)
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup() {
+    let project = empack_tests::fixtures::restricted::pair("pending-sync");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let original = snapshot(project.dir());
+    command(&project, &state)
+        .args(["sync", "--materialize"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    assert_eq!(snapshot(project.dir()), original);
+    let operation = pending(&project, &state, "sync");
+    assert_eq!(operation["requirements_complete"], true);
+    assert_eq!(operation["inputs"].as_array().unwrap().len(), 2);
+    let first = sync_input(&operation, "123");
+    let second = sync_input(&operation, "124");
+    assert_eq!(first["bytes"], 5);
+    assert_eq!(second["bytes"], 6);
+    assert_eq!(first["provider_selection"]["selection"], "456");
+    assert_eq!(second["provider_selection"]["selection"], "457");
+    assert_eq!(first["verification"], "not supplied; verification required");
+    assert_eq!(
+        second["verification"],
+        "not supplied; verification required"
+    );
+    assert_eq!(
+        first["digests"],
+        json!([[
+            "sha512",
+            "7fdd80dbdded156323d36c459e5fd133a4d888c227320cfb7042be9feb35d7f07201e535697af914e69d6f46b2a88655c86c2371288052ccd4fa92058b01d3fd"
+        ]])
+    );
+    assert_eq!(
+        second["digests"],
+        json!([[
+            "sha512",
+            "9381e9a67aa361751cea90178c094ad6133742163cbd14f146be5c3ee6606d4e8ab4bdd839e7c672baa6eb87e06f59b2d3a68ad0533f2a13ef6c0c5d8769216a"
+        ]])
+    );
+    let id = operation["id"].as_str().unwrap();
+    let first_path = host.path().join("renamed first download.bin");
+    let association = format!(
+        "{}={}",
+        first["key"].as_str().unwrap(),
+        first_path.display()
+    );
+    fs::write(&first_path, b"wrong").unwrap();
+    let retained = snapshot(&state);
+    command(&project, &state)
+        .args(["--dry-run", "pending", "resume", id])
+        .assert()
+        .success();
+    command(&project, &state)
+        .args(["pending", "resume", id, "--file", &association])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&state), retained);
+    assert_eq!(snapshot(project.dir()), original);
+
+    fs::write(&first_path, b"first").unwrap();
+    command(&project, &state)
+        .args(["pending", "resume", id, "--file", &association])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    assert_eq!(snapshot(project.dir()), original);
+    let partial = pending(&project, &state, "sync");
+    assert_eq!(
+        sync_input(&partial, "123")["verification"],
+        "retained; verification required"
+    );
+    assert_eq!(
+        sync_input(&partial, "124")["verification"],
+        "not supplied; verification required"
+    );
+    fs::remove_file(&first_path).unwrap();
+    // Evict the ordinary cache too: later success must use the retained input,
+    // not the download path or an incidental acquisition-cache hit.
+    command(&project, &state)
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    assert!(
+        snapshot(&state.with_extension("cache"))
+            .values()
+            .all(|bytes| bytes != b"first")
+    );
+    let protected = snapshot(&state);
+    command(&project, &state)
+        .args(["clean", "retained"])
+        .assert()
+        .success();
+    assert_eq!(
+        snapshot(&state),
+        protected,
+        "saved inputs remain protected from cleanup"
+    );
+    assert_eq!(pending(&project, &state, "sync"), partial);
+    assert_eq!(snapshot(project.dir()), original);
+
+    let second_path = host.path().join("second renamed.bin");
+    fs::write(&second_path, b"second").unwrap();
+    let second = sync_input(&partial, "124");
+    let association = format!(
+        "{}={}",
+        second["key"].as_str().unwrap(),
+        second_path.display()
+    );
+    let next: Vec<_> = partial["next"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part.as_str().unwrap())
+        .collect();
+    command(&project, &state)
+        .args(next)
+        .args(["--file", &association])
+        .assert()
+        .success();
+    assert_eq!(
+        report(&project, &state, &["pending", "list", "--json"])["operations"],
+        json!([])
+    );
+    // Exact independent materialized inventory, not a planner-produced expectation.
+    assert_eq!(
+        snapshot(&project.dir().join("pack")),
+        std::collections::BTreeMap::from([
+            ("mods/one.jar".into(), b"first".to_vec()),
+            ("mods/two.jar".into(), b"second".to_vec()),
+        ])
+    );
+    let completed = snapshot(project.dir());
+    for _ in 0..2 {
+        command(&project, &state).arg("sync").assert().success();
+        assert_eq!(snapshot(project.dir()), completed);
+    }
+    let retained = snapshot(&state);
+    command(&project, &state)
+        .args(["--dry-run", "clean", "retained"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&state), retained);
+    command(&project, &state)
+        .args(["clean", "retained"])
+        .assert()
+        .success();
+    let cleaned = snapshot(&state);
+    assert_ne!(
+        cleaned, retained,
+        "completed continuation bytes can now be reclaimed"
+    );
+    command(&project, &state)
+        .args(["clean", "retained"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&state), cleaned, "cleanup converges");
+    assert_eq!(snapshot(project.dir()), completed);
+    assert_eq!(fs::read(&second_path).unwrap(), b"second");
+    assert!(!first_path.exists());
+    assert_eq!(
+        fs::read(project.dir().join("empack.yml")).unwrap(),
+        original[std::path::Path::new("empack.yml")]
+    );
+}
+
+#[test]
+fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state() {
+    for public_discard in [true, false] {
+        let project = empack_tests::fixtures::restricted::pair("pending-sync-stale");
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        command(&project, &state)
+            .args(["sync", "--materialize"])
+            .assert()
+            .failure();
+        let operation = pending(&project, &state, "sync");
+        let id = operation["id"].as_str().unwrap();
+        let author_path = project.dir().join("empack.yml");
+        let author = fs::read_to_string(&author_path).unwrap();
+        fs::write(author_path, format!("# Changed since suspension\n{author}")).unwrap();
+        fs::create_dir_all(project.dir().join("pack/config")).unwrap();
+        fs::write(
+            project.dir().join("pack/config/user.txt"),
+            b"retained author content",
+        )
+        .unwrap();
+        let original = snapshot(project.dir());
+        let retained = snapshot(&state);
+        let stale = pending(&project, &state, "sync");
+        assert_eq!(stale["id"], id);
+        assert_eq!(stale["state"], "stale");
+        command(&project, &state)
+            .args(["pending", "resume", id])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("stale"));
+        // Legacy inspection/cleanup remains a supported alias; no private record is injected.
+        command(&project, &state)
+            .args(["sync", "--continue", "--dry-run"])
+            .assert()
+            .failure();
+        command(&project, &state)
+            .args(["clean", "sync", "--dry-run"])
+            .assert()
+            .success();
+        command(&project, &state)
+            .args(["pending", "discard", id, "--dry-run"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(&state), retained);
+        assert_eq!(snapshot(project.dir()), original);
+        if public_discard {
+            command(&project, &state)
+                .args(["pending", "discard", id])
+                .assert()
+                .success();
+        } else {
+            command(&project, &state)
+                .args(["clean", "sync"])
+                .assert()
+                .success();
+        }
+        assert_eq!(
+            report(&project, &state, &["pending", "list", "--json"])["operations"],
+            json!([])
+        );
+        command(&project, &state)
+            .args(["clean", "sync"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(project.dir()), original);
+    }
 }

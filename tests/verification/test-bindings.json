@@ -319,6 +319,14 @@
       "boundary": "X"
     },
     {
+      "id": "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state",
+      "boundary": "X"
+    },
+    {
       "id": "empack-tests::journey_verified_import::journey_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates",
       "boundary": "X"
     },
@@ -488,10 +496,6 @@
     },
     {
       "id": "empack-tests::smoke::smoke_sync_empty_project_is_successful_and_preserves_project",
-      "boundary": "X"
-    },
-    {
-      "id": "empack-tests::smoke::smoke_sync_manual_continuation_and_stale_cleanup",
       "boundary": "X"
     },
     {
