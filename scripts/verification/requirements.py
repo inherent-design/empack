@@ -57,7 +57,8 @@ def case_results(document, classification, evidence, revision):
             raise ValueError("Unknown acceptance test feature graph")
         for test in record["tests"]:
             identity = test["id"]
-            if identity not in bindings or platform not in bindings[identity]["platforms"]:
+            if (identity not in bindings or platform not in bindings[identity]["platforms"]
+                    or graph not in bindings[identity]["test_features"]):
                 raise ValueError(f"Acceptance evidence has an unclassified test variant: {identity}")
             if test["status"] not in {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}:
                 raise ValueError(f"Unexpected acceptance test status: {identity}")

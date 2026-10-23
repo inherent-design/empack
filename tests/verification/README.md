@@ -69,15 +69,20 @@ source-line moves require an explicit binding update; they cannot silently remov
 a case. Binding checks reject unknown and vanished identities.
 
 ```bash
-python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings tests/verification/test-bindings.json
+python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings tests/verification/test-bindings.json --test-features all
+python3 scripts/check-test-map.py --inventory /tmp/empack-tests-minimal.json --bindings tests/verification/test-bindings.json --test-features minimal
 python3 scripts/check-test-map.py --python-inventory /tmp/empack-python-tests.json --python-bindings tests/verification/python-bindings.json
 python3 scripts/check-test-map.py --cli-inventory /tmp/empack-cli.json --cli-bindings tests/verification/cli-bindings.json
 ```
 
-`test-bindings.json` classifies the complete all-features Rust test graph across
+`test-bindings.json` uses schema 3 to classify the minimal and all-features Rust test graphs across
 macOS arm64, Linux x86_64 and Windows x86_64. Each exact Nextest identity has its
-binary ID/name, boundary, owning API responsibility, required platforms and reviewed
-ignore policy. The registry contains expectations, not execution results. Its
+binary ID/name, boundary, owning API responsibility, required platforms, explicit
+`test_features` membership and reviewed ignore policy. Each selected graph is
+compared independently; matching test names across graphs do not substitute for
+executing both. The minimal workspace graph disables default features but retains
+features requested by dependencies, including the test harness’s `test-utils`.
+Product feature selection remains separate. The registry contains expectations, not execution results. Its
 platform union comes from compiler discovery; new platform-neutral tests explicitly
 require every listed host before those variants have run. The `api` field identifies
 implementation responsibility, not measured call coverage or completion of every

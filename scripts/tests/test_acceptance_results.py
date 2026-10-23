@@ -21,7 +21,7 @@ class AcceptanceResults(unittest.TestCase):
                     "cases": [self.case]}
         self.document = {"schema": 1, "requirements": [self.row]}
         self.bindings = {"targets": {"linux-target": "linux", "windows-target": "windows"},
-                         "tests": [{"id": identity, "boundary": "X", "platforms": ["linux", "windows"]}
+                         "tests": [{"id": identity, "boundary": "X", "platforms": ["linux", "windows"], "test_features": ["minimal", "all"]}
                                    for identity in self.case["test_ids"]]}
         self.evidence = [{"source_revision": REVISION, "receipt_sha256": str(index) * 64,
                           "artifact_sha256": str(index + 4) * 64, "target": platform + "-target",
@@ -77,6 +77,10 @@ class AcceptanceResults(unittest.TestCase):
                 self.assertEqual(self.result()["requirements"][0]["status"], status)
 
     def test_receipt_cannot_substitute_another_revision_boundary_or_platform(self):
+        self.bindings["tests"][0]["test_features"] = ["all"]
+        with self.assertRaisesRegex(ValueError, "unclassified test variant"):
+            self.result()
+        self.bindings["tests"][0]["test_features"] = ["minimal", "all"]
         self.evidence[0]["source_revision"] = "b" * 40
         with self.assertRaisesRegex(ValueError, "another revision"):
             self.result()
