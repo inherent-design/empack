@@ -19,7 +19,7 @@ class Suite:
 CLI = (
     "cli_arguments", "cli_build", "cli_dependencies", "cli_entry", "cli_exit_codes",
     "cli_init", "cli_interactive", "cli_pending_build", "journey_authoring",
-    "journey_import", "journey_local_exports", "journey_verified_import", "smoke",
+    "journey_import", "journey_local_exports", "journey_pending", "journey_verified_import", "smoke",
 )
 SUITES = {
     "deterministic": Suite(),

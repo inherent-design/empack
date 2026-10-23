@@ -1105,7 +1105,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-034.build-public-inspection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes",
+            "empack-tests::journey_pending::journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh executable list/show agree on operation identity, provider selection, digest and length",
+            "Inspection preserves project and pending-state bytes; stale drafts remain distinguishable"
+          ],
+          "remaining_group_evidence": "Import/sync/instance families, corrupt records and ambiguous IDs remain required"
+        }
+      ],
       "owner_now": [
         "engine::pending + workflow-specific persisted records; application::engine_host",
         "empack executable + empack-lib::application"
@@ -1114,7 +1137,7 @@
         "shared pending semantics + native/browser retention and UI",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-035",
@@ -1138,7 +1161,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-035.build-manual-association",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Association key comes from public JSON, not private state",
+            "Equal-length wrong bytes, unknown keys and duplicate associations are rejected without changing saved work",
+            "Correct renamed bytes are retained in the independently inspected artifact"
+          ],
+          "remaining_group_evidence": "Other record families, ambiguous multi-role selections and interactive/package evidence remain required"
+        }
+      ],
       "owner_now": [
         "engine::pending + workflow-specific persisted records; application::engine_host",
         "engine::acquisition/content/archive_source/import",
@@ -1149,7 +1195,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-036",
@@ -1165,13 +1211,58 @@
       "required_work": "Exercise build, import, sync, instance dialect parity under shared journey, retain documented aliases.",
       "evidence_tiers": [
         "H",
-        "X"
+        "X",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-036.build-restart-and-staleness",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes",
+            "empack-tests::journey_pending::journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Each public action starts a fresh process",
+            "Public next command completes a suspended build; changed author text prevents stale resume"
+          ],
+          "remaining_group_evidence": "Other record families, partially retained multi-file inputs and legacy parity remain required"
+        },
+        {
+          "id": "UX-036.build-fresh-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_pty_pending_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Resume with valid bytes requests fresh terminal approval",
+            "Declining preserves the author workspace, pending record and supplied file"
+          ],
+          "remaining_group_evidence": "Other record families and acceptance after approval remain required"
+        }
+      ],
       "owner_now": [
         "engine::pending + workflow-specific persisted records; application::engine_host",
         "engine::acquisition/content/archive_source/import",
@@ -1182,7 +1273,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-037",
@@ -1239,7 +1330,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-038.build-explicit-discard",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Dry-run discard preserves saved state",
+            "Explicit discard removes the selected stale recipe and leaves prior artifact, changed author text and download unchanged",
+            "Discarded ID cannot be resumed"
+          ],
+          "remaining_group_evidence": "Race/active-owner, other record-family and recovery-journal preservation cases remain required"
+        }
+      ],
       "owner_now": [
         "engine::pending + workflow-specific persisted records; application::engine_host",
         "engine::native/snapshot/staging/verification/publication"
@@ -1248,7 +1362,7 @@
         "shared pending semantics + native/browser retention and UI",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-039",

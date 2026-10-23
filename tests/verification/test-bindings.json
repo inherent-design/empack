@@ -199,11 +199,11 @@
       "boundary": "I"
     },
     {
-      "id": "empack-tests::cli_pending_build::cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_cleanup",
-      "boundary": "X"
+      "id": "empack-tests::cli_interactive::cli_pty_pending_resume_requires_fresh_approval",
+      "boundary": "I"
     },
     {
-      "id": "empack-tests::cli_pending_build::cli_restricted_mrpack_preserves_preview_and_resumes_only_verified_content",
+      "id": "empack-tests::cli_pending_build::cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_cleanup",
       "boundary": "X"
     },
     {
@@ -308,6 +308,14 @@
     },
     {
       "id": "empack-tests::journey_local_exports::journey_local_content_export_prepare_preserves_bytes",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes",
+      "boundary": "X"
+    },
+    {
+      "id": "empack-tests::journey_pending::journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data",
       "boundary": "X"
     },
     {

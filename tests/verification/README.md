@@ -64,7 +64,7 @@ to actual JUnit results and retains one receipt per attempt. A successful struct
 `test-bindings.json` records the compiled external test crate on macOS arm64,
 including fixture checks, controlled hosts, executable journeys, interactive cases
 and live probes. Other platform-only identities and the remaining workspace still
-need classification. The registry marks UX-047 partial and lists its remaining
-evidence. Comparing the complete workspace inventory with this partial file must
+need classification. The registry marks the bound authoring and pending-build groups partial and lists
+their remaining evidence. Comparing the complete workspace inventory with this partial file must
 fail on unclassified tests. Cases declare required platforms and product feature
 variants; those declarations do not establish that any variant ran.

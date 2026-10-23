@@ -35,6 +35,7 @@ The separated executable suites have explicit boundaries:
 | `cli_arguments`, `cli_dependencies`, `cli_init` | Offline parsing, refusal and initialization |
 | `cli_build` | Offline artifact creation, metadata and cleanup |
 | `journey_authoring` | Literal layered authoring, rebuild and removal |
+| `journey_pending` | Public pending inspection, verified manual association, restart, stale refusal and discard |
 | `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
 | `live_cli_init` | Official loader catalog resolution |
 | `live_provider_cli` | Modrinth identity, acquisition and convergence |
@@ -54,7 +55,12 @@ fixtures created through codecs are distinct from the literal authoring journey;
 neither proves that Minecraft or Prism consumed the resulting pack. `journey_import`
 and `journey_verified_import` cover controlled local import paths. `cli_interactive`
 uses real PTY/ConPTY sessions; `live_manual_assistance` adds an official provider
-lookup with a fixture desktop opener. Moving upstream pack inputs belong to
+lookup with a fixture desktop opener. The pending-build journey starts with a component fixture, then obtains operation IDs
+and association keys only from `pending list/show --json`. Fresh executable invocations
+reject wrong bytes, resume renamed verified content and refuse stale drafts; terminal
+coverage checks fresh approval. State snapshots assert preservation without interpreting
+private continuation records. Import, sync and instance continuation parity remain
+separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
 
 The executable harness lives in `empack-tests::harness::process`, outside the

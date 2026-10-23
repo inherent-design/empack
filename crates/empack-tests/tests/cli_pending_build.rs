@@ -4,10 +4,13 @@ use empack_tests::{
     fixtures::restricted::fixture,
 };
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
+
+#[path = "support/files.rs"]
+mod files;
+use files::snapshot;
 
 fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
     let mut command = assert_cmd::Command::from_std(project.cmd());
@@ -31,80 +34,6 @@ fn saved(state: &Path) -> PathBuf {
         .collect();
     assert_eq!(records.len(), 1);
     records[0].clone()
-}
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(root: &Path, at: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in fs::read_dir(at).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                visit(root, &entry.path(), files);
-            } else {
-                files.insert(
-                    entry.path().strip_prefix(root).unwrap().into(),
-                    fs::read(entry.path()).unwrap(),
-                );
-            }
-        }
-    }
-    let mut files = BTreeMap::new();
-    visit(root, root, &mut files);
-    files
-}
-
-#[test]
-fn cli_restricted_mrpack_preserves_preview_and_resumes_only_verified_content() {
-    let project = fixture("restricted-mrpack");
-    let host = tempfile::tempdir().unwrap();
-    let state = host.path().join("state");
-    let before = snapshot(project.dir());
-    command(&project, &state)
-        .args(["--dry-run", "build", "modrinth"])
-        .assert()
-        .success();
-    assert_eq!(snapshot(project.dir()), before);
-    assert!(!state.exists());
-    command(&project, &state)
-        .args(["build", "modrinth"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(snapshot(project.dir()), before);
-    let record = saved(&state);
-    let recorded = fs::read(&record).unwrap();
-    let supplied = host.path().join("download.zip");
-    fs::write(&supplied, b"invalid").unwrap();
-    let association = format!("locked:manual%2Dassets:primary={}", supplied.display());
-    command(&project, &state)
-        .args(["build", "--continue", "--associate-download", &association])
-        .assert()
-        .failure();
-    assert_eq!(snapshot(project.dir()), before);
-    assert_eq!(fs::read(&record).unwrap(), recorded);
-    fs::write(&supplied, b"payload").unwrap();
-    command(&project, &state)
-        .args(["build", "--continue", "--associate-download", &association])
-        .assert()
-        .success();
-    assert!(!record.exists());
-    let mut archive = zip::ZipArchive::new(
-        fs::File::open(assert_dist_artifact_suffix(project.dir(), ".mrpack")).unwrap(),
-    )
-    .unwrap();
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut archive
-            .by_name("overrides/resourcepacks/manual.zip")
-            .unwrap(),
-        &mut bytes,
-    )
-    .unwrap();
-    assert_eq!(bytes, b"payload");
-    for name in ["empack.yml", "empack.lock"] {
-        assert_eq!(
-            fs::read(project.dir().join(name)).unwrap(),
-            before[Path::new(name)]
-        );
-    }
 }
 
 #[test]

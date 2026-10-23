@@ -4,6 +4,8 @@ use expectrl::{Expect, Regex};
 #[cfg(unix)]
 #[path = "support/desktop_assistance.rs"]
 mod desktop_assistance;
+#[path = "support/files.rs"]
+mod files;
 #[path = "support/terminal.rs"]
 mod terminal;
 #[cfg(unix)]
@@ -68,6 +70,58 @@ fn cli_pty_init_decline_preserves_absent_destination() {
     terminal.send_line("n").unwrap();
     terminal.expect(Regex("(?i)not applied")).unwrap();
     assert!(!project.dir().join("declined").exists());
+}
+
+#[test]
+fn cli_pty_pending_resume_requires_fresh_approval() {
+    use empack_tests::{fixtures::restricted::fixture, harness::process::offline_command};
+    let project = fixture("pending-approval");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    offline_command(project.dir())
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["--yes", "build", "modrinth"])
+        .assert()
+        .failure();
+    let output = offline_command(project.dir())
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["pending", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["operations"].as_array().unwrap().len(), 1);
+    let operation = &report["operations"][0];
+    let input = host.path().join("renamed.bin");
+    fs::write(&input, b"payload").unwrap();
+    let association = format!(
+        "{}={}",
+        operation["inputs"][0]["key"].as_str().unwrap(),
+        input.display()
+    );
+    let before = files::snapshot(project.dir());
+    let retained = files::snapshot(&state);
+    let mut cmd = empack_cmd(project.dir());
+    cmd.arg("--state-dir").arg(&state).args([
+        "pending",
+        "resume",
+        operation["id"].as_str().unwrap(),
+        "--file",
+        &association,
+    ]);
+    let mut terminal = terminal::spawn(cmd);
+    terminal.set_expect_timeout(Some(Duration::from_secs(20)));
+    terminal.expect(Regex("(?i)apply this build plan")).unwrap();
+    terminal.send_line("n").unwrap();
+    terminal.expect(Regex("(?i)not applied")).unwrap();
+    terminal.expect(expectrl::Eof).unwrap();
+    assert_eq!(files::snapshot(project.dir()), before);
+    assert_eq!(files::snapshot(&state), retained);
+    assert_eq!(fs::read(&input).unwrap(), b"payload");
 }
 
 #[cfg(unix)]
