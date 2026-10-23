@@ -85,7 +85,8 @@ class AcceptanceResults(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "another revision"):
             self.result()
         self.evidence[0]["source_revision"] = REVISION
-        self.case["boundary"] = "P"
+        self.row["evidence_tiers"].append("H")
+        self.case["boundary"] = "H"
         with self.assertRaisesRegex(ValueError, "required test boundary"):
             self.result()
         self.case["boundary"] = "X"

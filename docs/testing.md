@@ -453,11 +453,20 @@ Only those tested archives enter the publication payload. Publication verifies i
 checksums and the gate's evidence digest again, without rebuilding.
 
 `workflow_dispatch` accepts the reviewed version and exercises this pipeline without
-publishing. Tag pushes additionally publish the checked payload. These archive checks
-are not complete candidate qualification: the remaining native/consumer requirement
-results and approved-waiver policy still need their own gate. Missing platform
-execution remains a failure, not a cross-build pass. A configured workflow is not
-proof that its five-host execution has succeeded.
+publishing. Tag publication now requires both `archive-gate` and `candidate-gate`.
+The latter retains all 88 native obligations and makes the 21 staged portable
+obligations mandatory from v0.9. Incomplete case decomposition, absent required
+evidence boundaries and missing observations block qualification, even when every
+archive test passes. Missing platform execution remains a failure, not a cross-build
+pass. A configured workflow is not proof that its five-host execution has succeeded.
+
+The current registry is incomplete, so the candidate gate deliberately blocks
+publication. Completing its native/consumer case bindings, collecting their evidence
+and adding the corresponding workflow producers remain v0.8.4 implementation work.
+The workflow currently supplies the final-archive receipts; it does not yet supply a
+complete candidate matrix. No approved low-risk waiver policy is installed, and this
+gate accepts no waivers. Critical or actual-consumer omissions cannot be excused by a
+caller-supplied result label.
 
 Release builds now run `scripts/prepare-release.py` in a clean disposable checkout.
 The requested version must match the reviewed workspace release target. Stamping
@@ -473,6 +482,35 @@ Build artifacts retain `build.json`; execution artifacts retain the package and 
 receipts. `scripts/release-artifacts.py gate` validates their complete five-target set
 and writes `archive-evidence.json` plus `SHA256SUMS` alongside the unchanged archives.
 The evidence explicitly records that full candidate qualification remains separate.
+
+To evaluate an already checked payload without publishing:
+
+```sh
+python3 scripts/qualify-release.py gate --payload /path/to/checked-native-archives --archive-evidence-sha256 EXPECTED_GATE_DIGEST --revision FULL_COMMIT_SHA --version 0.8.4-beta --output /path/to/candidate.json
+```
+
+Run from the exact clean candidate checkout. This rechecks the archive payload's
+identity and evaluates the source registry, then writes JSON and Markdown with
+explicit outstanding obligations. Supplemental `--receipt` inputs are rechecked
+against inventory/JUnit, the same source/version and the actual shipped binary for
+that target. The current admission path accepts only default-feature release
+executables in the payload; additional feature builds need their own build evidence.
+A development binary or arbitrary telemetry binary cannot substitute for that proof.
+The command returns `0` only for full qualification, `2` for missing obligations and
+`1` for failed or rejected evidence.
+
+Package cases reference ordinary executable test IDs, but require additional proof
+from the archive gate. Running the same test through ordinary CLI CI does not satisfy
+its package case. Each package variant identifies an exact target triple; Intel and
+ARM64 evidence cannot substitute for each other merely because they share an OS.
+The initial `UX-085` package case checks local content export and instance preparation
+on all five targets. It is a partial binding, not complete package acceptance.
+
+The release job rechecks both the archive-evidence digest and the qualification
+digest from its prerequisite jobs, including source, version and payload association,
+before publishing unchanged bytes. Candidate diagnostics stay in a separate workflow
+artifact; they do not become extra distribution files. A blocked candidate cannot
+reach publication through a passing archive job.
 
 ## Coverage and release qualification
 

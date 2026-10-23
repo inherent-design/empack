@@ -39,7 +39,7 @@ class VerificationReports(unittest.TestCase):
         self.assertIn("qualification has **not** been established", text)
         self.assertIn("| 0 | 0 | 0 | 1 |", text)
         self.assertIn("<code>partial</code> | <code>NOT_RUN</code>", text)
-        self.assertIn("<code>windows</code> | <code>default</code> | <code>NOT_RUN</code>", text)
+        self.assertIn("<code>windows</code> | <code>any classified target</code> | <code>default</code> | <code>NOT_RUN</code>", text)
         self.assertIn("No admitted execution for this test and variant", text)
         for identity in ("a" * 40, "b" * 40, *(str(n) * 64 for n in range(1, 6)), "cli::observed"):
             self.assertIn(identity, text)

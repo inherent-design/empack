@@ -20,6 +20,12 @@ class ReleaseArchiveGate(unittest.TestCase):
 
     def setUp(self):
         input_fixtures.ReleaseInputs.setUp(self)
+        registry = self.root / "tests/verification"
+        registry.mkdir(parents=True)
+        for name in ("requirements.json", "test-bindings.json"):
+            (registry / name).write_bytes((ci_fixtures.SCRIPTS.parent / "tests/verification" / name).read_bytes())
+        self.git("add", "tests")
+        self.git("commit", "-qm", "fixture registry")
         self.revision = self.git("rev-parse", "HEAD")
         self.version = "0.8.4-beta"
         self.inputs = input_fixtures.release.prepare(self.root, self.version)
@@ -146,7 +152,11 @@ class ReleaseArchiveGate(unittest.TestCase):
             self.assertEqual(len(targets), 5)
         self.assertIn("os: ubuntu-24.04-arm", tests)
         self.assertIn("needs: [build, test-archives]", gate)
-        self.assertIn("needs: archive-gate", publication)
+        self.assertIn("needs: [archive-gate, candidate-gate]", publication)
+        self.assertIn("needs: archive-gate", gate)
+        self.assertIn("scripts/qualify-release.py gate", gate)
+        self.assertIn("needs.candidate-gate.outputs.qualification_sha256", publication)
+        self.assertLess(publication.index("scripts/qualify-release.py verify"), publication.index("softprops/action-gh-release"))
         self.assertIn("if: github.event_name == 'push'", publication)
         self.assertNotIn("cargo build", publication)
         self.assertLess(publication.index("verify-payload"), publication.index("softprops/action-gh-release"))

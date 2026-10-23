@@ -3595,7 +3595,30 @@
       "run_gate": "release",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-085.packaged-local-export-prepare",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_local_exports::journey_local_content_export_prepare_preserves_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "required_product_features": [
+            "default"
+          ]
+        }
+      ],
       "owner_now": [
         "release.yml and external process harness",
         "empack executable + empack-lib::application",
@@ -3606,7 +3629,7 @@
         "empack-cli",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-086",

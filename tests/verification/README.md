@@ -129,3 +129,18 @@ assessment of missing requirements. This offline fixture does not establish a li
 provider's restricted-download policy. Instance pending journeys, corrupt/ambiguous
 records and interactive import approval remain separate obligations. Required platform
 and product-feature declarations do not establish that those variants ran.
+
+## Package context and candidate qualification
+
+A `P` case can reference an `X` executable test, provided the archive gate has bound
+that execution to the built and extracted final artifact. Ordinary suite receipts
+cannot assert this context themselves. `required_targets` enumerates the exact five
+release triples alongside the required OS and feature variants; missing ARM64 or
+Intel execution remains `NOT_RUN` independently of other hosts on the same OS.
+
+The candidate gate requires complete case decomposition and coverage of each declared
+evidence boundary for every applicable group. All 88 native groups remain mandatory;
+from v0.9 the 21 portable groups join them. Pending or partial groups, absent consumer
+observations and failed attempts block qualification. The current registry and
+workflow evidence are incomplete, so no candidate is qualified by this wiring alone.
+See [candidate commands and remaining work](../../docs/testing.md#coverage-and-release-qualification).

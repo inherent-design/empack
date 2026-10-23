@@ -122,6 +122,70 @@
       ]
     },
     {
+      "id": "python::test_candidate_qualification.CandidateCommand.test_real_registry_and_archives_cannot_skip_unimplemented_consumer_obligations",
+      "boundary": "H",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidateCommand.test_supplemental_suite_cannot_substitute_another_product_or_unclean_source",
+      "boundary": "H",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_all_applicable_observations_required_and_future_portable_scope_retained",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_failed_or_unstarted_execution_cannot_qualify_by_other_passing_attempts",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_native_requirements_cannot_be_removed_or_reclassified_as_future_work",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_package_case_needs_proof_for_each_architecture_not_just_each_os",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_partial_mapping_and_missing_consumer_boundary_block_even_with_passing_cases",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_qualification.CandidatePolicy.test_publication_binds_qualification_to_source_version_payload_and_gate_digest",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.ChangeSelection.test_actual_git_rename_from_code_to_docs_still_requires_native_checks",
       "boundary": "N",
       "requirements": [

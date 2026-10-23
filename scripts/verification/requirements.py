@@ -30,19 +30,28 @@ def validate_requirements(document):
                     or not set(platforms) <= {"linux", "macos", "windows"}
                     or not set(features) <= {"default", "telemetry"}):
                 raise ValueError(f"Case has no required execution variants: {case['id']}")
+            if "required_targets" in case:
+                targets = case["required_targets"]
+                if (case["boundary"] != "P" or not targets or len(set(targets)) != len(targets)):
+                    raise ValueError(f"Exact target variants require a package case: {case['id']}")
             if not case["test_ids"] or len(set(case["test_ids"])) != len(case["test_ids"]):
                 raise ValueError(f"Case has no concrete tests: {case['id']}")
     return requirements, cases
 
 
-def case_results(document, classification, evidence, revision):
+def case_results(document, classification, evidence, revision, *, package_receipts=()):
     """Join already validated suite evidence; no test counts imply group coverage.
 
     The CI gate authenticates revision/cleanliness and re-reads inventory/JUnit
     before calling this function. This function is not an evidence-file loader.
-    Missing cases, variants and incomplete decomposition remain NOT_RUN.
+    Missing cases, variants and incomplete decomposition remain NOT_RUN. Only the
+    archive gate may supply package_receipts after binding archive/build/execution
+    identities; ordinary suite receipts cannot assert their own package context.
     """
     validate_requirements(document)
+    package_receipts = set(package_receipts)
+    if not package_receipts <= {record["receipt_sha256"] for record in evidence}:
+        raise ValueError("Package proof lacks its admitted suite receipt")
     bindings = {row["id"]: row for row in classification["tests"]}
     targets = classification["targets"]
     observed = {}
@@ -75,15 +84,17 @@ def case_results(document, classification, evidence, revision):
                 raise ValueError(f"Unexpected acceptance test status: {identity}")
             key = (identity, platform, features)
             outcome = {"status": test["status"], "artifact_sha256": record["artifact_sha256"],
-                       "test_features": graph, "receipt_sha256": digest}
+                       "test_features": graph, "receipt_sha256": digest, "target": record["target"]}
             if "created_at" in record:
                 outcome["created_at"] = record["created_at"]
             if "suite" in test:
                 outcome["suite"] = test["suite"]
             observed.setdefault(key, {})[(digest, test.get("suite", ""))] = outcome
 
-    def test_result(identity, platform, features):
-        entries = observed.get((identity, platform, features), {})
+    def test_result(identity, platform, features, target, packaged):
+        entries = {key: value for key, value in observed.get((identity, platform, features), {}).items()
+                   if (not target or value["target"] == target)
+                   and (not packaged or key[0] in package_receipts)}
         attempts = [entries[key] for key in sorted(entries)]
         result = {"id": identity, "status": aggregate_outcomes(a["status"] for a in attempts),
                   "receipts": sorted({key[0] for key in entries}), "attempts": attempts}
@@ -101,18 +112,27 @@ def case_results(document, classification, evidence, revision):
         for case in row["cases"]:
             for identity in case["test_ids"]:
                 binding = bindings.get(identity)
-                if binding is None or binding["boundary"] != case["boundary"]:
+                if binding is None or not (binding["boundary"] == case["boundary"]
+                        or case["boundary"] == "P" and binding["boundary"] == "X"):
                     raise ValueError(f"Acceptance case lacks its required test boundary: {case['id']} / {identity}")
                 if not set(case["required_platforms"]) <= set(binding["platforms"]):
                     raise ValueError(f"Acceptance case requires an unclassified platform: {case['id']}")
             variants = []
-            for platform in case["required_platforms"]:
+            exact_targets = case.get("required_targets", [])
+            if exact_targets and (not set(exact_targets) <= targets.keys()
+                                  or {targets[t] for t in exact_targets} != set(case["required_platforms"])):
+                raise ValueError(f"Package targets disagree with required platforms: {case['id']}")
+            hosts = [(targets[t], t) for t in exact_targets] if exact_targets else [
+                (platform, None) for platform in case["required_platforms"]]
+            for platform, target in hosts:
                 for features in case["required_product_features"]:
-                    tests = []
-                    for identity in case["test_ids"]:
-                        tests.append(test_result(identity, platform, features))
-                    variants.append({"platform": platform, "features": features, "tests": tests,
-                                     "status": aggregate_outcomes([test["status"] for test in tests])})
+                    tests = [test_result(identity, platform, features, target, case["boundary"] == "P")
+                             for identity in case["test_ids"]]
+                    variant = {"platform": platform, "features": features, "tests": tests,
+                               "status": aggregate_outcomes(test["status"] for test in tests)}
+                    if target:
+                        variant["target"] = target
+                    variants.append(variant)
             cases.append({"id": case["id"], "boundary": case["boundary"], "variants": variants,
                           "status": aggregate_outcomes([variant["status"] for variant in variants])})
         states = [case["status"] for case in cases]

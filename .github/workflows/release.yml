@@ -228,9 +228,55 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+  candidate-gate:
+    name: Qualify complete candidate obligations
+    needs: archive-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      qualification_sha256: ${{ steps.qualify.outputs.qualification_sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: checked-native-archives
+          path: .git/candidate-payload
+      - name: Require native and consumer evidence for the exact tested payload
+        id: qualify
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+        run: |
+          python3 scripts/qualify-release.py gate --payload .git/candidate-payload --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python3 - <<'PYTHON'
+          import hashlib, os
+          from pathlib import Path
+          digest = hashlib.sha256(Path(".git/candidate.json").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("qualification_sha256=" + digest, file=output)
+          PYTHON
+      - name: Summarize qualification and missing evidence
+        if: always()
+        run: |
+          if [ -f .git/candidate.md ]; then
+            cat .git/candidate.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: candidate-qualification
+          path: |
+            .git/candidate.json
+            .git/candidate.md
+          include-hidden-files: true
+          if-no-files-found: error
+
   release:
     name: Create GitHub Release
-    needs: archive-gate
+    needs: [archive-gate, candidate-gate]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -274,6 +320,19 @@ jobs:
           RELEASE_REVISION: ${{ github.sha }}
           EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
         run: python3 scripts/release-artifacts.py verify-payload --directory dist --version "${RELEASE_VERSION#v}" --revision "$RELEASE_REVISION" --evidence-sha256 "$EVIDENCE_SHA256"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-qualification
+          path: .git/qualification
+
+      - name: Recheck candidate qualification before publication
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+          QUALIFICATION_SHA256: ${{ needs.candidate-gate.outputs.qualification_sha256 }}
+        run: python3 scripts/qualify-release.py verify --record .git/qualification/candidate.json --sha256 "$QUALIFICATION_SHA256" --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}"
 
       - name: Generate release notes
         id: changelog

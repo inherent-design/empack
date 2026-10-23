@@ -68,9 +68,10 @@ def _acceptance_lines(record):
         for case in row["cases"]:
             lines += [f"### {cell(case['id'])}", "",
                       f"Boundary: {cell(case['boundary'])}; case result: {cell(case['status'])}.", "",
-                      "| Platform | Product features | Result |", "| --- | --- | --- |"]
+                      "| Platform | Target | Product features | Result |", "| --- | --- | --- | --- |"]
             for variant in case["variants"]:
-                lines.append("| " + " | ".join(cell(variant[k]) for k in ("platform", "features", "status")) + " |")
+                lines.append("| " + " | ".join(cell(variant.get(k, "any classified target"))
+                             for k in ("platform", "target", "features", "status")) + " |")
             lines += ["", "<details>", "<summary>Exact tests and evidence identities</summary>", ""]
             for variant in case["variants"]:
                 for test in variant["tests"]:
@@ -79,6 +80,8 @@ def _acceptance_lines(record):
                         for attempt in test["attempts"]:
                             lines += [f"  - Attempt: {cell(attempt['status'])}; receipt: {cell(attempt['receipt_sha256'])}",
                                       f"    - Test graph: {cell(attempt['test_features'])}; executable: {cell(attempt['artifact_sha256'])}"]
+                            if attempt.get("target"):
+                                lines += [f"    - Target: {cell(attempt['target'])}"]
                             if attempt.get("suite"):
                                 lines += [f"    - Suite: {cell(attempt['suite'])}"]
                             if attempt.get("created_at"):
