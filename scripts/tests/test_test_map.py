@@ -1,7 +1,13 @@
 import importlib.util
 import json
+import copy
+import sys
+import tempfile
+from unittest.mock import patch
 from pathlib import Path
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 spec = importlib.util.spec_from_file_location(
     "test_map", Path(__file__).resolve().parents[1] / "check-test-map.py")
@@ -62,6 +68,10 @@ class TestDiscoveryBinding(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not listed"):
             checker.compare_inventory(self.inventory, self.bindings)
 
+    def test_empty_inventory_and_empty_classification_are_not_a_pass(self):
+        with self.assertRaisesRegex(ValueError, "nonempty"):
+            checker.compare_inventory({"test-count": 0, "rust-suites": {}}, {"tests": []})
+
     def test_count_mismatch_fails(self):
         self.inventory["test-count"] = 2
         with self.assertRaisesRegex(ValueError, "count"):
@@ -90,6 +100,17 @@ class SurfaceBindings(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "definition changed"):
             checker.compare_surfaces(self.inventory, self.bindings, {"UX-040"})
 
+    def test_structural_changes_require_review_even_when_names_stay_the_same(self):
+        for field, value in {
+            "environment": "DIFFERENT_ENV", "arity": {"min": 2, "max": 2},
+            "short_aliases": ["x"], "trailing_values": True, "action": "Append",
+        }.items():
+            with self.subTest(field=field):
+                inventory = copy.deepcopy(self.inventory)
+                inventory["surfaces"][0][field] = value
+                with self.assertRaisesRegex(ValueError, "definition changed"):
+                    checker.compare_surfaces(inventory, self.bindings, {"UX-040"})
+
     def test_new_surface_is_unclassified(self):
         self.inventory["surfaces"].append({"id": "empack new", "kind": "leaf"})
         with self.assertRaisesRegex(ValueError, "unclassified_surfaces"):
@@ -105,3 +126,51 @@ class SurfaceBindings(unittest.TestCase):
         bindings = {"tests": [{"id": "python::test_fixture.Checks.test_failure", "boundary": "U"}]}
         result = checker.compare_python(inventory, bindings)
         self.assertTrue(result[bindings["tests"][0]["id"]]["ignored"])
+
+
+class ToolingOwnership(unittest.TestCase):
+    def test_python_owner_must_be_nonempty_and_known(self):
+        inventory = {"source": "unittest-loader", "tests": [
+            {"id": "module.Checks.test_fixture", "ignored": False}]}
+        row = {"id": "python::module.Checks.test_fixture", "boundary": "H"}
+        for owners in (None, [], ["UX-typo"]):
+            row["requirements"] = owners
+            with self.subTest(owners=owners), self.assertRaisesRegex(ValueError, "requirement owner"):
+                checker.compare_python(inventory, {"tests": [row]}, {"UX-088"})
+        row["requirements"] = ["UX-088"]
+        self.assertEqual(len(checker.compare_python(inventory, {"tests": [row]}, {"UX-088"})), 1)
+
+    def test_failed_discovery_cannot_reuse_an_old_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            prior = output / "python-inventory.json"
+            prior.write_text('{"source":"unittest-loader","tests":[]}')
+            with patch.object(checker, "run", return_value=(1, "", False)):
+                with self.assertRaisesRegex(ValueError, "discovery failed"):
+                    checker.discover_tooling(output, {"UX-088"})
+
+
+class DoctestDiscovery(unittest.TestCase):
+    def test_listing_preserves_ids_and_empty_crate_groups(self):
+        text = "crates/core.rs - Type (line 1): test\n1 test, 0 benchmarks\n0 tests, 0 benchmarks\n"
+        self.assertEqual(checker.rustdoc_tests(text), {"crates/core.rs - Type (line 1)"})
+
+    def test_incomplete_duplicate_and_unknown_listings_fail(self):
+        entry = "crates/core.rs - Type (line 1): test\n"
+        for text in (entry, entry + "2 tests, 0 benchmarks\n", entry * 2 + "2 tests, 0 benchmarks\n",
+                     "test passed\n", "0 tests, 0 benchmarks\n", ""):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                checker.rustdoc_tests(text)
+        self.assertEqual(checker.rustdoc_tests("0 tests, 0 benchmarks\n", allow_empty=True), set())
+
+    def test_newly_ignored_or_unowned_doctest_needs_review(self):
+        name = "crates/core.rs - Type (line 1)"
+        inventory = {"source": "rustdoc-list", "tests": [{"id": name, "ignored": False}]}
+        entry = {"id": "doctest::" + name, "boundary": "U", "ignored": False, "requirements": ["UX-086"]}
+        bindings = {"tests": [entry]}
+        self.assertEqual(len(checker.compare_doctests(inventory, bindings, {"UX-086"})), 1)
+        inventory["tests"][0]["ignored"] = True
+        with self.assertRaisesRegex(ValueError, "ignore policy"):
+            checker.compare_doctests(inventory, bindings, {"UX-086"})
+        with self.assertRaisesRegex(ValueError, "requirement owner"):
+            checker.compare_doctests(inventory, bindings, {"UX-001"})

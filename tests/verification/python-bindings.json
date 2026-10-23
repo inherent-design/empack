@@ -1,0 +1,640 @@
+{
+  "schema": 1,
+  "status": "unittest identities classified; fixture/helper checks are not consumer or final-package execution",
+  "tests": [
+    {
+      "id": "python::test_ci_verification.ChangeSelection.test_actual_git_rename_from_code_to_docs_still_requires_native_checks",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.ChangeSelection.test_docs_and_editor_schemas_select_executable_tooling_without_native_matrix",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.ChangeSelection.test_manual_full_run_keeps_credentialed_and_survey_obligations",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.ChangeSelection.test_provider_runtime_and_consumer_boundaries_select_distinct_evidence",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.ChangeSelection.test_unknown_non_document_changes_cannot_skip_native_checks",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.ChangeSelection.test_untrusted_required_checks_remain_blocked_not_waived",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_consumer_source_dependency_and_fixture_identity_are_required",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_docs_gate_allows_deliberately_unselected_jobs",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_missing_credentials_are_blocked_before_discovery_or_execution",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_mutated_selection_cannot_erase_a_required_job",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_native_gate_joins_all_three_actual_record_shapes",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_required_missing_failed_cancelled_and_skipped_are_not_passes",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_selected_case_missing_from_discovery_cannot_be_substituted",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_wrong_identity_partial_outcomes_and_changed_evidence_fail",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ConsumerEvidence.test_only_supported_qt_versions_qualify",
+      "boundary": "U",
+      "requirements": [
+        "UX-083"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ConsumerEvidence.test_snapshot_scope_and_ancestry_are_explicit",
+      "boundary": "N",
+      "requirements": [
+        "UX-087",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ConsumerEvidence.test_structural_docs_without_git_and_negative_cases",
+      "boundary": "N",
+      "requirements": [
+        "UX-087",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_fixture_world_choice_is_passed_explicitly_to_import",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_generic_import_failure_does_not_become_a_continuation",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_native_build_failure_is_reported_without_retry_or_legacy_fallback",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_native_errors_remain_visible_after_cursor_restoration",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_only_exact_saved_restricted_obligations_allow_manual_downloads",
+      "boundary": "U",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_relative_executable_is_bound_before_child_workdir_changes",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_sync_cannot_create_or_remove_bindings_unnoticed",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_sync_document_drift_fails_before_build",
+      "boundary": "H",
+      "requirements": [
+        "UX-017",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_build_failure_never_stages_or_publishes",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_build_selects_exact_profiles_and_stages_only_expected_outputs",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_digest_mismatch_prevents_execution",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_failed_upload_keeps_release_draft",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_mismatched_tag_fails_before_build_or_publication",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_missing_digest_prevents_download",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_publication_reveals_release_only_after_upload",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_stale_lock_rejected",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_symlinked_ancestor_rejected",
+      "boundary": "N",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_unsafe_paths_and_name_collisions_rejected",
+      "boundary": "N",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_verified_archive_installs_only_binary_and_exports_path",
+      "boundary": "N",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_project_automation.ProjectAutomation.test_workflows_share_helper_and_pin_actions",
+      "boundary": "H",
+      "requirements": [
+        "UX-081",
+        "UX-082"
+      ]
+    },
+    {
+      "id": "python::test_python_discovery.PythonDiscovery.test_empty_suite_fails",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_discovery.PythonDiscovery.test_import_failure_is_not_a_test_identity",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_discovery.PythonDiscovery.test_loader_lists_skipped_tests_without_executing",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_workflow.ReleaseChannelContracts.test_numbered_and_unnumbered_prereleases_are_not_stable",
+      "boundary": "N",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_test_map.DoctestDiscovery.test_incomplete_duplicate_and_unknown_listings_fail",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.DoctestDiscovery.test_listing_preserves_ids_and_empty_crate_groups",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.DoctestDiscovery.test_newly_ignored_or_unowned_doctest_needs_review",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RequirementBindings.test_case_cannot_substitute_another_host_boundary",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RequirementBindings.test_case_requires_positive_test_membership",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RequirementBindings.test_empty_cases_cannot_claim_completed_bindings",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.RequirementBindings.test_partial_bindings_remain_structurally_valid",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.SurfaceBindings.test_added_option_value_requires_review",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.SurfaceBindings.test_new_surface_is_unclassified",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.SurfaceBindings.test_observed_surface_has_requirement_owner",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.SurfaceBindings.test_python_identity_is_classified_without_a_rust_wrapper",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.SurfaceBindings.test_structural_changes_require_review_even_when_names_stay_the_same",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.SurfaceBindings.test_typo_in_requirement_is_not_an_owner",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_count_mismatch_fails",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_empty_inventory_and_empty_classification_are_not_a_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_ignored_tests_remain_visible",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_missing_binary_is_not_an_empty_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_unknown_test_is_an_error",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_unrecognized_boundary_fails",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_vanished_selector_is_an_error",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.ToolingOwnership.test_failed_discovery_cannot_reuse_an_old_inventory",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_test_map.ToolingOwnership.test_python_owner_must_be_nonempty_and_known",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_toolchain.ToolchainContracts.test_repository_pin_and_extra_components_reach_the_installer",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_empty_and_inapplicable_runs_are_not_passes",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_external_artifact_requires_complete_identity",
+      "boundary": "H",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_java_home_selects_the_probed_executable_without_path_fallback",
+      "boundary": "H",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_malformed_xml_is_not_a_command_success",
+      "boundary": "H",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_wrong_digest_and_version_cannot_qualify",
+      "boundary": "H",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.CommandEvidence.test_credentials_and_url_queries_are_redacted",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.CommandEvidence.test_large_output_is_bounded",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.CommandEvidence.test_nonzero_status_and_separate_stdout_are_preserved",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.CommandEvidence.test_timeout_does_not_retry_mutation",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.CommandEvidence.test_unicode_command_logs_ignore_the_host_file_encoding",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SourceIdentity.test_staging_deletion_is_stable_but_new_source_changes_identity",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_actual_success_is_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_duplicate_and_unknown_results_are_rejected",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_empty_or_ignored_selection_is_not_success",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_exact_suite_filter_can_exclude_unrelated_binaries",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_failure_error_and_flake_remain_failures",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_inconsistent_count_is_rejected",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_required_binary_and_case_are_discovered",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_required_case_retains_module_path",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_selected_ignored_case_requires_explicit_selection",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_skip_and_absence_are_not_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_unlisted_binary_fails_discovery",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.SuiteEvidence.test_unrecognized_result_cannot_be_a_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    }
+  ]
+}

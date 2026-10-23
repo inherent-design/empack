@@ -16,7 +16,7 @@ cargo nextest list --workspace --all-features --message-format json > /tmp/empac
 cargo nextest list --workspace --no-default-features --message-format json > /tmp/empack-tests-minimal.json
 cargo run --quiet -p empack-tests --example cli-inventory > /tmp/empack-cli.json
 python3 scripts/discover-python-tests.py > /tmp/empack-python-tests.json
-python3 scripts/check-test-map.py
+python3 scripts/check-test-map.py --discover-tooling target/verification-inventory
 ```
 
 Nextest supplies compiled Rust identities, including ignored tests. The external
@@ -25,6 +25,13 @@ test control. Global options have one root definition. Leaf commands, local
 arguments, option values, aliases and groups remain separately visible. Python
 discovery uses `unittest.TestLoader` and fails on import errors or an empty suite.
 Each required platform and feature selection needs its own inventory.
+
+`mise run test:map` runs the same discovery and classification check as the PR
+tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,
+and asks rustdoc for both the complete and ignored workspace doctest listings.
+Bounded logs and inventories are saved under `target/verification-inventory`.
+A failed discovery cannot fall back to a prior inventory. Compilation and listing
+do not execute the acceptance cases.
 
 ## Binding format
 
@@ -47,26 +54,40 @@ files contain a `tests` array with `id` and `boundary`. The boundary vocabulary 
 
 CLI bindings contain `surfaces`, each with the exact discovered `id`, its
 `definition`, and nonempty owning `requirements`. Definition comparison catches
-changed option values as well as newly added commands. Binding checks reject
-unknown and vanished identities; a renamed test needs an explicit registry edit.
+changed option values, aliases, environment-variable names, arity, positional
+indices, actions and parsing flags, as well as newly added commands. Environment
+values are never included. Generated help routes belong to the help obligation;
+classifying those routes does not qualify the operations they describe.
+
+`python-bindings.json` assigns each unittest identity an evidence boundary and
+requirement owner. Pure parser checks, controlled helper calls and actual script
+processes remain distinct from executing empack or a consumer. `doctest-bindings.json`
+records rustdoc identities and reviewed ignore policy. Compile-only examples and
+expected constructor-access failures do not establish runtime behavior. Rustdoc
+source-line moves require an explicit binding update; they cannot silently remove
+a case. Binding checks reject unknown and vanished identities.
 
 ```bash
 python3 scripts/check-test-map.py --inventory /tmp/empack-tests-all.json --bindings path/to/rust-bindings.json
-python3 scripts/check-test-map.py --python-inventory /tmp/empack-python-tests.json --python-bindings path/to/python-bindings.json
-python3 scripts/check-test-map.py --cli-inventory /tmp/empack-cli.json --cli-bindings path/to/cli-bindings.json
+python3 scripts/check-test-map.py --python-inventory /tmp/empack-python-tests.json --python-bindings tests/verification/python-bindings.json
+python3 scripts/check-test-map.py --cli-inventory /tmp/empack-cli.json --cli-bindings tests/verification/cli-bindings.json
 ```
 
-These checks validate structure and classification only. The complete bindings,
-requirement/case/variant result join, doctest discovery and final qualification gate
-are still being implemented. `scripts/verify.py` already joins selected compiler IDs
-to actual JUnit results and retains one receipt per attempt. A successful structural check does not qualify the release.
+These checks validate structure and classification only. CLI, Python and doctest
+bindings are checked against their discovered inventories. Complete Rust workspace
+and platform bindings, the requirement/case/variant result join, and final
+qualification remain in progress. `scripts/verify.py` already joins selected compiler IDs
+to actual JUnit results and retains one receipt per attempt. A successful structural
+check does not qualify the release.
 
 `test-bindings.json` records the compiled external test crate on macOS arm64,
 including fixture checks, controlled hosts, executable journeys, interactive cases
 and live probes. Other platform-only identities and the remaining workspace still
 need classification. The registry marks the bound authoring and pending
-build/synchronization groups partial and lists their remaining evidence. Synchronization exercises public association keys, partial
+build/synchronization groups partial and lists their remaining evidence.
+Synchronization exercises public association keys, partial
 retention after cache eviction, restart, exact materialized bytes, stale drafts and
 explicit cleanup. Import and instance pending journeys remain separate obligations.
-Comparing the complete workspace inventory with this partial file must fail on unclassified tests. Cases declare required platforms and product feature
+Comparing the complete workspace inventory with this partial file must fail on
+unclassified tests. Cases declare required platforms and product feature
 variants; those declarations do not establish that any variant ran.

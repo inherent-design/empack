@@ -29,6 +29,20 @@ fn surfaces(command: &clap::Command, parent: &str, rows: &mut Vec<Value>) {
             "kind": "argument",
             "long": argument.get_long(),
             "short": argument.get_short(),
+            "short_aliases": argument.get_all_short_aliases().unwrap_or_default(),
+            "position": argument.get_index(),
+            "action": format!("{:?}", argument.get_action()),
+            "arity": argument.get_num_args().map(|range| json!({
+                "min": range.min_values(),
+                "max": (range.max_values() != usize::MAX).then_some(range.max_values()),
+            })),
+            "value_names": argument.get_value_names().map(|names| names.iter()
+                .map(|name| name.as_str()).collect::<Vec<_>>()).unwrap_or_default(),
+            // Only the variable name is public schema. Never read or emit its value.
+            "environment": argument.get_env().map(|name| name.to_str().expect("UTF-8 CLI schema")),
+            "trailing_values": argument.is_trailing_var_arg_set(),
+            "last": argument.is_last_set(),
+            "allow_hyphen_values": argument.is_allow_hyphen_values_set(),
             "global": argument.is_global_set(),
             "required": argument.is_required_set(),
             "aliases": argument.get_all_aliases().unwrap_or_default(),
@@ -43,6 +57,7 @@ fn surfaces(command: &clap::Command, parent: &str, rows: &mut Vec<Value>) {
             "kind": "group",
             "arguments": group.get_args().map(|id| id.as_str()).collect::<Vec<_>>(),
             "required": group.is_required_set(),
+            "multiple": group.clone().is_multiple(),
         }));
     }
     for child in children {

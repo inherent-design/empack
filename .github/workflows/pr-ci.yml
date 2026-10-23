@@ -51,7 +51,13 @@ jobs:
         with:
           version: "0.13.5"
       - run: python3 -m unittest discover -s scripts/tests
-      - run: python3 scripts/check-test-map.py
+      - run: python3 scripts/check-test-map.py --discover-tooling target/verification-inventory
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-tooling-inventory
+          path: target/verification-inventory/
+          if-no-files-found: error
       - run: python3 scripts/check-docs.py README.md docs tests/verification
       - run: cargo build --locked -p empack --target-dir target/verification-tools
       - run: uv run scripts/check-authoring-schema.py target/verification-tools/debug/empack

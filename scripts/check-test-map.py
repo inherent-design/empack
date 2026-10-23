@@ -2,7 +2,12 @@
 """Validate acceptance bindings against actual compiler discovery; never infer passes."""
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
+
+from verification.discovery import rustdoc_tests
+from verification.process import run
 
 ROOT = Path(__file__).resolve().parents[1]
 BOUNDARIES = {"U", "H", "N", "X", "I", "L", "C", "P", "W", "M"}
@@ -19,6 +24,8 @@ def discovered_tests(inventory):
                 raise ValueError(f"Duplicate test identity: {identity}")
             result[identity] = {"binary": binary_id, "name": name,
                                 "ignored": case["ignored"]}
+    if not result:
+        raise ValueError("Compiler discovery must be nonempty")
     if len(result) != inventory["test-count"]:
         raise ValueError("Compiler inventory count does not match discovered tests")
     return result
@@ -70,12 +77,16 @@ def compare_inventory(inventory, bindings):
     return discovered
 
 
-def compare_python(inventory, bindings):
+def compare_python(inventory, bindings, requirements=None):
     if inventory.get("source") != "unittest-loader":
         raise ValueError("Expected unittest loader discovery")
     discovered = {row["id"]: row for row in inventory["tests"]}
     if not discovered or len(discovered) != len(inventory["tests"]):
         raise ValueError("Python identities must be unique and nonempty")
+    if requirements is not None:
+        for entry in bindings["tests"]:
+            if not entry.get("requirements") or not set(entry["requirements"]) <= requirements:
+                raise ValueError(f"Python test has no valid requirement owner: {entry['id']}")
     return compare_inventory({"test-count": len(discovered), "rust-suites": {
         "python": {"status": "listed", "testcases": discovered}}}, bindings)
 
@@ -102,6 +113,57 @@ def compare_surfaces(inventory, bindings, requirements):
     return discovered
 
 
+def compare_doctests(inventory, bindings, requirements):
+    if inventory.get("source") != "rustdoc-list":
+        raise ValueError("Expected rustdoc discovery")
+    discovered = {row["id"]: row for row in inventory["tests"]}
+    if not discovered or len(discovered) != len(inventory["tests"]):
+        raise ValueError("Doctest identities must be unique and nonempty")
+    for entry in bindings["tests"]:
+        if not entry.get("requirements") or not set(entry["requirements"]) <= requirements:
+            raise ValueError(f"Doctest has no valid requirement owner: {entry['id']}")
+        name = entry["id"].removeprefix("doctest::")
+        if name in discovered and entry["ignored"] != discovered[name]["ignored"]:
+            raise ValueError(f"Doctest ignore policy changed: {entry['id']}")
+    return compare_inventory({"test-count": len(discovered), "rust-suites": {
+        "doctest": {"status": "listed", "testcases": discovered}}}, bindings)
+
+
+def discover_tooling(output, requirements):
+    """Compile/list public surfaces and verify ownership, without executing cases."""
+    output.mkdir(parents=True, exist_ok=True)
+    def invoke(command, name):
+        log = output / f"{name}-discovery.log"
+        code, stdout, timed_out = run(command, cwd=ROOT, env=dict(os.environ),
+            log=log, timeout=900, separate_stdout=True)
+        if code or timed_out:
+            raise ValueError(f"{name} discovery failed (exit {code}, timeout={timed_out}); see {log}")
+        return stdout
+
+    commands = {
+        "python": [sys.executable, str(ROOT / "scripts/discover-python-tests.py")],
+        "cli": ["cargo", "run", "--locked", "--quiet", "-p", "empack-tests",
+                "--example", "cli-inventory"],
+    }
+    inventories = {name: json.loads(invoke(command, name)) for name, command in commands.items()}
+    command = ["cargo", "test", "--locked", "--workspace", "--all-features", "--doc", "--", "--list"]
+    tests = rustdoc_tests(invoke(command, "doctest"))
+    ignored = rustdoc_tests(invoke(command + ["--ignored"], "doctest-ignored"), allow_empty=True)
+    if ignored - tests:
+        raise ValueError("Ignored rustdoc identities were absent from complete discovery")
+    inventories["doctest"] = {"schema": 1, "source": "rustdoc-list",
+        "selection": "workspace-all-features", "tests": [
+            {"id": identity, "ignored": identity in ignored} for identity in sorted(tests)]}
+    counts = {}
+    for name, inventory in inventories.items():
+        (output / f"{name}-inventory.json").write_text(
+            json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+        bindings = json.loads((ROOT / f"tests/verification/{name}-bindings.json").read_text(encoding="utf-8"))
+        compare = {"python": compare_python, "cli": compare_surfaces, "doctest": compare_doctests}[name]
+        counts[name] = len(compare(inventory, bindings, requirements))
+    return counts
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--requirements", type=Path,
@@ -110,21 +172,29 @@ def main():
     parser.add_argument("--bindings", type=Path)
     parser.add_argument("--python-inventory", type=Path)
     parser.add_argument("--python-bindings", type=Path)
+    parser.add_argument("--doctest-inventory", type=Path)
+    parser.add_argument("--doctest-bindings", type=Path)
     parser.add_argument("--cli-inventory", type=Path)
     parser.add_argument("--cli-bindings", type=Path)
     parser.add_argument("--discover", action="store_true",
                         help="Print compiler IDs for review, without validating classification")
+    parser.add_argument("--discover-tooling", type=Path, metavar="OUTPUT_DIR",
+                        help="Compile/list CLI, Python and doctests; verify checked-in bindings")
     args = parser.parse_args()
-    requirements = json.loads(args.requirements.read_text())
+    requirements = json.loads(args.requirements.read_text(encoding="utf-8"))
     owners, cases = validate_requirements(requirements)
+    if args.discover_tooling:
+        counts = discover_tooling(args.discover_tooling, owners)
+        print(f"Classified {counts['cli']} CLI surfaces, {counts['python']} Python tests "
+              f"and {counts['doctest']} doctests")
     if args.inventory:
-        inventory = json.loads(args.inventory.read_text())
+        inventory = json.loads(args.inventory.read_text(encoding="utf-8"))
         if args.discover:
             print(json.dumps(discovered_tests(inventory), indent=2))
             return
         if not args.bindings:
             parser.error("--inventory requires --bindings or explicit --discover")
-        bindings = json.loads(args.bindings.read_text())
+        bindings = json.loads(args.bindings.read_text(encoding="utf-8"))
         discovered = compare_inventory(inventory, bindings)
         for requirement in requirements["requirements"]:
             for case in requirement["cases"]:
@@ -134,16 +204,14 @@ def main():
     for inventory_path, binding_path, label, compare in [
         (args.python_inventory, args.python_bindings, "Python", compare_python),
         (args.cli_inventory, args.cli_bindings, "CLI", compare_surfaces),
+        (args.doctest_inventory, args.doctest_bindings, "Doctest", compare_doctests),
     ]:
         if bool(inventory_path) != bool(binding_path):
             parser.error(f"{label} validation requires both inventory and bindings")
         if inventory_path:
-            inventory = json.loads(inventory_path.read_text())
-            bindings = json.loads(binding_path.read_text())
-            if label == "CLI":
-                compare(inventory, bindings, owners)
-            else:
-                compare(inventory, bindings)
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+            bindings = json.loads(binding_path.read_text(encoding="utf-8"))
+            compare(inventory, bindings, owners)
     print(f"{len(requirements['requirements'])} requirements, {len(cases)} bound cases; "
           "structure checked only, no execution or qualification claim")
 
