@@ -1440,8 +1440,84 @@
             "Input archive SHA-256 is pinned independently of the product and checked before execution",
             "Public preview leaves destination absent; import and two syncs preserve author documents and exact runtime selection",
             "Exported Modrinth metadata and complete override inventory match independent literal expectations"
+          ]
+        },
+        {
+          "id": "UX-012.layers-and-conversions",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::import::tests::native_import_preserves_layers_and_optional_choices_through_build_and_export",
+            "empack-lib::engine::import::acquisition::tests::import_candidate_retains_every_layer_and_explicit_local_conversion",
+            "empack-lib::engine::import::acquisition::tests::import_candidate_requires_a_safe_durable_url_or_explicit_conversion",
+            "empack-lib::engine::mrpack::tests::optional_metadata_conversion_is_explicit_and_embedded_optionality_never_flattens_silently"
           ],
-          "remaining_group_evidence": "Remote/provider content, optional choices, conversions and real-pack qualification remain separate cases"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled acquisition and native host fixtures preserve exact runtime, common/client/server layers and optional participation; side projection retains effective bytes while keeping authored common content",
+            "Unsafe durable references require explicit local conversion and retain original assertions and conversion provenance",
+            "Optional metadata loss requires acknowledgement; unrepresentable embedded optionality is refused rather than silently flattened"
+          ]
+        },
+        {
+          "id": "UX-012.reference-roundtrip",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_verified_import::journey_verified_url_import_sync_export_and_remove_preserve_contract",
+            "empack-tests::journey_verified_import::journey_md5_import_preserves_weak_source_evidence_through_native_export",
+            "empack-tests::journey_verified_import::journey_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public local import, sync and export preserve an independently asserted complete mrpack index and override byte inventory, including ordered URLs, observed digests, runtime and optional/unsupported sides",
+            "Strong and weak original source assertions survive authoring and native reference output; observed mrpack digests do not replace the recorded original evidence",
+            "A second public import requires an explicit optional default; choosing false then re-exporting retains optional participation and the complete inventory without modifying the first archive",
+            "Wrong manual bytes, unknown slots and duplicate associations cannot publish a project; retained incomplete dependency evidence refuses removal until explicitly acknowledged"
+          ]
+        },
+        {
+          "id": "UX-012.shipped-roundtrip",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_import::journey_local_mrpack_import_reexport",
+            "empack-tests::journey_verified_import::journey_verified_url_import_sync_export_and_remove_preserve_contract",
+            "empack-tests::journey_verified_import::journey_md5_import_preserves_weak_source_evidence_through_native_export",
+            "empack-tests::journey_verified_import::journey_import_associations_reject_wrong_bytes_unknown_slots_and_duplicates"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each extracted shipping archive runs the same pinned layered import and reference re-import journey against independent expected bytes and metadata",
+            "Neither a repository build nor a host-only fixture substitutes for the final artifact"
+          ],
+          "required_targets": [
+            "aarch64-apple-darwin",
+            "x86_64-unknown-linux-gnu",
+            "x86_64-pc-windows-msvc",
+            "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu"
+          ]
         }
       ],
       "owner_now": [
@@ -1454,7 +1530,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-013",

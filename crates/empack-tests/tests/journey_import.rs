@@ -1,8 +1,11 @@
 //! Pinned source archives and independent expected inventories; no moving upstream inputs.
-use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, offline_command};
+use empack_tests::harness::{
+    archive::zip_members,
+    process::{TestProject, assert_dist_artifact_suffix, offline_command},
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, fs, io::Read, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
 fn corpus(id: &str) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import-corpus");
@@ -107,33 +110,14 @@ fn corpus(id: &str) {
         ])
         .assert()
         .success();
-    let mut output = zip::ZipArchive::new(
-        fs::File::open(assert_dist_artifact_suffix(
-            &imported,
-            &format!(
-                "{}-{}.mrpack",
-                case["expected"]["name"].as_str().unwrap(),
-                case["expected"]["version"].as_str().unwrap()
-            ),
-        ))
-        .unwrap(),
-    )
-    .unwrap();
-    let mut members = BTreeMap::new();
-    for index in 0..output.len() {
-        let mut entry = output.by_index(index).unwrap();
-        if entry.is_dir() {
-            continue;
-        }
-        let mut value = Vec::new();
-        entry.read_to_end(&mut value).unwrap();
-        assert!(
-            members
-                .insert(entry.name().unwrap().into_owned(), value)
-                .is_none(),
-            "duplicate exported member"
-        );
-    }
+    let mut members = zip_members(&assert_dist_artifact_suffix(
+        &imported,
+        &format!(
+            "{}-{}.mrpack",
+            case["expected"]["name"].as_str().unwrap(),
+            case["expected"]["version"].as_str().unwrap()
+        ),
+    ));
     let exported: Value =
         serde_json::from_slice(&members.remove("modrinth.index.json").unwrap()).unwrap();
     let expected = &case["expected"];

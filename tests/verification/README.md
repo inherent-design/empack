@@ -295,3 +295,13 @@ with the real product and a POSIX GitHub command recorder, checking early refusa
 upload failure and reveal ordering. These tests have no publisher credentials and
 cannot contact GitHub. They do not complete UX-082: actual authorized sandbox
 publication evidence remains a distinct manual-candidate obligation.
+
+The local mrpack journey (`UX-012`) compares the complete exported index and override
+inventory against literal values, then imports the resulting archive into another
+project and exports again. It covers common/client/server files, ordered URL fallbacks,
+strong and weak original assertions, observed export digests and optional client-only
+content. Mrpack cannot store the authoring default for an optional choice: a second
+import must ask for it again. Choosing a different default preserves optional
+participation in the exported format. Imported dependency coverage remains partial;
+removing a root while retaining other imported roots requires explicit acknowledgement.
+The host conversion cases and five shipping-archive cases remain separate evidence.
