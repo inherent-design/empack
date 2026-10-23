@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from verification.classification import BOUNDARIES, compare_rust_inventory
+from verification.consumer import PRISM_TEST
 from verification.suites import TEST_FEATURES
 from verification.discovery import rustdoc_tests
 from verification.requirements import case_results, validate_requirements
@@ -179,7 +180,9 @@ def main():
                       if bindings.get("schema") == 3 else compare_inventory(inventory, bindings))
         for requirement in requirements["requirements"]:
             for case in requirement["cases"]:
-                missing = set(case["test_ids"]) - discovered.keys()
+                # The fixed parser producer is validated by case_results above;
+                # it is observed by Qt, never discovered by the Rust compiler.
+                missing = set(case["test_ids"]) - {PRISM_TEST} - discovered.keys()
                 if missing:
                     raise ValueError(f"Case {case['id']} selects absent tests: {sorted(missing)}")
     for inventory_path, binding_path, label, compare in [

@@ -62,6 +62,15 @@ def _acceptance_lines(record):
     if not record["suite_evidence"]:
         lines += ["No native suite receipts were selected or admitted by this gate.", ""]
 
+    if record.get("consumer_evidence"):
+        lines += ["## Consumer parser observations", "",
+                  "These probes execute pinned consumer source. They do not execute empack or establish launcher import/startup.", ""]
+        for consumer in record["consumer_evidence"]:
+            lines += [f"- {cell(consumer['platform'])}: {cell(consumer['status'])}; Qt {cell(consumer['qt_version'])}",
+                      f"  - Prism source: {cell(consumer['prism_commit'])}; probe SHA-256: {cell(consumer['probe_sha256'])}",
+                      f"  - Receipt SHA-256: {cell(consumer['receipt_sha256'])}"]
+        lines += [""]
+
     lines += ["## Bound cases and execution variants", "",
               "Missing evidence stays NOT_RUN. A pure, host, or parser check cannot replace another case's required boundary.", ""]
     for row in requirements:
@@ -79,7 +88,9 @@ def _acceptance_lines(record):
                     if test.get("attempts"):
                         for attempt in test["attempts"]:
                             lines += [f"  - Attempt: {cell(attempt['status'])}; receipt: {cell(attempt['receipt_sha256'])}",
-                                      f"    - Test graph: {cell(attempt['test_features'])}; executable: {cell(attempt['artifact_sha256'])}"]
+                                      f"    - Test graph: {cell(attempt['test_features'])}; " +
+                                      (f"consumer probe: {cell(attempt['probe_sha256'])}" if "probe_sha256" in attempt
+                                       else f"empack executable: {cell(attempt['artifact_sha256'])}")]
                             if attempt.get("target"):
                                 lines += [f"    - Target: {cell(attempt['target'])}"]
                             if attempt.get("suite"):

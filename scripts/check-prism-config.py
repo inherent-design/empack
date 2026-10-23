@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise shared managed-config fixtures with an unmodified Prism INIFile parser."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import platform
@@ -10,12 +11,14 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from verification.consumer import PRISM_COMMIT, require_supported_qt
+from verification.consumer import (PRISM_COMMIT, PREPARE, WRAPPER, input_hashes,
+                                   observation_failures, require_supported_qt)
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "crates/empack-lib/src/engine/build/client/fixtures.json"
 
 
 def checked(*args, **kwargs):
+    kwargs.setdefault("timeout", 30)
     return subprocess.check_output(args, text=True, **kwargs).strip()
 
 
@@ -44,6 +47,7 @@ def main():
         raise ValueError("Prism source checkout must be clean")
     empack_commit = checked("git", "-C", str(ROOT), "rev-parse", "HEAD")
     empack_status = checked("git", "-C", str(ROOT), "status", "--porcelain")
+    inputs = input_hashes()
     fixture_bytes = FIXTURES.read_bytes()
     with tempfile.TemporaryDirectory(prefix="empack-prism-parser-") as temporary:
         work = Path(temporary)
@@ -61,7 +65,7 @@ unix:!macx:QMAKE_LFLAGS += -Wl,--gc-sections
 """
         (work / "probe.pro").write_text(project)
         for command in ([qmake, "probe.pro"], ["make", "-j2"]):
-            result = subprocess.run(command, cwd=work, text=True, capture_output=True)
+            result = subprocess.run(command, cwd=work, text=True, capture_output=True, timeout=180)
             if result.returncode:
                 raise RuntimeError(result.stdout + result.stderr)
         environment = json.loads(checked(str(work / "prism-config-probe"), "--environment"))
@@ -72,30 +76,26 @@ unix:!macx:QMAKE_LFLAGS += -Wl,--gc-sections
             raise ValueError(f"qmake/compiled/runtime Qt mismatch: {qt}, {environment}")
         build = dict(re.findall(r"^(CXX|CXXFLAGS|DEFINES|LFLAGS)\s*=\s*(.*)$",
                                 (work / "Makefile").read_text(), re.MULTILINE))
-        prepare = ('empack --workdir "$INST_DIR" --yes instance prepare '
-                   '"$INST_DIR/.minecraft/.empack-consumer/release.json" --sha256 '
-                   + '0' * 64 + ' --layout prism --side client')
-        wrapper = 'empack --workdir "$INST_DIR" --yes instance launch --'
         observations = []
         for index, case in enumerate(json.loads(fixture_bytes)):
-            config = case["configuration"].replace("@PREPARE@", json.dumps(prepare)).replace("@WRAPPER@", json.dumps(wrapper))
+            config = case["configuration"].replace("@PREPARE@", json.dumps(PREPARE)).replace("@WRAPPER@", json.dumps(WRAPPER))
             path = work / f"{index}.ini"
             path.write_bytes(config.encode("utf-8"))
             actual = json.loads(checked(str(work / "prism-config-probe"), str(path)))
-            integrated = (actual["loaded"] and actual["override"] and
-                          actual["prepare"] == prepare and actual["wrapper"] == wrapper)
-            if case["accepted"] and not integrated:
-                raise AssertionError((case["name"], actual))
-            if case["name"] == "legacy-shadow" and integrated:
-                raise AssertionError("The legacy shadow counterexample was not reproduced")
-            if "consumer_override" in case and actual["override"] != case["consumer_override"]:
-                raise AssertionError((case["name"], "unexpected consumer override", actual))
             observations.append({"fixture": case["name"], "supported": case["accepted"], "consumer": actual})
         if (checked("git", "-C", str(ROOT), "rev-parse", "HEAD") != empack_commit or
                 checked("git", "-C", str(ROOT), "status", "--porcelain") != empack_status or
-                FIXTURES.read_bytes() != fixture_bytes):
+                input_hashes() != inputs or
+                checked("git", "-C", str(source), "rev-parse", "HEAD") != commit or
+                checked("git", "-C", str(source), "status", "--porcelain")):
             raise ValueError("Empack source changed during probe; rerun against a stable checkout")
-        print(json.dumps({"prism_commit": commit, "qt_version": qt,
+        failures = observation_failures(json.loads(fixture_bytes), observations)
+        print(json.dumps({"schema": 2, "kind": "prism-parser-observations",
+                          "created_at": datetime.now(timezone.utc).isoformat(),
+                          "status": "FAIL" if failures else "PASS", "inputs": inputs,
+                          "probe_sha256": hashlib.sha256((work / "prism-config-probe").read_bytes()).hexdigest(),
+                          "host_system": platform.system(),
+                          "prism_commit": commit, "qt_version": qt,
                           "evidence_scope": "supported-dependency headless parser probe",
                           "empack_commit": empack_commit, "empack_dirty": bool(empack_status),
                           "fixture_sha256": hashlib.sha256(fixture_bytes).hexdigest(),
@@ -103,7 +103,8 @@ unix:!macx:QMAKE_LFLAGS += -Wl,--gc-sections
                           "environment": environment, "qmake": qmake,
                           "build_configuration": {"mode": "release", "cxx_standard": 20, **build},
                           "fixtures": observations, "gameplay_tested": False}, indent=2))
+        return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -12,6 +12,7 @@ import test_ci_verification as ci_fixtures
 import test_release_inputs as input_fixtures
 from verification.evidence import sha256, write_json
 from verification import release
+from verification.consumer import INPUTS
 
 
 class ReleaseArchiveGate(unittest.TestCase):
@@ -24,7 +25,11 @@ class ReleaseArchiveGate(unittest.TestCase):
         registry.mkdir(parents=True)
         for name in ("requirements.json", "test-bindings.json"):
             (registry / name).write_bytes((ci_fixtures.SCRIPTS.parent / "tests/verification" / name).read_bytes())
-        self.git("add", "tests")
+        for name in INPUTS:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())
+        self.git("add", "tests", "scripts", "crates")
         self.git("commit", "-qm", "fixture registry")
         self.revision = self.git("rev-parse", "HEAD")
         self.version = "0.8.4-beta"
@@ -153,7 +158,7 @@ class ReleaseArchiveGate(unittest.TestCase):
         self.assertIn("os: ubuntu-24.04-arm", tests)
         self.assertIn("needs: [build, test-archives]", gate)
         self.assertIn("needs: [archive-gate, candidate-gate]", publication)
-        self.assertIn("needs: archive-gate", gate)
+        self.assertIn("needs: [archive-gate, consumer]", gate)
         self.assertIn("scripts/qualify-release.py gate", gate)
         self.assertIn("needs.candidate-gate.outputs.qualification_sha256", publication)
         self.assertLess(publication.index("scripts/qualify-release.py verify"), publication.index("softprops/action-gh-release"))

@@ -135,6 +135,16 @@ invocation's bytes and leaves unselected workspaces intact. A separate dry-run m
 checks whether an artifact is actually retained or removed. These complete the group's
 case decomposition; platform and product-feature observations still determine acceptance.
 
+The fixed `consumer::prism::managed-config-grammar` identity belongs to the Qt probe,
+not Rust discovery. Its `independent` feature variant records that no empack product
+was executed. It requires every fixture's observations, a supported dependency/build
+environment, immutable source/input identity and the probe digest. The CI and candidate
+gates recheck those observations before joining them to `UX-053.prism-parser`.
+Unsupported or mismatched records are rejected; recorded failures remain failures.
+Other managed-integration cases still need public builder, executable and actual
+consumer evidence. Python tests of admission use explicitly synthetic records and
+are classified as helper/script evidence, never as consumer executions.
+
 Workspace-status cases pair ordinary executable JSON and human reports with literal
 malformed documents, absent/current/stale locks and mixed workspace markers. Their
 expected states come from the fixture edits, not the production document decoder.

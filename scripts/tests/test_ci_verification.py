@@ -16,6 +16,8 @@ ci = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ci)
 from verification.evidence import selected_tests, sha256, write_json
 from verification.suites import SUITES, nextest_command
+from consumer_fixture import prism_record
+from verification.consumer import inspect_prism_record
 
 REVISION = "a" * 40
 
@@ -170,12 +172,8 @@ class RequiredGate(unittest.TestCase):
                              "Evidence classification bytes changed under native checkout conversion")
 
     def test_consumer_source_dependency_and_fixture_identity_are_required(self):
-        record = dict(empack_commit=REVISION, empack_dirty=False, prism_commit=ci.PRISM_COMMIT,
-            evidence_scope="supported-dependency headless parser probe", fixture_sha256=sha256(ci.FIXTURES),
-            qt_version="6.4.2", environment=dict(qt_compiled="6.4.2", qt_runtime="6.4.2"),
-            fixtures=[dict(fixture=case["name"], supported=case["accepted"])
-                      for case in json.loads(ci.FIXTURES.read_text())])
-        ci.check_consumer(record, REVISION)
+        record = prism_record(REVISION)
+        inspect_prism_record(record, REVISION)
         for mutate in (
             lambda r: r.update(qt_version="5.15.2"),
             lambda r: r["environment"].update(qt_runtime="6.5.0"),
@@ -183,11 +181,37 @@ class RequiredGate(unittest.TestCase):
             lambda r: r.update(empack_dirty=True),
             lambda r: r.update(fixture_sha256="d" * 64),
             lambda r: r["fixtures"].pop(),
+            lambda r: r["fixtures"][0]["consumer"].update(override=False),
         ):
             modified = copy.deepcopy(record)
             mutate(modified)
             with self.assertRaises(ValueError):
-                ci.check_consumer(modified, REVISION)
+                inspect_prism_record(modified, REVISION)
+
+    def test_consumer_job_observations_reach_cases_and_the_report(self):
+        from verification.reporting import render_gate
+        plan = bound(ci.selection(["scripts/check-prism-config.py"], trusted=True))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for target in ci.TARGETS:
+                for features, suites in ci.NATIVE_SUITES.items():
+                    fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
+            path = root / "consumer-prism/prism.json"
+            path.parent.mkdir()
+            record = prism_record(REVISION)
+            write_json(path, record)
+            result = ci.check_gate(plan, successes(plan), root)
+            row = next(r for r in result["acceptance"]["requirements"] if r["id"] == "UX-053")
+            self.assertEqual(row["cases"][0]["status"], "PASS")
+            self.assertEqual(row["status"], "NOT_RUN")
+            self.assertIn("Consumer parser observations", render_gate(result))
+            self.assertIn("consumer probe:", render_gate(result))
+            self.assertEqual(result["consumer_evidence"][0]["receipt_sha256"], sha256(path))
+            record["fixtures"][0]["consumer"]["prepare"] = "missing integration"
+            record["status"] = "FAIL"
+            write_json(path, record)
+            with self.assertRaisesRegex(ValueError, "observations failed"):
+                ci.check_gate(plan, successes(plan), root)
 
     def test_docs_gate_allows_deliberately_unselected_jobs(self):
         plan = bound(ci.selection(["docs/testing.md"], trusted=False))

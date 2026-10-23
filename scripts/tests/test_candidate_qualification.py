@@ -160,6 +160,38 @@ class CandidateCommand(unittest.TestCase):
         self.assertEqual(process.returncode, 1, process.stderr)
         self.assertEqual(json.loads(output.read_text())["status"], "FAIL")
 
+    def test_parser_evidence_joins_without_qualifying_missing_consumer_journeys(self):
+        from consumer_fixture import prism_record
+        self.admit()
+        parser = self.root / ".git/prism.json"
+        data = prism_record(self.revision, self.root)
+        write_json(parser, data)
+        output = self.root / ".git/candidate.json"
+        command = [sys.executable, str(SCRIPTS / "qualify-release.py"), "gate",
+                   "--payload", str(self.output), "--archive-evidence-sha256", sha256(self.output / "archive-evidence.json"),
+                   "--consumer", str(parser), "--revision", self.revision, "--version", self.version, "--output", str(output)]
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 2, process.stderr)
+        result = json.loads(output.read_text())
+        row = next(r for r in result["acceptance"]["requirements"] if r["id"] == "UX-053")
+        self.assertEqual(row["status"], "NOT_RUN")
+        self.assertEqual(row["cases"][0]["status"], "PASS")
+        self.assertFalse(result["qualification"])
+        self.assertEqual(result["consumer_evidence"][0]["receipt_sha256"], sha256(parser))
+        data["fixtures"][0]["consumer"]["wrapper"] = "wrong wrapper"
+        for status in ("PASS", "FAIL"):
+            data["status"] = status
+            write_json(parser, data)
+            process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+            self.assertEqual(process.returncode, 1, process.stderr)
+            result = json.loads(output.read_text())
+            self.assertEqual(result["status"], "FAIL")
+            self.assertFalse(result["qualification"])
+            if status == "FAIL":
+                self.assertEqual(result["consumer_evidence"][0]["failed_fixtures"], ["supported-1.2"])
+            else:
+                self.assertIn("status disagrees", result["reason"])
+
     def test_supplemental_suite_cannot_substitute_another_product_or_unclean_source(self):
         self.admit()
         from verification.qualification import qualify

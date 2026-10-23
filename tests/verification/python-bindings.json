@@ -122,6 +122,14 @@
       ]
     },
     {
+      "id": "python::test_candidate_qualification.CandidateCommand.test_parser_evidence_joins_without_qualifying_missing_consumer_journeys",
+      "boundary": "X",
+      "requirements": [
+        "UX-084",
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_candidate_qualification.CandidateCommand.test_real_registry_and_archives_cannot_skip_unimplemented_consumer_obligations",
       "boundary": "H",
       "requirements": [
@@ -263,6 +271,14 @@
       ]
     },
     {
+      "id": "python::test_ci_verification.RequiredGate.test_consumer_job_observations_reach_cases_and_the_report",
+      "boundary": "H",
+      "requirements": [
+        "UX-084",
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_ci_verification.RequiredGate.test_consumer_source_dependency_and_fixture_identity_are_required",
       "boundary": "H",
       "requirements": [
@@ -393,6 +409,46 @@
       "requirements": [
         "UX-087",
         "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ParserAdmission.test_declared_negative_cases_are_rechecked",
+      "boundary": "U",
+      "requirements": [
+        "UX-084",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ParserAdmission.test_file_receipt_is_bounded_and_binds_exact_bytes",
+      "boundary": "U",
+      "requirements": [
+        "UX-084",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ParserAdmission.test_observed_settings_are_checked_instead_of_the_claimed_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-084",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ParserAdmission.test_parser_case_has_its_own_host_and_cannot_satisfy_product_execution",
+      "boundary": "U",
+      "requirements": [
+        "UX-084",
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_consumer_evidence.ParserAdmission.test_probe_inputs_environment_and_complete_observations_are_required",
+      "boundary": "U",
+      "requirements": [
+        "UX-084",
+        "UX-086"
       ]
     },
     {
@@ -802,6 +858,14 @@
       "boundary": "N",
       "requirements": [
         "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_release_workflow.ReleaseChannelContracts.test_parser_producer_is_shared_and_required_before_candidate_publication",
+      "boundary": "U",
+      "requirements": [
+        "UX-084",
+        "UX-086"
       ]
     },
     {

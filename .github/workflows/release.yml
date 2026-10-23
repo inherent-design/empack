@@ -228,9 +228,26 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+  consumer:
+    name: Qualify supported consumer parser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prism-parser
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: consumer-prism
+          path: .git/prism.json
+          include-hidden-files: true
+          if-no-files-found: error
+
   candidate-gate:
     name: Qualify complete candidate obligations
-    needs: archive-gate
+    needs: [archive-gate, consumer]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -243,6 +260,10 @@ jobs:
         with:
           name: checked-native-archives
           path: .git/candidate-payload
+      - uses: actions/download-artifact@v8
+        with:
+          name: consumer-prism
+          path: .git/candidate-consumer
       - name: Require native and consumer evidence for the exact tested payload
         id: qualify
         shell: bash
@@ -250,7 +271,7 @@ jobs:
           RELEASE_REVISION: ${{ github.sha }}
           ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
         run: |
-          python3 scripts/qualify-release.py gate --payload .git/candidate-payload --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python3 scripts/qualify-release.py gate --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
           python3 - <<'PYTHON'
           import hashlib, os
           from pathlib import Path

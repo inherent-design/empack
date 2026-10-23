@@ -10,7 +10,7 @@ import subprocess
 
 from verification.evidence import sha256, write_json
 from verification.suites import SUITES
-from verification.consumer import PRISM_COMMIT, require_supported_qt
+from verification.consumer import inspect_prism_evidence
 from verification.requirements import case_results
 from verification.receipts import check_suite_receipt
 from verification.reporting import render_gate
@@ -22,7 +22,6 @@ JOBS = ("tooling", "lint", "test", "cross-build", "coverage", "live", "consumer"
 ROOT = Path(__file__).resolve().parents[1]
 CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
 REQUIREMENTS = ROOT / "tests/verification/requirements.json"
-FIXTURES = Path(__file__).resolve().parents[1] / "crates/empack-lib/src/engine/build/client/fixtures.json"
 
 
 def selection(paths, *, trusted, full=False):
@@ -122,22 +121,6 @@ def make_plan(event, event_name, repository):
     return plan
 
 
-def check_consumer(record, revision):
-    if (record["empack_commit"] != revision or record["empack_dirty"]
-            or record["prism_commit"] != PRISM_COMMIT
-            or record["evidence_scope"] != "supported-dependency headless parser probe"
-            or record["fixture_sha256"] != sha256(FIXTURES)):
-        raise ValueError("Missing or unrelated supported Prism parser evidence")
-    qt = record["qt_version"]
-    require_supported_qt(qt)
-    if any(record["environment"][key] != qt for key in ("qt_compiled", "qt_runtime")):
-        raise ValueError("Consumer Qt runtime and build identity disagree")
-    expected = [(case["name"], case["accepted"]) for case in json.loads(FIXTURES.read_text())]
-    actual = [(case["fixture"], case["supported"]) for case in record["fixtures"]]
-    if actual != expected:
-        raise ValueError("Consumer fixture set differs from the required source fixtures")
-
-
 def check_gate(plan, needs, artifacts):
     if plan["schema"] != 1 or not re.fullmatch("[0-9a-f]{40}", plan["source_revision"]):
         raise ValueError("Malformed CI plan")
@@ -161,16 +144,18 @@ def check_gate(plan, needs, artifacts):
     if plan["survey"]:
         evidence.append(check_suite_receipt(artifacts / "verification-survey", ["import-survey"],
                         TARGETS[0], plan["source_revision"]))
+    consumers = []
     if plan["consumer"]:
-        record = json.loads((artifacts / "consumer-prism" / "prism.json").read_text())
-        check_consumer(record, plan["source_revision"])
+        consumers.append(inspect_prism_evidence(artifacts / "consumer-prism" / "prism.json", plan["source_revision"]))
+        if consumers[0]["status"] != "PASS":
+            raise ValueError("Required consumer parser observations failed")
     acceptance = case_results(json.loads(REQUIREMENTS.read_text()), json.loads(CLASSIFICATION.read_text()),
-                              evidence, plan["source_revision"])
+                              evidence, plan["source_revision"], consumer_evidence=consumers)
     acceptance["requirements_sha256"] = sha256(REQUIREMENTS)
     acceptance["classification_sha256"] = sha256(CLASSIFICATION)
     return {"schema": 1, "status": "PASS", "qualification": False,
             "source_revision": plan["source_revision"], "source_tree": plan["source_tree"],
-            "required_jobs": plan["required_jobs"], "acceptance": acceptance,
+            "required_jobs": plan["required_jobs"], "acceptance": acceptance, "consumer_evidence": consumers,
             "suite_evidence": [{key: value for key, value in record.items() if key != "tests"}
                                for record in evidence]}
 

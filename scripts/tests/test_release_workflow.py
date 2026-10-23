@@ -30,6 +30,20 @@ class ReleaseChannelContracts(unittest.TestCase):
                                env={**os.environ, "GITHUB_REF_NAME": tag, "GITHUB_OUTPUT": "output"})
                 self.assertEqual(output.read_text(), f"level={channel}\nprerelease={prerelease}\n")
 
+    def test_parser_producer_is_shared_and_required_before_candidate_publication(self):
+        root = Path(__file__).parents[2]
+        release = (root / '.github/workflows/release.yml').read_text()
+        pr = (root / '.github/workflows/pr-ci.yml').read_text()
+        action = (root / '.github/actions/prism-parser/action.yml').read_text()
+        self.assertIn('uses: ./.github/actions/prism-parser', release)
+        self.assertIn('uses: ./.github/actions/prism-parser', pr)
+        self.assertIn('--qmake qmake6', action)
+        self.assertIn('7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4', action)
+        gate = release.split('  candidate-gate:', 1)[1].split('\n  release:', 1)[0]
+        self.assertIn('needs: [archive-gate, consumer]', gate)
+        self.assertIn('name: consumer-prism', gate)
+        self.assertIn('--consumer .git/candidate-consumer/prism.json', gate)
+
 
 if __name__ == "__main__":
     unittest.main()

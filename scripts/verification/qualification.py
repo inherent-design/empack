@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .evidence import aggregate_outcomes, sha256
+from .consumer import inspect_prism_evidence
 from .receipts import inspect_suite_receipt
 from .release import TARGETS, check_payload, git
 from .release_inputs import release_version, stamped_sources
@@ -19,7 +20,7 @@ def applicable_requirements(version):
     return NATIVE | PORTABLE if (major, minor) >= (0, 9) else NATIVE
 
 
-def evaluate_requirements(document, classification, evidence, revision, version, package_receipts):
+def evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumer_evidence=()):
     """Evaluate admitted observations, not self-reported requirement PASS labels."""
     release_version(version)
     by_id = {row["id"]: row for row in document["requirements"]}
@@ -31,7 +32,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # Portable obligations become mandatory at their planned release, never by
     # silently changing the denominator or relying on a caller's exclusions.
     applicable = applicable_requirements(version)
-    acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts)
+    acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence)
     blockers = []
     for row in acceptance["requirements"]:
         row["applicable"] = row["id"] in applicable
@@ -54,18 +55,18 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # No approved low-risk waiver policy is installed. Missing critical or actual
     # consumer evidence cannot be waived by setting a result field to WAIVED.
     states = [row["status"] for row in acceptance["requirements"] if row["applicable"]]
-    for record in evidence:
+    for record in [*evidence, *consumer_evidence]:
         if record.get("status") != "PASS":
             blockers.append({"requirement": "candidate", "reasons": [
-                f"Suite receipt {record['receipt_sha256']} is {record.get('status', 'missing its outcome')}"]})
-    observed = aggregate_outcomes(states + [record["status"] for record in evidence])
+                f"Evidence receipt {record['receipt_sha256']} is {record.get('status', 'missing its outcome')}"]})
+    observed = aggregate_outcomes(states + [record["status"] for record in [*evidence, *consumer_evidence]])
     status = "FAIL" if observed == "FAIL" else "BLOCKED" if blockers else "PASS"
     return {"status": status, "qualification": status == "PASS", "acceptance": acceptance,
             "applicable_requirements": sorted(applicable), "blockers": blockers,
             "waivers": [], "waiver_policy": "No waiver admission; all applicable obligations must pass"}
 
 
-def qualify(root, payload, payload_sha256, revision, version, receipt_paths=()):
+def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=()):
     root = Path(root)
     if git(root, "rev-parse", "HEAD") != revision or git(root, "status", "--porcelain"):
         raise ValueError("Candidate gate requires its exact clean source checkout")
@@ -88,11 +89,13 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=()):
         if artifact["features"] != "default" or binaries.get(artifact["target"]) != artifact["sha256"]:
             raise ValueError("Candidate suite did not execute the admitted release binary")
         evidence.append(record)
-    result = evaluate_requirements(document, classification, evidence, revision, version, package_receipts)
+    consumers = [inspect_prism_evidence(path, revision, root) for path in consumer_paths]
+    result = evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumers)
     result["acceptance"].update(requirements_sha256=sha256(registry), classification_sha256=sha256(bindings))
     result.update(schema=1, kind="release-candidate-qualification", source_revision=revision,
                   source_tree=git(root, "rev-parse", "HEAD^{tree}"), version=version,
                   created_at=datetime.now(timezone.utc).isoformat(), archive_evidence_sha256=payload_sha256,
+                  consumer_evidence=consumers,
                   suite_evidence=[{key: value for key, value in record.items() if key != "tests"} for record in evidence])
     return result
 

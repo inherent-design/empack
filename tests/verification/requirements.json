@@ -2609,7 +2609,44 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-053.prism-parser",
+          "boundary": "C",
+          "test_ids": [
+            "consumer::prism::managed-config-grammar"
+          ],
+          "required_platforms": [
+            "linux"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Pinned Prism source with supported Qt/C++20 observes the required effective command settings for every accepted shared fixture and reproduces the declared negative cases; comment, whitespace and continuation semantics are checked without claiming launcher import or gameplay"
+          ]
+        },
+        {
+          "id": "UX-053.prism-preparation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::managed_prism_consumer_format_fixtures_use_public_preparation",
+            "empack-lib::engine::build::client::tests::standalone_prism_retains_hash_prefixed_configuration"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The shared configuration fixtures pass or fail through public batch preparation for reference snapshots and both subscribed Prism variants while preserving author/lock/template/prior-artifact bytes; standalone bundled configuration retains its separately supported customization"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "api::launch + process_runtime + runtime lease; server_runtime/installer"
@@ -2618,7 +2655,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-054",

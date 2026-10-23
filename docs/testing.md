@@ -486,7 +486,7 @@ The evidence explicitly records that full candidate qualification remains separa
 To evaluate an already checked payload without publishing:
 
 ```sh
-python3 scripts/qualify-release.py gate --payload /path/to/checked-native-archives --archive-evidence-sha256 EXPECTED_GATE_DIGEST --revision FULL_COMMIT_SHA --version 0.8.4-beta --output /path/to/candidate.json
+python3 scripts/qualify-release.py gate --payload /path/to/checked-native-archives --consumer /path/to/prism.json --archive-evidence-sha256 EXPECTED_GATE_DIGEST --revision FULL_COMMIT_SHA --version 0.8.4-beta --output /path/to/candidate.json
 ```
 
 Run from the exact clean candidate checkout. This rechecks the archive payload's
@@ -496,6 +496,13 @@ against inventory/JUnit, the same source/version and the actual shipped binary f
 that target. The current admission path accepts only default-feature release
 executables in the payload; additional feature builds need their own build evidence.
 A development binary or arbitrary telemetry binary cannot substitute for that proof.
+Repeated `--consumer` inputs admit the fixed Prism parser producer for the same clean
+source. Admission checks the supported Qt/compiler environment, probe and fixture
+identities, and every recorded setting. A claimed PASS with broken required commands
+is rejected; an accurately recorded failure remains failed. This evidence contributes
+only to the parser case, independently of product features. It cannot qualify actual
+Prism import/startup or any missing native case. The release workflow runs the same
+parser action as PR CI and requires its record before candidate evaluation.
 The command returns `0` only for full qualification, `2` for missing obligations and
 `1` for failed or rejected evidence.
 
@@ -550,11 +557,17 @@ The probe rejects unsupported Qt versions before compilation. Earlier Qt 5 runs 
 supplemental diagnostics, not qualification of Prism 11.1.1. Consumer-parser execution
 is separate from launching Minecraft. Its receipt records application and empack
 revisions, dirty state, fixture SHA-256, platform/architecture, compile/runtime Qt
-versions, compiler identity and build configuration. The probe compiles upstream `INIFile.cpp` and `Json.cpp`
+versions, compiler identity, build configuration, probe executable digest, observation
+time and source-input digests. The schema-2 record retains every fixture observation;
+settings failures return a nonzero status after writing the observations. The gate
+recomputes the outcome from those settings rather than trusting the status field.
+Dirty-source results remain diagnostic only. The producer currently runs on Linux
+and macOS; the required parser case selects Linux, matching the CI runner. This does
+not qualify other consumer operations or hosts. The probe compiles upstream `INIFile.cpp` and `Json.cpp`
 without vendoring or changing their parsing code:
 
 ```sh
-python3 scripts/check-prism-config.py --prism-source /path/to/PrismLauncher-11.1.1 --qmake /path/to/qmake
+python3 scripts/check-prism-config.py --prism-source /path/to/PrismLauncher-11.1.1 --qmake /path/to/qmake > /path/to/prism.json
 ```
 
 Use a clean checkout at `7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4` and supported Qt 6

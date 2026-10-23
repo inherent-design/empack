@@ -62,3 +62,112 @@ class ConsumerEvidence(unittest.TestCase):
             command[command.index('--ref') + 1] = base
             command[command.index('--base') + 1] = 'HEAD'
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+
+class ParserAdmission(unittest.TestCase):
+    def record(self):
+        from consumer_fixture import prism_record
+        return prism_record('a' * 40)
+
+    def test_observed_settings_are_checked_instead_of_the_claimed_pass(self):
+        import copy
+        from verification.consumer import inspect_prism_record
+        original = self.record()
+        for key, value in [('override', False), ('loaded', False), ('prepare', 'wrong command'), ('wrapper', 'wrong wrapper')]:
+            record = copy.deepcopy(original)
+            record['fixtures'][0]['consumer'][key] = value
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, 'status disagrees'):
+                    inspect_prism_record(record, 'a' * 40)
+                record['status'] = 'FAIL'
+                result = inspect_prism_record(record, 'a' * 40)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertEqual(result['failed_fixtures'], ['supported-1.2'])
+
+    def test_probe_inputs_environment_and_complete_observations_are_required(self):
+        import copy
+        from verification.consumer import inspect_prism_record
+        original = self.record()
+        for mutate in [
+            lambda r: r['inputs'].pop('scripts/check-prism-config.py'),
+            lambda r: r['inputs'].update({'scripts/consumer/prism-config-probe.cpp': '0' * 64}),
+            lambda r: r.update(probe_sha256='not-a-digest'),
+            lambda r: r.update(created_at='2026-10-23T00:00:00'),
+            lambda r: r['environment'].update(cplusplus=201703),
+            lambda r: r['build_configuration'].update(mode='debug'),
+            lambda r: r['build_configuration'].update(CXX=''),
+            lambda r: r.update(gameplay_tested=True),
+            lambda r: r.update(host_system='unobserved'),
+            lambda r: r['fixtures'].append(r['fixtures'][0]),
+            lambda r: r['fixtures'][0]['consumer'].update(override='true'),
+            lambda r: r['fixtures'][0].pop('consumer'),
+            lambda r: r.update(environment=None),
+        ]:
+            record = copy.deepcopy(original)
+            mutate(record)
+            with self.subTest(record=record.get('probe_sha256')), self.assertRaises(ValueError):
+                inspect_prism_record(record, 'a' * 40)
+
+    def test_declared_negative_cases_are_rechecked(self):
+        from verification.consumer import inspect_prism_record, PREPARE, WRAPPER
+        record = self.record()
+        shadow = next(x for x in record['fixtures'] if x['fixture'] == 'legacy-shadow')
+        shadow['consumer'].update(loaded=True, override=True, prepare=PREPARE, wrapper=WRAPPER)
+        record['status'] = 'FAIL'
+        self.assertIn('legacy-shadow', inspect_prism_record(record, 'a' * 40)['failed_fixtures'])
+        record = self.record()
+        negative = next(x for x in record['fixtures'] if not x['supported'] and 'hash' in x['fixture'])
+        negative['consumer']['override'] = True
+        with self.assertRaises(ValueError):
+            inspect_prism_record(record, 'a' * 40)
+
+    def test_file_receipt_is_bounded_and_binds_exact_bytes(self):
+        import json
+        from verification.consumer import inspect_prism_evidence
+        from verification.evidence import sha256
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'prism.json'
+            path.write_text(json.dumps(self.record()))
+            result = inspect_prism_evidence(path, 'a' * 40)
+            self.assertEqual(result['receipt_sha256'], sha256(path))
+            self.assertEqual(result['features'], 'independent')
+            self.assertNotIn('artifact_sha256', result)
+            for payload in ('', ' ' * (1024 * 1024 + 1)):
+                path.write_text(payload)
+                with self.assertRaisesRegex(ValueError, 'nonempty and at most'):
+                    inspect_prism_evidence(path, 'a' * 40)
+
+    def test_parser_case_has_its_own_host_and_cannot_satisfy_product_execution(self):
+        import copy
+        from verification.consumer import inspect_prism_record, PRISM_TEST
+        from verification.requirements import case_results
+        record = inspect_prism_record(self.record(), 'a' * 40)
+        record['receipt_sha256'] = 'b' * 64
+        case = dict(id='UX-053.parser', boundary='C', test_ids=[PRISM_TEST],
+                    required_platforms=['linux'], required_product_features=['independent'])
+        document = dict(schema=1, requirements=[dict(id='UX-053', scope='stable', risk='critical',
+                        evidence_tiers=['C'], case_bindings_status='partial', cases=[case])])
+        classification = dict(targets={'linux-native': 'linux'}, tests=[])
+        def result(records):
+            return case_results(document, classification, [], 'a' * 40, consumer_evidence=records)['requirements'][0]
+        self.assertEqual(result([])['cases'][0]['status'], 'NOT_RUN')
+        joined = result([record])
+        self.assertEqual(joined['cases'][0]['status'], 'PASS')
+        self.assertEqual(joined['status'], 'NOT_RUN')
+        attempt = joined['cases'][0]['variants'][0]['tests'][0]['attempts'][0]
+        self.assertEqual(attempt['probe_sha256'], record['probe_sha256'])
+        self.assertNotIn('artifact_sha256', attempt)
+        other_host = dict(record, platform='macos')
+        self.assertEqual(result([other_host])['cases'][0]['status'], 'NOT_RUN')
+        failed = dict(record, receipt_sha256='c' * 64, status='FAIL')
+        self.assertEqual(result([failed, record])['status'], 'FAIL')
+        for bad in [dict(record, source_revision='d' * 40), dict(record, features='default')]:
+            with self.assertRaises(ValueError):
+                result([bad])
+        for field, value in [('boundary', 'X'), ('required_product_features', ['default']),
+                             ('test_ids', ['consumer::unreviewed::claim'])]:
+            changed = copy.deepcopy(case)
+            case[field] = value
+            with self.assertRaises(ValueError):
+                result([record])
+            case.clear(); case.update(changed)
