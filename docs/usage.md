@@ -3,7 +3,8 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide follows the v0.8.0-beta CLI; `empack <command> --help` lists the installed options.
+This guide follows the current native CLI; `empack <command> --help` lists the
+options in your installed version.
 
 ## Workspace status
 
@@ -243,9 +244,22 @@ stop all associated processes before `instance recover-runtime --acknowledge-sto
 cached content. `clean all` means builds and cache; it does not erase author sources,
 installed worlds or recovery evidence. Preview the selected cleanup with `--dry-run`.
 
-Workdir and relative paths resolve from captured invocation context. State and cache
-roots are separately configurable. Configuration precedence is explicit and cannot
-cause an inherited environment value to override a supplied command-line value.
+Workdir and relative input paths resolve from the directory where empack was invoked.
+Relative `--state-dir` and `--cache-dir` paths use that same directory, independently
+of `--workdir`. A relative initialization destination is a child of the selected
+workdir. State holds durable operation and recovery records; cache content is disposable.
+
+Configuration precedence, from lowest to highest, is defaults, `.env`, `.env.local`,
+inherited environment variables, then explicit CLI options. Dotenv files are read from
+the invocation directory; selecting `--workdir` does not load that project's dotenv
+files. Quote paths containing spaces in dotenv files and pass each CLI path as one
+argument. The corresponding environment variables are `EMPACK_WORKDIR`,
+`EMPACK_STATE_DIR` and `EMPACK_CACHE_DIR`.
+
+Help and version display flags remain available when unrelated dotenv files are
+malformed. Ordinary commands, including `version` and an invocation with no command,
+load configuration and report malformed dotenv as an error. With valid configuration,
+invoking no command prints help guidance without creating project or host state.
 
 ## Native release example
 

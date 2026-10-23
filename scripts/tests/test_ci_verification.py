@@ -233,7 +233,11 @@ class RequiredGate(unittest.TestCase):
                         for row in json.loads(ci.REQUIREMENTS.read_text())["requirements"]
                         for case in row["cases"]}
             for requirement in acceptance:
-                self.assertEqual(requirement["status"], "NOT_RUN")
+                # This synthetic full native matrix now supplies every bound
+                # configuration case. Entry identity still needs package proof;
+                # partial groups cannot pass just because their current tests do.
+                self.assertEqual(requirement["status"],
+                                 "PASS" if requirement["id"] == "UX-002" else "NOT_RUN")
                 for case in requirement["cases"]:
                     # This plan selects native suites, not the independently bound
                     # live-provider case. Only selected execution can pass it.

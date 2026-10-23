@@ -126,6 +126,15 @@ display flags remain usable. With valid configuration, invoking no command retur
 help guidance without creating state. Recursive help checks each selected command's
 own usage line, so mistakenly returning root help cannot satisfy a leaf's case.
 
+Configuration cases connect parsed values and host loading to ordinary executable
+effects. Competing dotenv, environment and CLI roots must select only the intended
+workspace and invocation-relative state/cache paths. The input fixture places different
+bytes and malformed dotenv in the selected workspace to expose accidental rebasing.
+Preview preserves every fixture file and creates no storage; application installs the
+invocation's bytes and leaves unselected workspaces intact. A separate dry-run matrix
+checks whether an artifact is actually retained or removed. These complete the group's
+case decomposition; platform and product-feature observations still determine acceptance.
+
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a
 controlled child, changes its ownership record, sends a host interrupt, and checks

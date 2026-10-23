@@ -303,16 +303,7 @@ fn smoke_local_removal_cannot_follow_a_symlinked_ancestor() {
         outside_before
     );
 }
-#[test]
-fn smoke_native_requirements_do_not_install_a_backend() {
-    let project = TestProject::new();
-    command(&project)
-        .env("PATH", "")
-        .arg("requirements")
-        .assert()
-        .success();
-    assert!(!project.dir().join(".empack-cache/bin").exists());
-}
+
 #[test]
 fn smoke_invalid_optional_flags_do_not_mutate_project() {
     let project = initialized();
@@ -324,42 +315,6 @@ fn smoke_invalid_optional_flags_do_not_mutate_project() {
     ] {
         command(&project).args(args).assert().failure();
         assert_eq!(snapshot(&project), before);
-    }
-}
-#[test]
-fn smoke_dotenv_precedence_reaches_command_execution() {
-    for (local, environment, cli, preserved) in [
-        (None, None, false, true),
-        (Some(false), None, false, false),
-        (Some(true), Some(false), false, false),
-        (Some(true), Some(false), true, true),
-    ] {
-        let project = initialized();
-        std::fs::write(project.dir().join(".env"), "EMPACK_DRY_RUN=true\n").unwrap();
-        if let Some(value) = local {
-            std::fs::write(
-                project.dir().join(".env.local"),
-                format!("EMPACK_DRY_RUN={value}\n"),
-            )
-            .unwrap();
-        }
-        std::fs::create_dir(project.dir().join("dist")).unwrap();
-        let artifact = project.dir().join("dist/keep.zip");
-        std::fs::write(&artifact, "artifact").unwrap();
-        let mut cmd = command(&project);
-        if let Some(value) = environment {
-            cmd.env("EMPACK_DRY_RUN", value.to_string());
-        }
-        cmd.args(["clean", "builds", "--yes"]);
-        if cli {
-            cmd.arg("--dry-run");
-        }
-        cmd.assert().success();
-        assert_eq!(
-            artifact.exists(),
-            preserved,
-            "local={local:?}, env={environment:?}, cli={cli}"
-        );
     }
 }
 

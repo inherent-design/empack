@@ -228,8 +228,7 @@
           ],
           "assertions": [
             "Unlike display flags, the version command and no-subcommand invocation load configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
-          ],
-          "remaining_group_evidence": "Precedence, selected workspace, literal arguments and state/cache roots still need complete bindings and execution evidence"
+          ]
         },
         {
           "id": "UX-002.no-command-guidance",
@@ -248,8 +247,112 @@
           ],
           "assertions": [
             "No-subcommand invocation exits successfully with help guidance, without modifying invalid author documents or clean/hostile isolated state and cache paths"
+          ]
+        },
+        {
+          "id": "UX-002.parsed-values-and-arguments",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::application::cli::tests::cli_config_load_from_parses_arguments_and_config",
+            "empack-lib::application::cli::tests::instance_launch_preserves_native_argument_boundaries",
+            "empack-lib::application::cli::tests::cli_load_for_process_from_returns_parse_error_for_invalid_args"
           ],
-          "remaining_group_evidence": "Precedence, selected workspace, literal arguments and state/cache roots still need complete bindings and execution evidence"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit numeric, color and boolean options survive parsing; invalid options remain typed errors",
+            "Runtime executable and arguments containing spaces and literal shell characters remain separate values after --"
+          ]
+        },
+        {
+          "id": "UX-002.host-config-loading",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::loader::tests::test_load_from_parses_cli_and_fills_workdir",
+            "empack-lib::application::loader::tests::test_load_from_reads_env_local_and_applies_cli_overrides",
+            "empack-lib::application::loader::tests::test_load_from_reports_invalid_env_file"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The host loads dotenv and explicit configuration with expected values and fills the invocation workdir",
+            "CLI numeric, color and logging options override dotenv; malformed configuration remains a typed error"
+          ]
+        },
+        {
+          "id": "UX-002.workspace-storage-precedence",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_arguments::cli_configuration_precedence_selects_workspace_and_invocation_relative_storage"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Four competing configuration layers select only the highest-priority workspace, state and cache paths",
+            "Relative paths containing spaces and Unicode resolve from invocation; workdir dotenv and decoy input bytes are not used",
+            "Initialization and add previews leave all bytes unchanged and create no storage; application installs the invocation input into the selected project and preserves all original files",
+            "State/cache records appear only at their configured invocation-relative roots; lower-priority workspaces and storage remain untouched"
+          ]
+        },
+        {
+          "id": "UX-002.dry-run-precedence",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_arguments::cli_dry_run_precedence_reaches_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "CLI dry-run beats inherited environment, which beats .env.local, which beats .env",
+            "The selected policy governs actual artifact retention/removal; previews preserve all bytes and applied cleanup preserves manifest and lock"
+          ]
+        },
+        {
+          "id": "UX-002.empty-storage-arguments",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_arguments::cli_invalid_storage_roots_refuse_before_project_creation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Empty explicit state/cache paths fail with status 2 and a named missing-value diagnostic before project or storage creation"
+          ]
         }
       ],
       "owner_now": [
@@ -258,7 +361,7 @@
       "owner_09": [
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-003",
