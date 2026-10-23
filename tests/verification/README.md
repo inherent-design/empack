@@ -96,8 +96,8 @@ changes and vanished tests fail. CI rechecks the inventory and classification di
 alongside the JUnit join. Cross compilation cannot substitute for host discovery.
 The two additional release execution targets (Intel macOS and ARM64 Linux) require
 the corresponding OS membership too. These are expectations awaiting discovery and
-execution on those hosts, not inferred passing evidence. The current registry does
-not classify the separate minimal-feature graph.
+execution on those hosts, not inferred passing evidence. Both minimal and all-features
+membership must be checked against their own compiler inventories.
 
 These checks validate structure and classification only. CLI, Python and doctest
 bindings are also checked against actual discovery. After revalidating each selected

@@ -2065,7 +2065,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-054.private-key-init",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Dry run creates neither signing key nor publication output",
+            "Initialization in a protected directory prints its independently derived public key without the private seed",
+            "Repeated initialization refuses to overwrite the original signing bytes"
+          ],
+          "remaining_group_evidence": "Declined approval, unsafe key-directory matrices and failures during key creation remain separate native/interactive cases"
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine::native/snapshot/staging/verification/publication",
@@ -2076,7 +2099,7 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-055",
@@ -2099,7 +2122,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-055.signed-local-stage",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal authored native release is built and staged through public commands",
+            "Independently computed payload digest and Ed25519 verification agree with the signed output and preserve source payload bytes",
+            "Tampered source asset refuses staging without creating the release directory; corrected source stages exact bytes without publishing a channel"
+          ],
+          "remaining_group_evidence": "Immutable destination conflicts, complete allowed-upload inventory and hosted publication remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine_host::build/profiles; engine::build; templates/artifacts",
@@ -2110,7 +2156,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-056",
@@ -2165,7 +2211,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-057.explicit-local-enrollment",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public enrollment uses an explicit pack, channel, HTTPS origin and disposable public key",
+            "Enrollment and subsequent channel observation do not create the game directory"
+          ],
+          "remaining_group_evidence": "Existing installation mismatches, enrollment preview and decline remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine::instance + api::instance; empack-core::instance"
@@ -2174,7 +2242,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-058",
@@ -2197,7 +2265,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-058.local-channel-authentication",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Wrong signer, modified signed payload and expired high-sequence channel are rejected without changing installed bytes",
+            "Valid lower sequence remains acceptable after rejected high-sequence evidence",
+            "Observation persists independently of content application; a later managed-file conflict leaves the installed release unchanged"
+          ],
+          "remaining_group_evidence": "Correctly signed pack/channel mismatch, public freshness/expiry diagnostic detail and hosted transport remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine::acquisition/content/archive_source/import",
@@ -2208,7 +2299,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-059",
@@ -2230,7 +2321,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-059.trust-changes-retain-floor",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Replacing trust rejects the old signer and accepts a fresh channel signed by the newly selected key",
+            "Rollback, key rotation and revoke/re-enroll do not reset the accepted sequence floor",
+            "Revocation rejects channel observation while installed release and user bytes remain intact"
+          ],
+          "remaining_group_evidence": "Multiple-key sets, decline/preview and trust persistence faults remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine::instance + api::instance; empack-core::instance"
@@ -2239,7 +2353,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-060",
@@ -2263,7 +2377,30 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-060.local-publisher-player",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Independently signed local channel envelopes connect ordinary build, stage, enrollment, observation and installation commands",
+            "Release A to B updates require an explicit managed-file replacement decision and preserve player configuration and world bytes",
+            "Repair and rollback select exact retained content across fresh executable invocations"
+          ],
+          "remaining_group_evidence": "Hosted HTTPS publication, optional choices, restricted input, runtime changes and actual consumer acceptance remain required"
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine::instance + api::instance; empack-core::instance",
@@ -2274,7 +2411,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-061",
@@ -2397,7 +2534,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-064.local-update-conflict",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Observing B leaves A installed; a conflicting managed file blocks B without overwriting local data",
+            "Explicit replacement installs exact B bytes while retaining player-owned configuration and world content"
+          ],
+          "remaining_group_evidence": "Client/server and Prism layout variants, contradictory overrides, check/approval behavior and instance pending input remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::release + api::release_publication/subscription",
@@ -2408,7 +2567,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-065",
@@ -2497,7 +2656,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-067.offline-repair",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Repair with explicit local release assets restores a deleted managed file from active B without an upstream refresh",
+            "Repair preserves modified seed configuration, world contents and player-added world members"
+          ],
+          "remaining_group_evidence": "Corrupt managed bytes, accepted deviations, cache miss and failed repair variants remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::acquisition/content/archive_source/import",
@@ -2508,7 +2689,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-068",
@@ -2531,7 +2712,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-068.rollback-retains-player-data-and-floor",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Rollback to retained A restores its exact managed bytes after installing B",
+            "Player configuration, modified world data and player-added files survive rollback",
+            "Replayed older signed channel remains rejected after rollback"
+          ],
+          "remaining_group_evidence": "Unknown releases, rollback conflicts, choice decisions and publication interruption remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::release + api::release_publication/subscription",
@@ -2542,7 +2746,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-069",
@@ -2598,7 +2802,29 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-070.initialized-world-no-gap-fill",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "After A initializes a world, B adding another publisher world member does not fill that member during update or repair",
+            "Existing world bytes and player-added files survive update, repair and rollback"
+          ],
+          "remaining_group_evidence": "Prism icons, custom world folders and managed/seed ownership transitions remain separate cases"
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine_host::build/profiles; engine::build; templates/artifacts"
@@ -2607,7 +2833,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-071",

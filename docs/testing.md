@@ -37,6 +37,7 @@ The separated executable suites have explicit boundaries:
 | `journey_authoring` | Literal layered authoring, rebuild and removal |
 | `journey_pending` | Public build/sync inspection, verified manual association, retained partial inputs, restart, stale refusal and discard |
 | `journey_pending_import` | Public import selectors, retained-archive restart, exact exported bytes and changed-destination refusal |
+| `journey_publisher` | Local signed-channel enrollment, update conflicts, repair, rollback and trust changes |
 | `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
 | `live_cli_init` | Official loader catalog resolution |
 | `live_provider_cli` | Modrinth identity, acquisition and convergence |
@@ -66,6 +67,14 @@ keeps incomplete requirement discovery explicit. Its unsupported-transport fixtu
 does not establish a live provider's restricted-download policy. Instance continuation
 parity and remaining interactive/corrupt-record variants are still separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
+
+The publisher journey builds literal native projects, stages them using a disposable
+private key, and checks the signed payload independently with Ed25519. Fresh CLI
+processes enroll, observe local channel envelopes, install, update, repair, roll back,
+and change trust. Assertions cover refused tampering and expiry, explicit conflict
+resolution, replay floors, and preservation of player configuration and initialized
+worlds. These are the documented local-envelope routes. They do not execute hosted
+HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
 
 The executable harness lives in `empack-tests::harness::process`, outside the
 product dependency graph. Local runs may discover a binary and print the selected

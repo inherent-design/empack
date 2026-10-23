@@ -810,6 +810,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "conpty 0.7.0",
+ "ed25519-dalek",
  "empack-core",
  "empack-lib",
  "expectrl",
