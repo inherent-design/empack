@@ -72,6 +72,18 @@ launch failure headlines do not imply that the runtime never ran. The executable
 fixtures test result presentation; the engine and PTY fixtures establish ownership
 cleanup and actual process retirement.
 
+The `managed_runtime_exit_uses_empack_classification` host test runs a fixture child
+with exit statuses 0 and 7, then verifies managed CLI classification and the retained
+runtime-status diagnostic. It does not launch Java. The Unix
+`e2e_interrupt_exits_130` test sends SIGINT to the actual empack executable during
+a bounded local HTTP request and checks both exit 130 and stderr. Run it against a
+freshly built binary to test executable wiring:
+
+```sh
+cargo build -p empack --all-features
+cargo test -p empack-tests --all-features --test e2e_exit_codes e2e_interrupt_exits_130
+```
+
 ## Strict external checks
 
 ```sh

@@ -285,6 +285,11 @@ group or Windows job has no active processes. A kill request alone cannot clear
 runtime evidence. Failure to establish retirement within the bounded cleanup period
 retains recovery evidence and blocks publication.
 
+Managed launch commands report unsuccessful runtime status in the diagnostic and
+return empack's classified error code (normally 1), rather than forwarding the
+runtime's numeric exit code. Standalone scripts that invoke Java directly return
+Java's status.
+
 On Unix, an inherited console attached to the controlling terminal transfers
 foreground ownership to the runtime's separate process group before exec. Console
 input and terminal-generated Ctrl-C therefore reach the runtime; Ctrl-C can run
