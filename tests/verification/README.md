@@ -25,6 +25,12 @@ test control. Global options have one root definition. Leaf commands, local
 arguments, option values, aliases and groups remain separately visible. Python
 discovery uses `unittest.TestLoader` and fails on import errors or an empty suite.
 Each required platform and feature selection needs its own inventory.
+The registry command validates native membership for the selected host and feature
+graph; cases for other platforms remain bound without being claimed as executed.
+Python, rustdoc and consumer-parser identities use their own producers rather than
+being searched for in Nextest's executable-test inventory.
+Native Python subprocess checks of the registry are supplemental `N` evidence for
+UX-088; they do not replace its required product-executable (`X`) checks.
 
 `mise run test:map` runs the same discovery and classification check as the PR
 tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,

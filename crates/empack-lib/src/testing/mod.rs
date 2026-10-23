@@ -1,3 +1,6 @@
+#[cfg(test)]
+pub(crate) mod http;
+
 pub mod filesystem;
 
 pub use filesystem::TempDirFixture;

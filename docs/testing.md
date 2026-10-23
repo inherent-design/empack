@@ -74,6 +74,16 @@ does not establish a live provider's restricted-download policy. Instance contin
 parity and remaining interactive/corrupt-record variants are still separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
 
+Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
+headers and bodies, and retain author files through refused replacement. A shared
+native HTTP fixture signals when a request actually arrives before triggering
+cancellation or caller abandonment. It distinguishes EOF/reset from a socket timeout;
+a timeout cannot stand in for connection retirement. Tests also inspect the operation
+outcome so a worker panic cannot pass as successful cleanup. Credential fixtures
+use the existing private origin mapping to exercise authenticated same-origin and
+cross-origin redirects. These are controlled wire checks, not live TLS/provider or
+public-executable HTTPS qualification.
+
 The mixed CurseForge host fixture uses controlled provider records with no download
 URL plus embedded author overrides. It resumes after the original archive is gone,
 rejects mismatched supplied bytes, and retains exact provider identity separately

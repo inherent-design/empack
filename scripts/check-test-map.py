@@ -174,11 +174,17 @@ def main():
         bindings = json.loads(args.bindings.read_text(encoding="utf-8"))
         discovered = (compare_rust_inventory(inventory, bindings, requirements["api_routes"], test_features=args.test_features)
                       if bindings.get("schema") == 3 else compare_inventory(inventory, bindings))
+        # Compiler comparison above enforces this host/feature graph. Cases can
+        # also require other hosts; check their names against the complete Rust
+        # classification, not this host's conditional compilation result.
+        known_rust = ({row["id"] for row in bindings["tests"]}
+                      if bindings.get("schema") == 3 else discovered.keys())
         for requirement in requirements["requirements"]:
             for case in requirement["cases"]:
-                # The fixed parser producer is validated by case_results above;
-                # it is observed by Qt, never discovered by the Rust compiler.
-                missing = {identity for identity in case["test_ids"] if not identity.startswith("python::")} - {PRISM_TEST} - discovered.keys()
+                # Python, rustdoc and Qt have independent discovery/validation.
+                # case_results above still rejects unknown or mismatched bindings.
+                missing = {identity for identity in case["test_ids"]
+                           if not identity.startswith(("python::", "doctest::"))} - {PRISM_TEST} - known_rust
                 if missing:
                     raise ValueError(f"Case {case['id']} selects absent tests: {sorted(missing)}")
     for inventory_path, binding_path, label, compare in [

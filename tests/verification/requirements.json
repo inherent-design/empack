@@ -1634,7 +1634,83 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-014.bounded-transfer-retirement",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::acquisition::tests::headers_digests_status_and_policy_cannot_be_mistaken_for_verified_content",
+            "empack-lib::engine::acquisition::tests::chunk_overflow_and_deadline_do_not_wait_for_a_stalled_eof",
+            "empack-lib::engine::acquisition::tests::cancellation_retires_the_blocking_verifier_and_response",
+            "empack-lib::engine::acquisition::tests::dropping_acquisition_future_closes_and_retires_its_verifier",
+            "empack-lib::engine::acquisition::tests::mirror_retry_counts_partial_bytes_from_the_failed_attempt",
+            "empack-lib::engine::acquisition::tests::verified_bytes_keep_reservations_until_the_last_reader_retires"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Streamed bytes and partial failed mirrors consume the original allowance; headers, digests, HTTP status and source policy cannot substitute for verified bytes",
+            "Stalled headers and bodies meet the transfer deadline without waiting for EOF; cancellation and caller abandonment retire the socket and release resource reservations",
+            "A surviving reader retains verified bytes and their resource reservation until it retires; worker outcomes and socket closure are checked separately"
+          ],
+          "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
+        },
+        {
+          "id": "UX-014.credential-and-redirect-scope",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::acquisition::tests::provider_download_credentials_are_scoped_to_the_exact_https_origin",
+            "empack-lib::engine::acquisition::tests::configured_provider_downloads_do_not_leak_keys_to_redirects_or_alternatives",
+            "empack-lib::engine::acquisition::tests::redirects_and_mirrors_keep_the_same_policy_and_hide_secret_locators"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Only the exact configured HTTPS origin receives sensitive provider credentials; ports, schemes, host suffixes and unrelated providers cannot acquire them",
+            "Controlled wire requests preserve credentials through same-origin redirects and recompute them for cross-origin redirects and alternate URLs; both authenticated and anonymous starting origins are exercised",
+            "Redirect budgets and locator validation remain enforced and diagnostic context does not disclose secret URLs; the private origin mapping does not prove live TLS or provider availability"
+          ],
+          "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
+        },
+        {
+          "id": "UX-014.import-failure-preserves-project",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::import::tests::remote_archive_acquisition_enforces_bytes_and_source_assertions_before_replacement",
+            "empack-lib::application::engine_host::import::tests::chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body",
+            "empack-lib::application::engine_host::import::tests::remote_archive_stalls_and_cancellation_preserve_existing_project"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Wrong source assertions and oversized streams refuse replacement before authoring decisions or publication",
+            "Header and partial-body stalls terminate on deadline or observed host cancellation, retaining author documents, templates, prior artifacts and world bytes",
+            "After a failed transfer no partial project or new durable state is published and the response socket is closed; successful controlled acquisition remains a separate positive control"
+          ],
+          "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
+        }
+      ],
       "owner_now": [
         "engine::acquisition/content/archive_source/import",
         "engine_host::initialize; engine::api::project_change"
@@ -1643,7 +1719,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared initialization/import semantics + native publication"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-015",
@@ -5199,7 +5275,8 @@
       "required_work": "Self-tests for classifier, inventory, retry policy, receipt tamper, wrong binary, stale coverage and unknown tests.",
       "evidence_tiers": [
         "U",
-        "X"
+        "X",
+        "N"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -5225,6 +5302,26 @@
             "Setup failure and incomplete or duplicate executions cannot supply passing test evidence"
           ],
           "remaining_group_evidence": "This helper evidence does not execute empack, a consumer, generated workflows or final archives; other harness obligations remain separate."
+        },
+        {
+          "id": "UX-088.tooling-command-membership",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_test_map.TestDiscoveryBinding.test_registry_command_keeps_producers_and_host_membership_separate"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "The registry command accepts synthetic native inventories for macOS/Windows and minimal/all graphs while keeping rustdoc, Python and consumer identities with their separate producers",
+            "Removing a required native identity from the selected host/graph fails the command; other-platform declarations cannot hide missing native coverage",
+            "Synthetic inventories test command validation only and never establish execution on the represented platform"
+          ]
         }
       ],
       "owner_now": [

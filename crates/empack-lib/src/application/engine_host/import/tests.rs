@@ -537,28 +537,16 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
     fs::create_dir_all(root.path().join("project/pack")).unwrap();
     fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
     let original = super::super::tests::snapshot(root.path());
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let worker = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut input = [0; 4096];
-        assert!(stream.read(&mut input).unwrap() > 0);
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n")
-            .unwrap();
-        // No final chunk: rejection must happen before EOF, and retire the connection.
-        stream.read(&mut input)
-    });
+    let fixture = crate::testing::http::StalledHttp::new(
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n",
+    );
     let result = tokio::time::timeout(
         Duration::from_secs(4),
         import_with_services(
             &session(root.path(), true, false),
             request(
                 ImportSource::Download {
-                    alternatives: NonEmpty::new(vec![format!("http://{address}/source")]).unwrap(),
+                    alternatives: NonEmpty::new(vec![fixture.url.clone()]).unwrap(),
                     expected: ExpectedContent {
                         digests: None,
                         size: None,
@@ -568,7 +556,7 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
                 true,
             ),
             |_| panic!("oversized archive must not reach decisions"),
-            ProviderCatalog::for_loopback_tests(&format!("http://{address}"), None),
+            ProviderCatalog::for_loopback_tests(&fixture.url, None),
             HttpAcquisition::for_loopback_tests(),
             ImportLimits {
                 archive: ArchiveLimits {
@@ -585,8 +573,94 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
         result.unwrap_err().downcast_ref(),
         Some(crate::engine::acquisition::TransferError::ByteLimit)
     ));
-    assert_eq!(worker.join().unwrap().unwrap(), 0);
+    fixture.assert_closed();
     assert_eq!(super::super::tests::snapshot(root.path()), original);
+}
+
+#[tokio::test]
+async fn remote_archive_stalls_and_cancellation_preserve_existing_project() {
+    use crate::application::{
+        process_runtime::{Cancellation, Interrupted},
+        session::LiveProcessProvider,
+    };
+    for prefix in [
+        &b"HTTP/1.1 200 OK\r\n"[..],
+        &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\npart\r\n"[..],
+    ] {
+        for cancelled in [false, true] {
+            for populated in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                if populated {
+                    for name in [
+                        "empack.yml",
+                        "empack.lock",
+                        "pack/keep",
+                        "templates/custom",
+                        "dist/previous.zip",
+                        "worlds/playtest/level.dat",
+                    ] {
+                        let path = root.path().join("project").join(name);
+                        fs::create_dir_all(path.parent().unwrap()).unwrap();
+                        fs::write(path, b"retain through stalled replacement").unwrap();
+                    }
+                }
+                let original = super::super::tests::snapshot(root.path());
+                let cancellation = Cancellation::default();
+                let mut host = session(root.path(), true, false);
+                host.config_provider.app_config.net_timeout = if cancelled { 30 } else { 1 };
+                host.process_provider =
+                    LiveProcessProvider::new().with_cancellation(cancellation.clone());
+                let mut fixture = crate::testing::http::StalledHttp::new(prefix);
+                let url = fixture.url.clone();
+                let prepare = import_with_services(
+                    &host,
+                    request(
+                        ImportSource::Download {
+                            alternatives: NonEmpty::new(vec![url.clone()]).unwrap(),
+                            expected: ExpectedContent {
+                                digests: None,
+                                size: None,
+                                accepted_observation: None,
+                            },
+                        },
+                        true,
+                    ),
+                    |_| panic!("partial archive must not reach conversion or publication"),
+                    ProviderCatalog::for_loopback_tests(&url, None),
+                    HttpAcquisition::for_loopback_tests(),
+                    ImportLimits::default(),
+                );
+                let observe = async {
+                    fixture.started().await;
+                    if cancelled {
+                        cancellation.cancel();
+                    }
+                };
+                let (result, ()) = tokio::time::timeout(Duration::from_secs(4), async {
+                    tokio::join!(prepare, observe)
+                })
+                .await
+                .expect("host did not retire its stalled acquisition");
+                let error = result.unwrap_err();
+                if cancelled {
+                    assert!(error.downcast_ref::<Interrupted>().is_some(), "{error:#}");
+                } else {
+                    assert!(
+                        matches!(
+                            error.downcast_ref(),
+                            Some(crate::engine::acquisition::TransferError::Deadline)
+                        ),
+                        "{error:#}"
+                    );
+                }
+                fixture.assert_closed();
+                assert_eq!(super::super::tests::snapshot(root.path()), original);
+                assert_eq!(root.path().join("project").exists(), populated);
+                assert!(!root.path().join("state").exists());
+                assert!(!root.path().join("cache").exists());
+            }
+        }
+    }
 }
 
 #[tokio::test]

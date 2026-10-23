@@ -2,6 +2,7 @@ import importlib.util
 import json
 import copy
 import sys
+import subprocess
 import tempfile
 from unittest.mock import patch
 from pathlib import Path
@@ -81,6 +82,43 @@ class TestDiscoveryBinding(unittest.TestCase):
         self.bindings["tests"][0]["boundary"] = "mock-browser"
         with self.assertRaisesRegex(ValueError, "boundary"):
             checker.compare_inventory(self.inventory, self.bindings)
+
+    def test_registry_command_keeps_producers_and_host_membership_separate(self):
+        root = Path(__file__).resolve().parents[2]
+        bindings = json.loads((root / "tests/verification/test-bindings.json").read_text())
+        # Synthetic compiler listings exercise the command join only. They are
+        # never admitted as evidence that these Rust or rustdoc tests executed.
+        for target in ("aarch64-apple-darwin", "x86_64-pc-windows-msvc"):
+            for graph in ("minimal", "all"):
+                with self.subTest(target=target, graph=graph), tempfile.TemporaryDirectory() as directory:
+                    suites = {}
+                    for row in bindings["tests"]:
+                        if bindings["targets"][target] not in row["platforms"] or graph not in row["test_features"]:
+                            continue
+                        suite = suites.setdefault(row["binary"], {
+                            "binary-name": row["binary_name"], "status": "listed", "testcases": {}})
+                        name = row["id"][len(row["binary"]) + 2:]
+                        suite["testcases"][name] = {"ignored": row["ignored"]}
+                    inventory = {"test-count": sum(len(s["testcases"]) for s in suites.values()),
+                        "rust-build-meta": {"platforms": {"host": {"platform": {"triple": target}}, "targets": []}},
+                        "rust-suites": suites}
+                    path = Path(directory) / "inventory.json"
+                    path.write_text(json.dumps(inventory))
+                    command = [sys.executable, str(root / "scripts/check-test-map.py"),
+                        "--inventory", str(path), "--bindings", str(root / "tests/verification/test-bindings.json"),
+                        "--test-features", graph]
+                    result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("no execution or qualification claim", result.stdout)
+                    # Separating producers cannot waive a native test absent on
+                    # the host/feature graph where its binding requires it.
+                    suite = next(iter(suites.values()))
+                    suite["testcases"].pop(next(iter(suite["testcases"])))
+                    inventory["test-count"] -= 1
+                    path.write_text(json.dumps(inventory))
+                    result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("missing=", result.stderr)
 
 
 class SurfaceBindings(unittest.TestCase):

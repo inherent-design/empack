@@ -1281,6 +1281,13 @@
       ]
     },
     {
+      "id": "python::test_test_map.TestDiscoveryBinding.test_registry_command_keeps_producers_and_host_membership_separate",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_test_map.TestDiscoveryBinding.test_unknown_test_is_an_error",
       "boundary": "U",
       "requirements": [
