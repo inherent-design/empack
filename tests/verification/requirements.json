@@ -32,7 +32,155 @@
       "run_gate": "release",
       "scope": "stable",
       "variant_axes": "five native target triples; clean/hostile env; paths with spaces",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-001.executable-identity",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_identity_outside_checkout_preserves_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Version flags match the selected executable identity; the version command reports version, revision, build date and target",
+            "Clean and hostile state/cache/home paths outside the checkout, including spaces and Unicode, remain unchanged with PATH empty",
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
+          ]
+        },
+        {
+          "id": "UX-001.executable-help",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_registered_help_routes_ignore_unrelated_dotenv"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Every registered command and generated help route returns usage successfully despite an invalid project and absent or malformed .env/.env.local",
+            "Short help and version flags remain available without loading unrelated author state",
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
+          ]
+        },
+        {
+          "id": "UX-001.executable-usage-errors",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_unknown_commands_report_usage_without_mutation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
+            "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox"
+          ]
+        },
+        {
+          "id": "UX-001.packaged-identity",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_identity_outside_checkout_preserves_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Version flags match the selected executable identity; the version command reports version, revision, build date and target",
+            "Clean and hostile state/cache/home paths outside the checkout, including spaces and Unicode, remain unchanged with PATH empty",
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
+            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        },
+        {
+          "id": "UX-001.packaged-help",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_registered_help_routes_ignore_unrelated_dotenv"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Every registered command and generated help route returns usage successfully despite an invalid project and absent or malformed .env/.env.local",
+            "Short help and version flags remain available without loading unrelated author state",
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
+            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        },
+        {
+          "id": "UX-001.packaged-usage-errors",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_unknown_commands_report_usage_without_mutation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Unknown root and nested commands and unknown flags return status 2 and usage on stderr with no stdout",
+            "Inputs and isolated state/cache/home paths remain unchanged; no request reaches the configured HTTP proxy",
+            "Every invocation preserves fixture bytes and root entries and makes no observed proxy connection; the proxy is not an OS network sandbox",
+            "Archive admission binds execution to the final packaged binary digest, version and native target without fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "release.yml and external process harness"
@@ -41,7 +189,7 @@
         "empack-cli",
         "CLI archive and SDK client/worker packages"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-002",
@@ -62,14 +210,35 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-002.malformed-dotenv",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_malformed_dotenv_reports_configuration_error_without_mutation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unlike display flags, the version command loads configuration: malformed .env or .env.local reports status 2 and a configuration diagnostic without modifying inputs or isolated state"
+          ],
+          "remaining_group_evidence": "Precedence, selected workspace, literal arguments, state/cache roots and no-subcommand behavior still need complete bindings and execution evidence"
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application"
       ],
       "owner_09": [
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-003",

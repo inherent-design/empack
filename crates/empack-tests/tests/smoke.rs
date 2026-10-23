@@ -364,49 +364,6 @@ fn smoke_dotenv_precedence_reaches_command_execution() {
 }
 
 #[test]
-fn smoke_malformed_dotenv_is_a_configuration_error() {
-    let project = TestProject::new();
-    std::fs::write(project.dir().join(".env"), "EMPACK_DRY_RUN='unterminated\n").unwrap();
-    command(&project).arg("version").assert().code(2);
-}
-
-#[test]
-fn smoke_malformed_dotenv_does_not_block_clap_help_or_version() {
-    for filename in [".env", ".env.local"] {
-        let project = TestProject::new();
-        std::fs::write(
-            project.dir().join(filename),
-            "EMPACK_DRY_RUN='unterminated\n",
-        )
-        .unwrap();
-        for args in [
-            vec!["--help"],
-            vec!["--version"],
-            vec!["init", "--help"],
-            vec!["build", "--help"],
-        ] {
-            command(&project)
-                .args(args)
-                .assert()
-                .success()
-                .stdout(predicates::str::contains("empack"));
-        }
-    }
-}
-
-#[test]
-fn smoke_version_does_not_resolve_managed_tooling() {
-    let project = TestProject::new();
-    command(&project)
-        .env_remove("EMPACK_PACKWIZ_BIN")
-        .env("PATH", "")
-        .arg("version")
-        .assert()
-        .success();
-    assert!(!project.dir().join(".empack-cache/bin").exists());
-}
-
-#[test]
 fn smoke_forced_import_invalid_destination_preserves_existing_project() {
     assert_forced_import_rejects_invalid_input(false);
 }

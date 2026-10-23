@@ -111,6 +111,18 @@ case's declared evidence. This report is not final release qualification: remain
 decomposition, non-Rust/consumer/device evidence and final-archive acceptance still
 need their required evidence. A successful structural check does not qualify a release.
 
+The entry-point group has a complete case decomposition for identity, recursive
+help and usage errors at executable and package boundaries. Each test runs outside
+the checkout in a path containing spaces and Unicode, with isolated clean or hostile
+state/cache/home paths and no tools on `PATH`. The help matrix uses the reviewed
+command registry and includes malformed `.env` and `.env.local` files. It checks
+status, output, unchanged inputs and absence of new root entries. A local proxy
+observes ordinary HTTP transport attempts; it is not an OS network sandbox. Package
+evidence additionally requires archive admission on each of the five native targets.
+Complete decomposition does not mean those execution variants have passed. Ordinary
+commands still load configuration: the separate malformed-dotenv case asserts that
+`version` reports configuration errors while help/version display flags remain usable.
+
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a
 controlled child, changes its ownership record, sends a host interrupt, and checks

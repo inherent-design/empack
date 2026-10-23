@@ -55,26 +55,3 @@ cli_requires_modpack!(cli_matrix_remove_requires_modpack, args: ["remove", "sodi
 cli_requires_modpack!(cli_matrix_sync_requires_modpack, args: ["sync"]);
 cli_requires_modpack!(cli_matrix_build_requires_modpack, args: ["build", "modrinth"]);
 // clean in an empty directory exits 0 ("nothing to clean" is valid)
-
-macro_rules! cli_no_args_succeeds {
-    ($name:ident, args: [$($arg:expr),+]) => {
-        #[test]
-        fn $name() {
-            let project = TestProject::new();
-            offline_command(project.dir())
-                .args([$($arg),+])
-                .assert()
-                .success();
-        }
-    };
-}
-
-cli_no_args_succeeds!(cli_matrix_version, args: ["version"]);
-cli_no_args_succeeds!(cli_matrix_help, args: ["--help"]);
-cli_no_args_succeeds!(cli_matrix_help_init, args: ["init", "--help"]);
-cli_no_args_succeeds!(cli_matrix_help_add, args: ["add", "--help"]);
-cli_no_args_succeeds!(cli_matrix_help_remove, args: ["remove", "--help"]);
-cli_no_args_succeeds!(cli_matrix_help_build, args: ["build", "--help"]);
-cli_no_args_succeeds!(cli_matrix_help_sync, args: ["sync", "--help"]);
-cli_no_args_succeeds!(cli_matrix_help_clean, args: ["clean", "--help"]);
-cli_no_args_succeeds!(cli_matrix_help_requirements, args: ["requirements", "--help"]);
