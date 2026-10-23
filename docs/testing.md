@@ -316,6 +316,14 @@ results. All 109 requirement groups remain in the report, including undecomposed
 native work and staged portable work. A passing selected CI suite does not make those
 groups complete. The report and source registry digests travel together.
 
+The gate writes `gate.json` and a readable `gate.md` together; CI uploads both and
+adds the Markdown to its job summary. The view lists requirement groups, their
+binding status, exact execution variants, and source/executable/receipt hashes.
+Failed evidence admission produces a diagnostic summary without a passing acceptance
+table. Report generation time is not an execution timestamp. The renderer does not
+revalidate standalone JSON, apply waivers, or calculate coverage from test counts;
+the JSON and original job artifacts remain the evidence to inspect.
+
 The resulting record has `qualification: false`: the remaining case decomposition,
 non-Rust/consumer/device evidence and final-package checks are not yet a complete
 release qualification record. Selecting this required status in repository

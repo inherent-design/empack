@@ -100,7 +100,7 @@ def case_results(document, classification, evidence, revision):
         states = [case["status"] for case in cases]
         if row["case_bindings_status"] != "complete":
             states.append("NOT_RUN")
-        requirements.append({"id": row["id"], "scope": row["scope"], "risk": row["risk"],
+        requirements.append({"id": row["id"], "title": row.get("title", row["id"]), "scope": row["scope"], "risk": row["risk"],
                              "case_bindings_status": row["case_bindings_status"],
                              "status": status(states), "cases": cases})
     return {"source_revision": revision, "qualification": False, "requirements": requirements}

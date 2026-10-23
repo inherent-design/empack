@@ -302,10 +302,18 @@ jobs:
         env:
           CI_NEEDS_JSON: ${{ toJSON(needs) }}
         run: python3 scripts/ci-verification.py gate --artifacts "$RUNNER_TEMP/verification-evidence" --output .git/gate.json
+      - name: Summarize admitted and missing evidence
+        if: always()
+        run: |
+          if [ -f .git/gate.md ]; then
+            cat .git/gate.md >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: verification-gate
-          path: .git/gate.json
+          path: |
+            .git/gate.json
+            .git/gate.md
           include-hidden-files: true
           if-no-files-found: error

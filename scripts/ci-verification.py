@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Select change-based checks and reject missing job or suite evidence at the final gate."""
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ from verification.suites import SUITES
 from verification.consumer import PRISM_COMMIT, require_supported_qt
 from verification.requirements import case_results
 from verification.receipts import check_suite_receipt
+from verification.reporting import render_gate
 
 TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
 NATIVE_TEST_FEATURES = {"default": "minimal", "telemetry": "all"}
@@ -193,16 +195,25 @@ def main():
                 print(name + "=" + json.dumps(value), file=output)
         print(json.dumps(plan, indent=2))
     else:
-        plan = json.loads((args.artifacts / "verification-plan" / "plan.json").read_text())
-        if git("rev-parse", "HEAD") != plan["source_revision"]:
-            raise ValueError("Gate checkout differs from the planned source")
+        identity = {"schema": 1, "qualification": False,
+                    "source_revision": git("rev-parse", "HEAD"),
+                    "source_tree": git("rev-parse", "HEAD^{tree}"),
+                    "created_at": datetime.now(timezone.utc).isoformat()}
         try:
+            plan = json.loads((args.artifacts / "verification-plan" / "plan.json").read_text())
+            if (identity["source_revision"] != plan["source_revision"]
+                    or identity["source_tree"] != plan["source_tree"]):
+                raise ValueError("Gate checkout differs from the planned source")
             result = check_gate(plan, json.loads(os.environ["CI_NEEDS_JSON"]), args.artifacts)
         except (ValueError, OSError, KeyError) as error:
-            write_json(args.output, {"status": "FAIL", "qualification": False, "reason": str(error)})
+            result = {**identity, "status": "FAIL", "reason": str(error)}
+            write_json(args.output, result)
+            args.output.with_suffix(".md").write_text(render_gate(result), encoding="utf-8")
             raise
+        result.update(created_at=identity["created_at"])
         write_json(args.output, result)
-        print(json.dumps(result, indent=2))
+        args.output.with_suffix(".md").write_text(render_gate(result), encoding="utf-8")
+        print(f"CI evidence gate: {result['status']}; JSON and Markdown: {args.output.with_suffix('')}")
 
 
 if __name__ == "__main__":

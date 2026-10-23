@@ -671,6 +671,41 @@
       ]
     },
     {
+      "id": "python::test_reporting.VerificationReports.test_ci_success_does_not_qualify_partial_requirement_or_missing_variant",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_reporting.VerificationReports.test_diagnostic_text_cannot_inject_html_or_table_structure",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_reporting.VerificationReports.test_failed_admission_cannot_render_fabricated_passing_acceptance",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_reporting.VerificationReports.test_gate_subprocess_writes_success_and_failure_reports_with_actual_source",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_reporting.VerificationReports.test_unknown_qualification_waivers_or_mixed_sources_are_not_summarized_as_success",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_test_map.DoctestDiscovery.test_incomplete_duplicate_and_unknown_listings_fail",
       "boundary": "U",
       "requirements": [
