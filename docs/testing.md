@@ -59,6 +59,19 @@ native release producer and a persisted Prism layout, reject managed icon update
 and preserve launcher bytes through corrected seed updates and launch preparation.
 Historical managed-icon fixtures verify migration to seed without conflict overrides.
 
+Executable finalization is tested separately from process supervision:
+
+```sh
+cargo test -p empack --bin empack
+cargo test -p empack-lib --lib launch_failure_summary
+```
+
+These checks retain cleanup, recovery, uncertainty and partial-effect diagnostics
+when cancellation is set, retain success after a late interrupt, and verify that
+launch failure headlines do not imply that the runtime never ran. The executable
+fixtures test result presentation; the engine and PTY fixtures establish ownership
+cleanup and actual process retirement.
+
 ## Strict external checks
 
 ```sh

@@ -35,6 +35,10 @@ Use `stop` or Ctrl-C to finish normally. If an operator externally stops the pro
 group, it remains owned until resumed with SIGCONT or retired by cancellation.
 A terminal-restoration error is reported separately from process retirement; confirmed
 retired processes do not need a false recovery acknowledgement for console cleanup.
+The CLI reports the completed outcome even when host cancellation was requested:
+cleanup and recovery failures still reach stderr. A clean interruption exits 130;
+other failures retain their classified exit status. Cancellation arriving after
+success does not change that success into an interrupted result.
 
 Run interactive launches in the foreground. Services can redirect all three console
 streams. This fix belongs to the recipient empack executable; it does not require
