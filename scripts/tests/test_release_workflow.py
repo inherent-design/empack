@@ -40,7 +40,7 @@ class ReleaseChannelContracts(unittest.TestCase):
         self.assertIn('--qmake qmake6', action)
         self.assertIn('7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4', action)
         gate = release.split('  candidate-gate:', 1)[1].split('\n  release:', 1)[0]
-        self.assertIn('needs: [archive-gate, consumer]', gate)
+        self.assertIn('needs: [archive-gate, consumer, auxiliary]', gate)
         self.assertIn('name: consumer-prism', gate)
         self.assertIn('--consumer .git/candidate-consumer/prism.json', gate)
 

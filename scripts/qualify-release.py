@@ -37,6 +37,8 @@ def main():
     gate.add_argument("--receipt", type=Path, action="append", default=[])
     gate.add_argument("--consumer", type=Path, action="append", default=[])
     gate.add_argument("--tooling", type=Path, action="append", default=[])
+    gate.add_argument("--auxiliary", type=Path, action="append", default=[],
+                      help="Telemetry build.json with its retained executable and suite evidence")
     gate.add_argument("--output", type=Path, required=True)
     publish = commands.add_parser("verify")
     publish.add_argument("--record", type=Path, required=True)
@@ -52,7 +54,7 @@ def main():
         return 0
     try:
         record = qualify(Path.cwd(), args.payload, args.archive_evidence_sha256,
-                         args.revision, args.version, args.receipt, args.consumer, args.tooling)
+                         args.revision, args.version, args.receipt, args.consumer, args.tooling, args.auxiliary)
     except (ValueError, OSError, KeyError, TypeError) as error:
         record = dict(schema=1, kind="release-candidate-qualification", status="FAIL", qualification=False,
                       source_revision=args.revision, version=args.version,

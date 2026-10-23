@@ -6,6 +6,7 @@ from pathlib import Path
 from .evidence import aggregate_outcomes, sha256
 from .consumer import inspect_prism_evidence
 from .python_tests import inspect_python_evidence
+from .auxiliary import inspect_auxiliary
 from .receipts import inspect_suite_receipt
 from .release import TARGETS, check_payload, git
 from .release_inputs import release_version, stamped_sources
@@ -67,7 +68,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
             "waivers": [], "waiver_policy": "No waiver admission; all applicable obligations must pass"}
 
 
-def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=(), tooling_paths=()):
+def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=(), tooling_paths=(), auxiliary_paths=()):
     root = Path(root)
     if git(root, "rev-parse", "HEAD") != revision or git(root, "status", "--porcelain"):
         raise ValueError("Candidate gate requires its exact clean source checkout")
@@ -79,14 +80,15 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     evidence = [entry["suite"] for entry in archives["targets"]]
     package_receipts = {record["receipt_sha256"] for record in evidence}
     binaries = {entry["suite"]["target"]: entry["executable"]["sha256"] for entry in archives["targets"]}
+    auxiliary = [inspect_auxiliary(path, root, revision, version) for path in auxiliary_paths]
+    evidence.extend(record["suite"] for record in auxiliary)
     for path in receipt_paths:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         artifact = raw["artifact"]
         record = inspect_suite_receipt(path, raw["requested_suites"], artifact["target"], revision,
                                        artifact["features"], version, "release", raw["test_features"])
-        # This first producer path admits the actual shipped product only.
-        # Additional feature builds need their own bound build evidence, not an
-        # arbitrary binary described by a caller-supplied receipt.
+        # Bare supplemental receipts still describe shipped bytes only. Auxiliary
+        # feature builds enter through their checked build-and-execution bundles.
         if artifact["features"] != "default" or binaries.get(artifact["target"]) != artifact["sha256"]:
             raise ValueError("Candidate suite did not execute the admitted release binary")
         evidence.append(record)
@@ -98,6 +100,7 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
                   source_tree=git(root, "rev-parse", "HEAD^{tree}"), version=version,
                   created_at=datetime.now(timezone.utc).isoformat(), archive_evidence_sha256=payload_sha256,
                   consumer_evidence=consumers, tooling_evidence=tooling,
+                  auxiliary_builds=[{key: value for key, value in record.items() if key != "suite"} for record in auxiliary],
                   suite_evidence=[{key: value for key, value in record.items() if key != "tests"} for record in evidence])
     return result
 

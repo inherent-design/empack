@@ -122,6 +122,34 @@
       ]
     },
     {
+      "id": "python::test_auxiliary_build.AuxiliaryBuild.test_bound_telemetry_enters_candidate_without_becoming_shipped_package_evidence",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_auxiliary_build.AuxiliaryBuild.test_mismatched_build_inputs_features_compiler_command_or_bytes_are_rejected",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_auxiliary_build.AuxiliaryBuild.test_missing_duplicate_and_modified_suite_evidence_cannot_qualify",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_auxiliary_build.AuxiliaryBuild.test_suite_cannot_relabel_binary_or_hide_an_earlier_failed_attempt",
+      "boundary": "H",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_candidate_qualification.CandidateCommand.test_parser_evidence_joins_without_qualifying_missing_consumer_journeys",
       "boundary": "X",
       "requirements": [

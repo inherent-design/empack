@@ -226,3 +226,10 @@ from v0.9 the 21 portable groups join them. Pending or partial groups, absent co
 observations and failed attempts block qualification. The current registry and
 workflow evidence are incomplete, so no candidate is qualified by this wiring alone.
 See [candidate commands and remaining work](../../docs/testing.md#coverage-and-release-qualification).
+
+Auxiliary candidate builds bind a feature variant to reviewed source, stamped inputs,
+pinned native compiler, fixed product-only command and retained executable bytes.
+Their shared-runner outcomes join ordinary feature cases; only archive admission can
+satisfy package cases. `check-auxiliary-build.py` produces the telemetry bundle and
+`qualify-release.py --auxiliary` rechecks it. Synthetic admission fixtures are helper
+evidence; actual telemetry execution requires the producer's retained suite results.

@@ -514,9 +514,29 @@ Run from the exact clean candidate checkout. This rechecks the archive payload's
 identity and evaluates the source registry, then writes JSON and Markdown with
 explicit outstanding obligations. Supplemental `--receipt` inputs are rechecked
 against inventory/JUnit, the same source/version and the actual shipped binary for
-that target. The current admission path accepts only default-feature release
-executables in the payload; additional feature builds need their own build evidence.
-A development binary or arbitrary telemetry binary cannot substitute for that proof.
+that target. Bare suite receipts cannot admit arbitrary feature builds.
+
+For a required telemetry variant, run the fixed auxiliary producer from the clean
+candidate checkout:
+
+```sh
+python3 scripts/check-auxiliary-build.py --version 0.8.4-beta --output .git/auxiliary
+```
+
+It stamps a disposable source clone, builds only the ordinary `empack` package with
+`--features telemetry --release --locked`, and runs the shared CLI and telemetry
+suites against the retained executable. The build uses an isolated Cargo home, a
+separate target directory, the pinned native compiler and the candidate's build date.
+The original source checkout and default archives remain unchanged. Add each emitted
+`build.json` to candidate evaluation with repeated `--auxiliary` options; keep its
+executable and `suite/` evidence alongside it. Admission checks the prepared inputs,
+compiler, fixed command, executable bytes and independently replayed suite results.
+These are trusted workflow producer records, not third-party signed attestations.
+
+Auxiliary builds can satisfy their explicit feature/host cases, but never package
+cases or replace any of the five shipped archives. Failures remain failures even if
+a later attempt passes. The candidate workflow produces telemetry evidence on Linux,
+macOS and Windows; it does not treat cross-compilation as native execution.
 Repeated `--consumer` inputs admit the fixed Prism parser producer for the same clean
 source. Admission checks the supported Qt/compiler environment, probe and fixture
 identities, and every recorded setting. A claimed PASS with broken required commands
