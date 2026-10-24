@@ -860,6 +860,13 @@
       ]
     },
     {
+      "id": "python::test_python_evidence.PythonAdmission.test_missing_unpinned_or_installing_compiler_evidence_is_rejected",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_python_evidence.PythonAdmission.test_replays_observations_instead_of_claimed_pass",
       "boundary": "H",
       "requirements": [
@@ -1366,6 +1373,20 @@
       "requirements": [
         "UX-085",
         "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_python_worker_builds_offline_with_installed_tools_and_isolated_state",
+      "boundary": "N",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_python_worker_missing_toolchain_is_blocked_without_installing",
+      "boundary": "N",
+      "requirements": [
+        "UX-086"
       ]
     },
     {

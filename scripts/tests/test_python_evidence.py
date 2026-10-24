@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import tomllib
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -26,6 +27,7 @@ def fixture(root, output, classification=None):
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("# synthetic producer identity; not executable evidence\n")
+        (root / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "1.99.1"\n')
         write_json(root / BINDINGS, classification)
         write_json(root / "tests/verification/requirements.json", {"synthetic": True})
     inventory = {"schema": 1, "source": "unittest-loader", "tests": [
@@ -35,9 +37,12 @@ def fixture(root, output, classification=None):
     write_json(output / "inventory.json", inventory)
     write_json(output / "events.json", events)
     tests, status = outcomes(inventory, events)
+    pin = tomllib.loads((root / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     record = dict(schema=1, kind="python-suite-run", source_revision=REVISION, worktree_dirty=False,
                   features="independent", platform="linux", architecture="x86_64", python_version="3.14.0",
                   interpreter_sha256="c" * 64, created_at="2026-10-23T00:00:00+00:00", inputs=inputs(root),
+                  compiler_tools=dict(toolchain=pin, automatic_installation=False,
+                                      rustc=f"rustc fixture\nrelease: {pin}", cargo=f"cargo {pin} (fixture)"),
                   inventory_sha256=sha256(output / "inventory.json"), events_sha256=sha256(output / "events.json"),
                   classification_sha256=sha256(root / BINDINGS), tests=tests, status=status, exit_code=0, timed_out=False)
     write_json(output / "receipt.json", record)
@@ -95,6 +100,23 @@ class PythonLifecycle(unittest.TestCase):
 
 
 class PythonAdmission(unittest.TestCase):
+    def test_missing_unpinned_or_installing_compiler_evidence_is_rejected(self):
+        import copy
+        with tempfile.TemporaryDirectory() as temp:
+            root, output = Path(temp), Path(temp) / "attempt"
+            record = fixture(root, output)
+            for field, value in (("toolchain", "other"), ("automatic_installation", True),
+                                 ("rustc", "release: 1.0.0"), ("cargo", "cargo 1.0.0 (fixture)")):
+                changed = copy.deepcopy(record)
+                changed["compiler_tools"][field] = value
+                write_json(output / "receipt.json", changed)
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "pinned toolchain"):
+                    inspect_python_evidence(output / "receipt.json", REVISION, root)
+            del record["compiler_tools"]
+            write_json(output / "receipt.json", record)
+            with self.assertRaisesRegex(ValueError, "Malformed"):
+                inspect_python_evidence(output / "receipt.json", REVISION, root)
+
     def test_replays_observations_instead_of_claimed_pass(self):
         with tempfile.TemporaryDirectory() as temp:
             root, output = Path(temp), Path(temp) / "attempt"

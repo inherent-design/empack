@@ -340,8 +340,16 @@ is insufficient. Python cases use the `independent` feature variant and cannot
 substitute for empack, packaged artifacts or actual consumers. Raw `unittest` remains
 useful for focused debugging but does not produce an admissible receipt.
 
-Doctests are discovered and executed separately; their execution receipts are not
-yet joined to acceptance. Source-edited or interrupted tooling attempts remain
+The worker uses the existing Rustup installation and selects the repository's
+pinned compiler with automatic toolchain installation disabled. Cargo home and
+application home/state/cache remain isolated; host Cargo credentials, configuration
+and compiler wrappers are not inherited. The receipt identifies the compiler and
+Cargo used by the small offline build fixtures. A missing pinned installation
+blocks the suite before tests run; Cargo's `--offline` alone does not prevent
+Rustup from downloading a toolchain.
+
+Doctests are discovered and executed separately and their receipts are joined to
+their own acceptance cases. Source-edited or interrupted tooling attempts remain
 nonqualifying. `report-verification.py --receipt` accepts both native and Python
 records and preserves earlier failed attempts.
 

@@ -148,6 +148,57 @@ class CommandEvidence(unittest.TestCase):
 
 
 class AttemptPolicy(unittest.TestCase):
+    def test_python_worker_builds_offline_with_installed_tools_and_isolated_state(self):
+        import subprocess
+        from unittest.mock import patch
+        from verify import python_environment
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "isolated home"
+            home.mkdir()
+            attempt = root / "attempt"
+            attempt.mkdir()
+            with patch.dict(os.environ, {"CARGO_HOME": str(root / "host-cargo"),
+                                        "CARGO_REGISTRIES_CRATES_IO_TOKEN": "must-not-reach-worker",
+                                        "RUSTC_WRAPPER": "untrusted-wrapper",
+                                        "EMPACK_STATE_DIR": str(root / "host-state")}):
+                worker, tools = python_environment(home, attempt, dict(os.environ))
+            self.assertEqual(worker["HOME"], str(home))
+            self.assertEqual(worker["EMPACK_STATE_DIR"], str(home))
+            self.assertEqual(worker["CARGO_HOME"], str(home / ".cargo"))
+            self.assertEqual(worker["RUSTUP_AUTO_INSTALL"], "0")
+            self.assertNotIn("CARGO_REGISTRIES_CRATES_IO_TOKEN", worker)
+            self.assertNotIn("RUSTC_WRAPPER", worker)
+            self.assertFalse(tools["automatic_installation"])
+            (root / "src").mkdir()
+            (root / "Cargo.toml").write_text(
+                '[package]\nname = "isolated-probe"\nversion = "0.0.0"\nedition = "2024"\n')
+            (root / "Cargo.lock").write_text(
+                'version = 4\n[[package]]\nname = "isolated-probe"\nversion = "0.0.0"\n')
+            (root / "src/main.rs").write_text('fn main() { println!("isolated compiler works"); }\n')
+            result = subprocess.run(["cargo", "run", "--locked", "--offline", "--quiet"],
+                                    cwd=root, env=worker, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "isolated compiler works")
+            self.assertFalse((home / ".rustup").exists())
+            self.assertFalse((root / "host-cargo").exists())
+            self.assertFalse((root / "host-state").exists())
+
+    def test_python_worker_missing_toolchain_is_blocked_without_installing(self):
+        from unittest.mock import patch
+        from verify import Blocked, python_environment
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            home.mkdir()
+            (root / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "99.99.99"\n')
+            with patch("verify.ROOT", root), self.assertRaisesRegex(Blocked, "automatic installation is disabled"):
+                python_environment(home, root, dict(os.environ))
+            diagnostic = (root / "python-rustc.log").read_text()
+            self.assertIn("not installed", diagnostic)
+            self.assertNotIn("downloading", diagnostic)
+            self.assertFalse((home / ".rustup").exists())
+
     def test_java_home_selects_the_probed_executable_without_path_fallback(self):
         from unittest.mock import patch
         from verify import Blocked, java_probe

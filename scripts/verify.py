@@ -49,6 +49,27 @@ def isolated_environment(root):
     return result
 
 
+def python_environment(home, attempt, environment):
+    """Reuse installed compiler tools without inheriting Cargo or application state."""
+    probe_environment = dict(environment, RUSTUP_AUTO_INSTALL="0")
+    rustup_home = Path(checked(["rustup", "show", "home"], attempt, "rustup-home",
+                               probe_environment).strip())
+    if not rustup_home.is_absolute() or not rustup_home.is_dir():
+        raise Blocked("Python verification requires an existing absolute Rustup home")
+    pin = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+    worker = isolated_environment(home)
+    worker.update(RUSTUP_HOME=str(rustup_home), RUSTUP_TOOLCHAIN=pin, RUSTUP_AUTO_INSTALL="0",
+                  CARGO_HOME=str(home / ".cargo"))
+    try:
+        rustc = checked(["rustc", "-vV"], attempt, "python-rustc", worker, cwd=home).strip()
+        cargo = checked(["cargo", "--version"], attempt, "python-cargo", worker, cwd=home).strip()
+    except RuntimeError as error:
+        raise Blocked(f"Python verification requires installed Rust {pin}; automatic installation is disabled: {error}") from error
+    if f"release: {pin}" not in rustc.splitlines() or not cargo.startswith(f"cargo {pin} "):
+        raise Blocked(f"Python verification requires pinned Rust {pin}")
+    return worker, dict(rustc=rustc, cargo=cargo, toolchain=pin, automatic_installation=False)
+
+
 def product(args, attempt, environment, host):
     features = args.product_features
     profile = args.product_profile
@@ -210,8 +231,9 @@ def run_python(attempt, environment):
         record["classification_sha256"] = sha256(ROOT / BINDINGS)
         home = attempt / "worker-home"
         home.mkdir()
+        worker, record["compiler_tools"] = python_environment(home, attempt, environment)
         code, _, timed_out = run([sys.executable, str(ROOT / "scripts/python-test-driver.py"), "--output", str(attempt)],
-            cwd=ROOT, env=isolated_environment(home), log=attempt / "run.log", timeout=900)
+            cwd=ROOT, env=worker, log=attempt / "run.log", timeout=900)
         record.update(exit_code=code, timed_out=timed_out)
         inventory = json.loads((attempt / "inventory.json").read_text(encoding="utf-8"))
         compare_inventory(inventory, json.loads((ROOT / BINDINGS).read_text(encoding="utf-8")))
@@ -223,6 +245,8 @@ def run_python(attempt, environment):
             record["status"] = "FAIL"
         if source_snapshot(attempt, environment) != snapshot:
             raise RuntimeError("Source files changed during verification")
+    except Blocked as error:
+        record.update(status="BLOCKED", reason=str(error))
     except (OSError, ValueError, RuntimeError, KeyError, KeyboardInterrupt) as error:
         record.update(status="FAIL", reason=str(error) or "Python verification interrupted")
     write_json(attempt / "receipt.json", record)

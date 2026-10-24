@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import tomllib
 import unittest
 
 from .evidence import aggregate_outcomes, sha256
@@ -11,7 +12,8 @@ from .evidence import aggregate_outcomes, sha256
 ROOT = Path(__file__).resolve().parents[2]
 BINDINGS = "tests/verification/python-bindings.json"
 PLATFORMS = ("linux", "macos", "windows")
-PRODUCER_INPUTS = ("scripts/verify.py", "scripts/python-test-driver.py", "scripts/verification/python_tests.py")
+PRODUCER_INPUTS = ("scripts/verify.py", "scripts/python-test-driver.py", "scripts/verification/python_tests.py",
+                   "rust-toolchain.toml")
 
 
 def inputs(root=ROOT):
@@ -156,6 +158,12 @@ def read_json(path):
 def inspect_python_evidence(path, revision, root=ROOT):
     try:
         record, digest = read_json(path)
+        pin = tomllib.loads((Path(root) / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+        tools = record["compiler_tools"]
+        if (tools["toolchain"] != pin or tools["automatic_installation"] is not False
+                or f"release: {pin}" not in tools["rustc"].splitlines()
+                or not tools["cargo"].startswith(f"cargo {pin} ")):
+            raise ValueError("Python compiler evidence does not match the installed pinned toolchain")
         if (record.get("schema") != 1 or record.get("kind") != "python-suite-run"
                 or record["source_revision"] != revision or record["worktree_dirty"] is not False
                 or record["inputs"] != inputs(root) or record["features"] != "independent"
@@ -180,6 +188,7 @@ def inspect_python_evidence(path, revision, root=ROOT):
         return dict(kind="python", source_revision=revision, features="independent", tests=tests,
                     status=status, platform=record["platform"], architecture=record["architecture"],
                     python_version=record["python_version"], interpreter_sha256=record["interpreter_sha256"],
+                    compiler_tools=tools,
                     created_at=record["created_at"], receipt_sha256=digest,
                     inventory_sha256=inventory_digest, events_sha256=events_digest)
     except (KeyError, TypeError, AttributeError) as error:
