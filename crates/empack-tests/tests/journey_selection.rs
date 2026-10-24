@@ -1,4 +1,4 @@
-//! Document-only selection edits over a fixed, offline provider resolution.
+//! Selection edits and removals over a fixed, offline provider resolution.
 use empack_core::{
     digest::{DigestSet, ExpectedDigest},
     identity::{ModrinthProjectId, ModrinthVersionId, PinSelector, ProviderProjectId},
@@ -168,21 +168,23 @@ fn fixture(root: &Path) -> ResolvedProject {
     project
 }
 
+fn isolated_command(root: &Path, host: &Path) -> assert_cmd::Command {
+    let mut command = offline_command(root);
+    command
+        .env("EMPACK_STATE_DIR", host.join("state"))
+        .env("EMPACK_CACHE_DIR", host.join("cache"))
+        .env("TMPDIR", host)
+        .env("TMP", host)
+        .env("TEMP", host);
+    command
+}
+
 #[test]
 fn journey_cli_pin_unpin_retains_selection_and_refuses_grouped_invalid_edits() {
     let project = TestProject::new();
     let root = project.dir();
     let host = tempfile::tempdir().unwrap();
-    let command = || {
-        let mut command = offline_command(root);
-        command
-            .env("EMPACK_STATE_DIR", host.path().join("state"))
-            .env("EMPACK_CACHE_DIR", host.path().join("cache"))
-            .env("TMPDIR", host.path())
-            .env("TMP", host.path())
-            .env("TEMP", host.path());
-        command
-    };
+    let command = || isolated_command(root, host.path());
     let original = fixture(root);
     let key = DependencyKey::parse("renderer-alias").unwrap();
     let original_files = files::snapshot(root);
@@ -263,6 +265,197 @@ fn journey_cli_pin_unpin_retains_selection_and_refuses_grouped_invalid_edits() {
                 after,
                 "sync changed an exact retained selection"
             );
+        }
+    }
+}
+
+#[test]
+fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependency_evidence() {
+    for known_dependent in [false, true] {
+        let project = TestProject::new();
+        let root = project.dir();
+        let host = tempfile::tempdir().unwrap();
+        let command = || isolated_command(root, host.path());
+        let original = fixture(root);
+        let selected = DependencyKey::parse("renderer-alias").unwrap();
+        let retained = DependencyKey::parse("local").unwrap();
+        let mut lock = original.lock().clone();
+        lock.coverage.insert(retained.clone(), Coverage::Partial);
+        if known_dependent {
+            lock.required_edges
+                .insert(retained.clone(), [selected.clone()].into());
+        }
+        let original = ResolvedProject::validate(
+            original.intent().clone(),
+            lock,
+            original.lock().intent_revision,
+        )
+        .unwrap();
+        write(
+            root,
+            "empack.lock",
+            &DocumentCodec.encode_lock(&original).unwrap(),
+        );
+        for (name, bytes) in [
+            ("pack/saves/player/level.dat", b"unrelated world".as_slice()),
+            (
+                "pack/resourcepacks/unowned/note.txt",
+                b"unowned directory".as_slice(),
+            ),
+            (
+                "overrides/server/server.properties",
+                b"author settings".as_slice(),
+            ),
+        ] {
+            write(root, name, bytes);
+        }
+        let before = files::snapshot(root);
+        for (arguments, diagnostic) in [
+            (
+                vec!["remove", "renderer-alias", "missing"],
+                "No tracked dependency matches",
+            ),
+            (
+                vec!["remove", "renderer-alias", "--deps"],
+                "Automatic orphan cleanup requires complete dependency evidence",
+            ),
+            (
+                vec![
+                    "remove",
+                    "renderer-alias",
+                    "--forget",
+                    "--acknowledge-unknown",
+                ],
+                "cannot be used with",
+            ),
+        ] {
+            command()
+                .arg("--yes")
+                .args(arguments)
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains(diagnostic));
+            assert_eq!(files::snapshot(root), before);
+        }
+        // A canonical provider selector resolves the aliased author root.
+        let query = "modrinth:Project1";
+        for dry in [true, false] {
+            let mut cmd = command();
+            cmd.args(["--yes", "remove", query]);
+            if dry {
+                cmd.arg("--dry-run");
+            }
+            cmd.assert()
+                .failure()
+                .stderr(predicates::str::contains(if known_dependent {
+                    "Retained dependencies require selected content"
+                } else {
+                    "Retained dependency evidence is incomplete"
+                }));
+            assert_eq!(files::snapshot(root), before);
+        }
+        if known_dependent {
+            command()
+                .args(["--yes", "remove", query, "--acknowledge-unknown"])
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains(
+                    "Retained dependencies require selected content",
+                ));
+            assert_eq!(files::snapshot(root), before);
+        }
+        command()
+            .args(["--dry-run", "remove", query, "--forget"])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("Select renderer-alias:"));
+        assert_eq!(files::snapshot(root), before);
+        command()
+            .args(["--yes", "remove", query, "--forget"])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains(
+                "Applied ForgetRoots to 1 dependencies",
+            ));
+        let demoted = read_project(root);
+        let mut expected_intent = original.intent().clone();
+        expected_intent.roots.remove(&selected);
+        assert_eq!(demoted.intent(), &expected_intent);
+        let mut expected_lock = original.lock().clone();
+        expected_lock.intent_revision = demoted.lock().intent_revision;
+        assert_eq!(demoted.lock(), &expected_lock);
+        assert!(
+            fs::read_to_string(root.join("empack.yml"))
+                .unwrap()
+                .starts_with("# Keep this author's selection notes.\n")
+        );
+        let mut expected = before;
+        for name in ["empack.yml", "empack.lock", "empack.bindings.yml"] {
+            expected.insert(name.into(), fs::read(root.join(name)).unwrap());
+        }
+        assert_eq!(
+            files::snapshot(root),
+            expected,
+            "forget changed a non-document file"
+        );
+        command()
+            .args(["--yes", "remove", query, "--forget"])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("not an explicit root"));
+        assert_eq!(files::snapshot(root), expected);
+        for _ in 0..2 {
+            command().args(["--yes", "sync"]).assert().success();
+            assert_eq!(files::snapshot(root), expected);
+        }
+        let args = if known_dependent {
+            // Removing the dependent is a separate explicit choice, never traversal.
+            vec!["--yes", "rm", query, "local"]
+        } else {
+            vec!["--yes", "rm", query, "--acknowledge-unknown"]
+        };
+        let mut preview = args.clone();
+        preview.push("--dry-run");
+        command().args(preview).assert().success();
+        assert_eq!(files::snapshot(root), expected);
+        command()
+            .args(args)
+            .assert()
+            .success()
+            .stdout(predicates::str::contains(if known_dependent {
+                "Applied RemoveContent to 2 dependencies"
+            } else {
+                "Applied RemoveContent to 1 dependencies"
+            }));
+        let removed = read_project(root);
+        assert!(!removed.lock().dependencies.contains_key(&selected));
+        if known_dependent {
+            expected_intent.roots.remove(&retained);
+        }
+        assert_eq!(removed.intent(), &expected_intent);
+        expected.remove(Path::new("pack/resourcepacks/custom-name.zip"));
+        if known_dependent {
+            assert!(removed.lock().dependencies.is_empty());
+            expected.remove(Path::new("pack/resourcepacks/local.zip"));
+        } else {
+            assert_eq!(
+                removed.lock().dependencies[&retained],
+                original.lock().dependencies[&retained]
+            );
+            assert_eq!(removed.lock().coverage[&retained], Coverage::Partial);
+        }
+        for name in ["empack.yml", "empack.lock", "empack.bindings.yml"] {
+            expected.insert(name.into(), fs::read(root.join(name)).unwrap());
+        }
+        assert_eq!(
+            files::snapshot(root),
+            expected,
+            "remove changed unselected author files"
+        );
+        assert!(root.join("pack/resourcepacks/unowned").is_dir());
+        for _ in 0..2 {
+            command().args(["--yes", "sync"]).assert().success();
+            assert_eq!(files::snapshot(root), expected);
         }
     }
 }

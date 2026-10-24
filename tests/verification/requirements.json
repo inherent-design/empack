@@ -2290,7 +2290,8 @@
       "evidence_tiers": [
         "H",
         "X",
-        "P"
+        "P",
+        "N"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -2338,8 +2339,8 @@
           ]
         },
         {
-          "id": "UX-020.host-removal-refusal",
-          "boundary": "H",
+          "id": "UX-020.native-removal-refusal",
+          "boundary": "N",
           "test_ids": [
             "empack-lib::engine::removal::native::tests::changed_bytes_and_directory_targets_reject_the_entire_removal"
           ],
@@ -3691,13 +3692,160 @@
         "U",
         "H",
         "X",
-        "N"
+        "N",
+        "L"
       ],
       "risk": "critical",
-      "run_gate": "pr",
+      "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-031.pure-selection-and-evidence",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::removal::tests::acknowledging_unknown_dependents_retains_uncertainty_but_never_bypasses_known_edges",
+            "empack-lib::engine::removal::tests::all_requested_selection_errors_return_no_successful_subset",
+            "empack-lib::engine::removal::tests::demotion_keeps_required_edges_and_cannot_demote_an_already_transitive_selection",
+            "empack-lib::engine::removal::tests::explicit_removal_preserves_unrequested_selections_and_raw_revision_binding",
+            "empack-lib::engine::removal::tests::incomplete_retained_evidence_blocks_deletion_but_explicit_demotion_preserves_content",
+            "empack-lib::engine::removal::tests::incomplete_selected_nodes_do_not_prevent_an_explicit_complete_group_removal",
+            "empack-lib::engine::removal::tests::required_cycles_need_explicit_group_selection_and_never_collect_other_nodes",
+            "empack-lib::engine::removal::tests::stale_resolution_cannot_authorize_removal",
+            "empack-lib::engine::removal::selection::tests::exact_keys_and_titles_deduplicate_and_unknown_names_fail_the_batch",
+            "empack-lib::engine::removal::selection::tests::provider_identity_is_qualified_and_titles_never_override_exact_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Logical keys and qualified provider identity resolve deterministically; ambiguous titles and invalid grouped requests cannot select a successful subset",
+            "Known dependents and cycles require explicit selection; incomplete retained evidence needs acknowledgement; forgetting retains exact files, edges and uncertainty",
+            "Stale resolution cannot authorize removal and native publication remains separate from a pure proposal"
+          ]
+        },
+        {
+          "id": "UX-031.native-publication",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::removal::native::tests::changed_bytes_and_directory_targets_reject_the_entire_removal",
+            "empack-lib::engine::removal::native::tests::document_and_payload_edits_after_preparation_prevent_all_publication",
+            "empack-lib::engine::removal::native::tests::exact_removal_publishes_documents_and_files_without_collecting_unrequested_content",
+            "empack-lib::engine::removal::native::tests::explicit_root_demotion_publishes_only_documents_and_retains_exact_files",
+            "empack-lib::engine::removal::native::tests::foreign_metadata_neither_authorizes_nor_blocks_native_removal",
+            "empack-lib::engine::removal::native::tests::ignored_locked_placements_remain_observed_removal_targets"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Physical removal changes only selected verified regular files and documents, while forgetting changes only documents",
+            "Changed bytes, occupied directories and stale captured documents refuse all publication; ignored paths and foreign metadata cannot change deletion authority",
+            "Unrequested content, source archives, templates and prior artifacts remain unchanged"
+          ]
+        },
+        {
+          "id": "UX-031.unix-confinement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::removal::native::tests::removal_refuses_linked_ancestors_without_deleting_outside_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Linked placement ancestors cannot authorize deleting content outside the captured project"
+          ]
+        },
+        {
+          "id": "UX-031.operation-authority",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::removal_tests::foreign_metadata_cannot_nominate_removal_even_with_uncertainty_acknowledged",
+            "empack-lib::engine::api::removal_tests::removal_admission_failure_preserves_all_files_and_releases_reservations",
+            "empack-lib::engine::api::removal_tests::removal_conflicts_fail_before_any_live_file_is_removed",
+            "empack-lib::engine::api::removal_tests::removal_preview_is_read_only_and_requires_exact_grant_and_engine",
+            "empack-lib::engine::api::removal_tests::remove_and_demote_have_distinct_receipts_and_subsequent_build_content",
+            "empack-lib::engine::api::removal_tests::selected_portable_alias_is_not_mistaken_for_absent_content",
+            "empack-lib::engine::api::removal_tests::title_selection_previews_canonical_identity_and_unknown_batch_changes_nothing",
+            "empack-lib::engine::api::removal_tests::unrelated_content_does_not_block_removal_or_become_a_read_precondition",
+            "empack-lib::engine::api::removal_tests::unselected_locked_bytes_are_not_removal_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact grant and engine ownership are required; previews and admission failures do not mutate and all reservations retire",
+            "Remove and forget have distinct typed receipts and later artifact inventories; unselected bytes are not deletion inputs",
+            "Canonical selection, occupied aliases and foreign metadata retain the intended authority boundary"
+          ]
+        },
+        {
+          "id": "UX-031.public-forget-and-removal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_selection::journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependency_evidence",
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual CLI resolves a canonical provider ID to its aliased root and refuses grouped errors, unsupported --deps and contradictory policies without edits",
+            "Forgetting retains exact selections and bytes across two syncs; acknowledgement cannot override known dependents; physical removal requires deliberate selection",
+            "Source files, custom bindings, worlds, unowned directories and prior artifacts survive preview/refusal and unrelated removal; actual selected deletion agrees with the receipt"
+          ]
+        },
+        {
+          "id": "UX-031.live-alias-readd",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_equivalent_provider_selectors_converge"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real add, authored alias, synchronization and forced canonical re-add retain one logical owner",
+            "Removal by provider-qualified identity previews the alias, deletes only its installed placements, retains other selections and author files, and converges across two syncs"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::native/snapshot/staging/verification/publication"
@@ -3706,7 +3854,7 @@
         "portable planners and engine; CLI request mapping; native effects",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-032",

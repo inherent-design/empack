@@ -5,6 +5,17 @@ use std::path::{Path, PathBuf};
 #[path = "support/terminal.rs"]
 mod terminal;
 
+fn placement_path(placement: &empack_core::model::Placement) -> PathBuf {
+    use empack_core::model::ContentLayer;
+    let layer = match placement.layer {
+        ContentLayer::Common => "pack",
+        ContentLayer::CommonOverride => "overrides/common",
+        ContentLayer::Client => "overrides/client",
+        ContentLayer::Server => "overrides/server",
+    };
+    PathBuf::from(layer).join(placement.destination.relative().as_str())
+}
+
 fn snapshot(root: &Path, excluded: &[&str]) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(root: &Path, path: &Path, excluded: &[&str], files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for entry in std::fs::read_dir(path).unwrap() {
@@ -187,6 +198,11 @@ fn selector_journey(
     credential: Option<&str>,
 ) {
     let project = TestProject::workflow_fixture("provider-add", loader, "1.21.1");
+    std::fs::write(
+        project.dir().join("prior-build.zip"),
+        b"Retain previous output",
+    )
+    .unwrap();
     let run = |args: &[&str]| checked(&project, args, credential);
     run(&["--yes", "add", "--platform", platform, slug]);
     let resolved = read_project(project.dir());
@@ -277,6 +293,102 @@ fn selector_journey(
     );
     assert!(!output.status.success());
     assert_eq!(author_snapshot(project.dir()), before);
+    // An authored alias is distinct from the provider slug/ID. Re-resolution and
+    // forced re-add must keep one logical owner, then removal must select that owner.
+    let old = format!("\n  {}:", key.as_str());
+    let author_path = project.dir().join("empack.yml");
+    let author = std::fs::read_to_string(&author_path).unwrap();
+    assert_eq!(author.matches(&old).count(), 1);
+    std::fs::write(&author_path, author.replacen(&old, "\n  custom-alias:", 1)).unwrap();
+    let bindings_path = project.dir().join("empack.bindings.yml");
+    if bindings_path.exists() {
+        let bindings = std::fs::read_to_string(&bindings_path).unwrap();
+        if bindings.contains(&old) {
+            assert_eq!(bindings.matches(&old).count(), 1);
+            std::fs::write(
+                &bindings_path,
+                bindings.replacen(&old, "\n  custom-alias:", 1),
+            )
+            .unwrap();
+        }
+    }
+    run(&["--yes", "sync", "--materialize"]);
+    run(&["--yes", "add", "--force", "--platform", platform, id]);
+    let aliased = read_project(project.dir());
+    let alias = empack_core::model::DependencyKey::parse("custom-alias").unwrap();
+    assert!(aliased.intent().roots.contains_key(&alias));
+    assert!(!aliased.lock().dependencies.contains_key(key));
+    assert_eq!(
+        aliased.lock().dependencies[&alias].identity,
+        ResolvedIdentity::Provider(canonical.clone())
+    );
+    assert_eq!(
+        aliased
+            .lock()
+            .dependencies
+            .values()
+            .filter(|dep| dep.identity == ResolvedIdentity::Provider(canonical.clone()))
+            .count(),
+        1
+    );
+    let before = author_snapshot(project.dir());
+    for _ in 0..2 {
+        run(&["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), before);
+    }
+    let query = format!("{platform}:{id}");
+    let preview = run(&["--dry-run", "remove", &query]);
+    let rendered = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&preview.stdout),
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert!(rendered.contains("Select custom-alias:"), "{rendered}");
+    assert_eq!(author_snapshot(project.dir()), before);
+    let result = run(&["--yes", "rm", &query]);
+    let rendered = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        rendered.contains("Applied RemoveContent to 1 dependencies"),
+        "{rendered}"
+    );
+    let removed = read_project(project.dir());
+    assert!(!removed.intent().roots.contains_key(&alias));
+    assert!(!removed.lock().dependencies.contains_key(&alias));
+    for (key, dependency) in &aliased.lock().dependencies {
+        if key != &alias {
+            assert_eq!(&removed.lock().dependencies[key], dependency);
+        }
+    }
+    let mut expected = before;
+    for file in aliased.lock().dependencies[&alias].files.as_slice() {
+        for placement in file.placements.as_slice() {
+            let path = placement_path(placement);
+            assert!(
+                expected.remove(&path).is_some(),
+                "selected installed path absent: {}",
+                path.display()
+            );
+        }
+    }
+    for name in ["empack.yml", "empack.lock", "empack.bindings.yml"] {
+        if project.dir().join(name).exists() {
+            expected.insert(
+                name.into(),
+                std::fs::read(project.dir().join(name)).unwrap(),
+            );
+        } else {
+            expected.remove(Path::new(name));
+        }
+    }
+    assert_eq!(author_snapshot(project.dir()), expected);
+    for _ in 0..2 {
+        run(&["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), expected);
+    }
 }
 
 #[test]
@@ -401,7 +513,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         materialized.lock().dependencies,
         resolved.lock().dependencies
     );
-    use empack_core::{digest::ExpectedDigest, model::ContentLayer};
+    use empack_core::digest::ExpectedDigest;
     use sha2::{Digest, Sha512};
     for file in materialized.lock().dependencies[key].files.as_slice() {
         let expected = file
@@ -414,19 +526,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
             .find(|digest| matches!(digest, ExpectedDigest::Sha512(_)))
             .expect("Modrinth selection declares SHA-512");
         for placement in file.placements.as_slice() {
-            let layer = match placement.layer {
-                ContentLayer::Common => "pack",
-                ContentLayer::CommonOverride => "overrides/common",
-                ContentLayer::Client => "overrides/client",
-                ContentLayer::Server => "overrides/server",
-            };
-            let bytes = std::fs::read(
-                project
-                    .dir()
-                    .join(layer)
-                    .join(placement.destination.relative().as_str()),
-            )
-            .unwrap();
+            let bytes = std::fs::read(project.dir().join(placement_path(placement))).unwrap();
             assert_eq!(file.expected.size, Some(bytes.len() as u64));
             assert_eq!(
                 &ExpectedDigest::Sha512(Sha512::digest(&bytes).into()),

@@ -254,6 +254,17 @@ checking absent/invalid-target refusal, provider-byte mismatches, payload attrib
 declared versus observed identity and repeated convergence. These fixtures still require execution on every
 required host and product configuration; their presence is not release qualification.
 
+Removal fixtures distinguish forgetting a root from deleting its selected content.
+The offline CLI checks canonical identity under an author alias, grouped refusal,
+reserved `--deps`, incomplete retained evidence and known dependents. Forgetting
+changes documents while retaining the exact selection; acknowledging uncertainty
+never bypasses a known requirement. Full file snapshots retain sources, worlds,
+unowned directories and previous artifacts. A live provider journey adds an authored
+alias, re-adds by canonical identity and removes through that identity after repeated
+synchronization. Pure selection tests, native publication/confinement tests and
+operation-authority tests supply separate evidence; live success does not replace
+native conflict or stale-observation checks.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
