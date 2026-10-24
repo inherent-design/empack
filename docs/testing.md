@@ -68,6 +68,16 @@ occupied destination directory, and on Unix refuses linked ancestors leading out
 the project. These are executable fixtures; consumer startup and final-package
 qualification require separate evidence.
 
+The multi-file provider host journey connects explicit primary/companion roles through
+add, synchronization, a renamed primary in an updated version, and adoption. It checks
+complete native client/server inventories and both optional selections in bundled
+Prism output against independent expected bytes. Native release descriptors retain
+optional-choice metadata; Prism materializes the choice. Missing companions, missing
+choices and unknown choices preserve author inputs and prior artifacts. These are
+controlled catalog/transport and host-build checks, not public CLI or launcher
+execution. Exact filename selectors remain version-sensitive; the `primary` role
+is the stable selection when a provider renames its primary file.
+
 The resourcepack scenario shares its assertions between offline client exports and
 live server preparation. Missing Java cannot skip the offline client case. Component
 fixtures created through codecs are distinct from the literal authoring journey;

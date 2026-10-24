@@ -2573,7 +2573,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-022.host-connected-roles",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A single four-file provider fixture passes add, fresh sync, update after a primary filename change, adoption and two subsequent materializing syncs",
+            "The explicit primary role retains its destination and all companion placements/requirements while the selected version and primary bytes change",
+            "Missing required companions refuse before publication; add/update previews preserve project state, and completed updates retain authored documents and bindings"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::acquisition/content/archive_source/import",
@@ -2584,7 +2606,7 @@
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-023",
@@ -2607,7 +2629,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-023.host-side-and-choice-inventories",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Complete bundled native client/server descriptors and archive member inventories match independent expected destinations, digests and bytes, excluding the opposite-side companion",
+            "Native releases retain the optional choice definition and per-file participation; bundled Prism excludes or includes exact optional bytes according to each explicit choice",
+            "Missing and unknown optional choices refuse without replacing authored inputs or prior verified artifacts"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine_host::build/profiles; engine::build; templates/artifacts",
@@ -2618,7 +2662,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-024",
