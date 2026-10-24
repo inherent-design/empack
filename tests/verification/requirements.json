@@ -2835,7 +2835,92 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-024.comment-preserving-edits",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::documents::editing::tests::shorthand_pin_keeps_neighbor_comments",
+            "empack-lib::engine::documents::editing::tests::block_pin_and_unpin_preserve_inner_source_comments"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pinning shorthand and block provider roots retains neighboring and inner source comments",
+            "Unpinning the block source restores the original author bytes"
+          ]
+        },
+        {
+          "id": "UX-024.document-publication",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::synchronization::native::tests::pin_edits_publish_only_documents_preserve_payloads_and_reject_stale_sources"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Selection edits publish only author documents and retain dependencies, graph edges, runtime and locally modified payload bytes",
+            "A source edit after staging refuses publication and preserves the edited author and prior lock"
+          ]
+        },
+        {
+          "id": "UX-024.provider-pin-ownership",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::addition::tests::provider_addition_shares_budget_and_rejects_foreign_pins_and_duplicate_roots"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled provider resolution refuses an exact version owned by another project",
+            "Duplicate canonical roots and exhausted shared acquisition allowance refuse resolution and retire resource reservations"
+          ]
+        },
+        {
+          "id": "UX-024.public-selection-journey",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_selection::journey_cli_pin_unpin_retains_selection_and_refuses_grouped_invalid_edits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual offline CLI pin/unpin retains the exact selected dependency inventory, runtime, coverage and edges; only the lock intent revision changes",
+            "Literal author comments, logical root alias, unrelated YAML anchor/alias, bindings, sources, installed bytes, templates and prior artifacts survive",
+            "Grouped edits containing an unknown, repeated or local key refuse without any project file change; dry-run also preserves every project file",
+            "Pinning removes the root automatic release preference; unpinning retains the exact selection and inherits stable-only project preference without restoring the removed override",
+            "Two syncs after each edit preserve every project file; fixed provider resolution is fixture setup, not live provider evidence"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::documents + application::engine_host::cli::manifest",
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
@@ -2846,7 +2931,7 @@
         "portable planners and engine; CLI request mapping; native effects",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-025",

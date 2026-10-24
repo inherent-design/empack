@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::journey_selection::journey_cli_pin_unpin_retains_selection_and_refuses_grouped_invalid_edits", "binary": "empack-tests::journey_selection", "binary_name": "journey_selection", "boundary": "X", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::providers::tests::provider_file_roles_survive_renames_and_reject_ambiguous_companions", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "CAT", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_content_kinds::journey_cli_content_kinds_preserve_sides_choices_and_world_groups", "binary": "empack-tests::journey_content_kinds", "binary_name": "journey_content_kinds", "boundary": "X", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::live_provider_cli::live_cli_direct_url_retains_observed_content", "binary": "empack-tests::live_provider_cli", "binary_name": "live_provider_cli", "boundary": "L", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},

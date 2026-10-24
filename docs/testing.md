@@ -195,6 +195,16 @@ tests use current compatible provider selections; the independently hashed real-
 corpus below retains a separate immutable-input contract. Public alias editing and
 the remaining provider permutations still require their own acceptance evidence.
 
+The offline `journey_selection` CLI fixture starts from literal authoring and bindings
+plus a fixed provider lock assembled as component setup. Pin/unpin preserve the
+selected inventory, custom placement, comments, logical alias and unrelated YAML
+anchor/alias. Invalid grouped requests and previews preserve every project file;
+two syncs after each edit retain the same content. Pinning removes the root release
+preference; unpinning keeps the selected version and returns to the project preference.
+The fixture does not prove live provider ownership: a separate controlled provider
+case rejects a version belonging to another project. The native publication test
+also checks stale-input refusal and preservation of locally modified payloads.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
