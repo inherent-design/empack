@@ -1,0 +1,3 @@
+# Compile-time public release identity; do not pass credentials or test controls.
+[build.env]
+passthrough = ["GIT_HASH", "BUILD_DATE"]

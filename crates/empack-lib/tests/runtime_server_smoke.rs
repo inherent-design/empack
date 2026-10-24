@@ -1,7 +1,11 @@
-//! Explicit live runtime probes. Missing HTTP/Java prerequisites fail this opt-in suite.
+//! Live runtime probes and bounded launcher diagnostics. Missing HTTP/Java prerequisites fail opt-in checks.
+use anyhow::Context;
 use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
 use empack_lib::{
-    application::process_runtime::{Cancellation, execute_async},
+    application::{
+        process_runtime::{Cancellation, execute_async},
+        session::{ProcessOutput, ProcessStream},
+    },
     engine::{
         acquisition::{HttpAcquisition, TransferLimits},
         artifacts::ArchiveLimits,
@@ -13,6 +17,60 @@ use empack_lib::{
     },
 };
 use std::{fs, path::PathBuf, time::Duration};
+// Keep bounded, best-effort progress on failure: execute_async correctly reports
+// retirement/timeout, but its failed result does not contain captured output.
+async fn probe_launcher(
+    command: std::process::Command,
+    deadline: Duration,
+) -> anyhow::Result<ProcessOutput> {
+    let (sender, receiver) = std::sync::mpsc::sync_channel::<(ProcessStream, Vec<u8>)>(64);
+    let observer = std::thread::spawn(move || {
+        let mut tails = [Vec::new(), Vec::new()];
+        for (stream, bytes) in receiver {
+            let index = match stream {
+                ProcessStream::Stdout => 0,
+                ProcessStream::Stderr => 1,
+            };
+            let tail = &mut tails[index];
+            tail.extend_from_slice(&bytes);
+            let excess = tail.len().saturating_sub(64 * 1024);
+            tail.drain(..excess);
+        }
+        tails
+    });
+    let result = execute_async(command, deadline, Cancellation::default(), Some(sender)).await;
+    let tails = observer
+        .join()
+        .expect("launcher progress observer panicked");
+    result.with_context(|| {
+        format!(
+            "Launcher failed; best-effort progress tails (at most 64 KiB per stream)\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&tails[0]),
+            String::from_utf8_lossy(&tails[1]),
+        )
+    })
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn native_runtime_probe_timeout_retains_partial_output() {
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args([
+        "-c",
+        "printf 'launcher starting\\n'; printf 'runtime pending\\n' >&2; exec sleep 10",
+    ]);
+    let error = probe_launcher(command, Duration::from_secs(1))
+        .await
+        .unwrap_err();
+    let diagnostic = format!("{error:#}");
+    assert!(
+        diagnostic.contains("timed out after 1 seconds"),
+        "{diagnostic}"
+    );
+    assert!(diagnostic.contains("launcher starting"), "{diagnostic}");
+    assert!(diagnostic.contains("runtime pending"), "{diagnostic}");
+}
+
 async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> anyhow::Result<()> {
     verify_live_distribution(game, loader, false).await
 }
@@ -43,15 +101,18 @@ async fn verify_live_distribution(
         .unwrap_or_else(|| executable.into());
     let root = tempfile::tempdir()?;
     package_runtime(runtime, java.clone(), root.path(), managed).await?;
-    let mut command = if cfg!(windows) {
-        let mut command = std::process::Command::new("cmd.exe");
-        command.args(["/D", "/C", "start.bat"]);
-        command
-    } else {
-        let mut command = std::process::Command::new("bash");
-        command.arg("start.sh");
-        command
+    let entrypoint = |name: &str| {
+        if cfg!(windows) {
+            let mut command = std::process::Command::new("cmd.exe");
+            command.args(["/D", "/C"]).arg(format!("{name}.bat"));
+            command
+        } else {
+            let mut command = std::process::Command::new("bash");
+            command.arg(format!("{name}.sh"));
+            command
+        }
     };
+    let mut command = entrypoint("start");
     if java.is_absolute() {
         command.env(
             "JAVA_HOME",
@@ -91,16 +152,52 @@ async fn verify_live_distribution(
     }
     let historical = matches!(game, "1.12.2" | "1.7.10");
     command.env("EMPACK_NO_PAUSE", "1").current_dir(root.path());
+    if managed {
+        // First installation verifies/copies the complete native inventory. It is
+        // not Minecraft startup, and must finish before measuring that boundary.
+        // Retain a separate finite budget and test the generated installer itself.
+        let mut install = entrypoint("install_pack");
+        install.current_dir(root.path());
+        for (key, value) in command.get_envs() {
+            match value {
+                Some(value) => {
+                    install.env(key, value);
+                }
+                None => {
+                    install.env_remove(key);
+                }
+            }
+        }
+        let started = std::time::Instant::now();
+        let installed = probe_launcher(install, Duration::from_secs(300))
+            .await
+            .context("Generated first-installation phase failed")?;
+        anyhow::ensure!(
+            installed.success,
+            "Generated installer failed: {}",
+            installed.error_output()
+        );
+        anyhow::ensure!(
+            root.path().join(".empack/instance.json").is_file(),
+            "Installer omitted completed ownership"
+        );
+        anyhow::ensure!(
+            fs::read(root.path().join("game/config/runtime-check.txt"))? == b"current content",
+            "Installer omitted selected content"
+        );
+        eprintln!(
+            "Generated first installation completed in {:?}",
+            started.elapsed()
+        );
+    }
     if !historical {
         command.arg("--help");
     }
-    let output = execute_async(
-        command,
-        Duration::from_secs(90),
-        Cancellation::default(),
-        None,
-    )
-    .await?;
+    let started = std::time::Instant::now();
+    let output = probe_launcher(command, Duration::from_secs(90))
+        .await
+        .context("Generated server startup phase failed")?;
+    eprintln!("Generated startup completed in {:?}", started.elapsed());
     anyhow::ensure!(
         output.success,
         "Actual server launcher failed: {}",

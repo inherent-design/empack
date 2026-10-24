@@ -25,7 +25,15 @@ async fn main() -> std::process::ExitCode {
     }
     let caps = empack_lib::TerminalCapabilities::detect_from_config(config.app_config.color)
         .unwrap_or_else(|_| empack_lib::TerminalCapabilities::minimal());
-    if let Err(error) = empack_lib::Logger::init(config.app_config.to_logger_config(&caps)) {
+    let mut logger_config = config.app_config.to_logger_config(&caps);
+    if config
+        .command
+        .as_ref()
+        .is_some_and(|command| command.emits_json())
+    {
+        logger_config.output = empack_lib::primitives::LogOutput::Stderr;
+    }
+    if let Err(error) = empack_lib::Logger::init(logger_config) {
         eprintln!("empack: logger init failed: {error}");
     }
     empack_lib::terminal::cursor::force_show_cursor();

@@ -40,6 +40,13 @@ streaming. A byte bound does not limit time or decompression CPU: network acquis
 also enforces deadlines, while blocking workers require cooperative retirement.
 Failures leave partial bytes in private staging rather than published destinations.
 
+ZIP metadata admission runs before the archive library allocates its directory
+index or ZIP64 extension data. The central directory and ZIP64 extensible data
+share a 16 MiB allowance. Checked record lengths and offsets must keep the
+directory before its end record and the ZIP64 end record adjacent to its locator.
+This metadata bound is separate from compressed and decoded content limits; a
+large admitted source does not authorize equally large parser metadata.
+
 ### Canonical encoding contract
 
 Do not hash Rust `Debug` output, randomized `HashMap` traversal, raw YAML formatting, or platform-native absolute paths. Canonical encoding uses explicit domain/schema boundaries and deterministic values.

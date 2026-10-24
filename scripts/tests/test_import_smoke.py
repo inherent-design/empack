@@ -1,5 +1,11 @@
 """Offline contracts for the native CLI smoke driver; live fixtures remain separate."""
 import importlib.util
+import io
+import hashlib
+import http.server
+import threading
+import json
+import subprocess
 import os
 from pathlib import Path
 import sys
@@ -7,13 +13,152 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location("empack_import_smoke", Path(__file__).parents[1] / "import-smoke-test.py")
+sys.path.insert(0, str(Path(__file__).parents[1]))
+SPEC = importlib.util.spec_from_file_location("empack_import_smoke", Path(__file__).parents[1] / "survey-imports.py")
 smoke = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = smoke
 SPEC.loader.exec_module(smoke)
 
 
 class NativeSmokeContracts(unittest.TestCase):
+    def test_actual_http_archive_stream_is_bounded_before_cache_publication(self):
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()  # No Content-Length: actual bytes enforce admission.
+                self.wfile.write(b"archive" if self.path == "/good" else b"too much content")
+            def log_message(self, *_args):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+                layout.ensure_dirs()
+                candidate = smoke.PackCandidate("pack", "1.21.1", "modrinth", "pack", "project", 0, "fabric",
+                    file_url=f"http://127.0.0.1:{server.server_port}/good", file_id="good", format="mrpack")
+                self.assertTrue(smoke.download_pack(candidate, layout, maximum_bytes=7))
+                self.assertEqual(Path(candidate.local_path).read_bytes(), b"archive")
+                rejected = smoke.replace(candidate, file_url=f"http://127.0.0.1:{server.server_port}/large", file_id="large")
+                self.assertFalse(smoke.download_pack(rejected, layout, maximum_bytes=7))
+                self.assertFalse(smoke.cache_path(rejected, layout).exists())
+                self.assertEqual(list(layout.packs_dir.glob(".download-*")), [])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+
+    def test_cache_reuse_requires_intact_observed_bytes_and_retains_provenance(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+            layout.ensure_dirs()
+            candidate = smoke.PackCandidate("pack", "1.21.1", "modrinth", "pack", "project", 0, "fabric",
+                                            file_url="https://example.invalid/archive", file_id="one", format="mrpack", file_size=7)
+            with patch.object(smoke, "urlopen", return_value=io.BytesIO(b"archive")):
+                self.assertTrue(smoke.download_pack(candidate, layout))
+            self.assertEqual(candidate.acquisition, "fresh-http")
+            with patch.object(smoke, "urlopen") as fetch:
+                self.assertTrue(smoke.download_pack(candidate, layout))
+                fetch.assert_not_called()
+            self.assertEqual(candidate.acquisition, "retained-observation")
+            self.assertEqual(len(smoke.retained_candidates(layout, 100)), 1)
+            Path(candidate.local_path).write_bytes(b"changed")
+            self.assertEqual(smoke.retained_candidates(layout, 100), [])
+            with patch.object(smoke, "urlopen", return_value=io.BytesIO(b"archive")) as fetch:
+                self.assertTrue(smoke.download_pack(candidate, layout))
+                fetch.assert_called_once()
+            self.assertEqual(candidate.acquisition, "fresh-http")
+            self.assertEqual(Path(candidate.local_path).read_bytes(), b"archive")
+
+    def test_declared_length_and_expired_deadline_do_not_publish_archive(self):
+        for expired in (False, True):
+            with self.subTest(expired=expired), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+                layout.ensure_dirs()
+                candidate = smoke.PackCandidate("pack", "1.21.1", "modrinth", "pack", "project", 0, "fabric",
+                                                file_url="https://example.invalid/archive", file_id="one", format="mrpack", file_size=8)
+                ticks = [0, 0, 0, 61] if expired else [0] * 12
+                with patch.object(smoke.time, "monotonic", side_effect=ticks), patch.object(smoke, "urlopen", return_value=io.BytesIO(b"short")):
+                    self.assertFalse(smoke.download_pack(candidate, layout))
+                self.assertEqual(list(layout.packs_dir.iterdir()), [])
+                self.assertEqual(candidate.local_path, "")
+                self.assertTrue(candidate.download_error)
+
+    def test_new_provider_file_cannot_reuse_previous_pack_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+            layout.ensure_dirs()
+            first = smoke.PackCandidate("pack", "1.21.1", "modrinth", "pack", "project", 0, "fabric",
+                                        file_url="https://example.invalid/old", file_id="old", format="mrpack")
+            with patch.object(smoke, "urlopen", return_value=io.BytesIO(b"old archive")):
+                self.assertTrue(smoke.download_pack(first, layout))
+            second = smoke.replace(first, file_url="https://example.invalid/new", file_id="new", local_path="")
+            with patch.object(smoke, "urlopen", return_value=io.BytesIO(b"new archive")) as fetch:
+                self.assertTrue(smoke.download_pack(second, layout))
+                fetch.assert_called_once()
+            self.assertEqual(Path(second.local_path).read_bytes(), b"new archive")
+            self.assertEqual(Path(first.local_path).read_bytes(), b"old archive")
+
+    def test_streamed_pack_limit_rejects_unknown_size_without_retaining_partial_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+            layout.ensure_dirs()
+            candidate = smoke.PackCandidate("pack", "1.21.1", "modrinth", "pack", "project", 0, "fabric",
+                                            file_url="https://example.invalid/archive", file_id="one", format="mrpack")
+            with patch.object(smoke, "urlopen", return_value=io.BytesIO(b"oversized")):
+                self.assertFalse(smoke.download_pack(candidate, layout, maximum_bytes=4))
+            self.assertEqual(list(layout.packs_dir.iterdir()), [])
+            self.assertEqual(candidate.local_path, "")
+
+    def test_legacy_survey_entrypoint_preserves_help_without_running_live_work(self):
+        for name in ("survey-imports.py", "import-smoke-test.py"):
+            with self.subTest(name=name):
+                result = subprocess.run([sys.executable, str(Path(__file__).parents[1] / name), "--help"],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("not pinned regression qualification", result.stdout)
+                self.assertIn("--profile", result.stdout)
+
+    def test_survey_report_retains_observations_without_becoming_qualification(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "empack"
+            binary.write_bytes(b"fixture executable")
+            layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+            observations = [{"import_result": {"success": False, "exit_code": 1}, "failure_reason": "upstream drift"}]
+            smoke.save_survey_report(observations, layout, "curated-latest", binary)
+            report = json.loads(layout.report_path.read_text())
+            self.assertEqual(report["kind"], "rolling-import-survey")
+            self.assertFalse(report["qualification"])
+            self.assertEqual(report["selection"], "curated-latest")
+            self.assertEqual(report["entries"], observations)
+            self.assertGreater(report["observed_at_unix"], 0)
+            self.assertEqual(report["executable"]["sha256"], hashlib.sha256(binary.read_bytes()).hexdigest())
+
+    def test_survey_report_redacts_credentials_and_signed_url_queries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root / "empack"
+            binary.write_bytes(b"fixture executable")
+            layout = smoke.RuntimeLayout(root, root / "packs", root / "projects", root / "cache", root / "report.json")
+            observations = [{"url": "https://user:password@example.invalid/pack?token=temporary",
+                             "failure_reason": "provider rejected fixture-secret-value"}]
+            with patch.dict(os.environ, {"EMPACK_KEY_CURSEFORGE": "fixture-secret-value"}):
+                smoke.save_survey_report(observations, layout, "curated-latest", binary)
+            raw = layout.report_path.read_text()
+            for secret in ("user:password", "temporary", "fixture-secret-value"):
+                self.assertNotIn(secret, raw)
+            report = json.loads(raw)
+            self.assertEqual(report["entries"][0]["url"], "https://example.invalid/pack?<redacted>")
+            self.assertIn("provider rejected", report["entries"][0]["failure_reason"])
+
     def test_native_errors_remain_visible_after_cursor_restoration(self):
         result = smoke.parse_import_output("\x1b[?25hError: source changed\r\n", "")
         self.assertEqual(result.warnings, ["Error: source changed"])
@@ -35,7 +180,7 @@ class NativeSmokeContracts(unittest.TestCase):
             previous = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.object(sys, "argv", ["import-smoke-test.py", "--profile", "curated", "--empack-bin", "empack"]), patch.object(smoke, "run_curated_mode", return_value=0) as run:
+                with patch.object(sys, "argv", ["survey-imports.py", "--profile", "curated", "--empack-bin", "empack"]), patch.object(smoke, "run_curated_mode", return_value=0) as run:
                     with self.assertRaises(SystemExit) as result:
                         smoke.main()
                     self.assertEqual(result.exception.code, 0)
@@ -75,7 +220,7 @@ class NativeSmokeContracts(unittest.TestCase):
             layout = smoke.RuntimeLayout(base, base / "packs", base, base / "cache", base / "report.json")
             responses = [smoke.CommandResult(success=True), smoke.CommandResult(success=True), smoke.CommandResult(stderr="not verified", exit_code=1)]
             with patch.object(smoke, "run_empack_command", side_effect=responses) as command:
-                result = smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                result = smoke.run_curated_build(smoke.CURATED_PACKS[0], base, base / "empack", layout, 10, False)
                 self.assertFalse(result.success)
                 self.assertEqual(command.call_count, 3)
                 self.assertIn("not verified", result.output_tail)
@@ -92,7 +237,7 @@ class NativeSmokeContracts(unittest.TestCase):
                     (base / document).write_bytes(b"changed")
                     return smoke.CommandResult(success=True)
                 with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
-                    smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                    smoke.run_curated_build(smoke.CURATED_PACKS[0], base, base / "empack", layout, 10, False)
                 command.assert_called_once()
 
     def test_sync_cannot_create_or_remove_bindings_unnoticed(self):
@@ -112,7 +257,7 @@ class NativeSmokeContracts(unittest.TestCase):
                         bindings.write_bytes(b"new")
                     return smoke.CommandResult(success=True)
                 with patch.object(smoke, "run_empack_command", side_effect=changed) as command, self.assertRaisesRegex(RuntimeError, "sync changed"):
-                    smoke.run_curated_build(smoke.CURATED_GOLDEN_PACKS[0], base, base / "empack", layout, 10, False)
+                    smoke.run_curated_build(smoke.CURATED_PACKS[0], base, base / "empack", layout, 10, False)
                 command.assert_called_once()
 
 

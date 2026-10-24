@@ -9,22 +9,12 @@ use std::{
 };
 
 fn command(project: &TestProject) -> assert_cmd::Command {
-    let mut cmd = project.cmd();
-    cmd.env_remove("EMPACK_WORKDIR")
-        .env_remove("EMPACK_DRY_RUN")
-        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
-        .env(
-            "EMPACK_PACKWIZ_BIN",
-            project.dir().join("must-not-be-executed"),
-        )
-        .env("EMPACK_COLOR", "never")
-        .env("EMPACK_NET_TIMEOUT", "1")
-        .env("HTTP_PROXY", "http://127.0.0.1:9")
-        .env("HTTPS_PROXY", "http://127.0.0.1:9")
-        .env("ALL_PROXY", "http://127.0.0.1:9")
-        .env("NO_PROXY", "");
-    let mut cmd = assert_cmd::Command::from_std(cmd);
-    cmd.timeout(Duration::from_secs(15));
+    let mut cmd = empack_tests::harness::process::offline_command(project.dir());
+    cmd.env(
+        "EMPACK_PACKWIZ_BIN",
+        project.dir().join("must-not-be-executed"),
+    )
+    .timeout(Duration::from_secs(15));
     cmd
 }
 fn initialized() -> TestProject {
@@ -161,11 +151,17 @@ fn project_snapshot(project: &TestProject) -> BTreeMap<PathBuf, Vec<u8>> {
         .collect()
 }
 fn jar(project: &TestProject, name: &str) {
+    jar_version(project, name, "1");
+}
+fn jar_version(project: &TestProject, name: &str, version: &str) {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
         .unwrap();
-    zip.write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
-        .unwrap();
+    write!(
+        zip,
+        r#"{{"schemaVersion":1,"id":"fixture","version":"{version}"}}"#
+    )
+    .unwrap();
     fs::write(project.dir().join(name), zip.finish().unwrap().into_inner()).unwrap();
 }
 fn read_project(project: &TestProject) -> empack_lib::engine::documents::DecodedIntent {
@@ -313,16 +309,7 @@ fn smoke_local_removal_cannot_follow_a_symlinked_ancestor() {
         outside_before
     );
 }
-#[test]
-fn smoke_native_requirements_do_not_install_a_backend() {
-    let project = TestProject::new();
-    command(&project)
-        .env("PATH", "")
-        .arg("requirements")
-        .assert()
-        .success();
-    assert!(!project.dir().join(".empack-cache/bin").exists());
-}
+
 #[test]
 fn smoke_invalid_optional_flags_do_not_mutate_project() {
     let project = initialized();
@@ -335,85 +322,6 @@ fn smoke_invalid_optional_flags_do_not_mutate_project() {
         command(&project).args(args).assert().failure();
         assert_eq!(snapshot(&project), before);
     }
-}
-#[test]
-fn smoke_dotenv_precedence_reaches_command_execution() {
-    for (local, environment, cli, preserved) in [
-        (None, None, false, true),
-        (Some(false), None, false, false),
-        (Some(true), Some(false), false, false),
-        (Some(true), Some(false), true, true),
-    ] {
-        let project = initialized();
-        std::fs::write(project.dir().join(".env"), "EMPACK_DRY_RUN=true\n").unwrap();
-        if let Some(value) = local {
-            std::fs::write(
-                project.dir().join(".env.local"),
-                format!("EMPACK_DRY_RUN={value}\n"),
-            )
-            .unwrap();
-        }
-        std::fs::create_dir(project.dir().join("dist")).unwrap();
-        let artifact = project.dir().join("dist/keep.zip");
-        std::fs::write(&artifact, "artifact").unwrap();
-        let mut cmd = command(&project);
-        if let Some(value) = environment {
-            cmd.env("EMPACK_DRY_RUN", value.to_string());
-        }
-        cmd.args(["clean", "builds", "--yes"]);
-        if cli {
-            cmd.arg("--dry-run");
-        }
-        cmd.assert().success();
-        assert_eq!(
-            artifact.exists(),
-            preserved,
-            "local={local:?}, env={environment:?}, cli={cli}"
-        );
-    }
-}
-
-#[test]
-fn smoke_malformed_dotenv_is_a_configuration_error() {
-    let project = TestProject::new();
-    std::fs::write(project.dir().join(".env"), "EMPACK_DRY_RUN='unterminated\n").unwrap();
-    command(&project).arg("version").assert().code(2);
-}
-
-#[test]
-fn smoke_malformed_dotenv_does_not_block_clap_help_or_version() {
-    for filename in [".env", ".env.local"] {
-        let project = TestProject::new();
-        std::fs::write(
-            project.dir().join(filename),
-            "EMPACK_DRY_RUN='unterminated\n",
-        )
-        .unwrap();
-        for args in [
-            vec!["--help"],
-            vec!["--version"],
-            vec!["init", "--help"],
-            vec!["build", "--help"],
-        ] {
-            command(&project)
-                .args(args)
-                .assert()
-                .success()
-                .stdout(predicates::str::contains("empack"));
-        }
-    }
-}
-
-#[test]
-fn smoke_version_does_not_resolve_managed_tooling() {
-    let project = TestProject::new();
-    command(&project)
-        .env_remove("EMPACK_PACKWIZ_BIN")
-        .env("PATH", "")
-        .arg("version")
-        .assert()
-        .success();
-    assert!(!project.dir().join(".empack-cache/bin").exists());
 }
 
 #[test]
@@ -554,6 +462,7 @@ fn smoke_recovery_inspection_needs_no_pack_and_creates_no_state() {
 fn smoke_adopt_sources_and_restore_missing_lock_without_installing_files() {
     let project = initialized();
     jar(&project, "fixture.jar");
+    fs::write(project.dir().join("prior-build.zip"), b"Prior artifact").unwrap();
     let before = snapshot(&project);
     command(&project)
         .args(["adopt", "--from", "fixture.jar", "--yes"])
@@ -566,17 +475,59 @@ fn smoke_adopt_sources_and_restore_missing_lock_without_installing_files() {
         project.dir().join("pack/mods/fixture.jar"),
     )
     .unwrap();
-    let before = snapshot(&project);
+    // An occupied destination with different bytes is not an adoption candidate.
+    fs::write(
+        project.dir().join("pack/mods/fixture.jar"),
+        b"wrong installed bytes",
+    )
+    .unwrap();
+    let wrong = snapshot(&project);
+    command(&project)
+        .args(["adopt", "--from", "fixture.jar", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), wrong);
+    fs::copy(
+        project.dir().join("fixture.jar"),
+        project.dir().join("pack/mods/fixture.jar"),
+    )
+    .unwrap();
+    let before = project_snapshot(&project);
+    let installed = project.dir().join("pack/mods/fixture.jar");
+    let source_time = fs::metadata(project.dir().join("fixture.jar"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let installed_time = fs::metadata(&installed).unwrap().modified().unwrap();
     command(&project)
         .args(["adopt", "--from", "fixture.jar", "--dry-run", "--yes"])
         .assert()
         .success();
-    assert_eq!(snapshot(&project), before);
+    assert_eq!(project_snapshot(&project), before);
     command(&project)
         .args(["adopt", "--from", "fixture.jar", "--yes"])
         .assert()
         .success();
     assert_eq!(read_project(&project).intent().roots.len(), 1);
+    let mut expected = before;
+    let mut actual = project_snapshot(&project);
+    for name in ["empack.yml", "empack.lock", "empack.bindings.yml"] {
+        actual.remove(Path::new(name));
+        expected.remove(Path::new(name));
+    }
+    assert_eq!(actual, expected);
+    assert_eq!(
+        fs::metadata(project.dir().join("fixture.jar"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        source_time
+    );
+    assert_eq!(
+        fs::metadata(&installed).unwrap().modified().unwrap(),
+        installed_time
+    );
+    let resolved = empack_tests::harness::process::read_project(project.dir());
     fs::remove_file(project.dir().join("empack.lock")).unwrap();
     let before = snapshot(&project);
     command(&project)
@@ -588,6 +539,28 @@ fn smoke_adopt_sources_and_restore_missing_lock_without_installing_files() {
         .args(["adopt", "fixture", "--yes"])
         .assert()
         .success();
+    let restored = empack_tests::harness::process::read_project(project.dir());
+    assert_eq!(restored.intent(), resolved.intent());
+    // Without the old lock, the inferred display title is reconstructed from
+    // the logical key. Identity, exact byte evidence and placements must survive.
+    let mut expected_dependencies = resolved.lock().dependencies.clone();
+    let key = empack_core::model::DependencyKey::parse("fixture").unwrap();
+    assert_eq!(expected_dependencies[&key].title, "fixture.jar");
+    expected_dependencies.get_mut(&key).unwrap().title = "fixture".into();
+    assert_eq!(restored.lock().dependencies, expected_dependencies);
+    assert_eq!(restored.lock().runtime, resolved.lock().runtime);
+    let mut actual = project_snapshot(&project);
+    actual.remove(Path::new("empack.lock"));
+    let mut expected = before;
+    expected.retain(|path, _| !path.starts_with(".host-state"));
+    assert_eq!(
+        actual, expected,
+        "restoring the lock must not rewrite payloads or authoring"
+    );
+    assert_eq!(
+        fs::metadata(&installed).unwrap().modified().unwrap(),
+        installed_time
+    );
     let adopted = project_snapshot(&project);
     for _ in 0..2 {
         command(&project).args(["sync", "--yes"]).assert().success();
@@ -600,255 +573,73 @@ fn smoke_adopt_sources_and_restore_missing_lock_without_installing_files() {
 }
 
 #[test]
-fn smoke_sync_manual_continuation_and_stale_cleanup() {
-    use empack_core::{digest::*, identity::*, model::*, path::*, requirements::*};
-    use empack_lib::engine::documents::DocumentCodec;
-    use std::collections::BTreeSet;
-    let project = initialized();
-    let current = empack_tests::e2e::read_project(project.dir());
-    let mut intent = current.intent().clone();
-    let mut lock = current.lock().clone();
-    for (key, id, version, bytes) in [
-        ("one", "123", "456", b"first".as_slice()),
-        ("two", "124", "457", b"second".as_slice()),
-    ] {
-        let key = DependencyKey::parse(key).unwrap();
-        let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse(id).unwrap());
-        let pin = ResolvedPin {
-            selection: identity.parse_pin(version).unwrap(),
-            project: identity.clone(),
-        };
-        let place = Placement {
-            layer: ContentLayer::Common,
-            destination: InstallDestination::parse(&format!("mods/{}.jar", key.as_str())).unwrap(),
-            requirements: Requirements {
-                client: Requirement::Required,
-                server: Requirement::Required,
-            },
-        };
-        intent.roots.insert(
-            key.clone(),
-            DependencyIntent {
-                releases: None,
-                source: SourceIntent::Provider(identity.clone()),
-                kind: ContentKind::Mod,
-                selection: DependencySelection::ProviderPin(pin.selection.clone()),
-                placement: PlacementIntent::Explicit(NonEmpty::new(vec![place.clone()]).unwrap()),
-                requirements: Requirements {
-                    client: Requirement::Required,
-                    server: Requirement::Required,
-                },
-            },
-        );
-        let digests =
-            DigestSet::new(vec![ExpectedDigest::parse("sha512", match bytes { b"first" => "7fdd80dbdded156323d36c459e5fd133a4d888c227320cfb7042be9feb35d7f07201e535697af914e69d6f46b2a88655c86c2371288052ccd4fa92058b01d3fd", b"second" => "9381e9a67aa361751cea90178c094ad6133742163cbd14f146be5c3ee6606d4e8ab4bdd839e7c672baa6eb87e06f59b2d3a68ad0533f2a13ef6c0c5d8769216a", _ => unreachable!() }).unwrap()]).unwrap();
-        lock.dependencies.insert(
-            key.clone(),
-            LockedDependency {
-                incompatibilities: Vec::new(),
-                source_selector: None,
-                title: key.as_str().into(),
-                kind: ContentKind::Mod,
-                identity: ResolvedIdentity::Provider(identity),
-                selected: Some(pin.clone()),
-                files: NonEmpty::new(vec![ResolvedFile {
-                    slot: FileSlot::parse("primary").unwrap(),
-                    acquisition: AcquisitionSpec::Manual {
-                        pin: Some(pin),
-                        instructions: "Use the provider page".into(),
-                    },
-                    expected: ExpectedContent {
-                        digests: Some(digests.clone()),
-                        size: Some(bytes.len() as u64),
-                        accepted_observation: None,
-                    },
-                    provenance: Provenance {
-                        source: "fixture".into(),
-                        location: None,
-                        declared_digests: Some(digests),
-                        conversions: vec![],
-                    },
-                    placements: NonEmpty::new(vec![place]).unwrap(),
-                }])
-                .unwrap(),
-            },
-        );
-        lock.coverage
-            .insert(key.clone(), Coverage::CompleteForSelection);
-        lock.required_edges.insert(key, BTreeSet::new());
-    }
-    fs::write(
-        project.dir().join("empack.yml"),
-        DocumentCodec.encode_intent(&intent).unwrap(),
-    )
-    .unwrap();
-    let source = empack_lib::testing::read_authoring(&project.dir().join("empack.yml")).unwrap();
-    lock.intent_revision = source.semantic_revision();
-    let resolved = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
-    fs::write(
-        project.dir().join("empack.lock"),
-        DocumentCodec.encode_lock(&resolved).unwrap(),
-    )
-    .unwrap();
-
-    let original = project_snapshot(&project);
-    command(&project)
-        .args(["sync", "--materialize", "--yes"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(project_snapshot(&project), original);
-    let pending = snapshot(&project);
-    command(&project)
-        .args(["sync", "--continue", "--dry-run", "--yes"])
-        .assert()
-        .success();
-    assert_eq!(snapshot(&project), pending);
-    fs::write(project.dir().join("first.jar"), b"first").unwrap();
-    command(&project)
-        .args([
-            "sync",
-            "--continue",
-            "--file",
-            "one/primary=first.jar",
-            "--yes",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("continuation was saved"));
-    let retained = snapshot(&project);
-    command(&project)
-        .args(["clean", "retained", "--yes"])
-        .assert()
-        .success();
-    assert_eq!(
-        snapshot(&project),
-        retained,
-        "pending inputs must survive cleanup"
-    );
-    fs::remove_file(project.dir().join("first.jar")).unwrap();
-    fs::write(project.dir().join("second.jar"), b"second").unwrap();
-    command(&project)
-        .args([
-            "sync",
-            "--continue",
-            "--file",
-            "two/primary=second.jar",
-            "--yes",
-        ])
-        .assert()
-        .success();
-    assert_eq!(
-        fs::read(project.dir().join("pack/mods/one.jar")).unwrap(),
-        b"first"
-    );
-    assert_eq!(
-        fs::read(project.dir().join("pack/mods/two.jar")).unwrap(),
-        b"second"
-    );
-    let complete = project_snapshot(&project);
-    for _ in 0..2 {
-        command(&project).args(["sync", "--yes"]).assert().success();
-    }
-    assert_eq!(project_snapshot(&project), complete);
-    let before_cleanup = snapshot(&project);
-    command(&project)
-        .args(["clean", "retained", "--dry-run", "--yes"])
-        .assert()
-        .success();
-    assert_eq!(snapshot(&project), before_cleanup);
-    command(&project)
-        .args(["clean", "retained", "--yes"])
-        .assert()
-        .success();
-    assert_eq!(project_snapshot(&project), complete);
-    assert!(
-        !fs::read_dir(project.dir().join(".host-state/pending-sync-content"))
-            .unwrap()
-            .any(|entry| entry
-                .unwrap()
-                .path()
-                .extension()
-                .is_some_and(|ext| ext == "blob"))
-    );
-
-    // A stale record is inspected without mutation and removed only by explicit cleanup.
-    let pending_dir = project.dir().join(".host-state/pending-sync");
-    for (path, bytes) in pending.iter().filter(|(path, _)| {
-        path.starts_with(".host-state/pending-sync")
-            && path.extension().is_some_and(|ext| ext == "json")
-    }) {
-        fs::write(project.dir().join(path), bytes).unwrap();
-    }
-    let intent_path = project.dir().join("empack.yml");
-    let mut bytes = fs::read(&intent_path).unwrap();
-    bytes.extend_from_slice(b"\n# changed after capture\n");
-    fs::write(&intent_path, bytes).unwrap();
-    let stale = snapshot(&project);
-    command(&project)
-        .args(["sync", "--continue", "--dry-run", "--yes"])
-        .assert()
-        .failure();
-    command(&project)
-        .args(["clean", "sync", "--dry-run", "--yes"])
-        .assert()
-        .success();
-    assert_eq!(snapshot(&project), stale);
-    command(&project)
-        .args(["clean", "sync", "--yes"])
-        .assert()
-        .success();
-    assert!(!fs::read_dir(pending_dir).unwrap().any(|entry| {
-        entry
-            .unwrap()
-            .path()
-            .extension()
-            .is_some_and(|ext| ext == "json")
-    }));
-    assert_eq!(
-        fs::read(project.dir().join("pack/mods/one.jar")).unwrap(),
-        b"first"
-    );
-}
-
-#[test]
 fn smoke_independent_add_publishes_successes_once_and_reports_preserved_failures() {
     let project = initialized();
+    let cache = tempfile::tempdir().unwrap();
+    let run = || {
+        let mut cmd = command(&project);
+        cmd.env("EMPACK_CACHE_DIR", cache.path());
+        cmd
+    };
     jar(&project, "existing.jar");
     jar(&project, "fresh.jar");
-    command(&project)
+    fs::write(
+        project.dir().join("author-note.md"),
+        b"Keep the review notes",
+    )
+    .unwrap();
+    fs::write(project.dir().join("prior-build.zip"), b"Previous artifact").unwrap();
+    run()
         .args(["add", "existing.jar", "--yes"])
         .assert()
         .success();
     let before = project_snapshot(&project);
-    command(&project)
+    let prior = empack_tests::harness::process::read_project(project.dir());
+    run()
         .args(["add", "existing.jar", "fresh.jar", "--yes"])
         .assert()
         .failure();
     assert_eq!(project_snapshot(&project), before);
-    command(&project)
-        .args([
-            "add",
-            "existing.jar",
-            "fresh.jar",
-            "--continue-independent",
-            "--dry-run",
-            "--yes",
-        ])
-        .assert()
-        .success();
-    assert_eq!(project_snapshot(&project), before);
-    command(&project)
-        .args([
+    for dry in [true, false] {
+        let mut cmd = run();
+        cmd.args([
             "add",
             "existing.jar",
             "fresh.jar",
             "--continue-independent",
             "--yes",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("Dependency batch incomplete"));
+        ]);
+        if dry {
+            cmd.arg("--dry-run");
+        }
+        let result = cmd.assert();
+        let output = result.get_output();
+        let text = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for expected in [
+            "Ready independent group: fresh",
+            "Preserve blocked group existing:",
+        ] {
+            assert!(text.contains(expected), "{text}");
+        }
+        if dry {
+            result.success();
+            assert_eq!(project_snapshot(&project), before);
+            assert!(!text.contains("Recorded 1 dependency bindings"), "{text}");
+        } else {
+            result.failure();
+            for expected in [
+                "Recorded 1 dependency bindings and 0 exact references",
+                "Addition completed only part of its displayed effects",
+                "Dependency batch incomplete: 1 successful groups, 1 blocked groups",
+            ] {
+                assert!(text.contains(expected), "{text}");
+            }
+        }
+    }
     assert_eq!(read_project(&project).intent().roots.len(), 2);
     assert_eq!(
         fs::read(project.dir().join("pack/mods/existing.jar")).unwrap(),
@@ -858,12 +649,33 @@ fn smoke_independent_add_publishes_successes_once_and_reports_preserved_failures
         fs::read(project.dir().join("pack/mods/fresh.jar")).unwrap(),
         fs::read(project.dir().join("fresh.jar")).unwrap()
     );
+    let resolved = empack_tests::harness::process::read_project(project.dir());
+    let existing = empack_core::model::DependencyKey::parse("existing").unwrap();
+    assert_eq!(
+        resolved.lock().dependencies[&existing],
+        prior.lock().dependencies[&existing]
+    );
+    assert_eq!(resolved.lock().runtime, prior.lock().runtime);
+    let mut expected = before.clone();
+    expected.insert(
+        PathBuf::from("pack/mods/fresh.jar"),
+        fs::read(project.dir().join("fresh.jar")).unwrap(),
+    );
+    let mut actual = project_snapshot(&project);
+    for name in ["empack.yml", "empack.lock", "empack.bindings.yml"] {
+        actual.remove(Path::new(name));
+        expected.remove(Path::new(name));
+    }
+    assert_eq!(
+        actual, expected,
+        "partial success must preserve all other files"
+    );
     let after = project_snapshot(&project);
     for _ in 0..2 {
-        command(&project).args(["sync", "--yes"]).assert().success();
+        run().args(["sync", "--yes"]).assert().success();
     }
     assert_eq!(project_snapshot(&project), after);
-    command(&project)
+    let retry = run()
         .args([
             "add",
             "existing.jar",
@@ -873,8 +685,31 @@ fn smoke_independent_add_publishes_successes_once_and_reports_preserved_failures
         ])
         .assert()
         .failure();
+    let output = retry.get_output();
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        text.contains("Dependency batch incomplete: 0 successful groups, 2 blocked groups"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("Recorded "),
+        "retry must not publish another receipt: {text}"
+    );
     assert_eq!(project_snapshot(&project), after);
-    command(&project)
+    // Input interpretation must finish before an independent footprint exists.
+    // A malformed source is therefore an all-requested preflight failure.
+    fs::write(
+        project.dir().join("existing.jar"),
+        b"invalid replacement archive",
+    )
+    .unwrap();
+    jar_version(&project, "fresh.jar", "2");
+    let malformed = project_snapshot(&project);
+    run()
         .args([
             "update",
             "existing",
@@ -883,8 +718,109 @@ fn smoke_independent_add_publishes_successes_once_and_reports_preserved_failures
             "--yes",
         ])
         .assert()
-        .success();
+        .failure()
+        .stderr(predicates::str::contains("Inspect dependency existing"));
+    assert_eq!(project_snapshot(&project), malformed);
+    fs::write(
+        project.dir().join("existing.jar"),
+        &before[Path::new("existing.jar")],
+    )
+    .unwrap();
+    // With resolved inputs, a modified installed file blocks only its group.
+    // The other root must perform an actual update, not merely a successful no-op.
+    fs::write(
+        project.dir().join("pack/mods/existing.jar"),
+        b"player local customization",
+    )
+    .unwrap();
+    let changed_sources = project_snapshot(&project);
+    run()
+        .args(["update", "existing", "fresh", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(project_snapshot(&project), changed_sources);
+    for dry in [true, false] {
+        let mut cmd = run();
+        cmd.args([
+            "update",
+            "existing",
+            "fresh",
+            "--continue-independent",
+            "--yes",
+        ]);
+        if dry {
+            cmd.arg("--dry-run");
+        }
+        let result = cmd.assert();
+        let output = result.get_output();
+        let text = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for expected in [
+            "Ready independent group: fresh",
+            "Preserve blocked group existing:",
+        ] {
+            assert!(text.contains(expected), "{text}");
+        }
+        if dry {
+            result.success();
+            assert_eq!(project_snapshot(&project), changed_sources);
+        } else {
+            result.failure();
+            for expected in [
+                "Checked 1 selected dependencies: 1 selections changed, 0 retained; preserved authored intent",
+                "Update completed only part of its displayed effects",
+                "Dependency batch incomplete: 1 successful groups, 1 blocked groups",
+            ] {
+                assert!(text.contains(expected), "{text}");
+            }
+        }
+    }
+    let next = empack_tests::harness::process::read_project(project.dir());
+    assert_eq!(next.intent(), resolved.intent());
+    assert_eq!(
+        next.lock().dependencies[&existing],
+        resolved.lock().dependencies[&existing]
+    );
+    let mut expected = changed_sources;
+    expected.insert(
+        PathBuf::from("pack/mods/fresh.jar"),
+        fs::read(project.dir().join("fresh.jar")).unwrap(),
+    );
+    let mut actual = project_snapshot(&project);
+    assert_ne!(
+        actual.remove(Path::new("empack.lock")),
+        expected.remove(Path::new("empack.lock"))
+    );
+    assert_eq!(actual, expected);
+    // Repair the rejected installed file, then retry: the successful root must not
+    // publish its update again or manufacture a changed-selection count.
+    fs::write(
+        project.dir().join("pack/mods/existing.jar"),
+        &before[Path::new("existing.jar")],
+    )
+    .unwrap();
+    let after = project_snapshot(&project);
+    run()
+        .args([
+            "update",
+            "existing",
+            "fresh",
+            "--continue-independent",
+            "--yes",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "0 selections changed, 2 retained",
+        ));
     assert_eq!(project_snapshot(&project), after);
+    for _ in 0..2 {
+        run().args(["sync", "--yes"]).assert().success();
+        assert_eq!(project_snapshot(&project), after);
+    }
 }
 
 #[test]

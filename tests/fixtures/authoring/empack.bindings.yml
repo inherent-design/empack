@@ -1,0 +1,8 @@
+# Destination policy belongs to this project, not to the source filename.
+schema: 1
+bindings:
+  fixture:
+    placement:
+      - destination: mods/private-rules.jar
+        layer: common
+        environment: {client: required, server: required}

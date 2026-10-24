@@ -32,9 +32,10 @@ failures stop further queries. Joint closure assessment requires complete inputs
 Update preparation still validates retained inventory and placements separately.
 
 `update --continue-independent` isolates preparation/publication conflicts after
-provider resolution succeeds. It does not isolate catalog failures. A catalog
-failure publishes nothing. Use its named dependency to inspect the requested source,
-pin, game and loader. Do not remove dependencies merely to make a report succeed.
+input resolution succeeds. It does not isolate catalog failures or malformed local
+sources that fail before a complete candidate is available. Those failures publish
+nothing. Use the named dependency to inspect the requested source, pin, game and
+loader. Do not remove dependencies merely to make a report succeed.
 
 A retained-dependent error names records that must be resolved in the same request.
 Include those keys in the selected update only when you intend to assess them too.

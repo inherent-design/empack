@@ -129,6 +129,14 @@ layout. `manifest explain KEY` shows URL evidence policy, effective source, poli
 provenance, requirements, bindings and available
 locked selection. `manifest diff` classifies differences between current authoring
 and the available lock; it does not claim to predict a resolved candidate.
+The lock's document revision and each dependency's selection are separate facts.
+A display-only edit can make `lock_status` stale while `selection_satisfied` remains
+true; synchronization can rebind that metadata without selecting new content.
+Changing a source, pin, automatic content directory or explicit placement can make
+the recorded selection unsatisfied. The explanation reports that constraint before
+synchronization resolves it. These inspections do not query providers or verify
+payload bytes, and a retained lock entry is not deletion authority when its authored
+root is absent.
 `pin KEY` records its current exact provider selection. `unpin KEY` restores
 compatible intent while retaining the current selection; neither refreshes files.
 Pinning removes a per-dependency automatic preference; unpinning returns to the project

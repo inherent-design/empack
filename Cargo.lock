@@ -808,7 +808,9 @@ version = "0.0.0-dev"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "clap",
  "conpty 0.7.0",
+ "ed25519-dalek",
  "empack-core",
  "empack-lib",
  "expectrl",
@@ -817,6 +819,7 @@ dependencies = [
  "reqwest",
  "serde-saphyr",
  "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "toml",

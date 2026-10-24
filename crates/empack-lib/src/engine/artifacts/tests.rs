@@ -4,6 +4,7 @@ use std::{
     fs,
     io::{Cursor, Write},
 };
+mod headers;
 fn path(name: &str) -> PortableRelPath {
     PortableRelPath::parse(name, PathSyntax::ArchiveMember).unwrap()
 }

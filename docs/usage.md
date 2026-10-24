@@ -3,7 +3,21 @@
 Empack separates pack authoring from installed game instances. Use `--workdir` before
 the command to select the authoring project, instance or publisher directory. Relative
 input paths resolve from the directory where you invoked empack, not `--workdir`.
-This guide follows the v0.8.0-beta CLI; `empack <command> --help` lists the installed options.
+This guide follows the current native CLI; `empack <command> --help` lists the
+options in your installed version.
+
+## Reports, logs and exit status
+
+Commands with `--json` reserve stdout for their report. Logs go to stderr for those
+commands even if `--log-output stdout` is configured. `--log-format` changes logs,
+not the report schema; `--color always` does not add terminal escapes to JSON reports.
+Human-readable commands continue to honor the selected log destination.
+
+Check the exit status as well as the report. A failed command can return a useful
+partial report, such as `outdated --strict`; its diagnostic goes to stderr. A failure
+before a report is available does not produce a successful empty report. Cancellation
+requests do not replace the completed result: cleanup and recovery failures remain
+visible, and an operation that already completed successfully remains successful.
 
 ## Workspace status
 
@@ -19,6 +33,13 @@ when those records are available. Publisher storage is recognized but its conten
 are not authenticated by status. Pending records are reported as present; resuming
 still validates them and requests fresh approval. Interrupted publication must be
 inspected with `recover inspect` before live documents can be interpreted.
+
+A successful status command means the inspection completed, not that its records
+are ready for a build or launch. In JSON schema 1, inspect `selected`, `contexts`
+and `findings`; `content_verified` is false. A valid author record can still have a
+missing, invalid or stale resolution lock. An ambiguous workspace has no automatic
+selection. `--context` chooses the context shown in the human report; JSON retains
+the other discovered contexts as well.
 
 Status does not verify installed content, authenticate a channel or establish that
 Minecraft will launch. `update` changes author dependency selections;
@@ -46,6 +67,29 @@ Initialization establishes `pack.id` once. `init --java MAJOR` declares the mini
 recipient Java version (default 21); adjust it for your game and loader. A display
 name or version change preserves the pack ID. See the [manifest guide](manifest.md)
 for source-specific declarations and author-only projects.
+
+With explicit Minecraft and loader versions, initialization records those exact
+choices without consulting a catalog or running Java. Legacy Forge 1.7.10 loader
+versions may include the `-1.7.10` suffix; empack stores the canonical loader version.
+When a required version is omitted, initialization uses official catalog discovery. A chosen
+loader version is recorded in the lock without adding an authored pin. These steps
+do not prove that runtime downloads are available or that the server will start;
+build and launch verify their own requirements.
+
+`init --force` and `init --from ARCHIVE --force` prepare a replacement before
+changing an existing project. Add `--dry-run` to inspect the affected files first.
+An invalid candidate or a declined plan leaves the existing project unchanged.
+An approved replacement can remove captured content under `pack/` and `overrides/`;
+it preserves existing custom templates, prior `dist/` artifacts and unrelated root
+files or directories. Worlds placed inside a replaced source root are author content
+in that scope; this command is not an installed-instance update.
+
+Imported overrides are recorded as local dependencies with accepted content in the
+lock. When you edit an imported file that is also its managed destination, `sync`
+and `update` protect the previously recorded bytes. Use `empack adopt KEY` with
+its exact dependency key from `empack.yml` to deliberately accept the edit, then
+build again. This does not require changing the pack version. Custom source trees
+declared separately from dependencies retain their ordinary fresh-build behavior.
 
 Modrinth public resolution needs no API key. For CurseForge, provide your client key
 through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version
@@ -243,9 +287,22 @@ stop all associated processes before `instance recover-runtime --acknowledge-sto
 cached content. `clean all` means builds and cache; it does not erase author sources,
 installed worlds or recovery evidence. Preview the selected cleanup with `--dry-run`.
 
-Workdir and relative paths resolve from captured invocation context. State and cache
-roots are separately configurable. Configuration precedence is explicit and cannot
-cause an inherited environment value to override a supplied command-line value.
+Workdir and relative input paths resolve from the directory where empack was invoked.
+Relative `--state-dir` and `--cache-dir` paths use that same directory, independently
+of `--workdir`. A relative initialization destination is a child of the selected
+workdir. State holds durable operation and recovery records; cache content is disposable.
+
+Configuration precedence, from lowest to highest, is defaults, `.env`, `.env.local`,
+inherited environment variables, then explicit CLI options. Dotenv files are read from
+the invocation directory; selecting `--workdir` does not load that project's dotenv
+files. Quote paths containing spaces in dotenv files and pass each CLI path as one
+argument. The corresponding environment variables are `EMPACK_WORKDIR`,
+`EMPACK_STATE_DIR` and `EMPACK_CACHE_DIR`.
+
+Help and version display flags remain available when unrelated dotenv files are
+malformed. Ordinary commands, including `version` and an invocation with no command,
+load configuration and report malformed dotenv as an error. With valid configuration,
+invoking no command prints help guidance without creating project or host state.
 
 ## Native release example
 

@@ -1,0 +1,2 @@
+# Verification receipts hash registry bytes across native checkout platforms.
+tests/verification/*.json text eol=lf

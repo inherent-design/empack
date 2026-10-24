@@ -68,8 +68,11 @@ labels, not dependency ranges.
 A local `path` is the source file, not its installed destination. `add` retains a
 file already inside the author checkout at that source path; an external file is
 copied into project storage to keep the declaration portable. World archive imports
-retain interpreted members as their own sources. Use `adopt` to accept deliberate
-changed bytes. A direct `url` normally requires expected content evidence:
+retain interpreted members as their own sources. Use `update KEY` to install a
+changed local source. `adopt KEY` records deliberate existing destination bytes;
+for a separate local source, those bytes must also match the source. Adoption does
+not install a missing or mismatched payload. A direct `url` normally requires
+expected content evidence:
 
 ```yaml
 textures:
