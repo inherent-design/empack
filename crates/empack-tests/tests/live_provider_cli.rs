@@ -441,6 +441,184 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     }
 }
 
+// Reuse the already verified immutable payload; adoption observes the installed
+// copies while the live provider routes establish identity, never a latest choice.
+fn adopt_existing_live_content(bytes: &[u8], url: &str) {
+    use empack_core::{
+        digest::{ContentId, ExpectedDigest},
+        identity::{ModrinthProjectId, ModrinthVersionId, PinSelector},
+        model::SourceIntent,
+    };
+    use sha2::{Digest, Sha256, Sha512};
+    use std::fs;
+    for mode in ["url", "exact-provider", "identified-provider"] {
+        let project = TestProject::workflow_fixture("untracked-adoption", "fabric", "1.21.1");
+        fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+        let installed = project.dir().join("pack/mods/morechathistory-1.3.1.jar");
+        fs::write(project.dir().join("observed.jar"), bytes).unwrap();
+        fs::write(
+            project.dir().join("prior-build.zip"),
+            b"Retain prior artifact",
+        )
+        .unwrap();
+        let args = match mode {
+            "url" => vec!["--yes", "adopt", "--from", url],
+            "exact-provider" => vec![
+                "--yes",
+                "adopt",
+                "--from",
+                "8qkXwOnk",
+                "--platform",
+                "modrinth",
+                "--version-id",
+                "3siYJiWG",
+            ],
+            _ => vec![
+                "--yes",
+                "adopt",
+                "--from",
+                "observed.jar",
+                "--platform",
+                "modrinth",
+            ],
+        };
+        // Adoption cannot install an absent target. Provider adoption must match
+        // declared bytes; URL adoption instead observes a valid installed archive,
+        // so its negative case supplies malformed content, not a remote assertion.
+        for mismatch in [false, true] {
+            if mismatch {
+                fs::write(&installed, b"different installed bytes").unwrap();
+            }
+            let before = author_snapshot(project.dir());
+            let refused = execute(&project, &args, None);
+            assert!(
+                !refused.status.success(),
+                "{mode} unexpectedly accepted mismatching content"
+            );
+            let diagnostic = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&refused.stdout),
+                String::from_utf8_lossy(&refused.stderr)
+            );
+            if mode != "url" {
+                assert!(
+                    diagnostic.contains(if mismatch {
+                        "Source size differs from lock"
+                    } else {
+                        "Input is not a captured regular file"
+                    }),
+                    "{mode}: {diagnostic}"
+                );
+            } else if mismatch {
+                assert!(diagnostic.contains("Inspect dependency"), "{diagnostic}");
+            }
+            assert_eq!(author_snapshot(project.dir()), before, "{mode}");
+        }
+        fs::write(&installed, bytes).unwrap();
+        let attributes = |path: &Path| {
+            let metadata = fs::metadata(path).unwrap();
+            (
+                metadata.modified().unwrap(),
+                metadata.permissions().readonly(),
+                metadata.len(),
+            )
+        };
+        let source_attributes = attributes(&project.dir().join("observed.jar"));
+        let installed_attributes = attributes(&installed);
+        let before = snapshot(project.dir(), &[]);
+        let mut preview = args.clone();
+        preview.push("--dry-run");
+        run(&project, &preview);
+        assert_eq!(
+            snapshot(project.dir(), &[]),
+            before,
+            "{mode} preview changed files"
+        );
+        let before = author_snapshot(project.dir());
+        let output = run(&project, &args);
+        let rendered = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            rendered.contains("Adopted 1 verified dependency bindings"),
+            "{mode}: {rendered}"
+        );
+        let resolved = read_project(project.dir());
+        assert_eq!(resolved.intent().roots.len(), 1);
+        assert_eq!(resolved.lock().dependencies.len(), 1);
+        let (key, dependency) = resolved.lock().dependencies.first_key_value().unwrap();
+        if mode == "url" {
+            assert!(
+                matches!(&resolved.intent().roots[key].source, SourceIntent::Url(urls) if urls.as_slice() == [url])
+            );
+            assert!(dependency.selected.is_none());
+            assert!(dependency.files.as_slice()[0].expected.digests.is_none());
+        } else {
+            let pin = dependency.selected.as_ref().unwrap();
+            assert_eq!(
+                pin.project,
+                ProviderProjectId::Modrinth(ModrinthProjectId::parse("8qkXwOnk").unwrap())
+            );
+            assert_eq!(
+                pin.selection,
+                PinSelector::ModrinthVersion(ModrinthVersionId::parse("3siYJiWG").unwrap())
+            );
+            assert!(
+                dependency.files.as_slice()[0]
+                    .provenance
+                    .declared_digests
+                    .is_some()
+            );
+        }
+        assert_eq!(dependency.files.as_slice().len(), 1);
+        let file = &dependency.files.as_slice()[0];
+        assert_eq!(file.expected.size, Some(bytes.len() as u64));
+        if mode == "url" {
+            assert_eq!(
+                file.expected.accepted_observation,
+                Some(ContentId::from_sha256(Sha256::digest(bytes).into()))
+            );
+            assert!(file.provenance.declared_digests.is_none());
+        } else {
+            // Provider evidence remains declared evidence, not a fabricated
+            // accept-first-observation assertion merely because adoption ran.
+            assert!(file.expected.accepted_observation.is_none());
+            assert_eq!(file.expected.digests, file.provenance.declared_digests);
+            assert!(
+                file.expected
+                    .digests
+                    .as_ref()
+                    .unwrap()
+                    .values()
+                    .contains(&ExpectedDigest::Sha512(Sha512::digest(bytes).into()))
+            );
+        }
+        assert_eq!(attributes(&installed), installed_attributes);
+        assert_eq!(
+            attributes(&project.dir().join("observed.jar")),
+            source_attributes
+        );
+        let mut after = author_snapshot(project.dir());
+        let mut expected = before;
+        for path in ["empack.yml", "empack.bindings.yml", "empack.lock"] {
+            after.remove(Path::new(path));
+            expected.remove(Path::new(path));
+        }
+        assert_eq!(after, expected, "{mode} changed non-document files");
+        let stable = author_snapshot(project.dir());
+        for _ in 0..2 {
+            run(&project, &["--yes", "sync"]);
+            assert_eq!(
+                author_snapshot(project.dir()),
+                stable,
+                "{mode} did not converge"
+            );
+        }
+    }
+}
+
 #[test]
 #[ignore = "immutable direct HTTPS JAR from the pinned import corpus; live network required"]
 fn live_cli_direct_url_retains_observed_content() {
@@ -502,4 +680,5 @@ fn live_cli_direct_url_retains_observed_content() {
         fs::read(project.dir().join("prior-build.zip")).unwrap(),
         b"prior artifact"
     );
+    adopt_existing_live_content(&bytes, url);
 }

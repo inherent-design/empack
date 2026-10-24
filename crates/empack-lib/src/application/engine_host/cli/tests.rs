@@ -1395,23 +1395,31 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     latest.assert_async().await;
 }
 
+fn adoption_jar(id: &str) -> Vec<u8> {
+    use std::io::Write;
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(
+            json!({"schemaVersion":1,"id":id,"version":"1"})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    archive.finish().unwrap().into_inner()
+}
+
 #[tokio::test]
 async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloading_payloads() {
-    use std::io::Write;
     for missing_lock in [false, true] {
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
         if missing_lock {
             fs::remove_file(root.path().join("project/empack.lock")).unwrap();
         }
-        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        archive
-            .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
-            .unwrap();
-        archive
-            .write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
-            .unwrap();
-        let bytes = archive.finish().unwrap().into_inner();
+        let bytes = adoption_jar("fixture");
         fs::write(root.path().join("fixture.jar"), &bytes).unwrap();
         fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
         fs::write(root.path().join("project/pack/mods/fixture.jar"), b"wrong").unwrap();
@@ -1487,16 +1495,8 @@ async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloadin
 #[tokio::test]
 async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete_copies() {
     use empack_core::digest::ExpectedDigest;
-    use std::io::Write;
     for identify in [false, true] {
-        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        archive
-            .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
-            .unwrap();
-        archive
-            .write_all(br#"{"schemaVersion":1,"id":"renderer","version":"1"}"#)
-            .unwrap();
-        let payload = archive.finish().unwrap().into_inner();
+        let payload = adoption_jar("renderer");
         let hash = ExpectedDigest::Sha512(Sha512::digest(&payload).into()).hex();
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
@@ -1593,6 +1593,152 @@ async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete
             committed
         );
         latest.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn new_provider_adoption_refuses_unknown_and_ambiguous_byte_identity_without_edits() {
+    use empack_core::digest::ExpectedDigest;
+    let payload = adoption_jar("renderer");
+    let sha512 = ExpectedDigest::Sha512(Sha512::digest(&payload).into()).hex();
+    let sha1 = ExpectedDigest::Sha1(sha1::Sha1::digest(&payload).into()).hex();
+    let fingerprint_bytes: Vec<_> = payload
+        .iter()
+        .copied()
+        .filter(|byte| !matches!(byte, 9 | 10 | 13 | 32))
+        .collect();
+    let fingerprint = murmur2::murmur2(&fingerprint_bytes, 1);
+    for mode in ["unknown", "identities", "file-roles"] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::write(root.path().join("renderer.jar"), &payload).unwrap();
+        fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
+        fs::write(root.path().join("project/pack/mods/renderer.jar"), &payload).unwrap();
+        fs::write(
+            root.path().join("project/prior-build.zip"),
+            b"Retain prior artifact",
+        )
+        .unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let lookup;
+        let mut projects = Vec::new();
+        let (platform, credential, diagnostic) = if mode == "identities" {
+            let matches: Vec<_> = [123, 456]
+                .into_iter()
+                .map(|id| {
+                    json!({"id":id,"file":{
+                        "id":id+1,"modId":id,"gameId":432,"fileFingerprint":fingerprint,
+                        "fileName":"renderer.jar","fileLength":payload.len(),
+                        "hashes":[{"algo":1,"value":sha1}],"downloadUrl":null,
+                        "gameVersions":["1.21.1","Fabric"],"dependencies":[]
+                    }})
+                })
+                .collect();
+            lookup = server
+                .mock("POST", "/fingerprints/432")
+                .with_body(json!({"data":{"isCacheBuilt":true,"exactMatches":matches}}).to_string())
+                .expect(2)
+                .create_async()
+                .await;
+            for id in [123, 456] {
+                projects.push(
+                    server
+                        .mock("GET", format!("/mods/{id}").as_str())
+                        .with_body(
+                            json!({"data":{"id":id,"gameId":432,"classId":6,
+                        "slug":format!("renderer-{id}"),"name":"Renderer"}})
+                            .to_string(),
+                        )
+                        .expect(2)
+                        .create_async()
+                        .await,
+                );
+            }
+            (
+                SearchPlatform::Curseforge,
+                Some("fixture-key".into()),
+                "Multiple provider identities match",
+            )
+        } else {
+            let request = server
+                .mock("GET", format!("/version_file/{sha512}").as_str())
+                .match_query(mockito::Matcher::Any)
+                .expect(2);
+            lookup = if mode == "unknown" {
+                request.with_status(404).create_async().await
+            } else {
+                let files: Vec<_> = ["renderer.jar","copy.jar"].into_iter().map(|name| json!({
+                    "filename":name,"primary":false,"size":payload.len(),"hashes":{"sha512":sha512},
+                    "url":format!("https://example.invalid/{name}")
+                })).collect();
+                projects.push(
+                    server
+                        .mock("GET", "/project/Root0001")
+                        .with_body(
+                            json!({"id":"Root0001","slug":"renderer","title":"Renderer",
+                        "project_type":"mod","loaders":["fabric"]})
+                            .to_string(),
+                        )
+                        .expect(2)
+                        .create_async()
+                        .await,
+                );
+                request
+                    .with_body(
+                        json!({"id":"RootVer1","project_id":"Root0001",
+                    "game_versions":["1.21.1"],"loaders":["fabric"],"files":files,
+                    "dependencies":[]})
+                        .to_string(),
+                    )
+                    .create_async()
+                    .await
+            };
+            (
+                SearchPlatform::Modrinth,
+                None,
+                if mode == "unknown" {
+                    "No provider identity verified"
+                } else {
+                    "Provider bytes match multiple file roles"
+                },
+            )
+        };
+        let before = super::super::tests::snapshot(root.path());
+        for dry in [true, false] {
+            let (host, messages) = session(root.path(), dry).record_status_messages();
+            let mut selected = options("renderer.jar");
+            selected.platform = Some(platform.clone());
+            selected.version_id = None;
+            let error = selected_with_catalog(
+                &host,
+                selected,
+                ProviderCatalog::for_loopback_tests(&server.url(), credential.clone()),
+                InputOperation::Adopt,
+            )
+            .await
+            .unwrap_err();
+            let diagnostic_text = format!("{error:#}");
+            assert!(
+                diagnostic_text.contains(diagnostic),
+                "{mode}: {diagnostic_text}"
+            );
+            assert_eq!(
+                super::super::tests::snapshot(root.path()),
+                before,
+                "{mode}, dry={dry}"
+            );
+            assert!(
+                !messages
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|message| message.contains("Adopted "))
+            );
+        }
+        lookup.assert_async().await;
+        for project in projects {
+            project.assert_async().await;
+        }
     }
 }
 

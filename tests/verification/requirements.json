@@ -3578,10 +3578,9 @@
             "telemetry"
           ],
           "assertions": [
-            "Local and URL adoption require matching installed bytes, preserve previews and payloads, and work with or without an existing lock",
+            "Local adoption requires matching source and installed bytes; URL adoption observes valid installed content without fetching it; both preserve previews and payloads with or without an existing lock",
             "A new provider source without an exact version cannot masquerade as observation; the host refuses it without querying a latest version"
-          ],
-          "remaining_group_evidence": "Live provider/URL adoption and ambiguous-candidate selection at the handler boundary still need explicit qualification"
+          ]
         },
         {
           "id": "UX-030.provider-exact-file-plan",
@@ -3601,8 +3600,7 @@
           "assertions": [
             "Exact provider selection or verified byte identification reuses explicit side-specific file plans and rejects incomplete installed copies",
             "Preview and approved adoption preserve installed content, never query a latest version, retain the exact provider pin and converge"
-          ],
-          "remaining_group_evidence": "Live provider/URL adoption and ambiguous-candidate selection at the handler boundary still need explicit qualification"
+          ]
         },
         {
           "id": "UX-030.public-local-input",
@@ -3622,8 +3620,48 @@
           "assertions": [
             "The real CLI refuses absent or mismatched installed destinations for adopt --from local",
             "Successful local adoption preserves source and destination modification times and every non-document file; preview and later missing-lock recovery remain non-installing"
+          ]
+        },
+        {
+          "id": "UX-030.ambiguous-handler-refusal",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::new_provider_adoption_refuses_unknown_and_ambiguous_byte_identity_without_edits"
           ],
-          "remaining_group_evidence": "Live provider/URL adoption and ambiguous-candidate selection at the handler boundary still need explicit qualification"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unknown byte identity, multiple verified provider identities and multiple matching file roles are refused through the adoption handler under preview and approval",
+            "Refusal preserves all authoring, supplied and installed bytes, prior artifacts and host state without a completion receipt"
+          ]
+        },
+        {
+          "id": "UX-030.live-observed-inputs",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_direct_url_retains_observed_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The real CLI adopts an independently hash-checked immutable JAR through its URL, an exact Modrinth version and local-byte provider identification; it never substitutes a latest pin",
+            "Absent destinations, malformed URL content and provider-mismatched bytes are refused; preview preserves all files and approved adoption retains payload attributes and all non-document bytes",
+            "URL observations remain distinct from provider-declared digests, and two subsequent synchronizations converge"
+          ]
         }
       ],
       "owner_now": [
@@ -3636,7 +3674,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable catalog interpretation; native/Fetch transport"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-031",

@@ -247,7 +247,12 @@ from provider-declared evidence. First-lock reconstruction is tested separately:
 retains identity and byte evidence, but cannot retain an inferred display title that
 was present only in the missing lock. Controlled provider cases check exact byte
 identification, incompatible identities, copied placements and absence of latest-version
-queries. Live untracked-adoption and ambiguous-selection evidence remain outstanding.
+queries. A handler matrix refuses unknown identity, competing provider matches and
+multiple matching file roles without edits or a completion receipt. The live CLI
+reuses the pinned JAR corpus for URL, exact-version and byte-identified adoption,
+checking absent/invalid-target refusal, provider-byte mismatches, payload attributes,
+declared versus observed identity and repeated convergence. These fixtures still require execution on every
+required host and product configuration; their presence is not release qualification.
 
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
