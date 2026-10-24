@@ -307,10 +307,10 @@ class RequiredGate(unittest.TestCase):
                         for case in row["cases"]}
             for requirement in acceptance:
                 # This synthetic full native matrix now supplies every bound
-                # configuration, status, explanation and replacement case. Entry identity needs package proof;
-                # partial groups cannot pass just because their current tests do.
+                # configuration, status, explanation, replacement, content-kind and side-choice cases.
+                # Entry identity needs package proof; partial groups cannot pass merely because their current tests do.
                 self.assertEqual(requirement["status"],
-                                 "PASS" if requirement["id"] in {"UX-002", "UX-005", "UX-007", "UX-011"} else "NOT_RUN")
+                                 "PASS" if requirement["id"] in {"UX-002", "UX-005", "UX-007", "UX-011", "UX-022", "UX-023"} else "NOT_RUN")
                 for case in requirement["cases"]:
                     # This plan selects native suites, not the independently bound
                     # live-provider case. Only selected execution can pass it.

@@ -2594,6 +2594,68 @@
             "The explicit primary role retains its destination and all companion placements/requirements while the selected version and primary bytes change",
             "Missing required companions refuse before publication; add/update previews preserve project state, and completed updates retain authored documents and bindings"
           ]
+        },
+        {
+          "id": "UX-022.provider-role-interpretation",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::providers::tests::provider_file_roles_survive_renames_and_reject_ambiguous_companions",
+            "empack-lib::engine::providers::tests::exact_version_kinds_do_not_inherit_the_whole_project_union"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Primary and declared companion selectors survive filename changes; filename selectors remain exact and old names are refused",
+            "Ambiguous declared companion roles require an exact filename rather than selecting an arbitrary matching file",
+            "Exact version kinds reflect the selected version rather than the union of project kinds"
+          ]
+        },
+        {
+          "id": "UX-022.host-direct-kind-routing",
+          "boundary": "H",
+          "test_ids": [
+            "empack-tests::host_commands::direct_content_matrix_preserves_selected_kind_destination_and_sync"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit mod, resourcepack, shader and datapack additions retain source bytes at independently specified destinations and converge across two syncs"
+          ]
+        },
+        {
+          "id": "UX-022.cli-kind-routing-and-worlds",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_content_kinds::journey_cli_content_kinds_preserve_sides_choices_and_world_groups"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal schema-5 project accepts explicit mod/resourcepack/shader/datapack/world CLI types with exact default or authored destinations",
+            "Ambiguous untyped ZIPs and malformed multi-root or mixed-root worlds refuse without modifying any project file or prior artifact; previews also preserve the project",
+            "A wrapped world becomes one dependency with two members under one seed-owned world root; complete client/server export file inventories contain the expected bytes"
+          ]
         }
       ],
       "owner_now": [
@@ -2606,7 +2668,7 @@
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-023",
@@ -2650,6 +2712,94 @@
             "Native releases retain the optional choice definition and per-file participation; bundled Prism excludes or includes exact optional bytes according to each explicit choice",
             "Missing and unknown optional choices refuse without replacing authored inputs or prior verified artifacts"
           ]
+        },
+        {
+          "id": "UX-023.requirements-and-inventory",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::requirements::every_environment_combination_preserves_or_rejects_meaning",
+            "empack-core::requirements::independent_choices_must_not_collapse",
+            "empack-core::inventory::sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers",
+            "empack-core::inventory::optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices",
+            "empack-core::inventory::duplicate_destinations_and_conflicting_choice_definitions_fail",
+            "empack-core::inventory::optional_overlay_keeps_fallback_or_requires_a_materialized_choice",
+            "empack-core::inventory::optional_common_override_requires_a_choice_and_preserves_disabled_fallback",
+            "empack-core::inventory::selection_can_defer_bytes_but_completed_inventory_cannot"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Client/server required, unsupported and optional combinations retain meaning; inconsistent choice identity/default/description cannot collapse",
+            "Side projection, overlay precedence and optional selection preserve the correct fallback bytes or require an explicit materialization choice",
+            "Unknown choices and conflicting definitions fail; a selected inventory cannot finish while required bytes remain unacquired"
+          ]
+        },
+        {
+          "id": "UX-023.host-selected-byte-requirements",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::acquisition::tests::acquisition_selection_matches_materialized_missing_content_and_optional_choices"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Enabled client optional inputs require the same exact missing acquisitions as materialization; disabled inputs and the unsupported server side require no bytes"
+          ]
+        },
+        {
+          "id": "UX-023.host-world-group-retention",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::initialized_world_groups_survive_update_repair_removal_and_rollback"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Initialized world groups retain player edits and deletions across update, repair, rollback, complete world removal and later reintroduction; new world members are not refilled",
+            "Unrelated configuration still installs while world members remain protected"
+          ]
+        },
+        {
+          "id": "UX-023.cli-side-choice-and-acquisition",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_content_kinds::journey_cli_content_kinds_preserve_sides_choices_and_world_groups"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Authored per-file requirements produce independent complete native client/server file inventories, retain world groups and exclude opposite-side content",
+            "Both explicit optional choices and authored defaults produce the exact Prism file inventory; missing or unknown choices preserve all author files and prior artifacts",
+            "After deleting optional source and installed bytes and evicting the cache, an unselected client build succeeds while a selected build diagnoses the missing file and preserves prior artifacts"
+          ]
         }
       ],
       "owner_now": [
@@ -2662,7 +2812,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-024",

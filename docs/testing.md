@@ -78,6 +78,18 @@ controlled catalog/transport and host-build checks, not public CLI or launcher
 execution. Exact filename selectors remain version-sensitive; the `primary` role
 is the stable selection when a provider renames its primary file.
 
+The public `journey_content_kinds` scenario shares only literal archive inputs and
+expected destinations with the host kind matrix. It drives the selected executable
+from a written schema-5 project, refusing ambiguous ZIP inputs and malformed worlds
+before adding mods, resource packs, shaders, datapacks and one wrapped world. Complete
+native client/server and Prism file inventories check side selection, optional choices
+and world-group metadata. Removing optional source/installed bytes and evicting the
+cache proves that unselected content is unnecessary while selected bytes remain
+mandatory. Host state lives outside the project so project snapshots include all
+author files and artifacts without confusing journal retention with author changes.
+Separate instance tests prove that initialized worlds retain player edits and missing
+members across update, repair and rollback. None of these fixtures claims game startup.
+
 The resourcepack scenario shares its assertions between offline client exports and
 live server preparation. Missing Java cannot skip the offline client case. Component
 fixtures created through codecs are distinct from the literal authoring journey;

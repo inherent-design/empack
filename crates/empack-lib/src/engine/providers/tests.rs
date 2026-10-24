@@ -812,6 +812,80 @@ fn locator_refresh_keeps_locked_assertions_and_refuses_ambiguous_or_changed_role
 }
 
 #[test]
+fn provider_file_roles_survive_renames_and_reject_ambiguous_companions() {
+    let mut version = mr_version();
+    let mut companion = version["files"][0].clone();
+    companion["primary"] = json!(false);
+    companion["filename"] = json!("resources.zip");
+    companion["file_type"] = json!("required-resource-pack");
+    version["files"].as_array_mut().unwrap().push(companion);
+    let parse = |value: &Value| {
+        modrinth::selection(
+            modrinth::project(&bytes(&mr_project())).unwrap(),
+            &pin(ProviderKind::Modrinth),
+            &bytes(value),
+        )
+        .unwrap()
+    };
+    let original = parse(&version);
+    assert_eq!(
+        original.file_for_selector("primary").unwrap().filename,
+        "sodium.jar"
+    );
+    assert_eq!(
+        original
+            .file_for_selector("role:required-resource-pack")
+            .unwrap()
+            .filename,
+        "resources.zip"
+    );
+    version["files"][0]["filename"] = json!("renamed.jar");
+    version["files"][1]["filename"] = json!("renamed-assets.zip");
+    let renamed = parse(&version);
+    assert_eq!(
+        renamed.file_for_selector("primary").unwrap().filename,
+        "renamed.jar"
+    );
+    assert_eq!(
+        renamed
+            .file_for_selector("role:required-resource-pack")
+            .unwrap()
+            .filename,
+        "renamed-assets.zip"
+    );
+    for absent in ["sodium.jar", "filename:resources.zip", "role:unknown"] {
+        assert!(renamed.file_for_selector(absent).is_err(), "{absent}");
+    }
+    assert_eq!(
+        renamed
+            .file_for_selector("filename:renamed-assets.zip")
+            .unwrap()
+            .filename,
+        "renamed-assets.zip"
+    );
+    let mut duplicate = version["files"][1].clone();
+    duplicate["filename"] = json!("another-assets.zip");
+    version["files"].as_array_mut().unwrap().push(duplicate);
+    let ambiguous = parse(&version);
+    let error = ambiguous
+        .file_for_selector("role:required-resource-pack")
+        .err()
+        .unwrap();
+    assert!(format!("{error:#}").contains("ambiguous"));
+    assert_eq!(
+        ambiguous.file_for_selector("primary").unwrap().filename,
+        "renamed.jar"
+    );
+    assert_eq!(
+        ambiguous
+            .file_for_selector("filename:another-assets.zip")
+            .unwrap()
+            .filename,
+        "another-assets.zip"
+    );
+}
+
+#[test]
 fn exact_version_kinds_do_not_inherit_the_whole_project_union() {
     let mut project = mr_project();
     project["loaders"] = json!(["datapack", "fabric", "forge"]);

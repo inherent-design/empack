@@ -14,9 +14,11 @@ use empack_lib::{
 use std::{
     collections::BTreeMap,
     fs,
-    io::{Cursor, Write},
     path::{Path, PathBuf},
 };
+#[path = "support/content_kinds.rs"]
+mod content_kinds;
+
 struct Project {
     root: tempfile::TempDir,
 }
@@ -90,16 +92,9 @@ impl Project {
             .len()
     }
     fn source(&self, filename: &str, members: &[(&str, &[u8])]) {
-        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        for (name, bytes) in members {
-            archive
-                .start_file(*name, zip::write::SimpleFileOptions::default())
-                .unwrap();
-            archive.write_all(bytes).unwrap();
-        }
         fs::write(
             self.root.path().join(filename),
-            archive.finish().unwrap().into_inner(),
+            content_kinds::archive(members),
         )
         .unwrap();
     }
@@ -176,46 +171,15 @@ async fn all_loader_families_keep_exact_runtime_and_generate_mrpack() -> Result<
 }
 #[tokio::test]
 async fn direct_content_matrix_preserves_selected_kind_destination_and_sync() -> Result<()> {
-    type ContentCase = (
-        &'static str,
-        CliProjectType,
-        &'static [(&'static str, &'static [u8])],
-        &'static str,
-    );
-    let cases: &[ContentCase] = &[
-        (
-            "mod.jar",
-            CliProjectType::Mod,
-            &[("fabric.mod.json", b"{}")],
-            "mods/mod.jar",
-        ),
-        (
-            "resources.zip",
-            CliProjectType::ResourcePack,
-            &[("pack.mcmeta", b"{}"), ("assets/example/file", b"resource")],
-            "resourcepacks/resources.zip",
-        ),
-        (
-            "shaders.zip",
-            CliProjectType::Shader,
-            &[("shaders/example.glsl", b"shader")],
-            "shaderpacks/shaders.zip",
-        ),
-        (
-            "data.zip",
-            CliProjectType::Datapack,
-            &[("pack.mcmeta", b"{}"), ("data/example/file", b"data")],
-            "config/paxi/datapacks/data.zip",
-        ),
-    ];
-    for (filename, kind, members, destination) in cases {
+    for case in content_kinds::CASES {
         let project = Project::new();
         project.initialize("none", None).await?;
-        project.source(filename, members);
-        project.run(add(&[filename], Some(kind.clone()))).await?;
+        project.source(case.filename, case.members);
+        let kind = <CliProjectType as clap::ValueEnum>::from_str(case.kind, false).unwrap();
+        project.run(add(&[case.filename], Some(kind))).await?;
         assert_eq!(
-            fs::read(project.path().join("pack").join(destination))?,
-            fs::read(project.root.path().join(filename))?
+            fs::read(project.path().join("pack").join(case.destination))?,
+            fs::read(project.root.path().join(case.filename))?
         );
         let before = project.snapshot();
         for _ in 0..2 {
