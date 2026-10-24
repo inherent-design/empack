@@ -153,3 +153,99 @@ fn journey_pinned_curseforge_import_reexport_preserves_inventory() {
 fn journey_pinned_traversal_import_refuses_publication() {
     corpus("traversal-refused");
 }
+
+#[test]
+fn journey_import_exclusion_requires_consent_and_preserves_declared_runtime() {
+    let project = TestProject::new();
+    let archive = project.dir().join("auxiliary.mrpack");
+    empack_tests::fixtures::write_zip(
+        &archive,
+        &[
+            ("modrinth.index.json", br#"{"formatVersion":1,"game":"minecraft","name":"Auxiliary Pack","versionId":"1.0.0","files":[],"dependencies":{"minecraft":"1.21.1"}}"#),
+            ("overrides/config/example.toml", b"# author source\nenabled=true\n"),
+            ("readme.txt", b"Author notes that must not be silently discarded"),
+        ],
+    ).unwrap();
+    let archive_bytes = fs::read(&archive).unwrap();
+    let neighbors = [
+        ("neighbor/empack.yml", b"author document".as_slice()),
+        ("neighbor/empack.lock", b"prior resolution".as_slice()),
+        ("neighbor/dist/prior.zip", b"prior artifact".as_slice()),
+        (
+            "neighbor/worlds/playtest/level.dat",
+            b"player world".as_slice(),
+        ),
+    ];
+    for (name, bytes) in neighbors {
+        let path = project.dir().join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    let unchanged = || {
+        assert_eq!(fs::read(&archive).unwrap(), archive_bytes);
+        for (name, bytes) in neighbors {
+            assert_eq!(fs::read(project.dir().join(name)).unwrap(), bytes, "{name}");
+        }
+    };
+    let imported = project.dir().join("imported");
+    for (extra, diagnostic) in [
+        (vec![], "--exclude-auxiliary"),
+        (
+            vec!["--exclude-auxiliary", "--mc-version", "1.20.1"],
+            "--mc-version differs",
+        ),
+    ] {
+        offline_command(project.dir())
+            .args(["--yes", "init", "--from", archive.to_str().unwrap()])
+            .args(extra)
+            .arg("imported")
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains(diagnostic));
+        assert!(!imported.exists());
+        unchanged();
+    }
+    offline_command(project.dir())
+        .args([
+            "--yes",
+            "init",
+            "--from",
+            archive.to_str().unwrap(),
+            "--exclude-auxiliary",
+            "imported",
+        ])
+        .assert()
+        .success();
+    let author = fs::read(imported.join("empack.yml")).unwrap();
+    let lock = fs::read(imported.join("empack.lock")).unwrap();
+    let decoded = empack_lib::testing::read_authoring(&imported.join("empack.yml")).unwrap();
+    assert_eq!(decoded.intent().runtime.minecraft.as_str(), "1.21.1");
+    assert_eq!(decoded.intent().roots.len(), 1);
+    assert!(!imported.join("readme.txt").exists());
+    assert_eq!(
+        fs::read(imported.join("overrides/common/config/example.toml")).unwrap(),
+        b"# author source\nenabled=true\n"
+    );
+    offline_command(&imported)
+        .args(["--yes", "build", "modrinth"])
+        .assert()
+        .success();
+    let mut members = zip_members(&assert_dist_artifact_suffix(&imported, ".mrpack"));
+    let index: Value =
+        serde_json::from_slice(&members.remove("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(
+        index["dependencies"],
+        serde_json::json!({"minecraft":"1.21.1"})
+    );
+    assert_eq!(index["files"], serde_json::json!([]));
+    assert_eq!(
+        members,
+        BTreeMap::from([(
+            "overrides/config/example.toml".into(),
+            b"# author source\nenabled=true\n".to_vec()
+        )])
+    );
+    assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), author);
+    assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), lock);
+    unchanged();
+}

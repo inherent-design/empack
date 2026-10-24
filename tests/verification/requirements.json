@@ -1849,7 +1849,79 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-016.explicit-interpretation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::import::tests::import_cli_requires_explicit_exclusion_and_never_changes_declared_runtime",
+            "empack-lib::engine::import::acquisition::tests::import_candidate_retains_every_layer_and_explicit_local_conversion",
+            "empack-lib::engine::import::acquisition::tests::import_candidate_rejects_inventory_and_semantic_changes",
+            "empack-lib::engine::import::acquisition::tests::import_candidate_requires_a_safe_durable_url_or_explicit_conversion",
+            "empack-lib::engine::import::acquisition::tests::import_candidate_preserves_provider_pins_weak_digests_and_optional_choices"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Import retains side participation, provider identity and source assertions; dropping entries or changing declared requirements requires explicit supported interpretation",
+            "Auxiliary exclusion cannot silently alter the imported runtime; unsafe durable URLs require a supported explicit conversion"
+          ],
+          "remaining_group_evidence": "Controlled provider routing is host evidence; remaining executable routing, conversion and populated-replacement combinations require their own cases"
+        },
+        {
+          "id": "UX-016.provider-kind-and-world-routing",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::import::tests::provider_import_preserves_kinds_optional_choices_and_exported_files",
+            "empack-lib::application::engine_host::cli::import::tests::provider_world_import_interprets_verified_members_before_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled provider kinds keep their mod/resource/shader/datapack destinations and optional participation through import and export",
+            "World archives require an explicit parent folder; verified members retain archive identity, while ambiguous roots, wrong digests and missing decisions preserve the original workspace"
+          ],
+          "remaining_group_evidence": "Controlled provider routing is host evidence; remaining executable routing, conversion and populated-replacement combinations require their own cases"
+        },
+        {
+          "id": "UX-016.public-consent-and-preservation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_import::journey_import_exclusion_requires_consent_and_preserves_declared_runtime",
+            "empack-tests::journey_verified_import::journey_verified_url_import_sync_export_and_remove_preserve_contract",
+            "empack-tests::journey_verified_import::journey_md5_import_preserves_weak_source_evidence_through_native_export"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The public executable reports the missing auxiliary-exclusion decision and refuses a conflicting runtime before creating the destination; source archives and neighboring author/player/artifact bytes remain unchanged",
+            "Consent imports only the declared content and re-exports the exact expected inventory without auxiliary files or a changed runtime",
+            "Optional metadata loss and fresh optional defaults require separate decisions; refusal preserves source documents, lock, prior artifact, supplied content and the exported archive"
+          ],
+          "remaining_group_evidence": "Controlled provider routing is host evidence; remaining executable routing, conversion and populated-replacement combinations require their own cases"
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::acquisition/content/archive_source/import",
@@ -1860,7 +1932,7 @@
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-017",

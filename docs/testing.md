@@ -103,6 +103,14 @@ metadata loss requires a separate export acknowledgement, and refusal preserves
 prior artifacts. This is controlled host evidence; the public pinned archive fixture
 and actual credentialed provider checks establish different parts of the workflow.
 
+Import-decision journeys refuse auxiliary-file exclusion without explicit consent
+and refuse a requested runtime that contradicts the archive. They then import and
+re-export the retained content against a literal inventory. Missing optional-default
+and metadata-loss decisions have separate diagnostic assertions: refusal preserves
+author documents, supplied content, the original archive and prior artifacts.
+Controlled host tests cover provider-kind routing and world archive interpretation;
+they do not substitute for executable evidence of every routing combination.
+
 The populated migration host journey starts from literal authoring and bindings,
 materializes controlled provider JARs, and updates an automatic root alongside an
 exact pin. It captures the displayed JSON plan before migrating, then compares it

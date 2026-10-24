@@ -131,16 +131,27 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
     assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), original);
     assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
     // The authored optional decision must be acknowledged for this lossy export format.
+    fs::create_dir_all(imported.join("dist")).unwrap();
+    let prior_artifact = imported.join("dist/prior.zip");
+    fs::write(&prior_artifact, b"prior artifact").unwrap();
     assert_cmd::Command::from_std(empack_cmd(&imported))
         .args(["--yes", "build", "modrinth"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicates::str::contains(
+            "conversion needs acknowledgement",
+        ));
+    assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), original);
+    assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
+    assert_eq!(fs::read(&prior_artifact).unwrap(), b"prior artifact");
+    assert_eq!(fs::read_dir(imported.join("dist")).unwrap().count(), 1);
     run(
         &imported,
         &["build", "modrinth", "--allow-optional-metadata-loss"],
     );
     let exported_path = assert_dist_artifact_suffix(&imported, ".mrpack");
     let exported_bytes = fs::read(&exported_path).unwrap();
+    assert_eq!(fs::read(&prior_artifact).unwrap(), b"prior artifact");
     let inventory = assert_mrpack(&exported_path);
 
     // Mrpack retains optional participation, but not the author's default. A fresh
@@ -159,8 +170,13 @@ fn verified_url_lifecycle(algorithm: &str, hash: &str) {
             "reopened",
         ])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicates::str::contains("--import-optional-default"));
     assert!(!second.exists());
+    assert_eq!(fs::read(&exported_path).unwrap(), exported_bytes);
+    assert_eq!(fs::read(&selected_bytes).unwrap(), b"payload");
+    assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), original);
+    assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
     run(
         project.dir(),
         &[
