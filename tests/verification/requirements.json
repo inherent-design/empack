@@ -2011,7 +2011,125 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-018.selector-syntax",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::providers::tests::selectors_reject_credentialed_foreign_and_ambiguous_urls"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed, credentialed, foreign and ambiguous selectors are rejected before transport; CurseForge numeric IDs reject noncanonical leading zeroes"
+          ]
+        },
+        {
+          "id": "UX-018.provider-record-ownership",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::providers::tests::explicit_ids_wrong_owners_and_malformed_files_fail_before_resolution"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Project/version/file DTO identities must match requested canonical project and pin; malformed file metadata cannot construct a valid provider resolution"
+          ]
+        },
+        {
+          "id": "UX-018.equivalent-selectors",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::tests::equivalent_modrinth_selectors_resolve_canonical_identity_and_kind",
+            "empack-lib::engine::providers::tests::equivalent_curseforge_selectors_use_exact_identity_and_reject_ambiguity"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Slug, numeric or opaque ID and supported project URL reach the same provider identity and content kind through controlled HTTP",
+            "CurseForge slug uses exact search, numeric ID uses direct lookup, and authenticated request counts prove each intended route"
+          ]
+        },
+        {
+          "id": "UX-018.aliased-root-identity",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::dependencies::tests::native_provider_host_preserves_alias_pin_required_content_and_cross_command_identity"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Provider host preserves a named root alias, exact pin and required dependency across equivalent selectors, repeat synchronization and downstream operations"
+          ]
+        },
+        {
+          "id": "UX-018.modrinth-cli-selectors",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_equivalent_provider_selectors_converge"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real executable resolves Modrinth slug/ID/URL to one canonical root; repeat sync converges; non-force re-add and failed lookup preserve author documents/content; approved replacement retains canonical identity"
+          ]
+        },
+        {
+          "id": "UX-018.curseforge-cli-selectors",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_curseforge_selectors_converge"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Credentialed executable resolves CurseForge slug/ID/URL to one canonical root; repeat sync converges; non-force re-add and failed lookup preserve author documents/content; approved replacement retains canonical identity",
+            "Missing explicit credential fails the prerequisite and cannot become passing provider evidence"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::providers + runtime_catalog + networking::rate_budget",
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
@@ -2020,7 +2138,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-019",

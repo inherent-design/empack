@@ -123,6 +123,22 @@ exercises ordinary CLI pin/update commands against Modrinth and checks the retai
 selection report. Neither boundary claims actual consumer startup or complete
 migration qualification.
 
+Canonical provider selection has separate syntax, DTO ownership, controlled HTTP,
+host-alias and live executable cases. Both controlled catalogs check slug, ID and
+project-URL equivalence; CurseForge additionally verifies exact-slug search versus
+direct numeric lookup. The shared live journey checks one canonical root after
+approved re-adds, no-op synchronization, and preservation on refused replacements
+and failed lookup. It snapshots author files without reading disposable caches or
+recovery records. Commands have a 120-second deadline.
+
+`python3 scripts/verify.py live-provider-cli` selects the Modrinth executable cases.
+`python3 scripts/verify.py live-curseforge` also includes the CurseForge executable
+journey and requires explicit `EMPACK_KEY_CURSEFORGE` before discovery/execution.
+An absent credential is blocked evidence, not an empty passing selection. These
+tests use current compatible provider selections; the independently hashed real-pack
+corpus below retains a separate immutable-input contract. Public alias editing and
+the remaining provider permutations still require their own acceptance evidence.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,

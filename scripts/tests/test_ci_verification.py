@@ -43,6 +43,8 @@ class ChangeSelection(unittest.TestCase):
         cases = [
             ("crates/empack-lib/src/engine/providers/modrinth.rs", ["live-provider-cli", "live-modrinth"], False),
             ("crates/empack-lib/src/engine/providers/curseforge.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
+            ("crates/empack-lib/src/engine/providers/selector.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
+            ("crates/empack-tests/tests/live_provider_cli.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
             ("crates/empack-lib/src/engine/build/server/unix.rs", ["live-catalog", "server-cli", "runtime-current", "pinned-import"], False),
             ("crates/empack-lib/src/engine/build/client/fixtures.json", ["pinned-import"], True),
             ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["pinned-import"], False),
@@ -394,6 +396,10 @@ class RequiredGate(unittest.TestCase):
 
     def test_missing_credentials_are_blocked_before_discovery_or_execution(self):
         from verify import Blocked, run_suite
+        sentinel = "live_cli_curseforge_selectors_converge"
+        self.assertIn(sentinel, SUITES["live-curseforge"].cases)
+        self.assertTrue(SUITES["live-provider-cli"].cases)
+        self.assertNotIn(sentinel, SUITES["live-provider-cli"].cases)
         for name in ("live-provider", "live-curseforge", "live-runtime"):
             with self.subTest(name=name), self.assertRaisesRegex(Blocked, "prerequisites unavailable"):
                 run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry"}, {}, "all")

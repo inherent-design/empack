@@ -57,7 +57,9 @@ def selection(paths, *, trusted, full=False):
     if provider:
         live += ["live-provider-cli", "live-modrinth"]
     if full or any(p.startswith(("crates/empack-lib/src/engine/providers/curseforge",
-                                "crates/empack-lib/tests/provider_catalog_smoke.rs")) for p in code):
+                                "crates/empack-lib/src/engine/providers/selector.rs",
+                                "crates/empack-lib/tests/provider_catalog_smoke.rs",
+                                "crates/empack-tests/tests/live_provider_cli.rs")) for p in code):
         live.append("live-curseforge")
     if runtime:
         live += ["live-catalog", "server-cli", "runtime-current"]

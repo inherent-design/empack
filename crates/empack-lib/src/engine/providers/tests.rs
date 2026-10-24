@@ -388,37 +388,49 @@ fn selectors_reject_credentialed_foreign_and_ambiguous_urls() {
     assert_eq!(selector.value(), "sodium");
 }
 #[tokio::test]
-async fn curseforge_slug_uses_exact_search_and_rejects_ambiguous_results() {
+async fn equivalent_curseforge_selectors_use_exact_identity_and_reject_ambiguity() {
     let mut server = mockito::Server::new_async().await;
     let response = server
         .mock("GET", "/mods/search")
+        .match_header("x-api-key", "fixture-secret")
         .match_query(mockito::Matcher::AllOf(vec![
             mockito::Matcher::UrlEncoded("slug".into(), "sodium".into()),
             mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
             mockito::Matcher::UrlEncoded("pageSize".into(), "2".into()),
         ]))
         .with_body(bytes(&json!({"data":[cf_project()["data"].clone()]})))
+        .expect(2)
+        .create_async()
+        .await;
+    let numeric = server
+        .mock("GET", "/mods/394468")
+        .match_header("x-api-key", "fixture-secret")
+        .with_body(bytes(&cf_project()))
         .create_async()
         .await;
     let runtime = OperationRuntime::new(governor(), 1);
-    let catalog = catalog(&server.url());
-    let mut handle = runtime
-        .start(move |mut scope| async move {
-            Ok(catalog
-                .resolve_selector(
-                    &mut scope,
-                    ProjectSelector::parse(ProviderKind::CurseForge, "sodium").unwrap(),
-                    limits(),
-                )
-                .await)
-        })
-        .unwrap();
-    let outcome = handle.wait().await;
-    assert!(
-        matches!(&*outcome, OperationOutcome::Completed(Ok(value)) if value.id == pin(ProviderKind::CurseForge).project)
-    );
+    for input in [
+        "sodium",
+        "394468",
+        "https://www.curseforge.com/minecraft/mc-mods/sodium",
+    ] {
+        let catalog = catalog(&server.url());
+        let selector = ProjectSelector::parse(ProviderKind::CurseForge, input).unwrap();
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                Ok(catalog
+                    .resolve_selector(&mut scope, selector, limits())
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        assert!(matches!(&*outcome, OperationOutcome::Completed(Ok(value))
+            if value.id == pin(ProviderKind::CurseForge).project && value.kinds.as_slice() == &[empack_core::model::ContentKind::Mod]));
+        runtime.release_completed(handle.id());
+    }
     runtime.shutdown().await;
     response.assert_async().await;
+    numeric.assert_async().await;
     assert!(
         curseforge::project(
             &bytes(&json!({"data":[cf_project()["data"].clone(), cf_project()["data"].clone()]})),
@@ -427,6 +439,7 @@ async fn curseforge_slug_uses_exact_search_and_rejects_ambiguous_results() {
         .is_err()
     );
 }
+
 #[tokio::test]
 async fn transport_classifies_failures_and_never_follows_a_redirect_with_credentials() {
     let mut server = mockito::Server::new_async().await;
