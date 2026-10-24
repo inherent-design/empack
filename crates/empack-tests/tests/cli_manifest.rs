@@ -208,8 +208,7 @@ fn cli_manifest_reports_explicit_url_observation_and_editing_limits() {
     assert!(text.contains("Local metadata only: no provider queries or file verification."));
 }
 
-#[test]
-fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs() {
+fn fixture_jar() -> Vec<u8> {
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     archive
@@ -218,7 +217,12 @@ fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs()
     archive
         .write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
         .unwrap();
-    let jar = archive.finish().unwrap().into_inner();
+    archive.finish().unwrap().into_inner()
+}
+
+#[test]
+fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs() {
+    let jar = fixture_jar();
     for change in [
         "unchanged",
         "display",
@@ -377,5 +381,215 @@ fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs()
             stable,
             "{change}: repeated sync changed bytes"
         );
+    }
+}
+
+#[test]
+fn cli_sync_distinguishes_lock_states_and_preserves_populated_author_work() {
+    use empack_core::{digest::ContentId, model::DependencyKey};
+    use empack_tests::harness::process::read_project;
+    use sha2::{Digest, Sha256};
+    const INSTALLED: &str = "pack/mods/custom.jar";
+    const BINDING: &str = "# Placement remains author-owned.\nschema: 1\nbindings:\n  example:\n    placement:\n      - destination: mods/custom.jar\n        layer: common\n        environment: {client: required, server: required}\n";
+    let jar = fixture_jar();
+    for materialize in [false, true] {
+        for state in [
+            "current",
+            "missing",
+            "missing-occupied-identical",
+            "missing-occupied-different",
+            "stale-display",
+            "corrupt-syntax",
+            "unsupported-schema",
+            "missing-installed",
+            "modified-installed",
+            "missing-source-and-installed",
+        ] {
+            let project = TestProject::new();
+            let root = project.dir();
+            let host = tempfile::tempdir().unwrap();
+            let command = |preview| {
+                let mut cmd = offline_command(root);
+                cmd.env("EMPACK_STATE_DIR", host.path().join("state"))
+                    .env("EMPACK_CACHE_DIR", host.path().join("cache"))
+                    .env("TMPDIR", host.path())
+                    .env("TMP", host.path())
+                    .env("TEMP", host.path());
+                cmd.args(["--yes", "sync"]);
+                if preview {
+                    cmd.arg("--dry-run");
+                }
+                if materialize {
+                    cmd.arg("--materialize");
+                }
+                cmd
+            };
+            let author = format!(
+                "{HEADER}dependencies:\n  example:\n    path: vendor/original.jar # retained source\n"
+            );
+            for (name, bytes) in [
+                ("empack.yml", author.as_bytes()),
+                ("empack.bindings.yml", BINDING.as_bytes()),
+                ("vendor/original.jar", jar.as_slice()),
+                (
+                    "pack/config/user.properties",
+                    b"author choice=true\n".as_slice(),
+                ),
+                ("pack/mods/untracked.jar", b"untracked payload".as_slice()),
+                ("templates/client/note.txt", b"author template".as_slice()),
+                ("notes/decision.md", b"retain this decision".as_slice()),
+                ("dist/prior.zip", b"prior artifact".as_slice()),
+            ] {
+                let path = root.join(name);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, bytes).unwrap();
+            }
+            let pristine = files::snapshot(root);
+            // First resolve from literal documents with no lock and no occupied
+            // tracked destination; all other populated author work already exists.
+            command(true).assert().success();
+            assert_eq!(files::snapshot(root), pristine);
+            command(false).assert().success();
+            let resolved = read_project(root);
+            let key = DependencyKey::parse("example").unwrap();
+            assert_eq!(resolved.lock().dependencies.len(), 1);
+            let selected = &resolved.lock().dependencies[&key];
+            assert!(selected.selected.is_none());
+            let file = &selected.files.as_slice()[0];
+            assert_eq!(selected.files.as_slice().len(), 1);
+            assert_eq!(file.expected.size, Some(jar.len() as u64));
+            assert!(
+                file.expected.digests.is_none(),
+                "local observation is not a source declaration"
+            );
+            assert_eq!(
+                file.expected.accepted_observation,
+                Some(ContentId::from_sha256(Sha256::digest(&jar).into()))
+            );
+            assert_eq!(
+                file.placements.as_slice()[0]
+                    .destination
+                    .relative()
+                    .as_str(),
+                "mods/custom.jar"
+            );
+            let lock = fs::read(root.join("empack.lock")).unwrap();
+            let mut expected_files = pristine.clone();
+            expected_files.insert("empack.lock".into(), lock.clone());
+            expected_files.insert(INSTALLED.into(), jar.clone());
+            assert_eq!(
+                files::snapshot(root),
+                expected_files,
+                "{state}: initial resolution"
+            );
+            match state {
+                "missing" => {
+                    fs::remove_file(root.join("empack.lock")).unwrap();
+                    fs::remove_file(root.join(INSTALLED)).unwrap();
+                }
+                "missing-occupied-identical" | "missing-occupied-different" => {
+                    fs::remove_file(root.join("empack.lock")).unwrap();
+                    if state.ends_with("different") {
+                        fs::write(root.join(INSTALLED), b"unowned different bytes").unwrap();
+                    }
+                }
+                "stale-display" => fs::write(
+                    root.join("empack.yml"),
+                    author.replace("name: Literal Pack", "name: Renamed Pack"),
+                )
+                .unwrap(),
+                "corrupt-syntax" => fs::write(root.join("empack.lock"), b"schema: [\n").unwrap(),
+                "unsupported-schema" => {
+                    fs::write(root.join("empack.lock"), b"schema: 999\n").unwrap()
+                }
+                "missing-installed" | "missing-source-and-installed" => {
+                    fs::remove_file(root.join(INSTALLED)).unwrap();
+                    if state == "missing-source-and-installed" {
+                        fs::remove_file(root.join("vendor/original.jar")).unwrap();
+                        // A retained cache is not evidence that the missing source
+                        // can be reacquired. Require the actual unavailable-input path.
+                        let cache = host.path().join("cache");
+                        if cache.exists() {
+                            fs::remove_dir_all(cache).unwrap();
+                        }
+                    }
+                }
+                "modified-installed" => {
+                    fs::write(root.join(INSTALLED), b"modified installed bytes").unwrap()
+                }
+                "current" => {}
+                _ => unreachable!(),
+            }
+            let before = files::snapshot(root);
+            let refusal = match state {
+                "missing-occupied-identical" | "missing-occupied-different" => {
+                    Some("untracked content")
+                }
+                "corrupt-syntax" => Some("Invalid lock document"),
+                "unsupported-schema" => Some("Unsupported lock schema"),
+                "missing-source-and-installed" => Some("original.jar"),
+                _ => None,
+            };
+            for preview in [true, false] {
+                let output = command(preview).output().unwrap();
+                let diagnostic = String::from_utf8_lossy(&output.stderr);
+                if let Some(reason) = refusal {
+                    assert!(
+                        !output.status.success(),
+                        "{state}, materialize={materialize}, preview={preview}"
+                    );
+                    assert!(diagnostic.contains(reason), "{state}: {diagnostic}");
+                } else {
+                    assert!(output.status.success(), "{state}: {diagnostic}");
+                }
+                if preview || refusal.is_some() {
+                    assert_eq!(
+                        files::snapshot(root),
+                        before,
+                        "{state}: unexpected publication"
+                    );
+                }
+            }
+            if refusal.is_some() {
+                continue;
+            }
+            let current = read_project(root);
+            let mut expected_lock = resolved.lock().clone();
+            expected_lock.intent_revision = current.lock().intent_revision;
+            assert_eq!(
+                current.lock(),
+                &expected_lock,
+                "{state}: changed retained resolution"
+            );
+            if state == "stale-display" {
+                assert_ne!(
+                    current.lock().intent_revision,
+                    resolved.lock().intent_revision
+                );
+                expected_files.insert(
+                    "empack.yml".into(),
+                    author
+                        .replace("name: Literal Pack", "name: Renamed Pack")
+                        .into_bytes(),
+                );
+                expected_files.insert(
+                    "empack.lock".into(),
+                    fs::read(root.join("empack.lock")).unwrap(),
+                );
+            }
+            assert_eq!(
+                files::snapshot(root),
+                expected_files,
+                "{state}: exact restored project"
+            );
+            for _ in 0..2 {
+                command(false).assert().success();
+                assert_eq!(
+                    files::snapshot(root),
+                    expected_files,
+                    "{state}: repeated sync"
+                );
+            }
+        }
     }
 }

@@ -2955,7 +2955,125 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-025.retained-resolution-scope",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::synchronization::resolution_tests::synchronization_does_not_implicitly_upgrade_delete_or_add_unrelated_content",
+            "empack-lib::engine::synchronization::resolution_tests::changed_root_can_add_required_closure_but_cannot_rewrite_a_valid_root",
+            "empack-lib::engine::synchronization::resolution_tests::new_requirements_cannot_invalidate_retained_dependents"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Synchronization cannot implicitly upgrade, remove or add unrelated retained content or change the selected runtime",
+            "Changed roots can add required closure but cannot rewrite valid retained selections or invalidate retained dependents"
+          ]
+        },
+        {
+          "id": "UX-025.native-materialization",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::synchronization::native::tests::first_resolution_creates_a_lock_without_adopting_untracked_files",
+            "empack-lib::engine::synchronization::native::tests::reference_sync_preserves_absent_placements_and_present_content",
+            "empack-lib::engine::synchronization::native::tests::restores_modified_and_missing_locked_files_then_syncs_without_changes",
+            "empack-lib::engine::synchronization::native::tests::author_metadata_edits_rebind_documents_without_changing_foreign_records"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "First resolution publishes an absent lock but refuses occupied untracked destinations, even with identical bytes",
+            "Reference synchronization preserves present content and does not manufacture absent referenced files",
+            "Exact materialization restores modified and missing tracked files; converged publication has no staged payloads and refuses a late destination change",
+            "Metadata rebinding preserves selected dependencies and foreign metadata bytes"
+          ]
+        },
+        {
+          "id": "UX-025.public-lock-state-matrix",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_sync_distinguishes_lock_states_and_preserves_populated_author_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Populated literal authoring with a custom binding, source, configuration, untracked JAR, template, note and prior artifact resolves without a lock under both sync modes",
+            "Preview and failed operations preserve every project file; malformed/unsupported locks refuse instead of becoming fresh resolution",
+            "A missing lock cannot authorize adoption of occupied identical or different bytes; stale metadata only rebinds the recorded revision",
+            "Known tracked files are restored exactly; missing source and installed copy with an empty cache produce a named-source diagnostic",
+            "Local content records an accepted SHA-256 observation and size, not an invented declared digest; two subsequent syncs retain exact project file bytes"
+          ]
+        },
+        {
+          "id": "UX-025.public-stale-constraints",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Manifest explanation and synchronization agree for unchanged, display-only, source, missing-source, layout and binding changes",
+            "Refused resolution preserves inputs; permitted moves retain exact bytes and authoring, retire only the previous owned path and converge"
+          ]
+        },
+        {
+          "id": "UX-025.packaged-synchronization",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_sync_distinguishes_lock_states_and_preserves_populated_author_work",
+            "empack-tests::cli_manifest::cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat lock-state, materialization, preservation, stale-constraint and convergence assertions using the extracted final executable",
+            "Archive admission binds execution to the final binary digest, version and native target without discovery fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::acquisition/content/archive_source/import",
@@ -2966,7 +3084,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-026",

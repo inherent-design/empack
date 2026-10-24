@@ -205,6 +205,17 @@ The fixture does not prove live provider ownership: a separate controlled provid
 case rejects a version belonging to another project. The native publication test
 also checks stale-input refusal and preservation of locally modified payloads.
 
+The populated synchronization matrix in `cli_manifest` distinguishes current, absent,
+stale, malformed and unsupported locks under both `sync` modes. It verifies exact
+restoration and repeated convergence, preserves unrelated author work, and refuses
+implicit adoption even when untracked bytes match the source. A missing source and
+installed copy is tested after cache eviction. Local hashes remain observations,
+not declared provider evidence. The shared model fixture now uses literal payload
+digests instead of creating a native staging lease; its pure scope tests cover
+retained selections and required closure. Native fixtures separately cover reference
+preservation, publication races and foreign metadata. Final-package execution of
+the public matrix is a separate five-target obligation, not established by local tests.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
