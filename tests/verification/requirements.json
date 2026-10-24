@@ -2296,7 +2296,133 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-020.host-source-ownership",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::synchronization::tests::selected_local_updates_retain_authored_sources_distinct_from_destinations",
+            "empack-lib::application::engine_host::cli::synchronization::tests::moved_or_removed_placement_cannot_delete_a_retained_acquisition_source"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Single and grouped local-source updates retain authored acquisition paths distinct from destinations and converge across repeated synchronization",
+            "Moving or removing a placement cannot delete a source retained by another dependency; host fixtures use configuration content rather than claiming JAR export coverage"
+          ]
+        },
+        {
+          "id": "UX-020.host-adoption",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::addition::native::tests::adoption_records_existing_files_without_rewriting_or_implicitly_adding_them"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Adoption publishes verified descriptions without rewriting existing payloads or silently installing absent content"
+          ]
+        },
+        {
+          "id": "UX-020.host-removal-refusal",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::removal::native::tests::changed_bytes_and_directory_targets_reject_the_entire_removal"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Changed file bytes and occupied directory destinations reject the entire removal while retaining author documents, other payloads and directory contents"
+          ]
+        },
+        {
+          "id": "UX-020.local-jar-lifecycle",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual commands add a valid opaque JAR from a path with spaces, retain author source and explicit placement, and independently verify complete Prism/mrpack inventories and selected bytes",
+            "Changed source refuses ordinary sync; update preview preserves all author/content/artifact bytes, approved update preserves intent/bindings and installs exact new bytes without a pack-version bump",
+            "Adoption refuses mismatched source/destination bytes; matching changed bytes update only the lock observation and repeated synchronization is byte-stable",
+            "Removal preview and occupied-directory refusal preserve existing work; approved removal removes only the installed JAR while retaining source, source directory, empty author directory and unrelated files"
+          ]
+        },
+        {
+          "id": "UX-020.unix-outside-removal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A linked placement ancestor cannot authorize deletion outside the project; removal refuses and preserves the link, exact external content, author documents and prior artifacts"
+          ]
+        },
+        {
+          "id": "UX-020.packaged-local-jar",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat the local JAR add/update/adopt/sync/remove journey and independent archive inventory/byte checks through each final extracted executable",
+            "Source and directory ownership assertions run across all native targets; linked-ancestor refusal runs on Unix targets only"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::acquisition/content/archive_source/import"
@@ -2305,7 +2431,7 @@
         "portable planners and engine; CLI request mapping; native effects",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-021",

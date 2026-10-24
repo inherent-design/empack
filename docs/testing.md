@@ -40,7 +40,7 @@ The separated executable suites have explicit boundaries:
 | `cli_arguments`, `cli_dependencies`, `cli_init` | Offline parsing, refusal and initialization |
 | `cli_build` | Offline artifact creation, metadata and cleanup |
 | `journey_import` | Pinned Modrinth/CurseForge archives, complete exported inventory and traversal refusal |
-| `journey_authoring` | Literal layered authoring, rebuild and removal |
+| `journey_authoring` | Literal layered authoring, local JAR update/adoption, rebuild and removal |
 | `journey_pending` | Public build/sync inspection, verified manual association, retained partial inputs, restart, stale refusal and discard |
 | `journey_pending_import` | Public import selectors, retained-archive restart, exact exported bytes and changed-destination refusal |
 | `journey_publisher` | Local signed-channel enrollment, update conflicts, repair, rollback and trust changes |
@@ -56,6 +56,17 @@ coverage. Select them explicitly with strict prerequisites:
 cargo nextest run -p empack-tests --test cli_arguments --test cli_dependencies --test cli_init --test cli_build --test journey_authoring --test journey_local_exports
 EMPACK_E2E_STRICT=1 cargo nextest run -p empack-tests --test live_cli_init --test live_provider_cli --test live_server_cli --run-ignored ignored-only --test-threads 2
 ```
+
+The local JAR authoring journey uses a source path with spaces and a distinct bound
+installation path. Changing the source first proves ordinary sync refusal, then
+explicit update installs the new bytes while retaining authored intent. Adoption
+refuses mismatched source/destination bytes; matching changed bytes update only the
+lock observation. Repeat synchronization and independently inspected Prism/mrpack
+archives establish convergence and fresh output without a version bump. Removal
+preserves source files, neighboring author work and empty directories, rejects an
+occupied destination directory, and on Unix refuses linked ancestors leading outside
+the project. These are executable fixtures; consumer startup and final-package
+qualification require separate evidence.
 
 The resourcepack scenario shares its assertions between offline client exports and
 live server preparation. Missing Java cannot skip the offline client case. Component

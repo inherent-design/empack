@@ -311,3 +311,11 @@ import must ask for it again. Choosing a different default preserves optional
 participation in the exported format. Imported dependency coverage remains partial;
 removing a root while retaining other imported roots requires explicit acknowledgement.
 The host conversion cases and five shipping-archive cases remain separate evidence.
+
+Local JAR ownership (`UX-020`) binds host source-retention/adoption/refusal tests to
+one literal public authoring journey. The latter checks source paths with spaces,
+changed-source update and adoption, repeated synchronization, exact exported JAR
+bytes and removal confinement. The Unix linked-ancestor assertion has a separate
+platform case; it does not imply a Windows junction test. All five final archives
+must repeat the public journey through package admission. Complete case definitions
+are not evidence that those host, feature or package variants have run.
