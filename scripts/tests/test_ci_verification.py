@@ -49,7 +49,7 @@ class ChangeSelection(unittest.TestCase):
             ("crates/empack-tests/tests/live_provider_cli.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
             ("crates/empack-lib/src/engine/build/server/unix.rs", ["live-catalog", "server-cli", "runtime-current", "pinned-import"], False),
             ("crates/empack-lib/src/engine/build/client/fixtures.json", ["pinned-import"], True),
-            ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["pinned-import"], False),
+            ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["live-provider-cli", "live-modrinth", "pinned-import"], False),
             ("crates/empack-tests/tests/live_pinned_import.rs", ["pinned-import"], False),
         ]
         for path, suites, consumer in cases:

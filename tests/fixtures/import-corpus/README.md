@@ -62,3 +62,9 @@ their own licenses; this is not permission to redistribute every component.
 Fixture revisions require reviewing the upstream archive and expectations anew.
 There is no automatic golden update. This one pack does not qualify CurseForge,
 restricted downloads, launcher import/startup, or the full UX-017 group.
+
+The direct-URL sentinel in `live_provider_cli` reuses the recorded
+`mods/morechathistory-1.3.1.jar` entry (3,573 bytes). It invokes ordinary `add` with
+the immutable CDN URL and checks the installed size/SHA-512 independently of empack's
+accepted-observation record. No extra upstream payload is committed. Changes to this
+metadata select both the direct-URL sentinel and the full pinned-import journey.

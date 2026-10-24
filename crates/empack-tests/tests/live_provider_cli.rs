@@ -348,3 +348,66 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         assert_eq!(author_snapshot(project.dir()), before);
     }
 }
+
+#[test]
+#[ignore = "immutable direct HTTPS JAR from the pinned import corpus; live network required"]
+fn live_cli_direct_url_retains_observed_content() {
+    use empack_core::{digest::ContentId, model::SourceIntent};
+    use sha2::{Digest, Sha256, Sha512};
+    use std::fs;
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json"
+    ))
+    .unwrap();
+    let selected = corpus["index"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["path"] == "mods/morechathistory-1.3.1.jar")
+        .unwrap();
+    let url = selected["downloads"][0].as_str().unwrap();
+    let project = TestProject::workflow_fixture("direct-url", "fabric", "1.21.1");
+    fs::write(project.dir().join("prior-build.zip"), b"prior artifact").unwrap();
+    let before = snapshot(project.dir(), &[]);
+    run(&project, &["--dry-run", "add", url]);
+    assert_eq!(snapshot(project.dir(), &[]), before);
+    run(&project, &["--yes", "add", url]);
+    let bytes = fs::read(project.dir().join("pack/mods/morechathistory-1.3.1.jar")).unwrap();
+    assert_eq!(bytes.len() as u64, selected["fileSize"].as_u64().unwrap());
+    let digest = Sha512::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(digest, selected["hashes"]["sha512"].as_str().unwrap());
+    let resolved = read_project(project.dir());
+    assert_eq!(resolved.intent().roots.len(), 1);
+    let (key, root) = resolved.intent().roots.first_key_value().unwrap();
+    assert!(matches!(&root.source, SourceIntent::Url(urls) if urls.as_slice() == [url]));
+    let dependency = &resolved.lock().dependencies[key];
+    assert!(
+        dependency.selected.is_none(),
+        "a direct URL is not a provider pin"
+    );
+    let file = &dependency.files.as_slice()[0];
+    assert!(file.expected.digests.is_none());
+    assert!(file.provenance.declared_digests.is_none());
+    assert_eq!(
+        file.expected.accepted_observation,
+        Some(ContentId::from_sha256(Sha256::digest(&bytes).into()))
+    );
+    let accepted = author_snapshot(project.dir());
+    for _ in 0..2 {
+        run(&project, &["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), accepted);
+    }
+    let report = run(&project, &["manifest", "check", "--json"]);
+    let report: serde_json::Value = serde_json::from_slice(&report.stdout).unwrap();
+    assert_eq!(
+        report["dependencies"][0]["evidence_policy"],
+        "accept-first-observation"
+    );
+    assert_eq!(
+        fs::read(project.dir().join("prior-build.zip")).unwrap(),
+        b"prior artifact"
+    );
+}

@@ -35,6 +35,7 @@ def selection(paths, *, trusted, full=False):
                         or p.startswith(("crates/empack-core/", ".github/", "scripts/verification/"))
                         or p in {"scripts/verify.py", "scripts/ci-verification.py"} for p in code)
     provider = shared or any(p.startswith((
+        "tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json",
         "crates/empack-lib/src/engine/providers", "crates/empack-lib/src/engine/acquisition",
         "crates/empack-lib/src/engine/import", "crates/empack-lib/src/networking",
         "crates/empack-lib/src/application/engine_host/dependencies",

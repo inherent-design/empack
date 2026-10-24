@@ -46,7 +46,7 @@ The separated executable suites have explicit boundaries:
 | `journey_publisher` | Local signed-channel enrollment, update conflicts, repair, rollback and trust changes |
 | `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
 | `live_cli_init` | Official loader catalog resolution |
-| `live_provider_cli` | Modrinth identity, acquisition and convergence |
+| `live_provider_cli` | Provider identity, pinned direct-URL acquisition and convergence |
 | `live_server_cli` | Server acquisition/export and instance preparation; no game startup |
 
 Live binaries contain ignored tests so a default run cannot silently claim their
@@ -153,7 +153,19 @@ alone does not authorize publication. Each terminal expectation is bounded at
 120 seconds. Host pagination tests do not substitute for public terminal paging;
 that path and credentialed CurseForge search remain separate qualification work.
 
-`python3 scripts/verify.py live-provider-cli` selects the Modrinth executable cases.
+Direct URL integrity has distinct parser, host, executable and live evidence.
+The host journey covers compact/expanded declarations with authored assertions or
+first-observation consent. It commits the lock, checks repeat-sync convergence,
+then removes retained content and serves changed bytes at the same URL; publication
+must fail without changing the lock or prior artifacts. Its private loopback adapter
+does not establish production TLS behavior. The ordinary executable separately
+acquires the immutable 3,573-byte More Chat History JAR from the pinned import corpus,
+checks its recorded SHA-512/size and retained observation, and verifies preview and
+repeat-sync preservation. That exercises production HTTPS without modifying trust
+configuration or adding a product test endpoint.
+
+`python3 scripts/verify.py live-provider-cli` selects the Modrinth and direct-URL
+executable cases.
 `python3 scripts/verify.py live-curseforge` also includes the CurseForge executable
 journey and requires explicit `EMPACK_KEY_CURSEFORGE` before discovery/execution.
 An absent credential is blocked evidence, not an empty passing selection. These

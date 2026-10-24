@@ -2448,13 +2448,98 @@
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "X",
+        "L"
       ],
       "risk": "critical",
-      "run_gate": "pr",
+      "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-021.source-policy-grammar",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::documents::tests::url_spellings_require_assertions_or_explicit_first_observation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Compact and expanded URL declarations require either authored content assertions or explicit first-observation consent; missing/false consent and conflicting evidence policies are rejected; valid policies round-trip"
+          ]
+        },
+        {
+          "id": "UX-021.retained-observation-and-changed-response",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::synchronization::tests::direct_url_policies_retain_locked_bytes_across_changed_responses"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Both URL syntaxes and both evidence policies resolve controlled HTTP bytes through the existing private transport adapter; preview preserves project and host-state bytes",
+            "Persisted locks retain authored digests separately from accepted observations; observed content does not acquire declared authenticity or a provider identity",
+            "Two subsequent syncs preserve author/content/artifact bytes; forcing reacquisition from the same URL with changed response bytes refuses publication and preserves the prior lock and artifacts"
+          ]
+        },
+        {
+          "id": "UX-021.public-evidence-policy",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_equivalent_source_forms_preserve_literal_authoring",
+            "empack-tests::cli_manifest::cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting",
+            "empack-tests::cli_manifest::cli_manifest_reports_explicit_url_observation_and_editing_limits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real manifest commands interpret both URL forms consistently for authored assertions and accepted observation; malformed/conflicting policies fail without creating state/cache or rewriting author files",
+            "Human explanation distinguishes first-observation consent from retained locked evidence; JSON preserves the same effective selection policy"
+          ]
+        },
+        {
+          "id": "UX-021.live-direct-url",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_direct_url_retains_observed_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual executable adds the immutable 3573-byte morechathistory JAR URL recorded in the pinned Fabulously Optimized corpus, without a provider selector",
+            "Preview preserves the entire fixture; installed bytes match the independently recorded size/SHA-512; the lock records accepted SHA-256 observation with no declared digest or provider pin",
+            "Repeat synchronization preserves author/content/prior-artifact bytes; public JSON reports accept-first-observation rather than authored assertions"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::acquisition/content/archive_source/import",
@@ -2465,7 +2550,7 @@
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-022",

@@ -65,6 +65,12 @@ fn cli_manifest_equivalent_source_forms_preserve_literal_authoring() {
             Some("authored-assertions"),
         ),
         (
+            "  example:\n    url: https://example.invalid/custom.jar\n    accept-observed: true\n".to_owned(),
+            "  example:\n    source:\n      kind: url\n      downloads: [https://example.invalid/custom.jar]\n    accept-observed: true\n".to_owned(),
+            serde_json::json!({"kind": "url", "downloads": ["https://example.invalid/custom.jar"]}),
+            Some("accept-first-observation"),
+        ),
+        (
             "  example:\n    path: absent-private.jar\n".to_owned(),
             "  example:\n    source:\n      kind: local\n      path: absent-private.jar\n".to_owned(),
             serde_json::json!({"kind": "local", "path": "absent-private.jar"}),
@@ -81,7 +87,7 @@ fn cli_manifest_equivalent_source_forms_preserve_literal_authoring() {
             assert_eq!(row["explicit"], true);
             assert_eq!(row["effective"]["source"], expected_source);
             assert_eq!(row["evidence_policy"].as_str(), policy);
-            let expected_selection = if policy.is_some() {
+            let expected_selection = if policy == Some("authored-assertions") {
                 serde_json::json!({"mode": "content-assertions", "digests": {"sha256": digest}})
             } else {
                 serde_json::json!({"mode": "automatic"})
@@ -110,6 +116,9 @@ fn cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting() {
         "dependencies:\n  example: {source: 'modrinth:Example1', path: private.jar}\n",
         "dependencies:\n  example: {url: 'https://example.invalid/custom.jar'}\n",
         "dependencies:\n  example: {url: 'https://example.invalid/custom.jar', accept-observed: false}\n",
+        "dependencies:\n  example: {source: {kind: url, downloads: ['https://example.invalid/custom.jar']}}\n",
+        "dependencies:\n  example: {source: {kind: url, downloads: ['https://example.invalid/custom.jar']}, accept-observed: false}\n",
+        "dependencies:\n  example: {source: {kind: url, downloads: ['https://example.invalid/custom.jar']}, accept-observed: true, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}\n",
         "dependencies:\n  example: {path: private.jar, unknown: true}\n",
         "dependencies:\n  example: {url: 'https://example.invalid/custom.jar', accept-observed: true, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}\n",
     ] {
