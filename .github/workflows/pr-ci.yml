@@ -62,7 +62,7 @@ jobs:
             target/verification-python/*/receipt.json
             target/verification-python/*/inventory.json
             target/verification-python/*/events.json
-            target/verification-python/*/run.log
+            target/verification-python/*/*.log
           if-no-files-found: error
       - run: python3 scripts/check-test-map.py --discover-tooling target/verification-inventory
       - uses: actions/upload-artifact@v7

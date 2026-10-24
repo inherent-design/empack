@@ -166,6 +166,9 @@ class ReleaseArchiveGate(unittest.TestCase):
         self.assertIn("needs: [build, test-archives]", gate)
         self.assertIn("needs: [archive-gate, candidate-gate]", publication)
         self.assertIn("needs: [archive-gate, consumer, auxiliary]", gate)
+        candidate = gate.split("  candidate-gate:\n", 1)[1]
+        self.assertLess(candidate.index("uses: ./.github/actions/rust-toolchain"),
+                        candidate.index("python3 scripts/verify.py python"))
         self.assertIn("os: [ubuntu-24.04, macos-26, windows-latest]", gate)
         self.assertIn("scripts/check-auxiliary-build.py", gate)
         self.assertIn('gate "${auxiliary_args[@]}"', gate)

@@ -172,7 +172,7 @@ class AttemptPolicy(unittest.TestCase):
             self.assertFalse(tools["automatic_installation"])
             (root / "src").mkdir()
             (root / "Cargo.toml").write_text(
-                '[package]\nname = "isolated-probe"\nversion = "0.0.0"\nedition = "2024"\n')
+                '[package]\nname = "isolated-probe"\nversion = "0.0.0"\nedition = "2024"\n[workspace]\n')
             (root / "Cargo.lock").write_text(
                 'version = 4\n[[package]]\nname = "isolated-probe"\nversion = "0.0.0"\n')
             (root / "src/main.rs").write_text('fn main() { println!("isolated compiler works"); }\n')
