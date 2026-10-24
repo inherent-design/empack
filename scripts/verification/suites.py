@@ -38,6 +38,7 @@ SUITES = {
                            required_env=("EMPACK_KEY_CURSEFORGE",)),
     "live-provider-cli": Suite(("live_provider_cli",), ignored=True, cases=(
         "live_cli_equivalent_provider_selectors_converge",
+        "live_cli_pty_search_requires_choice_and_approval",
         "live_cli_selected_update_preserves_exact_pin_and_authoring")),
     "live-modrinth": Suite(("provider_catalog_smoke",), ignored=True, cases=(
         "modrinth_mod_identity_and_exact_bytes", "modrinth_resource_pack_identity_and_exact_bytes",

@@ -131,6 +131,17 @@ approved re-adds, no-op synchronization, and preservation on refused replacement
 and failed lookup. It snapshots author files without reading disposable caches or
 recovery records. Commands have a 120-second deadline.
 
+Search has separate host, executable and terminal evidence. Controlled catalog
+responses distinguish an empty result from authentication, not-found, throttling
+and server errors. Headless queries refuse before an observed proxy request and
+preserve the project, lock and prior artifacts; this is not a network sandbox.
+The live terminal journey filters displayed Modrinth labels by canonical project
+identity, cancels the search, declines publication, then explicitly approves the
+selected root. Scratch files remain separate from author files, and selection
+alone does not authorize publication. Each terminal expectation is bounded at
+120 seconds. Host pagination tests do not substitute for public terminal paging;
+that path and credentialed CurseForge search remain separate qualification work.
+
 `python3 scripts/verify.py live-provider-cli` selects the Modrinth executable cases.
 `python3 scripts/verify.py live-curseforge` also includes the CurseForge executable
 journey and requires explicit `EMPACK_KEY_CURSEFORGE` before discovery/execution.

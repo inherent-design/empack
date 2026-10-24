@@ -38,6 +38,8 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-lib/src/engine/providers", "crates/empack-lib/src/engine/acquisition",
         "crates/empack-lib/src/engine/import", "crates/empack-lib/src/networking",
         "crates/empack-lib/src/application/engine_host/dependencies",
+        "crates/empack-lib/src/application/engine_host/cli",
+        "crates/empack-lib/src/application/session.rs",
         "crates/empack-tests/tests/live_provider", "crates/empack-tests/tests/provider_catalog",
         "crates/empack-lib/tests/provider_catalog",
     )) for p in code)

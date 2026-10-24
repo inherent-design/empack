@@ -42,6 +42,8 @@ class ChangeSelection(unittest.TestCase):
     def test_provider_runtime_and_consumer_boundaries_select_distinct_evidence(self):
         cases = [
             ("crates/empack-lib/src/engine/providers/modrinth.rs", ["live-provider-cli", "live-modrinth"], False),
+            ("crates/empack-lib/src/application/engine_host/cli.rs", ["live-provider-cli", "live-modrinth"], False),
+            ("crates/empack-lib/src/application/session.rs", ["live-provider-cli", "live-modrinth"], False),
             ("crates/empack-lib/src/engine/providers/curseforge.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
             ("crates/empack-lib/src/engine/providers/selector.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
             ("crates/empack-tests/tests/live_provider_cli.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),

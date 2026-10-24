@@ -10,6 +10,9 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::engine::providers::search::tests::search_http_failures_remain_distinct_from_empty_results", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "CAT", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
+    {"id": "empack-tests::live_provider_cli::live_cli_pty_search_requires_choice_and_approval", "binary": "empack-tests::live_provider_cli", "binary_name": "live_provider_cli", "boundary": "I", "api": "CAT", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},
+    {"id": "empack-tests::live_provider_cli::terminal::conpty_preserves_only_the_explicit_environment", "binary": "empack-tests::live_provider_cli", "binary_name": "live_provider_cli", "boundary": "N", "api": "CLI", "platforms": ["windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::live_provider_cli::live_cli_curseforge_selectors_converge", "binary": "empack-tests::live_provider_cli", "binary_name": "live_provider_cli", "boundary": "L", "api": "CAT", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::live_pinned_import::live_pinned_modrinth_import_converges_and_exports_complete_inventory", "binary": "empack-tests::live_pinned_import", "binary_name": "live_pinned_import", "boundary": "L", "api": "INIT", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-core::contracts::build_selection_is_unique_and_stable_for_every_short_request", "binary": "empack-core::contracts", "binary_name": "contracts", "boundary": "U", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

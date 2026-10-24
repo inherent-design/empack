@@ -2,6 +2,8 @@ use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
 use empack_tests::harness::process::{TestProject, read_project};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+#[path = "support/terminal.rs"]
+mod terminal;
 
 fn snapshot(root: &Path, excluded: &[&str]) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(root: &Path, path: &Path, excluded: &[&str], files: &mut BTreeMap<PathBuf, Vec<u8>>) {
@@ -63,6 +65,92 @@ fn checked(project: &TestProject, args: &[&str], credential: Option<&str>) -> st
 fn run(project: &TestProject, args: &[&str]) -> std::process::Output {
     checked(project, args, None)
 }
+
+#[test]
+#[ignore = "requires a real terminal and live Modrinth search/version catalogs"]
+fn live_cli_pty_search_requires_choice_and_approval() {
+    use expectrl::{Expect, Regex};
+    let project = TestProject::workflow_fixture("deliberate-search", "fabric", "1.21.1");
+    let scratch = tempfile::tempdir().unwrap();
+    std::fs::write(project.dir().join("prior-build.zip"), b"previous artifact").unwrap();
+    let before = author_snapshot(project.dir());
+    assert!(read_project(project.dir()).intent().roots.is_empty());
+    // Search ranking may change. Select the canonical project from the displayed
+    // labels rather than assuming the first result or a particular row number.
+    let selected = ProviderProjectId::Modrinth(
+        empack_core::identity::ModrinthProjectId::parse("SfMw2IZN").unwrap(),
+    ); // Nvidium
+    for approval in [None, Some(false), Some(true)] {
+        let mut command = project.cmd();
+        for variable in ["TMPDIR", "TMP", "TEMP"] {
+            command.env(variable, scratch.path());
+        }
+        command.args([
+            "add",
+            "--platform",
+            "modrinth",
+            "--type",
+            "mod",
+            "rendering engine",
+        ]);
+        let mut console = terminal::spawn(command);
+        console.set_expect_timeout(Some(std::time::Duration::from_secs(120)));
+        console
+            .expect(Regex("Select Mod for rendering engine"))
+            .unwrap();
+        if let Some(approve) = approval {
+            console.send("SfMw2IZN").unwrap();
+            console.send_line("").unwrap();
+            console
+                .expect(Regex("(?i)apply this addition plan"))
+                .unwrap();
+            // A choice is not publication approval. Candidate files use the
+            // separate scratch root rather than the author tree.
+            assert_eq!(author_snapshot(project.dir()), before);
+            console.send_line(if approve { "y" } else { "n" }).unwrap();
+            console
+                .expect(Regex(if approve {
+                    "Recorded [0-9]+ dependency bindings and [0-9]+ exact references"
+                } else {
+                    "Addition not applied"
+                }))
+                .unwrap();
+        } else {
+            console.send("\u{1b}").unwrap();
+            console.expect(Regex("(?i)interrupted")).unwrap();
+        }
+        #[cfg(not(windows))]
+        {
+            console.expect(expectrl::Eof).unwrap();
+            assert!(matches!(console.get_process().wait().unwrap(),
+                expectrl::process::unix::WaitStatus::Exited(_, code)
+                if code == if approval.is_none() { 130 } else { 0 }));
+        }
+        #[cfg(windows)]
+        assert_eq!(
+            console.get_process().wait(Some(120_000)).unwrap(),
+            if approval.is_none() { 130 } else { 0 }
+        );
+        if approval != Some(true) {
+            assert_eq!(author_snapshot(project.dir()), before);
+        }
+    }
+    let result = read_project(project.dir());
+    assert_eq!(result.intent().roots.len(), 1);
+    let key = result.intent().roots.keys().next().unwrap();
+    let dependency = &result.lock().dependencies[key];
+    assert_eq!(
+        dependency.identity,
+        ResolvedIdentity::Provider(selected.clone())
+    );
+    assert_eq!(dependency.selected.as_ref().unwrap().project, selected);
+    for (path, bytes) in before {
+        if path != Path::new("empack.yml") && path != Path::new("empack.lock") {
+            assert_eq!(std::fs::read(project.dir().join(path)).unwrap(), bytes);
+        }
+    }
+}
+
 #[test]
 #[ignore = "requires live Modrinth catalog and downloads"]
 fn live_cli_equivalent_provider_selectors_converge() {

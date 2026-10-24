@@ -2162,7 +2162,108 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-019.ranked-pages",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::search::tests::search_retains_choices_provider_order_and_page_boundaries"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled search retains distinct candidates, provider order, page boundaries and truncation; ranking does not select a project"
+          ]
+        },
+        {
+          "id": "UX-019.deliberate-host-choice",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::interactive_search_preserves_selected_identity_without_publishing"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A selected second result resolves its canonical identity rather than the first ranked result; selection preserves the entire captured project"
+          ]
+        },
+        {
+          "id": "UX-019.failure-meaning",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::search::tests::search_http_failures_remain_distinct_from_empty_results",
+            "empack-lib::engine::providers::search::tests::missing_auth_and_invalid_queries_make_no_requests"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "HTTP 401/403, 404, 429 and 503 retain distinct typed errors, while an empty valid page is successful empty search",
+            "Read-only retry counts remain bounded, error bodies do not replace typed diagnostics, invalid queries and missing authorization make no requests, and resource reservations retire"
+          ]
+        },
+        {
+          "id": "UX-019.headless-refusal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_dependencies::cli_headless_search_requires_explicit_selection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Headless, --yes and dry-run search refuse with instructions for explicit URLs or provider slug/ID",
+            "Manifest, lock, author notes and prior artifacts remain unchanged; no request reaches the configured proxy (not an OS network sandbox)"
+          ]
+        },
+        {
+          "id": "UX-019.live-terminal-choice",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_pty_search_requires_choice_and_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real PTY/ConPTY and live Modrinth search permit canonical-ID filtering without relying on rank",
+            "Escape returns interruption with no publication; selected-result approval decline preserves author bytes; choosing alone does not publish",
+            "Approval records the chosen root and matching exact provider pin while preserving previous artifacts; no Java or gameplay acceptance is claimed"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::providers + runtime_catalog + networking::rate_budget",
         "empack executable + empack-lib::application",
@@ -2173,7 +2274,7 @@
         "empack-cli",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-020",

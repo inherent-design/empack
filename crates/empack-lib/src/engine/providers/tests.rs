@@ -425,7 +425,7 @@ async fn equivalent_curseforge_selectors_use_exact_identity_and_reject_ambiguity
             .unwrap();
         let outcome = handle.wait().await;
         assert!(matches!(&*outcome, OperationOutcome::Completed(Ok(value))
-            if value.id == pin(ProviderKind::CurseForge).project && value.kinds.as_slice() == &[empack_core::model::ContentKind::Mod]));
+            if value.id == pin(ProviderKind::CurseForge).project && value.kinds.as_slice() == [empack_core::model::ContentKind::Mod]));
         runtime.release_completed(handle.id());
     }
     runtime.shutdown().await;

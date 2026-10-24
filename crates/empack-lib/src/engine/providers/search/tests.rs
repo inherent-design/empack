@@ -137,6 +137,59 @@ async fn provider_errors_and_cumulative_limits_discard_earlier_choices() {
     assert!(matches!(&*outcome, OperationOutcome::Completed(Err(_))));
 }
 #[tokio::test]
+async fn search_http_failures_remain_distinct_from_empty_results() {
+    for status in [401, 403, 404, 429, 503, 200] {
+        let mut server = Server::new_async().await;
+        let response = server
+            .mock("GET", "/search")
+            .match_query(Matcher::Any)
+            .with_status(status)
+            .with_header("retry-after", "0")
+            .with_body(if status == 200 {
+                json!({"hits":[],"offset":0,"limit":2,"total_hits":0}).to_string()
+            } else {
+                "private upstream diagnostic must not replace the typed error".into()
+            })
+            .expect(if matches!(status, 429 | 503) { 3 } else { 1 })
+            .create_async()
+            .await;
+        let mut selected = query();
+        selected.providers = NonEmpty::new(vec![ProviderKind::Modrinth]).unwrap();
+        let (outcome, governor) = search(&server, selected, None, limits()).await;
+        match &*outcome {
+            OperationOutcome::Completed(Ok(results)) if status == 200 => {
+                assert_eq!(results.pages.len(), 1);
+                assert!(results.pages[0].candidates.is_empty());
+                assert!(results.pages[0].next_offset.is_none());
+                assert!(results.unsupported.is_empty());
+            }
+            OperationOutcome::Completed(Err(error)) => {
+                assert!(!format!("{error:#}").contains("private upstream diagnostic"));
+                let error = error
+                    .downcast_ref::<CatalogError>()
+                    .expect("typed catalog error");
+                assert!(
+                    match status {
+                        401 | 403 => matches!(error, CatalogError::Unauthorized),
+                        404 => matches!(error, CatalogError::NotFound),
+                        429 => matches!(error, CatalogError::RateLimited),
+                        503 => matches!(error, CatalogError::Server(503)),
+                        _ => false,
+                    },
+                    "HTTP {status}: {error}"
+                );
+            }
+            _ => panic!("unexpected search outcome for HTTP {status}"),
+        }
+        response.assert_async().await;
+        // A successful page owns its admitted memory until its retained output
+        // is released, even when the page has no candidates.
+        drop(outcome);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+
+#[tokio::test]
 async fn missing_auth_and_invalid_queries_make_no_requests() {
     let mut server = Server::new_async().await;
     let none = server
