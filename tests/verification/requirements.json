@@ -1954,7 +1954,30 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-017.pinned-modrinth-inventory",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_pinned_import::live_pinned_modrinth_import_converges_and_exports_complete_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh isolated acquisition checks fixed archive size/SHA-256/SHA-512 and independent complete index/override expectations before public import",
+            "Two sync commands preserve author and lock bytes; Modrinth export preserves every declared URL, digest, size, side participation, exact runtime and override byte",
+            "Bundled Prism output independently verifies all 50 acquired file SHA-512 digests, all 63 override bytes, exact game inventory and runtime components; source archive and author documents remain unchanged",
+            "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::initialize; engine::api::project_change",
         "engine::acquisition/content/archive_source/import",
@@ -1965,7 +1988,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-018",

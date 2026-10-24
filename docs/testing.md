@@ -139,11 +139,18 @@ that selection; it also runs in the ordinary CLI and deterministic suites.
 identify themselves as rolling observations, record acquired archive and executable
 digests, and cannot qualify the pinned corpus. `scripts/import-smoke-test.py` remains
 a compatibility entry point for the survey. The small synthetic corpus does not
-replace the broader pinned real-pack acceptance requirement.
+replace real-pack acceptance. The separate `python3 scripts/verify.py pinned-import`
+suite acquires the fixed Fabulously Optimized 6.5.0 archive and checks complete
+index/override preservation, two-sync convergence, and every downloaded mod's
+bytes in a bundled export. Edited imported local dependencies require explicit
+adoption; the fixture checks refusal preservation and fresh output without a version
+bump after that acceptance. Its fixture contains metadata and hashes, not upstream
+assets. This is live executable evidence, not launcher/game acceptance or coverage
+of all real-pack formats.
 
 Scheduled compatibility runs on the default branch each Monday. The shared runner
-selects the pinned corpus, official provider/catalog probes, and current runtime
-checks. During the first seven UTC dates of each month it substitutes the broader
+selects the synthetic and real-pack pinned corpora, official provider/catalog probes, and
+current runtime checks. During the first seven UTC dates of each month it substitutes the broader
 runtime suite, with both Java 8 and 21 installed. Missing credentials or prerequisites
 remain blocked evidence. `python3 scripts/check-live-compatibility.py --plan-only`
 writes the dated selection without claiming execution; omit that flag to run it.
@@ -375,8 +382,9 @@ job expects the `EMPACK_KEY_CURSEFORGE` repository or organization secret and re
 
 Manual dispatch also runs the rolling import survey and the existing import-smoke
 driver. Broad surveys are excluded from ordinary PRs and instrumented coverage.
-The pinned corpus split and scheduled rotations remain separate work; an upstream
-survey is not a stable regression oracle.
+Pinned real-pack inputs and scheduled rotations use separate selections; an
+upstream survey is not a stable regression oracle. Import/export changes select
+the fixed `pinned-import` suite, while docs-only changes do not acquire packs.
 
 Use `verification-gate` as the required PR status. It requires every selected job
 to succeed, including the complete native matrix, and checks each uploaded suite

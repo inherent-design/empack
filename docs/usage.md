@@ -84,6 +84,13 @@ it preserves existing custom templates, prior `dist/` artifacts and unrelated ro
 files or directories. Worlds placed inside a replaced source root are author content
 in that scope; this command is not an installed-instance update.
 
+Imported overrides are recorded as local dependencies with accepted content in the
+lock. When you edit an imported file that is also its managed destination, `sync`
+and `update` protect the previously recorded bytes. Use `empack adopt KEY` with
+its exact dependency key from `empack.yml` to deliberately accept the edit, then
+build again. This does not require changing the pack version. Custom source trees
+declared separately from dependencies retain their ordinary fresh-build behavior.
+
 Modrinth public resolution needs no API key. For CurseForge, provide your client key
 through `EMPACK_KEY_CURSEFORGE`; keep credentials out of the manifest and version
 control. Resolution and referenced downloads require network access.

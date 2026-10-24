@@ -10,6 +10,11 @@ filter = "binary(=live_import_survey)"
 slow-timeout = { period = "60s", terminate-after = 10 }
 
 [[profile.default.overrides]]
+# Fixed input, fresh isolated acquisition, sync and both reference/bundled exports.
+filter = "binary(=live_pinned_import)"
+slow-timeout = { period = "60s", terminate-after = 20 }
+
+[[profile.default.overrides]]
 # Build and preparation contracts can run slowly on CI; live runtime acquisition
 # is selected separately from offline archive creation.
 filter = "binary(=cli_build) | binary(=live_server_cli) | binary(=journey_local_exports)"

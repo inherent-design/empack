@@ -43,8 +43,10 @@ class ChangeSelection(unittest.TestCase):
         cases = [
             ("crates/empack-lib/src/engine/providers/modrinth.rs", ["live-provider-cli", "live-modrinth"], False),
             ("crates/empack-lib/src/engine/providers/curseforge.rs", ["live-provider-cli", "live-modrinth", "live-curseforge"], False),
-            ("crates/empack-lib/src/engine/build/server/unix.rs", ["live-catalog", "server-cli", "runtime-current"], False),
-            ("crates/empack-lib/src/engine/build/client/fixtures.json", [], True),
+            ("crates/empack-lib/src/engine/build/server/unix.rs", ["live-catalog", "server-cli", "runtime-current", "pinned-import"], False),
+            ("crates/empack-lib/src/engine/build/client/fixtures.json", ["pinned-import"], True),
+            ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["pinned-import"], False),
+            ("crates/empack-tests/tests/live_pinned_import.rs", ["pinned-import"], False),
         ]
         for path, suites, consumer in cases:
             with self.subTest(path=path):

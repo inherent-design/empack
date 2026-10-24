@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::live_pinned_import::live_pinned_modrinth_import_converges_and_exports_complete_inventory", "binary": "empack-tests::live_pinned_import", "binary_name": "live_pinned_import", "boundary": "L", "api": "INIT", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-core::contracts::build_selection_is_unique_and_stable_for_every_short_request", "binary": "empack-core::contracts", "binary_name": "contracts", "boundary": "U", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-core::contracts::file_values_preserve_unicode_and_punctuation", "binary": "empack-core::contracts", "binary_name": "contracts", "boundary": "U", "api": "DOC", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-core::contracts::opaque_archive_names_preserve_spelling_without_granting_portable_destinations", "binary": "empack-core::contracts", "binary_name": "contracts", "boundary": "U", "api": "IO", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
