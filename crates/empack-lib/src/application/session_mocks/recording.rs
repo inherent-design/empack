@@ -5,12 +5,14 @@ use std::sync::{Arc, Mutex};
 pub(super) struct RecordingDisplay {
     pub inner: Box<dyn DisplayProvider>,
     pub messages: Arc<Mutex<Vec<String>>>,
+    pub include_status: bool,
 }
 impl DisplayProvider for RecordingDisplay {
     fn status(&self) -> Box<dyn StatusProvider> {
         Box::new(RecordingStatus {
             inner: self.inner.status(),
             messages: self.messages.clone(),
+            include_status: self.include_status,
         })
     }
     fn progress(&self) -> Box<dyn ProgressProvider> {
@@ -23,6 +25,7 @@ impl DisplayProvider for RecordingDisplay {
 struct RecordingStatus {
     inner: Box<dyn StatusProvider>,
     messages: Arc<Mutex<Vec<String>>>,
+    include_status: bool,
 }
 impl StatusProvider for RecordingStatus {
     fn message(&self, text: &str) {
@@ -42,6 +45,9 @@ impl StatusProvider for RecordingStatus {
         self.inner.warning(message);
     }
     fn info(&self, message: &str) {
+        if self.include_status {
+            self.messages.lock().unwrap().push(message.to_owned());
+        }
         self.inner.info(message);
     }
     fn emphasis(&self, text: &str) {
@@ -54,6 +60,9 @@ impl StatusProvider for RecordingStatus {
         self.inner.list(items);
     }
     fn complete(&self, task: &str) {
+        if self.include_status {
+            self.messages.lock().unwrap().push(task.to_owned());
+        }
         self.inner.complete(task);
     }
     fn tool_check(&self, tool: &str, available: bool, version: &str) {

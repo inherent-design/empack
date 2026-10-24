@@ -216,6 +216,21 @@ retained selections and required closure. Native fixtures separately cover refer
 preservation, publication races and foreign metadata. Final-package execution of
 the public matrix is a separate five-target obligation, not established by local tests.
 
+Selected-update tests connect frozen provider records to the host preview, completion
+receipt and materialized inventory. Updating an automatic root beside an exact pin
+must report one changed selection and one retained selection, preserve unselected
+records and authoring, and retain explicit file-role destinations. Pure candidate
+cases cover reverse and exact-version incompatibilities, side separation, grouped
+updates and preservation of negative evidence when the selected version is unchanged.
+The host refusal matrix checks the whole populated project after both dry-run and
+approved requests; no conflicting retained dependency is silently removed.
+
+The live CLI sentinel checks an exact pin, unpins without upgrading, then performs
+an automatic update. It compares the actual change count with the resulting pin and
+independently hashes materialized bytes. A live catalog may already be current; that
+run does not replace the frozen fixture proving a changed selection. Broader public
+release-policy permutations and other-platform execution remain separate obligations.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,

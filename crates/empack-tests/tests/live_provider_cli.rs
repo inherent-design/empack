@@ -347,6 +347,98 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         run(&project, &["--yes", "sync"]);
         assert_eq!(author_snapshot(project.dir()), before);
     }
+    // Unpinning is a policy edit, not an upgrade. The live catalog may already be
+    // current; the frozen host journey separately proves an actual version change.
+    run(&project, &["--yes", "unpin", key.as_str()]);
+    let automatic = read_project(project.dir());
+    assert_eq!(
+        automatic.intent().roots[key].selection,
+        DependencySelection::Automatic
+    );
+    assert_eq!(automatic.lock().dependencies, updated.lock().dependencies);
+    assert_eq!(automatic.lock().runtime, updated.lock().runtime);
+    assert_eq!(
+        automatic.lock().required_edges,
+        updated.lock().required_edges
+    );
+    let author = std::fs::read(project.dir().join("empack.yml")).unwrap();
+    let before_preview = snapshot(project.dir(), &[]);
+    run(
+        &project,
+        &[
+            "--yes",
+            "--dry-run",
+            "update",
+            key.as_str(),
+            "--release-policy",
+            "any",
+        ],
+    );
+    assert_eq!(snapshot(project.dir(), &[]), before_preview);
+    let output = run(
+        &project,
+        &["--yes", "update", key.as_str(), "--release-policy", "any"],
+    );
+    let resolved = read_project(project.dir());
+    let changed = usize::from(
+        resolved.lock().dependencies[key].selected != automatic.lock().dependencies[key].selected,
+    );
+    let rendered = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(rendered.contains(&format!("Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent", 1 - changed)), "{rendered}");
+    assert_eq!(resolved.intent(), automatic.intent());
+    assert_eq!(
+        std::fs::read(project.dir().join("empack.yml")).unwrap(),
+        author
+    );
+    assert_eq!(resolved.lock().runtime, automatic.lock().runtime);
+    run(&project, &["--yes", "sync", "--materialize"]);
+    let materialized = read_project(project.dir());
+    assert_eq!(
+        materialized.lock().dependencies,
+        resolved.lock().dependencies
+    );
+    use empack_core::{digest::ExpectedDigest, model::ContentLayer};
+    use sha2::{Digest, Sha512};
+    for file in materialized.lock().dependencies[key].files.as_slice() {
+        let expected = file
+            .expected
+            .digests
+            .as_ref()
+            .unwrap()
+            .values()
+            .iter()
+            .find(|digest| matches!(digest, ExpectedDigest::Sha512(_)))
+            .expect("Modrinth selection declares SHA-512");
+        for placement in file.placements.as_slice() {
+            let layer = match placement.layer {
+                ContentLayer::Common => "pack",
+                ContentLayer::CommonOverride => "overrides/common",
+                ContentLayer::Client => "overrides/client",
+                ContentLayer::Server => "overrides/server",
+            };
+            let bytes = std::fs::read(
+                project
+                    .dir()
+                    .join(layer)
+                    .join(placement.destination.relative().as_str()),
+            )
+            .unwrap();
+            assert_eq!(file.expected.size, Some(bytes.len() as u64));
+            assert_eq!(
+                &ExpectedDigest::Sha512(Sha512::digest(&bytes).into()),
+                expected
+            );
+        }
+    }
+    let converged = author_snapshot(project.dir());
+    for _ in 0..2 {
+        run(&project, &["--yes", "sync"]);
+        assert_eq!(author_snapshot(project.dir()), converged);
+    }
 }
 
 #[test]

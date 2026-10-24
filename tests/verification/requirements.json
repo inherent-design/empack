@@ -3098,6 +3098,7 @@
       "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
       "required_work": "Deterministic candidate fixture plus spawned binary live sentinel; compare resulting inventory and report.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "L"
@@ -3111,7 +3112,8 @@
           "id": "UX-026.selected-host-update",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory"
+            "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory",
+            "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection"
           ],
           "required_platforms": [
             "linux",
@@ -3124,9 +3126,11 @@
           ],
           "assertions": [
             "Selected automatic root advances while an exact pin with a newer available version stays exact; dry-run preserves the project",
-            "Primary-role destination survives changed provider filenames; materialized bytes match independently supplied content"
+            "Primary-role destination survives changed provider filenames; materialized bytes match independently supplied content",
+            "Displayed per-root preview and completed receipt report one changed and one retained selection; runtime, required edges, all unselected records and raw authoring/bindings remain unchanged",
+            "A multi-file provider root retains its explicit primary/companion roles and side projections through update and adoption"
           ],
-          "remaining_group_evidence": "Other release policies, full changed/retained report variants and live automatic-selection coverage remain required"
+          "remaining_group_evidence": "Broader public release-policy permutations remain required; the frozen catalog proves a changed selection while live catalogs may already be current"
         },
         {
           "id": "UX-026.live-pinned-update",
@@ -3145,9 +3149,33 @@
           ],
           "assertions": [
             "Ordinary CLI pin and update against Modrinth retain the selected exact version under release-policy any",
-            "Actual output reports zero changed and one retained selection; preview, application and repeated sync preserve author files"
+            "Actual output reports zero changed and one retained selection; preview, application and repeated sync preserve author files",
+            "Unpinning retains the current exact inventory; automatic update preserves author intent and runtime, and actual changed/retained output agrees with the selected pin",
+            "Materialized selected payloads match declared SHA-512 and size independently; two subsequent CLI syncs converge"
           ],
-          "remaining_group_evidence": "A pinned live update does not establish all automatic candidate or incompatibility cases"
+          "remaining_group_evidence": "Live success does not imply a newer version was available; deterministic host coverage establishes the changed-selection path"
+        },
+        {
+          "id": "UX-026.selected-update-scope",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::addition::update_tests::update_binds_aliases_preserves_raw_intent_and_retains_unselected_installations",
+            "empack-lib::engine::addition::update_tests::transitive_update_requires_dependents_and_does_not_promote_temporary_roots",
+            "empack-lib::engine::addition::update_tests::update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Updates bind aliases without changing raw intent or unselected installations",
+            "Transitive changes require retained dependents and cannot promote temporary roots; explicit pins and installed identity boundaries remain enforced"
+          ]
         }
       ],
       "owner_now": [
@@ -3179,7 +3207,91 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-027.retained-negative-evidence",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::addition::update_tests::update_checks_new_negative_evidence_against_unselected_retained_inventory",
+            "empack-lib::engine::addition::update_tests::update_retains_old_negative_evidence_until_its_selection_changes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "New project-wide and exact-version negative assertions check the full retained inventory, including installed non-root dependencies; a nonmatching exact assertion permits the update without deleting retained content",
+            "Reverse assertions from retained selections reject new conflicting roots; refreshing the same selection cannot discard those assertions",
+            "Only an actual changed selection can retire its old evidence; an explicit compatible grouped update preserves author intent and both records"
+          ]
+        },
+        {
+          "id": "UX-027.environment-and-grouping",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::addition::tests::negative_evidence_uses_all_files_layers_and_optional_participation",
+            "empack-lib::engine::addition::independent::tests::negative_relationships_keep_interdependent_updates_in_one_component",
+            "empack-lib::engine::addition::independent::tests::disjoint_sides_are_independent_until_old_or_new_placements_overlap"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Disjoint client/server participation permits retained negative assertions; required or optional companions with overlapping environments restore the conflict in either direction",
+            "Old and new placements constrain independent groups; mutually dependent compatible updates execute as one group and retain exact selections and negative evidence"
+          ]
+        },
+        {
+          "id": "UX-027.provider-assessment",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Provider assessment reports forward and reverse incompatibilities against retained content separately from complete required closure; update preparation rejects the resulting candidate"
+          ]
+        },
+        {
+          "id": "UX-027.host-update-refusal",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::journey::host_selected_update_refuses_incoming_and_retained_incompatibilities_without_edits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A populated native project with provider roots, an exact pin, retained transitive content and local bindings refuses conflicting incoming and retained provider evidence",
+            "Dry-run and approved update preserve all project files, emit no completion receipt and do not delete or replace the conflicting retained root"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::providers + runtime_catalog + networking::rate_budget",
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners"
@@ -3188,7 +3300,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-028",

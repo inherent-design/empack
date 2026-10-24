@@ -313,11 +313,20 @@ impl MockCommandSession {
         }
     }
     /// Capture plain host messages without replacing progress or other presentation.
-    pub fn record_messages(mut self) -> (Self, Arc<Mutex<Vec<String>>>) {
+    pub fn record_messages(self) -> (Self, Arc<Mutex<Vec<String>>>) {
+        self.record_display(false)
+    }
+    /// Also capture informational previews and completion receipts at the host boundary.
+    /// This is not an assertion about executable stdout/stderr rendering.
+    pub fn record_status_messages(self) -> (Self, Arc<Mutex<Vec<String>>>) {
+        self.record_display(true)
+    }
+    fn record_display(mut self, include_status: bool) -> (Self, Arc<Mutex<Vec<String>>>) {
         let messages = Arc::new(Mutex::new(Vec::new()));
         self.display_provider = Box::new(recording::RecordingDisplay {
             inner: self.display_provider,
             messages: messages.clone(),
+            include_status,
         });
         (self, messages)
     }

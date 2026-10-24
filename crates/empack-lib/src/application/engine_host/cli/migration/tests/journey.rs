@@ -58,7 +58,13 @@ fn jar(version: &str) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-async fn populated_migration(retained_compatible: bool) {
+#[derive(Clone, Copy)]
+enum UpdateConflict {
+    Incoming,
+    Retained,
+}
+
+async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateConflict>) {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let project_dir = root.path().join("project");
@@ -103,7 +109,16 @@ async fn populated_migration(retained_compatible: bool) {
     ];
     let mut catalogs = BTreeMap::<&str, Vec<serde_json::Value>>::new();
     let mut payloads = BTreeMap::new();
-    for (id, version, games, dependencies) in records {
+    for (id, version, games, mut dependencies) in records {
+        match (conflict, version) {
+            (Some(UpdateConflict::Incoming), "RootMid1") => dependencies.push(
+                json!({"project_id":"Pinned01","dependency_type":"incompatible"}),
+            ),
+            (Some(UpdateConflict::Retained), "ClientV1") => dependencies.push(
+                json!({"project_id":"Root0001","version_id":"RootMid1","dependency_type":"incompatible"}),
+            ),
+            _ => {}
+        }
         let bytes = jar(version);
         let value = json!({"id":version,"project_id":id,"game_versions":games,"loaders":["fabric"],
             "files":[{"filename":format!("{version}.jar"),"primary":true,"size":bytes.len(),
@@ -167,16 +182,49 @@ async fn populated_migration(retained_compatible: bool) {
         .await;
     let before_update = snapshot(&project_dir);
     for dry in [true, false] {
-        super::super::super::update::update_with_services(
-            &session(root.path(), dry),
+        let (host, messages) = session(root.path(), dry).record_status_messages();
+        let result = super::super::super::update::update_with_services(
+            &host,
             vec!["root".into(), "pinned".into()],
             services(&server),
         )
-        .await
-        .unwrap();
+        .await;
+        let messages = messages.lock().unwrap();
+        if conflict.is_some() {
+            let error = format!("{:#}", result.unwrap_err());
+            assert!(error.contains("incompatib"), "{error}");
+            assert_eq!(snapshot(&project_dir), before_update);
+            assert!(
+                !messages
+                    .iter()
+                    .any(|message| message.starts_with("Checked "))
+            );
+            continue;
+        }
+        result.unwrap();
+        for expected in [
+            "Check root as root: selection changed",
+            "Check pinned as pinned: selection retained",
+        ] {
+            assert!(
+                messages.iter().any(|message| message == expected),
+                "{messages:?}"
+            );
+        }
+        let receipt = "Checked 2 selected dependencies: 1 selections changed, 1 retained; preserved authored intent";
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| message.as_str() == receipt)
+                .count(),
+            usize::from(!dry)
+        );
         if dry {
             assert_eq!(snapshot(&project_dir), before_update);
         }
+    }
+    if conflict.is_some() {
+        return;
     }
     synchronization::synchronize_with_services(
         &session(root.path(), false),
@@ -188,9 +236,32 @@ async fn populated_migration(retained_compatible: bool) {
     .unwrap();
     let old = project(root.path());
     assert_eq!(old.intent(), initial.intent());
+    assert_eq!(old.lock().runtime, initial.lock().runtime);
+    assert_eq!(old.lock().required_edges, initial.lock().required_edges);
     assert_eq!(
-        old.lock().dependencies[&DependencyKey::parse("pinned").unwrap()],
-        initial.lock().dependencies[&DependencyKey::parse("pinned").unwrap()]
+        old.lock().dependencies.len(),
+        initial.lock().dependencies.len()
+    );
+    for (key, dependency) in &initial.lock().dependencies {
+        if key.as_str() != "root" {
+            assert_eq!(
+                &old.lock().dependencies[key],
+                dependency,
+                "retained {key:?}"
+            );
+        }
+    }
+    assert_eq!(
+        fs::read(project_dir.join("empack.yml")).unwrap(),
+        AUTHOR.as_bytes()
+    );
+    assert_eq!(
+        fs::read(project_dir.join("empack.bindings.yml")).unwrap(),
+        BINDINGS.as_bytes()
+    );
+    assert_eq!(
+        fs::read(project_dir.join("vendor/settings.toml")).unwrap(),
+        SETTINGS
     );
     assert_eq!(
         fs::read(project_dir.join("pack/mods/stable-root.jar")).unwrap(),
@@ -434,9 +505,16 @@ async fn populated_migration(retained_compatible: bool) {
 
 #[tokio::test]
 async fn host_populated_migration_matches_displayed_plan_and_materialized_inventory() {
-    populated_migration(true).await;
+    populated_migration(true, None).await;
 }
 #[tokio::test]
 async fn host_populated_migration_refuses_incompatible_retained_library_without_edits() {
-    populated_migration(false).await;
+    populated_migration(false, None).await;
+}
+
+#[tokio::test]
+async fn host_selected_update_refuses_incoming_and_retained_incompatibilities_without_edits() {
+    for conflict in [UpdateConflict::Incoming, UpdateConflict::Retained] {
+        populated_migration(true, Some(conflict)).await;
+    }
 }
