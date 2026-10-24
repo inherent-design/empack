@@ -3323,7 +3323,95 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-028.independent-components",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::addition::independent::tests::independent_groups_follow_current_required_chains_cycles_and_old_paths",
+            "empack-lib::engine::addition::independent::tests::independent_groups_merge_required_closure_and_reject_conflicting_shared_records",
+            "empack-lib::engine::addition::independent::tests::independent_groups_use_native_layer_paths_unicode_and_ancestor_collisions",
+            "empack-lib::engine::addition::independent::tests::negative_relationships_keep_interdependent_updates_in_one_component",
+            "empack-lib::engine::addition::independent::tests::disjoint_sides_are_independent_until_old_or_new_placements_overlap"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Required chains/cycles, old and new occupied paths, shared records, Unicode/ancestor collisions and negative relationships couple dependent requests",
+            "Disjoint environments remain independent until an old or new placement overlaps; contradictory shared records are rejected"
+          ]
+        },
+        {
+          "id": "UX-028.native-partial-publication",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::addition_tests::independent_batch::batch_default_preserves_all_and_partial_publishes_one_coherent_candidate",
+            "empack-lib::engine::api::addition_tests::independent_batch::failed_shared_component_blocks_all_its_requests_but_not_an_unrelated_group",
+            "empack-lib::engine::api::addition_tests::independent_batch::partial_update_keeps_failed_intent_and_stale_approval_never_publishes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Default preparation is all-or-none; explicit independent policy admits one coherent candidate and returns a typed partial receipt for successful groups",
+            "A failed shared component blocks every member while unrelated groups remain available; stale approval cannot publish",
+            "Decline, all-failed and stale cases preserve files; partial update retains failed intent and retires reserved resources"
+          ]
+        },
+        {
+          "id": "UX-028.public-partial-add-update",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::smoke::smoke_independent_add_publishes_successes_once_and_reports_preserved_failures"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual CLI preview identifies ready and blocked roots without publication; default add/update failures preserve all project files",
+            "Partial add and changed-content update exit nonzero, name the ready/blocked groups and report the completed effects and accurate selection counts",
+            "Every unrelated file and retained lock record survives; retrying completed additions or repairing a rejected update cannot duplicate publication; repeated sync converges"
+          ]
+        },
+        {
+          "id": "UX-028.unowned-destination",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::smoke::smoke_independent_add_preserves_unowned_directory_and_installs_unrelated_file"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An unowned directory occupying one requested destination remains intact, including its sentinel, while a separate valid root can publish under explicit independent policy"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "empack executable + empack-lib::application",
@@ -3334,7 +3422,7 @@
         "empack-cli",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-029",
@@ -3355,7 +3443,93 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-029.native-observation-only",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::addition_tests::adoption_publishes_observed_intent_without_payload_writes_then_sync_retains_it",
+            "empack-lib::engine::api::addition_tests::adoption_creates_first_lock_without_rewriting_observed_payloads",
+            "empack-lib::engine::api::addition_tests::initial_adoption_refuses_missing_changed_or_late_conflicting_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Adoption previews and publishes document/evidence changes without content writes; payload modification time is preserved and subsequent synchronization has no content changes",
+            "First-lock adoption is explicitly represented; missing, mismatched or late-changing payloads and a concurrently created lock refuse publication while retaining authoring"
+          ]
+        },
+        {
+          "id": "UX-029.provider-identity-and-copies",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::provider_adoption_identifies_bytes_without_reading_foreign_metadata",
+            "empack-lib::application::engine_host::cli::tests::provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Byte identification binds the observed exact version without any latest-version query; an authored exact pin cannot be silently relaxed",
+            "Foreign metadata remains untouched, a different provider identity or inconsistent copies refuses without edits, and client-side placements survive",
+            "Missing-lock reconstruction retains the observed provider selection and subsequent syncs converge"
+          ]
+        },
+        {
+          "id": "UX-029.public-tracked-observation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Changed source bytes alone cannot be installed by adopt; missing source/destination and grouped unknown/repeated keys preserve all author files and prior artifacts",
+            "Matching source and installed content can be previewed and accepted with only the lock observation changing; source/destination modification times and attributes remain unchanged",
+            "Independent SHA-256 and size match accepted local evidence without inventing declared provider hashes; repeated sync and rebuilt artifacts retain those bytes"
+          ]
+        },
+        {
+          "id": "UX-029.public-first-lock",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::smoke::smoke_adopt_sources_and_restore_missing_lock_without_installing_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A missing lock can be reconstructed from already adopted local content without rewriting authoring, source, installed bytes or prior artifacts",
+            "Exact identity, size/digests, placements and runtime survive; only the absent inferred display title is reconstructed from the logical key; repeated sync converges"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::documents + application::engine_host::cli::manifest"
@@ -3364,7 +3538,7 @@
         "portable planners and engine; CLI request mapping; native effects",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-030",
@@ -3387,7 +3561,71 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-030.local-url-host-inputs",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::new_adoption_inputs_verify_installed_bytes_without_adding_or_downloading_payloads"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Local and URL adoption require matching installed bytes, preserve previews and payloads, and work with or without an existing lock",
+            "A new provider source without an exact version cannot masquerade as observation; the host refuses it without querying a latest version"
+          ],
+          "remaining_group_evidence": "Live provider/URL adoption and ambiguous-candidate selection at the handler boundary still need explicit qualification"
+        },
+        {
+          "id": "UX-030.provider-exact-file-plan",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::tests::new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete_copies"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact provider selection or verified byte identification reuses explicit side-specific file plans and rejects incomplete installed copies",
+            "Preview and approved adoption preserve installed content, never query a latest version, retain the exact provider pin and converge"
+          ],
+          "remaining_group_evidence": "Live provider/URL adoption and ambiguous-candidate selection at the handler boundary still need explicit qualification"
+        },
+        {
+          "id": "UX-030.public-local-input",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::smoke::smoke_adopt_sources_and_restore_missing_lock_without_installing_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The real CLI refuses absent or mismatched installed destinations for adopt --from local",
+            "Successful local adoption preserves source and destination modification times and every non-document file; preview and later missing-lock recovery remain non-installing"
+          ],
+          "remaining_group_evidence": "Live provider/URL adoption and ambiguous-candidate selection at the handler boundary still need explicit qualification"
+        }
+      ],
       "owner_now": [
         "engine_host::dependencies/cli; engine::api::addition/removal/synchronization; empack-core planners",
         "engine::acquisition/content/archive_source/import",
@@ -3398,7 +3636,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable catalog interpretation; native/Fetch transport"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-031",

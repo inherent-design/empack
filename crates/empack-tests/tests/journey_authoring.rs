@@ -162,6 +162,100 @@ fn author_snapshot(project: &TestProject) -> BTreeMap<PathBuf, Vec<u8>> {
     result
 }
 
+// Exercise observation as part of the existing authoring journey, not a second
+// fixture that can drift from the update/build/remove path.
+fn adopt_changed_content(project: &TestProject) -> Vec<u8> {
+    use empack_core::{digest::ContentId, model::DependencyKey};
+    use sha2::{Digest, Sha256};
+    let adopted = fixture_jar("3");
+    write(project, SOURCE, &adopted);
+    let before = author_snapshot(project);
+    // A source change alone cannot authorize installing it through adoption.
+    for dry in [true, false] {
+        let mut cmd = offline_command(project.dir());
+        cmd.args(["--yes", "adopt", "fixture"]);
+        if dry {
+            cmd.arg("--dry-run");
+        }
+        cmd.assert().failure();
+        assert_eq!(author_snapshot(project), before);
+    }
+    write(project, INSTALLED, &adopted);
+    for absent in [SOURCE, INSTALLED] {
+        fs::remove_file(project.dir().join(absent)).unwrap();
+        let before = author_snapshot(project);
+        offline_command(project.dir())
+            .args(["--yes", "adopt", "fixture"])
+            .assert()
+            .failure();
+        assert_eq!(author_snapshot(project), before);
+        write(project, absent, &adopted);
+    }
+    for invalid in ["missing", "fixture"] {
+        let before = author_snapshot(project);
+        offline_command(project.dir())
+            .args(["--yes", "adopt", "fixture", invalid])
+            .assert()
+            .failure();
+        assert_eq!(author_snapshot(project), before);
+    }
+    let before = author_snapshot(project);
+    let attributes = |name: &str| {
+        let metadata = fs::metadata(project.dir().join(name)).unwrap();
+        (
+            metadata.modified().unwrap(),
+            metadata.permissions().readonly(),
+            metadata.len(),
+        )
+    };
+    let source_attributes = attributes(SOURCE);
+    let installed_attributes = attributes(INSTALLED);
+    offline_command(project.dir())
+        .args(["--dry-run", "adopt", "fixture"])
+        .assert()
+        .success();
+    assert_eq!(author_snapshot(project), before);
+    offline_command(project.dir())
+        .args(["--yes", "adopt", "fixture"])
+        .assert()
+        .success();
+    assert_eq!(attributes(SOURCE), source_attributes);
+    assert_eq!(attributes(INSTALLED), installed_attributes);
+    let mut after = author_snapshot(project);
+    let mut expected = before;
+    assert_ne!(
+        after.remove(&PathBuf::from("empack.lock")),
+        expected.remove(&PathBuf::from("empack.lock"))
+    );
+    assert_eq!(
+        after, expected,
+        "adoption must change only the lock observation"
+    );
+    let resolved = empack_tests::harness::process::read_project(project.dir());
+    let dependency = &resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()];
+    assert_eq!(dependency.files.as_slice().len(), 1);
+    let file = &dependency.files.as_slice()[0];
+    assert_eq!(file.expected.size, Some(adopted.len() as u64));
+    assert_eq!(
+        file.expected.accepted_observation,
+        Some(ContentId::from_sha256(Sha256::digest(&adopted).into()))
+    );
+    assert!(file.expected.digests.is_none());
+    assert!(
+        file.provenance.declared_digests.is_none(),
+        "local acceptance is not provider-declared evidence"
+    );
+    let stable = author_snapshot(project);
+    for _ in 0..2 {
+        offline_command(project.dir())
+            .args(["--yes", "sync"])
+            .assert()
+            .success();
+        assert_eq!(author_snapshot(project), stable);
+    }
+    adopted
+}
+
 #[test]
 fn journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency() {
     let project = TestProject::new();
@@ -277,39 +371,7 @@ fn journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the
     assert_ne!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
     build_and_check(&project, Some(&updated), b"renderDistance:12\n");
 
-    // Adoption records verified existing content; it must not install changed source bytes.
-    let adopted = fixture_jar("3");
-    write(&project, SOURCE, &adopted);
-    let before = author_snapshot(&project);
-    offline_command(project.dir())
-        .args(["--yes", "adopt", "fixture"])
-        .assert()
-        .failure();
-    assert_eq!(author_snapshot(&project), before);
-    write(&project, INSTALLED, &adopted);
-    let before = author_snapshot(&project);
-    offline_command(project.dir())
-        .args(["--yes", "adopt", "fixture"])
-        .assert()
-        .success();
-    let mut after = author_snapshot(&project);
-    let mut expected = before;
-    assert_ne!(
-        after.remove(&PathBuf::from("empack.lock")),
-        expected.remove(&PathBuf::from("empack.lock"))
-    );
-    assert_eq!(
-        after, expected,
-        "adoption must change only the lock observation"
-    );
-    let stable = author_snapshot(&project);
-    for _ in 0..2 {
-        offline_command(project.dir())
-            .args(["--yes", "sync"])
-            .assert()
-            .success();
-        assert_eq!(author_snapshot(&project), stable);
-    }
+    let adopted = adopt_changed_content(&project);
     build_and_check(&project, Some(&adopted), b"renderDistance:12\n");
     let before = author_snapshot(&project);
     offline_command(project.dir())

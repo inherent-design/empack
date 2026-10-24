@@ -231,6 +231,24 @@ independently hashes materialized bytes. A live catalog may already be current; 
 run does not replace the frozen fixture proving a changed selection. Broader public
 release-policy permutations and other-platform execution remain separate obligations.
 
+Independent-batch fixtures distinguish default all-or-none execution from explicit
+partial completion. The public CLI test verifies named ready/blocked groups, nonzero
+partial results, preserved files, a real changed-content update and truthful retry
+counts. Malformed source interpretation still fails before independent groups are
+prepared and preserves the whole request. Pure planners cover coupled requests; native
+API tests cover coherent partial publication, stale approval and resource retirement. None of these checks permits
+an unrelated failed request to disappear from the result.
+
+The authoring journey accepts changed local content only after both source and installed
+copies agree. Preview and refusal preserve all authoring and previous artifacts;
+approved adoption changes the lock observation while retaining payload modification
+times and attributes. Its SHA-256 and size checks distinguish accepted local bytes
+from provider-declared evidence. First-lock reconstruction is tested separately: it
+retains identity and byte evidence, but cannot retain an inferred display title that
+was present only in the missing lock. Controlled provider cases check exact byte
+identification, incompatible identities, copied placements and absence of latest-version
+queries. Live untracked-adoption and ambiguous-selection evidence remain outstanding.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
