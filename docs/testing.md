@@ -231,6 +231,17 @@ independently hashes materialized bytes. A live catalog may already be current; 
 run does not replace the frozen fixture proving a changed selection. Broader public
 release-policy permutations and other-platform execution remain separate obligations.
 
+Assessment fixtures compare complete report fields with independent expectations,
+including exact pins and the distinction between permitted, compatible and upstream
+versions. Controlled catalogs exercise malformed records, shared transfer/deadline
+limits, retained incompatibilities and incomplete pagination. The public executable
+checks populated manual and unavailable-provider rows in text and JSON, preserving
+all author files and printing the report before strict-mode failure. A manual-only
+root set stays complete even when the lock retains a forgotten provider dependency;
+that does not establish compatibility of the retained inventory. The live pinned
+journey checks a successful populated strict assessment through actual Modrinth
+routes. Live observations do not replace the controlled failure and policy cases.
+
 Independent-batch fixtures distinguish default all-or-none execution from explicit
 partial completion. The public CLI test verifies named ready/blocked groups, nonzero
 partial results, preserved files, a real changed-content update and truthful retry

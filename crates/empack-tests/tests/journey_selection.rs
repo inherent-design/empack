@@ -459,3 +459,115 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
         }
     }
 }
+
+#[test]
+fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits() {
+    use serde_json::{Value, json};
+
+    for manual_only in [false, true] {
+        let project = TestProject::new();
+        let root = project.dir();
+        let host = tempfile::tempdir().unwrap();
+        fixture(root);
+        let command = || isolated_command(root, host.path());
+        if manual_only {
+            // A retained, non-root provider record must not turn this manual-root
+            // assessment into network work or a claim about retained compatibility.
+            command()
+                .args(["--yes", "remove", "renderer-alias", "--forget"])
+                .assert()
+                .success();
+        }
+        let before = files::snapshot(root);
+        for strict in [false, true] {
+            for json_output in [true, false] {
+                let mut cmd = command();
+                cmd.args(["outdated", "--release-policy", "any"]);
+                if strict {
+                    cmd.arg("--strict");
+                }
+                if json_output {
+                    cmd.arg("--json");
+                }
+                let output = cmd.output().unwrap();
+                let fails = strict && !manual_only;
+                assert_eq!(output.status.code(), Some(i32::from(fails)), "{output:?}");
+                let stderr = String::from_utf8(output.stderr).unwrap();
+                if fails {
+                    assert!(
+                        stderr.contains("Dependency assessment is incomplete"),
+                        "{stderr}"
+                    );
+                } else {
+                    assert!(stderr.is_empty(), "{stderr}");
+                }
+                let stdout = String::from_utf8(output.stdout).unwrap();
+                if json_output {
+                    let mut report: Value = serde_json::from_str(&stdout).unwrap();
+                    assert!(!report["observed_at"].as_str().unwrap().is_empty());
+                    report.as_object_mut().unwrap().remove("observed_at");
+                    let mut rows = vec![json!({
+                        "release_policy": "any", "key": "local", "name": "local",
+                        "current": null, "permitted": null, "compatible": null,
+                        "upstream": null, "state": "manual", "catalog_complete": false,
+                        "observed_records": null, "diagnostic": null, "reasons": ["manual-source"]
+                    })];
+                    if !manual_only {
+                        let diagnostic = report["dependencies"][1]["diagnostic"].as_str().unwrap();
+                        assert!(
+                            diagnostic.contains("Dependency renderer-alias (Project1)"),
+                            "{diagnostic}"
+                        );
+                        // The ordinary offline proxy deliberately refuses transport;
+                        // it supplies no invented provider records or successful catalog.
+                        report["dependencies"][1]["diagnostic"] = Value::Null;
+                        rows.push(json!({
+                            "release_policy": "any", "key": "renderer-alias", "name": "renderer-alias",
+                            "current": {"provider": "modrinth", "project": "Project1", "selection": "Version1",
+                                "version": null, "published_at": null, "channel": null},
+                            "permitted": null, "compatible": null, "upstream": null, "state": "unknown",
+                            "catalog_complete": false, "observed_records": null, "diagnostic": null,
+                            "reasons": ["provider-unavailable"]
+                        }));
+                    }
+                    assert_eq!(
+                        report,
+                        json!({
+                            "schema": 1, "release_policy": "any", "dependencies": rows,
+                            "joint": {"scope": "provider-dependency-closure", "candidate_compatibility": "not-assessed",
+                                "declared_incompatibilities": [], "declarations_complete": false,
+                                "state": if manual_only {"not-applicable"} else {"not-assessed"},
+                                "selections": [], "reasons": []}
+                        })
+                    );
+                } else {
+                    assert!(
+                        stdout.contains(&format!("Assessment complete: {manual_only}")),
+                        "{stdout}"
+                    );
+                    assert!(stdout.contains("local [local]: manual (policy: any)"));
+                    assert!(stdout.contains(
+                        "Candidate compatibility (including retained inventory): not-assessed"
+                    ));
+                    assert!(stdout.contains("Declared incompatibility list complete: false"));
+                    if !manual_only {
+                        assert!(
+                            stdout
+                                .contains("renderer-alias [renderer-alias]: unknown (policy: any)")
+                        );
+                        assert!(stdout.contains("current: modrinth:Project1@Version1"));
+                        for column in ["permitted", "compatible", "upstream"] {
+                            assert!(stdout.contains(&format!("{column}: unknown")));
+                        }
+                        assert!(stdout.contains("provider-unavailable"));
+                    }
+                }
+                assert_eq!(
+                    files::snapshot(root),
+                    before,
+                    "assessment edited author files"
+                );
+            }
+        }
+    }
+}

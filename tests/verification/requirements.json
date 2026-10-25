@@ -3877,7 +3877,141 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-032.catalog-meanings",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::assessment::tests::changed_rows_require_joint_validation_and_pins_remain_exact",
+            "empack-lib::engine::providers::assessment::tests::assessment_uses_authored_preferences_and_reports_each_effective_policy",
+            "empack-lib::engine::providers::assessment::tests::manual_sources_are_not_reported_as_current_provider_versions",
+            "empack-lib::engine::providers::compatible::tests::assessment_distinguishes_policy_compatibility_and_complete_upstream_observation",
+            "empack-lib::engine::providers::compatible::tests::assessment_never_returns_partial_curseforge_pages_as_latest"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Independent complete report expectations distinguish current, permitted, compatible and upstream observations; exact pins remain exact and manual roots are not provider versions",
+            "Root and project release preferences affect permitted choices without conflating compatibility or newest observed metadata; incomplete pagination cannot claim a complete upstream observation"
+          ]
+        },
+        {
+          "id": "UX-032.failure-and-shared-limits",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::assessment::tests::malformed_root_does_not_hide_independent_catalog_evidence",
+            "empack-lib::engine::providers::assessment::tests::malformed_root_still_consumes_the_shared_transfer_allowance",
+            "empack-lib::engine::providers::assessment::tests::invalid_provider_identity_and_kind_do_not_stop_independent_roots",
+            "empack-lib::engine::providers::assessment::tests::empty_modrinth_files_are_local_evidence_failures_with_shared_limits",
+            "empack-lib::engine::providers::assessment::tests::provider_access_and_service_failures_still_stop_later_roots",
+            "empack-lib::engine::providers::assessment::tests::throttled_catalog_is_unknown_and_does_not_reset_shared_budget",
+            "empack-lib::engine::providers::assessment::tests::declaration_limit_keeps_completed_rows_and_marks_partial_evidence",
+            "empack-lib::engine::providers::assessment::tests::declaration_scan_honors_original_deadline_and_keeps_partial_evidence"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed root evidence leaves independent rows assessable under the original remaining byte allowance; exhaustion is not reset",
+            "Authorization, service and throttling failures stop later provider work; deadline and declaration limits retain completed rows while reporting incomplete evidence"
+          ]
+        },
+        {
+          "id": "UX-032.retained-compatibility",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects",
+            "empack-lib::engine::providers::assessment::tests::declared_incompatibilities_do_not_claim_placement_aware_validation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Forward and reverse declarations involving retained inventory remain visible, and update preparation refuses the incompatible candidate",
+            "Required dependency closure, declared-list completeness and complete placement/runtime compatibility remain distinct claims"
+          ]
+        },
+        {
+          "id": "UX-032.strict-presentation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::assessment::tests::text_separates_required_closure_from_candidate_compatibility"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A populated invalid-evidence report is emitted exactly once in text or JSON before strict-mode failure returns; retained cause and compatibility limits remain visible"
+          ]
+        },
+        {
+          "id": "UX-032.public-report-and-preservation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_selection::journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits",
+            "empack-tests::smoke::smoke_strict_outdated_accepts_complete_empty_assessment"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual executable emits complete independent JSON expectations and explanatory text for manual and unavailable-provider rows; strict mode fails only the incomplete assessment after rendering its report",
+            "A manual-only root set remains complete despite retained non-root provider records; every invocation preserves all source, lock, binding, template and prior-artifact bytes",
+            "An empty assessment succeeds in strict mode without manufacturing provider observations"
+          ]
+        },
+        {
+          "id": "UX-032.live-pinned-assessment",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_selected_update_preserves_exact_pin_and_authoring"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual executable assesses a populated exact-pinned Modrinth project through live routes in strict JSON mode, retains the pin and all author bytes, and distinguishes current/permitted from compatible/upstream observations",
+            "Successful provider closure does not claim complete candidate or gameplay compatibility; the subsequent update journey preserves the same pin until explicitly unpinned"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::providers + runtime_catalog + networking::rate_budget",
         "empack executable + empack-lib::application",
@@ -3888,7 +4022,7 @@
         "empack-cli",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-033",

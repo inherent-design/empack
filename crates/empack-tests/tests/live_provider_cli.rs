@@ -409,6 +409,34 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         pinned.intent().roots[key].selection,
         DependencySelection::ProviderPin(selected.selection.clone())
     );
+    let assessment_before = author_snapshot(project.dir());
+    let output = run(&project, &["outdated", "--json", "--strict"]);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["schema"], 1);
+    let rows = report["dependencies"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    assert_eq!(row["key"], key.as_str());
+    assert_eq!(row["state"], "pinned");
+    assert_eq!(row["reasons"], serde_json::json!(["pinned"]));
+    assert_eq!(row["catalog_complete"], true);
+    for column in ["current", "permitted"] {
+        assert_eq!(row[column]["project"], selected.project.to_string());
+        let empack_core::identity::PinSelector::ModrinthVersion(version) = &selected.selection
+        else {
+            panic!("expected selected Modrinth version")
+        };
+        assert_eq!(row[column]["selection"], version.as_str());
+    }
+    // Live catalog identities are observations, not hardcoded latest versions.
+    for column in ["compatible", "upstream"] {
+        assert_eq!(row[column]["project"], selected.project.to_string());
+        assert!(!row[column]["selection"].as_str().unwrap().is_empty());
+    }
+    assert_eq!(report["joint"]["state"], "validated");
+    assert_eq!(report["joint"]["declarations_complete"], true);
+    assert_eq!(report["joint"]["candidate_compatibility"], "not-assessed");
+    assert_eq!(author_snapshot(project.dir()), assessment_before);
     let before_preview = snapshot(project.dir(), &[]);
     let before = author_snapshot(project.dir());
     run(
