@@ -163,6 +163,16 @@ and directories. Native batch tests separately inject publication interruption a
 verify finish/restore outcomes. Those controlled faults do not establish actual
 process-termination recovery.
 
+Missing-content checks distinguish unresolved obligations from legitimate reference
+exports. Controlled URL/provider failures and deliberately omitted retained slots
+cannot publish an incomplete candidate. Removing a captured materialized input or
+embedded archive after preparation preserves prior output. Each archive encoder
+also rejects an incomplete stage against a separately declared inventory. Public
+fixtures use cold storage for missing local sources and resume corrupt/missing
+retained inputs; independent readers check the complete successful archive. An
+excluded optional source has no byte obligation, while a selected reference is not
+proof that bundled bytes exist.
+
 Native snapshot fixtures export a literal project with common/client/server layers
 and a default-disabled choice through both delivery policies and ZIP/TAR.GZ/7z.
 Independent readers compare complete membership, content digests and output modes.

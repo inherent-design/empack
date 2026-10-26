@@ -232,9 +232,13 @@ fn selection_can_defer_bytes_but_completed_inventory_cannot() {
     let inputs = vec![common.clone()];
     for target in [
         Recipe::MODRINTH,
+        Recipe::CURSEFORGE,
         Recipe::PRISM_REFERENCES,
         Recipe::PRISM_BUNDLED,
+        Recipe::SERVER_REFERENCES,
         Recipe::SERVER_BUNDLED,
+        Recipe::EMPACK_REFERENCES,
+        Recipe::EMPACK_BUNDLED,
     ] {
         let selected = BuildSelection::select(&inputs, target, &OptionalPolicy::Preserve).unwrap();
         assert_eq!(selected.entries().len(), 1);

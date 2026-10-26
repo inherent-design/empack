@@ -6549,7 +6549,116 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-052.obligation-semantics",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::inventory::selection_can_defer_bytes_but_completed_inventory_cannot",
+            "empack-core::inventory::reference_presence_never_satisfies_full_bytes_and_replaced_content_is_recorded",
+            "empack-core::inventory::provider_references_preserve_unknown_size_and_require_real_byte_evidence"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "All eight native recipe variants reject an unresolved selected obligation when completing inventory",
+            "A valid reference remains distinct from materialized-byte evidence; selected layer replacement may legitimately eliminate a lower-priority obligation"
+          ]
+        },
+        {
+          "id": "UX-052.acquisition-completeness",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::acquisition::tests::download_batch_verifies_every_requested_file_before_artifact_publication",
+            "empack-lib::engine::api::build_input_tests::local_build_inputs_reject_wrong_missing_unrequested_unsafe_and_over_budget_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled URL and provider-origin failures preserve prior output and author documents; acquisition releases its reservations",
+            "Omitting either acquired slot after planning prevents candidate preparation; complete reference output has the literal full index and exact member set",
+            "Missing, wrong, unrequested, unsafe and over-budget local selections cannot replace prior outputs"
+          ]
+        },
+        {
+          "id": "UX-052.captured-source-obligations",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::acquisition::tests::captured_embedded_members_feed_verified_publication_without_distributing_the_source_archive",
+            "empack-lib::engine::build::acquisition::tests::excluded_local_records_do_not_require_missing_or_modified_bytes",
+            "empack-lib::engine::build::acquisition::tests::unresolved_manual_and_archive_sources_remain_explicit_pending_obligations"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Deleting the captured materialized input or embedded source archive after candidate preparation prevents publication and preserves the previous archive",
+            "Missing manual and embedded content remains pending; selecting a missing or invalid local optional file fails while an excluded file creates no byte obligation"
+          ]
+        },
+        {
+          "id": "UX-052.archive-omission",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::every_encoder_rejects_omitted_stage_members_before_replacing_candidate_bytes",
+            "empack-lib::engine::artifacts::tests::all_supported_containers_require_every_expected_file_and_exact_binary_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "ZIP, TAR.GZ and 7z writers refuse either missing stage member against an independently declared inventory before replacing prior candidate bytes",
+            "Verification rejects an omitted expected member, incorrect bytes and exceeded limits; writer/verifier checks alone do not substitute for the independent public archive oracle"
+          ]
+        },
+        {
+          "id": "UX-052.public-missing-input-recovery",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_export_requires_declared_local_bytes_even_for_reference_delivery",
+            "empack-tests::journey_pending::journey_pending_build_reverifies_corrupt_and_missing_retained_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A declared local source missing from a cold host prevents both reference and bundled native export without replacing prior artifacts; restored exact bytes produce the complete independently read inventory",
+            "Corrupt and deleted retained manual content cannot complete a saved build; explicit resupply after restart produces the literal complete mrpack inventory and preserves neighboring project state"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::acquisition/content/archive_source/import"
@@ -6558,7 +6667,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-053",

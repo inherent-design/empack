@@ -274,6 +274,44 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
 }
 
 #[test]
+fn cli_native_export_requires_declared_local_bytes_even_for_reference_delivery() {
+    let (project, _) = fixture();
+    for delivery in ["references", "bundled"] {
+        let host = tempfile::tempdir().unwrap();
+        command(project.dir(), host.path())
+            .args(["--yes", "build", "--delivery", delivery])
+            .assert()
+            .success();
+        let archive =
+            assert_dist_artifact_suffix(project.dir(), &format!("-empack-{delivery}.empack"));
+        inventory(&distribution_inventory(&archive, "zip"));
+        let local = project.dir().join("vendor/extra.txt");
+        fs::remove_file(&local).unwrap();
+        let before = snapshot(project.dir());
+        // A cold host cannot recover missing local input from an earlier cache.
+        let cold = tempfile::tempdir().unwrap();
+        command(project.dir(), cold.path())
+            .args(["--yes", "build", "--delivery", delivery])
+            .assert()
+            .failure()
+            .stderr(contains("vendor/extra.txt"));
+        assert_eq!(snapshot(project.dir()), before);
+        fs::write(local, CONTENT[4].2).unwrap();
+        let mut expected = snapshot(project.dir());
+        command(project.dir(), cold.path())
+            .args(["--yes", "build", "--delivery", delivery])
+            .assert()
+            .success();
+        inventory(&distribution_inventory(&archive, "zip"));
+        expected.insert(
+            archive.strip_prefix(project.dir()).unwrap().into(),
+            fs::read(&archive).unwrap(),
+        );
+        assert_eq!(snapshot(project.dir()), expected);
+    }
+}
+
+#[test]
 fn cli_native_export_requires_pack_identity_and_java_without_replacing_prior_output() {
     let (project, host) = fixture();
     command(project.dir(), host.path())

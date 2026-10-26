@@ -324,12 +324,13 @@ fn reference_evidence_and_layer_precedence_determine_missing_bytes_without_effec
 }
 #[tokio::test]
 async fn download_batch_verifies_every_requested_file_before_artifact_publication() {
-    for fail_second in [true, false] {
+    for fail_at in [Some("first"), Some("second"), None] {
         let root = tempfile::tempdir().unwrap();
         let host = tempfile::tempdir().unwrap();
         write_project(root.path(), &project(true, false));
         fs::create_dir(root.path().join("dist")).unwrap();
         fs::write(root.path().join("dist/result.mrpack"), b"previous artifact").unwrap();
+        let original_author = fs::read(root.path().join("empack.yml")).unwrap();
         let original_lock = fs::read(root.path().join("empack.lock")).unwrap();
         let workspace = capture(root.path(), host.path());
         let mut plan = plan_build_acquisitions(
@@ -343,13 +344,19 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
         let mut server = mockito::Server::new_async().await;
         let first = server
             .mock("GET", "/first")
+            .with_status(if fail_at == Some("first") { 503 } else { 200 })
+            .expect(if fail_at == Some("first") { 3 } else { 1 })
             .with_body("payload")
             .create_async()
             .await;
         let second = server
             .mock("GET", "/second")
-            .with_status(if fail_second { 503 } else { 200 })
-            .expect(if fail_second { 3 } else { 1 })
+            .with_status(if fail_at == Some("second") { 503 } else { 200 })
+            .expect(match fail_at {
+                Some("first") => 0,
+                Some("second") => 3,
+                _ => 1,
+            })
             .with_body("payload")
             .create_async()
             .await;
@@ -403,8 +410,11 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
             fs::read(root.path().join("dist/result.mrpack")).unwrap(),
             b"previous artifact"
         );
-        if fail_second {
-            assert!(matches!(&*outcome, OperationOutcome::Completed(Err(_))));
+        if fail_at.is_some() {
+            let OperationOutcome::Completed(Err(error)) = &*outcome else {
+                panic!("failed required download must not complete acquisition");
+            };
+            assert!(format!("{error:#}").contains("503"), "{error:#}");
             assert_eq!(governor.status().reserved, ResourceRequest::default());
         } else {
             let result = match &*outcome {
@@ -413,6 +423,34 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
             };
             assert!(result.pending.is_empty());
             assert_eq!(result.acquired.locked.len(), 2);
+            // Retained content can be omitted by a caller after acquisition. Each
+            // obligation remains required; the other slot cannot stand in for it.
+            for omitted in ["first", "second"] {
+                let mut incomplete = BuildAcquisitions {
+                    locked: result.acquired.locked.clone(),
+                };
+                let key = LockedFileKey {
+                    dependency: empack_core::model::DependencyKey::parse("assets").unwrap(),
+                    slot: empack_core::model::FileSlot::parse(omitted).unwrap(),
+                };
+                assert!(incomplete.locked.remove(&key).is_some());
+                assert!(
+                    prepare_mrpack_build(
+                        capture(root.path(), host.path()),
+                        path("result.mrpack"),
+                        &incomplete,
+                        SourceEvidencePolicy::Compatibility,
+                        OptionalConversion::RejectMetadataLoss,
+                        &Cancellation::default(),
+                    )
+                    .is_err(),
+                    "omitted {omitted}"
+                );
+                assert_eq!(
+                    fs::read(root.path().join("dist/result.mrpack")).unwrap(),
+                    b"previous artifact"
+                );
+            }
             let prepared = prepare_mrpack_build(
                 workspace,
                 path("result.mrpack"),
@@ -432,16 +470,36 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
             .unwrap();
             let index: serde_json::Value =
                 serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
-            assert_eq!(index["files"].as_array().unwrap().len(), 3);
             assert_eq!(
-                index["files"][0]["downloads"][0],
-                "https://example.com/unrelated-name.jar"
+                archive.len(),
+                1,
+                "no payload is embedded in this reference export"
             );
+            let files: Vec<_> = ["resourcepacks/a.zip", "resourcepacks/b.zip", "resourcepacks/copy.zip"]
+                .into_iter().map(|name| serde_json::json!({
+                    "path":name,"fileSize":7,"downloads":["https://example.com/unrelated-name.jar"],
+                    "env":{"client":"required","server":"unsupported"},
+                    "hashes":{
+                        "sha1":"f07e5a815613c5abeddc4b682247a4c42d8a95df",
+                        "sha512":"70b33ce9c9047e30f917e7ea13e42f7767008c3f4f9c9baf49e4390fc625549e9625eee39b94545074e8a1824cf3f238463b11bc03d97348e0fc2999ca1fff7f"
+                    }
+                })).collect();
             assert_eq!(
-                fs::read(root.path().join("empack.lock")).unwrap(),
-                original_lock
+                index,
+                serde_json::json!({
+                    "formatVersion":1,"game":"minecraft","versionId":"alpha","name":"Test",
+                    "files":files,"dependencies":{"minecraft":"1.20.1","fabric-loader":"0.16.0"}
+                })
             );
         }
+        assert_eq!(
+            fs::read(root.path().join("empack.yml")).unwrap(),
+            original_author
+        );
+        assert_eq!(
+            fs::read(root.path().join("empack.lock")).unwrap(),
+            original_lock
+        );
         first.assert_async().await;
         second.assert_async().await;
     }
@@ -594,6 +652,57 @@ fn captured_embedded_members_feed_verified_publication_without_distributing_the_
     let mut bytes = Vec::new();
     entry.read_to_end(&mut bytes).unwrap();
     assert_eq!(bytes, b"payload");
+    // Both the materialized manual input and the embedded archive remain captured
+    // author sources. Removing either after preparation cannot publish a candidate.
+    for removed in ["pack/resourcepacks/a.zip", "pack/sources/source.zip"] {
+        let workspace = capture(root.path(), host.path());
+        let plan = plan_build_acquisitions(
+            &workspace,
+            &BuildAcquisitions::default(),
+            BuildMaterialization::ReferenceArchive,
+            &cancel,
+        )
+        .unwrap();
+        let acquired = plan
+            .begin()
+            .acquire_embedded(
+                &workspace,
+                crate::engine::artifacts::ArchiveLimits::default(),
+                SourceEvidencePolicy::Compatibility,
+                &cancel,
+            )
+            .unwrap();
+        let prepared = prepare_mrpack_build(
+            workspace,
+            path("result.mrpack"),
+            &acquired.acquired,
+            SourceEvidencePolicy::Compatibility,
+            OptionalConversion::RejectMetadataLoss,
+            &cancel,
+        )
+        .unwrap();
+        let source = root.path().join(removed);
+        let original = fs::read(&source).unwrap();
+        fs::remove_file(&source).unwrap();
+        assert!(
+            prepared
+                .publish(
+                    &Publisher::open(&host.path().join("private")).unwrap(),
+                    &cancel,
+                )
+                .is_err(),
+            "removed {removed}"
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/result.mrpack")).unwrap(),
+            previous
+        );
+        assert!(
+            !source.exists(),
+            "refused publication restored an author input"
+        );
+        fs::write(source, original).unwrap();
+    }
     write_source(b"changed");
     let workspace = capture(root.path(), host.path());
     let plan = plan_build_acquisitions(
