@@ -571,3 +571,90 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
         }
     }
 }
+
+#[test]
+fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without_edits() {
+    let project = TestProject::new();
+    let root = project.dir();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root);
+    // Make policy loss observable: a redundant replacement must not unpin this root.
+    isolated_command(root, host.path())
+        .args(["--yes", "pin", "renderer-alias"])
+        .assert()
+        .success();
+
+    let command = || isolated_command(root, host.path());
+    let args = ["migrate", "--minecraft", "1.21.2", "--loader", "vanilla"];
+    for (extra, diagnostic) in [
+        (
+            vec!["--replace", "missing=modrinth:Project2"],
+            "not an explicit dependency",
+        ),
+        (
+            vec!["--replace", "local=modrinth:Project2"],
+            "only provider-owned roots",
+        ),
+        (
+            vec!["--replace", "renderer-alias=modrinth:Project1"],
+            "existing project",
+        ),
+        (
+            vec!["--replace", "renderer-alias=Project2"],
+            "provider and canonical project ID",
+        ),
+        (
+            vec![
+                "--replace",
+                "renderer-alias=modrinth:Project2",
+                "--replace",
+                "renderer-alias=modrinth:Project3",
+            ],
+            "Duplicate replacement key",
+        ),
+        (
+            vec!["--loader-version", "0.16.14"],
+            "Vanilla has no loader version",
+        ),
+        (vec!["--json"], "--plan"),
+    ] {
+        for mode in ["--dry-run", "--yes"] {
+            let before = files::snapshot(root);
+            command()
+                .args(args)
+                .args(&extra)
+                .arg(mode)
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains(diagnostic));
+            assert_eq!(files::snapshot(root), before, "{extra:?}/{mode}");
+        }
+    }
+    for invalid in ["missing", "stale"] {
+        fixture(root);
+        if invalid == "missing" {
+            fs::remove_file(root.join("empack.lock")).unwrap();
+        } else {
+            fs::write(
+                root.join("empack.yml"),
+                AUTHOR.replace("version: '1'", "version: '2'"),
+            )
+            .unwrap();
+        }
+        let before = files::snapshot(root);
+        for mode in ["--plan", "--dry-run", "--yes"] {
+            let result = command().args(args).arg(mode).output().unwrap();
+            assert!(!result.status.success());
+            let message = String::from_utf8_lossy(&result.stderr);
+            assert!(
+                message.contains(if invalid == "missing" {
+                    "current lock"
+                } else {
+                    "different intent revision"
+                }),
+                "{message}"
+            );
+            assert_eq!(files::snapshot(root), before, "{invalid}/{mode}");
+        }
+    }
+}

@@ -4066,8 +4066,7 @@
             "Captured JSON from plan, dry-run and application agrees for automatic root, exact pin, client-only mod, retained library and local source",
             "Runtime and filename change preserve primary-role placement, comments, bindings and local bytes; incomplete local dependency evidence remains explicit",
             "Client and server native archives have independently expected destinations, hashes, sizes and asset bytes; repeated sync converges"
-          ],
-          "remaining_group_evidence": "Executable migration, live runtime selection, profile drift and additional replacement/refusal cases remain separate; native archive inspection does not establish consumer startup"
+          ]
         },
         {
           "id": "UX-033.retained-library-refusal",
@@ -4086,8 +4085,116 @@
           ],
           "assertions": [
             "Plan, dry-run and application refuse a retained library incompatible with the proposed runtime without modifying project files"
+          ]
+        },
+        {
+          "id": "UX-033.pure-runtime-contracts",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::synchronization::tests::changed_pins_and_runtime_require_resolution_instead_of_relabeling_old_evidence",
+            "empack-lib::engine::build::client::tests::profile_contract_preserves_all_loader_families_and_rejects_runtime_drift"
           ],
-          "remaining_group_evidence": "Executable migration, live runtime selection, profile drift and additional replacement/refusal cases remain separate; native archive inspection does not establish consumer startup"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Changed runtime or pin requires new resolution; prior evidence cannot simply be relabeled",
+            "Prism component interpretation retains all supported loader families and rejects missing, disabled, duplicated or drifting runtime components"
+          ]
+        },
+        {
+          "id": "UX-033.replacement-and-retained-evidence",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::migration::tests::migration_retains_valid_follow_compatible_pin_and_requires_explicit_provider_replacement",
+            "empack-lib::application::engine_host::cli::migration::tests::migration_rejects_stale_lock_and_unknown_runtime_without_changing_documents",
+            "empack-lib::application::engine_host::cli::migration::tests::migration_reselects_incompatible_required_libraries",
+            "empack-lib::application::engine_host::cli::migration::tests::migration_applies_new_exact_required_library_selection",
+            "empack-lib::application::engine_host::cli::migration::tests::migration_refuses_incompatible_library_dropped_from_new_closure",
+            "empack-lib::application::engine_host::cli::migration::tests::migration_refuses_unknown_retained_library_evidence",
+            "empack-lib::application::engine_host::cli::migration::tests::migration_reports_compatible_library_dropped_from_new_closure_as_retained"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Compatible exact selections remain retained; explicit different-project replacement resets selection deliberately",
+            "Migration assesses retained libraries even when the new required closure no longer mentions them; incompatible or unknown evidence refuses publication",
+            "New exact requirements and runtime-incompatible required libraries resolve coherently without erasing retained content"
+          ]
+        },
+        {
+          "id": "UX-033.publication-binding",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::recorded_sync_tests::migration_binds_original_documents_before_preparation_and_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Original document capture binds preparation and publication; stale documents or unrelated author edits cannot be smuggled into runtime migration"
+          ]
+        },
+        {
+          "id": "UX-033.public-refusals",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_selection::journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without_edits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual CLI refuses malformed, duplicate, missing-root, local-root and redundant canonical provider replacements before acquisition; a redundant request cannot reset an exact pin",
+            "Invalid loader arguments, JSON without plan, missing locks and stale evidence preserve every author file under plan, preview and approved invocation"
+          ]
+        },
+        {
+          "id": "UX-033.live-candidate-and-consumers",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real Modrinth and Minecraft/Fabric routes drive a populated 1.21.1 to 1.21.2 migration; plan JSON, dry-run text and application agree on exact pins and changed selections",
+            "Stable placements, local configuration, profiles, comments, prior artifacts and unselected content survive; complete client/server native inventories and byte digests match the applied candidate",
+            "A stale authored Prism component profile refuses delivery without changing author files or old outputs; deliberately removing it produces current components and the expected files",
+            "A deliberate provider replacement resets only the selected pin, preserves all unselected records and file bytes, rebuilds the expected native outputs and converges across two syncs; no startup or gameplay claim"
+          ]
         }
       ],
       "owner_now": [
@@ -4100,7 +4207,7 @@
         "portable planners and engine; CLI request mapping; native effects",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-034",

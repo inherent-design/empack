@@ -242,6 +242,19 @@ that does not establish compatibility of the retained inventory. The live pinned
 journey checks a successful populated strict assessment through actual Modrinth
 routes. Live observations do not replace the controlled failure and policy cases.
 
+Runtime migration has a populated live executable journey alongside frozen host
+cases. Real catalog selection changes Minecraft 1.21.1 to 1.21.2 while retaining an
+exact pin, custom placements and local configuration. Plan JSON is compared with
+preview/application text and the applied inventory; the public CLI intentionally
+requires `--plan` for JSON. Client/server native outputs and regenerated Prism
+components are inspected independently. A stale authored Prism profile must refuse
+output while retaining author files and prior artifacts. Deliberate provider
+replacement resets only the selected root; a redundant canonical replacement must
+not erase an exact pin, even when authoring uses a selector. Offline executable
+refusals and native publication tests cover invalid arguments, stale captures and
+unrelated edits. These are catalog, content and configuration checks, not launcher
+startup or gameplay evidence.
+
 Independent-batch fixtures distinguish default all-or-none execution from explicit
 partial completion. The public CLI test verifies named ready/blocked groups, nonzero
 partial results, preserved files, a real changed-content update and truthful retry

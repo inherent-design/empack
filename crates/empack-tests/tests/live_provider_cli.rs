@@ -810,3 +810,12 @@ fn live_cli_direct_url_retains_observed_content() {
     );
     adopt_existing_live_content(&bytes, url);
 }
+
+#[path = "live_provider_cli/migration.rs"]
+mod migration;
+
+#[test]
+#[ignore = "requires live Modrinth and official runtime catalogs"]
+fn live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs() {
+    migration::journey();
+}
