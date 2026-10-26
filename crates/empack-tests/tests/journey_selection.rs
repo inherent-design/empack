@@ -494,10 +494,14 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                         Err(error) => panic!("{error}"),
                     }
                 };
+                // Accepted sockets inherit nonblocking mode on some Unix hosts.
+                // Header reads must wait for the client, not race its first write.
+                connection.set_nonblocking(false).unwrap();
                 connection.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
                 connection.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
                 let mut request = Vec::new();
                 while !request.ends_with(b"\r\n\r\n") {
+                    assert!(Instant::now() < deadline, "proxy headers exceeded deadline");
                     assert!(request.len() < 8192, "oversized proxy request");
                     let mut byte = [0];
                     connection.read_exact(&mut byte).unwrap();
