@@ -418,6 +418,134 @@ fn cli_profile_selection_refusals_preserve_existing_artifacts() {
 }
 
 #[test]
+fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_inputs() {
+    let fixture = Fixture::new(false);
+    let root = fixture.project.dir();
+    let author = AUTHOR
+        .replace("default: [curated]", "default: [exchange, curated]")
+        .replace(
+            "    curated:",
+            "    exchange: {target: modrinth, format: zip}\n    curated:",
+        );
+    fs::write(root.join("empack.yml"), &author).unwrap();
+    fixture.command().args(["--yes", "sync"]).assert().success();
+    fs::create_dir_all(root.join("templates/client")).unwrap();
+    let template = root.join("templates/client/notice.txt.template");
+    fs::write(&template, b"{{NAME}} / {{VERSION}} / first\n").unwrap();
+    fs::create_dir_all(root.join("dist/obsolete")).unwrap();
+    fs::write(root.join("dist/obsolete/old.zip"), b"obsolete artifact").unwrap();
+    fs::write(root.join("author-notes.txt"), b"outside managed outputs").unwrap();
+    let exchange = "dist/Profile fixture-1.mrpack";
+
+    let build = |configuration: &[u8], notice: &[u8], clean: bool| {
+        let mut before = snapshot(root);
+        let mut command = fixture.command();
+        command.args(["--yes", "build"]);
+        if clean {
+            command.arg("--clean");
+            before.retain(|path, _| !path.starts_with("dist"));
+        }
+        command.assert().success();
+        let mut client = tar_gz_members(&root.join(SUBSCRIBED));
+        assert_eq!(client.remove("notice.txt").unwrap(), notice);
+        assert_inventory(
+            &client,
+            true,
+            true,
+            &[(CONTENT[0].0, configuration), CONTENT[1]],
+        );
+        let platform = zip_members(&root.join(exchange));
+        assert_eq!(
+            platform.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "modrinth.index.json",
+                "overrides/config/settings.txt",
+                "overrides/readme.txt",
+            ])
+        );
+        assert_eq!(platform["overrides/config/settings.txt"], configuration);
+        assert_eq!(platform["overrides/readme.txt"], CONTENT[1].1);
+        let manifest: Value = serde_json::from_slice(&platform["modrinth.index.json"]).unwrap();
+        assert_eq!(manifest["formatVersion"], 1);
+        assert_eq!(manifest["game"], "minecraft");
+        assert_eq!(manifest["name"], "Profile fixture");
+        assert_eq!(manifest["versionId"], "1");
+        assert_eq!(manifest["dependencies"], json!({"minecraft":"1.21.1"}));
+        assert_eq!(manifest["files"], json!([]));
+        for output in [SUBSCRIBED, exchange] {
+            before.insert(output.into(), fs::read(root.join(output)).unwrap());
+        }
+        assert_eq!(
+            snapshot(root),
+            before,
+            "build changed files outside its selected output/cleanup set"
+        );
+        (client, platform)
+    };
+
+    let (initial_client, _) = build(CONTENT[0].1, b"Profile fixture / 1 / first\n", false);
+    let before = snapshot(root);
+    fixture
+        .command()
+        .args(["--dry-run", "build", "--clean"])
+        .assert()
+        .success();
+    assert_eq!(
+        snapshot(root),
+        before,
+        "cleanup preview changed prior output"
+    );
+
+    let changed = b"changed configuration, same pack version\n";
+    fs::write(root.join("pack/config/settings.txt"), changed).unwrap();
+    fs::write(&template, b"{{missing_required_value}}").unwrap();
+    let refused = snapshot(root);
+    for clean in [false, true] {
+        let mut command = fixture.command();
+        command.args(["--yes", "build"]);
+        if clean {
+            command.arg("--clean");
+        }
+        command
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("missing_required_value"));
+        assert_eq!(
+            snapshot(root),
+            refused,
+            "a later recipe failure replaced an earlier output or cleaned prior files"
+        );
+    }
+
+    fs::write(&template, b"{{NAME}} / {{VERSION}} / revised\n").unwrap();
+    let (revised_client, revised_platform) =
+        build(changed, b"Profile fixture / 1 / revised\n", false);
+    let descriptor = ".minecraft/.empack-consumer/release.json";
+    assert_ne!(
+        initial_client[descriptor], revised_client[descriptor],
+        "same-version content edit reused a stale release"
+    );
+    assert!(root.join("dist/prior.zip").is_file());
+    assert!(root.join("dist/obsolete/old.zip").is_file());
+
+    // Template-only edits must also be fresh; they do not change game content.
+    fs::write(&template, b"{{NAME}} / {{VERSION}} / final\n").unwrap();
+    let (final_client, final_platform) = build(changed, b"Profile fixture / 1 / final\n", true);
+    assert_eq!(final_client, revised_client);
+    assert_eq!(final_platform, revised_platform);
+    assert!(!root.join("dist/prior.zip").exists());
+    assert!(!root.join("dist/obsolete/old.zip").exists());
+    assert!(
+        root.join("dist/obsolete").is_dir(),
+        "cleanup owns files, not directories"
+    );
+    assert_eq!(
+        fs::read(root.join("empack.yml")).unwrap(),
+        author.as_bytes()
+    );
+}
+
+#[test]
 fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
     for missing in [false, true] {
         let fixture = Fixture::new(false);

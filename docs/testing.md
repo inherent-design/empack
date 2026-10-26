@@ -155,6 +155,14 @@ remain inspectable without effects and cannot authorize a build. The external TA
 reader checks bounded members and consumes the gzip trailer; its dependencies belong
 to the test harness, not the distributed product.
 
+The multi-output fixture changes configuration and template bytes without changing
+its version label. Independent archive inventories must show those fresh bytes.
+A later template failure preserves both prior archives, including with `--clean`;
+a successful cleanup removes obsolete output files while retaining author inputs
+and directories. Native batch tests separately inject publication interruption and
+verify finish/restore outcomes. Those controlled faults do not establish actual
+process-termination recovery.
+
 Native snapshot fixtures export a literal project with common/client/server layers
 and a default-disabled choice through both delivery policies and ZIP/TAR.GZ/7z.
 Independent readers compare complete membership, content digests and output modes.

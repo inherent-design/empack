@@ -6453,7 +6453,72 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-051.public-freshness-and-cleanup",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal populated project builds Modrinth and subscribed Prism outputs; independent ZIP/TAR readers compare complete member sets, exact content, descriptor identity and template output",
+            "A later recipe template error preserves every prior artifact and author file with or without cleanup; cleanup preview has no file effects",
+            "Configuration and template edits produce fresh content without changing the pack version; successful cleanup removes obsolete files only within the output directory and preserves author inputs and directories"
+          ]
+        },
+        {
+          "id": "UX-051.batch-preparation-and-recovery",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::batch::tests::later_requested_failure_or_stale_input_retains_every_prior_artifact",
+            "empack-lib::application::engine_host::build::tests::native_clean_build_keeps_all_prior_artifacts_when_one_recipe_fails",
+            "empack-lib::engine::build::batch::tests::interrupted_clean_build_finishes_or_restores_the_same_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A later materialized-content obligation cannot publish an earlier prepared reference artifact; changed captured inputs invalidate the whole batch and preserve both prior outputs",
+            "Injected interruption during clean publication supports finishing the same batch or restoring both prior archives and obsolete files; this is controlled fault injection, not process-termination evidence"
+          ]
+        },
+        {
+          "id": "UX-051.native-publication-observations",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::verification::tests::artifact_only_publication_binds_read_only_sources_without_copying_or_replacing_them",
+            "empack-lib::engine::publication::tests::separate_source_and_artifact_budgets_survive_interrupted_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native artifact publication revalidates captured read-only author sources without copying or replacing them",
+            "Separate source and artifact byte allowances remain enforced through interrupted publication and recovery; changed source bytes cannot authorize stale output"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::native/snapshot/staging/verification/publication"
@@ -6462,7 +6527,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-052",
