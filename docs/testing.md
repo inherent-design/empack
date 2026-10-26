@@ -104,7 +104,8 @@ pending families now exercise fresh terminal approval: build, import publication
 instance continuation and synchronization acquisition. Decline preserves author/player
 files, prior artifacts, supplied downloads, cache and saved work after the executable
 exits. The shared external harness owns PTY/ConPTY handling and offline command setup;
-no terminal controls are added to the product. State snapshots assert preservation without interpreting
+no terminal controls are added to the product. The terminal helper also verifies
+successful process exit: expected prompt text and EOF cannot hide a later failure. State snapshots assert preservation without interpreting
 private continuation records. Synchronization also checks partial retention across
 cache eviction. Import resumes a retained archive after deleting the original and
 keeps incomplete requirement discovery explicit. Its unsupported-transport fixture

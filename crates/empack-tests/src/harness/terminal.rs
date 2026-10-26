@@ -114,8 +114,61 @@ pub fn decline(command: std::process::Command, prompt: &str) {
     terminal.send_line("n").unwrap();
     terminal.expect(Regex("(?i)not applied")).unwrap();
     #[cfg(not(windows))]
-    terminal.expect(expectrl::Eof).unwrap();
+    {
+        use expectrl::process::{Healthcheck, unix::WaitStatus};
+        terminal.expect(expectrl::Eof).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            match terminal.get_process().get_status().unwrap() {
+                WaitStatus::Exited(_, 0) => break,
+                WaitStatus::StillAlive => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "terminal child did not exit"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                status => panic!("terminal child did not exit successfully: {status:?}"),
+            }
+        }
+    }
     // ConPTY's output pipe can outlive the child. Wait on its process handle.
     #[cfg(windows)]
     assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn terminal_decline_waits_for_exit_after_eof_and_rejects_nonzero_status() {
+    for status in [0, 7] {
+        let root = tempfile::tempdir().unwrap();
+        let marker = root.path().join("finished");
+        let outcome = std::panic::catch_unwind(|| {
+            let mut command = std::process::Command::new("/bin/sh");
+            let script = r#"printf 'Apply fixture plan? '
+read answer
+printf 'not applied\n'
+exec 0<&- 1>&- 2>&-
+/bin/sleep 0.1
+printf finished > "$1"
+exit "$2"
+"#;
+            command
+                .env_clear()
+                .args(["-c", script, "fixture"])
+                .arg(&marker)
+                .arg(status.to_string());
+            decline(command, "Apply fixture plan");
+        });
+        assert_eq!(
+            std::fs::read(&marker).unwrap(),
+            b"finished",
+            "EOF must not let assertions race the still-running child"
+        );
+        assert_eq!(
+            outcome.is_ok(),
+            status == 0,
+            "the terminal fixture must establish successful process exit"
+        );
+    }
 }

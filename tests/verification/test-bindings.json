@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::harness::terminal::terminal_decline_waits_for_exit_after_eof_and_rejects_nonzero_status", "binary": "empack-tests", "binary_name": "empack_tests", "boundary": "N", "api": "CLI", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_pending::journey_pending_sync_resume_requires_fresh_approval", "binary": "empack-tests::journey_pending", "binary_name": "journey_pending", "boundary": "I", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_pending_import::journey_pending_import_resume_requires_fresh_approval", "binary": "empack-tests::journey_pending_import", "binary_name": "journey_pending_import", "boundary": "I", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval", "binary": "empack-tests::journey_pending_instance", "binary_name": "journey_pending_instance", "boundary": "I", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
