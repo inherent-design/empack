@@ -217,7 +217,7 @@ def case_results(document, classification, evidence, revision, *, package_receip
             for identity in case["test_ids"]:
                 binding = bindings.get(identity)
                 if binding is None or not (binding["boundary"] == case["boundary"]
-                        or case["boundary"] == "P" and binding["boundary"] == "X"):
+                        or case["boundary"] == "P" and binding["boundary"] in {"X", "I"}):
                     raise ValueError(f"Acceptance case lacks its required test boundary: {case['id']} / {identity}")
                 if identity.startswith("doctest::") and case["doctest_mode"] != binding["mode"]:
                     raise ValueError(f"Case requires a different rustdoc execution mode: {case['id']}")

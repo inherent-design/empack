@@ -15,6 +15,8 @@ use files::snapshot;
 
 #[path = "support/pending.rs"]
 mod public_pending;
+#[path = "support/retained.rs"]
+mod retained;
 
 fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
     public_pending::command(project.dir(), project.dir(), state)
@@ -517,4 +519,189 @@ fn journey_pending_sync_resume_requires_fresh_approval() {
         "(?i)apply this remote content acquisition plan",
     );
     assert_eq!(pending(&project, &state, "sync"), operation);
+}
+
+#[test]
+fn journey_pending_sync_reverifies_corrupt_and_missing_retained_bytes() {
+    retained_payload_recovery("sync");
+}
+
+#[test]
+fn journey_pending_build_reverifies_corrupt_and_missing_retained_bytes() {
+    retained_payload_recovery("build");
+}
+
+fn retained_payload_recovery(kind: &str) {
+    let project = empack_tests::fixtures::restricted::pair("pending-retained-fault");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    // A different project shares this host store; its saved work must survive
+    // corruption, re-suspension and successful completion of the selected project.
+    let neighbor = fixture("pending-neighbor");
+    command(&neighbor, &state)
+        .args(["build", "modrinth"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    let neighbor_operation = pending(&neighbor, &state, "build");
+    let neighbor_files = snapshot(neighbor.dir());
+    let neighbor_state = snapshot(&state);
+    fs::create_dir(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
+    let original = snapshot(project.dir());
+    let args = match kind {
+        "sync" => ["sync", "--materialize"],
+        "build" => ["build", "modrinth"],
+        _ => unreachable!(),
+    };
+    command(&project, &state)
+        .args(args)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    let first_path = host.path().join("first renamed.bin");
+    let second_path = host.path().join("second renamed.bin");
+    fs::write(&first_path, b"first").unwrap();
+    fs::write(&second_path, b"second").unwrap();
+    let operation = pending(&project, &state, kind);
+    command(&project, &state)
+        .args([
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &format!(
+                "{}={}",
+                sync_input(&operation, "123")["key"].as_str().unwrap(),
+                first_path.display()
+            ),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    fs::remove_file(&first_path).unwrap();
+    command(&project, &state)
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    let cache = state.with_extension("cache");
+    assert!(!cache.exists() || snapshot(&cache).values().all(|b| b != b"first"));
+    let partial = pending(&project, &state, kind);
+    let backing = retained::backing(&state, b"first");
+    let association = format!(
+        "{}={}",
+        sync_input(&partial, "124")["key"].as_str().unwrap(),
+        second_path.display()
+    );
+    fs::write(&backing, b"WRONG").unwrap();
+    let corrupted = snapshot(&state);
+    command(&project, &state)
+        .args([
+            "pending",
+            "resume",
+            partial["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("digest mismatch"));
+    assert_eq!(snapshot(&state), corrupted);
+    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(pending(&project, &state, kind), partial);
+    assert_eq!(pending(&neighbor, &state, "build"), neighbor_operation);
+    assert_eq!(snapshot(neighbor.dir()), neighbor_files);
+    for (path, bytes) in &neighbor_state {
+        assert_eq!(&fs::read(state.join(path)).unwrap(), bytes);
+    }
+
+    // Missing backing is a fresh obligation, never evidence that it was verified.
+    // The continuation may legitimately be replaced while retaining the second input.
+    fs::remove_file(&backing).unwrap();
+    command(&project, &state)
+        .args([
+            "pending",
+            "resume",
+            partial["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    assert_eq!(snapshot(project.dir()), original);
+    let missing = pending(&project, &state, kind);
+    assert_eq!(
+        sync_input(&missing, "123")["verification"],
+        "not supplied; verification required"
+    );
+    assert_eq!(
+        sync_input(&missing, "124")["verification"],
+        "retained; verification required"
+    );
+    fs::remove_file(&second_path).unwrap();
+    command(&project, &state)
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    fs::write(&first_path, b"first").unwrap();
+    command(&project, &state)
+        .args([
+            "pending",
+            "resume",
+            missing["id"].as_str().unwrap(),
+            "--file",
+            &format!(
+                "{}={}",
+                sync_input(&missing, "123")["key"].as_str().unwrap(),
+                first_path.display()
+            ),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        report(&project, &state, &["pending", "list", "--json"])["operations"],
+        json!([])
+    );
+    if kind == "sync" {
+        assert_eq!(
+            snapshot(&project.dir().join("pack")),
+            std::collections::BTreeMap::from([
+                ("mods/one.jar".into(), b"first".to_vec()),
+                ("mods/two.jar".into(), b"second".to_vec()),
+            ])
+        );
+    } else {
+        let members = empack_tests::harness::archive::zip_members(&assert_dist_artifact_suffix(
+            project.dir(),
+            ".mrpack",
+        ));
+        assert_eq!(
+            members.keys().map(String::as_str).collect::<Vec<_>>(),
+            [
+                "modrinth.index.json",
+                "overrides/mods/one.jar",
+                "overrides/mods/two.jar"
+            ]
+        );
+        assert_eq!(members["overrides/mods/one.jar"], b"first");
+        assert_eq!(members["overrides/mods/two.jar"], b"second");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&members["modrinth.index.json"]).unwrap(),
+            json!({
+                "formatVersion":1,"game":"minecraft","versionId":"1.0.0","name":"pending-retained-fault",
+                "files":[],"dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.0"}
+            })
+        );
+    }
+    for (path, bytes) in original {
+        assert_eq!(fs::read(project.dir().join(path)).unwrap(), bytes);
+    }
+    assert_eq!(fs::read(&first_path).unwrap(), b"first");
+    assert!(!second_path.exists());
+    assert_eq!(pending(&neighbor, &state, "build"), neighbor_operation);
+    assert_eq!(snapshot(neighbor.dir()), neighbor_files);
+    for (path, bytes) in neighbor_state {
+        assert_eq!(fs::read(state.join(path)).unwrap(), bytes);
+    }
 }

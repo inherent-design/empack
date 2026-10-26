@@ -52,6 +52,13 @@
       ]
     },
     {
+      "id": "python::test_acceptance_results.AcceptanceResults.test_packaged_interactive_cases_require_admitted_archive_evidence",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
       "id": "python::test_acceptance_results.AcceptanceResults.test_partial_or_empty_decomposition_cannot_qualify_a_requirement",
       "boundary": "U",
       "requirements": [

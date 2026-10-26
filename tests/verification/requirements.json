@@ -4448,8 +4448,7 @@
             "Association key comes from public JSON, not private state",
             "Equal-length wrong bytes, unknown keys and duplicate associations are rejected without changing saved work",
             "Correct renamed bytes are retained in the independently inspected artifact"
-          ],
-          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+          ]
         },
         {
           "id": "UX-035.sync-manual-association",
@@ -4469,8 +4468,7 @@
           "assertions": [
             "Association keys come from public exact-provider selections; equal-length wrong bytes leave project and saved operation unchanged",
             "Correct renamed inputs materialize the independent complete two-file inventory"
-          ],
-          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+          ]
         },
         {
           "id": "UX-035.import-manual-association",
@@ -4490,8 +4488,7 @@
           "assertions": [
             "Exact association selector comes from the initial public diagnostic, not private continuation storage",
             "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory"
-          ],
-          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+          ]
         },
         {
           "id": "UX-035.instance-manual-association",
@@ -4511,8 +4508,7 @@
           "assertions": [
             "Public displayed keys authorize association; same-length wrong bytes, unknown keys and duplicate associations produce specific diagnostics without modifying the instance or saved operation",
             "Correct renamed bytes and retained input produce the independently expected complete game-directory inventory"
-          ],
-          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+          ]
         },
         {
           "id": "UX-035.provider-role-ambiguity",
@@ -4532,8 +4528,7 @@
           "assertions": [
             "Two provider selections with the same filename require exact selectors; ambiguous and foreign aliases are refused with an explicit diagnostic",
             "Equal-length wrong or other-role bytes fail the original selected digest; renamed verified files retain distinct per-key bytes and original provider evidence"
-          ],
-          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+          ]
         },
         {
           "id": "UX-035.manual-input-fresh-approval",
@@ -4556,8 +4551,67 @@
           "assertions": [
             "A previous approved save does not authorize resumed work with manually supplied files",
             "Declining the actual build, sync acquisition, import or instance-continuation prompt preserves author and player files, prior artifacts, saved work and supplied downloads after process exit"
+          ]
+        },
+        {
+          "id": "UX-035.packaged-manual-associations",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes",
+            "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector",
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
           ],
-          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "assertions": [
+            "Repeat the public manual-input association journeys",
+            "Execute the extracted final binary on each native target; archive admission binds its digest and version without discovery fallback",
+            "Wrong bytes or declined approval preserve author work, saved obligations and prior artifacts; only verified approved input permits completion"
+          ]
+        },
+        {
+          "id": "UX-035.packaged-fresh-approval",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_pty_pending_resume_requires_fresh_approval",
+            "empack-tests::journey_pending::journey_pending_sync_resume_requires_fresh_approval",
+            "empack-tests::journey_pending_import::journey_pending_import_resume_requires_fresh_approval",
+            "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "assertions": [
+            "Repeat fresh terminal approval for build, sync, import and instance continuation",
+            "Execute the extracted final binary on each native target; archive admission binds its digest and version without discovery fallback",
+            "Wrong bytes or declined approval preserve author work, saved obligations and prior artifacts; only verified approved input permits completion"
+          ]
         }
       ],
       "owner_now": [
@@ -4570,7 +4624,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-036",
@@ -4614,7 +4668,7 @@
             "Each public action starts a fresh process",
             "Public next command completes a suspended build; changed author text prevents stale resume"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.build-fresh-approval",
@@ -4635,7 +4689,7 @@
             "Resume with valid bytes requests fresh terminal approval",
             "Declining preserves the author workspace, pending record and supplied file"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.sync-partial-restart",
@@ -4658,7 +4712,7 @@
             "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
             "Repeated synchronization converges; changed author bytes prevent stale resume"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.import-retained-archive-restart",
@@ -4680,7 +4734,7 @@
             "After the original archive is deleted, a fresh process resumes using retained archive bytes and the public next command",
             "Explicit local-source persistence, two convergent synchronizations and exact export inventory preserve the imported file and overrides; a changed destination refuses resume"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.instance-partial-restart",
@@ -4702,7 +4756,7 @@
             "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed, ordinary cache is evicted and retained cleanup preserves the pending owner",
             "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.sync-fresh-approval",
@@ -4723,7 +4777,7 @@
             "Synchronization requests fresh acquisition approval before using the two exact public manual-input keys",
             "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.import-fresh-approval",
@@ -4744,7 +4798,7 @@
             "Import requests fresh publication approval from its retained archive after the original is deleted",
             "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         },
         {
           "id": "UX-036.instance-fresh-approval",
@@ -4765,7 +4819,101 @@
             "Instance continuation requests fresh approval with one retained input and a public association for the remaining input after the original descriptor is deleted",
             "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
           ],
-          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+        },
+        {
+          "id": "UX-036.build-retained-content-faults",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_reverifies_corrupt_and_missing_retained_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native fault placement targets one known retained backing; every resume uses public operation IDs and exact input keys in a fresh executable",
+            "Corrupt retained bytes fail integrity verification without changing author/instance files or the saved state",
+            "Missing retained input becomes a new obligation without partial publication; another valid input remains retained for later completion",
+            "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data",
+            "A different project sharing the host store retains its saved record and author files throughout failure and recovery"
+          ],
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+        },
+        {
+          "id": "UX-036.sync-retained-content-faults",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_reverifies_corrupt_and_missing_retained_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native fault placement targets one known retained backing; every resume uses public operation IDs and exact input keys in a fresh executable",
+            "Corrupt retained bytes fail integrity verification without changing author/instance files or the saved state",
+            "Missing retained input becomes a new obligation without partial publication; another valid input remains retained for later completion",
+            "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data",
+            "A different project sharing the host store retains its saved record and author files throughout failure and recovery"
+          ],
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+        },
+        {
+          "id": "UX-036.instance-retained-content-faults",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native fault placement targets one known retained backing; every resume uses public operation IDs and exact input keys in a fresh executable",
+            "Corrupt retained bytes fail integrity verification without changing author/instance files or the saved state",
+            "Missing retained input becomes a new obligation without partial publication; another valid input remains retained for later completion",
+            "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data"
+          ],
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+        },
+        {
+          "id": "UX-036.import-retained-content-faults",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_rejects_corrupt_and_missing_retained_archive"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native fault placement targets one known retained backing; every resume uses public operation IDs and exact input keys in a fresh executable",
+            "Corrupt retained bytes fail integrity verification without changing author/instance files or the saved state",
+            "A missing archive refuses restoration until its exact captured backing is restored",
+            "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data"
+          ],
+          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
         }
       ],
       "owner_now": [

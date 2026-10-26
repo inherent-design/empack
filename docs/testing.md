@@ -115,7 +115,13 @@ through a partial resume, remove the original download and descriptor, evict ord
 cache and exercise retained cleanup, then complete from public keys through both
 public and legacy continuation commands. They compare the complete game inventory and preserve player notes. A separate real installation
 stales the saved operation; both discard interfaces preserve that installation and
-remove only the selected record. Corrupt or changed retained-byte variants remain separate obligations. A shared fault fixture corrupts actual saved records from
+remove only the selected record. Retained-content fault journeys locate a known native
+backing by its fixture bytes, without decoding a private record. Corruption fails
+verification; missing build, sync or instance content becomes a fresh obligation
+without partial publication. Missing import-archive content prevents restoration.
+Recovery compares the complete output inventory, and build/sync faults preserve a
+second project's saved work in the same host store. Imported manual-payload faults
+remain distinct from archive faults. A shared record fault fixture corrupts actual saved records from
 all four families without interpreting their private payloads. Malformed JSON and
 unsupported schemas remain visible as unavailable; text and JSON inspection preserve
 storage, resume refuses them, and explicit discard removes only the selected record.
@@ -123,7 +129,10 @@ Pure selector tests cover ambiguous prefixes separately from native stale-cleanu
 ownership. A controlled provider-import fixture gives identically named files distinct
 bytes and original digests: exact role selectors are required, other-role bytes fail
 verification, and successful associations retain per-role bytes and source evidence.
-This host fixture does not substitute for live-provider or final-package execution. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
+This host fixture does not substitute for live-provider or final-package execution.
+Manual-association and fresh-approval journeys have explicit final-package cases on
+all five release targets. Passing them with a development executable leaves those
+package obligations unexecuted. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
 regression corpus.
 
 Download assistance separates pure provider-page interpretation, native file scans,

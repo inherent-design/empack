@@ -12,6 +12,8 @@ mod approval;
 mod files;
 #[path = "support/pending.rs"]
 mod public_pending;
+#[path = "support/retained.rs"]
+mod retained;
 use files::snapshot;
 
 const ONE: &[u8] = b"first";
@@ -384,4 +386,108 @@ fn journey_pending_instance_resume_requires_fresh_approval() {
         fs::read(fixture.host.path().join("first renamed.bin")).unwrap(),
         ONE
     );
+}
+
+#[test]
+fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
+    let fixture = Fixture::new();
+    fixture.suspend(true);
+    fs::remove_file(fixture.host.path().join("first renamed.bin")).unwrap();
+    fs::remove_file(&fixture.release).unwrap();
+    fixture
+        .command()
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    let original = snapshot(fixture.project.dir());
+    let operation = fixture.pending();
+    let backing = retained::backing(&fixture.state, ONE);
+    let second = fixture.host.path().join("second renamed.bin");
+    fs::write(&second, TWO).unwrap();
+    let row = operation["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["needed"] == true)
+        .unwrap();
+    let association = format!("{}={}", row["key"].as_str().unwrap(), second.display());
+    fs::write(&backing, b"WRONG").unwrap();
+    let corrupted = snapshot(&fixture.state);
+    fixture
+        .command()
+        .args([
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("Content differs from the accepted observation"));
+    assert_eq!(snapshot(&fixture.state), corrupted);
+    assert_eq!(snapshot(fixture.project.dir()), original);
+    assert_eq!(fixture.pending(), operation);
+    fs::remove_file(&backing).unwrap();
+    fixture
+        .command()
+        .args([
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("exact manual inputs remain pending"));
+    assert_eq!(snapshot(fixture.project.dir()), original);
+    let missing = fixture.pending();
+    let rows = missing["inputs"].as_array().unwrap();
+    let first_row = rows.iter().find(|r| r["filename"] == "first.jar").unwrap();
+    assert_eq!(first_row["needed"], true);
+    let second_row = rows.iter().find(|r| r["filename"] == "second.jar").unwrap();
+    assert_eq!(
+        second_row["verification"],
+        "retained; verification required"
+    );
+    assert_eq!(second_row["needed"], false);
+    fs::remove_file(&second).unwrap();
+    fixture
+        .command()
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    let first = fixture.host.path().join("replacement first.bin");
+    fs::write(&first, ONE).unwrap();
+    fixture
+        .command()
+        .args([
+            "pending",
+            "resume",
+            missing["id"].as_str().unwrap(),
+            "--file",
+            &format!("{}={}", first_row["key"].as_str().unwrap(), first.display()),
+        ])
+        .assert()
+        .success()
+        .stdout(contains(hash(&fixture.payload)));
+    assert_eq!(fixture.list()["operations"], json!([]));
+    assert_eq!(
+        snapshot(&fixture.target.join("game")),
+        BTreeMap::from([
+            (
+                PathBuf::from(".empack-layout"),
+                b"empack-game-layout-v1\n".to_vec()
+            ),
+            (PathBuf::from("mods/first.jar"), ONE.to_vec()),
+            (PathBuf::from("mods/second.jar"), TWO.to_vec()),
+        ])
+    );
+    for (path, bytes) in original {
+        assert_eq!(fs::read(fixture.project.dir().join(path)).unwrap(), bytes);
+    }
+    assert_eq!(fs::read(&first).unwrap(), ONE);
+    assert!(!second.exists());
+    assert!(!fixture.release.exists());
 }

@@ -16,6 +16,8 @@ mod approval;
 mod files;
 #[path = "support/pending.rs"]
 mod public_pending;
+#[path = "support/retained.rs"]
+mod retained;
 use files::snapshot;
 
 struct ImportFixture {
@@ -174,25 +176,7 @@ fn journey_pending_import_replays_retained_archive_using_public_selector() {
         .args(["build", "modrinth"])
         .assert()
         .success();
-    let members = zip_members(&assert_dist_artifact_suffix(&fixture.target, ".mrpack"));
-    assert_eq!(
-        members.keys().map(String::as_str).collect::<Vec<_>>(),
-        vec![
-            "modrinth.index.json",
-            "overrides/config/settings.toml",
-            "overrides/resourcepacks/declared.zip",
-        ]
-    );
-    assert_eq!(
-        members["overrides/config/settings.toml"],
-        b"enabled = true\n"
-    );
-    assert_eq!(members["overrides/resourcepacks/declared.zip"], b"payload");
-    let index: Value = serde_json::from_slice(&members["modrinth.index.json"]).unwrap();
-    assert_eq!(index["name"], "pending-import");
-    assert_eq!(index["versionId"], "1.0.0");
-    assert_eq!(index["dependencies"], json!({"minecraft":"1.21.1"}));
-    assert_eq!(index["files"], json!([]));
+    assert_imported_archive(&fixture);
 }
 
 #[test]
@@ -271,4 +255,104 @@ fn journey_pending_import_resume_requires_fresh_approval() {
         "(?i)apply this import plan",
     );
     assert_eq!(fixture.pending(), operation);
+}
+
+#[test]
+fn journey_pending_import_rejects_corrupt_and_missing_retained_archive() {
+    let fixture = ImportFixture::new();
+    let archive = fs::read(&fixture.archive).unwrap();
+    let selector = fixture.suspend();
+    fs::remove_file(&fixture.archive).unwrap();
+    fixture
+        .command()
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    let original = snapshot(fixture.project.dir());
+    let operation = fixture.pending();
+    let backing = retained::backing(&fixture.state, &archive);
+    let supplied = fixture._host.path().join("renamed download.bin");
+    fs::write(&supplied, b"payload").unwrap();
+    let association = format!("{selector}={}", supplied.display());
+    for missing in [false, true] {
+        if missing {
+            fs::remove_file(&backing).unwrap();
+        } else {
+            let mut changed = archive.clone();
+            changed[0] ^= 1;
+            fs::write(&backing, changed).unwrap();
+        }
+        let retained = snapshot(&fixture.state);
+        fixture
+            .command()
+            .args([
+                "pending",
+                "resume",
+                operation["id"].as_str().unwrap(),
+                "--file",
+                &association,
+                "--import-local-files",
+            ])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains(if missing {
+                "Saved import archive is missing"
+            } else {
+                "Content differs from the accepted observation"
+            }));
+        assert_eq!(snapshot(&fixture.state), retained);
+        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert!(!fixture.target.exists());
+        assert_eq!(fixture.pending(), operation);
+    }
+    // Restore only the exact captured backing. Resumption still re-verifies it.
+    fs::write(&backing, &archive).unwrap();
+    fixture
+        .command()
+        .args([
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+            "--import-local-files",
+        ])
+        .assert()
+        .success();
+    assert_eq!(fixture.list()["operations"], json!([]));
+    fixture
+        .command()
+        .args(["build", "modrinth"])
+        .assert()
+        .success();
+    assert_imported_archive(&fixture);
+    for (path, bytes) in original {
+        assert_eq!(fs::read(fixture.project.dir().join(path)).unwrap(), bytes);
+    }
+    assert_eq!(fs::read(&supplied).unwrap(), b"payload");
+    assert!(!fixture.archive.exists());
+}
+
+fn assert_imported_archive(fixture: &ImportFixture) {
+    let members = zip_members(&assert_dist_artifact_suffix(&fixture.target, ".mrpack"));
+    assert_eq!(
+        members.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "modrinth.index.json",
+            "overrides/config/settings.toml",
+            "overrides/resourcepacks/declared.zip",
+        ]
+    );
+    assert_eq!(
+        members["overrides/config/settings.toml"],
+        b"enabled = true\n"
+    );
+    assert_eq!(members["overrides/resourcepacks/declared.zip"], b"payload");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&members["modrinth.index.json"]).unwrap(),
+        json!({
+            "formatVersion":1,"game":"minecraft","name":"pending-import","versionId":"1.0.0",
+            "files":[],"dependencies":{"minecraft":"1.21.1"}
+        })
+    );
 }

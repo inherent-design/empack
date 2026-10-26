@@ -318,6 +318,13 @@ class RequiredGate(unittest.TestCase):
                     missing = [test for variant in case["variants"] for test in variant["tests"]
                                if not test["receipts"]]
                     self.assertEqual(case["status"], "NOT_RUN" if missing else "PASS")
+                    if case["id"].startswith("UX-035.packaged-"):
+                        # Complete definitions do not turn native development
+                        # executions into evidence for the five final archives.
+                        self.assertEqual(case["status"], "NOT_RUN")
+                        self.assertEqual(len(case["variants"]), 5)
+                        self.assertTrue(all(not test["receipts"] for variant in case["variants"]
+                                            for test in variant["tests"]))
                     if case["id"] == "UX-026.live-pinned-update":
                         self.assertEqual(case["status"], "NOT_RUN")
                     actual = [(v.get("target", v["platform"]), v["features"], v.get("test_features")) for v in case["variants"]]

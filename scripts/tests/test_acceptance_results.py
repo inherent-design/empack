@@ -47,6 +47,26 @@ class AcceptanceResults(unittest.TestCase):
                 self.assertEqual(test["test_features"], evidence["test_features"])
                 self.assertEqual(test["receipts"], [evidence["receipt_sha256"]])
 
+    def test_packaged_interactive_cases_require_admitted_archive_evidence(self):
+        self.case.update(boundary="P", required_targets=list(self.bindings["targets"]))
+        for binding in self.bindings["tests"]:
+            binding["boundary"] = "I"
+        ordinary = self.result()["requirements"][0]
+        self.assertEqual(ordinary["status"], "NOT_RUN")
+        self.assertTrue(all(not test["receipts"] for variant in ordinary["cases"][0]["variants"]
+                            for test in variant["tests"]))
+        proofs = {row["receipt_sha256"] for row in self.evidence}
+        admitted = case_results(self.document, self.bindings, self.evidence, REVISION,
+                                package_receipts=proofs)
+        self.assertEqual(admitted["requirements"][0]["status"], "PASS")
+        # Archive identity does not turn a host-library fixture into execution of
+        # the distributed executable, whether interactive or noninteractive.
+        for boundary in ("H", "N", "U"):
+            self.bindings["tests"][0]["boundary"] = boundary
+            with self.subTest(boundary=boundary), self.assertRaisesRegex(ValueError, "required test boundary"):
+                case_results(self.document, self.bindings, self.evidence, REVISION,
+                             package_receipts=proofs)
+
     def test_missing_test_host_or_product_feature_is_not_a_pass(self):
         original = copy.deepcopy(self.evidence)
         for missing in ("test", "host", "feature"):
