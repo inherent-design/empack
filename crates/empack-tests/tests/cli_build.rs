@@ -1,6 +1,11 @@
 use empack_tests::harness::archive::{zip_member, zip_members};
 use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, offline_command};
 
+#[path = "support/files.rs"]
+mod files;
+#[path = "support/build_profiles.rs"]
+mod profiles;
+
 #[test]
 fn cli_build_relative_workdir_writes_expected_mrpack_metadata() {
     let project = TestProject::workflow_fixture("relative-pack", "fabric", "1.21.1");

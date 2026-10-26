@@ -5520,7 +5520,113 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-040.configured-output",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_profiles_preserve_authored_policy_and_explain_actual_output"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal populated profile retains bundled delivery, empack update authority and TAR.GZ format across default, named, repeated-name and unique consumer selection",
+            "Explicit snapshot/ZIP overrides and ad-hoc reference selection agree with JSON explanation, origins and recipient empack requirements",
+            "Independent complete archive membership, exact payload bytes, digests, runtime components and generated preparation/wrapper strings establish the selected output without reusing the product planner",
+            "Repeated publication changes only selected output bytes; raw author files and unrelated prior archives remain intact"
+          ]
+        },
+        {
+          "id": "UX-040.selection-refusals",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_profile_selection_refusals_preserve_existing_artifacts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Ambiguous consumer selection, unknown profiles, unconfigured consumers, conflicting output destinations, mixed selectors and missing ad-hoc consumers fail explanation and execution without changing the project or host storage",
+            "Multiple default or named profiles publish the expected ZIP and TAR.GZ outputs together, with identical selected content and subscription requirements",
+            "An empty default list requires explicit selection rather than silently reverting to a consumer preset"
+          ]
+        },
+        {
+          "id": "UX-040.readonly-explanation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_profile_explanation_preserves_missing_and_stale_lock_states"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Missing and stale locks remain distinguishable in text/JSON explanation, which reports unverified inputs and does not mutate source or host storage",
+            "Actual execution refuses missing or mismatched resolution while preserving prior artifacts; recipient requirements and Java declaration stay visible"
+          ]
+        },
+        {
+          "id": "UX-040.profile-and-recipe-rules",
+          "boundary": "U",
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "test_ids": [
+            "empack-lib::engine::documents::tests::named_profile_documents_reject_missing_defaults_unknown_fields_and_unsafe_names",
+            "empack-core::distribution::bundled_content_can_follow_updates_and_references_can_remain_snapshots"
+          ],
+          "assertions": [
+            "Authored defaults must reference defined safe profiles and cannot repeat names; unknown profile fields are rejected",
+            "Delivery and update authority are independent recipe dimensions; bundled delivery can subscribe while references remain snapshots"
+          ]
+        },
+        {
+          "id": "UX-040.host-selection-and-publication",
+          "boundary": "H",
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "test_ids": [
+            "empack-lib::application::engine_host::build::tests::named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity",
+            "empack-lib::application::engine_host::build::tests::distinct_profile_formats_are_built_and_published_together"
+          ],
+          "assertions": [
+            "Host request construction preserves selected policy, refuses ambiguous/colliding outputs and explains CLI overrides without effects",
+            "Two differently formatted profiles publish together with the selected content"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::documents + application::engine_host::cli::manifest",
@@ -5531,7 +5637,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-041",

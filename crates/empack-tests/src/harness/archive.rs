@@ -48,3 +48,41 @@ pub fn zip_members(path: &Path) -> BTreeMap<String, Vec<u8>> {
     }
     members
 }
+
+pub fn tar_gz_members(path: &Path) -> BTreeMap<String, Vec<u8>> {
+    let input = flate2::read::GzDecoder::new(std::fs::File::open(path).unwrap());
+    let mut archive = tar::Archive::new(input);
+    let mut members = BTreeMap::new();
+    let mut total = 0_u64;
+    for (index, entry) in archive.entries().unwrap().enumerate() {
+        assert!(index < 256, "fixture archive exceeds admitted member count");
+        let entry = entry.unwrap();
+        if entry.header().entry_type().is_dir() {
+            continue;
+        }
+        assert!(
+            entry.header().entry_type().is_file(),
+            "special fixture member"
+        );
+        let size = entry.size();
+        total = total.checked_add(size).unwrap();
+        assert!(total <= 16 << 20, "fixture archive exceeds admitted bytes");
+        let name = entry.path().unwrap().to_str().unwrap().to_owned();
+        assert!(
+            members.insert(name, bounded_bytes(entry, size)).is_none(),
+            "duplicate archive member"
+        );
+    }
+    // TAR ends before the gzip trailer. Consume bounded padding so the decoder
+    // also verifies the compressed stream's final checksum and length.
+    let trailing = std::io::copy(
+        &mut archive.into_inner().take((1 << 20) + 1),
+        &mut std::io::sink(),
+    )
+    .unwrap();
+    assert!(
+        trailing <= 1 << 20,
+        "fixture archive exceeds admitted padding"
+    );
+    members
+}

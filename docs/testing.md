@@ -141,6 +141,18 @@ all five release targets. Passing them with a development executable leaves thos
 package obligations unexecuted. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
 regression corpus.
 
+Configured build-profile checks start from literal author text and populated local
+content. The actual executable must preserve subscription policy and TAR.GZ format
+through default, named and unique-consumer selection. Explicit overrides and ad-hoc
+reference builds must agree with explanation about output paths, field origins and
+recipient requirements. Independent ZIP/TAR readers compare complete inventories,
+payload digests, runtime declarations and exact generated commands; this does not
+establish Prism UI acceptance. Ambiguous or colliding selections preserve prior
+artifacts, while multiple configured formats publish together. Missing/stale locks
+remain inspectable without effects and cannot authorize a build. The external TAR
+reader checks bounded members and consumes the gzip trailer; its dependencies belong
+to the test harness, not the distributed product.
+
 Download assistance separates pure provider-page interpretation, native file scans,
 host preparation, real terminal decisions and live metadata lookup. Scans verify
 content assertions rather than accepting a unique filename. The wait fixtures reject
