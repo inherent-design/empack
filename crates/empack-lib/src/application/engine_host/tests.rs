@@ -295,3 +295,97 @@ fn launch_failure_summary_preserves_runtime_phase_and_cause() {
         "Addition was not applied"
     );
 }
+
+#[tokio::test]
+async fn scoped_service_cancellation_preserves_completed_effects_and_final_result() {
+    use crate::application::{
+        process_runtime::{Cancellation, Interrupted},
+        session::LiveProcessProvider,
+    };
+    for fail_after_effect in [true, false] {
+        let root = tempfile::tempdir().unwrap();
+        let selected = root.path().join("selected");
+        let neighbor = root.path().join("neighbor");
+        fs::write(&selected, b"discard this").unwrap();
+        fs::write(&neighbor, b"keep this").unwrap();
+        let cancellation = Cancellation::default();
+        let mut session = MockCommandSession::new();
+        session.process_provider =
+            LiveProcessProvider::new().with_cancellation(cancellation.clone());
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            open_files: 2,
+            ..Default::default()
+        });
+        let removed = selected.clone();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            scoped(&session, governor.clone(), move |mut scope| async move {
+                let work = scope.spawn_blocking(
+                    ResourceRequest {
+                        jobs: 1,
+                        open_files: 1,
+                        ..Default::default()
+                    },
+                    ResourceRequest::default(),
+                    move |_| fs::remove_file(removed),
+                )?;
+                scope.accept(work.wait().await?)?.transpose()?;
+                // The host is interrupted only after a native effect was established.
+                // Wait for propagation instead of guessing when its polling tick runs.
+                cancellation.cancel();
+                scope.cancellation().cancelled().await;
+                if fail_after_effect {
+                    Err(anyhow::Error::new(Interrupted)
+                        .context("Cleanup interrupted; completed scope: selected (12 bytes)"))
+                } else {
+                    Ok("completed selected cleanup")
+                }
+            }),
+        )
+        .await
+        .expect("host must retire its service promptly");
+        assert!(!selected.exists());
+        assert_eq!(fs::read(neighbor).unwrap(), b"keep this");
+        if fail_after_effect {
+            let error = result.unwrap_err();
+            assert!(error.is::<Interrupted>());
+            assert_eq!(
+                format!("{error:#}"),
+                "Cleanup interrupted; completed scope: selected (12 bytes): Operation interrupted"
+            );
+        } else {
+            assert_eq!(result.unwrap(), "completed selected cleanup");
+        }
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+
+#[tokio::test]
+async fn scoped_service_precancellation_never_starts_work() {
+    use crate::application::{process_runtime::Cancellation, session::LiveProcessProvider};
+    let cancellation = Cancellation::default();
+    cancellation.cancel();
+    let mut session = MockCommandSession::new();
+    session.process_provider = LiveProcessProvider::new().with_cancellation(cancellation);
+    let root = tempfile::tempdir().unwrap();
+    let selected = root.path().join("selected");
+    fs::write(&selected, b"keep this").unwrap();
+    let target = selected.clone();
+    let error = scoped(
+        &session,
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            open_files: 2,
+            ..Default::default()
+        }),
+        move |_| async move {
+            fs::remove_file(target)?;
+            Ok(())
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.is::<crate::application::process_runtime::Interrupted>());
+    assert_eq!(fs::read(selected).unwrap(), b"keep this");
+}

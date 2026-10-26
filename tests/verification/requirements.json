@@ -4956,8 +4956,7 @@
             "Dry-run discard preserves saved state",
             "Explicit discard removes the selected stale recipe and leaves prior artifact, changed author text and download unchanged",
             "Discarded ID cannot be resumed"
-          ],
-          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
+          ]
         },
         {
           "id": "UX-038.sync-explicit-discard",
@@ -4977,8 +4976,7 @@
           "assertions": [
             "A genuinely captured stale synchronization remains inspectable; dry-run discard and legacy cleanup preserve all bytes",
             "Explicit public discard and legacy sync cleanup both remove the saved obligation while preserving authored content"
-          ],
-          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
+          ]
         },
         {
           "id": "UX-038.import-explicit-discard",
@@ -4998,8 +4996,7 @@
           "assertions": [
             "Dry-run discard preserves the changed destination and saved state",
             "Explicit discard removes the pending import without overwriting the externally created destination"
-          ],
-          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
+          ]
         },
         {
           "id": "UX-038.instance-explicit-discard",
@@ -5019,8 +5016,7 @@
           "assertions": [
             "Public and legacy discard previews preserve every saved and installed byte",
             "Discard removes exactly one selected stale record while preserving the intervening installation, player notes and all neighboring state; the discarded identity cannot resume"
-          ],
-          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
+          ]
         },
         {
           "id": "UX-038.changed-record-ownership",
@@ -5063,6 +5059,69 @@
           "assertions": [
             "Public discard previews preserve corrupted saved work; explicit discard removes exactly the selected record for all four families while retaining author/instance files and neighboring state"
           ]
+        },
+        {
+          "id": "UX-038.retained-owner-races",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::retained_cleanup::tests::retained_cleanup_preserves_pending_categories_live_leases_and_unowned_state",
+            "empack-lib::engine::retained_cleanup::tests::retained_cleanup_refuses_active_save_new_records_and_changed_objects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pending categories and live retained readers remain usable; unowned neighbors and recovery preimages survive reclamation",
+            "An active save, newly published record or changed captured blob produces its specific refusal before deletion; a fresh capture can subsequently clean safely"
+          ]
+        },
+        {
+          "id": "UX-038.partial-retained-cleanup",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::retained_cleanup::tests::retained_cleanup_reports_completed_scopes_and_reopens_surviving_content",
+            "empack-lib::engine::content::store::cleanup::tests::eviction_reports_completed_effects_when_later_work_fails_or_is_cancelled"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A later store failure reports exact completed scopes and preserves the complete surviving inventory, including downloads and recovery bytes",
+            "Failure or cancellation during eviction retains truthful removed/remaining objects; fresh capture converges and the same content can be ingested again"
+          ]
+        },
+        {
+          "id": "UX-038.host-cancellation-result",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::scoped_service_cancellation_preserves_completed_effects_and_final_result",
+            "empack-lib::application::engine_host::tests::scoped_service_precancellation_never_starts_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Host cancellation after an established native effect retains the service completion context or completed success and retires all reservations",
+            "A cancellation already requested before service admission cannot start work or delete the selected fixture file"
+          ]
         }
       ],
       "owner_now": [
@@ -5073,7 +5132,7 @@
         "shared pending semantics + native/browser retention and UI",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-039",

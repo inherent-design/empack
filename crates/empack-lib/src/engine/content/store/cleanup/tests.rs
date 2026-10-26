@@ -117,6 +117,7 @@ fn eviction_reports_completed_effects_when_later_work_fails_or_is_cancelled() {
         let store = store(&path);
         fill(&store, b"first");
         fill(&store, b"second");
+        fs::write(path.join("user-download.jar"), b"keep download").unwrap();
         let cancel = Cancellation::default();
         let plan = store.0.plan_cleanup(&cancel).unwrap();
         let receipt = store
@@ -130,11 +131,32 @@ fn eviction_reports_completed_effects_when_later_work_fails_or_is_cancelled() {
                 }
             })
             .unwrap();
-        assert!(receipt.failure.is_some());
+        let error = receipt.failure.as_ref().unwrap();
+        if cancel_after_first {
+            assert!(error.is::<crate::application::process_runtime::Interrupted>());
+        } else {
+            assert_eq!(error.to_string(), "injected eviction failure");
+        }
         assert_eq!(receipt.removed.len(), 1);
         assert_eq!(receipt.retained.len(), 1);
         assert!(!path.join(receipt.removed[0].name()).exists());
         assert!(path.join(receipt.retained[0].name()).exists());
+        let next = store.0.plan_cleanup(&Cancellation::default()).unwrap();
+        let completed = store.0.evict(next, &Cancellation::default()).unwrap();
+        assert!(completed.failure.is_none());
+        assert_eq!(completed.removed.len(), 1);
+        assert!(completed.retained.is_empty());
+        for bytes in [b"first".as_slice(), b"second".as_slice()] {
+            let content = fill(&store, bytes);
+            assert_eq!(
+                fs::read(path.join(name(&content.lease().id()))).unwrap(),
+                bytes
+            );
+        }
+        assert_eq!(
+            fs::read(path.join("user-download.jar")).unwrap(),
+            b"keep download"
+        );
     }
 }
 #[cfg(unix)]

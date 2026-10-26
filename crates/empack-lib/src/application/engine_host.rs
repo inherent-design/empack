@@ -504,21 +504,36 @@ where
     F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
     Fut: Future<Output = Result<T>> + Send + 'static,
 {
+    session.process().check_cancelled()?;
     let runtime = crate::engine::runtime::OperationRuntime::new(governor, 1);
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let mut handle = runtime.start(move |scope| async move {
         let _ = sender.send(work(scope).await);
         Ok(())
     })?;
-    let result = cancellable(session, async {
-        match &*handle.wait().await {
-            OperationOutcome::Completed(()) => {
-                receiver.await.context("Host service result was lost")?
+    let mut ticks = tokio::time::interval(Duration::from_millis(50));
+    let mut cancellation_requested = false;
+    let outcome = loop {
+        tokio::select! {
+            result = handle.wait() => break result,
+            _ = ticks.tick(), if !cancellation_requested => {
+                if session.process().check_cancelled().is_err() {
+                    handle.cancel();
+                    cancellation_requested = true;
+                }
             }
-            OperationOutcome::Failed(error) => Err(error.clone().into()),
         }
-    })
-    .await;
+    };
+    // A service may already have published a record or deleted owned content.
+    // Retire it and preserve its terminal result instead of replacing that evidence
+    // with the request that caused cancellation.
+    let result = match &*outcome {
+        OperationOutcome::Completed(()) => receiver
+            .await
+            .context("Host service result was lost")
+            .and_then(|result| result),
+        OperationOutcome::Failed(error) => Err(error.clone().into()),
+    };
     runtime.shutdown().await;
     result
 }

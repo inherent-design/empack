@@ -84,6 +84,7 @@ Public API examples compile as doctests; callable signatures live with their Rus
 | Filesystem | Symlink/junction ancestors, case collisions, absent targets, hardlink copy safety, permissions, cross-device publication rejection. |
 | Instance | Three-way ownership, seed preservation, choices, exact release, structured conflicts and launch gating. |
 | Artifact writer/reader | Inventory completeness for all sources; duplicate paths; optional choices; deterministic settings where promised. |
+| Host services | Cancellation requests service retirement and preserves the terminal result; completed effects, partial-cleanup context and late success cannot be replaced with a bare interruption. Precancelled services do not start. |
 | Process runner | Closed pipes with live child; live descendant after parent exit; output flooding; timeout during drain; cancellation and job retirement. |
 | Publisher | Every durable crash point; expected-old conflict; before/after/neither recovery classification; prior artifact retained. |
 | Runtime | Close/admit race, cancel-before-start, cancel-after-result, late result from superseded attempt, permit retention, lost progress notification. |

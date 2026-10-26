@@ -129,6 +129,16 @@ following cancellation; it does not launch or supervise a real browser. The live
 Modrinth case verifies page selection but still uses fixture payload bytes. Windows
 opener behavior and remaining page-limit/failure cases stay explicit gaps in UX-037.
 
+Retained cleanup tests distinguish record ownership, category retention and partial
+reclamation. Active saves, replacement records and changed backing produce specific
+refusals; later-store failures retain an exact account of completed scopes and surviving
+bytes. A fresh capture can finish cleanup and ingest the same content again while
+preserving downloads and recovery preimages. Native eviction fault tests cover failure
+and cancellation within a store. Separate host tests cancel only after an admitted
+file deletion: the service must retire and return its actual result, including partial
+completion context or completed success. Precancellation cannot start a service.
+These component tests do not substitute for the broader process-crash recovery matrix.
+
 Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
 headers and bodies, and retain author files through refused replacement. A shared
 native HTTP fixture signals when a request actually arrives before triggering
