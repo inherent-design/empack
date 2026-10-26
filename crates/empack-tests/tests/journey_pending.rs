@@ -427,3 +427,62 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
         assert_eq!(snapshot(project.dir()), original);
     }
 }
+
+#[test]
+fn journey_pending_build_corruption_is_visible_and_explicitly_discardable() {
+    let project = fixture("corrupt-build");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    command(&project, &state)
+        .args(["build", "modrinth"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    public_pending::corrupt_record(project.dir(), project.dir(), &state, "build");
+}
+
+#[test]
+fn journey_pending_sync_corruption_is_visible_and_explicitly_discardable() {
+    let project = empack_tests::fixtures::restricted::pair("corrupt-sync");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    command(&project, &state)
+        .args(["sync", "--materialize"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    public_pending::corrupt_record(project.dir(), project.dir(), &state, "sync");
+}
+
+#[test]
+fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
+    let project = TestProject::new();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let before = snapshot(project.dir());
+    assert_eq!(
+        report(&project, &state, &["pending", "list", "--json"])["operations"],
+        json!([])
+    );
+    command(&project, &state)
+        .args(["pending", "list"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("No saved pending operations"));
+    for action in ["show", "resume", "discard"] {
+        for (id, diagnostic) in [
+            ("1234", "No pending operation matches"),
+            ("", "hexadecimal identity"),
+            ("not-hex", "hexadecimal identity"),
+        ] {
+            command(&project, &state)
+                .args(["pending", action, id])
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains(diagnostic));
+            assert_eq!(snapshot(project.dir()), before);
+            assert!(!state.exists());
+            assert!(!state.with_extension("cache").exists());
+        }
+    }
+}

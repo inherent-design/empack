@@ -910,30 +910,6 @@ fn smoke_build_explanation_is_json_and_preserves_missing_lock_workspace() {
 }
 
 #[test]
-fn smoke_pending_list_is_read_only_json_without_an_author_project() {
-    let project = TestProject::new();
-    let before = snapshot(&project);
-    let output = command(&project)
-        .args(["pending", "list", "--json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 1);
-    assert_eq!(report["operations"], serde_json::json!([]));
-    assert_eq!(snapshot(&project), before);
-    for action in ["show", "resume", "discard"] {
-        command(&project)
-            .args(["pending", action, "1234"])
-            .assert()
-            .failure();
-        assert_eq!(snapshot(&project), before);
-    }
-}
-
-#[test]
 fn smoke_outdated_json_and_runtime_plan_preserve_author_workspace() {
     let project = initialized();
     let before = snapshot(&project);

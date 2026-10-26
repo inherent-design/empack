@@ -227,3 +227,15 @@ fn journey_pending_import_rejects_changed_destination_and_discards_without_overw
     assert_eq!(fixture.list()["operations"], json!([]));
     assert_eq!(snapshot(fixture.project.dir()), original);
 }
+
+#[test]
+fn journey_pending_import_corruption_is_visible_and_explicitly_discardable() {
+    let fixture = ImportFixture::new();
+    fixture.suspend();
+    public_pending::corrupt_record(
+        fixture.project.dir(),
+        &fixture.target,
+        &fixture.state,
+        "import",
+    );
+}

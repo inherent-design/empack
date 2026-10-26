@@ -111,8 +111,13 @@ cache and exercise retained cleanup, then complete from public keys through both
 public and legacy continuation commands. They compare the complete game inventory and preserve player notes. A separate real installation
 stales the saved operation; both discard interfaces preserve that installation and
 remove only the selected record. Remaining interactive and corrupt-record variants
-are separate obligations. Moving upstream pack inputs belong to
-`live_import_survey`, not the pinned regression corpus.
+are separate obligations. A shared fault fixture corrupts actual saved records from
+all four families without interpreting their private payloads. Malformed JSON and
+unsupported schemas remain visible as unavailable; text and JSON inspection preserve
+storage, resume refuses them, and explicit discard removes only the selected record.
+Pure selector tests cover ambiguous prefixes separately from native stale-cleanup
+ownership. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
+regression corpus.
 
 Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
 headers and bodies, and retain author files through refused replacement. A shared

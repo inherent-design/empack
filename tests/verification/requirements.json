@@ -4221,6 +4221,7 @@
       "required_assertions": "Exact selected operation and requirements; missing/corrupt/stale distinctions; no reads interpreted as verification; no network/durable writes.",
       "required_work": "All build/import/sync/instance record families and ambiguous IDs.",
       "evidence_tiers": [
+        "U",
         "H",
         "X"
       ],
@@ -4248,8 +4249,7 @@
           "assertions": [
             "Fresh executable list/show agree on operation identity, provider selection, digest and length",
             "Inspection preserves project and pending-state bytes; stale drafts remain distinguishable"
-          ],
-          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
+          ]
         },
         {
           "id": "UX-034.sync-public-inspection",
@@ -4270,8 +4270,7 @@
           "assertions": [
             "Fresh executable list/show agree on complete synchronization requirements, exact provider identities, digests and lengths",
             "Inspection preserves author, state and cache bytes; retained bytes remain explicitly unverified until resume; changed author text reports stale"
-          ],
-          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
+          ]
         },
         {
           "id": "UX-034.import-public-inspection",
@@ -4292,8 +4291,7 @@
           "assertions": [
             "Public list/show agree on saved import identity and honestly mark undiscovered input requirements incomplete",
             "Inspection preserves invocation, destination, state and cache; a changed destination reports stale"
-          ],
-          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
+          ]
         },
         {
           "id": "UX-034.instance-public-inspection",
@@ -4314,8 +4312,88 @@
           "assertions": [
             "Public list/show agree on both exact manual file keys, selected content digests, lengths and retained-versus-needed status without modifying invocation, instance, state or cache",
             "A real intervening installation makes the saved operation visibly stale; inspection remains metadata rather than byte verification"
+          ]
+        },
+        {
+          "id": "UX-034.missing-records",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_missing_records_and_invalid_ids_do_not_create_storage"
           ],
-          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Text and JSON report no saved work without an author project; missing, empty and non-hexadecimal IDs refuse show/resume/discard without creating state/cache or changing invocation bytes"
+          ]
+        },
+        {
+          "id": "UX-034.corrupt-records",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending::journey_pending_sync_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_import::journey_pending_import_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_instance::journey_pending_instance_corruption_is_visible_and_explicitly_discardable"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed JSON and unsupported schemas in actual saved build/import/sync/instance records remain visible as unavailable with explicit diagnostics, no fabricated inputs and incomplete requirement discovery",
+            "Text/JSON inspection preserves invocation, destination, state and cache; old identities cannot select replacement bytes; corrupted work cannot resume and requires explicit discard"
+          ]
+        },
+        {
+          "id": "UX-034.selector-semantics",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::pending::tests::pending_selectors_require_unique_hex_prefix_without_choosing_first_match"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Hexadecimal selector length and spelling are bounded; ambiguous prefixes never choose the first match; full identities and unique prefixes select exactly one operation"
+          ]
+        },
+        {
+          "id": "UX-034.host-presentation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::pending::tests::shared_pending_views_and_discard_preserve_neighboring_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Four native record families preserve distinct unavailable diagnostics and incomplete requirements; captured host JSON/text agrees with inspected identities and public next commands",
+            "Inspection and preview preserve neighboring state and reject selecting an operation from another root"
+          ]
         }
       ],
       "owner_now": [
@@ -4326,7 +4404,7 @@
         "shared pending semantics + native/browser retention and UI",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-035",
@@ -4734,6 +4812,48 @@
             "Discard removes exactly one selected stale record while preserving the intervening installation, player notes and all neighboring state; the discarded identity cannot resume"
           ],
           "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
+        },
+        {
+          "id": "UX-038.changed-record-ownership",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::pending::tests::pending_replacement_rejects_stale_cleanup_and_cross_root_selection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Replacing a saved operation changes its identity; a stale cleanup handle refuses deletion and preserves all replacement bytes and its newly selectable identity",
+            "Operation identities cannot cross root boundaries"
+          ]
+        },
+        {
+          "id": "UX-038.corrupt-record-discard",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending::journey_pending_sync_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_import::journey_pending_import_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_instance::journey_pending_instance_corruption_is_visible_and_explicitly_discardable"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public discard previews preserve corrupted saved work; explicit discard removes exactly the selected record for all four families while retaining author/instance files and neighboring state"
+          ]
         }
       ],
       "owner_now": [

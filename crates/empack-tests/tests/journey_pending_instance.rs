@@ -333,3 +333,15 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         assert_eq!(snapshot(fixture.project.dir()), before);
     }
 }
+
+#[test]
+fn journey_pending_instance_corruption_is_visible_and_explicitly_discardable() {
+    let fixture = Fixture::new();
+    fixture.suspend(true);
+    public_pending::corrupt_record(
+        fixture.project.dir(),
+        &fixture.target,
+        &fixture.state,
+        "instance",
+    );
+}

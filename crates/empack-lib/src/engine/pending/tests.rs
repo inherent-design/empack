@@ -90,6 +90,17 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
     let original = snapshot(root.path());
     let view = inspect(&state, &target, &cancel).unwrap();
     assert_eq!(view.operations.len(), 4);
+    for kind in [
+        PendingKind::Build,
+        PendingKind::Import,
+        PendingKind::Sync,
+        PendingKind::Instance,
+    ] {
+        assert_eq!(
+            view.operations.iter().filter(|op| op.kind == kind).count(),
+            1
+        );
+    }
     assert_eq!(
         view.operations
             .iter()
@@ -99,15 +110,43 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
         4
     );
     assert_eq!(serde_json::to_value(&view).unwrap()["schema"], 1);
+    for operation in &view.operations {
+        assert_eq!(operation.state, "unavailable");
+        assert!(!operation.requirements_complete);
+        assert!(operation.inputs.is_empty());
+        let diagnostic = match operation.kind {
+            PendingKind::Build => "Invalid pending record",
+            PendingKind::Import => "Missing retained import associations",
+            PendingKind::Sync => "Missing synchronization mode",
+            PendingKind::Instance => "Missing release payload",
+        };
+        assert!(operation.diagnostic.as_ref().unwrap().contains(diagnostic));
+        assert_eq!(
+            operation.next,
+            vec!["pending", "resume", operation.id.as_str()]
+        );
+    }
     for json in [false, true] {
+        let (session, messages) = host(root.path(), false).record_messages();
         execute_command_with_session(
             Commands::Pending {
                 command: PendingCommand::List { json },
             },
-            &host(root.path(), false),
+            &session,
         )
         .await
         .unwrap();
+        let captured = messages.lock().unwrap().clone();
+        assert_eq!(captured.len(), 1);
+        if json {
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&captured[0]).unwrap(),
+                serde_json::to_value(&view).unwrap()
+            );
+        } else {
+            assert_eq!(captured[0], view.text());
+            assert!(captured[0].contains("Metadata only"));
+        }
         for operation in &view.operations {
             execute_command_with_session(
                 Commands::Pending {
@@ -175,7 +214,53 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
     }
 }
 #[test]
-fn pending_ids_reject_ambiguity_and_replacement_without_crossing_roots() {
+fn pending_selectors_require_unique_hex_prefix_without_choosing_first_match() {
+    let first = "a".repeat(64);
+    let second = format!("{}b", "a".repeat(63));
+    let report = PendingReport {
+        schema: 1,
+        root: "root".into(),
+        operations: vec![
+            empty(first.clone(), PendingKind::Build, Path::new("root")),
+            empty(second.clone(), PendingKind::Import, Path::new("root")),
+        ],
+    };
+    for prefix in ["a", &first[..63]] {
+        assert!(
+            report
+                .select(prefix)
+                .unwrap_err()
+                .to_string()
+                .contains("ambiguous")
+        );
+    }
+    assert_eq!(report.select(&first).unwrap().kind, PendingKind::Build);
+    assert_eq!(report.select(&second).unwrap().kind, PendingKind::Import);
+    for invalid in ["", "not-hex", &"a".repeat(65)] {
+        assert!(
+            report
+                .select(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("hexadecimal identity")
+        );
+    }
+    assert!(
+        report
+            .select("b")
+            .unwrap_err()
+            .to_string()
+            .contains("No pending operation matches")
+    );
+    let unique = PendingReport {
+        operations: vec![report.operations[0].clone()],
+        ..report
+    };
+    assert_eq!(unique.select("a").unwrap().id, first);
+}
+
+#[test]
+fn pending_replacement_rejects_stale_cleanup_and_cross_root_selection() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("project");
     fs::create_dir(&target).unwrap();
@@ -189,19 +274,14 @@ fn pending_ids_reject_ambiguity_and_replacement_without_crossing_roots() {
     let saved = store::save(&state, Kind::Import, &target, &record, None, &cancel).unwrap();
     let view = inspect(&state, &target, &cancel).unwrap();
     let old = view.operations[0].id.clone();
-    let mut ambiguous = view.clone();
-    ambiguous.operations[0].id = "a".repeat(64);
-    let mut duplicate = ambiguous.operations[0].clone();
-    duplicate.id = format!("{}b", "a".repeat(63));
-    ambiguous.operations.push(duplicate);
+    let another = root.path().join("another");
+    fs::create_dir(&another).unwrap();
     assert!(
-        ambiguous
-            .select("a")
-            .unwrap_err()
-            .to_string()
-            .contains("ambiguous")
+        inspect(&state, &another, &cancel)
+            .unwrap()
+            .select(&old)
+            .is_err()
     );
-    assert!(ambiguous.select("").is_err());
     let replacement = OpaqueRecord {
         marker: 1,
         ..record
@@ -215,7 +295,20 @@ fn pending_ids_reject_ambiguity_and_replacement_without_crossing_roots() {
         &cancel,
     )
     .unwrap();
+    let replacement = inspect(&state, &target, &cancel).unwrap();
+    let current = replacement.operations[0].id.clone();
+    assert_ne!(current, old);
+    let preserved = snapshot(root.path());
     assert!(!store::discard(&saved.into_cleanup(), &cancel).unwrap());
+    assert_eq!(snapshot(root.path()), preserved);
+    assert_eq!(
+        inspect(&state, &target, &cancel)
+            .unwrap()
+            .select(&current)
+            .unwrap()
+            .id,
+        current
+    );
     assert!(
         inspect(&state, &target, &cancel)
             .unwrap()
