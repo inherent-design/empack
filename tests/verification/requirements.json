@@ -6160,7 +6160,116 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-046.snapshot-installation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal schema-5 project exports reference and bundled native snapshots in ZIP, TAR.GZ and 7z; independent readers verify complete membership, bytes, output modes, descriptor SHA-256, runtime and pack identity",
+            "Common/client/server layers and a default-disabled durable choice survive export; the public instance install command projects exact client/server inventories with the default choice and an explicit enabled selection",
+            "Wrong descriptor digests and equal-length corrupted included assets fail without changing instance files, including after another installation has populated the disposable cache",
+            "Repeated preparation retains installed side and choices, player-written seed data and unrelated files; extracted release bytes and raw author inputs remain unchanged",
+            "Local sources require included assets under both delivery policies; this fixture does not claim live URL acquisition or signed-channel enrollment"
+          ]
+        },
+        {
+          "id": "UX-046.authoring-prerequisites",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_export_requires_pack_identity_and_java_without_replacing_prior_output"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Missing pack identity or Java declaration causes a specific author-document refusal before replacing a prior native archive or changing author/host storage"
+          ]
+        },
+        {
+          "id": "UX-046.source-and-choice-semantics",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::release::producer::tests::native_reference_and_bundled_exports_preserve_choices_layers_and_original_assertions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled URL content retains its source and original digest algorithm; bundled delivery includes its asset while reference delivery omits it",
+            "Stable choice identity, default, description, layers and seed policy survive native preparation; archive membership distinguishes included local assets from referenced content"
+          ]
+        },
+        {
+          "id": "UX-046.invalid-inputs",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::release::producer::tests::export_rejects_missing_wrong_and_unrelated_content_and_conflicting_choices"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Missing or wrong selected bytes, conflicting choice declarations and policies naming unselected destinations cannot produce a verified native release"
+          ]
+        },
+        {
+          "id": "UX-046.packaged-snapshot-installation",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports",
+            "empack-tests::cli_build::native_exports::cli_native_export_requires_pack_identity_and_java_without_replacing_prior_output"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat native archive inventory, integrity refusal, optional-content installation, seed preservation and authoring-prerequisite checks against each final extracted executable",
+            "Package admission binds source, native target, executable digest and version without development-binary fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::release + api::release_publication/subscription"
@@ -6169,7 +6278,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "shared release meaning/signature verification + native signing custody and publication"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-047",

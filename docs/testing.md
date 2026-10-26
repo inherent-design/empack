@@ -38,7 +38,7 @@ The separated executable suites have explicit boundaries:
 | Test binary | Evidence |
 | --- | --- |
 | `cli_arguments`, `cli_dependencies`, `cli_init` | Offline parsing, refusal and initialization |
-| `cli_build` | Offline artifact creation, metadata and cleanup |
+| `cli_build` | Offline artifact inventory, profile selection, native snapshot installation and cleanup |
 | `journey_import` | Pinned Modrinth/CurseForge archives, complete exported inventory and traversal refusal |
 | `journey_authoring` | Literal layered authoring, local JAR update/adoption, rebuild and removal |
 | `journey_pending` | Public build/sync inspection, verified manual association, retained partial inputs, restart, stale refusal and discard |
@@ -154,6 +154,17 @@ artifacts, while multiple configured formats publish together. Missing/stale loc
 remain inspectable without effects and cannot authorize a build. The external TAR
 reader checks bounded members and consumes the gzip trailer; its dependencies belong
 to the test harness, not the distributed product.
+
+Native snapshot fixtures export a literal project with common/client/server layers
+and a default-disabled choice through both delivery policies and ZIP/TAR.GZ/7z.
+Independent readers compare complete membership, content digests and output modes.
+The public instance command rejects a wrong descriptor digest and corrupted included
+bytes before installing the exact selected inventory. Repeated preparation preserves
+saved choices, player-written seed data and unrelated files. Missing pack identity
+or Java declarations preserve prior output and host storage. These local sources
+require included assets for both policies; controlled producer tests separately
+verify URL references, bundled assets and original source assertions. Final-package
+cases repeat the public journey against each extracted native executable.
 
 Reference Prism fixtures independently hash the exported descriptor and assets,
 then prepare an extracted instance through the real executable. The hash comes from

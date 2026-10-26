@@ -3,6 +3,8 @@ use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, o
 
 #[path = "support/files.rs"]
 mod files;
+#[path = "support/native_exports.rs"]
+mod native_exports;
 #[path = "support/build_profiles.rs"]
 mod profiles;
 
