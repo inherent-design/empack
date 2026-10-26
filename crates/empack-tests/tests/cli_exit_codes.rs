@@ -361,8 +361,12 @@ fn cli_interrupt_exits_130() {
         );
         std::thread::sleep(Duration::from_millis(10));
     };
-    assert_eq!(status.code(), Some(EmpackExitCode::Interrupted.as_i32()));
     let diagnostic = fs::read_to_string(stderr.path()).unwrap();
+    assert_eq!(
+        status.code(),
+        Some(EmpackExitCode::Interrupted.as_i32()),
+        "{diagnostic}"
+    );
     assert!(
         diagnostic.contains("Error: Operation interrupted"),
         "Cancellation must reach executable error rendering: {diagnostic}"

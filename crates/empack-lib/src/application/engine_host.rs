@@ -534,6 +534,21 @@ where
             .and_then(|result| result),
         OperationOutcome::Failed(error) => Err(error.clone().into()),
     };
+    // As with ExecutionOutcome::failed, a result invalidated by this host's
+    // cancellation is interruption. Retain the original cause and its context;
+    // unrelated failures must not be reclassified merely because cancellation raced.
+    let result = result.map_err(|error| {
+        if cancellation_requested
+            && matches!(
+                error.downcast_ref::<RuntimeError>(),
+                Some(RuntimeError::StaleResult)
+            )
+        {
+            error.context(super::process_runtime::Interrupted)
+        } else {
+            error
+        }
+    });
     runtime.shutdown().await;
     result
 }

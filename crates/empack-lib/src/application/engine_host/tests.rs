@@ -302,7 +302,7 @@ async fn scoped_service_cancellation_preserves_completed_effects_and_final_resul
         process_runtime::{Cancellation, Interrupted},
         session::LiveProcessProvider,
     };
-    for fail_after_effect in [true, false] {
+    for outcome in ["partial", "complete", "unrelated", "invalidated"] {
         let root = tempfile::tempdir().unwrap();
         let selected = root.path().join("selected");
         let neighbor = root.path().join("neighbor");
@@ -335,11 +335,17 @@ async fn scoped_service_cancellation_preserves_completed_effects_and_final_resul
                 // Wait for propagation instead of guessing when its polling tick runs.
                 cancellation.cancel();
                 scope.cancellation().cancelled().await;
-                if fail_after_effect {
-                    Err(anyhow::Error::new(Interrupted)
-                        .context("Cleanup interrupted; completed scope: selected (12 bytes)"))
-                } else {
-                    Ok("completed selected cleanup")
+                match outcome {
+                    "partial" => Err(anyhow::Error::new(Interrupted)
+                        .context("Cleanup interrupted; completed scope: selected (12 bytes)")),
+                    "complete" => Ok("completed selected cleanup"),
+                    "invalidated" => Err(anyhow::Error::new(RuntimeError::StaleResult)
+                        .context("Service input was invalidated during cancellation")),
+                    "unrelated" => Err(anyhow::Error::new(std::io::Error::from(
+                        std::io::ErrorKind::PermissionDenied,
+                    ))
+                    .context("Later cleanup scope failed; selected already removed")),
+                    _ => unreachable!(),
                 }
             }),
         )
@@ -347,15 +353,45 @@ async fn scoped_service_cancellation_preserves_completed_effects_and_final_resul
         .expect("host must retire its service promptly");
         assert!(!selected.exists());
         assert_eq!(fs::read(neighbor).unwrap(), b"keep this");
-        if fail_after_effect {
-            let error = result.unwrap_err();
-            assert!(error.is::<Interrupted>());
-            assert_eq!(
-                format!("{error:#}"),
-                "Cleanup interrupted; completed scope: selected (12 bytes): Operation interrupted"
-            );
-        } else {
-            assert_eq!(result.unwrap(), "completed selected cleanup");
+        match outcome {
+            "partial" => {
+                let error = result.unwrap_err();
+                assert!(error.is::<Interrupted>());
+                assert_eq!(
+                    format!("{error:#}"),
+                    "Cleanup interrupted; completed scope: selected (12 bytes): Operation interrupted"
+                );
+            }
+            "complete" => assert_eq!(result.unwrap(), "completed selected cleanup"),
+            "invalidated" => {
+                let error = result.unwrap_err();
+                assert!(error.is::<Interrupted>());
+                assert!(matches!(
+                    error.downcast_ref::<RuntimeError>(),
+                    Some(RuntimeError::StaleResult)
+                ));
+                assert!(
+                    format!("{error:#}")
+                        .contains("Service input was invalidated during cancellation")
+                );
+            }
+            "unrelated" => {
+                let error = result.unwrap_err();
+                assert!(!error.is::<Interrupted>());
+                assert_eq!(
+                    error.downcast_ref::<std::io::Error>().unwrap().kind(),
+                    std::io::ErrorKind::PermissionDenied
+                );
+                assert!(
+                    format!("{error:#}")
+                        .contains("Later cleanup scope failed; selected already removed")
+                );
+                assert_eq!(
+                    crate::application::exit::classify_error(&error),
+                    crate::application::exit::EmpackExitCode::General
+                );
+            }
+            _ => unreachable!(),
         }
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
