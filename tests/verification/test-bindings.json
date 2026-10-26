@@ -10,6 +10,8 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys", "binary": "empack-tests::journey_pending_instance", "binary_name": "journey_pending_instance", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
+    {"id": "empack-tests::journey_pending_instance::journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work", "binary": "empack-tests::journey_pending_instance", "binary_name": "journey_pending_instance", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_init::replacement::terminal::conpty_preserves_only_the_explicit_environment", "binary": "empack-tests::cli_init", "binary_name": "cli_init", "boundary": "N", "api": "CLI", "platforms": ["windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::live_provider_cli::live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs", "binary": "empack-tests::live_provider_cli", "binary_name": "live_provider_cli", "boundary": "L", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_selection::journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without_edits", "binary": "empack-tests::journey_selection", "binary_name": "journey_selection", "boundary": "X", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

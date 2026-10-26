@@ -4249,7 +4249,7 @@
             "Fresh executable list/show agree on operation identity, provider selection, digest and length",
             "Inspection preserves project and pending-state bytes; stale drafts remain distinguishable"
           ],
-          "remaining_group_evidence": "Import/sync/instance families, corrupt records and ambiguous IDs remain required"
+          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
         },
         {
           "id": "UX-034.sync-public-inspection",
@@ -4271,7 +4271,7 @@
             "Fresh executable list/show agree on complete synchronization requirements, exact provider identities, digests and lengths",
             "Inspection preserves author, state and cache bytes; retained bytes remain explicitly unverified until resume; changed author text reports stale"
           ],
-          "remaining_group_evidence": "Import/instance families, corrupt records and ambiguous IDs remain required"
+          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
         },
         {
           "id": "UX-034.import-public-inspection",
@@ -4293,7 +4293,29 @@
             "Public list/show agree on saved import identity and honestly mark undiscovered input requirements incomplete",
             "Inspection preserves invocation, destination, state and cache; a changed destination reports stale"
           ],
-          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
+          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
+        },
+        {
+          "id": "UX-034.instance-public-inspection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys",
+            "empack-tests::journey_pending_instance::journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public list/show agree on both exact manual file keys, selected content digests, lengths and retained-versus-needed status without modifying invocation, instance, state or cache",
+            "A real intervening installation makes the saved operation visibly stale; inspection remains metadata rather than byte verification"
+          ],
+          "remaining_group_evidence": "Corrupt records and ambiguous ID public fixtures remain required; inspection does not verify retained bytes."
         }
       ],
       "owner_now": [
@@ -4349,7 +4371,7 @@
             "Equal-length wrong bytes, unknown keys and duplicate associations are rejected without changing saved work",
             "Correct renamed bytes are retained in the independently inspected artifact"
           ],
-          "remaining_group_evidence": "Other record families, ambiguous multi-role selections and interactive/package evidence remain required"
+          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
         },
         {
           "id": "UX-035.sync-manual-association",
@@ -4370,7 +4392,7 @@
             "Association keys come from public exact-provider selections; equal-length wrong bytes leave project and saved operation unchanged",
             "Correct renamed inputs materialize the independent complete two-file inventory"
           ],
-          "remaining_group_evidence": "Import/instance families, ambiguous multi-role selections and interactive/package evidence remain required"
+          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
         },
         {
           "id": "UX-035.import-manual-association",
@@ -4391,7 +4413,28 @@
             "Exact association selector comes from the initial public diagnostic, not private continuation storage",
             "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory"
           ],
-          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
+          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
+        },
+        {
+          "id": "UX-035.instance-manual-association",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public displayed keys authorize association; same-length wrong bytes, unknown keys and duplicate associations produce specific diagnostics without modifying the instance or saved operation",
+            "Correct renamed bytes and retained input produce the independently expected complete game-directory inventory"
+          ],
+          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
         }
       ],
       "owner_now": [
@@ -4448,7 +4491,7 @@
             "Each public action starts a fresh process",
             "Public next command completes a suspended build; changed author text prevents stale resume"
           ],
-          "remaining_group_evidence": "Other record families, partially retained multi-file inputs and legacy parity remain required"
+          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
         },
         {
           "id": "UX-036.build-fresh-approval",
@@ -4469,7 +4512,7 @@
             "Resume with valid bytes requests fresh terminal approval",
             "Declining preserves the author workspace, pending record and supplied file"
           ],
-          "remaining_group_evidence": "Other record families and acceptance after approval remain required"
+          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
         },
         {
           "id": "UX-036.sync-partial-restart",
@@ -4492,7 +4535,7 @@
             "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
             "Repeated synchronization converges; changed author bytes prevent stale resume"
           ],
-          "remaining_group_evidence": "Import/instance families and their restart/staleness variants remain required"
+          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
         },
         {
           "id": "UX-036.import-retained-archive-restart",
@@ -4514,7 +4557,29 @@
             "After the original archive is deleted, a fresh process resumes using retained archive bytes and the public next command",
             "Explicit local-source persistence, two convergent synchronizations and exact export inventory preserve the imported file and overrides; a changed destination refuses resume"
           ],
-          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
+          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
+        },
+        {
+          "id": "UX-036.instance-partial-restart",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys",
+            "empack-tests::journey_pending_instance::journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed",
+            "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
+          ],
+          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
         }
       ],
       "owner_now": [
@@ -4605,7 +4670,7 @@
             "Explicit discard removes the selected stale recipe and leaves prior artifact, changed author text and download unchanged",
             "Discarded ID cannot be resumed"
           ],
-          "remaining_group_evidence": "Race/active-owner, other record-family and recovery-journal preservation cases remain required"
+          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
         },
         {
           "id": "UX-038.sync-explicit-discard",
@@ -4626,7 +4691,7 @@
             "A genuinely captured stale synchronization remains inspectable; dry-run discard and legacy cleanup preserve all bytes",
             "Explicit public discard and legacy sync cleanup both remove the saved obligation while preserving authored content"
           ],
-          "remaining_group_evidence": "Import/instance families and interrupted discard evidence remain required"
+          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
         },
         {
           "id": "UX-038.import-explicit-discard",
@@ -4647,7 +4712,28 @@
             "Dry-run discard preserves the changed destination and saved state",
             "Explicit discard removes the pending import without overwriting the externally created destination"
           ],
-          "remaining_group_evidence": "Instance pending parity, corrupt/ambiguous records, interactive import approval and live restricted-provider/package variants remain required"
+          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
+        },
+        {
+          "id": "UX-038.instance-explicit-discard",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public and legacy discard previews preserve every saved and installed byte",
+            "Discard removes exactly one selected stale record while preserving the intervening installation, player notes and all neighboring state; the discarded identity cannot resume"
+          ],
+          "remaining_group_evidence": "Races, active owners, interrupted cleanup and recovery-journal preservation remain separate requirements."
         }
       ],
       "owner_now": [

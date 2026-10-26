@@ -43,6 +43,7 @@ The separated executable suites have explicit boundaries:
 | `journey_authoring` | Literal layered authoring, local JAR update/adoption, rebuild and removal |
 | `journey_pending` | Public build/sync inspection, verified manual association, retained partial inputs, restart, stale refusal and discard |
 | `journey_pending_import` | Public import selectors, retained-archive restart, exact exported bytes and changed-destination refusal |
+| `journey_pending_instance` | Public instance keys, partial retention, executable restart, stale installation and exact discard |
 | `journey_publisher` | Local signed-channel enrollment, update conflicts, repair, rollback and trust changes |
 | `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
 | `live_cli_init` | Official loader catalog resolution |
@@ -103,8 +104,14 @@ coverage checks fresh approval. State snapshots assert preservation without inte
 private continuation records. Synchronization also checks partial retention across
 cache eviction. Import resumes a retained archive after deleting the original and
 keeps incomplete requirement discovery explicit. Its unsupported-transport fixture
-does not establish a live provider's restricted-download policy. Instance continuation
-parity and remaining interactive/corrupt-record variants are still separate obligations. Moving upstream pack inputs belong to
+does not establish a live provider's restricted-download policy. Instance journeys
+use a literal two-file manual release, retain a verified input
+through a partial resume, remove the original download and descriptor, then complete
+from public keys through both public and legacy continuation commands. They compare
+the complete game inventory and preserve player notes. A separate real installation
+stales the saved operation; both discard interfaces preserve that installation and
+remove only the selected record. Remaining interactive and corrupt-record variants
+are separate obligations. Moving upstream pack inputs belong to
 `live_import_survey`, not the pinned regression corpus.
 
 Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
