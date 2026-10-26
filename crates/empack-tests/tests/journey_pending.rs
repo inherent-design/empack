@@ -189,6 +189,15 @@ fn sync_input(operation: &Value, project: &str) -> Value {
 
 #[test]
 fn journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup() {
+    sync_restart_and_cleanup(false);
+}
+
+#[test]
+fn journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup() {
+    sync_restart_and_cleanup(true);
+}
+
+fn sync_restart_and_cleanup(legacy: bool) {
     let project = empack_tests::fixtures::restricted::pair("pending-sync");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -302,11 +311,13 @@ fn journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup() {
         .iter()
         .map(|part| part.as_str().unwrap())
         .collect();
-    command(&project, &state)
-        .args(next)
-        .args(["--file", &association])
-        .assert()
-        .success();
+    let mut resume = command(&project, &state);
+    if legacy {
+        resume.args(["sync", "--continue"]);
+    } else {
+        resume.args(next);
+    }
+    resume.args(["--file", &association]).assert().success();
     assert_eq!(
         report(&project, &state, &["pending", "list", "--json"])["operations"],
         json!([])

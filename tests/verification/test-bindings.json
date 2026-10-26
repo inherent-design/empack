@@ -10,6 +10,8 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::journey_pending_import::journey_pending_import_reverifies_retained_manual_payloads_across_both_resume_commands", "binary": "empack-tests::journey_pending_import", "binary_name": "journey_pending_import", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
+    {"id": "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup", "binary": "empack-tests::journey_pending", "binary_name": "journey_pending", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_pending::journey_pending_build_reverifies_corrupt_and_missing_retained_bytes", "binary": "empack-tests::journey_pending", "binary_name": "journey_pending", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_pending::journey_pending_sync_reverifies_corrupt_and_missing_retained_bytes", "binary": "empack-tests::journey_pending", "binary_name": "journey_pending", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_pending_instance::journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes", "binary": "empack-tests::journey_pending_instance", "binary_name": "journey_pending_instance", "boundary": "X", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

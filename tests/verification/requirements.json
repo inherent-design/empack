@@ -4641,7 +4641,8 @@
       "evidence_tiers": [
         "H",
         "X",
-        "I"
+        "I",
+        "N"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -4667,8 +4668,7 @@
           "assertions": [
             "Each public action starts a fresh process",
             "Public next command completes a suspended build; changed author text prevents stale resume"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.build-fresh-approval",
@@ -4688,15 +4688,15 @@
           "assertions": [
             "Resume with valid bytes requests fresh terminal approval",
             "Declining preserves the author workspace, pending record and supplied file"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.sync-partial-restart",
           "boundary": "X",
           "test_ids": [
             "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
-            "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state"
+            "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state",
+            "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup"
           ],
           "required_platforms": [
             "linux",
@@ -4710,9 +4710,9 @@
           "assertions": [
             "A separate executable retains the first verified input while the second is missing without publishing a partial project",
             "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
-            "Repeated synchronization converges; changed author bytes prevent stale resume"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+            "Repeated synchronization converges; changed author bytes prevent stale resume",
+            "Both public pending resume and sync --continue complete from retained verified input after executable restart and cache cleanup"
+          ]
         },
         {
           "id": "UX-036.import-retained-archive-restart",
@@ -4733,8 +4733,7 @@
           "assertions": [
             "After the original archive is deleted, a fresh process resumes using retained archive bytes and the public next command",
             "Explicit local-source persistence, two convergent synchronizations and exact export inventory preserve the imported file and overrides; a changed destination refuses resume"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.instance-partial-restart",
@@ -4755,8 +4754,7 @@
           "assertions": [
             "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed, ordinary cache is evicted and retained cleanup preserves the pending owner",
             "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.sync-fresh-approval",
@@ -4776,8 +4774,7 @@
           "assertions": [
             "Synchronization requests fresh acquisition approval before using the two exact public manual-input keys",
             "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.import-fresh-approval",
@@ -4797,8 +4794,7 @@
           "assertions": [
             "Import requests fresh publication approval from its retained archive after the original is deleted",
             "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.instance-fresh-approval",
@@ -4818,8 +4814,7 @@
           "assertions": [
             "Instance continuation requests fresh approval with one retained input and a public association for the remaining input after the original descriptor is deleted",
             "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.build-retained-content-faults",
@@ -4842,8 +4837,7 @@
             "Missing retained input becomes a new obligation without partial publication; another valid input remains retained for later completion",
             "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data",
             "A different project sharing the host store retains its saved record and author files throughout failure and recovery"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.sync-retained-content-faults",
@@ -4866,8 +4860,7 @@
             "Missing retained input becomes a new obligation without partial publication; another valid input remains retained for later completion",
             "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data",
             "A different project sharing the host store retains its saved record and author files throughout failure and recovery"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.instance-retained-content-faults",
@@ -4889,8 +4882,7 @@
             "Corrupt retained bytes fail integrity verification without changing author/instance files or the saved state",
             "Missing retained input becomes a new obligation without partial publication; another valid input remains retained for later completion",
             "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data"
-          ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          ]
         },
         {
           "id": "UX-036.import-retained-content-faults",
@@ -4912,8 +4904,94 @@
             "Corrupt retained bytes fail integrity verification without changing author/instance files or the saved state",
             "A missing archive refuses restoration until its exact captured backing is restored",
             "After original inputs and ordinary cache are removed, recovery verifies the complete independent output inventory and preserves prior author/player data"
+          ]
+        },
+        {
+          "id": "UX-036.import-retained-payload-faults",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_reverifies_retained_manual_payloads_across_both_resume_commands"
           ],
-          "remaining_group_evidence": "Imported manual-payload retention faults remain distinct from the retained-archive fault fixture; component lifecycle evidence and legacy-path parity still need a final group audit."
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public diagnostic selectors associate two distinct manual payloads through both pending resume and init --continue, across separate executable invocations",
+            "After the original archive and first download are removed, same-length corruption fails the original SHA-512 without changing saved state, author notes, prior artifacts or the absent destination",
+            "Missing payload becomes a new obligation while the other payload is retained; inspection lists retained content without claiming complete discovery",
+            "Fresh verified replacement completes an exact independently asserted exported inventory after both original downloads and ordinary cache are removed; repeated synchronization converges"
+          ]
+        },
+        {
+          "id": "UX-036.legacy-build-continuation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_pending_build::cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A timed-out restricted build retains its recipe and prior artifacts",
+            "A fresh build --continue invocation accepts verified renamed bytes and produces the independently expected complete MRPack"
+          ]
+        },
+        {
+          "id": "UX-036.component-resume-authority",
+          "boundary": "H",
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "test_ids": [
+            "empack-lib::engine::api::suspension::tests::durable_build_resume_reverifies_content_and_requires_fresh_approval",
+            "empack-lib::engine::api::suspension::tests::stale_and_missing_saved_build_inspection_is_read_only",
+            "empack-lib::engine::import::acquisition::tests::saved_import_accumulates_exact_verified_associations_across_restarts",
+            "empack-lib::engine::api::instance::tests::durable_instance_inputs_survive_engine_restart_without_source_files",
+            "empack-lib::engine::api::instance::tests::saved_instance_rejects_changed_base_without_discarding_pending_input"
+          ],
+          "assertions": [
+            "Build and instance preparation reload saved input after engine restart without publishing until a fresh execution grant; resource reservations retire",
+            "Changed build intent, bindings, lock or source and changed instance base invalidate replay while preserving saved work",
+            "Import restoration checks current plan assertions, revalidates retained archive content and accumulates exact per-selector verified payloads across separate runtimes"
+          ]
+        },
+        {
+          "id": "UX-036.native-sync-record",
+          "boundary": "N",
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "test_ids": [
+            "empack-lib::engine::synchronization::suspension::tests::small_pending_sync_saves_and_resumes_under_eight_mib"
+          ],
+          "assertions": [
+            "Real saved synchronization records reload the captured intent and lock under an eight-MiB memory allowance without changing author documents",
+            "All resource reservations retire after loading; acquired-byte behavior is exercised separately by the public partial-input journeys"
+          ]
         }
       ],
       "owner_now": [
@@ -4926,7 +5004,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-037",

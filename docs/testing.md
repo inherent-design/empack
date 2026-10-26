@@ -120,8 +120,14 @@ backing by its fixture bytes, without decoding a private record. Corruption fail
 verification; missing build, sync or instance content becomes a fresh obligation
 without partial publication. Missing import-archive content prevents restoration.
 Recovery compares the complete output inventory, and build/sync faults preserve a
-second project's saved work in the same host store. Imported manual-payload faults
-remain distinct from archive faults. A shared record fault fixture corrupts actual saved records from
+second project's saved work in the same host store. A two-input import exercises
+manual-payload faults separately from archive faults through both `pending resume`
+and `init --continue`: retained rows remain visible without claiming complete input
+discovery, missing bytes become fresh obligations, and the completed export preserves
+both exact payloads and author overrides. Synchronization also completes its partial
+retention journey through both public resume and `sync --continue`. Component/native
+cases separately bind saved plans, changed observations, fresh grants and retired
+resource reservations. A shared record fault fixture corrupts actual saved records from
 all four families without interpreting their private payloads. Malformed JSON and
 unsupported schemas remain visible as unavailable; text and JSON inspection preserve
 storage, resume refuses them, and explicit discard removes only the selected record.
