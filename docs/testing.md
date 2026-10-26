@@ -99,8 +99,12 @@ and `journey_verified_import` cover controlled local import paths. `cli_interact
 uses real PTY/ConPTY sessions; `live_manual_assistance` adds an official provider
 lookup with a fixture desktop opener. The pending-build journey starts with a component fixture, then obtains operation IDs
 and association keys only from `pending list/show --json`. Fresh executable invocations
-reject wrong bytes, resume renamed verified content and refuse stale drafts; terminal
-coverage checks fresh approval. State snapshots assert preservation without interpreting
+reject wrong bytes, resume renamed verified content and refuse stale drafts. All four
+pending families now exercise fresh terminal approval: build, import publication,
+instance continuation and synchronization acquisition. Decline preserves author/player
+files, prior artifacts, supplied downloads, cache and saved work after the executable
+exits. The shared external harness owns PTY/ConPTY handling and offline command setup;
+no terminal controls are added to the product. State snapshots assert preservation without interpreting
 private continuation records. Synchronization also checks partial retention across
 cache eviction. Import resumes a retained archive after deleting the original and
 keeps incomplete requirement discovery explicit. Its unsupported-transport fixture
@@ -110,13 +114,15 @@ through a partial resume, remove the original download and descriptor, evict ord
 cache and exercise retained cleanup, then complete from public keys through both
 public and legacy continuation commands. They compare the complete game inventory and preserve player notes. A separate real installation
 stales the saved operation; both discard interfaces preserve that installation and
-remove only the selected record. Remaining interactive and corrupt-record variants
-are separate obligations. A shared fault fixture corrupts actual saved records from
+remove only the selected record. Corrupt or changed retained-byte variants remain separate obligations. A shared fault fixture corrupts actual saved records from
 all four families without interpreting their private payloads. Malformed JSON and
 unsupported schemas remain visible as unavailable; text and JSON inspection preserve
 storage, resume refuses them, and explicit discard removes only the selected record.
 Pure selector tests cover ambiguous prefixes separately from native stale-cleanup
-ownership. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
+ownership. A controlled provider-import fixture gives identically named files distinct
+bytes and original digests: exact role selectors are required, other-role bytes fail
+verification, and successful associations retain per-role bytes and source evidence.
+This host fixture does not substitute for live-provider or final-package execution. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
 regression corpus.
 
 Download assistance separates pure provider-page interpretation, native file scans,

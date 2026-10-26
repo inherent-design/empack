@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
+#[path = "support/approval.rs"]
+mod approval;
 #[path = "support/files.rs"]
 mod files;
 #[path = "support/pending.rs"]
@@ -343,5 +345,43 @@ fn journey_pending_instance_corruption_is_visible_and_explicitly_discardable() {
         &fixture.target,
         &fixture.state,
         "instance",
+    );
+}
+
+#[test]
+fn journey_pending_instance_resume_requires_fresh_approval() {
+    let fixture = Fixture::new();
+    fixture.suspend(true);
+    let operation = fixture.pending();
+    let inputs = operation["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 2);
+    let needed = inputs.iter().find(|input| input["needed"] == true).unwrap();
+    assert_eq!(needed["key"], "second-role");
+    let input = fixture.project.dir().join("renamed-second.bin");
+    fs::write(&input, TWO).unwrap();
+    fs::write(
+        fixture.project.dir().join("prior.zip"),
+        b"keep prior artifact",
+    )
+    .unwrap();
+    let association = format!("{}={}", needed["key"].as_str().unwrap(), input.display());
+    fs::remove_file(&fixture.release).unwrap();
+    approval::decline_resume(
+        fixture.project.dir(),
+        &fixture.target,
+        &fixture.state,
+        &[
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ],
+        "(?i)apply this instance continuation plan",
+    );
+    assert_eq!(fixture.pending(), operation);
+    assert_eq!(
+        fs::read(fixture.host.path().join("first renamed.bin")).unwrap(),
+        ONE
     );
 }

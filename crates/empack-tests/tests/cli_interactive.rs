@@ -1,6 +1,8 @@
 //! Native prompt and desktop assistance contracts. No fake packwiz or installer output.
 use empack_tests::harness::process::{TestProject, empack_cmd};
 use expectrl::{Expect, Regex};
+#[path = "support/approval.rs"]
+mod approval;
 #[cfg(unix)]
 #[path = "support/desktop_assistance.rs"]
 mod desktop_assistance;
@@ -8,10 +10,9 @@ mod desktop_assistance;
 mod files;
 #[path = "support/initialization.rs"]
 mod initialization;
-#[path = "support/terminal.rs"]
-mod terminal;
 #[cfg(unix)]
 use desktop_assistance::{browser_command, browser_fixture};
+use empack_tests::harness::terminal;
 use std::{fs, time::Duration};
 
 #[test]
@@ -87,6 +88,12 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
     let project = fixture("pending-approval");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
+    fs::create_dir_all(project.dir().join("dist")).unwrap();
+    fs::write(
+        project.dir().join("dist/prior.mrpack"),
+        b"keep prior artifact",
+    )
+    .unwrap();
     offline_command(project.dir())
         .arg("--state-dir")
         .arg(&state)
@@ -112,29 +119,19 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
         operation["inputs"][0]["key"].as_str().unwrap(),
         input.display()
     );
-    let before = files::snapshot(project.dir());
-    let retained = files::snapshot(&state);
-    let mut cmd = empack_cmd(project.dir());
-    cmd.arg("--state-dir").arg(&state).args([
-        "pending",
-        "resume",
-        operation["id"].as_str().unwrap(),
-        "--file",
-        &association,
-    ]);
-    let mut terminal = terminal::spawn(cmd);
-    terminal.set_expect_timeout(Some(Duration::from_secs(20)));
-    terminal.expect(Regex("(?i)apply this build plan")).unwrap();
-    terminal.send_line("n").unwrap();
-    terminal.expect(Regex("(?i)not applied")).unwrap();
-    #[cfg(not(windows))]
-    terminal.expect(expectrl::Eof).unwrap();
-    // ConPTY's output pipe remains owned by the console host after the child exits.
-    // Wait on the actual process handle instead of mistaking pipe lifetime for work.
-    #[cfg(windows)]
-    assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
-    assert_eq!(files::snapshot(project.dir()), before);
-    assert_eq!(files::snapshot(&state), retained);
+    approval::decline_resume(
+        project.dir(),
+        project.dir(),
+        &state,
+        &[
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ],
+        "(?i)apply this build plan",
+    );
     assert_eq!(fs::read(&input).unwrap(), b"payload");
 }
 

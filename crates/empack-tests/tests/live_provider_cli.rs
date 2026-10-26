@@ -1,9 +1,8 @@
 use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
 use empack_tests::harness::process::{TestProject, read_project};
+use empack_tests::harness::terminal;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-#[path = "support/terminal.rs"]
-mod terminal;
 
 fn placement_path(placement: &empack_core::model::Placement) -> PathBuf {
     use empack_core::model::ContentLayer;

@@ -1,7 +1,6 @@
 //! Replacement assertions through the real executable, with literal incoming data.
 use super::files;
-#[path = "terminal.rs"]
-mod terminal;
+use empack_tests::harness::terminal;
 
 use empack_tests::harness::process::{TestProject, empack_cmd, offline_command};
 use expectrl::{Eof, Expect, Regex};

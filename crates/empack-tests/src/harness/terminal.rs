@@ -104,3 +104,18 @@ impl expectrl::process::NonBlocking for Stream {
         Ok(())
     }
 }
+
+/// Decline an observed plan and wait for the executable, not just its output.
+pub fn decline(command: std::process::Command, prompt: &str) {
+    use expectrl::{Expect, Regex};
+    let mut terminal = expectrl::session::log(spawn(command), std::io::stderr()).unwrap();
+    terminal.set_expect_timeout(Some(std::time::Duration::from_secs(20)));
+    terminal.expect(Regex(prompt)).unwrap();
+    terminal.send_line("n").unwrap();
+    terminal.expect(Regex("(?i)not applied")).unwrap();
+    #[cfg(not(windows))]
+    terminal.expect(expectrl::Eof).unwrap();
+    // ConPTY's output pipe can outlive the child. Wait on its process handle.
+    #[cfg(windows)]
+    assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
+}

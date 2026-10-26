@@ -4449,7 +4449,7 @@
             "Equal-length wrong bytes, unknown keys and duplicate associations are rejected without changing saved work",
             "Correct renamed bytes are retained in the independently inspected artifact"
           ],
-          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
+          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
         },
         {
           "id": "UX-035.sync-manual-association",
@@ -4470,7 +4470,7 @@
             "Association keys come from public exact-provider selections; equal-length wrong bytes leave project and saved operation unchanged",
             "Correct renamed inputs materialize the independent complete two-file inventory"
           ],
-          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
+          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
         },
         {
           "id": "UX-035.import-manual-association",
@@ -4491,7 +4491,7 @@
             "Exact association selector comes from the initial public diagnostic, not private continuation storage",
             "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory"
           ],
-          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
+          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
         },
         {
           "id": "UX-035.instance-manual-association",
@@ -4512,7 +4512,52 @@
             "Public displayed keys authorize association; same-length wrong bytes, unknown keys and duplicate associations produce specific diagnostics without modifying the instance or saved operation",
             "Correct renamed bytes and retained input produce the independently expected complete game-directory inventory"
           ],
-          "remaining_group_evidence": "Ambiguous multi-role, interactive and final-package evidence remain required."
+          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+        },
+        {
+          "id": "UX-035.provider-role-ambiguity",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::import::acquisition::tests::local_provider_associations_require_exact_identity_and_original_digests"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Two provider selections with the same filename require exact selectors; ambiguous and foreign aliases are refused with an explicit diagnostic",
+            "Equal-length wrong or other-role bytes fail the original selected digest; renamed verified files retain distinct per-key bytes and original provider evidence"
+          ],
+          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
+        },
+        {
+          "id": "UX-035.manual-input-fresh-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_pty_pending_resume_requires_fresh_approval",
+            "empack-tests::journey_pending::journey_pending_sync_resume_requires_fresh_approval",
+            "empack-tests::journey_pending_import::journey_pending_import_resume_requires_fresh_approval",
+            "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A previous approved save does not authorize resumed work with manually supplied files",
+            "Declining the actual build, sync acquisition, import or instance-continuation prompt preserves author and player files, prior artifacts, saved work and supplied downloads after process exit"
+          ],
+          "remaining_group_evidence": "Final-package evidence remains required; controlled provider associations do not establish live provider policy."
         }
       ],
       "owner_now": [
@@ -4569,7 +4614,7 @@
             "Each public action starts a fresh process",
             "Public next command completes a suspended build; changed author text prevents stale resume"
           ],
-          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
         },
         {
           "id": "UX-036.build-fresh-approval",
@@ -4590,7 +4635,7 @@
             "Resume with valid bytes requests fresh terminal approval",
             "Declining preserves the author workspace, pending record and supplied file"
           ],
-          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
         },
         {
           "id": "UX-036.sync-partial-restart",
@@ -4613,7 +4658,7 @@
             "After the original download is removed and ordinary cache evicted, retained input survives cleanup and completes fresh resume",
             "Repeated synchronization converges; changed author bytes prevent stale resume"
           ],
-          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
         },
         {
           "id": "UX-036.import-retained-archive-restart",
@@ -4635,7 +4680,7 @@
             "After the original archive is deleted, a fresh process resumes using retained archive bytes and the public next command",
             "Explicit local-source persistence, two convergent synchronizations and exact export inventory preserve the imported file and overrides; a changed destination refuses resume"
           ],
-          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
         },
         {
           "id": "UX-036.instance-partial-restart",
@@ -4657,7 +4702,70 @@
             "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed, ordinary cache is evicted and retained cleanup preserves the pending owner",
             "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
           ],
-          "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+        },
+        {
+          "id": "UX-036.sync-fresh-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Synchronization requests fresh acquisition approval before using the two exact public manual-input keys",
+            "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
+          ],
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+        },
+        {
+          "id": "UX-036.import-fresh-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Import requests fresh publication approval from its retained archive after the original is deleted",
+            "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
+          ],
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
+        },
+        {
+          "id": "UX-036.instance-fresh-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Instance continuation requests fresh approval with one retained input and a public association for the remaining input after the original descriptor is deleted",
+            "Decline preserves saved state, author/player files, prior artifacts, supplied bytes and cache; assertions run after the executable exits"
+          ],
+          "remaining_group_evidence": "Corrupt or changed retained-byte variants remain required; malformed record inspection is separate evidence."
         }
       ],
       "owner_now": [

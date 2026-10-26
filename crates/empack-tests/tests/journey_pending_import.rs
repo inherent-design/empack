@@ -10,6 +10,8 @@ use empack_tests::{
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
 
+#[path = "support/approval.rs"]
+mod approval;
 #[path = "support/files.rs"]
 mod files;
 #[path = "support/pending.rs"]
@@ -238,4 +240,35 @@ fn journey_pending_import_corruption_is_visible_and_explicitly_discardable() {
         &fixture.state,
         "import",
     );
+}
+
+#[test]
+fn journey_pending_import_resume_requires_fresh_approval() {
+    let fixture = ImportFixture::new();
+    let selector = fixture.suspend();
+    let operation = fixture.pending();
+    let input = fixture.project.dir().join("renamed.bin");
+    fs::write(&input, b"payload").unwrap();
+    fs::write(
+        fixture.project.dir().join("prior.zip"),
+        b"keep prior artifact",
+    )
+    .unwrap();
+    let association = format!("{selector}={}", input.display());
+    fs::remove_file(&fixture.archive).unwrap();
+    approval::decline_resume(
+        fixture.project.dir(),
+        &fixture.target,
+        &fixture.state,
+        &[
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+            "--import-local-files",
+        ],
+        "(?i)apply this import plan",
+    );
+    assert_eq!(fixture.pending(), operation);
 }

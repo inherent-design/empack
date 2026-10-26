@@ -7,6 +7,8 @@ use empack_tests::{
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 
+#[path = "support/approval.rs"]
+mod approval;
 #[path = "support/files.rs"]
 mod files;
 use files::snapshot;
@@ -475,4 +477,44 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
             assert!(!state.with_extension("cache").exists());
         }
     }
+}
+
+#[test]
+fn journey_pending_sync_resume_requires_fresh_approval() {
+    let project = empack_tests::fixtures::restricted::pair("sync-approval");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    command(&project, &state)
+        .args(["sync", "--materialize"])
+        .assert()
+        .failure();
+    let operation = pending(&project, &state, "sync");
+    fs::create_dir_all(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/prior.zip"), b"keep prior artifact").unwrap();
+    let mut associations = Vec::new();
+    for (id, bytes) in [("123", b"first".as_slice()), ("124", b"second".as_slice())] {
+        let input = project.dir().join(format!("renamed-{id}.bin"));
+        fs::write(&input, bytes).unwrap();
+        associations.push(format!(
+            "{}={}",
+            sync_input(&operation, id)["key"].as_str().unwrap(),
+            input.display()
+        ));
+    }
+    approval::decline_resume(
+        project.dir(),
+        project.dir(),
+        &state,
+        &[
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &associations[0],
+            "--file",
+            &associations[1],
+        ],
+        "(?i)apply this remote content acquisition plan",
+    );
+    assert_eq!(pending(&project, &state, "sync"), operation);
 }
