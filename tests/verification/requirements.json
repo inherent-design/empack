@@ -5861,6 +5861,7 @@
       "required_work": "Synthetic runtime/script tests all OS; official loader startup matrix separate.",
       "evidence_tiers": [
         "H",
+        "N",
         "X",
         "P",
         "L",
@@ -5870,7 +5871,198 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-043.component-inventory",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats",
+            "empack-lib::engine::build::server::tests::computed_runtime_hash_does_not_upgrade_original_source_assurance",
+            "empack-lib::engine::build::server::tests::managed_entry_points_normalize_output_attributes_across_formats"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Both server recipes retain selected server content and runtime across ZIP/TAR.GZ/7z; reference content prepares through the instance component",
+            "Managed shell/batch entry points receive recipe-owned writable/executable attributes independently of source-host permissions",
+            "Computed runtime hashes do not upgrade original source evidence; no generated EULA acceptance is supplied"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.template-refusals",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::wrong_runtime_and_colliding_templates_preserve_previous_distribution",
+            "empack-lib::engine::build::server::tests::captured_user_scripts_are_preserved_and_reported",
+            "empack-lib::engine::build::server::tests::managed_server_templates_require_generated_entry_points",
+            "empack-lib::engine::build::server::tests::subscribed_server_scripts_require_enrollment_and_check_before_runtime"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Wrong runtime and colliding templates preserve existing output; managed reference and subscribed scripts retain required preparation/lifecycle integration",
+            "Standalone custom scripts remain author-owned, while subscribed scripts require enrollment and update checking"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.unix-entrypoints",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::generated_shell_scripts_keep_java_path_and_user_arguments_separate",
+            "empack-lib::engine::build::server::tests::native_start_prepares_first_and_failure_blocks_the_server",
+            "empack-lib::engine::build::server::tests::typed_runtime_launch_preserves_argument_files_and_historical_jars"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real shell execution with controlled external programs preserves Java paths, user argument boundaries, console/GUI argument selection and game working directory",
+            "Preparation precedes runtime launch; preparation and runtime failures retain their statuses; typed argument-file and historical-JAR launch forms remain distinct",
+            "The controlled empack/Java fixtures prove generated shell behavior, not execution of the production supervisor or Minecraft"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.windows-entrypoints",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::native_windows_start_prepares_first_and_propagates_failure_without_bash",
+            "empack-lib::engine::build::server::tests::windows_bundled_entry_points_preserve_status_and_runtime_arguments"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual cmd.exe executes generated batch entry points with controlled external programs and no Bash dependency",
+            "Preparation failure prevents launch; bundled startup preserves immediate-child status, arguments and informational text under unattended operation",
+            "Batch fixture substitutions remain explicit and do not claim production empack or Java execution"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.managed-status",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::tests::managed_runtime_exit_uses_empack_classification"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A controlled runtime exiting nonzero becomes empack general failure with the original runtime status retained in the diagnostic rather than propagating its numeric code"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.pinned-public-archives",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_server_cli::live_cli_server_archives_preserve_pinned_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal populated project builds reference and bundled ZIP/TAR.GZ/7z through the ordinary executable against the pinned official Minecraft 1.21.1 runtime",
+            "An independent streaming reader verifies complete membership, SHA-256, lengths, attributes, server projection, runtime assertions and preparation/launch configuration; inventories agree across formats",
+            "Original upstream SHA-1 and separately observed SHA-256 remain fixed fixture expectations; author documents, templates and an unrelated prior artifact remain unchanged",
+            "The fresh store exercises acquisition, while later format builds may reuse verified cache; archive inspection does not execute the server"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.fabric-public-preparation",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_server_cli::live_cli_local_server_export_prepare_preserves_bytes",
+            "empack-tests::live_server_cli::live_cli_build_server_references_records_runtime"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual CLI Fabric export and instance preparation retain selected local resourcepack bytes",
+            "ZIP and 7z retain a Fabric runtime descriptor and exclude packwiz artifacts; exact descriptor identity is computed independently of the product decoder"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        },
+        {
+          "id": "UX-043.official-launchers",
+          "boundary": "L",
+          "test_ids": [
+            "empack-lib::runtime_server_smoke::runtime_server_vanilla",
+            "empack-lib::runtime_server_smoke::runtime_server_fabric_classpath",
+            "empack-lib::runtime_server_smoke::runtime_server_fabric_shaded",
+            "empack-lib::runtime_server_smoke::runtime_server_quilt",
+            "empack-lib::runtime_server_smoke::runtime_server_forge",
+            "empack-lib::runtime_server_smoke::runtime_server_neoforge",
+            "empack-lib::runtime_server_smoke::runtime_server_neoforge_early",
+            "empack-lib::runtime_server_smoke::runtime_server_forge_112",
+            "empack-lib::runtime_server_smoke::runtime_server_forge_1710",
+            "empack-lib::runtime_server_smoke::runtime_server_forge_116",
+            "empack-lib::runtime_server_smoke::runtime_managed_server_vanilla",
+            "empack-lib::runtime_server_smoke::runtime_managed_server_neoforge"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Published server distributions run actual generated console entry points against the selected official vanilla/Fabric/Quilt/Forge/NeoForge runtimes",
+            "Current variants reach Minecraft help without accepting an EULA; historical Forge variants preserve EULA refusal and require the explicit Java 8 prerequisite",
+            "Managed variants use the ordinary selected empack executable and preserve completed ownership plus selected game content; startup help/EULA is not an interactive console or gameplay check"
+          ],
+          "remaining_group_evidence": "Final-package server execution and actual interactive server-console acceptance remain separate obligations; help/EULA probes and controlled shell fixtures do not establish gameplay."
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
@@ -5881,7 +6073,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-044",

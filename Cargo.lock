@@ -820,6 +820,7 @@ dependencies = [
  "reqwest",
  "serde-saphyr",
  "serde_json",
+ "sevenz-rust2",
  "sha2",
  "tar",
  "tempfile",

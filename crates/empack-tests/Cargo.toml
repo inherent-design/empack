@@ -16,6 +16,7 @@ empack-core.workspace = true
 empack-lib = { workspace = true, features = ["test-utils"] }
 reqwest.workspace = true
 serde_json.workspace = true
+sevenz-rust2.workspace = true
 sha2.workspace = true
 serde-saphyr.workspace = true
 tar.workspace = true

@@ -15,6 +15,12 @@ filter = "binary(=live_pinned_import)"
 slow-timeout = { period = "60s", terminate-after = 20 }
 
 [[profile.default.overrides]]
+# Six pinned runtime archives include two 7z encodes (~208s on macOS arm64).
+# Each CLI build is separately bounded; allow slower native hosts without retries.
+filter = "binary(=live_server_cli) & (test(=live_cli_server_archives_preserve_pinned_inventory) | test(=live_cli_build_server_references_records_runtime))"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+[[profile.default.overrides]]
 # Build and preparation contracts can run slowly on CI; live runtime acquisition
 # is selected separately from offline archive creation.
 filter = "binary(=cli_build) | binary(=live_server_cli) | binary(=journey_local_exports) | binary(=journey_content_kinds)"

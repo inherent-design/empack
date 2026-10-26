@@ -164,6 +164,18 @@ separately checks client-only projection, same-version rebuilds and empty manage
 command hooks. These fixtures do not interpret arbitrary Qt syntax or execute Prism;
 actual import, preparation and wrapper execution remain consumer obligations.
 
+Server-export cases distinguish artifact inspection, native script execution and
+official runtime probes. A literal project builds reference and bundled ZIP,
+TAR.GZ and 7z against the [pinned vanilla inventory](../tests/fixtures/runtime/README.md).
+The streaming reader compares complete member sets, digests, sizes and output modes,
+including server-only content, source assertions and generated preparation settings.
+Large runtime files are hashed without retaining their bytes in memory. Fabric ZIP
+and 7z checks remain separate from the pinned vanilla matrix. Real shell and cmd.exe
+fixtures check argument boundaries, preparation ordering and immediate-child status;
+their controlled programs do not establish production empack or Java behavior.
+Official launcher probes reach Minecraft help or the historical EULA refusal. Actual
+interactive server-console and final-package acceptance remain outstanding gates.
+
 Download assistance separates pure provider-page interpretation, native file scans,
 host preparation, real terminal decisions and live metadata lookup. Scans verify
 content assertions rather than accepting a unique filename. The wait fixtures reject
