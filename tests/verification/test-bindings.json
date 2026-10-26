@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::cli_build::profiles::cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_change", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::profiles::cli_profiles_preserve_authored_policy_and_explain_actual_output", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::profiles::cli_profile_selection_refusals_preserve_existing_artifacts", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::profiles::cli_profile_explanation_preserves_missing_and_stale_lock_states", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

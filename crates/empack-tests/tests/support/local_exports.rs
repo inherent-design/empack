@@ -4,6 +4,7 @@ use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, o
 
 pub fn export_prepare(targets: &[&str], live: bool) {
     use empack_core::{model::PlacementIntent, requirements::Requirement};
+    use sha2::{Digest, Sha256};
     use std::io::Write;
     let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
     project.configure_native_distribution("local.content", 21);
@@ -95,16 +96,25 @@ pub fn export_prepare(targets: &[&str], live: bool) {
                 (".empack-consumer/release.json", "game", "server", "game")
             };
             let descriptor = instance.path().join(descriptor);
-            let release = empack_lib::engine::release::DecodedRelease::decode(
-                &std::fs::read(&descriptor).unwrap(),
-            )
-            .unwrap();
+            // The expected identity comes from the actual exported bytes,
+            // independently of the product's release decoder.
+            let release_hash: String = Sha256::digest(std::fs::read(&descriptor).unwrap())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
             command()
                 .arg("--workdir")
                 .arg(instance.path())
                 .args(["--yes", "instance", "prepare"])
                 .arg(&descriptor)
-                .args(["--sha256", release.id(), "--layout", layout, "--side", side])
+                .args([
+                    "--sha256",
+                    &release_hash,
+                    "--layout",
+                    layout,
+                    "--side",
+                    side,
+                ])
                 .assert()
                 .success();
             assert_eq!(

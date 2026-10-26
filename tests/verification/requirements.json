@@ -5661,7 +5661,80 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-041.reference-preparation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_change"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Independent complete archive members, literal selected bytes, SHA-256 descriptor/assets and generated command settings agree with the reference snapshot",
+            "Public instance prepare uses the hash extracted from the known emitted prelaunch fixture; changed descriptor bytes and equal-length corrupted assets refuse without altering instance files",
+            "Preparation in a path with spaces and Unicode installs the exact visible inventory, preserves a world sentinel and player-edited seed content, and converges on repeated preparation",
+            "Changing author configuration without changing the version produces a new descriptor identity and installs the new bytes into a fresh instance without changing unrelated author files",
+            "The command fixture is a restricted expected string, not a substitute for Qt parsing or actual launcher execution"
+          ],
+          "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        },
+        {
+          "id": "UX-041.reference-component",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::native_clients_preserve_exact_releases_and_install_into_prism"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reference plans across ZIP/TAR.GZ/7z retain native release integration; the ZIP component fixture retains a provider URL instead of embedding its dependency",
+            "Verified controlled content installs through the instance planner into the Prism layout; this is component evidence rather than a remote provider or launcher test"
+          ],
+          "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        },
+        {
+          "id": "UX-041.packaged-reference-preparation",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_change"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat the descriptor/content refusal, exact preparation and same-version rebuild journey against each final extracted native executable",
+            "Independent archive admission binds source, executable digest/version and native target without discovery fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::instance + api::instance; empack-core::instance",
@@ -5672,7 +5745,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-042",
@@ -5694,14 +5767,85 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-042.bundled-rebuild",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A literal author project produces a complete client-only inventory with exact JAR, options, client override and rendered configuration bytes; excluded author data and server-only files are absent",
+            "Same-version configuration changes rebuild selected bytes while preserving raw author documents and resolution; dependency removal affects only its owned output",
+            "Standalone output has empty prelaunch/wrapper commands and declares the Minecraft runtime component instead of claiming game/runtime assets are bundled"
+          ],
+          "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        },
+        {
+          "id": "UX-042.bundled-component",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::full_client_archives_include_game_templates_and_exact_launcher_profile"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "ZIP/TAR.GZ/7z plans select client templates and exclude server templates; independent ZIP reads verify selected content and rendered metadata",
+            "The launcher profile declares exact Minecraft/Fabric components, uses no managed command hooks and does not force memory settings"
+          ],
+          "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        },
+        {
+          "id": "UX-042.packaged-bundled-rebuild",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat literal authoring, client projection, same-version rebuild and dependency removal using each final extracted native executable",
+            "Independent archive admission binds source, executable digest/version and native target; archive execution does not qualify launcher import"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts"
       ],
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-043",

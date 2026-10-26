@@ -108,7 +108,7 @@ impl Fixture {
             } else {
                 zip_members(&path)
             };
-            assert_inventory(&members, managed, subscribed);
+            assert_inventory(&members, managed, subscribed, &CONTENT);
             expected.insert(output.into(), fs::read(path).unwrap());
         }
         // Publication owns only selected outputs, including repeated builds.
@@ -123,7 +123,12 @@ fn hash(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn assert_inventory(members: &BTreeMap<String, Vec<u8>>, managed: bool, subscribed: bool) {
+fn assert_inventory(
+    members: &BTreeMap<String, Vec<u8>>,
+    managed: bool,
+    subscribed: bool,
+    content: &[(&str, &[u8])],
+) {
     let mut names = BTreeSet::from(["instance.cfg".to_owned(), "mmc-pack.json".to_owned()]);
     assert_eq!(
         serde_json::from_slice::<Value>(&members["mmc-pack.json"]).unwrap(),
@@ -144,15 +149,15 @@ fn assert_inventory(members: &BTreeMap<String, Vec<u8>>, managed: bool, subscrib
         );
         assert_eq!(descriptor["choices"], json!([]));
         let files = descriptor["files"].as_array().unwrap();
-        assert_eq!(files.len(), CONTENT.len());
+        assert_eq!(files.len(), content.len());
         assert_eq!(
             files
                 .iter()
                 .map(|f| f["destination"].as_str().unwrap())
                 .collect::<BTreeSet<_>>(),
-            CONTENT.iter().map(|(path, _)| *path).collect()
+            content.iter().map(|(path, _)| *path).collect()
         );
-        for (destination, bytes) in CONTENT {
+        for &(destination, bytes) in content {
             let file = files
                 .iter()
                 .find(|f| f["destination"] == destination)
@@ -192,7 +197,7 @@ fn assert_inventory(members: &BTreeMap<String, Vec<u8>>, managed: bool, subscrib
             ),
         )
     } else {
-        for (path, bytes) in CONTENT {
+        for &(path, bytes) in content {
             let member = format!(".minecraft/{path}");
             assert_eq!(members[&member], bytes);
             names.insert(member);
@@ -450,5 +455,142 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
             }));
         assert_eq!(snapshot(fixture.project.dir()), before);
         assert_eq!(snapshot(fixture.host.path()), host_before);
+    }
+}
+
+#[test]
+fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_change() {
+    let fixture = Fixture::new(false);
+    let mut prior_release = None;
+    for settings in [CONTENT[0].1, &b"changed author configuration\n"[..]] {
+        fs::write(
+            fixture.project.dir().join("pack/config/settings.txt"),
+            settings,
+        )
+        .unwrap();
+        let content = [("config/settings.txt", settings), CONTENT[1]];
+        let mut author = snapshot(fixture.project.dir());
+        fixture
+            .command()
+            .args(["--yes", "build", "--ad-hoc", "prism"])
+            .assert()
+            .success();
+        let artifact = fixture.project.dir().join(REFERENCE);
+        let members = zip_members(&artifact);
+        assert_inventory(&members, true, false, &content);
+        author.insert(REFERENCE.into(), fs::read(&artifact).unwrap());
+        assert_eq!(snapshot(fixture.project.dir()), author);
+        let descriptor_name = ".minecraft/.empack-consumer/release.json";
+        let descriptor = &members[descriptor_name];
+        let digest = hash(descriptor);
+        if let Some(previous) = prior_release.replace(digest.clone()) {
+            assert_ne!(
+                digest, previous,
+                "changed bytes require a different release identity at the same version"
+            );
+        }
+        // This extracts a known emitted fixture string, not a general Qt parser.
+        // Actual Prism interpretation/import remains a separate consumer check.
+        let ini = std::str::from_utf8(&members["instance.cfg"]).unwrap();
+        let prepare: String = serde_json::from_str(
+            ini.lines()
+                .find_map(|l| l.strip_prefix("PreLaunchCommand="))
+                .unwrap(),
+        )
+        .unwrap();
+        let embedded_digest = prepare.strip_prefix("empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 ").unwrap()
+            .strip_suffix(" --layout prism --side client").unwrap();
+        assert_eq!(embedded_digest, digest);
+        let instance = tempfile::Builder::new()
+            .prefix("Prism instance café ")
+            .tempdir()
+            .unwrap();
+        let host = tempfile::tempdir().unwrap();
+        zip::ZipArchive::new(fs::File::open(&artifact).unwrap())
+            .unwrap()
+            .extract(instance.path())
+            .unwrap();
+        let game = instance.path().join(".minecraft");
+        fs::create_dir_all(game.join("saves/player world")).unwrap();
+        fs::write(
+            game.join("saves/player world/level.dat"),
+            b"player world sentinel",
+        )
+        .unwrap();
+        let prepare = || {
+            let mut command = offline_command(instance.path());
+            command
+                .arg("--state-dir")
+                .arg(host.path().join("state"))
+                .arg("--cache-dir")
+                .arg(host.path().join("cache"))
+                .args([
+                    "--yes",
+                    "instance",
+                    "prepare",
+                    descriptor_name,
+                    "--sha256",
+                    embedded_digest,
+                    "--layout",
+                    "prism",
+                    "--side",
+                    "client",
+                ]);
+            command
+        };
+        let selected = instance.path().join(descriptor_name);
+        let mut changed = descriptor.clone();
+        changed.push(b'\n');
+        fs::write(&selected, changed).unwrap();
+        let before = snapshot(instance.path());
+        prepare()
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains(
+                "Selected release payload identity mismatch",
+            ));
+        assert_eq!(snapshot(instance.path()), before);
+        fs::write(&selected, descriptor).unwrap();
+        // A valid descriptor cannot authorize corrupted included content, even
+        // when the replacement has the declared length. This uses a cold store.
+        let asset = game.join(".empack-consumer/assets").join(hash(settings));
+        fs::write(&asset, vec![b'!'; settings.len()]).unwrap();
+        let before = snapshot(instance.path());
+        prepare().assert().failure();
+        assert_eq!(snapshot(instance.path()), before);
+        fs::write(&asset, settings).unwrap();
+        prepare().assert().success();
+        for (path, bytes) in &members {
+            assert_eq!(fs::read(instance.path().join(path)).unwrap(), *bytes);
+        }
+        let visible = || {
+            snapshot(&game)
+                .into_iter()
+                .filter(|(p, _)| !p.starts_with(".empack-consumer"))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let mut expected: BTreeMap<_, _> = content
+            .iter()
+            .map(|(p, b)| (std::path::PathBuf::from(p), b.to_vec()))
+            .collect();
+        expected.insert(
+            ".empack-layout".into(),
+            b"empack-prism-layout-v1\n".to_vec(),
+        );
+        expected.insert(
+            "saves/player world/level.dat".into(),
+            b"player world sentinel".to_vec(),
+        );
+        assert_eq!(visible(), expected);
+        // Preparing again respects the seed's player-owned content and does
+        // not rebuild the release descriptor to disguise a local modification.
+        fs::write(game.join("config/settings.txt"), b"player configuration").unwrap();
+        let installed = snapshot(instance.path());
+        for _ in 0..2 {
+            prepare().assert().success();
+            assert_eq!(snapshot(instance.path()), installed);
+        }
+        assert_eq!(fs::read(&selected).unwrap(), *descriptor);
+        assert_eq!(snapshot(fixture.project.dir()), author);
     }
 }

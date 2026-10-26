@@ -121,6 +121,8 @@ fn build_and_check(project: &TestProject, jar: Option<&[u8]>, options: &[u8]) {
         "ConfigVersion=1.2",
         "InstanceType=OneSix",
         "name=\"Verification Pack\"",
+        "PreLaunchCommand=",
+        "WrapperCommand=",
     ] {
         assert!(
             configuration.lines().any(|line| line == setting),

@@ -153,6 +153,17 @@ remain inspectable without effects and cannot authorize a build. The external TA
 reader checks bounded members and consumes the gzip trailer; its dependencies belong
 to the test harness, not the distributed product.
 
+Reference Prism fixtures independently hash the exported descriptor and assets,
+then prepare an extracted instance through the real executable. The hash comes from
+the known emitted prelaunch setting; altered descriptors and equal-length corrupted
+assets must fail without changing instance files. Successful preparation installs the
+complete selected inventory, preserves a world sentinel and locally edited seed
+configuration, and converges on repetition. Rebuilding after an author edit changes
+the release identity even when the version label stays the same. The bundled journey
+separately checks client-only projection, same-version rebuilds and empty managed
+command hooks. These fixtures do not interpret arbitrary Qt syntax or execute Prism;
+actual import, preparation and wrapper execution remain consumer obligations.
+
 Download assistance separates pure provider-page interpretation, native file scans,
 host preparation, real terminal decisions and live metadata lookup. Scans verify
 content assertions rather than accepting a unique filename. The wait fixtures reject
