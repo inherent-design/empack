@@ -106,9 +106,9 @@ cache eviction. Import resumes a retained archive after deleting the original an
 keeps incomplete requirement discovery explicit. Its unsupported-transport fixture
 does not establish a live provider's restricted-download policy. Instance journeys
 use a literal two-file manual release, retain a verified input
-through a partial resume, remove the original download and descriptor, then complete
-from public keys through both public and legacy continuation commands. They compare
-the complete game inventory and preserve player notes. A separate real installation
+through a partial resume, remove the original download and descriptor, evict ordinary
+cache and exercise retained cleanup, then complete from public keys through both
+public and legacy continuation commands. They compare the complete game inventory and preserve player notes. A separate real installation
 stales the saved operation; both discard interfaces preserve that installation and
 remove only the selected record. Remaining interactive and corrupt-record variants
 are separate obligations. Moving upstream pack inputs belong to

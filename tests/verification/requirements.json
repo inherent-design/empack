@@ -4576,7 +4576,7 @@
             "telemetry"
           ],
           "assertions": [
-            "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed",
+            "A partial resume retains the first verified file without publishing the instance; later executable invocation completes after the original download and release descriptor are removed, ordinary cache is evicted and retained cleanup preserves the pending owner",
             "Public next-command and legacy instance continue paths install the same inventory and converge across repeated preparation; stale installation refuses replay"
           ],
           "remaining_group_evidence": "Remaining interactive approval and corrupt or changed retained-byte variants remain required."

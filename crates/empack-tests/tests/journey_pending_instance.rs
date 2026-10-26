@@ -203,6 +203,22 @@ fn journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys(
         }
         fs::remove_file(fixture.host.path().join("first renamed.bin")).unwrap();
         fs::remove_file(&fixture.release).unwrap();
+        // Retention must survive ordinary cache eviction, not rely on a cache hit.
+        fixture
+            .command()
+            .args(["clean", "cache"])
+            .assert()
+            .success();
+        let cache = fixture.state.with_extension("cache");
+        assert!(!cache.exists() || snapshot(&cache).values().all(|bytes| bytes != ONE));
+        let protected = snapshot(&fixture.state);
+        fixture
+            .command()
+            .args(["clean", "retained"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(&fixture.state), protected);
+        assert_eq!(fixture.pending(), operation);
         fs::write(&supplied, TWO).unwrap();
         let mut command = fixture.command();
         if legacy {
