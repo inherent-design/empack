@@ -464,6 +464,54 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
 fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits() {
     use serde_json::{Value, json};
 
+    // Refuse the real client's CONNECT through its ordinary proxy configuration.
+    // A closed port can take longer than the catalog deadline on Windows, which
+    // tests deadline presentation instead of the intended transport-failure row.
+    // This proxy supplies no TLS endpoint, provider response, or catalog records.
+    fn refused_transport(command: &mut assert_cmd::Command) -> std::process::Output {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            time::{Duration, Instant},
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
+            command.env(key, &address);
+        }
+        command.env("EMPACK_NET_TIMEOUT", "10");
+        std::thread::scope(|scope| {
+            let proxy = scope.spawn(|| {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut connection = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "catalog request did not start");
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("{error}"),
+                    }
+                };
+                connection.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                connection.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    assert!(request.len() < 8192, "oversized proxy request");
+                    let mut byte = [0];
+                    connection.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                assert!(request.starts_with(b"CONNECT api.modrinth.com:443 HTTP/1.1\r\n"));
+                connection.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            });
+            let result = command.output().unwrap();
+            proxy.join().unwrap();
+            result
+        })
+    }
+
     for manual_only in [false, true] {
         let project = TestProject::new();
         let root = project.dir();
@@ -489,7 +537,11 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                 if json_output {
                     cmd.arg("--json");
                 }
-                let output = cmd.output().unwrap();
+                let output = if manual_only {
+                    cmd.output().unwrap()
+                } else {
+                    refused_transport(&mut cmd)
+                };
                 let fails = strict && !manual_only;
                 assert_eq!(output.status.code(), Some(i32::from(fails)), "{output:?}");
                 let stderr = String::from_utf8(output.stderr).unwrap();
@@ -518,7 +570,7 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                             diagnostic.contains("Dependency renderer-alias (Project1)"),
                             "{diagnostic}"
                         );
-                        // The ordinary offline proxy deliberately refuses transport;
+                        // The ordinary proxy deliberately refuses transport;
                         // it supplies no invented provider records or successful catalog.
                         report["dependencies"][1]["diagnostic"] = Value::Null;
                         rows.push(json!({

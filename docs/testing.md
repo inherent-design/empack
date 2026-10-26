@@ -146,8 +146,10 @@ content. The actual executable must preserve subscription policy and TAR.GZ form
 through default, named and unique-consumer selection. Explicit overrides and ad-hoc
 reference builds must agree with explanation about output paths, field origins and
 recipient requirements. Independent ZIP/TAR readers compare complete inventories,
-payload digests, runtime declarations and exact generated commands; this does not
-establish Prism UI acceptance. Ambiguous or colliding selections preserve prior
+payload digests, runtime declarations and exact generated commands. The generated
+INI comparison accepts LF and CRLF checkout line endings without trimming settings
+or changing asset comparisons; this does not establish Prism UI acceptance.
+Ambiguous or colliding selections preserve prior
 artifacts, while multiple configured formats publish together. Missing/stale locks
 remain inspectable without effects and cannot authorize a build. The external TAR
 reader checks bounded members and consumes the gzip trailer; its dependencies belong
@@ -325,7 +327,10 @@ including exact pins and the distinction between permitted, compatible and upstr
 versions. Controlled catalogs exercise malformed records, shared transfer/deadline
 limits, retained incompatibilities and incomplete pagination. The public executable
 checks populated manual and unavailable-provider rows in text and JSON, preserving
-all author files and printing the report before strict-mode failure. A manual-only
+all author files and printing the report before strict-mode failure. A bounded local
+proxy refuses CONNECT for this unavailable-provider case; it supplies no provider
+records and avoids racing an OS-dependent connection-refusal delay against the
+catalog deadline. A manual-only
 root set stays complete even when the lock retains a forgotten provider dependency;
 that does not establish compatibility of the retained inventory. The live pinned
 journey checks a successful populated strict assessment through actual Modrinth

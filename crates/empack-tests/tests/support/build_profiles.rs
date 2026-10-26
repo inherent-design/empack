@@ -217,8 +217,13 @@ fn assert_inventory(
     } else {
         json!(wrapper).to_string()
     };
+    // The bundled template follows checkout line endings. Both LF and CRLF are
+    // supported Prism syntax; normalize only CRLF, never fields or asset bytes.
+    let configuration = String::from_utf8(members["instance.cfg"].clone()).unwrap();
+    let configuration = configuration.replace("\r\n", "\n");
+    assert!(!configuration.contains('\r'), "bare CR in generated INI");
     assert_eq!(
-        String::from_utf8(members["instance.cfg"].clone()).unwrap(),
+        configuration,
         format!(
             "[General]\nConfigVersion=1.2\nInstanceType=OneSix\nExportAuthor=\"Fixture\"\nOverrideMemory=false\nname=\"Profile fixture\"\niconKey=empack_icon\nAutoUpdate=false\nManagedPack=true\nOverrideCommands=true\nPreLaunchCommand={prepare}\nWrapperCommand={wrapper}\n"
         )

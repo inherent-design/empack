@@ -3,13 +3,11 @@ use super::files;
 use empack_tests::harness::terminal;
 
 use empack_tests::harness::process::{TestProject, empack_cmd, offline_command};
-use expectrl::{Eof, Expect, Regex};
 use std::{
     collections::BTreeMap,
     fs,
     io::Write,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 const MANIFEST: &[u8] = br#"{"formatVersion":1,"game":"minecraft","name":"Replacement","versionId":"2","files":[],"dependencies":{"minecraft":"1.21.1"}}"#;
@@ -368,14 +366,7 @@ fn cli_pty_forced_replacement_decline_preserves_existing_project() {
             ]);
         }
         command.arg("existing");
-        let mut terminal = terminal::spawn(command);
-        terminal.set_expect_timeout(Some(Duration::from_secs(20)));
-        terminal
-            .expect(Regex("(?i)apply this (initialization|import) plan"))
-            .unwrap();
-        terminal.send_line("n").unwrap();
-        terminal.expect(Regex("(?i)not applied")).unwrap();
-        terminal.expect(Eof).unwrap();
+        terminal::decline(command, "(?i)apply this (initialization|import) plan");
         assert_eq!(files::snapshot(project.dir()), before);
         assert_eq!(attributes(project.dir()), modes);
     }
