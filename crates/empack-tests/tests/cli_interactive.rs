@@ -142,11 +142,15 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
 #[test]
 fn cli_pty_download_assistance_preview_and_decline_are_read_only() {
     let (project, host) = browser_fixture();
+    let before = files::snapshot(project.dir());
+    let downloads = files::snapshot(&host.path().join("downloads"));
     let mut cmd = browser_command(&project, host.path());
     cmd.args(["--dry-run", "build", "modrinth", "--open-downloads"]);
     assert_cmd::Command::from_std(cmd).assert().success();
     assert!(!host.path().join("state").exists());
     assert!(!host.path().join("opened").exists());
+    assert_eq!(files::snapshot(project.dir()), before);
+    assert_eq!(files::snapshot(&host.path().join("downloads")), downloads);
     let mut cmd = browser_command(&project, host.path());
     cmd.args(["build", "modrinth", "--open-downloads"]);
     let mut terminal = terminal::spawn(cmd);
@@ -156,6 +160,9 @@ fn cli_pty_download_assistance_preview_and_decline_are_read_only() {
         .unwrap();
     terminal.send_line("n").unwrap();
     terminal.expect(Regex("(?i)not applied")).unwrap();
+    terminal.expect(expectrl::Eof).unwrap();
     assert!(!host.path().join("state").exists());
     assert!(!host.path().join("opened").exists());
+    assert_eq!(files::snapshot(project.dir()), before);
+    assert_eq!(files::snapshot(&host.path().join("downloads")), downloads);
 }

@@ -149,19 +149,17 @@ fn cli_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
                 .extension()
                 .is_some_and(|extension| extension == "json"))
     );
-    let mut archive = zip::ZipArchive::new(
-        fs::File::open(assert_dist_artifact_suffix(project.dir(), ".mrpack")).unwrap(),
-    )
-    .unwrap();
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut archive
-            .by_name("overrides/resourcepacks/manual.zip")
-            .unwrap(),
-        &mut bytes,
-    )
-    .unwrap();
-    assert_eq!(bytes, b"payload");
+    empack_tests::fixtures::restricted::assert_mrpack(
+        &assert_dist_artifact_suffix(project.dir(), ".mrpack"),
+        "restricted-wait",
+    );
+    assert_eq!(
+        fs::read(downloads.join("renamed-download.bin")).unwrap(),
+        b"payload"
+    );
+    for (path, bytes) in before {
+        assert_eq!(fs::read(project.dir().join(path)).unwrap(), bytes);
+    }
 }
 
 #[test]
@@ -171,7 +169,10 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
     let state = host.path().join("state");
     let downloads = host.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
-    fs::write(downloads.join("manual.zip"), b"impostor").unwrap();
+    fs::write(downloads.join("manual.zip"), b"INVALID").unwrap();
+    let original_downloads = snapshot(&downloads);
+    fs::create_dir(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
     let before = snapshot(project.dir());
     command(&project, &state)
         .args([
@@ -188,6 +189,7 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
         .stderr(predicates::str::contains("Download wait expired"));
     assert_eq!(snapshot(project.dir()), before);
     assert!(saved(&state).is_file());
+    assert_eq!(snapshot(&downloads), original_downloads);
     fs::write(downloads.join("renamed.bin"), b"payload").unwrap();
     command(&project, &state)
         .args([
@@ -200,7 +202,16 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
         .arg(&downloads)
         .assert()
         .success();
-    assert_dist_artifact_suffix(project.dir(), ".mrpack");
+    empack_tests::fixtures::restricted::assert_mrpack(
+        &assert_dist_artifact_suffix(project.dir(), ".mrpack"),
+        "restricted-wait-timeout",
+    );
+    let mut expected_downloads = original_downloads;
+    expected_downloads.insert("renamed.bin".into(), b"payload".to_vec());
+    assert_eq!(snapshot(&downloads), expected_downloads);
+    for (path, bytes) in before {
+        assert_eq!(fs::read(project.dir().join(path)).unwrap(), bytes);
+    }
 }
 
 #[test]
@@ -265,6 +276,8 @@ fn cli_restricted_wait_interrupt_retains_recovery_state() {
     let state = host.path().join("state");
     let downloads = host.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
+    fs::create_dir(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
     let before = snapshot(project.dir());
     let mut cmd = project.cmd();
     cmd.arg("--state-dir")

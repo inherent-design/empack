@@ -179,5 +179,61 @@ mod tests {
                 .is_err()
         );
         assert!(start.elapsed() < Duration::from_secs(3));
+
+        let mut command = std::process::Command::new("/bin/sh");
+        command.args(["-c", "exit 7"]);
+        let error = launch_command(command, Duration::from_secs(3), Default::default())
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Browser launcher failed; continuation was retained")
+        );
+
+        // Cancel only after the real launcher has started. This process deliberately
+        // has no browser descendants: cancellation owns the launcher, not the GUI.
+        let pid_path = root.path().join("launcher.pid");
+        let mut command = std::process::Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                "printf '%s\\n' \"$$\" > \"$1\"; exec sleep 60",
+                "launcher",
+            ])
+            .arg(&pid_path);
+        let cancel = crate::application::process_runtime::Cancellation::default();
+        let task = tokio::spawn(launch_command(
+            command,
+            Duration::from_secs(30),
+            cancel.clone(),
+        ));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let pid: libc::pid_t = loop {
+            if let Some(pid) = std::fs::read_to_string(&pid_path)
+                .ok()
+                .and_then(|text| text.strip_suffix('\n').and_then(|pid| pid.parse().ok()))
+            {
+                break pid;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "launcher did not start"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        cancel.cancel();
+        let error = tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(error.is::<crate::application::process_runtime::Interrupted>());
+        // SAFETY: signal zero observes the fixture's PID without delivering a signal.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
     }
 }

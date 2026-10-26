@@ -164,3 +164,22 @@ fn with_assets(name: &str, assets: Vec<ManualAsset>) -> TestProject {
     .unwrap();
     project
 }
+
+/// Independent expected inventory for the single-payload restricted fixture.
+/// Provider-page evidence does not make the fixture payload a real provider download.
+pub fn assert_mrpack(path: &std::path::Path, name: &str) {
+    let members = crate::harness::archive::zip_members(path);
+    assert_eq!(
+        members.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["modrinth.index.json", "overrides/resourcepacks/manual.zip"]
+    );
+    assert_eq!(members["overrides/resourcepacks/manual.zip"], b"payload");
+    let index: serde_json::Value = serde_json::from_slice(&members["modrinth.index.json"]).unwrap();
+    assert_eq!(
+        index,
+        serde_json::json!({
+            "formatVersion": 1, "game": "minecraft", "versionId": "1.0.0", "name": name,
+            "files": [], "dependencies": {"minecraft": "1.21.1", "fabric-loader": "0.15.0"}
+        })
+    );
+}

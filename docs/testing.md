@@ -119,6 +119,16 @@ Pure selector tests cover ambiguous prefixes separately from native stale-cleanu
 ownership. Moving upstream pack inputs belong to `live_import_survey`, not the pinned
 regression corpus.
 
+Download assistance separates pure provider-page interpretation, native file scans,
+host preparation, real terminal decisions and live metadata lookup. Scans verify
+content assertions rather than accepting a unique filename. The wait fixtures reject
+a sole wrong same-length file, preserve downloads and compare the complete resulting
+archive against an independent inventory shared with the pending-build journey.
+The controlled desktop launcher checks arguments, timeout, failure and retirement
+following cancellation; it does not launch or supervise a real browser. The live
+Modrinth case verifies page selection but still uses fixture payload bytes. Windows
+opener behavior and remaining page-limit/failure cases stay explicit gaps in UX-037.
+
 Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
 headers and bodies, and retain author files through refused replacement. A shared
 native HTTP fixture signals when a request actually arrives before triggering

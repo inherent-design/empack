@@ -4685,6 +4685,8 @@
       "required_assertions": "Exact permitted provider page; no opener on preview/decline; bounds/timeout; verified scans do not use uniqueness as identity.",
       "required_work": "Controlled opener and renamed files; real provider page lookup separately; Windows supported behavior explicit.",
       "evidence_tiers": [
+        "U",
+        "N",
         "H",
         "X",
         "I",
@@ -4694,7 +4696,214 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-037.provider-pages",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::providers::pages::tests::browser_pages_keep_provider_kind_and_exact_selection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact Modrinth and CurseForge selection pages preserve supported content-kind routing",
+            "Mismatched project or selection identities, unsupported kinds and unsafe slug syntax cannot produce an opener destination"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.verified-scans",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::acquisition::discovery::tests::discovery_hashes_once_and_uses_assertions_instead_of_names",
+            "empack-lib::engine::acquisition::discovery::tests::weak_evidence_and_prior_observation_keep_their_policy",
+            "empack-lib::engine::acquisition::discovery::tests::incomplete_scans_do_not_return_partial_associations"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Names and unique file counts do not establish content identity; size and all declared digests must agree",
+            "Weak evidence and prior observations retain their distinct policy, while incomplete bounded scans return no partial associations"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.scan-worker-lifecycle",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::acquisition::discovery::tests::discovery_retires_admitted_workers_and_retains_bounded_results"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Admitted scan workers retire while their bounded retained output remains charged until released"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.host-association",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::tests::native_build_missing_content_is_read_only_and_exact_supplied_bytes_complete_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Preview and decline preserve the entire fixture; incorrect, unknown or duplicate associations cannot apply content",
+            "Fresh approved continuation consumes the selected verified content through shared preparation"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.launcher-lifecycle",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::browser::tests::desktop_launcher_bounds_wait_and_preserves_literal_arguments"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The real fixture launcher receives the exact argument, reports nonzero completion and bounds its wait",
+            "Cancellation after observed process startup reports interruption and retires the launcher; it does not claim ownership of a real browser"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.public-wait",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_pending_build::cli_restricted_wait_preserves_preview_and_resumes_verified_downloads",
+            "empack-tests::cli_pending_build::cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts",
+            "empack-tests::cli_pending_build::cli_restricted_wait_refuses_a_replaced_recipe"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Invalid wait bounds and preview leave authoring and saved state untouched",
+            "A sole wrong same-length file times out; renamed verified bytes subsequently produce the complete expected archive while preserving downloads and prior author/artifact bytes",
+            "A changed saved recipe refuses automatic continuation"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.interactive-decline",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_pty_download_assistance_preview_and_decline_are_read_only"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Preview and an actual terminal decline finish without invoking the desktop opener, saving pending state or changing author/download bytes"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.official-page",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_manual_assistance::live_cli_manual_assistance_opens_exact_page_and_verifies_supplied_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An official Modrinth metadata lookup selects the exact resourcepack/version page passed to a controlled opener",
+            "Only verified renamed fixture bytes enter the complete expected archive; unrelated downloads and author files survive and the completed pending record is removed"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.scan-special-files",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::acquisition::discovery::tests::discovery_skips_links_and_special_files_without_following_or_blocking"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native scan skips symbolic links and special files without following or blocking, deduplicates hard links and preserves outside bytes"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        },
+        {
+          "id": "UX-037.public-interruption",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_pending_build::cli_restricted_wait_interrupt_retains_recovery_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Host interruption ends a public download wait without deleting its saved operation or changing author and prior-artifact bytes"
+          ],
+          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+        }
+      ],
       "owner_now": [
         "engine::pending + workflow-specific persisted records; application::engine_host",
         "engine::providers + runtime_catalog + networking::rate_budget",
@@ -4705,7 +4914,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-038",

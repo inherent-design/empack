@@ -2,10 +2,7 @@
 //! a fresh executable and only public pending output, never a private record key.
 use empack_tests::{
     fixtures::restricted::fixture,
-    harness::{
-        archive::zip_members,
-        process::{TestProject, assert_dist_artifact_suffix},
-    },
+    harness::process::{TestProject, assert_dist_artifact_suffix},
 };
 use serde_json::{Value, json};
 use std::{fs, path::Path};
@@ -109,17 +106,10 @@ fn journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes() {
     let completed = report(&project, &state, &["pending", "list", "--json"]);
     assert_eq!(completed["operations"], json!([]));
     assert_eq!(fs::read(&supplied).unwrap(), b"payload");
-    let members = zip_members(&assert_dist_artifact_suffix(project.dir(), ".mrpack"));
-    assert_eq!(
-        members.keys().map(String::as_str).collect::<Vec<_>>(),
-        vec!["modrinth.index.json", "overrides/resourcepacks/manual.zip"]
+    empack_tests::fixtures::restricted::assert_mrpack(
+        &assert_dist_artifact_suffix(project.dir(), ".mrpack"),
+        "pending-public",
     );
-    assert_eq!(members["overrides/resourcepacks/manual.zip"], b"payload");
-    let index: Value = serde_json::from_slice(&members["modrinth.index.json"]).unwrap();
-    assert_eq!(index["formatVersion"], 1);
-    assert_eq!(index["game"], "minecraft");
-    assert_eq!(index["files"], json!([]));
-    assert_eq!(index["dependencies"]["minecraft"], "1.21.1");
     for (name, bytes) in before {
         assert_eq!(fs::read(project.dir().join(name)).unwrap(), bytes);
     }
