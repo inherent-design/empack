@@ -2,6 +2,14 @@
 import re
 
 
+def rustdoc_identity(value):
+    """Use repository separators for the source path, leaving item names exact."""
+    if not re.fullmatch(r".+ - .*\(line [1-9][0-9]*\)", value):
+        raise ValueError(f"Unknown rustdoc test identity: {value}")
+    path, separator, item = value.partition(" - ")
+    return path.replace("\\", "/") + separator + item
+
+
 def rustdoc_tests(output, *, allow_empty=False):
     discovered = []
     group = []
@@ -10,10 +18,7 @@ def rustdoc_tests(output, *, allow_empty=False):
         if not line.strip():
             continue
         if line.endswith(": test"):
-            identity = line.removesuffix(": test")
-            if not re.fullmatch(r".+ - .*\(line [1-9][0-9]*\)", identity):
-                raise ValueError(f"Unknown rustdoc test identity: {line}")
-            group.append(identity)
+            group.append(rustdoc_identity(line.removesuffix(": test")))
         elif match := re.fullmatch(r"([0-9]+) tests?, ([0-9]+) benchmarks?", line):
             if int(match[1]) != len(group) or int(match[2]):
                 raise ValueError("Rustdoc listing count mismatch or unexpected benchmarks")

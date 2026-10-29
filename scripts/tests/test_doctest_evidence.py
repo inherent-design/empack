@@ -26,6 +26,13 @@ def fixture(output, target="x86_64-unknown-linux-gnu", features="all", source=RO
         suffix = next(key for key, mode in MODES.items() if mode == row['mode'])
         run += f'test {name}{suffix} ... ok\n'
     run += f'test result: ok. {len(names)} passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n'
+    if target == 'x86_64-pc-windows-msvc':
+        # rustdoc emits native source separators in both discovery and execution.
+        for name in names:
+            path, separator, item = name.partition(' - ')
+            native = path.replace('/', '\\') + separator + item
+            listing = listing.replace(name, native)
+            run = run.replace(name, native)
     for name, text in {'list.stdout': listing, 'ignored.stdout': '0 tests, 0 benchmarks\n',
                        'run.stdout': run, 'run.log': run, 'source-snapshot.json': '{}\n'}.items():
         (output / name).write_text(text, encoding='utf-8')
@@ -90,17 +97,34 @@ class RustdocOutcomes(unittest.TestCase):
             inventory(listing, listing, bindings)
         with self.assertRaises(ValueError):
             outcomes(listing, self.expected)
+        windows = listing.replace('crates/core.rs', 'crates\\core.rs')
+        self.assertEqual(inventory(windows, '0 tests, 0 benchmarks\n', bindings),
+                         inventory(listing, '0 tests, 0 benchmarks\n', bindings))
+        self.assertEqual(outcomes(self.output.replace('crates/core.rs', 'crates\\core.rs'), self.expected),
+                         outcomes(self.output, self.expected))
+        with self.assertRaisesRegex(ValueError, 'Duplicate'):
+            inventory(listing + windows, '0 tests, 0 benchmarks\n', bindings)
+        duplicate = self.output + self.output.replace('crates/core.rs', 'crates\\core.rs')
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            outcomes(duplicate, self.expected)
+        for source in ('other/core.rs', 'crates//core.rs', 'C:\\crates\\core.rs', 'crates/../core.rs'):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                inventory(listing.replace('crates/core.rs', source), '0 tests, 0 benchmarks\n', bindings)
+        with self.assertRaises(ValueError):
+            outcomes(self.output.replace('Type', 'Type\\Nested'), self.expected)
 
 
 class RustdocAdmission(unittest.TestCase):
     def test_receipt_replays_exact_graph_modes_and_observations(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory)
-            record = fixture(path)
-            admitted = inspect_doctest_evidence(path / 'receipt.json', REVISION)
-            self.assertEqual(admitted['tests'], record['tests'])
-            self.assertEqual(admitted['status'], 'PASS')
-            self.assertEqual({row['mode'] for row in admitted['tests']}, {'run', 'compile', 'compile_fail'})
+            for target in ('x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc'):
+                with self.subTest(target=target):
+                    path = Path(directory) / target
+                    record = fixture(path, target=target)
+                    admitted = inspect_doctest_evidence(path / 'receipt.json', REVISION)
+                    self.assertEqual(admitted['tests'], record['tests'])
+                    self.assertEqual(admitted['status'], 'PASS')
+                    self.assertEqual({row['mode'] for row in admitted['tests']}, {'run', 'compile', 'compile_fail'})
 
     def test_changed_source_toolchain_command_and_outcomes_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

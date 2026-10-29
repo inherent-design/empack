@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import tomllib
 
-from .discovery import rustdoc_tests
+from .discovery import rustdoc_identity, rustdoc_tests
 from .evidence import aggregate_outcomes, sha256
 from .suites import TEST_FEATURES
 
@@ -61,6 +61,7 @@ def outcomes(output, expected):
             group = []
         elif match := re.fullmatch(r"test (.+ - .*\(line [1-9][0-9]*\))( - compile fail| - compile)? \.\.\. (ok|FAILED|ignored)", line):
             identity, suffix, result = match.groups()
+            identity = rustdoc_identity(identity)
             mode = MODES[suffix or ""]
             if count is None or identity not in expected or identity in rows:
                 raise ValueError("Unknown, duplicate or ungrouped rustdoc result")

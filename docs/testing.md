@@ -706,6 +706,9 @@ the JSON and original job artifacts remain the evidence to inspect.
 Doctest cases retain their required mode (`run`, `compile`, or `compile_fail`) and
 workspace test graph independently of product features. The release candidate gate
 admits both graphs from each native host using the same observed-rustdoc verifier.
+Discovery and execution normalize native source-path separators to the registry's
+repository paths; item names, line numbers, modes and ignore policy remain exact.
+Duplicate identities are rejected after normalization, including mixed spellings.
 Compiler-only examples cannot replace executed examples, and failed attempts remain
 visible even when a later run passes.
 
