@@ -15,6 +15,78 @@ fn capture(root: &ProjectReadRoot, paths: &[&str]) -> NativeSnapshot {
 }
 
 #[test]
+fn persistent_fingerprint_keeps_object_evidence_without_boot_local_devices() {
+    let temp = tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("pack/config")).unwrap();
+    fs::create_dir(temp.path().join("directory")).unwrap();
+    fs::write(temp.path().join("pack/config/file"), b"same bytes").unwrap();
+    fs::write(temp.path().join("other"), b"same bytes").unwrap();
+    let root = ProjectReadRoot::open(temp.path()).unwrap();
+    let scopes = ["pack/config/file", "other", "absent", "directory"];
+    let mut snapshot = capture(&root, &scopes);
+    let legacy = snapshot.fingerprint(FingerprintVersion::NativeV1).unwrap();
+    let persistent = snapshot
+        .fingerprint(FingerprintVersion::PersistentV2)
+        .unwrap();
+    snapshot.root.volume ^= 1;
+    for observed in snapshot.entries.values_mut() {
+        match observed {
+            Observation::File(file) => file.object.volume ^= 1,
+            Observation::Ancestor(binding) | Observation::Directory { binding, .. } => {
+                binding.0.volume ^= 1
+            }
+            Observation::Absent => (),
+        }
+    }
+    assert_ne!(
+        snapshot.fingerprint(FingerprintVersion::NativeV1).unwrap(),
+        legacy
+    );
+    assert_eq!(
+        snapshot
+            .fingerprint(FingerprintVersion::PersistentV2)
+            .unwrap(),
+        persistent
+    );
+    // Durable comparison never grants permission to reuse a stale live observation.
+    assert!(
+        root.revalidate(&snapshot, &Cancellation::default())
+            .is_err()
+    );
+    snapshot.root.volume ^= 1;
+    assert!(
+        root.revalidate(&snapshot, &Cancellation::default())
+            .is_err()
+    );
+    let mut snapshot = capture(&root, &scopes);
+    let Observation::File(other) = &snapshot.entries[&path("other")] else {
+        unreachable!()
+    };
+    let other_identity = other.object.persistent;
+    let Observation::File(selected) = snapshot.entries.get_mut(&path("pack/config/file")).unwrap()
+    else {
+        unreachable!()
+    };
+    assert_ne!(selected.object.persistent, other_identity);
+    selected.object.persistent = other_identity;
+    assert_ne!(
+        snapshot
+            .fingerprint(FingerprintVersion::PersistentV2)
+            .unwrap(),
+        persistent
+    );
+    // Unsupported identity must not quietly fall back to the device-based fingerprint.
+    snapshot.root.persistent = None;
+    assert!(
+        snapshot
+            .fingerprint(FingerprintVersion::PersistentV2)
+            .unwrap_err()
+            .to_string()
+            .contains("Filesystem lacks persistent object identity")
+    );
+}
+
+#[test]
 fn raw_edits_absence_and_membership_invalidate_snapshots() {
     let temp = tempdir().unwrap();
     fs::create_dir(temp.path().join("pack")).unwrap();

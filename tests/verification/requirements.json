@@ -4219,7 +4219,7 @@
         "CLI"
       ],
       "required_assertions": "Exact selected operation and requirements; missing/corrupt/stale distinctions; no reads interpreted as verification; no network/durable writes.",
-      "required_work": "All build/import/sync/instance record families and ambiguous IDs.",
+      "required_work": "All build/import/sync/instance record families and ambiguous IDs. T27: persistent root/state lookup and recoverable legacy migration must preserve pending discovery and resume across native remount; fingerprint components alone do not establish this.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4404,7 +4404,7 @@
         "shared pending semantics + native/browser retention and UI",
         "empack-cli"
       ],
-      "case_bindings_status": "complete"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-035",
@@ -4417,12 +4417,14 @@
         "LIFE"
       ],
       "required_assertions": "Wrong bytes/same filename rejected; correct bytes/new filename accepted; ambiguous role rejected; receipt retains original evidence.",
-      "required_work": "Use public printed keys; never discover private state schema to perform UX step.",
+      "required_work": "Use public printed keys; never discover private state schema to perform UX step. T27: persistent root/state lookup and recoverable legacy migration must preserve pending discovery and resume across native remount; fingerprint components alone do not establish this.",
       "evidence_tiers": [
         "H",
         "X",
         "I",
-        "P"
+        "P",
+        "U",
+        "N"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -4612,6 +4614,67 @@
             "Execute the extracted final binary on each native target; archive admission binds its digest and version without discovery fallback",
             "Wrong bytes or declined approval preserve author work, saved obligations and prior artifacts; only verified approved input permits completion"
           ]
+        },
+        {
+          "id": "UX-035.persistent-object-namespaces",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::native::persistent::tests::volume_and_object_namespaces_cannot_alias_equal_object_numbers"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Persistent identity distinguishes volume, object, creation time and platform/object-namespace domains; equal inode numbers on different volumes do not alias"
+          ]
+        },
+        {
+          "id": "UX-035.persistent-snapshot-comparison",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::native::persistent::tests::persistent_observation_follows_retained_object_not_its_path_or_bytes",
+            "empack-lib::engine::snapshot::tests::persistent_fingerprint_keeps_object_evidence_without_boot_local_devices"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Device reassignment preserves the persistent comparison while invalidating reuse of the old live observation",
+            "Retained/reopened moved objects keep identity; replacement with identical bytes changes identity",
+            "Missing durable evidence refuses persistent comparison instead of falling back to a device number"
+          ]
+        },
+        {
+          "id": "UX-035.saved-build-fingerprint-versions",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::suspension::tests::durable_build_resume_reverifies_content_and_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "New schema-5 build records and existing schema-4 records resume through their respective fingerprint versions",
+            "Inspection and preparation preserve saved record bytes; retained inputs are reverified and completed publication still requires fresh approval"
+          ]
         }
       ],
       "owner_now": [
@@ -4624,7 +4687,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "complete"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-036",

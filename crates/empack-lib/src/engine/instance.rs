@@ -999,7 +999,8 @@ fn verify_current_file(
 impl InstancePlan {
     pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
         self.root.revalidate(&self.snapshot, cancel)?;
-        Ok(self.snapshot.fingerprint())
+        self.snapshot
+            .fingerprint(super::snapshot::FingerprintVersion::NativeV1)
     }
     pub(super) fn launch_lease(
         &self,

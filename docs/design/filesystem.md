@@ -27,6 +27,29 @@ A cache cleanup has cache-root authority, not project-root authority. The engine
 Native roots use directory capabilities with platform-specific identity, no-follow
 and reparse checks. `cap-std` alone does not establish confinement. [R9](https://docs.rs/cap-std/latest/cap_std/fs/struct.Dir.html)
 
+Live observations and persistent identity serve different purposes. A retained
+handle still checks the current device, object and creation metadata. Persistent
+comparison must not treat a Unix device number as a volume identifier across
+reboot or remount. The v0.8.4 adapter additionally observes a volume UUID and object
+identity through the retained handle: macOS uses `fgetattrlist`; Linux uses
+`FS_IOC_GETFSUUID` and the filesystem's export handle; Windows retains the volume
+serial and file ID from `FILE_ID_INFO`. Linux export handles distinguish filesystem
+object namespaces, including subvolumes. All three include creation identity and
+use separate platform domains. No pathname is accepted as substitute evidence.
+
+New saved-build fingerprints use these persistent observations. Old saved-build
+records retain their original strict comparison and are not rewritten by inspection.
+Unavailable UUID/export-handle support or creation metadata refuses retention that
+needs this evidence; it does not fall back to the current device number. The Linux
+generic UUID ioctl requires kernel support introduced in 6.9 and support from the
+selected filesystem. Missing native-host evidence is not a supported-platform claim.
+
+**Migration remains unfinished in the v0.8.4 development branch.** Root keys, other
+continuations and recovery journals still need the corresponding durable lookup and
+legacy migration. Persistent fingerprint support alone does not fix instance reopen
+or pending discovery after remount. Existing state must remain intact until its
+binding can be established; an ambiguous old device binding cannot authorize writes.
+
 Required behavior:
 
 - Open/read/create/remove relative to retained roots and validate expected file kinds without a weaker lexical fallback on I/O failure.

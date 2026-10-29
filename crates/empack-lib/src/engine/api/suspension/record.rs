@@ -18,6 +18,18 @@ pub(super) struct Record {
     pub recipe: SavedRecipe,
     pub files: Vec<SavedFile>,
 }
+impl Record {
+    pub(super) fn fingerprint_version(
+        &self,
+    ) -> Result<crate::engine::snapshot::FingerprintVersion> {
+        use crate::engine::snapshot::FingerprintVersion;
+        match self.schema {
+            4 => Ok(FingerprintVersion::NativeV1),
+            5 => Ok(FingerprintVersion::PersistentV2),
+            _ => anyhow::bail!("Unsupported pending build schema"),
+        }
+    }
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SavedFile {

@@ -10,6 +10,9 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::engine::native::persistent::tests::volume_and_object_namespaces_cannot_alias_equal_object_numbers", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
+    {"id": "empack-lib::engine::native::persistent::tests::persistent_observation_follows_retained_object_not_its_path_or_bytes", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
+    {"id": "empack-lib::engine::snapshot::tests::persistent_fingerprint_keeps_object_evidence_without_boot_local_devices", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::native_exports::cli_native_export_requires_declared_local_bytes_even_for_reference_delivery", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::artifacts::tests::every_encoder_rejects_omitted_stage_members_before_replacing_candidate_bytes", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::profiles::cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_inputs", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

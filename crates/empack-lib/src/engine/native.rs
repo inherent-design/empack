@@ -5,6 +5,7 @@ use cap_std::fs::{Dir, OpenOptions};
 use empack_core::path::PortableRelPath;
 use std::fs::File;
 mod creation;
+mod persistent;
 pub(super) use creation::rename_new_directory;
 #[cfg(windows)]
 use std::io;
@@ -14,6 +15,8 @@ pub(super) struct ObjectIdentity {
     pub volume: u64,
     pub object: u128,
     pub created: Option<(u64, u32)>,
+    /// Additional durable evidence, never a replacement for live handle equality.
+    pub persistent: Option<[u8; 32]>,
 }
 
 pub(super) fn identity(file: &File) -> Result<ObjectIdentity> {
@@ -27,11 +30,14 @@ pub(super) fn identity(file: &File) -> Result<ObjectIdentity> {
     {
         use std::os::unix::fs::MetadataExt;
         let metadata = file.metadata()?;
-        Ok(ObjectIdentity {
+        let mut value = ObjectIdentity {
             volume: metadata.dev(),
             object: metadata.ino() as u128,
             created,
-        })
+            persistent: None,
+        };
+        value.persistent = persistent::identity(file, &value)?;
+        Ok(value)
     }
     #[cfg(windows)]
     {
@@ -54,11 +60,14 @@ pub(super) fn identity(file: &File) -> Result<ObjectIdentity> {
             "Cannot bind native file identity: {}",
             io::Error::last_os_error()
         );
-        Ok(ObjectIdentity {
+        let mut value = ObjectIdentity {
             volume: info.VolumeSerialNumber,
             object: u128::from_le_bytes(info.FileId.Identifier),
             created,
-        })
+            persistent: None,
+        };
+        value.persistent = persistent::identity(file, &value)?;
+        Ok(value)
     }
 }
 
