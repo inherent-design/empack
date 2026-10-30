@@ -8051,11 +8051,53 @@
             "telemetry"
           ],
           "assertions": [
-            "A literal authored native release is built and staged through public commands",
-            "Independently computed payload digest and Ed25519 verification agree with the signed output and preserve source payload bytes",
-            "Tampered source asset refuses staging without creating the release directory; corrected source stages exact bytes without publishing a channel"
+            "The public CLI builds native client releases from literal source bytes, stages them, and independently verifies the Ed25519 domain, expected public key, original payload and release ID",
+            "An independently specified complete game/asset inventory checks runtime, subscription requirement, every destination, participation, policy, digest and length; staged output contains exactly the signed envelope and selected asset bytes, omitting unselected source files",
+            "Tampered source assets are refused without altering author/export bytes or existing staged output; successful staging preserves source extras, author files and all previously staged publisher bytes/attributes"
           ],
-          "remaining_group_evidence": "Immutable destination conflicts, complete allowed-upload inventory and hosted publication remain separate cases"
+          "remaining_group_evidence": "Local executable and independent signature/inventory evidence only. HTTPS availability and channel publication belong to UX056; no staging command uploads files."
+        },
+        {
+          "id": "UX-055.immutable-output-and-signer-context",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_conflicts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh CLI replay of the same signed release is a no-op across publisher files and attributes",
+            "Different bytes at an existing selected asset or envelope cannot be replaced; refusal preserves those conflicting bytes and every author/source/key file",
+            "A different signing key for the identical release payload/ID cannot replace its existing immutable envelope; the original signature and complete inventory remain verifiable and no channel is created"
+          ]
+        },
+        {
+          "id": "UX-055.source-evidence-and-stale-approval",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::release_publication::tests::immutable_release_staging_verifies_assets_signatures_and_republication",
+            "empack-lib::engine::api::release_publication::tests::publication_refuses_false_source_assertions_and_late_source_changes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Engine preparation enforces all asset provenance assertions in addition to SHA-256 identity, verifies signature/ID and permits identical replay without granting ownership of different existing bytes",
+            "Source changes after preparation invalidate execution before publication; captured preview/grants cannot publish stale local content"
+          ]
         }
       ],
       "owner_now": [

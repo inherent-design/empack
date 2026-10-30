@@ -70,6 +70,11 @@ assertions and refuses different bytes at existing release addresses. It does no
 advance a channel or enroll subscribers. Use `--dry-run` to inspect the release,
 output paths and signing fingerprints before publication.
 
+Only assets selected by the release descriptor are staged; adjacent source files
+stay in the export. Re-staging identical output is a no-op. Different bytes at an
+existing selected asset or envelope are refused. Signing the same release payload
+with different keys does not authorize replacing its existing immutable envelope.
+
 After the immutable release is available through HTTPS, prepare its channel pointer:
 
 ```sh

@@ -6,7 +6,12 @@ use empack_tests::harness::workspace::snapshot;
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::{fs, path::Path, time::SystemTime};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 #[path = "support/approval.rs"]
 mod approval;
@@ -42,6 +47,12 @@ fn private_directory(path: &Path) {
             .unwrap();
         assert!(output.status.success(), "{output:?}");
     }
+}
+
+fn staged_output(publisher: &Path) -> Option<empack_tests::harness::workspace::Snapshot> {
+    // Capture the served tree; per-command harness state lives beside it.
+    let dist = publisher.join("dist");
+    dist.exists().then(|| snapshot(&dist))
 }
 
 #[test]
@@ -229,10 +240,75 @@ build:
     let payload = fs::read(export.join("release.json")).unwrap();
     let id = hex(&Sha256::digest(&payload));
     build.stdout(contains(&id));
+    // Literal authored bytes define the oracle, independently of the native
+    // producer's inventory, its ZIP writer and the publication planner.
+    let mut expected_game = BTreeMap::from([
+        ("managed.txt", version.as_bytes().to_vec()),
+        (
+            "config/settings.txt",
+            format!("publisher {version}").into_bytes(),
+        ),
+        (
+            "saves/fixture/level.dat",
+            format!("world {version}").into_bytes(),
+        ),
+    ]);
+    if version == "2.0.0" {
+        expected_game.insert(
+            "saves/fixture/new-publisher-member.dat",
+            b"new seed member".to_vec(),
+        );
+    }
+    let document: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(document["pack"], "verification.publisher");
+    assert_eq!(document["version"], version);
+    assert_eq!(document["schema"], 1);
+    assert_eq!(document["require_subscription"], true);
+    assert_eq!(
+        document["runtime"],
+        json!({
+            "minecraft":"1.21.1", "loader":{"kind":"vanilla"}, "java_major":21
+        })
+    );
+    let files = document["files"].as_array().unwrap();
+    assert_eq!(files.len(), expected_game.len());
+    let mut expected_assets = BTreeMap::<PathBuf, Vec<u8>>::new();
+    for file in files {
+        let destination = file["destination"].as_str().unwrap();
+        let bytes = expected_game
+            .remove(destination)
+            .expect("undeclared game destination");
+        let digest = hex(&Sha256::digest(&bytes));
+        let asset = format!("assets/{digest}");
+        assert_eq!(file["sha256"], digest);
+        assert_eq!(file["bytes"], bytes.len() as u64);
+        assert_eq!(
+            file["policy"],
+            if destination == "managed.txt" {
+                "managed"
+            } else {
+                "seed"
+            }
+        );
+        assert_eq!(file["client"], json!({"kind":"required"}));
+        assert_eq!(file["server"], json!({"kind":"unsupported"}));
+        assert_eq!(file["source"], json!({"kind":"asset", "path":asset}));
+        expected_assets.insert(PathBuf::from(asset), bytes);
+    }
+    assert!(expected_game.is_empty());
+    write(
+        export,
+        "assets/not-selected.bin",
+        b"unselected source content",
+    );
+    write(export, "author notes.txt", b"unselected author work");
+    let author_before = snapshot(author);
+    let publisher_before = staged_output(publisher);
     let asset_name = format!("assets/{}", hex(&Sha256::digest(version.as_bytes())));
     let asset = export.join(&asset_name);
     assert_eq!(fs::read(&asset).unwrap(), version.as_bytes());
     fs::write(&asset, b"wrong").unwrap();
+    let bad_source = snapshot(export);
     offline_command(publisher)
         .args(["--yes", "release", "stage"])
         .arg(export)
@@ -241,8 +317,12 @@ build:
         .assert()
         .failure();
     assert!(!publisher.join(format!("dist/releases/{id}")).exists());
+    assert_eq!(snapshot(export), bad_source);
+    assert_eq!(staged_output(publisher), publisher_before);
+    assert_eq!(snapshot(author), author_before);
     assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
     fs::write(&asset, version.as_bytes()).unwrap();
+    let selected_source = snapshot(export);
     offline_command(publisher)
         .args(["--yes", "release", "stage"])
         .arg(export)
@@ -252,12 +332,144 @@ build:
         .success()
         .stdout(contains(&id));
     assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    assert_eq!(snapshot(export), selected_source);
+    assert_eq!(snapshot(author), author_before);
+    let staged = snapshot(&publisher.join(format!("dist/releases/{id}")));
+    assert_eq!(staged.files.len(), expected_assets.len() + 1);
+    assert!(staged.files.contains_key(Path::new("release.json")));
+    let mut expected_entries = BTreeSet::from([
+        PathBuf::new(),
+        PathBuf::from("assets"),
+        PathBuf::from("release.json"),
+    ]);
+    expected_entries.extend(expected_assets.keys().cloned());
+    assert_eq!(
+        staged.entries.keys().cloned().collect::<BTreeSet<_>>(),
+        expected_entries
+    );
+    for (path, bytes) in &expected_assets {
+        assert_eq!(&staged.files[path], bytes);
+    }
+    // A second release may add its own files, never rewrite earlier immutable
+    // output or neighboring publisher work.
+    let publisher_after = staged_output(publisher).unwrap();
+    if let Some(before) = publisher_before {
+        for (path, bytes) in &before.files {
+            assert_eq!(&publisher_after.files[path], bytes);
+        }
+        for (path, entry) in &before.entries {
+            assert_eq!(&publisher_after.entries[path], entry);
+        }
+    }
     assert_eq!(
         fs::read(publisher.join(format!("dist/releases/{id}/{asset_name}"))).unwrap(),
         version.as_bytes()
     );
     assert!(!publisher.join("dist/channels").exists());
     id
+}
+
+#[test]
+fn cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_conflicts() {
+    let root = tempfile::tempdir().unwrap();
+    let author = root.path().join("author");
+    let publisher = root.path().join("publisher");
+    let private = root.path().join("private keys");
+    fs::create_dir(&author).unwrap();
+    fs::create_dir(&publisher).unwrap();
+    private_directory(&private);
+    write(&publisher, "publisher notes.txt", b"retain publisher work");
+    write(
+        &publisher,
+        "dist/releases/prior/retained.txt",
+        b"retain older output",
+    );
+    // These public fixture seeds are disposable and never used outside tests.
+    let signing = SigningKey::from_bytes(&[81; 32]);
+    let key = private.join("publisher.key");
+    fs::write(&key, format!("{}\n", hex(signing.as_bytes()))).unwrap();
+    let alternate = private.join("alternate.key");
+    fs::write(&alternate, format!("{}\n", hex(&[82; 32]))).unwrap();
+    offline_command(&author)
+        .args([
+            "--yes",
+            "init",
+            "--modloader",
+            "none",
+            "--mc-version",
+            "1.21.1",
+        ])
+        .assert()
+        .success();
+    let export = root.path().join("export");
+    let id = build_and_stage(&author, &publisher, &key, &export, "1.0.0");
+    let output = publisher.join(format!("dist/releases/{id}"));
+    let envelope = output.join("release.json");
+    verify_staged(
+        &envelope,
+        &signing.verifying_key(),
+        &id,
+        &export.join("release.json"),
+    );
+    let original = staged_output(&publisher);
+    let source = snapshot(&export);
+    let authored = snapshot(&author);
+    let secrets = snapshot(&private);
+    offline_command(&publisher)
+        .args(["--yes", "release", "stage"])
+        .arg(&export)
+        .arg("--key-file")
+        .arg(&key)
+        .assert()
+        .success()
+        .stdout(contains(&id));
+    assert_eq!(staged_output(&publisher), original);
+    let asset = output.join(format!("assets/{}", hex(&Sha256::digest(b"1.0.0"))));
+    for path in [&asset, &envelope] {
+        let retained = fs::read(path).unwrap();
+        fs::write(path, b"publisher-owned conflicting bytes").unwrap();
+        let changed = staged_output(&publisher);
+        offline_command(&publisher)
+            .args(["--yes", "release", "stage"])
+            .arg(&export)
+            .arg("--key-file")
+            .arg(&key)
+            .assert()
+            .failure()
+            .stderr(contains("Immutable release output already differs"));
+        assert_eq!(staged_output(&publisher), changed);
+        assert_eq!(
+            fs::read(publisher.join("publisher notes.txt")).unwrap(),
+            b"retain publisher work"
+        );
+        assert_eq!(snapshot(&export), source);
+        assert_eq!(snapshot(&author), authored);
+        assert_eq!(snapshot(&private), secrets);
+        fs::write(path, retained).unwrap();
+    }
+    offline_command(&publisher)
+        .args(["--yes", "release", "stage"])
+        .arg(&export)
+        .arg("--key-file")
+        .arg(&alternate)
+        .assert()
+        .failure()
+        .stderr(contains("Immutable release output already differs"));
+    assert_eq!(staged_output(&publisher), original);
+    assert_eq!(
+        fs::read(publisher.join("publisher notes.txt")).unwrap(),
+        b"retain publisher work"
+    );
+    assert_eq!(snapshot(&export), source);
+    assert_eq!(snapshot(&author), authored);
+    assert_eq!(snapshot(&private), secrets);
+    assert!(!publisher.join("dist/channels").exists());
+    verify_staged(
+        &envelope,
+        &signing.verifying_key(),
+        &id,
+        &export.join("release.json"),
+    );
 }
 
 fn channel(path: &Path, key: &SigningKey, id: &str, envelope: &Path, sequence: u64, expires: u64) {

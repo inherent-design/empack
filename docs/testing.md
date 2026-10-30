@@ -543,9 +543,16 @@ flow and on-disk postconditions, not kernel-generated I/O faults or physical
 power-loss durability. Public approval and unsafe-destination checks remain separate.
 
 The publisher journey builds literal native projects, stages them using a disposable
-private key, and checks the signed payload independently with Ed25519. Fresh CLI
-processes enroll, observe local channel envelopes, install, update, repair, roll back,
-and change trust. Assertions cover refused tampering and expiry, explicit conflict
+private key, and checks the signed payload independently with Ed25519. Its staging
+assertions compare all destinations, asset digests and lengths against
+literal authored bytes, and require exactly the envelope and selected assets in the
+new release directory. Unselected source files stay in the export. A separate CLI
+case checks identical replay, conflicting output bytes and a different signing key
+against the same release ID while preserving earlier publisher work. Engine cases
+separately enforce provenance assertions and invalidate stale prepared sources.
+
+Fresh CLI processes enroll, observe local channel envelopes, install, update, repair,
+roll back, and change trust. Assertions cover refused tampering and expiry, explicit conflict
 resolution, replay floors, and preservation of player configuration and initialized
 worlds. A compiler-bound local runtime observes literal arguments and the game
 working directory while signed update, repair, duplicate launch and stopped-runtime
