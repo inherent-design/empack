@@ -1,7 +1,7 @@
 //! Restricted content exercises native saved recipes, not simulated packwiz output.
 use empack_tests::{
-    e2e::{TestProject, assert_dist_artifact_suffix},
     fixtures::restricted::fixture,
+    harness::process::{TestProject, assert_dist_artifact_suffix},
 };
 use std::{
     fs,

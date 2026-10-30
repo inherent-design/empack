@@ -227,7 +227,10 @@ fn configure_environment(
 #[macro_export]
 macro_rules! skip_if_no_java {
     () => {
-        if !$crate::e2e::prerequisite_available($crate::e2e::has_java(), "java -version failed") {
+        if !$crate::harness::process::prerequisite_available(
+            $crate::harness::process::has_java(),
+            "java -version failed",
+        ) {
             return;
         }
     };
@@ -237,8 +240,8 @@ macro_rules! skip_if_no_java {
 #[macro_export]
 macro_rules! skip_if_no_cf_key {
     () => {
-        if !$crate::e2e::prerequisite_available(
-            $crate::e2e::has_cf_key(),
+        if !$crate::harness::process::prerequisite_available(
+            $crate::harness::process::has_cf_key(),
             "CurseForge API key unavailable",
         ) {
             return;

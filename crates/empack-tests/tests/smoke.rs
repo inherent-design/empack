@@ -1,5 +1,5 @@
 //! Offline executable contracts for the native engine. No fake backend or cache-seeded API.
-use empack_tests::e2e::TestProject;
+use empack_tests::harness::process::TestProject;
 use std::{
     collections::BTreeMap,
     fs,
