@@ -418,6 +418,164 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
 }
 
 #[test]
+fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed_state() {
+    let (project, author_host) = fixture();
+    let host = tempfile::tempdir().unwrap();
+    let player = tempfile::tempdir().unwrap();
+    let instance = player.path().join("instance Ω");
+    put(&instance, "player-notes.txt", b"retain player work");
+    let mut previous = None;
+    for version in ["1", "2"] {
+        put(
+            project.dir(),
+            "empack.yml",
+            AUTHOR
+                .replace("version: '1'", &format!("version: '{version}'"))
+                .as_bytes(),
+        );
+        command(project.dir(), author_host.path())
+            .args(["--yes", "sync"])
+            .assert()
+            .success();
+        command(project.dir(), author_host.path())
+            .args(["--yes", "build", "--delivery", "bundled"])
+            .assert()
+            .success();
+        let archive =
+            assert_dist_artifact_suffix(project.dir(), &format!("{version}-empack-bundled.empack"));
+        let members = distribution_inventory(&archive, "zip");
+        let payload = members["release.json"].small.as_ref().unwrap();
+        let identity = hash(payload);
+        let export = tempfile::tempdir().unwrap();
+        for (name, member) in &members {
+            put(export.path(), name, member.small.as_ref().unwrap());
+        }
+        let mut install = command(&instance, host.path());
+        install
+            .args(["--yes", "instance", "install"])
+            .arg(export.path().join("release.json"))
+            .args([
+                "--sha256", &identity, "--layout", "game", "--side", "client",
+            ]);
+        if previous.is_none() {
+            install.args(["--choice", "extras=enabled"]);
+        }
+        install.assert().success();
+        assert_eq!(
+            fs::read(instance.join("game/config/extra.txt")).unwrap(),
+            CONTENT[4].2
+        );
+        let before = observe_workspace(&instance);
+        let stored = observe_workspace(host.path());
+        let exported = observe_workspace(export.path());
+        let inspected = command(&instance, host.path())
+            .args(["instance", "inspect"])
+            .output()
+            .unwrap();
+        assert!(inspected.status.success(), "{inspected:?}");
+        assert!(inspected.stderr.is_empty(), "{inspected:?}");
+        let text = String::from_utf8(inspected.stdout).unwrap();
+        assert!(
+            text.contains(&format!(
+                "Pack native.fixture {version} (Client), release {identity}; game directory: game/"
+            )),
+            "{text}"
+        );
+        assert!(
+            text.lines().any(|line| line.ends_with(" extras=enabled")),
+            "{text}"
+        );
+        let history: Vec<_> = text
+            .lines()
+            .filter_map(|line| line.split_once("Retained release: ").map(|(_, id)| id))
+            .collect();
+        assert_eq!(
+            history,
+            previous.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        let status = command(&instance, host.path())
+            .args(["status", "--context", "instance", "--json"])
+            .output()
+            .unwrap();
+        assert!(status.status.success(), "{status:?}");
+        assert!(status.stderr.is_empty(), "{status:?}");
+        let report: Value = serde_json::from_slice(&status.stdout).unwrap();
+        assert_eq!(report["content_verified"], false);
+        assert_eq!(report["selected"], "instance");
+        let selected = report["contexts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["context"] == "instance")
+            .unwrap();
+        assert_eq!(selected["state"], "valid");
+        assert_eq!(selected["version"], version);
+        assert_eq!(selected["exact"], identity);
+        assert_eq!(observe_workspace(&instance), before);
+        assert_eq!(observe_workspace(host.path()), stored);
+        assert_eq!(observe_workspace(export.path()), exported);
+
+        let record = instance.join(".empack/instance.json");
+        let original = fs::read(&record).unwrap();
+        for problem in ["unknown-schema", "wrong-root", "unknown-field", "malformed"] {
+            let mut invalid: Value = serde_json::from_slice(&original).unwrap();
+            match problem {
+                "unknown-schema" => invalid["schema"] = json!(999),
+                "wrong-root" => invalid["root"] = json!("0".repeat(64)),
+                "unknown-field" => invalid["unrecognized"] = json!(true),
+                "malformed" => {}
+                _ => unreachable!(),
+            }
+            let bytes = if problem == "malformed" {
+                b"{invalid completed instance\n".to_vec()
+            } else {
+                serde_json::to_vec(&invalid).unwrap()
+            };
+            fs::write(&record, &bytes).unwrap();
+            let invalid_before = observe_workspace(&instance);
+            let refused = command(&instance, host.path())
+                .args(["instance", "inspect"])
+                .output()
+                .unwrap();
+            assert!(!refused.status.success(), "{problem}: {refused:?}");
+            assert!(!refused.stderr.is_empty(), "{problem}: {refused:?}");
+            assert!(!String::from_utf8_lossy(&refused.stdout).contains("Pack native.fixture"));
+            let status = command(&instance, host.path())
+                .args(["status", "--context", "instance", "--json"])
+                .assert()
+                .success();
+            let report: Value = serde_json::from_slice(&status.get_output().stdout).unwrap();
+            assert_eq!(report["content_verified"], false);
+            assert_eq!(report["contexts"][0]["state"], "invalid", "{problem}");
+            assert_eq!(observe_workspace(&instance), invalid_before, "{problem}");
+            assert_eq!(observe_workspace(host.path()), stored, "{problem}");
+            fs::write(&record, &original).unwrap();
+        }
+        assert_eq!(observe_workspace(&instance), before);
+        let retained = instance.join(format!(".empack/releases/{identity}.json"));
+        let descriptor = fs::read(&retained).unwrap();
+        let mut changed: Value = serde_json::from_slice(&descriptor).unwrap();
+        changed["version"] = json!("tampered");
+        fs::write(&retained, serde_json::to_vec(&changed).unwrap()).unwrap();
+        let corrupt = observe_workspace(&instance);
+        command(&instance, host.path())
+            .args(["instance", "inspect"])
+            .assert()
+            .failure()
+            .stderr(contains("Retained release descriptor changed"));
+        assert_eq!(observe_workspace(&instance), corrupt);
+        assert_eq!(observe_workspace(host.path()), stored);
+        fs::write(&retained, descriptor).unwrap();
+        assert_eq!(observe_workspace(&instance), before);
+        assert_eq!(
+            fs::read(instance.join("player-notes.txt")).unwrap(),
+            b"retain player work"
+        );
+        previous = Some(identity);
+    }
+}
+
+#[test]
 fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts() {
     let (project, author_host) = fixture();
     put(

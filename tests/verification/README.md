@@ -40,6 +40,14 @@ cancellation and exclusive-publication collisions after preparation. These check
 do not complete the separate write, synchronization and cleanup failure matrix;
 the signing requirement remains partially decomposed until those cases are bound.
 
+Instance inspection has a public-command case that installs two exact snapshots,
+retains a selected optional choice, and checks the displayed release history.
+Both human inspection and JSON metadata status preserve the instance, external
+host store and exported inputs. Invalid completed records and changed retained
+descriptors must remain available for diagnosis rather than being normalized by
+inspection. Metadata status still does not claim content verification; the
+pending/recovery inspection matrix remains a separate obligation.
+
 `mise run test:map` runs the same discovery and classification check as the PR
 tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,
 and asks rustdoc for both the complete and ignored workspace doctest listings.

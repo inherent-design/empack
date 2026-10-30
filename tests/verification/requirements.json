@@ -8546,6 +8546,29 @@
             "Copying the instance record to a different root does not transfer the associated root proof",
             "Workspace status reports the same valid installed release under its proven association; subscription status still rejects another root"
           ]
+        },
+        {
+          "id": "UX-063.completed-inspection-and-refusal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Two exact bundled snapshots installed through the public command report the selected release, version, game root, retained optional choice and prior release history from the known authoring inputs",
+            "Human inspection and JSON workspace status preserve installed content, player notes, external host storage and exported bytes; metadata status explicitly does not claim content verification",
+            "Unknown schemas/fields, a mismatched native root and malformed completed records refuse inspection without rewriting state or emitting a false completed-pack headline; JSON metadata inspection reports invalid state without treating it as content verification",
+            "A retained descriptor whose payload changed under the saved release identity is rejected and preserved rather than silently normalized or repaired"
+          ],
+          "remaining_group_evidence": "Pending/publication uncertainty and complete cross-platform observations remain separate; successful metadata inspection is not verification of game content or startup"
         }
       ],
       "owner_now": [
