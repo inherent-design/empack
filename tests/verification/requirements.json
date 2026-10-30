@@ -8934,6 +8934,7 @@
       "required_work": "Machine/human reports and malformed state schema; role ambiguity.",
       "evidence_tiers": [
         "H",
+        "N",
         "X"
       ],
       "risk": "important",
@@ -8983,8 +8984,72 @@
             "Human inspection and JSON workspace status preserve installed content, player notes, external host storage and exported bytes; metadata status explicitly does not claim content verification",
             "Unknown schemas/fields, a mismatched native root and malformed completed records refuse inspection without rewriting state or emitting a false completed-pack headline; JSON metadata inspection reports invalid state without treating it as content verification",
             "A retained descriptor whose payload changed under the saved release identity is rejected and preserved rather than silently normalized or repaired"
+          ]
+        },
+        {
+          "id": "UX-063.public-pending-and-context-reports",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases",
+            "empack-tests::cli_status::cli_status_requires_explicit_context_for_mixed_roots"
           ],
-          "remaining_group_evidence": "Pending/publication uncertainty and complete cross-platform observations remain separate; successful metadata inspection is not verification of game content or startup"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "While signed update B waits for exact manual input, machine status and human inspection retain completed A identity and choice while reporting pending input separately",
+            "Read-only status preserves the entire instance and external host state, and explicitly does not claim content verification",
+            "Missing and malformed author/instance/publisher contexts remain distinct under explicit selection and mixed-root inspection"
+          ]
+        },
+        {
+          "id": "UX-063.pending-and-runtime-uncertainty",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::status::tests::status_reports_pending_presence_without_validating_or_rewriting_it",
+            "empack-lib::engine::status::tests::status_keeps_runtime_retirement_evidence_and_never_releases_the_lease"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled import/instance continuation presence is reported without validating or normalizing its workflow payload; completed instance metadata remains separately valid",
+            "Runtime retirement uncertainty is a finding alongside completed metadata, never content verification or authorization to clear the runtime lease",
+            "Reports retain fixture files and native ownership; only explicit completion releases the held runtime lease"
+          ]
+        },
+        {
+          "id": "UX-063.publication-recovery-barrier",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::progress_flags_do_not_authorize_overwriting_an_external_edit"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A controlled native publication interruption yields recovery-required status and no interpreted live contexts; inspection does not finish the publication",
+            "A subsequent user edit survives recovery refusal and unrelated planned content is not published",
+            "This private journal fixture proves the shared pre-context barrier, not actual process termination or consumer startup"
+          ]
         }
       ],
       "owner_now": [
@@ -8995,7 +9060,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-064",

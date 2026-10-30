@@ -631,6 +631,14 @@ restricted download, GUI or gameplay test. The same journeys are bound to final
 archive execution separately; hosted installation and consumer acceptance remain
 unqualified requirements.
 
+Inspection coverage keeps completed metadata, pending work and uncertainty
+separate. While B waits for manual input, A remains the displayed completed release
+and the pending finding remains visible. Status must not claim content verification
+or release a runtime lease. A hot publication journal blocks live-context parsing
+until recovery; malformed records and ambiguous workspace roles are preserved for
+diagnosis. The fixtures compare state before and after inspection rather than
+treating successful output alone as proof of a read-only operation.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid

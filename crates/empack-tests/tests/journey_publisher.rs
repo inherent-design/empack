@@ -1896,6 +1896,36 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
         .failure()
         .stderr(contains("exact manual inputs remain pending"));
     assert_eq!(snapshot(&instance), before_b);
+    let before_status = snapshot(host.path());
+    let status = command()
+        .args(["status", "--context", "instance", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let status: serde_json::Value = serde_json::from_slice(&status).unwrap();
+    assert_eq!(status["content_verified"], false);
+    let current = status["contexts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|context| context["context"] == "instance")
+        .unwrap();
+    assert_eq!(current["state"], "valid");
+    assert_eq!(current["version"], "A");
+    assert_eq!(current["exact"], releases[0].0);
+    assert!(
+        status["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["code"] == "pending-input"
+                && finding["next"] == json!(["instance", "continue"]))
+    );
+    expected("A", 0, false);
+    assert_eq!(snapshot(host.path()), before_status);
+    assert_eq!(snapshot(&instance), before_b);
     let before_list = snapshot(host.path());
     let pending = command()
         .args(["pending", "list", "--json"])

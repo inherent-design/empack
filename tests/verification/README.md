@@ -96,7 +96,13 @@ Both human inspection and JSON metadata status preserve the instance, external
 host store and exported inputs. Invalid completed records and changed retained
 descriptors must remain available for diagnosis rather than being normalized by
 inspection. Metadata status still does not claim content verification; the
-pending/recovery inspection matrix remains a separate obligation.
+Pending and uncertainty cases complete its definitions separately. The signed
+update fixture reports completed A while B waits for input, using both human
+inspection and machine status. Mixed-root cases require explicit context selection.
+Host cases retain the runtime lease and distinguish continuation presence from
+validation. The native publication fixture proves that a hot journal prevents
+live-context interpretation before recovery. These definitions do not provide
+execution observations or claim that metadata status verifies installed content.
 
 `mise run test:map` runs the same discovery and classification check as the PR
 tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,
