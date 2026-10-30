@@ -234,13 +234,17 @@ fn installed(instance: &Path, release: &str, managed: &[u8]) {
 #[test]
 fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
     let root = tempfile::tempdir().unwrap();
-    let author = root.path().join("author");
-    let publisher = root.path().join("publisher");
-    let instance = root.path().join("instance");
+    publisher_player_roundtrip(root.path(), |_| {});
+}
+
+fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
+    let author = root.join("author");
+    let publisher = root.join("publisher");
+    let instance = root.join("instance");
     for path in [&author, &publisher, &instance] {
         fs::create_dir(path).unwrap();
     }
-    let secrets = root.path().join("private keys");
+    let secrets = root.join("private keys");
     private_directory(&secrets);
     let key_file = secrets.join("publisher.key");
     offline_command(&publisher)
@@ -284,7 +288,7 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
         .assert()
         .success();
 
-    let export_a = root.path().join("export A");
+    let export_a = root.join("export A");
     let a = build_and_stage(&author, &publisher, &key_file, &export_a, "1.0.0");
     let envelope_a = publisher.join(format!("dist/releases/{a}/release.json"));
     verify_staged(
@@ -293,7 +297,7 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
         &a,
         &export_a.join("release.json"),
     );
-    let channel_a = root.path().join("channel-a.json");
+    let channel_a = root.join("channel-a.json");
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -338,7 +342,9 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
         b"new player data",
     );
 
-    let export_b = root.path().join("export B");
+    after_install(&instance);
+
+    let export_b = root.join("export B");
     let b = build_and_stage(&author, &publisher, &key_file, &export_b, "2.0.0");
     let envelope_b = publisher.join(format!("dist/releases/{b}/release.json"));
     verify_staged(
@@ -347,9 +353,9 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
         &b,
         &export_b.join("release.json"),
     );
-    let channel_b = root.path().join("channel-b.json");
+    let channel_b = root.join("channel-b.json");
     channel(&channel_b, &key, &b, &envelope_b, 2, now + 3600);
-    let wrong = root.path().join("wrong-key.json");
+    let wrong = root.join("wrong-key.json");
     channel(
         &wrong,
         &SigningKey::from_bytes(&[7; 32]),
@@ -360,12 +366,12 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
     );
     observe(&instance, &wrong).failure();
     installed(&instance, &a, b"1.0.0");
-    let expired = root.path().join("expired.json");
+    let expired = root.join("expired.json");
     channel(&expired, &key, &b, &envelope_b, 20, now - 1);
     observe(&instance, &expired).failure();
     installed(&instance, &a, b"1.0.0");
     // Change authenticated payload bytes without replacing the signature.
-    let tampered = root.path().join("tampered.json");
+    let tampered = root.join("tampered.json");
     let mut altered: serde_json::Value =
         serde_json::from_slice(&fs::read(&channel_b).unwrap()).unwrap();
     let payload = String::from_utf8(unhex(altered["payload"].as_str().unwrap())).unwrap();
@@ -416,10 +422,10 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
         .assert()
         .success();
     observe(&instance, &channel_b).failure();
-    let stale_new_key = root.path().join("stale-new-key.json");
+    let stale_new_key = root.join("stale-new-key.json");
     channel(&stale_new_key, &replacement, &b, &envelope_b, 1, now + 3600);
     observe(&instance, &stale_new_key).failure();
-    let channel_c = root.path().join("channel-c.json");
+    let channel_c = root.join("channel-c.json");
     channel(&channel_c, &replacement, &b, &envelope_b, 3, now + 3600);
     observe(&instance, &channel_c).success();
     offline_command(&instance)
@@ -441,4 +447,65 @@ fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
             .unwrap()
             .starts_with("# Publisher-owned source note\n")
     );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "opt-in native APFS images; no GUI, Java or normal instances"]
+fn journey_signed_channels_survive_native_remount() {
+    use empack_tests::harness::native_volume::ApfsFixture;
+    use std::{collections::BTreeMap, os::unix::fs::MetadataExt};
+    fn files(root: &Path) -> BTreeMap<std::path::PathBuf, [u8; 32]> {
+        fn visit(
+            root: &Path,
+            selected: &Path,
+            entries: &mut BTreeMap<std::path::PathBuf, [u8; 32]>,
+        ) {
+            for entry in fs::read_dir(selected).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    visit(root, &entry.path(), entries);
+                } else {
+                    entries.insert(
+                        entry.path().strip_prefix(root).unwrap().into(),
+                        Sha256::digest(fs::read(entry.path()).unwrap()).into(),
+                    );
+                }
+            }
+        }
+        let mut entries = BTreeMap::new();
+        visit(root, root, &mut entries);
+        entries
+    }
+    let fixture = ApfsFixture::new().unwrap();
+    let project = fixture.root().join("fixture");
+    fs::create_dir(&project).unwrap();
+    publisher_player_roundtrip(&project, |instance| {
+        let before = files(&project);
+        let root_before = fs::metadata(instance).unwrap();
+        fixture.remount().unwrap();
+        let root_after = fs::metadata(instance).unwrap();
+        assert_ne!(root_before.dev(), root_after.dev());
+        assert_eq!(root_before.ino(), root_after.ino());
+        assert_eq!(
+            root_before.created().unwrap(),
+            root_after.created().unwrap()
+        );
+        eprintln!(
+            "Subscribed instance retained inode {} and birth {:?}",
+            root_before.ino(),
+            root_before.created().unwrap()
+        );
+        assert_eq!(files(&project), before, "remount changed fixture bytes");
+        offline_command(instance)
+            .args(["instance", "inspect"])
+            .assert()
+            .success();
+        assert_eq!(
+            files(&project),
+            before,
+            "read-only inspection changed retained state"
+        );
+    });
+    fixture.finish().unwrap();
 }

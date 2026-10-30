@@ -7216,6 +7216,25 @@
             "Repair and rollback select exact retained content across fresh executable invocations"
           ],
           "remaining_group_evidence": "Hosted HTTPS publication, optional choices, restricted input, runtime changes and actual consumer acceptance remain required"
+        },
+        {
+          "id": "UX-060.native-remount-subscription",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_channels_survive_native_remount"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real disposable APFS remount changes the device number while preserving volume UUID, inode, creation time and fixture bytes",
+            "Signed subscription remains inspectable without durable changes, then authenticated update, repair, rollback, key rotation/revocation and sequence floors continue without rewriting release meaning or player data",
+            "Only fixture-owned images are detached, with fresh ownership checks and explicit cleanup; no physical reboot, Java, GUI or hosted HTTPS acceptance is claimed"
+          ]
         }
       ],
       "owner_now": [

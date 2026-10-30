@@ -226,6 +226,17 @@ class AttemptPolicy(unittest.TestCase):
         self.assertEqual(aggregate_status([{'status': 'NOT_APPLICABLE'}]), 'NOT_APPLICABLE')
         self.assertEqual(aggregate_status([{'status': 'PASS'}, {'status': 'BLOCKED'}]), 'BLOCKED')
         self.assertEqual(aggregate_status([{'status': 'FAIL'}, {'status': 'PASS'}]), 'FAIL')
+        from verify import run_suite
+        from verification.suites import SUITES
+        suite = SUITES["native-remount"]
+        self.assertTrue(suite.ignored)
+        self.assertIsNone(suite.inapplicable_reason("aarch64-apple-darwin"))
+        for target in ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
+            record = {}
+            run_suite("native-remount", suite, Path("unused"), {}, {"target": target}, record, "minimal")
+            self.assertEqual(record["status"], "NOT_APPLICABLE")
+            self.assertNotIn("tests", record)
+            self.assertEqual(aggregate_status([record]), "NOT_APPLICABLE")
 
     def test_failure_and_blocked_prerequisites_remain_visible_with_unstarted_suites(self):
         from verify import aggregate_status

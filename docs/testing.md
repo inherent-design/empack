@@ -420,6 +420,24 @@ resolution, replay floors, and preservation of player configuration and initiali
 worlds. These are the documented local-envelope routes. They do not execute hosted
 HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
 
+The opt-in `native-remount` suite repeats that signed publisher/player journey on
+macOS using two disposable 128 MiB APFS sparse images. It forces a device-number
+change after enrollment and installation, checks that UUID/inode/creation identity
+and fixture bytes survive, then exercises inspection, authenticated update, repair,
+rollback and trust floors. It uses `hdiutil`, `diskutil` and `plutil`, with Finder
+browsing/auto-open disabled. Fixture cleanup rechecks image ownership before detach;
+failed cleanup preserves its temporary directory for diagnosis.
+
+```sh
+python3 scripts/verify.py native-remount --product-features default --test-features minimal
+```
+
+Native PR verification requires the suite in both product/test graphs on macOS.
+Other hosts record explicit `NOT_APPLICABLE` evidence; missing permissions on
+macOS are a failure, not an applicability exemption. The native suite retains its
+successful identity observations in JUnit. This is local signed-envelope and
+filesystem evidence, not a physical reboot, hosted publication, Java or GUI test.
+
 The [pinned import corpus](../tests/fixtures/import-corpus/README.md) uses small
 repository-owned archives with fixed hashes and separately reviewed expectations.
 Run `python3 scripts/check-import-corpus.py` or `mise run test:import:corpus` for
@@ -587,7 +605,8 @@ produce a passing outcome. Empty required binaries, missing results, skipped sel
 tests, retries, failed commands and changed
 source/binary bytes cannot yield a suite pass. The final CI gate also checks the
 classification digest and the compiler inventory's actual host target. Missing tools
-or prerequisites produce `BLOCKED`; a Unix-only desktop fixture on Windows produces `NOT_APPLICABLE`.
+or prerequisites produce `BLOCKED`; the Unix-only desktop fixture on Windows and
+the APFS remount fixture outside macOS produce explicit `NOT_APPLICABLE` results.
 
 The runner does not retry an attempt. Re-running it creates another record and retains
 the earlier failure. These are suite records, not final release qualification or proof

@@ -76,12 +76,14 @@ def inspect_suite_receipt(path, expected_suites, target, revision, features="tel
                 raise ValueError(f"Unexecuted suite cannot supply test outcomes: {row['suite']}")
             if state != "NOT_RUN" and not row.get("reason"):
                 raise ValueError(f"Missing suite failure/prerequisite reason: {row['suite']}")
-            if state == "NOT_APPLICABLE" and not (SUITES[row["suite"]].unix_only and target == "x86_64-pc-windows-msvc"):
+            if state == "NOT_APPLICABLE" and not SUITES[row["suite"]].inapplicable_reason(target):
                 raise ValueError(f"Unreviewed suite applicability: {row['suite']}")
             continue
         if artifact is None or state not in {"PASS", "FAIL"} or row.get("attempt") != 1:
             raise ValueError(f"Suite has no single recorded execution: {row['suite']}")
         suite = SUITES[row["suite"]]
+        if suite.inapplicable_reason(target):
+            raise ValueError(f"Inapplicable suite cannot supply execution evidence: {row['suite']}")
         for action, key in (("list", "discovery_command"), ("run", "command")):
             command = row.get(key, [])
             if len(command) < 5 or command != nextest_command(action, suite, command[4], test_features):

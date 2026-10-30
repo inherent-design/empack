@@ -8,10 +8,18 @@ class Suite:
     ignored: bool = False
     telemetry: bool = False
     unix_only: bool = False
+    macos_only: bool = False
     java: bool = False
     timeout: int = 1800
     cases: tuple[str, ...] = ()
     required_env: tuple[str, ...] = ()
+
+    def inapplicable_reason(self, target):
+        if self.unix_only and target == "x86_64-pc-windows-msvc":
+            return "This desktop-opener fixture is Unix-only"
+        if self.macos_only and not target.endswith("-apple-darwin"):
+            return "This APFS remount fixture requires macOS"
+        return None
 
     @property
     def filter(self):
@@ -31,6 +39,8 @@ CLI = (
 SUITES = {
     "deterministic": Suite(),
     "cli": Suite(CLI),
+    "native-remount": Suite(("journey_publisher",), ignored=True, macos_only=True,
+                            cases=("journey_signed_channels_survive_native_remount",), timeout=600),
     "import-corpus": Suite(("journey_import",)),
     "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),

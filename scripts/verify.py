@@ -133,8 +133,8 @@ def java_probe(attempt, environment, label="java", home_variable="JAVA_HOME"):
 
 
 def run_suite(name, suite, attempt, environment, artifact, record, test_features):
-    if suite.unix_only and os.name == "nt":
-        record.update(status="NOT_APPLICABLE", reason="This desktop-opener fixture is Unix-only")
+    if reason := suite.inapplicable_reason(artifact["target"]):
+        record.update(status="NOT_APPLICABLE", reason=reason)
         return record
     if suite.telemetry and artifact["features"] != "telemetry":
         raise Blocked("Telemetry suite requires a telemetry product artifact")
@@ -156,7 +156,7 @@ retries = 0
 fail-fast = false
 junit.path = {json.dumps(str(junit))}
 junit.report-skipped = "all"
-junit.store-success-output = false
+junit.store-success-output = {str(name == "native-remount").lower()}
 junit.store-failure-output = false
 ''')
     discovery_command = nextest_command("list", suite, config, test_features)

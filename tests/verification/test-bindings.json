@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::journey_publisher::journey_signed_channels_survive_native_remount", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "INST", "platforms": ["macos"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::api::suspension::tests::obsolete_build_schemas_are_refused_without_rewriting_saved_work", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::creation::tests::creation_state_survives_associated_prior_device_labels_without_moving_coordination", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::creation::tests::creation_identity_formats_refuse_obsolete_or_missing_proofs_without_mutation", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

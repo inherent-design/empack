@@ -130,6 +130,9 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
                    requested_suites=suites, suites=[], test_features=test_features,
                    artifact=dict(target=target, features=features, profile="dev", sha256="c" * 64))
     for name in suites:
+        if reason := SUITES[name].inapplicable_reason(target):
+            receipt["suites"].append(dict(suite=name, status="NOT_APPLICABLE", reason=reason))
+            continue
         suite_dir = attempt / name
         suite_dir.mkdir()
         policy = json.loads(ci.CLASSIFICATION.read_text())
@@ -286,6 +289,22 @@ class RequiredGate(unittest.TestCase):
             result = ci.check_gate(plan, successes(plan), root)
             self.assertEqual(len(result["suite_evidence"]), 6)
             self.assertEqual(len(result["doctest_evidence"]), 6)
+            mac = root / "verification-aarch64-apple-darwin/default/one-attempt/receipt.json"
+            original = json.loads(mac.read_text())
+            forged = copy.deepcopy(original)
+            row = next(r for r in forged["suites"] if r["suite"] == "native-remount")
+            row.clear()
+            row.update(suite="native-remount", status="NOT_APPLICABLE", reason="permission denied")
+            write_json(mac, forged)
+            with self.assertRaisesRegex(ValueError, "applicability"):
+                ci.check_gate(plan, successes(plan), root)
+            write_json(mac, original)
+            missing = copy.deepcopy(original)
+            missing["suites"] = [r for r in missing["suites"] if r["suite"] != "native-remount"]
+            write_json(mac, missing)
+            with self.assertRaises(ValueError):
+                ci.check_gate(plan, successes(plan), root)
+            write_json(mac, original)
             doc = root / f"verification-{ci.TARGETS[0]}" / "doctest-all" / "attempt" / "receipt.json"
             original_doc = json.loads(doc.read_text())
             doc.unlink()
@@ -413,7 +432,7 @@ class RequiredGate(unittest.TestCase):
         self.assertNotIn(sentinel, SUITES["live-provider-cli"].cases)
         for name in ("live-provider", "live-curseforge", "live-runtime"):
             with self.subTest(name=name), self.assertRaisesRegex(Blocked, "prerequisites unavailable"):
-                run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry"}, {}, "all")
+                run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry", "target": ci.TARGETS[0]}, {}, "all")
 
 
 class PushPlanning(unittest.TestCase):

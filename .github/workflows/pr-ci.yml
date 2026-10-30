@@ -142,8 +142,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
-      - run: python scripts/verify.py deterministic --test-features minimal --product-features default --output target/verification/default
-      - run: python scripts/verify.py deterministic telemetry --test-features all --product-features telemetry --output target/verification/telemetry
+      - run: python scripts/verify.py deterministic native-remount --test-features minimal --product-features default --output target/verification/default
+      - run: python scripts/verify.py deterministic telemetry native-remount --test-features all --product-features telemetry --output target/verification/telemetry
       - run: python scripts/verify.py doctest --test-features minimal --output target/verification/doctest-minimal
       - run: python scripts/verify.py doctest --test-features all --output target/verification/doctest-all
       - uses: actions/upload-artifact@v7

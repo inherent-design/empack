@@ -19,7 +19,8 @@ from verification.reporting import render_gate
 
 TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
 NATIVE_TEST_FEATURES = {"default": "minimal", "telemetry": "all"}
-NATIVE_SUITES = {"default": ["deterministic"], "telemetry": ["deterministic", "telemetry"]}
+NATIVE_SUITES = {"default": ["deterministic", "native-remount"],
+                 "telemetry": ["deterministic", "telemetry", "native-remount"]}
 JOBS = ("tooling", "lint", "test", "cross-build", "coverage", "live", "consumer", "survey")
 ROOT = Path(__file__).resolve().parents[1]
 CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
