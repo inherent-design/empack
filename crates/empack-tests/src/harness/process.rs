@@ -855,6 +855,8 @@ mod harness_tests {
             ("EMPACK_YES", "1"),
             ("EMPACK_KEY_CURSEFORGE", "private"),
             ("EMPACK_TEST_FAULT", "1"),
+            ("EMPACK_TEST_INVENTORY", "/private/compiler-inventory.json"),
+            ("EMPACK_TEST_INVENTORY_SHA256", "private-fixture-hash"),
             ("HTTPS_PROXY", "http://wrong"),
         ]
         .into_iter()
@@ -884,6 +886,8 @@ mod harness_tests {
             "EMPACK_YES",
             "EMPACK_KEY_CURSEFORGE",
             "EMPACK_TEST_FAULT",
+            "EMPACK_TEST_INVENTORY",
+            "EMPACK_TEST_INVENTORY_SHA256",
             "HTTPS_PROXY",
         ] {
             assert!(!env.contains_key(std::ffi::OsStr::new(key)), "{key}");

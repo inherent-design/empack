@@ -8260,7 +8260,47 @@
             "Obsolete schema-1, unknown schemas, missing/malformed proofs and inconsistent candidate associations refuse without changing retained records; supported schema-2 recovery still completes",
             "Prepared creation recovery retains the freshly observed native candidate/root identity and rejects a native mismatch even when its persistent proof and journal revision still match"
           ],
-          "remaining_group_evidence": "Actual remount, already-unanchored legacy migration and full same-candidate qualification remain separately required"
+          "remaining_group_evidence": "Combined platform and final same-candidate qualification remain separately required; obsolete-state migration is outside this stabilization goal"
+        },
+        {
+          "id": "UX-078.native-creation-crash-remount",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_recovery::journey_creation_recovery_survives_crash_and_native_remount"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An external private test process exits at CreationIndexDurable, IntentDurable, TargetChanged and DirectorySynced; the product has no fault controls",
+            "Actual APFS remount changes the device assignment while volume UUID, inode, birth and host/project bytes remain stable; ordinary CLI inspection finds the same public operation IDs without writes",
+            "Public recover finish completes the exact three-file protocol fixture and preserves neighboring user bytes; repeated inspection reports no unfinished operation",
+            "Compiler discovery identifies the exact library test driver; its digest is retained in JUnit and checked after use; all disposable images are detached"
+          ]
+        },
+        {
+          "id": "UX-078.native-publication-crash-remount",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_recovery::journey_publication_finish_and_restore_survive_crash_and_native_remount"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An external private test process exits during publication at IntentDurable, TargetChanged, DirectorySynced and Verified; each boundary has independent finish and restore cases",
+            "Actual APFS remount reassigns the device while preserving filesystem identity; CLI recovery finds the original public selectors without changing project or host bytes",
+            "Public finish yields the exact candidate inventory and restore yields the exact original inventory, preserving user-owned files in both cases; repeated inspection retains the result and reports no interrupted operation",
+            "The private compiler-discovered driver is checked by digest and all disposable images are detached; no production fault controls or runnable-pack acceptance claims"
+          ]
         }
       ],
       "owner_now": [

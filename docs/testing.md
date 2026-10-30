@@ -448,6 +448,17 @@ and safe retained-content cleanup through both continuation commands. Restricted
 provider records are component setup; these cases do not establish live provider
 access or runnable mod content.
 
+Creation recovery also crosses real process exit and remount. A private libtest
+process exits at four durable index/intent/rename/sync boundaries. After device
+reassignment, the ordinary CLI must rediscover the same operation IDs without
+writes and finish the exact files while preserving neighbors. Existing-root
+publication repeats intent, replacement, directory-sync and verification failures
+for both finish and restore, checking candidate versus original inventories and
+convergent read-only inspection. The runner supplies
+its compiler inventory only to the test process; the test selects and hashes the
+library driver from that inventory. These protocol fixtures are deliberately not
+valid author documents and do not establish pack or runtime acceptance.
+
 Native PR verification requires the suite in both product/test graphs on macOS.
 Other hosts record explicit `NOT_APPLICABLE` evidence; missing permissions on
 macOS are a failure, not an applicability exemption. The native suite retains its

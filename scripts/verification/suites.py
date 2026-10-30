@@ -39,13 +39,15 @@ CLI = (
 SUITES = {
     "deterministic": Suite(),
     "cli": Suite(CLI),
-    "native-remount": Suite(("journey_publisher", "journey_pending_import", "journey_pending_instance", "journey_pending"),
+    "native-remount": Suite(("journey_publisher", "journey_pending_import", "journey_pending_instance", "journey_pending", "journey_recovery"),
                             ignored=True, macos_only=True, timeout=600, cases=(
                                 "journey_signed_channels_survive_native_remount",
                                 "journey_pending_import_survives_native_remount_and_reopens_created_root",
                                 "journey_pending_instance_survives_native_remount_with_retained_inputs",
                                 "journey_pending_build_survives_native_remount_with_public_keys",
-                                "journey_pending_sync_survives_native_remount_with_retained_inputs")),
+                                "journey_pending_sync_survives_native_remount_with_retained_inputs",
+                                "journey_creation_recovery_survives_crash_and_native_remount",
+                                "journey_publication_finish_and_restore_survive_crash_and_native_remount")),
     "import-corpus": Suite(("journey_import",)),
     "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
