@@ -14,6 +14,9 @@ fn move_state_to_prior_device(publisher: &Publisher, root: &ProjectReadRoot) -> 
     state
         .write("root-identity.json", serde_json::to_vec(&marker).unwrap())
         .unwrap();
+    // Windows directory capabilities prevent renaming their open directory.
+    // Only fixture setup changes this name; production retains the physical slot.
+    drop(state);
     publisher
         .host
         .rename(&current_key, &publisher.host, &old_key)
