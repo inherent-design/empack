@@ -8098,6 +8098,34 @@
             "Engine preparation enforces all asset provenance assertions in addition to SHA-256 identity, verifies signature/ID and permits identical replay without granting ownership of different existing bytes",
             "Source changes after preparation invalidate execution before publication; captured preview/grants cannot publish stale local content"
           ]
+        },
+        {
+          "id": "UX-055.packaged-immutable-staging",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_conflicts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each final extracted executable stages exactly the independently specified signed release inventory and preserves source files and earlier publisher output",
+            "Identical replay succeeds; conflicting asset/envelope bytes and a different signing key for the same release ID are refused without replacing immutable output",
+            "Archive evidence binds the actual native target, source, executable digest and version; source-build execution alone cannot satisfy this case"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "remaining_group_evidence": "This is a final-archive obligation. Existing package receipts predate this test and cannot establish its execution."
         }
       ],
       "owner_now": [
