@@ -418,6 +418,187 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
 }
 
 #[test]
+fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts() {
+    let (project, author_host) = fixture();
+    put(
+        project.dir(),
+        "empack.bindings.yml",
+        b"schema: 1\nbindings: {}\npolicies:\n  config/extra.txt: managed\n",
+    );
+    command(project.dir(), author_host.path())
+        .args(["--yes", "sync"])
+        .assert()
+        .success();
+    command(project.dir(), author_host.path())
+        .args(["--yes", "build"])
+        .assert()
+        .success();
+    let archive = assert_dist_artifact_suffix(project.dir(), "-empack-references.empack");
+    let members = distribution_inventory(&archive, "zip");
+    let payload = members["release.json"].small.as_ref().unwrap();
+    let descriptor: Value = serde_json::from_slice(payload).unwrap();
+    let optional = descriptor["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["destination"] == "config/extra.txt")
+        .unwrap();
+    assert_eq!(optional["policy"], "managed");
+    let identity = hash(payload);
+    let export = tempfile::tempdir().unwrap();
+    for (name, member) in &members {
+        put(export.path(), name, member.small.as_ref().unwrap());
+    }
+    let authored = snapshot(project.dir());
+    let exported = observe_workspace(export.path());
+    let player = tempfile::tempdir().unwrap();
+    let instance = player.path().join("instance Ω");
+    // A separate host cache cannot supply the optional bytes from the author's build.
+    let host = tempfile::tempdir().unwrap();
+    put(&instance, "game/config/settings.txt", b"player settings");
+    put(
+        &instance,
+        "game/saves/player/level.dat",
+        b"player world sentinel",
+    );
+    put(&instance, "game/unowned.txt", b"player note");
+    command(&instance, host.path())
+        .args(["--yes", "instance", "install"])
+        .arg(export.path().join("release.json"))
+        .args(["--sha256", &identity])
+        .assert()
+        .success();
+    let extra = instance.join("game/config/extra.txt");
+    assert!(!extra.exists());
+    let inspect = |selected: &str| {
+        let before = observe_workspace(&instance);
+        let stored = observe_workspace(host.path());
+        command(&instance, host.path())
+            .args(["instance", "options"])
+            .assert()
+            .success()
+            .stdout(contains(format!("extras={selected}")));
+        assert_eq!(observe_workspace(&instance), before);
+        assert_eq!(observe_workspace(host.path()), stored);
+    };
+    let choose = |selected: &str| {
+        let mut cmd = command(&instance, host.path());
+        cmd.args([
+            "--yes",
+            "instance",
+            "options",
+            "--choice",
+            &format!("extras={selected}"),
+        ]);
+        cmd
+    };
+    inspect("disabled");
+    let before = observe_workspace(&instance);
+    choose("not-an-alternative").assert().failure();
+    assert_eq!(observe_workspace(&instance), before);
+    choose("enabled").arg("--dry-run").assert().success();
+    assert_eq!(observe_workspace(&instance), before);
+    inspect("disabled");
+    choose("enabled")
+        .assert()
+        .failure()
+        .stderr(contains("exact manual inputs remain pending"));
+    assert_eq!(observe_workspace(&instance), before);
+    inspect("disabled");
+    let listed = command(&instance, host.path())
+        .args(["pending", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let listed: Value = serde_json::from_slice(&listed).unwrap();
+    assert_eq!(listed["schema"], 1);
+    let operations = listed["operations"].as_array().unwrap();
+    assert_eq!(operations.len(), 1);
+    let operation = &operations[0];
+    assert_eq!(operation["kind"], "instance");
+    let inputs = operation["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(inputs[0]["needed"], true);
+    assert_eq!(inputs[0]["bytes"], CONTENT[4].2.len());
+    assert_eq!(
+        inputs[0]["digests"],
+        json!([["selected-sha256", hash(CONTENT[4].2)]])
+    );
+    let supplied = player.path().join("renamed optional content.txt");
+    let association = format!(
+        "{}={}",
+        inputs[0]["key"].as_str().unwrap(),
+        supplied.display()
+    );
+    fs::write(&supplied, vec![b'!'; CONTENT[4].2.len()]).unwrap();
+    let resume = || {
+        let mut cmd = command(&instance, host.path());
+        cmd.args([
+            "--yes",
+            "pending",
+            "resume",
+            operation["id"].as_str().unwrap(),
+            "--file",
+            &association,
+        ]);
+        cmd
+    };
+    resume()
+        .assert()
+        .failure()
+        .stderr(contains("Content differs from the accepted observation"));
+    assert_eq!(observe_workspace(&instance), before);
+    fs::write(&supplied, CONTENT[4].2).unwrap();
+    resume().assert().success();
+    assert_eq!(fs::read(&extra).unwrap(), CONTENT[4].2);
+    inspect("enabled");
+    choose("disabled").assert().success();
+    assert!(
+        !extra.exists(),
+        "disabling must retire unchanged managed content"
+    );
+    inspect("disabled");
+    choose("enabled")
+        .arg("--assets")
+        .arg(export.path())
+        .assert()
+        .success();
+    fs::write(&extra, b"player modified optional content").unwrap();
+    let before = observe_workspace(&instance);
+    choose("disabled")
+        .assert()
+        .failure()
+        .stderr(contains("ModifiedManagedFile"));
+    assert_eq!(observe_workspace(&instance), before);
+    inspect("enabled");
+    choose("disabled")
+        .args(["--preserve", "config/extra.txt"])
+        .assert()
+        .success();
+    inspect("disabled");
+    assert_eq!(
+        fs::read(&extra).unwrap(),
+        b"player modified optional content"
+    );
+    assert_eq!(
+        fs::read(instance.join("game/config/settings.txt")).unwrap(),
+        b"player settings"
+    );
+    assert_eq!(
+        fs::read(instance.join("game/saves/player/level.dat")).unwrap(),
+        b"player world sentinel"
+    );
+    assert_eq!(
+        fs::read(instance.join("game/unowned.txt")).unwrap(),
+        b"player note"
+    );
+    assert_eq!(observe_workspace(export.path()), exported);
+    assert_eq!(snapshot(project.dir()), authored);
+}
+
+#[test]
 fn cli_native_export_requires_declared_local_bytes_even_for_reference_delivery() {
     let (project, _) = fixture();
     for delivery in ["references", "bundled"] {

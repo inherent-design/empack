@@ -8539,7 +8539,54 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-066.public-choice-decisions-and-missing-content",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_instance_choices_retain_decisions_through_missing_content_and_conflicts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Choice inspection preserves instance and host bytes and attributes; invalid alternatives and preview do not change the installed selection",
+            "Enabling an uncached optional asset saves pending work without applying the proposed choice; public pending output identifies the required exact bytes",
+            "Wrong supplied bytes refuse unchanged target state; correct renamed bytes resume the original proposed choice across a fresh CLI process",
+            "Disabling unchanged managed optional content retires it; modified content requires an explicit conflict decision and retains the old choice on refusal",
+            "An explicit preserve decision retains modified optional content; seeded settings and unrelated save/game content are preserved throughout"
+          ],
+          "remaining_group_evidence": "This client/game-layout fixture does not exercise release updates introducing or removing choice keys, native crash boundaries, actual consumers or final-package execution."
+        },
+        {
+          "id": "UX-066.choice-definition-changes",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::choice_defaults_do_not_reset_saved_selections_and_new_choices_require_input"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A changed publisher default retains the installed choice instead of resetting its selection",
+            "A newly introduced choice requires explicit input; refusal preserves the installed record and selected content",
+            "An explicit retired choice key is rejected without changing completed state; omitting retired keys allows the new release and drops those saved keys"
+          ],
+          "remaining_group_evidence": "This engine fixture does not establish the public signed-update command path, actual consumers or final-package qualification."
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::acquisition/content/archive_source/import"
@@ -8548,7 +8595,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-067",

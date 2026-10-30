@@ -229,6 +229,16 @@ require included assets for both policies; controlled producer tests separately
 verify URL references, bundled assets and original source assertions. Final-package
 cases repeat the public journey against each extracted native executable.
 
+The choice-change journey uses a separate recipient cache. Read-only option
+inspection preserves instance and host storage. An uncached optional asset becomes
+pending without changing the saved choice; the public pending key accepts exact
+renamed bytes and rejects wrong content. Disabling an unchanged managed optional
+file retires it. Modified content keeps the old selection until an explicit conflict
+decision is supplied; preservation leaves that content and unrelated player data
+intact. Choice-key changes across releases and actual consumers remain separate
+acceptance work for the public signed-update path. Engine fixtures separately check
+changed defaults, newly required choices, and removal of retired keys.
+
 Reference Prism fixtures independently hash the exported descriptor and assets,
 then prepare an extracted instance through the real executable. The hash comes from
 the known emitted prelaunch setting; altered descriptors and equal-length corrupted

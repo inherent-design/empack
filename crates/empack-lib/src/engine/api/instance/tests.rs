@@ -332,15 +332,21 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
         default: "no".into(),
         description: None,
     });
-    assert!(
-        engine
-            .prepare(
-                root.path().to_owned(),
-                replace_document(a(), document.clone())
-            )
-            .await
-            .is_err()
+    let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let error = engine
+        .prepare(
+            root.path().to_owned(),
+            replace_document(a(), document.clone()),
+        )
+        .await
+        .err()
+        .expect("a new choice requires an explicit decision");
+    assert!(format!("{error:#}").contains("New release choice requires a decision: new"));
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        before
     );
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
     let mut input = replace_document(a(), document);
     input.choices = vec![
         ChoiceSelection {
@@ -354,6 +360,28 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
     ];
     apply(&engine, root.path(), input).await;
     assert!(!root.path().join("game/mods/a.jar").exists());
+    // A later release may remove these choice definitions. An explicit stale
+    // choice is rejected, while omitted retired keys do not survive the update.
+    let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let mut stale = a();
+    stale.choices = vec![ChoiceSelection {
+        key: "new".into(),
+        value: "no".into(),
+    }];
+    let error = engine
+        .prepare(root.path().to_owned(), stale)
+        .await
+        .err()
+        .expect("a retired choice cannot be selected");
+    assert!(format!("{error:#}").contains("Unknown requested choice"));
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        before
+    );
+    assert!(!root.path().join("game/mods/a.jar").exists());
+    let after = apply(&engine, root.path(), a()).await;
+    assert!(after.choices.is_empty());
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
 }
 
 #[tokio::test]
