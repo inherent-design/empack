@@ -4,7 +4,7 @@ use crate::{
         Commands,
         cli::Cli,
         commands::execute_command_with_session,
-        session_mocks::{MockCommandSession, MockConfigProvider},
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInteractiveProvider},
     },
     engine::{
         publication::{
@@ -101,10 +101,18 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
         };
         let before_project = snapshot(project.path());
         let before_host = snapshot(host.path());
-        for mode in ["inspect", "preview", "decline", "wrong-operation"] {
+        for mode in [
+            "inspect",
+            "preview",
+            "decline",
+            "headless",
+            "wrong-operation",
+        ] {
             let mut config = config.clone();
             config.dry_run = mode == "preview";
-            let session = MockCommandSession::new().with_config(MockConfigProvider::new(config));
+            let session = MockCommandSession::new()
+                .with_config(MockConfigProvider::new(config))
+                .with_interactive(MockInteractiveProvider::new().with_yes_mode(mode == "headless"));
             let result = execute_command_with_session(
                 Commands::Recover {
                     action: if mode == "inspect" {
@@ -123,9 +131,18 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
             .await;
             assert_eq!(
                 result.is_err(),
-                mode == "wrong-operation",
+                matches!(mode, "headless" | "wrong-operation"),
                 "{mode}: {result:?}"
             );
+            if mode == "headless" {
+                let error = result.unwrap_err();
+                assert_eq!(
+                    crate::application::classify_error(&error),
+                    crate::application::EmpackExitCode::Usage
+                );
+                assert!(error.to_string().contains("requires --yes"), "{error:#}");
+                assert!(session.interactive_provider.get_confirm_calls().is_empty());
+            }
             assert_eq!(snapshot(project.path()), before_project);
             assert_eq!(snapshot(host.path()), before_host);
         }

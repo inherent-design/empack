@@ -263,10 +263,19 @@ shown in the respective diagnostics.
 
 ## Interaction and failures
 
+Without an interactive terminal, mutating plans require `--yes`. Piping `y` or `n`
+does not grant approval; closed input also returns a usage error with the next step.
+Use `--dry-run` to inspect a plan without approval. A resumed operation needs fresh
+approval even if its earlier save used `--yes`.
+
 Preview may resolve remote facts and use temporary scratch, but writes no project,
 instance, durable cache, subscription, tool installation or recovery record. Declining
 approval has the same preservation requirement. Unattended confirmation cannot invent
 missing choices or bypass integrity and ownership checks.
+
+`empack requirements` reports native capabilities and discovers Java on `PATH`.
+It does not execute Java or certify version compatibility. Managed server launch
+checks the selected Java against the pack's declared requirement after approval.
 
 Manual inputs use exact obligation-to-path associations. Resume retains original
 assertions and rejects stale recipes. Browser opening and bounded download waiting

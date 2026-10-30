@@ -271,7 +271,7 @@ fn journey_pending_import_resume_requires_fresh_approval() {
     .unwrap();
     let association = format!("{selector}={}", input.display());
     fs::remove_file(&fixture.archive).unwrap();
-    approval::decline_resume(
+    approval::preserve_without_approval(
         fixture.project.dir(),
         &fixture.target,
         &fixture.state,

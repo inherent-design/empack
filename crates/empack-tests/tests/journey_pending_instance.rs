@@ -384,7 +384,7 @@ fn journey_pending_instance_resume_requires_fresh_approval() {
     .unwrap();
     let association = format!("{}={}", needed["key"].as_str().unwrap(), input.display());
     fs::remove_file(&fixture.release).unwrap();
-    approval::decline_resume(
+    approval::preserve_without_approval(
         fixture.project.dir(),
         &fixture.target,
         &fixture.state,

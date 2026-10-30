@@ -1,11 +1,9 @@
 //! Public entry points must work before loading or creating unrelated project state.
-#[path = "support/files.rs"]
-mod files;
-
 use empack_tests::harness::process::{
     TestProject, empack_bin, expected_cli_version, offline_command,
 };
-use std::{collections::BTreeSet, fs, io::ErrorKind, net::TcpListener, path::PathBuf};
+use empack_tests::harness::workspace::snapshot;
+use std::{fs, io::ErrorKind, net::TcpListener, path::PathBuf};
 
 struct EntryFixture {
     project: TestProject,
@@ -47,14 +45,16 @@ impl EntryFixture {
     }
 
     fn invoke(&self, args: &[&str], code: i32) -> std::process::Output {
-        let before = files::snapshot(self.project.dir());
-        let names = || -> BTreeSet<_> {
-            fs::read_dir(&self.root)
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .collect()
-        };
-        let before_names = names();
+        self.invoke_with_path(args, code, std::ffi::OsStr::new(""))
+    }
+
+    fn invoke_with_path(
+        &self,
+        args: &[&str],
+        code: i32,
+        path: &std::ffi::OsStr,
+    ) -> std::process::Output {
+        let before = snapshot(self.project.dir());
         let mut command = offline_command(&self.root);
         let address = format!("http://{}", self.proxy.local_addr().unwrap());
         for name in [
@@ -70,17 +70,13 @@ impl EntryFixture {
         let output = command
             .env("NO_PROXY", "")
             .env("no_proxy", "")
-            .env("PATH", "")
+            .env("PATH", path)
+            .env("PATHEXT", ".CMD")
             .args(args)
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(code), "{args:?}: {output:?}");
-        assert_eq!(files::snapshot(self.project.dir()), before, "{args:?}");
-        assert_eq!(
-            names(),
-            before_names,
-            "entry point created a directory: {args:?}"
-        );
+        assert_eq!(snapshot(self.project.dir()), before, "{args:?}");
         match self.proxy.accept() {
             Err(error) if error.kind() == ErrorKind::WouldBlock => {}
             other => panic!("entry point attempted HTTP transport: {args:?}: {other:?}"),
@@ -240,5 +236,58 @@ fn cli_requirements_describes_native_capabilities_without_bootstrap() {
     assert!(
         stdout.contains("CurseForge also requires an API key"),
         "{stdout}"
+    );
+    assert!(stdout.contains("Java was not found"), "{stdout}");
+    assert!(
+        stdout.contains("not version compatibility with the selected runtime"),
+        "{stdout}"
+    );
+
+    let bin = fixture.root.join("controlled tools Ω");
+    fs::create_dir(&bin).unwrap();
+    let program = bin.join(if cfg!(windows) { "java.CMD" } else { "java" });
+    // Valid executable fixtures advertise different versions only if invoked.
+    // Requirement inspection must discover the path without running any of them.
+    for version in ["1.8", "21", "not-a-version"] {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::write(&program, format!("#!/bin/sh\nprintf invoked > \"$0.invoked\"\nprintf 'java.specification.version = {version}\\n' >&2\nexit 77\n")).unwrap();
+            fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        #[cfg(windows)]
+        fs::write(&program, format!("@echo off\r\n> \"%~f0.invoked\" echo invoked\r\necho java.specification.version = {version} 1>&2\r\nexit /b 77\r\n")).unwrap();
+        let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains(program.to_str().unwrap()), "{stdout}");
+        assert!(!stdout.contains("Java was not found"), "{stdout}");
+        assert!(
+            stdout.contains("not version compatibility with the selected runtime"),
+            "{stdout}"
+        );
+        let marker = program.with_file_name(format!(
+            "{}.invoked",
+            program.file_name().unwrap().to_str().unwrap()
+        ));
+        assert!(!marker.exists());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o600)).unwrap();
+        let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains("Java was not found")
+        );
+    }
+    fs::remove_file(&program).unwrap();
+    fs::create_dir(&program).unwrap();
+    let output = fixture.invoke_with_path(&["requirements"], 0, bin.as_os_str());
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("Java was not found")
     );
 }

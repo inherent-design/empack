@@ -4,3 +4,4 @@ pub mod archive;
 pub mod native_volume;
 pub mod process;
 pub mod terminal;
+pub mod workspace;

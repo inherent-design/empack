@@ -83,6 +83,115 @@ fn cli_pty_init_decline_preserves_absent_destination() {
 }
 
 #[test]
+fn cli_local_plans_require_explicit_approval_and_preserve_refused_work() {
+    use empack_tests::harness::{archive::zip_members, process::offline_command};
+    use serde_json::{Value, json};
+    use std::{collections::BTreeMap, io::Write};
+
+    for operation in ["initialization", "addition", "build"] {
+        let project = TestProject::workflow_fixture("decisions", "vanilla", "1.21.1");
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        fs::create_dir_all(project.dir().join("pack/config")).unwrap();
+        fs::write(
+            project.dir().join("pack/config/options.txt"),
+            b"author configuration",
+        )
+        .unwrap();
+        fs::create_dir_all(project.dir().join("dist")).unwrap();
+        fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
+        let mut jar = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        jar.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        jar.write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
+            .unwrap();
+        let jar = jar.finish().unwrap().into_inner();
+        fs::write(project.dir().join("fixture.jar"), &jar).unwrap();
+        let args = match operation {
+            "initialization" => vec![
+                "init",
+                "--modloader",
+                "none",
+                "--mc-version",
+                "1.21.1",
+                "--pack-name",
+                "New Pack",
+                "--pack-version",
+                "1.0.0",
+                "--author",
+                "Tester",
+                "new",
+            ],
+            "addition" => vec!["add", "fixture.jar"],
+            "build" => vec!["build", "modrinth"],
+            _ => unreachable!(),
+        };
+        approval::preserve_without_approval(
+            project.dir(),
+            project.dir(),
+            &state,
+            &args,
+            &format!("(?i)apply this {operation} plan"),
+        );
+        // An actual affirmative request must reach the intended publication,
+        // rather than making every refusal pass through an unrelated failure.
+        offline_command(project.dir())
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(state.with_extension("cache"))
+            .arg("--yes")
+            .args(&args)
+            .assert()
+            .success();
+        match operation {
+            "initialization" => {
+                initialization::assert_new_project(
+                    &project.dir().join("new"),
+                    "New Pack",
+                    "1.0.0",
+                    &["Tester"],
+                );
+            }
+            "addition" => {
+                assert_eq!(
+                    fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
+                    jar
+                );
+                let author: Value = serde_saphyr::from_str(
+                    &fs::read_to_string(project.dir().join("empack.yml")).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(author["dependencies"].as_object().unwrap().len(), 1);
+            }
+            "build" => {
+                let mut members = zip_members(&project.dir().join("dist/decisions-1.0.0.mrpack"));
+                let index: Value =
+                    serde_json::from_slice(&members.remove("modrinth.index.json").unwrap())
+                        .unwrap();
+                assert_eq!(
+                    index,
+                    json!({"formatVersion":1,"game":"minecraft","name":"decisions","versionId":"1.0.0","files":[],"dependencies":{"minecraft":"1.21.1"}})
+                );
+                assert_eq!(
+                    members,
+                    BTreeMap::from([(
+                        "overrides/config/options.txt".into(),
+                        b"author configuration".to_vec()
+                    )])
+                );
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            fs::read(project.dir().join("dist/prior.zip")).unwrap(),
+            b"prior artifact"
+        );
+        assert_eq!(fs::read(project.dir().join("fixture.jar")).unwrap(), jar);
+    }
+}
+
+#[test]
 fn cli_pty_pending_resume_requires_fresh_approval() {
     use empack_tests::{fixtures::restricted::fixture, harness::process::offline_command};
     let project = fixture("pending-approval");
@@ -119,7 +228,7 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
         operation["inputs"][0]["key"].as_str().unwrap(),
         input.display()
     );
-    approval::decline_resume(
+    approval::preserve_without_approval(
         project.dir(),
         project.dir(),
         &state,

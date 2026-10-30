@@ -1,14 +1,13 @@
 //! Replacement assertions through the real executable, with literal incoming data.
 use super::files;
-use empack_tests::harness::terminal;
+#[path = "approval.rs"]
+mod approval;
 
-use empack_tests::harness::process::{TestProject, empack_cmd, offline_command};
-use std::{
-    collections::BTreeMap,
-    fs,
-    io::Write,
-    path::{Path, PathBuf},
+use empack_tests::harness::{
+    process::{TestProject, offline_command},
+    workspace::snapshot,
 };
+use std::{collections::BTreeMap, fs, io::Write, path::Path};
 
 const MANIFEST: &[u8] = br#"{"formatVersion":1,"game":"minecraft","name":"Replacement","versionId":"2","files":[],"dependencies":{"minecraft":"1.21.1"}}"#;
 const RETAINED: &[(&str, &[u8])] = &[
@@ -59,34 +58,6 @@ fn fixture() -> TestProject {
         .unwrap();
     }
     project
-}
-
-// Byte snapshots alone miss removed empty directories and changed attributes.
-fn attributes(root: &Path) -> BTreeMap<PathBuf, (bool, u32)> {
-    fn visit(root: &Path, at: &Path, entries: &mut BTreeMap<PathBuf, (bool, u32)>) {
-        for entry in fs::read_dir(at).unwrap() {
-            let path = entry.unwrap().path();
-            let metadata = fs::symlink_metadata(&path).unwrap();
-            assert!(!metadata.is_symlink(), "fixture contains no links");
-            #[cfg(unix)]
-            let mode = {
-                use std::os::unix::fs::PermissionsExt;
-                metadata.permissions().mode() & 0o777
-            };
-            #[cfg(not(unix))]
-            let mode = u32::from(metadata.permissions().readonly());
-            entries.insert(
-                path.strip_prefix(root).unwrap().into(),
-                (metadata.is_dir(), mode),
-            );
-            if metadata.is_dir() {
-                visit(root, &path, entries);
-            }
-        }
-    }
-    let mut result = BTreeMap::new();
-    visit(root, root, &mut result);
-    result
 }
 
 fn archive(index: &[u8], members: &[(&str, &[u8])]) -> Vec<u8> {
@@ -154,7 +125,7 @@ fn cli_forced_import_rejects_invalid_candidates_without_mutation() {
         let project = fixture();
         fs::write(project.dir().join("incoming.mrpack"), incoming).unwrap();
         let before = files::snapshot(project.dir());
-        let modes = attributes(project.dir());
+        let modes = snapshot(project.dir()).entries;
         for preview in [false, true] {
             let mut command = offline_command(project.dir());
             command.args([
@@ -184,7 +155,7 @@ fn cli_forced_import_rejects_invalid_candidates_without_mutation() {
                 "{label}, preview={preview}"
             );
             assert_eq!(
-                attributes(project.dir()),
+                snapshot(project.dir()).entries,
                 modes,
                 "{label}, preview={preview}"
             );
@@ -201,7 +172,7 @@ fn cli_forced_initialization_rejects_invalid_options_without_mutation() {
     ] {
         let project = fixture();
         let before = files::snapshot(project.dir());
-        let modes = attributes(project.dir());
+        let modes = snapshot(project.dir()).entries;
         for preview in [false, true] {
             let mut command = offline_command(project.dir());
             command
@@ -231,7 +202,7 @@ fn cli_forced_initialization_rejects_invalid_options_without_mutation() {
                 "{extra:?}, preview={preview}"
             );
             assert_eq!(
-                attributes(project.dir()),
+                snapshot(project.dir()).entries,
                 modes,
                 "{extra:?}, preview={preview}"
             );
@@ -271,7 +242,7 @@ fn cli_forced_replacement_preview_and_publication_keep_unowned_files() {
             ]
         };
         let before = files::snapshot(project.dir());
-        let modes = attributes(project.dir());
+        let modes = snapshot(project.dir()).entries;
         let preview = offline_command(project.dir())
             .args(&arguments)
             .args(["--yes", "--dry-run"])
@@ -283,7 +254,7 @@ fn cli_forced_replacement_preview_and_publication_keep_unowned_files() {
             "{preview:?}"
         );
         assert_eq!(files::snapshot(project.dir()), before);
-        assert_eq!(attributes(project.dir()), modes);
+        assert_eq!(snapshot(project.dir()).entries, modes);
 
         offline_command(project.dir())
             .args(&arguments)
@@ -309,7 +280,7 @@ fn cli_forced_replacement_preview_and_publication_keep_unowned_files() {
             .iter()
             .filter(|(path, _)| outside_replacement(path))
             .collect();
-        let after_attributes = attributes(project.dir());
+        let after_attributes = snapshot(project.dir()).entries;
         assert_eq!(
             after_attributes
                 .iter()
@@ -346,13 +317,12 @@ fn cli_pty_forced_replacement_decline_preserves_existing_project() {
         )
         .unwrap();
         let before = files::snapshot(project.dir());
-        let modes = attributes(project.dir());
-        let mut command = empack_cmd(project.dir());
-        command.args(["init", "--force"]);
+        let modes = snapshot(project.dir()).entries;
+        let mut args = vec!["init", "--force"];
         if import {
-            command.args(["--from", "incoming.mrpack"]);
+            args.extend(["--from", "incoming.mrpack"]);
         } else {
-            command.args([
+            args.extend([
                 "--modloader",
                 "none",
                 "--mc-version",
@@ -365,9 +335,15 @@ fn cli_pty_forced_replacement_decline_preserves_existing_project() {
                 "2",
             ]);
         }
-        command.arg("existing");
-        terminal::decline(command, "(?i)apply this (initialization|import) plan");
+        args.push("existing");
+        approval::preserve_without_approval(
+            project.dir(),
+            project.dir(),
+            &project.dir().join(".host-state"),
+            &args,
+            "(?i)apply this (initialization|import) plan",
+        );
         assert_eq!(files::snapshot(project.dir()), before);
-        assert_eq!(attributes(project.dir()), modes);
+        assert_eq!(snapshot(project.dir()).entries, modes);
     }
 }

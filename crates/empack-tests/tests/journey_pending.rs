@@ -539,7 +539,7 @@ fn journey_pending_sync_resume_requires_fresh_approval() {
             input.display()
         ));
     }
-    approval::decline_resume(
+    approval::preserve_without_approval(
         project.dir(),
         project.dir(),
         &state,

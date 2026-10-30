@@ -383,7 +383,151 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-003.host-approval-and-recovery",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::commands::tests::dispatcher_preview_decline_and_invalid_input_preserve_whole_project",
+            "empack-lib::application::engine_host::tests::recovery_dispatch_inspects_previews_declines_and_recovers_native_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native dispatcher preview, decline and invalid additions preserve complete project bytes",
+            "Recovery inspect/preview/refusal preserve project and host records for both finish and restore; a headless host refuses with usage status and no confirmation prompt, while explicit approval completes the intended recovery"
+          ]
+        },
+        {
+          "id": "UX-003.local-publication-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_local_plans_require_explicit_approval_and_preserve_refused_work",
+            "empack-tests::cli_interactive::cli_pty_init_accepts_author_decisions",
+            "empack-tests::cli_interactive::cli_pty_init_decline_preserves_absent_destination"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Initialization, local addition and ready build refuse closed or piped affirmative/negative stdin without --yes; yes plus dry-run and an actual terminal decline preserve workspace and host bytes",
+            "Explicit affirmative requests publish independently checked author semantics, selected local bytes or a complete mrpack inventory; terminal author decisions produce the intended initialized project"
+          ]
+        },
+        {
+          "id": "UX-003.replacement-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_init::replacement::cli_pty_forced_replacement_decline_preserves_existing_project"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Forced initialization and import into an existing author project cannot receive approval through closed/piped stdin; preview and actual terminal refusal preserve source/artifact/world sentinels and author attributes"
+          ]
+        },
+        {
+          "id": "UX-003.fresh-retained-build-and-sync-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_interactive::cli_pty_pending_resume_requires_fresh_approval",
+            "empack-tests::journey_pending::journey_pending_sync_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Saved build and synchronization approvals do not carry forward to resume: closed/piped stdin cannot grant a fresh request, yes plus dry-run remains read-only, and actual terminal decline preserves retained evidence and supplied bytes"
+          ]
+        },
+        {
+          "id": "UX-003.retained-import-and-instance-decisions",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_reverifies_retained_manual_payloads_across_both_resume_commands",
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Retained import and instance journeys obtain selectors from public output and refuse unapproved closed/piped stdin requests without changing selected workspace, store or supplied inputs",
+            "The same saved inputs survive preview and terminal refusal and then complete the exact expected project or installation after deliberate approval"
+          ]
+        },
+        {
+          "id": "UX-003.headless-search-needs-selection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::smoke::smoke_headless_search_is_not_first_result_authorization",
+            "empack-tests::cli_dependencies::cli_headless_search_requires_explicit_selection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A bare headless provider search cannot select the first result merely because --yes is supplied; refusal preserves author data and explains the need for deliberate selection"
+          ]
+        },
+        {
+          "id": "UX-003.live-search-selection-and-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_pty_search_requires_choice_and_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The explicitly selected live terminal route obtains a deliberate catalog choice and separate mutation approval rather than treating search ranking as authority"
+          ],
+          "remaining_group_evidence": "Live route evidence, actual terminal EOF/cancellation variants, public recovery prompt integration and final platform/candidate execution remain required; component and closed-stdin checks do not qualify those boundaries"
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "engine::api + runtime + resources"
@@ -392,7 +536,7 @@
         "empack-cli",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-004",
@@ -414,7 +558,74 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-004.native-inspection-without-bootstrap",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::commands::tests::inspection_commands_need_no_project_or_backend_bootstrap"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Requirements and version dispatch succeed without an author project and preserve all fixture bytes; no backend bootstrap is part of inspection"
+          ]
+        },
+        {
+          "id": "UX-004.cli-path-discovery-is-observational",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Empty controlled PATH reports missing Java and required native capabilities without creating state or attempting a configured HTTP request",
+            "Controlled Java fixtures advertising old, current and malformed versions are discovered without execution or compatibility certification; directories and Unix nonexecutable files cannot masquerade as executable Java",
+            "Inspection retains malformed author text, supplied tool bytes, empty directories and captured permissions and explicitly separates path discovery from selected-runtime compatibility"
+          ]
+        },
+        {
+          "id": "UX-004.packaged-tool-inspection",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_entry::cli_requirements_describes_native_capabilities_without_bootstrap"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "The final extracted product runs the same empty-PATH and controlled-tool inspection outside the checkout without bootstrap or tool execution",
+            "Archive admission binds the inspection to the exact distributed binary identity and native target; ordinary source suites cannot qualify this case"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "api::launch + process_runtime + runtime lease; server_runtime/installer"
@@ -423,7 +634,7 @@
         "empack-cli",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-005",
@@ -9522,7 +9733,7 @@
           "id": "UX-087.api-examples-compile",
           "boundary": "U",
           "test_ids": [
-            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 737)",
+            "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 770)",
             "doctest::crates/empack-lib/src/lib.rs - (line 18)"
           ],
           "required_platforms": [

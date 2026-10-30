@@ -106,7 +106,25 @@ files, prior artifacts, supplied downloads, cache and saved work after the execu
 exits. The shared external harness owns PTY/ConPTY handling and offline command setup;
 no terminal controls are added to the product. The terminal helper also verifies
 successful process exit: expected prompt text and EOF cannot hide a later failure. State snapshots assert preservation without interpreting
-private continuation records. Synchronization also checks partial retention across
+private continuation records. The same decision fixture now checks closed input and
+piped affirmative/negative answers, each refused without `--yes`, plus a read-only
+`--yes --dry-run` before terminal decline. Local initialization, addition and build
+also prove that explicit approval reaches independently checked publication.
+Forced initialization/import retain author attributes and player-world sentinels.
+Shared fixture observations include bytes, empty directories and Unix rwx mode bits
+or the Windows read-only attribute;
+timestamps are excluded and links/special entries are not admitted by this observer.
+Native recovery has a separate headless-host refusal check. These checks do not
+qualify terminal EOF/cancellation, actual consumers or packaged execution.
+
+Requirements inspection runs with an empty controlled `PATH`, then with synthetic
+Java tools advertising old, current or malformed versions if executed. It must
+discover eligible paths without executing them or creating state, and must reject
+directories and Unix files without executable permissions as Java candidates.
+The output distinguishes path discovery from selected-runtime compatibility;
+approval and actual Java validation remain separate launch tests.
+
+Synchronization also checks partial retention across
 cache eviction. Import resumes a retained archive after deleting the original and
 keeps incomplete requirement discovery explicit. Its unsupported-transport fixture
 does not establish a live provider's restricted-download policy. Instance journeys
