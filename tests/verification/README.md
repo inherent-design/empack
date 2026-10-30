@@ -36,9 +36,19 @@ Publisher key setup has separate executable, terminal and native cases. The
 terminal case checks closed/piped input, preview and refusal before accepting the
 same path with explicit approval. Destination cases preserve publisher work and
 external secrets when paths are unsafe or already occupied. Native cases cover
-cancellation and exclusive-publication collisions after preparation. These checks
-do not complete the separate write, synchronization and cleanup failure matrix;
-the signing requirement remains partially decomposed until those cases are bound.
+cancellation and exclusive-publication collisions after preparation. Private
+operation checkpoints also cover write, file/directory synchronization, exclusive
+linking and cleanup failures on real files. Those controlled failures do not prove
+kernel-generated partial writes or physical crash durability. The signing group
+remains partially decomposed.
+
+Immutable staging has separate source-validation, public inventory/signature,
+approval and final-archive cases. Its case decomposition covers the original
+staging requirements: selected bytes and exact release identity, signer context,
+preserved immutable output, preview/refusal and five-target package execution.
+This completes the staging definitions, not their acceptance: without the required
+source/feature/target observations the group remains unexecuted. Hosted publication
+and channel advancement have their own requirements.
 
 Instance inspection has a public-command case that installs two exact snapshots,
 retains a selected optional choice, and checks the displayed release history.

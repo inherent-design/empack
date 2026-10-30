@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::cli_publisher::cli_pty_release_staging_requires_approval_and_preserves_preview_inputs", "binary": "empack-tests::cli_publisher", "binary_name": "cli_publisher", "boundary": "I", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_conflicts", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::release::signing::tests::publisher_setup_write_sync_and_link_failures_retire_only_the_private_candidate", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::release::signing::tests::publisher_setup_directory_sync_failure_preserves_created_key_and_reports_durability", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "REL", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},

@@ -8028,6 +8028,7 @@
       "evidence_tiers": [
         "H",
         "X",
+        "I",
         "P"
       ],
       "risk": "critical",
@@ -8126,6 +8127,26 @@
             "x86_64-pc-windows-msvc"
           ],
           "remaining_group_evidence": "This is a final-archive obligation. Existing package receipts predate this test and cannot establish its execution."
+        },
+        {
+          "id": "UX-055.stage-preview-and-explicit-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_publisher::cli_pty_release_staging_requires_approval_and_preserves_preview_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Closed stdin and piped yes/no cannot approve immutable release staging; explicit dry-run and actual terminal refusal leave publisher files, source releases, private key files and selected host state unchanged",
+            "The identical source/key/destination selection succeeds with explicit approval, preserving earlier publisher output and independently verifying the expected signed payload and selected asset bytes; no channel is published"
+          ]
         }
       ],
       "owner_now": [
@@ -8138,7 +8159,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-056",

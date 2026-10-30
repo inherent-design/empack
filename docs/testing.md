@@ -550,6 +550,8 @@ new release directory. Unselected source files stay in the export. A separate CL
 case checks identical replay, conflicting output bytes and a different signing key
 against the same release ID while preserving earlier publisher work. Engine cases
 separately enforce provenance assertions and invalidate stale prepared sources.
+The staging approval case also checks closed/piped stdin, dry-run and real terminal
+refusal before approving the same selection and checking its signed output.
 
 Fresh CLI processes enroll, observe local channel envelopes, install, update, repair,
 roll back, and change trust. Assertions cover refused tampering and expiry, explicit conflict

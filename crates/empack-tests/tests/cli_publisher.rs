@@ -18,6 +18,9 @@ use std::{
 mod publisher_checks;
 use publisher_checks::{hex, unhex, verify_signed_payload, verify_staged};
 
+#[path = "support/approval.rs"]
+mod approval;
+
 const FIXTURE_COMMIT: &str = "dd677b62f894030bf149bef7147d14231cdb2a36";
 
 struct Publisher {
@@ -233,6 +236,82 @@ fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+#[test]
+fn cli_pty_release_staging_requires_approval_and_preserves_preview_inputs() {
+    let fixture = Publisher::new();
+    let publisher = TestProject::new();
+    fs::write(publisher.dir().join("publisher notes.txt"), b"retain notes").unwrap();
+    fs::create_dir_all(publisher.dir().join("dist/releases/prior")).unwrap();
+    fs::write(
+        publisher.dir().join("dist/releases/prior/retained.txt"),
+        b"retain earlier release",
+    )
+    .unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("selected state");
+    let input = fixture.input("a");
+    let key = fixture.key("a");
+    let args = [
+        "release",
+        "stage",
+        input.to_str().unwrap(),
+        "--key-file",
+        key.to_str().unwrap(),
+    ];
+    let inputs_before = snapshot(fixture.inputs.path());
+    let origin_before = snapshot(fixture.project.dir());
+    let publisher_before = snapshot(publisher.dir());
+    let host_before = snapshot(host.path());
+    approval::preserve_without_approval(
+        publisher.dir(),
+        publisher.dir(),
+        &state,
+        &args,
+        "(?i)apply this immutable release plan",
+    );
+    assert_eq!(snapshot(fixture.inputs.path()), inputs_before);
+    assert_eq!(snapshot(fixture.project.dir()), origin_before);
+    assert_eq!(snapshot(publisher.dir()), publisher_before);
+    assert_eq!(snapshot(host.path()), host_before);
+
+    // The identical selection succeeds with explicit approval, so refusal was
+    // not an unrelated input, key, destination or prerequisite failure.
+    let id = fixture.release("a")["id"].as_str().unwrap();
+    offline_command(publisher.dir())
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--cache-dir")
+        .arg(state.with_extension("cache"))
+        .arg("--yes")
+        .args(args)
+        .assert()
+        .success()
+        .stdout(contains(id));
+    let staged = publisher.dir().join("dist/releases").join(id);
+    verify_staged(
+        &staged.join("release.json"),
+        &fixture.signer("a").verifying_key(),
+        id,
+        &input.join("release.json"),
+    );
+    let output = snapshot(&staged);
+    assert_eq!(output.files.len(), 2);
+    assert_eq!(
+        output.files[std::path::Path::new("assets/config.toml")],
+        fs::read(input.join("assets/config.toml")).unwrap()
+    );
+    let after = snapshot(publisher.dir());
+    for (path, bytes) in &publisher_before.files {
+        assert_eq!(&after.files[path], bytes);
+    }
+    for (path, entry) in &publisher_before.entries {
+        assert_eq!(&after.entries[path], entry);
+    }
+    assert_eq!(snapshot(fixture.inputs.path()), inputs_before);
+    assert_eq!(snapshot(fixture.project.dir()), origin_before);
+    assert!(!publisher.dir().join("dist/channels").exists());
 }
 
 #[test]
