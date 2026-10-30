@@ -9339,6 +9339,7 @@
       "required_assertions": "Only allowed connection failure can fall back; invalid signature/replay/corrupt release never downgraded to offline success.",
       "required_work": "Controlled fault taxonomy + public CLI local auth cases; no credential forwarding.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "L"
@@ -9347,7 +9348,116 @@
       "run_gate": "pr+external",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-077.typed-fallback-classification",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::instance::subscription::locator_tests::offline_fallback_is_limited_to_channel_transport_failures"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Only typed Network and Deadline channel failures are eligible for an explicit offline policy; authorization, HTTP status, byte/redirect limits, signature-like errors and cancellation remain hard failures"
+          ],
+          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+        },
+        {
+          "id": "UX-077.actual-http-failure-classification",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::channel_http_failures_do_not_become_offline_permission"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual metadata HTTP 401/403/404/429/400/500/503 responses retain the expected typed transfer category and refuse fallback even with offline permission",
+            "Encoded bodies, cross-origin or looping redirects, and oversized metadata are rejected with their policy/limit categories before changing the installed project or durable floor"
+          ],
+          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+        },
+        {
+          "id": "UX-077.authenticated-prelaunch-decisions",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::invalid_authenticated_channels_never_select_offline_launch_or_change_floor",
+            "empack-lib::application::engine_host::instance::prelaunch::tests::authenticated_prelaunch_stops_on_preview_decline_and_release_failure",
+            "empack-lib::application::engine_host::instance::prelaunch::tests::unavailable_channel_requires_explicit_offline_and_keeps_completed_release"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed envelopes, untrusted signing keys, corrupted trusted signatures, expired channels and validly signed replayed sequences return errors rather than the completed-release selection; failed authentication preserves the durable floor and never requests a release",
+            "After an approved valid channel observation, missing, malformed, untrusted or identity-mismatched releases cannot trigger fallback; the completed installation remains unchanged and the approved sequence floor persists",
+            "Preview and declined approval never authorize installation or launch; a genuine refused connection needs explicit offline permission, while revoked enrollment still refuses"
+          ],
+          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+        },
+        {
+          "id": "UX-077.publisher-transport-credentials",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::acquisition::metadata::tests::metadata_redirects_stay_on_origin_and_never_send_provider_credentials"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Publisher metadata requests with configured provider credentials omit the provider key, including same-origin redirects; cross-origin, downgraded and credential-bearing redirects refuse"
+          ],
+          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+        },
+        {
+          "id": "UX-077.executable-offline-launch-policy",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Normal proxy configuration routes a real CONNECT for the enrolled HTTPS publisher to a refusing local tunnel; without allow-offline the command exits Network without starting a runtime or changing the fixture",
+            "Explicit allow-offline reports the completed release and runs the selected compiler-bound local runtime in the game directory, preserving installation, enrollment and player data",
+            "Changed managed bytes refuse launch after connection failure; a changed retained release descriptor and revoked enrollment refuse before any proxy connection, even with offline permission",
+            "Every refusal preserves the relevant complete fixture snapshot and leaves no runtime-start observation; the original export remains unchanged"
+          ],
+          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+        }
+      ],
       "owner_now": [
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
         "engine::release + api::release_publication/subscription",
@@ -9358,7 +9468,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-078",
@@ -10302,6 +10412,25 @@
             "Matching registry bytes remain admissible while missing or malformed captured requirement identity is refused"
           ],
           "remaining_group_evidence": "These controlled helper tests establish evidence admission behavior, not product, actual consumer or package acceptance."
+        },
+        {
+          "id": "UX-088.windows-empty-locked-observation",
+          "boundary": "N",
+          "test_ids": [
+            "empack-tests::harness::workspace::tests::snapshot_observes_locked_empty_files_but_refuses_unreadable_content"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real exclusive byte lock makes an independent Windows byte read fail with lock violation; the fixture observer still records the empty file from its observed zero length",
+            "Once the same locked file contains bytes, observation refuses rather than omitting or inventing its content; after unlock the exact data is observed"
+          ],
+          "remaining_group_evidence": "This is native Windows harness behavior, not a replacement for actual application ownership/publication tests"
         }
       ],
       "owner_now": [

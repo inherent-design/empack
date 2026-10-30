@@ -4,12 +4,7 @@ use empack_tests::harness::process::TestProject;
 use std::{
     fs,
     io::Write,
-    process::{Command, Output},
-};
-
-#[cfg(unix)]
-use std::{
-    process::Stdio,
+    process::{Command, Output, Stdio},
     time::{Duration, Instant},
 };
 
@@ -375,7 +370,6 @@ fn cli_interrupt_exits_130() {
     assert!(!project.dir().join("pack/mods").exists());
 }
 
-#[cfg(unix)]
 fn runtime_release(root: &std::path::Path) -> (std::path::PathBuf, String, Vec<u8>) {
     use empack_tests::harness::process::{assert_dist_artifact_suffix, offline_command};
     use sha2::{Digest, Sha256};
@@ -428,6 +422,224 @@ build:
         .collect();
 
     (export, id, payload)
+}
+
+#[test]
+fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_trust() {
+    use empack_tests::harness::{
+        process::{empack_cmd, offline_command},
+        publication::Driver,
+        workspace::snapshot,
+    };
+    use predicates::str::contains;
+    use std::{io::Read, net::TcpListener, path::PathBuf};
+
+    fn set_proxy(command: &mut Command, address: &str) {
+        for key in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
+            command.env(key, address);
+        }
+        command.env("NO_PROXY", "").env("no_proxy", "");
+    }
+
+    fn refused_before_network(mut command: Command, diagnostic: &str) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        set_proxy(
+            &mut command,
+            &format!("http://{}", listener.local_addr().unwrap()),
+        );
+        assert_cmd::Command::from_std(command)
+            .timeout(Duration::from_secs(30))
+            .assert()
+            .failure()
+            .stderr(contains(diagnostic));
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    // Observe a real CONNECT through the normal proxy setting, then refuse its
+    // tunnel. No TLS bypass, alternate publisher root or product test endpoint.
+    fn unavailable(mut command: Command) -> Output {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        set_proxy(&mut command, &address);
+        std::thread::scope(|scope| {
+            let server = scope.spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(20);
+                let mut connection = loop {
+                    match listener.accept() {
+                        Ok((connection, _)) => break connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "publisher fetch did not reach proxy");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("proxy accept: {error}"),
+                    }
+                };
+                connection.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut part = [0; 512];
+                    let size = connection.read(&mut part).unwrap();
+                    assert!(size > 0 && request.len() + size <= 8192);
+                    request.extend_from_slice(&part[..size]);
+                }
+                connection.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                String::from_utf8(request).unwrap()
+            });
+            let output = assert_cmd::Command::from_std(command)
+                .timeout(Duration::from_secs(30))
+                .output()
+                .unwrap();
+            let request = server.join().unwrap();
+            assert!(
+                request.starts_with("CONNECT publisher.invalid:443 HTTP/1.1\r\n"),
+                "{request}"
+            );
+            output
+        })
+    }
+
+    const CHILD: &str = "engine::api::launch::tests::runtime_fixture";
+    let driver = Driver::native_fixture(CHILD);
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+    let instance = root.path().join("offline instance Ω");
+    fs::create_dir(&instance).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "install"])
+        .arg(export.join("release.json"))
+        .args(["--sha256", &id])
+        .assert()
+        .success();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[47; 32]);
+    let key = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    offline_command(&instance)
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.runtime",
+            "--channel",
+            "stable",
+            "https://publisher.invalid/channel.json",
+            "--key",
+        ])
+        .arg(key)
+        .assert()
+        .success();
+    let game = instance.join("game");
+    fs::write(game.join("player-note.txt"), b"player content").unwrap();
+    fs::write(game.join("launch-fixture"), b"record actual invocation").unwrap();
+    fs::write(game.join("launch-exit"), b"return immediately").unwrap();
+    let launch = |allow: bool| {
+        let mut command = empack_cmd(&instance);
+        command.args(["--yes", "instance", "launch", "--check-updates"]);
+        if allow {
+            command.arg("--allow-offline");
+        }
+        command
+            .arg("--")
+            .arg(driver.program())
+            .args(["--exact", CHILD, "--nocapture", "--test-threads=1"])
+            .stdin(Stdio::null());
+        command
+    };
+    let before = snapshot(&instance);
+    let refused = unavailable(launch(false));
+    assert_eq!(
+        refused.status.code(),
+        Some(EmpackExitCode::Network.as_i32()),
+        "{refused:?}"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("explicitly select --allow-offline"));
+    assert_eq!(snapshot(&instance), before);
+    assert!(!game.join("launch-started").exists());
+    let installation = fs::read(instance.join(".empack/instance.json")).unwrap();
+    let subscription = fs::read(instance.join(".empack/subscription.json")).unwrap();
+    let completed = unavailable(launch(true));
+    assert!(completed.status.success(), "{completed:?}");
+    assert!(
+        String::from_utf8_lossy(&completed.stdout).contains(&format!(
+            "checking completed release {id} for offline launch"
+        )),
+        "{completed:?}"
+    );
+    let observed: serde_json::Value =
+        serde_json::from_slice(&fs::read(game.join("launch-observed.json")).unwrap()).unwrap();
+    assert_eq!(
+        PathBuf::from(observed["cwd"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        game.canonicalize().unwrap()
+    );
+    assert_eq!(
+        fs::read(instance.join(".empack/instance.json")).unwrap(),
+        installation
+    );
+    assert_eq!(
+        fs::read(instance.join(".empack/subscription.json")).unwrap(),
+        subscription
+    );
+    offline_command(&instance)
+        .args(["instance", "inspect"])
+        .assert()
+        .success()
+        .stdout(contains(format!("release {id};")));
+    for file in ["launch-started", "launch-observed.json"] {
+        fs::remove_file(game.join(file)).unwrap();
+    }
+    fs::write(game.join("managed.txt"), b"damaged managed content").unwrap();
+    let damaged = snapshot(&instance);
+    let refused = unavailable(launch(true));
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("ModifiedManagedFile"),
+        "{refused:?}"
+    );
+    assert_eq!(snapshot(&instance), damaged);
+    assert!(!game.join("launch-started").exists());
+    fs::write(game.join("managed.txt"), b"publisher content").unwrap();
+    let retained = instance.join(format!(".empack/releases/{id}.json"));
+    let exact = fs::read(&retained).unwrap();
+    let mut altered = exact.clone();
+    altered.push(b'\n');
+    fs::write(&retained, altered).unwrap();
+    let corrupt = snapshot(&instance);
+    refused_before_network(launch(true), "Retained release descriptor changed");
+    assert_eq!(snapshot(&instance), corrupt);
+    assert!(!game.join("launch-started").exists());
+    fs::write(&retained, exact).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "trust", "--revoke-all"])
+        .assert()
+        .success();
+    let revoked = snapshot(&instance);
+    refused_before_network(launch(true), "Trust requires one to sixteen enrolled keys");
+    assert_eq!(snapshot(&instance), revoked);
+    assert!(!game.join("launch-started").exists());
+    assert_eq!(
+        fs::read(game.join("player-note.txt")).unwrap(),
+        b"player content"
+    );
+    assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    driver.verify();
 }
 
 #[cfg(unix)]

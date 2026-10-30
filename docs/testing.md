@@ -114,6 +114,10 @@ Forced initialization/import retain author attributes and player-world sentinels
 Shared fixture observations include bytes, empty directories and Unix rwx mode bits
 or the Windows read-only attribute;
 timestamps are excluded and links/special entries are not admitted by this observer.
+For zero-byte files, the observer records empty content from metadata without an
+EOF read, which Windows mandatory locks can reject. Nonempty content still requires
+a successful read. A Windows test holds a real exclusive lock and checks both
+the empty observation and refusal once that locked file contains data.
 Native recovery has a separate headless-host refusal check. These checks do not
 qualify terminal EOF/cancellation, actual consumers or packaged execution.
 Windows recovery-shell fixtures initialize a fresh PowerShell native-output
@@ -129,6 +133,17 @@ discover eligible paths without executing them or creating state, and must rejec
 directories and Unix files without executable permissions as Java candidates.
 The output distinguishes path discovery from selected-runtime compatibility;
 approval and actual Java validation remain separate launch tests.
+
+Offline prelaunch has distinct unit, host and executable evidence. The typed
+classifier admits only network/deadline failures; the host tests actual HTTP error
+responses, bounded/encoded metadata and redirect policy. Signed-channel fixtures
+also reject unknown keys, corrupt signatures, expiry, replay and invalid selected
+releases while retaining the completed installation and durable sequence floor.
+The CLI fixture uses ordinary proxy configuration to observe and refuse a real
+HTTPS CONNECT. It requires explicit `--allow-offline`, observes the selected local
+runtime, and refuses damaged content, a changed descriptor or revoked trust.
+The fallback warning uses the normal human status stream; command failures remain
+on stderr. These loopback/proxy checks do not qualify a live external publisher.
 
 Synchronization also checks partial retention across
 cache eviction. Import resumes a retained archive after deleting the original and
