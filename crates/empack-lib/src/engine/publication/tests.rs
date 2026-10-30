@@ -1232,3 +1232,5 @@ fn abrupt_runtime_owner_exit_blocks_publication_until_exact_acknowledgment() {
 }
 
 mod identity;
+
+mod root_state;

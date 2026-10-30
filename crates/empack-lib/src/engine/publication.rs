@@ -31,6 +31,7 @@ use journal_identity::JournalBinding;
 mod creation;
 mod recovery;
 mod retention;
+mod root_state;
 pub use creation::{PreparedCreationRecovery, PreparedRootCreation};
 pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryKind, RecoveryStatus};
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
@@ -67,12 +68,8 @@ impl RecoveryReader {
             return Ok(ProjectReadGuard { _lock: None });
         };
         root.check_binding()?;
-        let state = match publisher.host.open_dir_nofollow(root_key(root)?) {
-            Ok(value) => value,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(ProjectReadGuard { _lock: None });
-            }
-            Err(error) => return Err(error.into()),
+        let Some(state) = publisher.find_project_state(root)? else {
+            return Ok(ProjectReadGuard { _lock: None });
         };
         let file = match native::open_file(&state, "operation.lock") {
             Ok(value) => Some(value),
@@ -257,11 +254,8 @@ impl Publisher {
     /// Report unfinished publication before allowing ordinary project reads or planning.
     pub fn recovery_required(&self, root: &ProjectReadRoot) -> Result<bool> {
         root.check_binding()?;
-        let key = root_key(root)?;
-        let directory = match self.host.open_dir_nofollow(key) {
-            Ok(directory) => directory,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(error.into()),
+        let Some(directory) = self.find_project_state(root)? else {
+            return Ok(false);
         };
         native::reject_reparse(&directory.try_clone()?.into_std_file())?;
         let journal = load_journal(&directory)?;
@@ -719,6 +713,10 @@ impl Publisher {
 
     fn project_state(&self, root: &ProjectReadRoot) -> Result<Dir> {
         root.check_binding()?;
+        if let Some(directory) = self.find_project_state(root)? {
+            self.associate_project_state(&directory, root)?;
+            return Ok(directory);
+        }
         let key = root_key(root)?;
         match self.host.create_dir(&key) {
             Ok(()) => sync_directory(&self.host)?,
@@ -727,6 +725,7 @@ impl Publisher {
         }
         let directory = self.host.open_dir_nofollow(&key)?;
         private_directory(&directory)?;
+        self.associate_project_state(&directory, root)?;
         Ok(directory)
     }
 }

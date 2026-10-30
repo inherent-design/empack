@@ -8032,6 +8032,30 @@
             "Mixed schemas, conflicting identities and same-byte replacement files refuse recovery without changing project bytes or the journal",
             "Persistent comparison survives simulated device reassignment while live and legacy checks remain strict; unavailable identity refuses new publication before host coordination or retention state is created"
           ]
+        },
+        {
+          "id": "UX-078.associated-native-state-lookup",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::root_state::native_root_associations_recover_original_state_without_moving_locks",
+            "empack-lib::engine::publication::tests::root_state::native_root_associations_preserve_runtime_evidence_and_refuse_unassociated_state",
+            "empack-lib::engine::publication::tests::root_state::native_root_associations_reject_corrupt_foreign_and_duplicate_claims_without_effects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A controlled prior-device host-state fixture remains discoverable through its persistent root association",
+            "Recovery and runtime evidence retain their original physical coordination files; no replacement state directory is created",
+            "Unassociated legacy candidates fail explicitly instead of disappearing; acknowledgment requires the selected retained runtime evidence",
+            "Malformed, oversized, relocated, foreign and duplicate associations refuse reads and publication without changing author bytes, metadata or neighboring files"
+          ]
         }
       ],
       "owner_now": [

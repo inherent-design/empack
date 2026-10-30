@@ -59,12 +59,22 @@ mount path. Permission failures do not authorize a fallback. The native fixture
 records kernel and filesystem type, and compares the UUID readers on ext4. Missing
 native-host evidence is not a supported-platform claim.
 
-**Migration remains unfinished in the v0.8.4 development branch.** Root keys, other
-continuations and recovery journals still need the corresponding durable lookup and
-legacy migration. Journal format support does not migrate state directories or
-creation records or runtime state lookup. Persistent fingerprint support alone does not fix instance reopen
-or pending discovery after remount. Existing state must remain intact until its
-binding can be established; an ambiguous old device binding cannot authorize writes.
+Native publication state can retain an immutable `root-identity.json` association
+with its persistent root identity and original native key. Writers establish it
+under the existing publication lock. Read-only discovery never creates associations
+or coordination files. A bounded search checks matching object/creation candidates
+and verifies their persistent evidence; it keeps the original directory, journal,
+runtime marker and lock files in place. Foreign, moved, corrupt or duplicate claims
+refuse access. A potentially matching legacy directory without persistent evidence
+cannot silently disappear after its device assignment changes.
+
+**Migration remains unfinished in the v0.8.4 development branch.** This association
+supports publication and runtime state discovery; instance/subscription root strings,
+pending-operation filenames and creation metadata still require the corresponding
+lookup and legacy migration. Old journal and retention proofs remain strict. An
+association does not manufacture missing historical file identity or translate old
+snapshot fingerprints. Existing evidence must remain intact until its binding can
+be established; an ambiguous old device binding cannot authorize writes.
 
 Required behavior:
 
