@@ -95,7 +95,7 @@ def product(args, attempt, environment, host):
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         # A distinct target directory keeps product compilation outside the additive
         # workspace test feature graph. Build the ordinary product package only.
-        target_dir = ROOT / "target" / "verification-product" / features
+        target_dir = (ROOT / "target" / "verification-product" / features).resolve()
         command = ["cargo", "build", "--locked", "-p", "empack", "--target-dir", str(target_dir)]
         if profile == "release":
             command += ["--release"]
