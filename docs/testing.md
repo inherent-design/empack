@@ -155,6 +155,16 @@ remain inspectable without effects and cannot authorize a build. The external TA
 reader checks bounded members and consumes the gzip trailer; its dependencies belong
 to the test harness, not the distributed product.
 
+The template/archive case reuses that literal profile fixture for reference and
+standalone bundled Prism outputs in ZIP, TAR.GZ and 7z. Independent readers compare
+complete member sets, bytes, lengths, digests and modes across formats. Binary
+inputs remain literal; client templates override common inputs and exclude server
+inputs. Newlines, Unicode, quotes and backslashes pass through explicit shell, INI
+and properties encoders. On Unix, one archived shell script executes directly with
+its recorded mode and returns the original value. Missing variables, invalid text
+and duplicate destinations preserve author inputs and all prior outputs. Container
+parity does not establish that the launcher imports every format.
+
 The multi-output fixture changes configuration and template bytes without changing
 its version label. Independent archive inventories must show those fresh bytes.
 A later template failure preserves both prior archives, including with `--clean`;

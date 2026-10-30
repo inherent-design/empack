@@ -53,10 +53,13 @@ fn cli_build_modrinth_creates_named_artifact() {
 }
 
 #[test]
-fn cli_build_prism_references_tar_gz_creates_named_artifact() {
+fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
+    use empack_tests::harness::archive::distribution_inventory;
+    use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
     let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     project.configure_native_distribution("test.pack", 21);
-    let output = offline_command(project.dir())
+    offline_command(project.dir())
         .args([
             "--yes",
             "build",
@@ -67,14 +70,61 @@ fn cli_build_prism_references_tar_gz_creates_named_artifact() {
             "--delivery",
             "references",
         ])
-        .output()
-        .expect("failed to spawn");
-    assert!(
-        output.status.success(),
-        "empack build client --format tar.gz failed"
+        .assert()
+        .success();
+    let artifact = assert_dist_artifact_suffix(project.dir(), "-prism-references.tar.gz");
+    let members = distribution_inventory(&artifact, "tar.gz");
+    assert_eq!(
+        members.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            ".minecraft/.empack-consumer/release.json",
+            "instance.cfg",
+            "mmc-pack.json",
+        ]
     );
-
-    assert_dist_artifact_suffix(project.dir(), "-prism-references.tar.gz");
+    let bytes = |name: &str| members[name].small.as_ref().unwrap().as_slice();
+    assert_eq!(
+        serde_json::from_slice::<Value>(bytes("mmc-pack.json")).unwrap(),
+        json!({
+            "formatVersion":1,"components":[
+                {"uid":"net.minecraft","version":"1.21.1","important":true},
+                {"uid":"net.fabricmc.fabric-loader","version":"0.15.0"}
+            ]
+        })
+    );
+    let release = bytes(".minecraft/.empack-consumer/release.json");
+    let descriptor: Value = serde_json::from_slice(release).unwrap();
+    assert_eq!(descriptor["pack"], "test.pack");
+    assert_eq!(
+        descriptor["runtime"],
+        json!({
+            "minecraft":"1.21.1", "loader":{"kind":"fabric","version":"0.15.0"}, "java_major":21,
+        })
+    );
+    assert_eq!(descriptor["files"], json!([]));
+    assert_eq!(descriptor["choices"], json!([]));
+    assert_eq!(descriptor["require_subscription"], false);
+    let hash: String = Sha256::digest(release)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let prepare = format!(
+        "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {hash} --layout prism --side client"
+    );
+    let wrapper = "empack --workdir \"$INST_DIR\" --yes instance launch --";
+    let configuration = std::str::from_utf8(bytes("instance.cfg")).unwrap();
+    for setting in [
+        "ConfigVersion=1.2".to_owned(),
+        "OverrideCommands=true".to_owned(),
+        format!("PreLaunchCommand={}", json!(prepare)),
+        format!("WrapperCommand={}", json!(wrapper)),
+    ] {
+        assert!(
+            configuration.lines().any(|line| line == setting),
+            "{configuration}"
+        );
+    }
+    assert!(members.values().all(|member| member.mode == 0o644));
 }
 
 #[test]

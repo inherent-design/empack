@@ -2,7 +2,7 @@
 //! No launcher UI or game execution is implied by checking generated integration.
 use crate::files::snapshot;
 use empack_tests::harness::{
-    archive::{tar_gz_members, zip_members},
+    archive::{distribution_inventory, tar_gz_members, zip_members},
     process::{TestProject, offline_command},
 };
 use serde_json::{Value, json};
@@ -228,6 +228,219 @@ fn assert_inventory(
             "[General]\nConfigVersion=1.2\nInstanceType=OneSix\nExportAuthor=\"Fixture\"\nOverrideMemory=false\nname=\"Profile fixture\"\niconKey=empack_icon\nAutoUpdate=false\nManagedPack=true\nOverrideCommands=true\nPreLaunchCommand={prepare}\nWrapperCommand={wrapper}\n"
         )
     );
+}
+
+#[test]
+fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds() {
+    let fixture = Fixture::new(false);
+    let root = fixture.project.dir();
+    let description = "line\nkey='雪'\\suffix";
+    fs::write(
+        root.join("empack.yml"),
+        AUTHOR.replace(
+            "authors: [Fixture]",
+            "authors: [Fixture], description: \"line\\nkey='雪'\\\\suffix\"",
+        ),
+    )
+    .unwrap();
+    fixture.command().args(["--yes", "sync"]).assert().success();
+    let templates: &[(&str, &[u8])] = &[
+        ("common/notice.txt.template", b"common {{NAME}}"),
+        (
+            "client/notice.txt.template",
+            "client {{NAME}} / 雪\n".as_bytes(),
+        ),
+        ("server/server-only.txt.template", b"excluded"),
+        ("common/nested/raw.bin", &[0xff, 0, 0x80, b'{', b'{']),
+        (
+            "client/settings.ini.template",
+            b"value={{ini_quote DESCRIPTION}}\n",
+        ),
+        (
+            "client/settings.properties.template",
+            b"value={{properties_value DESCRIPTION}}\n",
+        ),
+        (
+            "client/show.sh.template",
+            b"#!/bin/sh\nprintf '%s' {{shell_quote DESCRIPTION}}\n",
+        ),
+    ];
+    for (name, bytes) in templates {
+        let path = root.join("templates").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            root.join("templates/client/show.sh.template"),
+            fs::Permissions::from_mode(0o555),
+        )
+        .unwrap();
+    }
+    // Expected output is literal and independent of the product's encoder.
+    let rendered: &[(&str, &[u8])] = &[
+        ("notice.txt", "client Profile fixture / 雪\n".as_bytes()),
+        ("nested/raw.bin", &[0xff, 0, 0x80, b'{', b'{']),
+        (
+            "settings.ini",
+            "value=\"line\\xakey='雪'\\\\suffix\"\n".as_bytes(),
+        ),
+        (
+            "settings.properties",
+            b"value=line\\u000akey='\\u96ea'\\\\suffix\n",
+        ),
+        (
+            "show.sh",
+            "#!/bin/sh\nprintf '%s' 'line\nkey='\"'\"'雪'\"'\"'\\suffix'\n".as_bytes(),
+        ),
+    ];
+    let mut author = snapshot(root);
+    #[cfg(unix)]
+    let mut shell = None;
+    for delivery in ["references", "bundled"] {
+        let mut previous = None;
+        for format in ["zip", "tar.gz", "7z"] {
+            fixture
+                .command()
+                .args([
+                    "--yes",
+                    "build",
+                    "--ad-hoc",
+                    "prism",
+                    "--delivery",
+                    delivery,
+                    "--format",
+                    format,
+                ])
+                .assert()
+                .success();
+            let output = format!("dist/Profile fixture-1-prism-{delivery}.{format}");
+            let archive = root.join(&output);
+            let members = distribution_inventory(&archive, format);
+            let mut bytes: BTreeMap<_, _> = members
+                .iter()
+                .map(|(name, member)| {
+                    (
+                        name.clone(),
+                        member.small.clone().expect("small fixture member"),
+                    )
+                })
+                .collect();
+            for &(name, expected) in rendered {
+                assert_eq!(
+                    bytes.remove(name).unwrap(),
+                    expected,
+                    "{delivery}/{format}/{name}"
+                );
+                let member = &members[name];
+                assert_eq!(member.bytes, expected.len() as u64);
+                assert_eq!(member.sha256, hash(expected));
+                assert_eq!(
+                    member.mode,
+                    if name == "show.sh" && cfg!(unix) {
+                        0o555
+                    } else {
+                        0o644
+                    }
+                );
+            }
+            #[cfg(unix)]
+            {
+                shell = Some((
+                    members["show.sh"].small.clone().unwrap(),
+                    members["show.sh"].mode,
+                ));
+            }
+            assert_inventory(&bytes, delivery == "references", false, &CONTENT);
+            assert!(
+                members
+                    .iter()
+                    .filter(|(name, _)| *name != "show.sh")
+                    .all(|(_, member)| member.mode == 0o644)
+            );
+            if let Some(previous) = &previous {
+                assert_eq!(
+                    &members, previous,
+                    "archive formats changed the effective inventory"
+                );
+            }
+            previous = Some(members);
+            author.insert(output.into(), fs::read(&archive).unwrap());
+            assert_eq!(
+                snapshot(root),
+                author,
+                "build changed author inputs or prior outputs"
+            );
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let script = tempfile::tempdir().unwrap();
+        let executable = script.path().join("show.sh");
+        let (bytes, mode) = shell.unwrap();
+        fs::write(&executable, bytes).unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(mode)).unwrap();
+        assert_cmd::Command::new(&executable)
+            .env_clear()
+            .timeout(std::time::Duration::from_secs(5))
+            .assert()
+            .success()
+            .stdout(description);
+        assert_eq!(
+            fs::metadata(root.join("templates/client/show.sh.template"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o555
+        );
+    }
+    #[cfg(not(unix))]
+    let _ = description;
+    for (name, invalid, diagnostic) in [
+        (
+            "bad.template",
+            b"{{MISSING}}".as_slice(),
+            "Template rendering failed",
+        ),
+        ("bad.template", &[0xff, 0], "Explicit template is not UTF-8"),
+        (
+            "notice.txt",
+            b"duplicate destination",
+            "Two templates produce the same destination",
+        ),
+    ] {
+        let path = root.join("templates/client").join(name);
+        fs::write(&path, invalid).unwrap();
+        let before = snapshot(root);
+        for format in ["zip", "tar.gz", "7z"] {
+            fixture
+                .command()
+                .args([
+                    "--yes",
+                    "build",
+                    "--ad-hoc",
+                    "prism",
+                    "--delivery",
+                    "references",
+                    "--format",
+                    format,
+                ])
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains(diagnostic));
+            assert_eq!(
+                snapshot(root),
+                before,
+                "failed preparation changed author work or prior archives"
+            );
+        }
+        fs::remove_file(path).unwrap();
+    }
+    assert_eq!(snapshot(root), author);
 }
 
 fn profile(

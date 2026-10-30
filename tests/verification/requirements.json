@@ -6558,14 +6558,102 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-048.output-language-encoding",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::templates::encoding::tests::ini_scalar_preserves_types_separators_controls_and_unicode",
+            "empack-lib::engine::templates::encoding::tests::properties_value_preserves_unicode_and_literal_escape_sequences"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "INI scalar encoding retains string type, literal separators, backslashes, quotes, adjacent hexadecimal characters, controls, Unicode and empty values",
+            "Java properties encoding retains literal escapes, whitespace, line endings, Unicode and supplementary UTF-16 code units; these literal assertions are not execution of Qt or Java"
+          ]
+        },
+        {
+          "id": "UX-048.captured-template-projection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::templates::tests::captured_templates_keep_nested_paths_side_precedence_and_user_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reference and bundled client/server recipes select the correct common/side templates and record explicit replacements",
+            "Nested paths, binary bytes, explicitly copied UTF-8 containing expressions, rendered text and Unix captured readonly/executable attributes survive preparation without publishing or changing captured inputs"
+          ]
+        },
+        {
+          "id": "UX-048.template-refusal-and-bounds",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::templates::tests::template_failures_never_return_partial_outputs_or_modify_project",
+            "empack-lib::engine::templates::tests::template_projection_rejects_ambiguous_output_and_stale_input",
+            "empack-lib::engine::templates::tests::embedded_defaults_share_escaping_and_enforce_output_budget"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Missing variables, malformed expressions, explicit invalid UTF-8, entry/input/output/aggregate limits and cancellation return errors without partial outputs",
+            "Duplicate, case-colliding and ancestor destinations, uncaptured mode overrides, unsupported recipe projections and changed captured inputs refuse preparation",
+            "Embedded properties templates preserve one logical value under LF and CRLF and enforce their output budget"
+          ]
+        },
+        {
+          "id": "UX-048.cli-template-artifact-preservation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public Prism builds preserve literal binary templates, side precedence and Unicode/newline/quote/backslash values in shell, INI and properties output through ZIP, TAR.GZ and 7z for references and standalone bundled recipes",
+            "Independent member bytes, lengths, digests and portable modes agree across formats; builds leave author inputs and previous output bytes unchanged",
+            "On Unix the actual archived shell bytes execute directly with their encoded mode and emit the original description; source script mode remains unchanged",
+            "Missing values, explicit invalid UTF-8 and duplicate template destinations reject every archive format before replacing prior artifacts"
+          ],
+          "remaining_group_evidence": "Public server-template variants, supported consumer interpretation of emitted INI/properties, and complete platform qualification remain required"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts"
       ],
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-049",
@@ -6620,7 +6708,142 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-050.shared-codec-inventory",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::all_supported_containers_require_every_expected_file_and_exact_binary_bytes",
+            "empack-lib::engine::artifacts::tests::every_encoder_preserves_portable_permissions_and_empty_directories"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "ZIP, TAR.GZ and 7z verify exact binary bytes, required members, lengths and portable permissions independently of native source executability",
+            "Missing members, same-length wrong bytes, decoded limits, compressed limits and a corrupted gzip trailer refuse verification; empty directories and Unix ZIP creator/mode fields are retained"
+          ]
+        },
+        {
+          "id": "UX-050.shared-codec-rejects-ambiguous-input",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::traversal_collision_extra_content_and_executable_loss_are_rejected",
+            "empack-lib::engine::artifacts::tests::duplicate_zip_records_cannot_hide_behind_the_parser_name_index",
+            "empack-lib::engine::artifacts::tests::directories_cannot_alias_files_or_other_directory_spellings",
+            "empack-lib::engine::artifacts::tests::malformed_utf8_zip_names_fail_import_and_verification_without_lossy_replacement",
+            "empack-lib::engine::artifacts::tests::zip_creator_system_controls_permission_interpretation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Traversal, file/directory aliases, duplicate records, unexpected content, lost executable attributes and malformed UTF-8 cannot produce a verified artifact",
+            "ZIP creator-system metadata controls whether portable permission fields may be interpreted; wrong creator metadata cannot manufacture valid attributes"
+          ]
+        },
+        {
+          "id": "UX-050.omitted-stage-preserves-candidate",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::every_encoder_rejects_omitted_stage_members_before_replacing_candidate_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "For each supported codec, omitting either of two independently declared staged members rejects encoding before changing prior candidate bytes"
+          ]
+        },
+        {
+          "id": "UX-050.native-export-format-inventories",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Both native deliveries in ZIP, TAR.GZ and 7z have complete independent descriptor/asset inventories, exact digests/lengths/modes, runtime, side/choice requirements and ownership policy",
+            "Public installation and repeat preparation consume the exported bytes while preserving selected choices, seed edits and source exports"
+          ]
+        },
+        {
+          "id": "UX-050.prism-export-format-inventories",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds",
+            "empack-tests::cli_build::cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Both Prism deliveries in ZIP, TAR.GZ and 7z preserve independently expected release/assets or direct game bytes, exact launcher components, required commands and rendered templates",
+            "Full decoded inventories including lengths, digests and modes agree across formats; unreadable templates and collisions cannot replace prior artifacts; this is archive/configuration evidence, not a claim that Prism UI imports every container format",
+            "The original Fabric/TAR.GZ route independently checks the exact Minecraft/Fabric components, empty game inventory and hash-bound managed preparation/wrapper commands"
+          ]
+        },
+        {
+          "id": "UX-050.packaged-native-format-inventories",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports",
+            "empack-tests::cli_build::native_exports::cli_native_export_requires_pack_identity_and_java_without_replacing_prior_output"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Repeat native archive inventory, integrity refusal, optional-content installation, seed preservation and authoring-prerequisite checks against each final extracted executable",
+            "Package admission binds source, native target, executable digest and version without development-binary fallback"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "remaining_group_evidence": "Recipe-specific Modrinth/CurseForge and server inventories, unsupported format refusals, actual supported consumer import and final packaged-candidate qualification remain required"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::acquisition/content/archive_source/import"
@@ -6629,7 +6852,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-051",
