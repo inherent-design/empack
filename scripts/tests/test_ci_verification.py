@@ -405,19 +405,26 @@ class RequiredGate(unittest.TestCase):
                         for graph in case.get("required_test_features", [None])}
                         for row in json.loads(ci.REQUIREMENTS.read_text())["requirements"]
                         for case in row["cases"]}
+            native_complete = {
+                "UX-002", "UX-005", "UX-007", "UX-011", "UX-022", "UX-023",
+                "UX-024", "UX-027", "UX-028", "UX-029", "UX-036", "UX-038",
+                "UX-040", "UX-051", "UX-052", "UX-054",
+            }
             for requirement in acceptance:
                 # This synthetic full native matrix now supplies every bound
-                # configuration, status, explanation, replacement, content-kind, side-choice, pending-inspection, continuation, retained-cleanup, configured-build and multi-output freshness cases.
+                # configuration, status, explanation, replacement, content-kind,
+                # side-choice, pending, build and signing-key setup cases.
                 # Entry identity needs package proof; partial groups cannot pass merely because their current tests do.
                 self.assertEqual(requirement["status"],
-                                 "PASS" if requirement["id"] in {"UX-002", "UX-005", "UX-007", "UX-011", "UX-022", "UX-023", "UX-024", "UX-027", "UX-028", "UX-029", "UX-036", "UX-038", "UX-040", "UX-051", "UX-052"} else "NOT_RUN")
+                                 "PASS" if requirement["id"] in native_complete else "NOT_RUN",
+                                 requirement["id"])
                 for case in requirement["cases"]:
                     # This plan selects native suites, not the independently bound
                     # live-provider case. Only selected execution can pass it.
                     missing = [test for variant in case["variants"] for test in variant["tests"]
                                if not test["receipts"]]
                     self.assertEqual(case["status"], "NOT_RUN" if missing else "PASS")
-                    if case["id"].startswith("UX-035.packaged-"):
+                    if case["boundary"] == "P":
                         # Complete definitions do not turn native development
                         # executions into evidence for the five final archives.
                         self.assertEqual(case["status"], "NOT_RUN")
@@ -429,6 +436,24 @@ class RequiredGate(unittest.TestCase):
                     actual = [(v.get("target", v["platform"]), v["features"], v.get("test_features")) for v in case["variants"]]
                     self.assertEqual(set(actual), declared[case["id"]])
                     self.assertEqual(len(actual), len(set(actual)))
+            partial_evidence = [
+                ci.check_suite_receipt(root / f"verification-{target}" / features,
+                                       suites, target, REVISION, features,
+                                       test_features=ci.NATIVE_TEST_FEATURES[features])
+                for target in ci.TARGETS for features, suites in ci.NATIVE_SUITES.items()
+                if not (target == "x86_64-pc-windows-msvc" and features == "default")
+            ]
+            partial = ci.case_results(
+                json.loads(ci.REQUIREMENTS.read_text()),
+                json.loads(ci.CLASSIFICATION.read_text()),
+                partial_evidence, REVISION,
+            )
+            key_setup = next(r for r in partial["requirements"] if r["id"] == "UX-054")
+            self.assertEqual(key_setup["status"], "NOT_RUN")
+            windows = next(c for c in key_setup["cases"]
+                           if c["id"] == "UX-054.windows-private-directory-refusal")
+            self.assertEqual({(v["features"], v["status"]) for v in windows["variants"]},
+                             {("default", "NOT_RUN"), ("telemetry", "PASS")})
             (root / f"verification-{ci.TARGETS[1]}" / "default" / "one-attempt" / "receipt.json").unlink()
             with self.assertRaisesRegex(ValueError, "exactly one attempt"):
                 ci.check_gate(plan, successes(plan), root)
