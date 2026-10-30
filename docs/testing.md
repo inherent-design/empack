@@ -472,7 +472,11 @@ private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
 and change trust. Assertions cover refused tampering and expiry, explicit conflict
 resolution, replay floors, and preservation of player configuration and initialized
-worlds. A generated bootstrap descriptor requires enrollment before its first
+worlds. Explicit preserve and merge decisions remain identifiable as local
+overrides through fresh repair and update processes. A later edit needs a new
+decision; explicit replacement restores publisher bytes and removes the override.
+The signed envelope and publisher payload remain unchanged throughout. A generated
+bootstrap descriptor requires enrollment before its first
 preparation. After a signed update, repeating that older bootstrap command retains
 and repairs the active release instead of downgrading it. Wrong digests and changed
 bootstrap bytes are rejected without changing the installed instance. These are

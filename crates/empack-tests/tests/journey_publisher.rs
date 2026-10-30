@@ -411,19 +411,105 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     observe(&instance, &channel_b).success();
     installed(&instance, &a, b"1.0.0");
     write(&instance, "game/managed.txt", b"local conflict");
+    let conflicted = snapshot(&instance);
     offline_command(&instance)
         .args(["--yes", "instance", "update"])
         .arg(&envelope_b)
         .assert()
-        .failure();
+        .failure()
+        .stderr(contains("ModifiedManagedFile"));
+    assert_eq!(snapshot(&instance), conflicted);
     installed(&instance, &a, b"local conflict");
+    let signed_b = fs::read(&envelope_b).unwrap();
+    let original_b = fs::read(export_b.join("release.json")).unwrap();
     offline_command(&instance)
         .args(["--yes", "instance", "update"])
         .arg(&envelope_b)
-        .args(["--replace", "managed.txt"])
+        .args(["--preserve", "managed.txt"])
+        .assert()
+        .success();
+    installed(&instance, &b, b"local conflict");
+    offline_command(&instance)
+        .args(["instance", "inspect"])
+        .assert()
+        .success()
+        .stdout(contains(format!(
+            "Local override: managed.txt (accepted SHA-256 {})",
+            hex(&Sha256::digest(b"local conflict"))
+        )));
+    // The accepted local bytes survive fresh-process repair and repeated update.
+    for command in ["repair", "update"] {
+        let mut invocation = offline_command(&instance);
+        invocation.args(["--yes", "instance", command]);
+        if command == "repair" {
+            invocation.arg("--assets").arg(envelope_b.parent().unwrap());
+        } else {
+            invocation.arg(&envelope_b);
+        }
+        invocation.assert().success();
+        installed(&instance, &b, b"local conflict");
+    }
+    write(&instance, "game/managed.txt", b"changed after acceptance");
+    let changed_override = snapshot(&instance);
+    offline_command(&instance)
+        .args(["--yes", "instance", "repair", "--assets"])
+        .arg(envelope_b.parent().unwrap())
+        .assert()
+        .failure()
+        .stderr(contains("ModifiedManagedFile"));
+    assert_eq!(snapshot(&instance), changed_override);
+    let merge = root.join("merged result Ω.txt");
+    fs::write(&merge, b"explicit merged result").unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "repair", "--assets"])
+        .arg(envelope_b.parent().unwrap())
+        .arg("--merge")
+        .arg(format!("managed.txt={}", merge.display()))
+        .assert()
+        .success();
+    installed(&instance, &b, b"explicit merged result");
+    offline_command(&instance)
+        .args(["instance", "inspect"])
+        .assert()
+        .success()
+        .stdout(contains(format!(
+            "Local override: managed.txt (accepted SHA-256 {})",
+            hex(&Sha256::digest(b"explicit merged result"))
+        )));
+    fs::write(&merge, b"later source edit").unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "update"])
+        .arg(&envelope_b)
+        .assert()
+        .success();
+    installed(&instance, &b, b"explicit merged result");
+    // Explicit replacement restores publisher bytes and retires local evidence.
+    offline_command(&instance)
+        .args([
+            "--yes",
+            "instance",
+            "repair",
+            "--replace",
+            "managed.txt",
+            "--assets",
+        ])
+        .arg(envelope_b.parent().unwrap())
         .assert()
         .success();
     installed(&instance, &b, b"2.0.0");
+    offline_command(&instance)
+        .args(["instance", "inspect"])
+        .assert()
+        .success()
+        .stdout(contains("Local override:").not());
+    assert_eq!(fs::read(&envelope_b).unwrap(), signed_b);
+    assert_eq!(fs::read(export_b.join("release.json")).unwrap(), original_b);
+    verify_staged(
+        &envelope_b,
+        &key.verifying_key(),
+        &b,
+        &export_b.join("release.json"),
+    );
     let tampered_export = root.join("tampered bootstrap");
     fs::create_dir(&tampered_export).unwrap();
     let mut tampered = fs::read(export_a.join("release.json")).unwrap();

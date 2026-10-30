@@ -8506,7 +8506,55 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-065.public-signed-local-deviations",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A modified managed file refuses a signed update with ModifiedManagedFile and preserves the complete installed snapshot",
+            "Explicit preserve installs the incoming release while inspect identifies the accepted local SHA-256; fresh repair and repeated update retain those exact local bytes",
+            "Editing accepted local bytes requires a new decision; explicit merge retains the selected result despite later source edits, and explicit replace restores publisher bytes and removes local override evidence",
+            "Signed release envelope, original payload and signature remain unchanged; player configuration and initialized worlds survive every transition"
+          ],
+          "remaining_group_evidence": "Interactive conflict decisions and remaining path/decision rejection variants require separate evidence; local signatures do not qualify hosted publication"
+        },
+        {
+          "id": "UX-065.prepared-local-evidence",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::conflict_preservation_is_durable_local_evidence_and_replace_restores_release",
+            "empack-lib::engine::api::instance::tests::explicit_merge_freezes_local_result_without_rewriting_publisher_evidence",
+            "empack-lib::engine::api::instance::tests::retired_local_override_preserves_user_content_and_unknown_decisions_fail"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Saved local evidence distinguishes accepted bytes from the publisher baseline; changed publisher baselines require a new decision and replacement retires the override",
+            "Preparation freezes explicit merge bytes before later source edits without rewriting retained publisher evidence",
+            "Retiring an override preserves user bytes and refuses decisions naming unknown paths"
+          ],
+          "remaining_group_evidence": "Public executable execution and interactive decisions are separate boundaries"
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::acquisition/content/archive_source/import",
@@ -8517,7 +8565,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-066",
