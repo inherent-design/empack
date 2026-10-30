@@ -312,8 +312,13 @@ fn authoring_documents(next: bool) -> BTreeMap<ManagedPath, Vec<u8>> {
     ])
 }
 fn prepare_authoring(root: &ProjectReadRoot) -> VerifiedFileChange {
+    prepare_files(root, authoring_documents(true))
+}
+fn prepare_files(
+    root: &ProjectReadRoot,
+    documents: BTreeMap<ManagedPath, Vec<u8>>,
+) -> VerifiedFileChange {
     let cancel = Cancellation::default();
-    let documents = authoring_documents(true);
     let paths: Vec<_> = documents
         .keys()
         .map(|key| ProjectLayout::path(key).unwrap())
@@ -344,6 +349,175 @@ fn prepare_authoring(root: &ProjectReadRoot) -> VerifiedFileChange {
         stage.freeze(SnapshotLimits::default(), &cancel).unwrap(),
     )
     .unwrap()
+}
+
+#[test]
+fn interrupted_trust_rotation_recovers_keys_without_resetting_observation_or_floor() {
+    use crate::engine::{
+        instance::subscription::SubscriptionRecord,
+        release::{
+            self,
+            trust::{ChannelDocument, ChannelRelease, EnvelopeKind, PublisherTrust, sign},
+        },
+    };
+    use ed25519_dalek::SigningKey;
+    let key = SigningKey::from_bytes(&[86; 32]);
+    let next = SigningKey::from_bytes(&[87; 32]);
+    let now = 2_000_000_000;
+    let engine_version = semver::Version::parse("0.8.0-beta").unwrap();
+    let document = ChannelDocument {
+        schema: 1,
+        pack: "fixture".into(),
+        channel: "stable".into(),
+        sequence: 7,
+        expires: now + 3600,
+        minimum_engine: ">=0.8.0-beta".into(),
+        release: ChannelRelease {
+            id: "a".repeat(64),
+            url: "https://publisher.test/release.json".into(),
+            maximum_bytes: 1024,
+        },
+    };
+    let envelope = sign(EnvelopeKind::Channel, &document.encode().unwrap(), &[&key]).unwrap();
+    let trust = PublisherTrust::enroll(
+        "fixture".into(),
+        "https://publisher.test",
+        vec![key.verifying_key()],
+    )
+    .unwrap();
+    let floor = trust
+        .channel(&envelope, "stable", now, &engine_version, None)
+        .unwrap()
+        .floor()
+        .clone();
+    for point in [
+        PublicationPoint::IntentDurable,
+        PublicationPoint::TargetChanged,
+        PublicationPoint::Committed,
+    ] {
+        for restore in [false, true] {
+            if restore && point == PublicationPoint::Committed {
+                continue; // A committed effect needs a new planned change, not restoration.
+            }
+            let project = tempfile::tempdir().unwrap();
+            let state = tempfile::tempdir().unwrap();
+            fs::create_dir(project.path().join(".empack")).unwrap();
+            fs::write(
+                project.path().join("player notes.txt"),
+                b"retain player work",
+            )
+            .unwrap();
+            let root = ProjectReadRoot::open(project.path()).unwrap();
+            let publisher = Publisher::open(&state.path().join("private")).unwrap();
+            let initial = SubscriptionRecord {
+                schema: 1,
+                root: publisher.bound_root_key(&root).unwrap(),
+                pack: "fixture".into(),
+                channel: "stable".into(),
+                url: "https://publisher.test/stable.json".into(),
+                keys: vec![release::hex(key.verifying_key().as_bytes())],
+                floor: Some(floor.clone()),
+                observed: Some(String::from_utf8(envelope.clone()).unwrap()),
+            };
+            let mut rotated = initial.clone();
+            rotated.keys = vec![release::hex(next.verifying_key().as_bytes())];
+            let before = serde_json::to_vec(&initial).unwrap();
+            let after = serde_json::to_vec(&rotated).unwrap();
+            SubscriptionRecord::decode(&before).unwrap();
+            SubscriptionRecord::decode(&after).unwrap();
+            let path = project.path().join(".empack/subscription.json");
+            fs::write(&path, &before).unwrap();
+            let change = prepare_files(
+                &root,
+                BTreeMap::from([(ManagedPath::InstanceSubscription, after.clone())]),
+            );
+            let mut reached = false;
+            let failure =
+                publisher.publish_with_hook(&root, change, &Cancellation::default(), &mut |at| {
+                    if at == point {
+                        reached = true;
+                        anyhow::bail!("injected trust publication interruption");
+                    }
+                    Ok(())
+                });
+            assert!(reached && failure.is_err(), "did not reach {point:?}");
+            assert_eq!(
+                publisher.recovery_required(&root).unwrap(),
+                point != PublicationPoint::Committed
+            );
+            drop(publisher);
+            drop(root);
+            // Reopen native handles and durable state before choosing recovery.
+            let root = ProjectReadRoot::open(project.path()).unwrap();
+            let publisher = Publisher::open(&state.path().join("private")).unwrap();
+            let receipt = if restore {
+                publisher.restore_before_images(&root).unwrap()
+            } else {
+                publisher.recover(&root).unwrap()
+            };
+            assert_eq!(
+                publisher.recover(&root).unwrap(),
+                receipt,
+                "recovery must be idempotent"
+            );
+            assert!(!publisher.recovery_required(&root).unwrap());
+            let bytes = fs::read(&path).unwrap();
+            assert_eq!(bytes, if restore { before } else { after });
+            let recovered = SubscriptionRecord::decode(&bytes).unwrap();
+            assert_eq!(recovered.floor.as_ref().unwrap(), &floor);
+            assert_eq!(recovered.observed.as_deref().unwrap().as_bytes(), &envelope);
+            assert_eq!(recovered.root, publisher.bound_root_key(&root).unwrap());
+            assert_eq!(recovered.pack, "fixture");
+            assert_eq!(recovered.channel, "stable");
+            assert_eq!(recovered.url, "https://publisher.test/stable.json");
+            assert_eq!(
+                recovered
+                    .authenticated_channel(now, &engine_version)
+                    .is_ok(),
+                restore,
+                "old metadata must be reverified against the recovered keys"
+            );
+            let selected_key = if restore { &key } else { &next };
+            let mut offered = document.clone();
+            for sequence in [6, 8] {
+                offered.sequence = sequence;
+                let signed = sign(
+                    EnvelopeKind::Channel,
+                    &offered.encode().unwrap(),
+                    &[selected_key],
+                )
+                .unwrap();
+                let result = recovered.trust().unwrap().channel(
+                    &signed,
+                    "stable",
+                    now,
+                    &engine_version,
+                    recovered.floor.as_ref(),
+                );
+                if sequence == 6 {
+                    assert_eq!(
+                        result
+                            .err()
+                            .expect("retained floor rejects replay")
+                            .to_string(),
+                        "Channel sequence replay rejected"
+                    );
+                } else {
+                    assert!(result.is_ok(), "recovered key must admit fresh evidence");
+                }
+            }
+            assert_eq!(
+                fs::read(&path).unwrap(),
+                bytes,
+                "verification must not rewrite trust"
+            );
+            assert_eq!(
+                fs::read(project.path().join("player notes.txt")).unwrap(),
+                b"retain player work"
+            );
+            assert!(!project.path().join("game").exists());
+        }
+    }
 }
 #[test]
 fn interrupted_author_bindings_and_lock_publication_recovers_one_composed_revision() {

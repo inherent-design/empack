@@ -8505,7 +8505,9 @@
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "N",
+        "X",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -8528,11 +8530,95 @@
             "telemetry"
           ],
           "assertions": [
-            "Replacing trust rejects the old signer and accepts a fresh channel signed by the newly selected key",
+            "Replacing trust rejects old-signer channel/release envelopes and accepts fresh channel evidence plus an independently re-signed exact release through public update",
             "Rollback, key rotation and revoke/re-enroll do not reset the accepted sequence floor",
             "Revocation rejects channel observation while installed release and user bytes remain intact"
+          ]
+        },
+        {
+          "id": "UX-059.multiple-key-approval-and-revocation",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor"
           ],
-          "remaining_group_evidence": "Multiple-key sets, decline/preview and trust persistence faults remain separate cases"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Closed/piped stdin, preview and actual terminal refusal preserve trust, its floor and player/host work for both multiple-key replacement and revocation",
+            "Duplicate keys are refused unchanged; each enrolled key independently authenticates identical observed metadata through a fresh executable",
+            "Replacement rejects the old signer, revocation disables authentication, and reenrollment retains the accepted replay floor without installing a release"
+          ]
+        },
+        {
+          "id": "UX-059.host-key-reverification-and-stale-inputs",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::subscription::tests::enrollment_rotation_revocation_and_restart_retain_sequence_authority",
+            "empack-lib::engine::api::subscription::tests::subscription_rejects_copied_roots_and_late_trust_edits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh-engine preview retains exact enrollment identity/URL/key and does not write trust; rotation/revocation reverify retained channel metadata against current keys",
+            "Copied-root trust cannot establish authority and a late trust edit survives stale-plan execution refusal"
+          ]
+        },
+        {
+          "id": "UX-059.interrupted-trust-publication",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::interrupted_trust_rotation_recovers_keys_without_resetting_observation_or_floor"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled failures after durable intent, target replacement and commit are recovered after native handles/state reopen; lost commit acknowledgement retains the completed key change",
+            "Finish and uncommitted restoration retain exact intended subscription bytes, root/pack/channel/URL, observed envelope and replay floor; repeat recovery is idempotent",
+            "Recovered keys reverify retained metadata, reject lower sequences and admit new correctly signed evidence without changing trust or unrelated player bytes",
+            "Private publication hooks exercise real native files; this is not kernel-generated I/O failure, actual process termination or physical power-loss evidence"
+          ]
+        },
+        {
+          "id": "UX-059.publisher-key-identity-and-replay",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::release::tests::signature_identity_key_and_context_are_independent_requirements",
+            "empack-lib::engine::release::tests::channel_floor_prevents_replay_and_equivocation_without_blocking_retries"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Publisher key, exact payload identity and envelope kind are independent authentication obligations",
+            "A durable sequence floor rejects replay and same-sequence equivocation while permitting identical retries"
+          ]
         }
       ],
       "owner_now": [
@@ -8543,7 +8629,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-060",

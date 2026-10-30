@@ -68,6 +68,17 @@ authentication cannot fetch a release or choose an offline fallback. These cases
 complete the authentication definitions; required execution is still separate.
 Hosted publication and actual consumer startup have their own requirements.
 
+Trust rotation binds public multiple-key approval, preview/refusal and revocation
+to the connected update journey. Both old and replacement signers are exercised
+against exact channel and release bytes. Native publication tests interrupt a
+subscription replacement after durable intent, target replacement and commit,
+then reopen the native state before finishing or restoring an uncommitted change.
+Keys may change; the observation, subscription identity and replay floor must not
+disappear. Recovery is idempotent, and retained metadata is reverified against the
+recovered keys. The private hook injects controlled errors on real files; it does
+not simulate an actual process kill, kernel I/O failure or power loss. These are
+case definitions until the required host/feature observations are admitted.
+
 Instance inspection has a public-command case that installs two exact snapshots,
 retains a selected optional choice, and checks the displayed release history.
 Both human inspection and JSON metadata status preserve the instance, external

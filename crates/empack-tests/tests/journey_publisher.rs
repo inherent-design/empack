@@ -423,6 +423,178 @@ fn cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_
     }
 }
 
+#[test]
+fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
+    let root = tempfile::tempdir().unwrap();
+    let instance = root.path().join("instance");
+    let inputs = root.path().join("inputs");
+    let host = root.path().join("host");
+    for path in [&instance, &inputs, &host] {
+        fs::create_dir(path).unwrap();
+    }
+    write(&instance, "player notes.txt", b"keep player work");
+    let state = host.join("selected state");
+    let command = || {
+        let mut command = offline_command(&instance);
+        command
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(state.with_extension("cache"));
+        command
+    };
+    let old = SigningKey::from_bytes(&[86; 32]);
+    let next = SigningKey::from_bytes(&[87; 32]);
+    let old_public = hex(old.verifying_key().as_bytes());
+    let next_public = hex(next.verifying_key().as_bytes());
+    command()
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.publisher",
+            "--channel",
+            "stable",
+            "https://publisher.invalid/channels/stable.json",
+            "--key",
+            &old_public,
+        ])
+        .assert()
+        .success();
+    // Observation authenticates metadata only. No release is installed/fetched;
+    // this literal supplies the advertised bound, not a private product record.
+    let unfetched = inputs.join("unfetched-release-envelope.json");
+    fs::write(&unfetched, b"content is never acquired by this fixture").unwrap();
+    let offered = inputs.join("channel.json");
+    let id = "a".repeat(64);
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let observe = || {
+        command()
+            .args(["--yes", "instance", "check-updates"])
+            .arg(&offered)
+            .assert()
+    };
+    channel(&offered, &old, &id, &unfetched, 2, now + 3600);
+    observe().success().stdout(contains("sequence 2"));
+    let both = [
+        "instance",
+        "trust",
+        "--key",
+        &old_public,
+        "--key",
+        &next_public,
+    ];
+    approval::preserve_without_approval(
+        &instance,
+        &instance,
+        &state,
+        &both,
+        "(?i)apply this publisher trust and channel observation plan",
+    );
+    let before_invalid = snapshot(&instance);
+    let host_before_invalid = snapshot(&host);
+    command()
+        .args([
+            "--yes",
+            "instance",
+            "trust",
+            "--key",
+            &old_public,
+            "--key",
+            &old_public,
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("Duplicate publisher key"));
+    assert_eq!(snapshot(&instance), before_invalid);
+    assert_eq!(snapshot(&host), host_before_invalid);
+    command()
+        .arg("--yes")
+        .args(both)
+        .assert()
+        .success()
+        .stdout(contains("2 enrolled keys; sequence 2"));
+    // Each key independently authenticates the same payload across fresh
+    // executable invocations; identical metadata is an admissible retry.
+    for key in [&old, &next] {
+        channel(&offered, key, &id, &unfetched, 2, now + 3600);
+        observe().success().stdout(contains("sequence 2"));
+    }
+    channel(
+        &offered,
+        &SigningKey::from_bytes(&[88; 32]),
+        &id,
+        &unfetched,
+        200,
+        now + 3600,
+    );
+    let before_wrong_key = snapshot(&instance);
+    observe()
+        .failure()
+        .stderr(contains("No enrolled publisher signed"));
+    assert_eq!(snapshot(&instance), before_wrong_key);
+    command()
+        .args(["--yes", "instance", "trust", "--key", &next_public])
+        .assert()
+        .success()
+        .stdout(contains("1 enrolled keys; sequence 2"));
+    channel(&offered, &old, &id, &unfetched, 200, now + 3600);
+    let after_rotation = snapshot(&instance);
+    observe()
+        .failure()
+        .stderr(contains("No enrolled publisher signed"));
+    assert_eq!(snapshot(&instance), after_rotation);
+    channel(&offered, &next, &id, &unfetched, 3, now + 3600);
+    observe().success().stdout(contains("sequence 3"));
+    let revoke = ["instance", "trust", "--revoke-all"];
+    approval::preserve_without_approval(
+        &instance,
+        &instance,
+        &state,
+        &revoke,
+        "(?i)apply this publisher trust and channel observation plan",
+    );
+    command()
+        .arg("--yes")
+        .args(revoke)
+        .assert()
+        .success()
+        .stdout(contains("0 enrolled keys; sequence 3"));
+    let revoked = snapshot(&instance);
+    observe()
+        .failure()
+        .stderr(contains("Trust requires one to sixteen enrolled keys"));
+    assert_eq!(snapshot(&instance), revoked);
+    command()
+        .arg("--yes")
+        .args(both)
+        .assert()
+        .success()
+        .stdout(contains("2 enrolled keys; sequence 3"));
+    channel(&offered, &next, &id, &unfetched, 2, now + 3600);
+    let reenrolled = snapshot(&instance);
+    observe()
+        .failure()
+        .stderr(contains("Channel sequence replay rejected"));
+    assert_eq!(snapshot(&instance), reenrolled);
+    channel(&offered, &next, &id, &unfetched, 3, now + 3600);
+    observe().success();
+    assert_eq!(
+        fs::read(instance.join("player notes.txt")).unwrap(),
+        b"keep player work"
+    );
+    assert!(!instance.join("game").exists());
+    assert!(!instance.join(".empack/instance.json").exists());
+    assert_eq!(
+        fs::read(&unfetched).unwrap(),
+        b"content is never acquired by this fixture"
+    );
+}
+
 fn build_and_stage(
     author: &Path,
     publisher: &Path,
@@ -1413,6 +1585,42 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     let channel_c = root.join("channel-c.json");
     channel(&channel_c, &replacement, &b, &envelope_b, 3, now + 3600);
     observe(&instance, &channel_c).success();
+    let after_rotation = snapshot(&instance);
+    offline_command(&instance)
+        .args(["--yes", "instance", "update"])
+        .arg(&envelope_b)
+        .assert()
+        .failure()
+        .stderr(contains("No enrolled publisher signed"));
+    assert_eq!(snapshot(&instance), after_rotation);
+    // Supply the same selected release payload with the newly enrolled key.
+    // The old immutable envelope remains untouched; ordinary relative assets
+    // still reside beside this separate local input.
+    let rotated_release = envelope_b
+        .parent()
+        .unwrap()
+        .join("replacement-signature.json");
+    let mut resigned: serde_json::Value = serde_json::from_slice(&signed_b).unwrap();
+    let payload = unhex(resigned["payload"].as_str().unwrap());
+    let signature = replacement.sign(&[b"empack.release.v1\0".as_slice(), &payload].concat());
+    resigned["signatures"] = json!([{
+        "algorithm":"ed25519", "key":hex(&Sha256::digest(replacement.verifying_key().as_bytes())),
+        "signature":hex(&signature.to_bytes())
+    }]);
+    fs::write(&rotated_release, serde_json::to_vec(&resigned).unwrap()).unwrap();
+    verify_staged(
+        &rotated_release,
+        &replacement.verifying_key(),
+        &b,
+        &export_b.join("release.json"),
+    );
+    offline_command(&instance)
+        .args(["--yes", "instance", "update"])
+        .arg(&rotated_release)
+        .assert()
+        .success();
+    installed(&instance, &b, b"2.0.0");
+    assert_eq!(fs::read(&envelope_b).unwrap(), signed_b);
     offline_command(&instance)
         .args(["--yes", "instance", "trust", "--revoke-all"])
         .assert()
@@ -1425,7 +1633,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .success();
     channel(&stale_new_key, &replacement, &b, &envelope_b, 2, now + 3600);
     observe(&instance, &stale_new_key).failure(); // Revocation also retained the floor.
-    installed(&instance, &a, b"1.0.0");
+    installed(&instance, &b, b"2.0.0");
     assert_eq!(fs::read_to_string(&key_file).unwrap(), secret);
     assert!(
         fs::read_to_string(author.join("empack.yml"))

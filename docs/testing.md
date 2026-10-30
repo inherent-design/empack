@@ -610,6 +610,16 @@ tests verify that authentication failure cannot fetch release content or silentl
 fall back to the completed installation. These definitions do not establish hosted
 HTTPS or actual launcher/runtime acceptance.
 
+Trust-change acceptance separately covers multiple enrolled keys, duplicate-key
+refusal, preview and real terminal refusal for both replacement and revocation.
+Fresh executable invocations must preserve the replay floor through those changes.
+The connected journey rejects an old-signer release after rotation, then updates
+with the same exact payload independently signed by the new key. The old immutable
+envelope remains unchanged. Native publication cases exercise interrupted trust
+replacement, reopened recovery and lost commit acknowledgement while preserving
+the observation, floor, identity and unrelated player work. Their controlled hook
+failures are separate from actual process termination or physical crash evidence.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid
