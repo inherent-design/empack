@@ -1077,6 +1077,20 @@ pub(crate) fn interrupt_publication(
     })
 }
 
+pub(crate) fn crash_publication(
+    publisher: &Publisher,
+    root: &ProjectReadRoot,
+    verified: VerifiedFileChange,
+    point: PublicationPoint,
+) -> Result<PublicationReceipt> {
+    publisher.publish_with_hook(root, verified, &Cancellation::default(), &mut |actual| {
+        if actual == point {
+            std::process::exit(86);
+        }
+        Ok(())
+    })
+}
+
 #[test]
 fn concurrent_private_directory_openers_share_one_verified_boundary() {
     let parent = tempfile::tempdir().unwrap();

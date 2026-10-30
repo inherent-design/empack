@@ -212,37 +212,88 @@ fn import_roundtrip(
 
 #[test]
 fn journey_pending_import_rejects_changed_destination_and_discards_without_overwrite() {
-    let fixture = ImportFixture::new();
-    fixture.suspend();
-    let operation = fixture.pending();
-    let id = operation["id"].as_str().unwrap();
-    fs::create_dir(&fixture.target).unwrap();
-    fs::write(fixture.target.join("user.txt"), b"created after capture").unwrap();
-    let original = snapshot(fixture.project.dir());
-    let retained = snapshot(&fixture.state);
-    let stale = fixture.pending();
-    assert_eq!(stale["state"], "stale");
-    assert_eq!(stale["id"], id);
-    fixture
-        .command()
-        .args(["pending", "resume", id])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("stale"));
-    fixture
-        .command()
-        .args(["--dry-run", "pending", "discard", id])
-        .assert()
-        .success();
-    assert_eq!(snapshot(fixture.project.dir()), original);
-    assert_eq!(snapshot(&fixture.state), retained);
-    fixture
-        .command()
-        .args(["pending", "discard", id])
-        .assert()
-        .success();
-    assert_eq!(fixture.list()["operations"], json!([]));
-    assert_eq!(snapshot(fixture.project.dir()), original);
+    for cleanup in [false, true] {
+        let fixture = ImportFixture::new();
+        fixture.suspend();
+        let operation = fixture.pending();
+        let id = operation["id"].as_str().unwrap();
+        let records: Vec<_> = snapshot(&fixture.state)
+            .into_keys()
+            .filter(|path| {
+                path.starts_with("pending-imports") && path.extension().is_some_and(|e| e == "json")
+            })
+            .collect();
+        assert_eq!(records.len(), 1);
+        let archive = fs::read(&fixture.archive).unwrap();
+        let backing = retained::backing(&fixture.state, &archive);
+        let mut neighbor = ImportFixture::new();
+        neighbor.state = fixture.state.clone();
+        neighbor.suspend();
+        let neighbor_pending = neighbor.pending();
+        let neighbor_files = snapshot(neighbor.project.dir());
+        fs::create_dir(&fixture.target).unwrap();
+        fs::write(fixture.target.join("user.txt"), b"created after capture").unwrap();
+        let original = snapshot(fixture.project.dir());
+        let retained = snapshot(&fixture.state);
+        let stale = fixture.pending();
+        assert_eq!(stale["state"], "stale");
+        assert_eq!(stale["id"], id);
+        fixture
+            .command()
+            .args(["pending", "resume", id])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("stale"));
+        let discard = if cleanup {
+            vec!["clean", "import"]
+        } else {
+            vec!["pending", "discard", id]
+        };
+        approval::preserve_without_approval(
+            fixture.project.dir(),
+            &fixture.target,
+            &fixture.state,
+            &discard,
+            if cleanup {
+                "(?i)apply this cleanup plan"
+            } else {
+                "(?i)apply this discard pending import plan"
+            },
+        );
+        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(snapshot(&fixture.state), retained);
+        fixture.command().args(&discard).assert().success();
+        let mut expected = retained;
+        expected.remove(&records[0]).unwrap();
+        assert_eq!(snapshot(&fixture.state), expected);
+        assert_eq!(fixture.list()["operations"], json!([]));
+        assert_eq!(neighbor.pending(), neighbor_pending);
+        assert_eq!(snapshot(neighbor.project.dir()), neighbor_files);
+        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(fs::read(&backing).unwrap(), archive);
+        fixture
+            .command()
+            .args(["clean", "import"])
+            .assert()
+            .success();
+        fixture
+            .command()
+            .args(["clean", "retained"])
+            .assert()
+            .success();
+        assert_eq!(
+            snapshot(&fixture.state),
+            expected,
+            "neighbor still retains the archive category"
+        );
+        fixture
+            .command()
+            .args(["pending", "resume", id])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("No pending operation"));
+        assert_eq!(snapshot(fixture.project.dir()), original);
+    }
 }
 
 #[test]

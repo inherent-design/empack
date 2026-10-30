@@ -277,6 +277,11 @@ fn runtime_defers_update(instance: &Path, envelope: &Path) {
     ];
     let game = instance.join("game");
     write(&game, "launch-fixture", b"wait for explicit retirement");
+    write(
+        instance,
+        "dist/held-artifact.zip",
+        b"keep until runtime retirement",
+    );
     let stderr = tempfile::NamedTempFile::new().unwrap();
     let mut runtime = Runtime {
         host: empack_cmd(instance)
@@ -348,6 +353,16 @@ fn runtime_defers_update(instance: &Path, envelope: &Path) {
         .failure()
         .stderr(contains("Project publication is busy"));
     assert_held();
+    for target in ["builds", "all"] {
+        let before_cleanup = snapshot(instance);
+        offline_command(instance)
+            .args(["--yes", "clean", target])
+            .assert()
+            .failure()
+            .stderr(contains("Project publication is busy"));
+        assert_eq!(snapshot(instance), before_cleanup);
+        assert_held();
+    }
     offline_command(instance)
         .args(["--yes", "instance", "launch", "--"])
         .arg(&program)
@@ -392,6 +407,14 @@ fn runtime_defers_update(instance: &Path, envelope: &Path) {
     ] {
         fs::remove_file(game.join(name)).unwrap();
     }
+    let player_files = snapshot(&game);
+    offline_command(instance)
+        .args(["--yes", "clean", "builds"])
+        .assert()
+        .success();
+    assert!(!instance.join("dist/held-artifact.zip").exists());
+    assert_eq!(snapshot(&game), player_files);
+    fs::remove_dir(instance.join("dist")).unwrap();
     driver.verify();
     assert_eq!(file_sha256(&program).unwrap(), digest);
 }

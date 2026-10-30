@@ -312,11 +312,25 @@ cleanup alone leaves its entire prior state unchanged. Cache storage is initiali
 by component setup, so these checks do not establish acquisition behavior.
 
 Empty cache, continuation, import, sync and retained cleanup also run without author
-documents and must create no host or project entries. Native tests separately cover
-stale selections, retained readers, links, interrupted artifact finish/restore and
-partial eviction followed by re-ingestion. Populated pending-record CLI cleanup,
-permission failures and remaining interruption/platform variants are still distinct
-UX-079 obligations.
+documents and must create no host or project entries. Populated stale build/import
+fixtures use both public discard and named cleanup, with piped-input refusal,
+preview and real terminal decline before approval. Only the selected record is
+removed; a second project's operation and retained archive remain. Existing sync
+and instance journeys protect retained inputs, and completed sync cleanup requires
+the same explicit decision. Unix permission tests require an actual OS read denial
+on either scope; an elevated account cannot supply a passing denial result. Artifact
+cleanup also refuses while a compiler-bound instance runtime is active, then succeeds
+after retirement without changing player files or the cache during refusal.
+
+A private libtest child prepares and authorizes the actual artifact cleanup plan,
+then exits at its first target-change hook. The ordinary executable discovers the
+recovery selector, refuses another cleanup and finishes or restores the exact
+literal artifact inventory. Private setup controls are not product settings; an
+ordinary cleanup given those controls still preserves their unrelated sentinel.
+The child's no-control invocation is setup discovery, not acceptance evidence.
+Native tests separately cover stale selections, retained readers, links and partial
+eviction followed by re-ingestion. OS interruption during an ordinary cleanup,
+remaining permission variants and full host/product qualification stay distinct.
 
 Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
 headers and bodies, and retain author files through refused replacement. A shared

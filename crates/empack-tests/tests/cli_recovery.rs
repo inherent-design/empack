@@ -79,9 +79,34 @@ impl Fixture {
             fs::create_dir(&fixture.project).unwrap();
             fs::write(fixture.project.join("empack.yml"), b"old intent").unwrap();
             fs::write(fixture.project.join("user-note.txt"), b"keep user bytes").unwrap();
-            fixture.crash(driver, false);
-            if kind == "restoring" {
-                fixture.crash(driver, true);
+            if kind == "cleanup" {
+                for (name, bytes) in [
+                    ("dist/a.zip", b"first artifact".as_slice()),
+                    ("dist/nested/b.mrpack", b"second artifact".as_slice()),
+                    ("pack/config/value", b"keep configuration".as_slice()),
+                    ("world/level.dat", b"keep player bytes".as_slice()),
+                ] {
+                    let path = fixture.project.join(name);
+                    fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    fs::write(path, bytes).unwrap();
+                }
+                driver
+                    .command(&fixture.invocation)
+                    .args([
+                        "--exact",
+                        "engine::api::cleanup::tests::cleanup_crash_child",
+                        "--nocapture",
+                    ])
+                    .env("EMPACK_TEST_CLEANUP_PROJECT", &fixture.project)
+                    .env("EMPACK_TEST_CLEANUP_STATE", &fixture.state)
+                    .assert()
+                    .code(86);
+                driver.verify();
+            } else {
+                fixture.crash(driver, false);
+                if kind == "restoring" {
+                    fixture.crash(driver, true);
+                }
             }
         }
         fixture
@@ -406,6 +431,93 @@ fn cli_recovery_commands_bind_the_reported_context_and_available_actions() {
         );
     }
     driver.verify();
+}
+
+#[test]
+fn cli_cleanup_crash_recovers_exact_artifacts_and_preserves_other_scopes() {
+    let driver = Driver::native_fixture("engine::api::cleanup::tests::cleanup_crash_child");
+    let program = installed_program();
+    for action in ["finish", "restore"] {
+        let fixture = Fixture::new("cleanup", &driver, program.path());
+        assert!(!fixture.project.join("dist/a.zip").exists());
+        assert_eq!(
+            fs::read(fixture.project.join("dist/nested/b.mrpack")).unwrap(),
+            b"second artifact"
+        );
+        let report = fixture.inspect();
+        let operation = report
+            .split_once("Interrupted operation: ")
+            .unwrap()
+            .1
+            .split_whitespace()
+            .next()
+            .unwrap();
+        let pending = fixture.observe();
+        for target in ["builds", "all"] {
+            fixture
+                .command()
+                .args(["--yes", "clean", target])
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains("requires publication recovery"));
+            assert_eq!(fixture.observe(), pending);
+        }
+        let args = ["recover", action, "--operation", operation];
+        approval::preserve_without_approval(
+            &fixture.invocation,
+            &fixture.project,
+            &fixture.state,
+            &args,
+            "(?i)apply this recovery plan",
+        );
+        fixture.command().arg("--yes").args(args).assert().success();
+        let mut expected = BTreeMap::from([
+            (PathBuf::from("empack.yml"), b"old intent".to_vec()),
+            (PathBuf::from("user-note.txt"), b"keep user bytes".to_vec()),
+            (
+                PathBuf::from("pack/config/value"),
+                b"keep configuration".to_vec(),
+            ),
+            (
+                PathBuf::from("world/level.dat"),
+                b"keep player bytes".to_vec(),
+            ),
+        ]);
+        if action == "restore" {
+            expected.insert(PathBuf::from("dist/a.zip"), b"first artifact".to_vec());
+            expected.insert(
+                PathBuf::from("dist/nested/b.mrpack"),
+                b"second artifact".to_vec(),
+            );
+        }
+        assert_eq!(snapshot(&fixture.project).files, expected);
+        assert_eq!(
+            fs::read(fixture.parent.join("neighbor.txt")).unwrap(),
+            b"keep neighbor"
+        );
+        for _ in 0..2 {
+            assert!(
+                fixture
+                    .inspect()
+                    .contains("No interrupted engine operation to recover")
+            );
+        }
+        let unrelated = fixture.parent.join("private-driver-control");
+        fs::create_dir_all(unrelated.join("dist")).unwrap();
+        fs::write(unrelated.join("dist/keep.zip"), b"not selected for cleanup").unwrap();
+        let unrelated_before = snapshot(&unrelated);
+        fixture
+            .command()
+            .env("EMPACK_TEST_CLEANUP_PROJECT", &unrelated)
+            .env("EMPACK_TEST_CLEANUP_STATE", &fixture.state)
+            .args(["--yes", "clean", "builds"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(&unrelated), unrelated_before);
+        expected.retain(|path, _| !path.starts_with("dist"));
+        assert_eq!(snapshot(&fixture.project).files, expected);
+        driver.verify();
+    }
 }
 
 #[test]

@@ -38,6 +38,32 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         run_runtime: false,
     }
 }
+
+/// Private crash setup; the ordinary executable never reads these controls.
+#[tokio::test]
+async fn cleanup_crash_child() {
+    let Some(project) = std::env::var_os("EMPACK_TEST_CLEANUP_PROJECT") else {
+        return;
+    };
+    let state = PathBuf::from(std::env::var_os("EMPACK_TEST_CLEANUP_STATE").unwrap());
+    let (engine, _) = tests::engine(state.clone());
+    let prepared = ready(&engine, Path::new(&project)).await;
+    let permission = grant(&prepared);
+    let approved = prepared.authorize(permission).unwrap();
+    let (kind, _reservation) = approved.prepared.data.into_parts();
+    let PreparedKind::Clean(prepared) = kind else {
+        panic!("not artifact cleanup");
+    };
+    crate::engine::publication::tests::crash_publication(
+        &Publisher::open(&state).unwrap(),
+        &prepared.root,
+        prepared.verified,
+        PublicationPoint::TargetChanged,
+    )
+    .unwrap();
+    panic!("cleanup crash point was not reached");
+}
+
 #[tokio::test]
 async fn artifact_cleanup_previews_exact_files_and_preserves_every_other_namespace() {
     let root = tempfile::tempdir().unwrap();

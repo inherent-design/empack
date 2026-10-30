@@ -132,59 +132,107 @@ fn build_roundtrip(
 
 #[test]
 fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data() {
-    let project = fixture("pending-stale");
-    let host = tempfile::tempdir().unwrap();
-    let state = host.path().join("state");
-    fs::create_dir(project.dir().join("dist")).unwrap();
-    fs::write(project.dir().join("dist/prior.mrpack"), b"prior archive").unwrap();
-    command(&project, &state)
-        .args(["build", "modrinth"])
-        .assert()
-        .failure();
-    let operation = pending(&project, &state, "build");
-    let id = operation["id"].as_str().unwrap();
-    let supplied = host.path().join("renamed.bin");
-    fs::write(&supplied, b"payload").unwrap();
-    let association = format!(
-        "{}={}",
-        operation["inputs"][0]["key"].as_str().unwrap(),
-        supplied.display()
-    );
-    let author_path = project.dir().join("empack.yml");
-    let author = fs::read_to_string(&author_path).unwrap();
-    fs::write(&author_path, format!("# Edited after suspension\n{author}")).unwrap();
-    let before = snapshot(project.dir());
-    let retained = snapshot(&state);
-    let stale = pending(&project, &state, "build");
-    assert_eq!(stale["id"], id);
-    assert_eq!(stale["state"], "stale");
-    command(&project, &state)
-        .args(["pending", "resume", id, "--file", &association])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("stale"));
-    command(&project, &state)
-        .args(["--dry-run", "pending", "discard", id])
-        .assert()
-        .success();
-    assert_eq!(snapshot(&state), retained);
-    assert_eq!(snapshot(project.dir()), before);
-    command(&project, &state)
-        .args(["pending", "discard", id])
-        .assert()
-        .success();
-    assert_eq!(
-        report(&project, &state, &["pending", "list", "--json"])["operations"],
-        json!([])
-    );
-    assert_eq!(snapshot(project.dir()), before);
-    assert_eq!(fs::read(&supplied).unwrap(), b"payload");
-    command(&project, &state)
-        .args(["pending", "resume", id])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("No pending operation"));
-    assert_eq!(snapshot(project.dir()), before);
+    for cleanup in [false, true] {
+        let project = fixture("pending-stale");
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        fs::create_dir(project.dir().join("dist")).unwrap();
+        fs::write(project.dir().join("dist/prior.mrpack"), b"prior archive").unwrap();
+        command(&project, &state)
+            .args(["build", "modrinth"])
+            .assert()
+            .failure();
+        let operation = pending(&project, &state, "build");
+        let id = operation["id"].as_str().unwrap();
+        // Locate only the fixture's native observation, never a command selector.
+        let records: Vec<_> = snapshot(&state)
+            .into_keys()
+            .filter(|path| {
+                path.starts_with("pending-builds") && path.extension().is_some_and(|e| e == "json")
+            })
+            .collect();
+        assert_eq!(records.len(), 1);
+        let neighbor = fixture("neighbor-pending");
+        command(&neighbor, &state)
+            .args(["build", "modrinth"])
+            .assert()
+            .failure();
+        let neighbor_pending = pending(&neighbor, &state, "build");
+        let neighbor_files = snapshot(neighbor.dir());
+        let supplied = host.path().join("renamed.bin");
+        fs::write(&supplied, b"payload").unwrap();
+        let association = format!(
+            "{}={}",
+            operation["inputs"][0]["key"].as_str().unwrap(),
+            supplied.display()
+        );
+        let author_path = project.dir().join("empack.yml");
+        let author = fs::read_to_string(&author_path).unwrap();
+        fs::write(&author_path, format!("# Edited after suspension\n{author}")).unwrap();
+        let before = snapshot(project.dir());
+        let retained = snapshot(&state);
+        let stale = pending(&project, &state, "build");
+        assert_eq!(stale["id"], id);
+        assert_eq!(stale["state"], "stale");
+        command(&project, &state)
+            .args(["pending", "resume", id, "--file", &association])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("stale"));
+        let discard = if cleanup {
+            vec!["clean", "continuation"]
+        } else {
+            vec!["pending", "discard", id]
+        };
+        approval::preserve_without_approval(
+            project.dir(),
+            project.dir(),
+            &state,
+            &discard,
+            if cleanup {
+                "(?i)apply this cleanup plan"
+            } else {
+                "(?i)apply this discard pending build plan"
+            },
+        );
+        assert_eq!(snapshot(&state), retained);
+        assert_eq!(snapshot(project.dir()), before);
+        command(&project, &state).args(&discard).assert().success();
+        let mut expected = retained;
+        expected.remove(&records[0]).unwrap();
+        assert_eq!(
+            snapshot(&state),
+            expected,
+            "discard only the selected native record"
+        );
+        assert_eq!(
+            report(&project, &state, &["pending", "list", "--json"])["operations"],
+            json!([])
+        );
+        assert_eq!(pending(&neighbor, &state, "build"), neighbor_pending);
+        assert_eq!(snapshot(neighbor.dir()), neighbor_files);
+        assert_eq!(snapshot(project.dir()), before);
+        assert_eq!(fs::read(&supplied).unwrap(), b"payload");
+        command(&project, &state)
+            .args(["clean", "continuation"])
+            .assert()
+            .success();
+        command(&project, &state)
+            .args(["clean", "retained"])
+            .assert()
+            .success();
+        assert_eq!(
+            snapshot(&state),
+            expected,
+            "neighbor still retains this category"
+        );
+        command(&project, &state)
+            .args(["pending", "resume", id])
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("No pending operation"));
+        assert_eq!(snapshot(project.dir()), before);
+    }
 }
 
 /// Select by the public exact provider identity; the association key is opaque.
@@ -361,10 +409,13 @@ fn sync_roundtrip(
         assert_eq!(snapshot(project.dir()), completed);
     }
     let retained = snapshot(&state);
-    command(&project, &state)
-        .args(["--dry-run", "clean", "retained"])
-        .assert()
-        .success();
+    approval::preserve_without_approval(
+        project.dir(),
+        project.dir(),
+        &state,
+        &["clean", "retained"],
+        "(?i)apply this cleanup plan",
+    );
     assert_eq!(snapshot(&state), retained);
     command(&project, &state)
         .args(["clean", "retained"])
@@ -420,15 +471,18 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
             .assert()
             .failure()
             .stderr(predicates::str::contains("stale"));
-        // Legacy inspection/cleanup remains a supported alias; no private record is injected.
+        // The existing sync continuation command remains supported; no private record is injected.
         command(&project, &state)
             .args(["sync", "--continue", "--dry-run"])
             .assert()
             .failure();
-        command(&project, &state)
-            .args(["clean", "sync", "--dry-run"])
-            .assert()
-            .success();
+        approval::preserve_without_approval(
+            project.dir(),
+            project.dir(),
+            &state,
+            &["clean", "sync"],
+            "(?i)apply this cleanup plan",
+        );
         command(&project, &state)
             .args(["pending", "discard", id, "--dry-run"])
             .assert()

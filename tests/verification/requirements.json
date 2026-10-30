@@ -9972,6 +9972,29 @@
             "Public finish yields the exact candidate inventory and restore yields the exact original inventory, preserving user-owned files in both cases; repeated inspection retains the result and reports no interrupted operation",
             "The private compiler-discovered driver is checked by digest and all disposable images are detached; no production fault controls or runnable-pack acceptance claims"
           ]
+        },
+        {
+          "id": "UX-078.cleanup-crash-to-public-recovery",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_recovery::cli_cleanup_crash_recovers_exact_artifacts_and_preserves_other_scopes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A private compiler-discovered driver prepares and authorizes the actual cleanup plan, then exits at the first target-change hook without Rust stack cleanup",
+            "The ordinary executable reports the retained public recovery selector; new builds/all cleanup refuses while recovery is pending and approval refusal preserves captured evidence",
+            "Approved finish removes both artifacts, while restore reinstates both exact inputs; complete literal file inventories preserve invalid author text, configuration and player/neighbor bytes",
+            "Read-only recovery inspection converges afterward and ordinary cleanup succeeds even when private driver controls target an unrelated sentinel; those bytes remain unchanged"
+          ],
+          "remaining_group_evidence": "This combines native crash setup with ordinary executable recovery; it does not claim an OS interrupt delivered during the ordinary cleanup command, nor complete every platform, permission or final-package variant."
         }
       ],
       "owner_now": [
@@ -10225,7 +10248,118 @@
           "assertions": [
             "Without author documents or initialized storage, preview and approved cache/continuation/import/sync/retained cleanup create no entries in either invocation or host roots"
           ],
-          "remaining_group_evidence": "Public cleanup of populated pending records, permission/busy-root failures, executable interruption and all declared platform/product variants remain separate obligations; the group remains partial."
+          "remaining_group_evidence": "Empty-scope no-ops are separate from the populated-record, permission, runtime ownership and crash-recovery cases below; all declared host/product variants still require execution."
+        },
+        {
+          "id": "UX-079.populated-saved-work-cleanup",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data",
+            "empack-tests::journey_pending::journey_pending_sync_stale_capture_is_discarded_without_replaying_private_state",
+            "empack-tests::journey_pending_import::journey_pending_import_rejects_changed_destination_and_discards_without_overwrite"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Named continuation/import/sync cleanup removes stale saved work without interpreting it as a new executable request; public pending discard remains separately exercised",
+            "Closed or piped stdin, dry run and real terminal refusal preserve author/destination and host/cache bytes until explicit approval",
+            "Build/import cleanup removes exactly the initially observed selected record; another real pending operation and retained import archive remain unchanged",
+            "Repeating named cleanup is harmless and the discarded public identity cannot resume; changed destinations, prior artifacts and supplied source bytes remain intact"
+          ]
+        },
+        {
+          "id": "UX-079.retained-inputs-through-public-cleanup",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending::journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual saved sync and instance inputs survive public retained cleanup after ordinary cache/origin content is unavailable",
+            "Once synchronization completes, preview and refusal preserve retained storage; approved cleanup reclaims eligible content and repeats without changing the completed project",
+            "Both current public resume entry points keep their input and ownership meaning; this does not establish live provider acquisition"
+          ]
+        },
+        {
+          "id": "UX-079.permission-preflight",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::cli_clean_permission_failure_preserves_all_selected_scopes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real OS read denial on either a selected artifact or cache object makes combined cleanup fail before deleting another scope or creating durable state",
+            "The product does not grant itself permissions; after restoring only the fixture access, exact bytes, attributes and directory membership match the initial snapshots",
+            "Normal approved cleanup succeeds once access is restored and preserves author bytes and unknown downloads; elevated access cannot produce a passing permission result"
+          ]
+        },
+        {
+          "id": "UX-079.runtime-ownership-prevents-cleanup",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A compiler-bound running program holds ordinary instance ownership; approved builds/all cleanup refuses with a publication-busy diagnostic before removing any artifact or cache entry",
+            "Complete installation, cache, ownership and portable-attribute snapshots survive refusal, alongside the existing authenticated update/repair/duplicate-launch refusals",
+            "Known normal runtime retirement permits artifact cleanup, without changing the game/player tree or the fixture executable"
+          ]
+        },
+        {
+          "id": "UX-079.crash-to-public-recovery",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_recovery::cli_cleanup_crash_recovers_exact_artifacts_and_preserves_other_scopes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A private compiler-discovered driver prepares and authorizes the actual cleanup plan, then exits at the first target-change hook without Rust stack cleanup",
+            "The ordinary executable reports the retained public recovery selector; new builds/all cleanup refuses while recovery is pending and approval refusal preserves captured evidence",
+            "Approved finish removes both artifacts, while restore reinstates both exact inputs; complete literal file inventories preserve invalid author text, configuration and player/neighbor bytes",
+            "Read-only recovery inspection converges afterward and ordinary cleanup succeeds even when private driver controls target an unrelated sentinel; those bytes remain unchanged"
+          ],
+          "remaining_group_evidence": "This combines native crash setup with ordinary executable recovery; it does not claim an OS interrupt delivered during the ordinary cleanup command, nor complete every platform, permission or final-package variant."
         }
       ],
       "owner_now": [

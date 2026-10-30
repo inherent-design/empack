@@ -356,6 +356,86 @@ fn cli_clean_empty_cache_and_pending_scopes_create_no_storage() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn cli_clean_permission_failure_preserves_all_selected_scopes() {
+    use empack_lib::engine::content::store::{ContentStoreLimits, FileContentStore};
+    use empack_tests::harness::workspace::snapshot;
+    use std::{fs, io::ErrorKind, os::unix::fs::PermissionsExt};
+
+    for denied_scope in ["artifact", "cache"] {
+        let project = TestProject::new();
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        let cache = host.path().join("cache");
+        let store = cache.join("content-v1");
+        drop(FileContentStore::open(&store, ContentStoreLimits::default()).unwrap());
+        let artifact = project.dir().join("dist/archive.zip");
+        fs::create_dir(artifact.parent().unwrap()).unwrap();
+        fs::write(&artifact, b"keep artifact").unwrap();
+        fs::write(project.dir().join("author.txt"), b"keep author bytes").unwrap();
+        let blob =
+            store.join("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.blob");
+        fs::write(&blob, b"abc").unwrap();
+        fs::write(store.join("user-download.jar"), b"keep download").unwrap();
+        let project_before = snapshot(project.dir());
+        let host_before = snapshot(host.path());
+        let denied = if denied_scope == "artifact" {
+            &artifact
+        } else {
+            &blob
+        };
+        let permissions = fs::metadata(denied).unwrap().permissions();
+        fs::set_permissions(denied, fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = fs::File::open(denied);
+        if !matches!(&readable, Err(error) if error.kind() == ErrorKind::PermissionDenied) {
+            fs::set_permissions(denied, permissions).unwrap();
+            panic!(
+                "Fixture requires OS-enforced read denial; elevated access is not a passing permission test"
+            );
+        }
+        let result = offline_command(project.dir())
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(&cache)
+            .args(["--yes", "clean", "all"])
+            .output();
+        let mode = fs::metadata(denied).unwrap().permissions().mode() & 0o777;
+        // Restore only the fixture's deliberately denied access, even if the child failed.
+        fs::set_permissions(denied, permissions).unwrap();
+        let output = result.unwrap();
+        assert!(!output.status.success(), "{denied_scope}");
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            diagnostic.contains("Permission denied"),
+            "{denied_scope}: {diagnostic}"
+        );
+        assert_eq!(mode, 0, "the product must not grant access to its inputs");
+        assert_eq!(snapshot(project.dir()), project_before, "{denied_scope}");
+        assert_eq!(snapshot(host.path()), host_before, "{denied_scope}");
+        assert!(!state.exists());
+        offline_command(project.dir())
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(&cache)
+            .args(["--yes", "clean", "all"])
+            .assert()
+            .success();
+        assert!(!artifact.exists());
+        assert!(!blob.exists());
+        assert_eq!(
+            fs::read(project.dir().join("author.txt")).unwrap(),
+            b"keep author bytes"
+        );
+        assert_eq!(
+            fs::read(store.join("user-download.jar")).unwrap(),
+            b"keep download"
+        );
+    }
+}
+
 #[test]
 fn cli_build_prism_references_records_runtime() {
     let project = TestProject::new();

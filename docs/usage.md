@@ -318,6 +318,10 @@ selected project or import destination; retained input bytes remain. `clean reta
 reclaims disposable inputs only from categories with no saved records. It preserves
 unknown neighboring files and recovery evidence, and refuses cleanup while a save
 owns the storage. These scopes are explicit; `clean all` does not select them.
+Stale saved work can be discarded without replaying its instructions. Other saved
+operations may still retain the same content category. Artifact cleanup respects
+runtime and publication ownership; an interrupted cleanup needs the usual recovery
+finish or restore before another artifact cleanup can proceed.
 
 Workdir and relative input paths resolve from the directory where empack was invoked.
 Relative `--state-dir` and `--cache-dir` paths use that same directory, independently
