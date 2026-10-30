@@ -79,6 +79,17 @@ pub(crate) struct PublisherSetup {
     directory: cap_std::fs::Dir,
     name: String,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeyCreationPoint {
+    Write,
+    FileSync,
+    Link,
+    #[cfg(unix)]
+    DirectorySync,
+    Cleanup,
+}
+
 impl PublisherSetup {
     pub(crate) fn prepare(root: &Path, file: &Path) -> Result<Self> {
         let root = std::fs::canonicalize(root).context("Publisher workspace must already exist")?;
@@ -110,6 +121,16 @@ impl PublisherSetup {
         self,
         cancel: &crate::application::process_runtime::Cancellation,
     ) -> Result<(String, String)> {
+        self.create_with_hook(cancel, &mut |_| Ok(()))
+    }
+
+    // Private checkpoints mirror the native operations. The ordinary caller
+    // always supplies a no-op; no product configuration enables fault injection.
+    fn create_with_hook(
+        self,
+        cancel: &crate::application::process_runtime::Cancellation,
+        hook: &mut dyn FnMut(KeyCreationPoint) -> Result<()>,
+    ) -> Result<(String, String)> {
         use std::io::Write;
         cancel.check()?;
         let mut seed = [0; 32];
@@ -119,16 +140,23 @@ impl PublisherSetup {
         seed.fill(0);
         let (candidate, mut file) = crate::engine::staging::create_temporary(&self.directory)?;
         let result: Result<(String, String)> = (|| {
+            hook(KeyCreationPoint::Write)?;
             writeln!(file, "{}", super::hex(key.as_bytes()))?;
+            hook(KeyCreationPoint::FileSync)?;
             file.sync_all()?;
             cancel.check()?;
-            self.directory
-                .hard_link(&candidate, &self.directory, &self.name)
+            hook(KeyCreationPoint::Link)
+                .and_then(|()| {
+                    self.directory
+                        .hard_link(&candidate, &self.directory, &self.name)
+                        .map_err(Into::into)
+                })
                 .context(
                     "Cannot create signing key exclusively; existing paths are never replaced",
                 )?;
             #[cfg(unix)]
-            crate::engine::native::readable_directory(&self.directory)
+            hook(KeyCreationPoint::DirectorySync)
+                .and_then(|()| crate::engine::native::readable_directory(&self.directory))
                 .and_then(|directory| directory.sync_all().map_err(Into::into))
                 .context("Signing key was created, but its directory could not be synchronized")?;
             Ok((
@@ -138,11 +166,12 @@ impl PublisherSetup {
         })();
         drop(file);
         // Only the owned candidate is retired, never the destination (including on failure).
-        let cleanup = self.directory.remove_file(candidate);
+        let cleanup = hook(KeyCreationPoint::Cleanup)
+            .and_then(|()| self.directory.remove_file(candidate).map_err(Into::into));
         match (result, cleanup) {
             (Ok(keys), Ok(())) => Ok(keys),
             (Err(error), Ok(())) => Err(error),
-            (Ok(_), Err(error)) => Err(anyhow::Error::from(error).context(
+            (Ok(_), Err(error)) => Err(error.context(
                 "Signing key was created, but its private temporary link could not be removed",
             )),
             (Err(error), Err(cleanup)) => Err(error.context(format!(
@@ -157,6 +186,190 @@ mod tests {
     use super::*;
     use crate::application::process_runtime::Cancellation;
     use ed25519_dalek::{Signer, Verifier};
+    use std::fs;
+
+    fn private_failure_fixture() -> (tempfile::TempDir, tempfile::TempDir, PathBuf, PathBuf) {
+        let workspace = tempfile::tempdir().unwrap();
+        let secrets = tempfile::tempdir().unwrap();
+        let private = secrets.path().join("private");
+        crate::engine::publication::open_private_directory(&private, true).unwrap();
+        fs::write(private.join("unrelated"), b"keep other private work").unwrap();
+        let key = private.join("publisher.key");
+        (workspace, secrets, private, key)
+    }
+
+    fn assert_private_work_preserved(workspace: &Path, private: &Path) {
+        assert_eq!(fs::read_dir(workspace).unwrap().count(), 0);
+        assert_eq!(
+            fs::read(private.join("unrelated")).unwrap(),
+            b"keep other private work"
+        );
+    }
+
+    #[test]
+    fn publisher_setup_write_sync_and_link_failures_retire_only_the_private_candidate() {
+        for fault in [
+            KeyCreationPoint::Write,
+            KeyCreationPoint::FileSync,
+            KeyCreationPoint::Link,
+        ] {
+            let (workspace, _secrets, private, path) = private_failure_fixture();
+            let prepared = PublisherSetup::prepare(workspace.path(), &path).unwrap();
+            let mut reached = false;
+            let error = prepared
+                .create_with_hook(&Cancellation::default(), &mut |point| {
+                    if point == fault {
+                        reached = true;
+                        anyhow::bail!("controlled private key operation failure");
+                    }
+                    Ok(())
+                })
+                .unwrap_err();
+            assert!(reached);
+            assert!(format!("{error:#}").contains("controlled private key operation failure"));
+            assert!(!path.exists());
+            assert_eq!(fs::read_dir(&private).unwrap().count(), 1);
+            assert_private_work_preserved(workspace.path(), &private);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publisher_setup_directory_sync_failure_preserves_created_key_and_reports_durability() {
+        let (workspace, _secrets, private, path) = private_failure_fixture();
+        let error = PublisherSetup::prepare(workspace.path(), &path)
+            .unwrap()
+            .create_with_hook(&Cancellation::default(), &mut |point| {
+                if point == KeyCreationPoint::DirectorySync {
+                    anyhow::bail!("controlled directory synchronization failure");
+                }
+                Ok(())
+            })
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message
+                .contains("Signing key was created, but its directory could not be synchronized")
+        );
+        assert!(message.contains("controlled directory synchronization failure"));
+        let encoded = fs::read_to_string(&path).unwrap();
+        assert_eq!(encoded.len(), 65);
+        assert!(!message.contains(encoded.trim()));
+        assert_eq!(
+            read_keys(
+                workspace.path(),
+                workspace.path(),
+                &[path],
+                &Cancellation::default()
+            )
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(fs::read_dir(&private).unwrap().count(), 2);
+        assert_private_work_preserved(workspace.path(), &private);
+    }
+
+    #[test]
+    fn publisher_setup_cleanup_failure_preserves_key_state_and_primary_error() {
+        for primary_failure in [false, true] {
+            let (workspace, _secrets, private, path) = private_failure_fixture();
+            let error = PublisherSetup::prepare(workspace.path(), &path)
+                .unwrap()
+                .create_with_hook(&Cancellation::default(), &mut |point| {
+                    if primary_failure && point == KeyCreationPoint::FileSync {
+                        anyhow::bail!("controlled primary synchronization failure");
+                    }
+                    if point == KeyCreationPoint::Cleanup {
+                        anyhow::bail!("controlled temporary cleanup failure");
+                    }
+                    Ok(())
+                })
+                .unwrap_err();
+            let message = format!("{error:#}");
+            assert!(message.contains("controlled temporary cleanup failure"));
+            assert_eq!(path.exists(), !primary_failure);
+            let candidates: Vec<_> = fs::read_dir(&private)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|entry| {
+                    entry.file_name().unwrap() != "publisher.key"
+                        && entry.file_name().unwrap() != "unrelated"
+                })
+                .collect();
+            assert_eq!(candidates.len(), 1);
+            let encoded = fs::read_to_string(&candidates[0]).unwrap();
+            assert_eq!(encoded.len(), 65);
+            assert!(!message.contains(encoded.trim()));
+            if primary_failure {
+                assert!(message.contains("controlled primary synchronization failure"));
+                assert!(
+                    message
+                        .contains("Private signing-key temporary link also could not be removed")
+                );
+            } else {
+                assert!(message.contains(
+                    "Signing key was created, but its private temporary link could not be removed"
+                ));
+                assert!(fs::read(&path).unwrap() == encoded.as_bytes());
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    fs::metadata(&candidates[0]).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+            assert_private_work_preserved(workspace.path(), &private);
+        }
+    }
+
+    #[test]
+    fn publisher_setup_cancellation_preserves_unpublished_and_completed_outcomes() {
+        for late in [false, true] {
+            let (workspace, _secrets, private, path) = private_failure_fixture();
+            let cancel = Cancellation::default();
+            let point = if late {
+                KeyCreationPoint::Cleanup
+            } else {
+                KeyCreationPoint::FileSync
+            };
+            let outcome = PublisherSetup::prepare(workspace.path(), &path)
+                .unwrap()
+                .create_with_hook(&cancel, &mut |actual| {
+                    if actual == point {
+                        cancel.cancel();
+                    }
+                    Ok(())
+                });
+            assert!(cancel.is_cancelled());
+            if late {
+                let (public, _) = outcome.unwrap();
+                let keys = read_keys(
+                    workspace.path(),
+                    workspace.path(),
+                    std::slice::from_ref(&path),
+                    &Cancellation::default(),
+                )
+                .unwrap();
+                assert_eq!(
+                    public,
+                    super::super::hex(keys[0].verifying_key().as_bytes())
+                );
+                assert_eq!(fs::read_dir(&private).unwrap().count(), 2);
+            } else {
+                let error = outcome.unwrap_err();
+                assert_eq!(
+                    crate::application::exit::classify_error(&error),
+                    crate::application::exit::EmpackExitCode::Interrupted
+                );
+                assert!(!path.exists());
+                assert_eq!(fs::read_dir(&private).unwrap().count(), 1);
+            }
+            assert_private_work_preserved(workspace.path(), &private);
+        }
+    }
 
     #[test]
     fn publisher_setup_is_exclusive_private_and_signs_round_trip() {

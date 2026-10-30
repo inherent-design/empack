@@ -7889,7 +7889,7 @@
             "Initialization in a protected directory prints its independently derived public key without the private seed",
             "Repeated initialization refuses to overwrite the original signing bytes"
           ],
-          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+          "remaining_group_evidence": "Preparation refusal, public approval and native exclusive creation have distinct evidence. The injected operation checkpoints below cover write/sync/link/cleanup control flow on real private files; they do not establish kernel-generated partial-write failures or physical crash durability."
         },
         {
           "id": "UX-054.explicit-key-approval",
@@ -7910,7 +7910,7 @@
             "default",
             "telemetry"
           ],
-          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+          "remaining_group_evidence": "Preparation refusal, public approval and native exclusive creation have distinct evidence. The injected operation checkpoints below cover write/sync/link/cleanup control flow on real private files; they do not establish kernel-generated partial-write failures or physical crash durability."
         },
         {
           "id": "UX-054.key-destination-refusal",
@@ -7931,7 +7931,7 @@
             "default",
             "telemetry"
           ],
-          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+          "remaining_group_evidence": "Preparation refusal, public approval and native exclusive creation have distinct evidence. The injected operation checkpoints below cover write/sync/link/cleanup control flow on real private files; they do not establish kernel-generated partial-write failures or physical crash durability."
         },
         {
           "id": "UX-054.native-exclusive-key-creation",
@@ -7954,7 +7954,51 @@
             "default",
             "telemetry"
           ],
-          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+          "remaining_group_evidence": "Preparation refusal, public approval and native exclusive creation have distinct evidence. The injected operation checkpoints below cover write/sync/link/cleanup control flow on real private files; they do not establish kernel-generated partial-write failures or physical crash durability."
+        },
+        {
+          "id": "UX-054.private-key-failure-boundaries",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::release::signing::tests::publisher_setup_write_sync_and_link_failures_retire_only_the_private_candidate",
+            "empack-lib::engine::release::signing::tests::publisher_setup_cleanup_failure_preserves_key_state_and_primary_error",
+            "empack-lib::engine::release::signing::tests::publisher_setup_cancellation_preserves_unpublished_and_completed_outcomes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Injected failure before write, file sync or exclusive linking removes only the owned candidate and leaves the destination absent; unrelated private work and publisher files are unchanged",
+            "A cleanup failure retains the private candidate and the original error; after linking it reports that the key was created and preserves identical candidate/destination bytes, without printing the private seed",
+            "Cancellation before exclusive publication leaves no key or candidate and retains typed interruption; cancellation after publication preserves the completed key result and still retires its temporary link"
+          ],
+          "remaining_group_evidence": "Actual native files, exclusive linking and retained-state checks with private callbacks at operation boundaries. No public fault controls; kernel-generated I/O faults and physical crashes are not reproduced by the callbacks."
+        },
+        {
+          "id": "UX-054.private-key-directory-sync",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::release::signing::tests::publisher_setup_directory_sync_failure_preserves_created_key_and_reports_durability"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Failure injected at Unix directory synchronization preserves a valid created key, removes its candidate and reports that creation happened but directory durability was not established",
+            "The diagnostic retains its cause without the private seed; unrelated private and publisher files remain unchanged"
+          ],
+          "remaining_group_evidence": "Unix-only directory synchronization; Windows follows the existing native creation path without this operation. Injected error tests propagation and state, not a physical power-loss experiment."
         }
       ],
       "owner_now": [
