@@ -37,24 +37,39 @@ impl Driver {
         );
         let path = PathBuf::from(drivers[0]["binary-path"].as_str().unwrap());
         assert!(path.is_absolute() && path.is_file());
+        let digest = file_sha256(&path).unwrap();
+        let driver = Self { path, digest };
+        let listing_root = tempfile::tempdir().unwrap();
+        // Filtered Nextest inventories retain the compiled binary but omit its
+        // unselected cases. Ask that exact binary to list each private fixture.
         for name in [
             "engine::publication::tests::crash_worker",
             "engine::publication::creation::tests::new_root_crash_child",
         ] {
-            assert!(
-                drivers[0]["testcases"]
-                    .as_object()
-                    .unwrap()
-                    .contains_key(name),
-                "missing private driver {name}"
-            );
+            let output = driver
+                .command(listing_root.path())
+                .args(["--exact", name, "--list"])
+                .assert()
+                .success()
+                .get_output()
+                .stdout
+                .clone();
+            let output = String::from_utf8(output).unwrap();
+            let names: Vec<_> = output
+                .lines()
+                .filter(|line| line.ends_with(": test"))
+                .map(str::to_owned)
+                .collect();
+            assert_eq!(names, [format!("{name}: test")]);
+            eprintln!("Publication crash fixture: {name}");
         }
-        let digest = file_sha256(&path).unwrap();
+        driver.verify();
         eprintln!(
-            "Publication crash driver: {} SHA256={digest}",
-            path.display()
+            "Publication crash driver: {} SHA256={}",
+            driver.path.display(),
+            driver.digest
         );
-        Self { path, digest }
+        driver
     }
 
     pub fn command(&self, invocation: &Path) -> assert_cmd::Command {
