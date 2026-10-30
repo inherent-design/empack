@@ -1,2 +1,5 @@
 # Verification receipts hash registry bytes across native checkout platforms.
 tests/verification/*.json text eol=lf
+
+# Hosted fixture signatures and content identities cover exact checked-in bytes.
+tests/fixtures/hosted-publication/** -text
