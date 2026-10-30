@@ -265,20 +265,52 @@ fn channel_rejects_expiry_cross_origin_wrong_subscription_and_bound_overflow() {
         sign(EnvelopeKind::Channel, &doc.encode().unwrap(), &[&key()]).unwrap()
     };
     let mut doc = channel(&release);
+    let mut wrong_pack = doc.clone();
+    wrong_pack.pack = "another-pack".into();
+    let mut wrong_channel = doc.clone();
+    wrong_channel.channel = "preview".into();
+    let mut distant = doc.clone();
+    distant.expires = 1_800_000_000 + 31 * 24 * 60 * 60 + 1;
+    for (offered, now, diagnostic) in [
+        (doc.clone(), doc.expires, "Channel has expired"),
+        (
+            wrong_pack,
+            1_800_000_000,
+            "Channel subscription identity mismatch",
+        ),
+        (
+            wrong_channel,
+            1_800_000_000,
+            "Channel subscription identity mismatch",
+        ),
+        (
+            doc.clone(),
+            0,
+            "Local clock cannot establish channel freshness",
+        ),
+        (
+            distant,
+            1_800_000_000,
+            "Channel expiry is beyond the supported freshness window",
+        ),
+    ] {
+        assert_eq!(
+            trust()
+                .channel(&encode(&offered), "stable", now, &version(), None)
+                .err()
+                .expect("invalid signed channel must be refused")
+                .to_string(),
+            diagnostic
+        );
+    }
+    // Both admission boundaries remain inclusive/exclusive as documented:
+    // expiry exactly now is refused above; exactly 31 days remains usable.
+    let mut maximum = doc.clone();
+    maximum.expires = 1_800_000_000 + 31 * 24 * 60 * 60;
     assert!(
         trust()
-            .channel(&encode(&doc), "stable", doc.expires, &version(), None)
-            .is_err()
-    );
-    assert!(
-        trust()
-            .channel(&encode(&doc), "other", 1_800_000_000, &version(), None)
-            .is_err()
-    );
-    assert!(
-        trust()
-            .channel(&encode(&doc), "stable", 0, &version(), None)
-            .is_err()
+            .channel(&encode(&maximum), "stable", 1_800_000_000, &version(), None)
+            .is_ok()
     );
     doc.release.url = "https://other.example/release".into();
     assert!(

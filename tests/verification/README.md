@@ -58,6 +58,16 @@ Its definitions cover fresh and installed contexts without treating enrollment a
 installation or implicit key replacement. Execution on each host/feature graph
 remains required; defining the cases supplies no passing observations.
 
+Channel authentication combines the public publisher/player journey with pure
+freshness/replay boundaries and host prelaunch refusal tests. Correctly signed
+wrong-pack and wrong-channel envelopes must preserve the entire instance, not
+merely its game files. Rejected high sequences cannot raise the replay floor;
+accepted observation survives a later content conflict. Clock, expiry and replay
+diagnostics remain distinct. Controlled host transport also proves that failed
+authentication cannot fetch a release or choose an offline fallback. These cases
+complete the authentication definitions; required execution is still separate.
+Hosted publication and actual consumer startup have their own requirements.
+
 Instance inspection has a public-command case that installs two exact snapshots,
 retains a selected optional choice, and checks the displayed release history.
 Both human inspection and JSON metadata status preserve the instance, external

@@ -729,10 +729,30 @@ fn cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_con
 }
 
 fn channel(path: &Path, key: &SigningKey, id: &str, envelope: &Path, sequence: u64, expires: u64) {
+    channel_with_identity(
+        path,
+        key,
+        id,
+        envelope,
+        sequence,
+        expires,
+        ("verification.publisher", "stable"),
+    );
+}
+
+fn channel_with_identity(
+    path: &Path,
+    key: &SigningKey,
+    id: &str,
+    envelope: &Path,
+    sequence: u64,
+    expires: u64,
+    (pack, name): (&str, &str),
+) {
     // Independent fixture encoding of the documented signed channel envelope.
     // No product planner, transport override or signature bypass supplies it.
     let payload = serde_json::to_vec(&json!({
-        "schema": 1, "pack": "verification.publisher", "channel": "stable",
+        "schema": 1, "pack": pack, "channel": name,
         "sequence": sequence, "expires": expires, "minimum_engine": ">=0.8.0-beta",
         "release": {"id": id, "url": format!("https://publisher.invalid/releases/{id}/release.json"),
                     "maximum_bytes": fs::metadata(envelope).unwrap().len()}
@@ -1142,6 +1162,41 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     );
     let channel_b = root.join("channel-b.json");
     channel(&channel_b, &key, &b, &envelope_b, 2, now + 3600);
+    let before_rejected_observation = snapshot(&instance);
+    for identity in [
+        ("another.pack", "stable"),
+        ("verification.publisher", "preview"),
+    ] {
+        let mismatched = root.join("wrong-subscription.json");
+        channel_with_identity(
+            &mismatched,
+            &key,
+            &b,
+            &envelope_b,
+            200,
+            now + 3600,
+            identity,
+        );
+        // Verify the independent fixture really has an enrolled signature; the
+        // rejection must establish subscription identity, not a bad signature.
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&fs::read(&mismatched).unwrap()).unwrap();
+        let payload = unhex(envelope["payload"].as_str().unwrap());
+        let signature = ed25519_dalek::Signature::from_slice(&unhex(
+            envelope["signatures"][0]["signature"].as_str().unwrap(),
+        ))
+        .unwrap();
+        key.verifying_key()
+            .verify_strict(
+                &[b"empack.channel.v1\0".as_slice(), &payload].concat(),
+                &signature,
+            )
+            .unwrap();
+        observe(&instance, &mismatched)
+            .failure()
+            .stderr(contains("Channel subscription identity mismatch"));
+        assert_eq!(snapshot(&instance), before_rejected_observation);
+    }
     let wrong = root.join("wrong-key.json");
     channel(
         &wrong,
@@ -1151,11 +1206,30 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         2,
         now + 3600,
     );
-    observe(&instance, &wrong).failure();
+    observe(&instance, &wrong)
+        .failure()
+        .stderr(contains("No enrolled publisher signed"));
+    assert_eq!(snapshot(&instance), before_rejected_observation);
     installed(&instance, &a, b"1.0.0");
     let expired = root.join("expired.json");
     channel(&expired, &key, &b, &envelope_b, 20, now - 1);
-    observe(&instance, &expired).failure();
+    observe(&instance, &expired)
+        .failure()
+        .stderr(contains("Channel has expired"));
+    assert_eq!(snapshot(&instance), before_rejected_observation);
+    let too_distant = root.join("distant-expiry.json");
+    channel(
+        &too_distant,
+        &key,
+        &b,
+        &envelope_b,
+        200,
+        now + 32 * 24 * 60 * 60,
+    );
+    observe(&instance, &too_distant).failure().stderr(contains(
+        "Channel expiry is beyond the supported freshness window",
+    ));
+    assert_eq!(snapshot(&instance), before_rejected_observation);
     installed(&instance, &a, b"1.0.0");
     // Change authenticated payload bytes without replacing the signature.
     let tampered = root.join("tampered.json");
@@ -1165,7 +1239,10 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     assert!(payload.contains("stable"));
     altered["payload"] = json!(hex(payload.replace("stable", "unsafe").as_bytes()));
     fs::write(&tampered, serde_json::to_vec(&altered).unwrap()).unwrap();
-    observe(&instance, &tampered).failure();
+    observe(&instance, &tampered)
+        .failure()
+        .stderr(contains("Publisher signature verification failed"));
+    assert_eq!(snapshot(&instance), before_rejected_observation);
     installed(&instance, &a, b"1.0.0");
     // Refused high-sequence evidence must not poison the accepted replay floor.
     observe(&instance, &channel_b).success();
@@ -1316,7 +1393,11 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .assert()
         .success();
     installed(&instance, &a, b"1.0.0");
-    observe(&instance, &channel_a).failure(); // Rollback did not reset the sequence floor.
+    let rolled_back = snapshot(&instance);
+    observe(&instance, &channel_a)
+        .failure()
+        .stderr(contains("Channel sequence replay rejected"));
+    assert_eq!(snapshot(&instance), rolled_back); // Rollback retained the floor.
     installed(&instance, &a, b"1.0.0");
 
     let replacement = SigningKey::from_bytes(&[8; 32]);

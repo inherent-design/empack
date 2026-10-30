@@ -601,6 +601,15 @@ tested. A unit-only transport adapter supplies real controlled asset acquisition
 it is absent from the ordinary product API. Actual consumer reload/import and
 interactive runtime qualification remain separate acceptance work.
 
+The local signed-channel journey also supplies valid enrolled signatures for the
+wrong pack and channel. It requires identity, signature, expiry, freshness-window
+and replay diagnostics, preserving the full instance after refusal. A valid lower
+sequence remains usable after rejected high-sequence evidence. Pure tests cover
+the clock and exact expiry boundaries, including the admitted 31-day limit. Host
+tests verify that authentication failure cannot fetch release content or silently
+fall back to the completed installation. These definitions do not establish hosted
+HTTPS or actual launcher/runtime acceptance.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid

@@ -8429,11 +8429,54 @@
             "telemetry"
           ],
           "assertions": [
-            "Wrong signer, modified signed payload and expired high-sequence channel are rejected without changing installed bytes",
-            "Valid lower sequence remains acceptable after rejected high-sequence evidence",
-            "Observation persists independently of content application; a later managed-file conflict leaves the installed release unchanged"
+            "Independently signed envelopes for another pack or channel are refused with identity diagnostics despite a valid enrolled signature",
+            "Wrong signer, modified signed payload, expired channel and expiry beyond the freshness window are refused with specific diagnostics",
+            "Each refusal preserves the entire installed instance and durable subscription bytes/attributes; a subsequent lower valid sequence remains admissible",
+            "Authenticated observation persists before content application; a managed-file conflict preserves the completed installation and observation",
+            "Rollback retains the accepted floor and a replay is refused with a sequence diagnostic without changing the instance"
+          ]
+        },
+        {
+          "id": "UX-058.channel-freshness-and-sequence-bounds",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::release::tests::channel_rejects_expiry_cross_origin_wrong_subscription_and_bound_overflow",
+            "empack-lib::engine::release::tests::channel_floor_prevents_replay_and_equivocation_without_blocking_retries"
           ],
-          "remaining_group_evidence": "Correctly signed pack/channel mismatch, public freshness/expiry diagnostic detail and hosted transport remain separate cases"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Clock below the supported epoch, expiry exactly now and expiry beyond 31 days are refused with distinct diagnostics; exactly 31 days is admitted",
+            "Correctly signed wrong pack/channel and cross-origin release pointers are refused; selected release acquisition remains bounded",
+            "Lower sequences and changed payload at the accepted sequence are refused while identical observation retries remain admissible"
+          ]
+        },
+        {
+          "id": "UX-058.failed-authentication-stops-before-content",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::invalid_authenticated_channels_never_select_offline_launch_or_change_floor"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed envelopes, wrong keys, altered signatures, expiry and replay cannot select a completed release as an offline fallback",
+            "Controlled host transport records no release request and preserves the completed instance and subscription after each authentication failure"
+          ]
         }
       ],
       "owner_now": [
@@ -8446,7 +8489,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-059",
