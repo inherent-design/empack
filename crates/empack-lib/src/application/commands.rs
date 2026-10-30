@@ -45,7 +45,9 @@ pub async fn execute_command_with_cancellation(
 /// Trace only a static command name and outcome, never selectors, paths, config or errors.
 #[tracing::instrument(name = "empack.command", skip_all, fields(command = %command_name(&command), outcome = tracing::field::Empty))]
 pub async fn execute_command_with_session(command: Commands, session: &dyn Session) -> Result<()> {
-    let result = dispatch(command, session).await;
+    let result = dispatch(command, session)
+        .await
+        .map_err(super::recovery_guidance::annotate);
     tracing::Span::current().record(
         "outcome",
         tracing::field::display(if result.is_ok() { "success" } else { "failure" }),

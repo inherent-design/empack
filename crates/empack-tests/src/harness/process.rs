@@ -54,8 +54,6 @@ fn validate_qualification_binary(
     expected_version: Option<&str>,
 ) -> anyhow::Result<PathBuf> {
     use anyhow::{Context, ensure};
-    use sha2::{Digest, Sha256};
-    use std::io::Read;
     let selected = selected.context("EMPACK_E2E_BIN is required; discovery is disabled")?;
     ensure!(
         selected.is_absolute(),
@@ -76,21 +74,7 @@ fn validate_qualification_binary(
         !expected_version.is_empty(),
         "Expected version must not be empty"
     );
-    let mut file = std::fs::File::open(&selected)?;
-    let mut digest = Sha256::new();
-    let mut buffer = [0; 64 * 1024];
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&buffer[..count]);
-    }
-    let actual: String = digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let actual = file_sha256(&selected)?;
     ensure!(
         actual.eq_ignore_ascii_case(expected_digest),
         "Selected executable SHA-256 differs from qualification input"
@@ -115,6 +99,27 @@ fn validate_qualification_binary(
         selected.display()
     );
     Ok(selected)
+}
+
+/// Stream a fixture/executable identity without allocating its complete contents.
+pub fn file_sha256(path: &Path) -> anyhow::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn find_empack_bin(target_root: &Path, exe: &str, coverage_active: bool) -> Option<PathBuf> {

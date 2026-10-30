@@ -285,15 +285,25 @@ Errors identify phase, affected object, expected/observed state, known effects a
 recovery action. Failure before publication differs from recovery required after
 possible effects. Completion is not reported until durable postconditions verify.
 
-If publication was interrupted, inspect the selected root first:
+If publication was interrupted, inspect the selected root with the same state
+directory used by the interrupted command:
 
 ```sh
-empack --workdir ./instance recover inspect
+empack --workdir ./instance --state-dir ./state recover inspect
 ```
 
-Use the reported operation ID with either `recover finish --operation ID` to finish
-the verified candidate or `recover restore --operation ID` to undo that operation's
-owned changes. These are alternative actions. External edits can require a decision;
+Recovery diagnostics print an inspection command retaining both selections. Inspection
+then prints the available commands with the operation ID. Commands are quoted for the
+labelled shell: POSIX shell on Unix, PowerShell on Windows. They require `empack` on
+PATH and do not imply approval; review the plan before confirming or adding `--yes`.
+Paths that cannot be represented safely retain a diagnostic asking for the original
+native selections instead of a lossy copyable command.
+
+`recover finish --operation ID` completes the verified candidate. For an interrupted
+publication that has not started restoring, `recover restore --operation ID` is an
+alternative that undoes its owned changes. Creation and an already-started restoration
+support finishing only. Keep both directory selections on subsequent commands.
+Recovery does not require valid author documents. External edits can require a decision;
 do not remove recovery records to force another install. Runtime recovery is separate:
 stop all associated processes before `instance recover-runtime --acknowledge-stopped`.
 

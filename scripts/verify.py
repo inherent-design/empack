@@ -174,11 +174,10 @@ junit.store-failure-output = false
     run_env = dict(environment, EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
                    EMPACK_E2E_BIN=artifact["path"], EMPACK_EXPECT_BINARY_SHA256=artifact["sha256"],
                    EMPACK_EXPECT_VERSION=artifact["version"], EMPACK_TEST_PYTHON=sys.executable)
-    if name == "native-remount":
-        # Only the test process receives compiler discovery. Product children use
-        # the harness environment allowlist and never inherit this fixture control.
-        run_env.update(EMPACK_TEST_INVENTORY=str((suite_dir / "inventory.json").resolve()),
-                       EMPACK_TEST_INVENTORY_SHA256=record["inventory_sha256"])
+    # Only test processes receive compiler discovery for private crash fixtures.
+    # Product children use the harness allowlist and never inherit these controls.
+    run_env.update(EMPACK_TEST_INVENTORY=str((suite_dir / "inventory.json").resolve()),
+                   EMPACK_TEST_INVENTORY_SHA256=record["inventory_sha256"])
     command = nextest_command("run", suite, config, test_features)
     record["command"] = command
     code, _, timed_out = run(command, cwd=ROOT, env=run_env,

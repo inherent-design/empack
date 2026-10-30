@@ -39,6 +39,11 @@ pub struct ProjectReadRoot {
     pub(super) binding: ObjectIdentity,
 }
 impl ProjectReadRoot {
+    /// Selected location for diagnostics; native access must still use the held directory.
+    pub(super) fn selected(&self) -> &Path {
+        &self.location
+    }
+
     pub(super) fn open_child(parent: &Self, child: &str) -> Result<Self> {
         PortableRelPath::parse(child, PathSyntax::ArtifactName)?;
         parent.check_binding()?;

@@ -115,26 +115,51 @@ pub fn decline(command: std::process::Command, prompt: &str) {
     terminal.expect(Regex("(?i)not applied")).unwrap();
     #[cfg(not(windows))]
     {
-        use expectrl::process::{Healthcheck, unix::WaitStatus};
         terminal.expect(expectrl::Eof).unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        loop {
-            match terminal.get_process().get_status().unwrap() {
-                WaitStatus::Exited(_, 0) => break,
-                WaitStatus::StillAlive => {
-                    assert!(
-                        std::time::Instant::now() < deadline,
-                        "terminal child did not exit"
-                    );
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                status => panic!("terminal child did not exit successfully: {status:?}"),
-            }
-        }
+        wait_for_exit(terminal.get_process(), 0);
     }
     // ConPTY's output pipe can outlive the child. Wait on its process handle.
     #[cfg(windows)]
     assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
+}
+
+/// Interrupt an actual approval prompt and establish the executable's final status.
+pub fn interrupt(command: std::process::Command, prompt: &str) {
+    use expectrl::{Expect, Regex};
+    let mut terminal = expectrl::session::log(spawn(command), std::io::stderr()).unwrap();
+    terminal.set_expect_timeout(Some(std::time::Duration::from_secs(20)));
+    terminal.expect(Regex(prompt)).unwrap();
+    terminal.send(expectrl::ControlCode::EndOfText).unwrap();
+    terminal.expect(Regex("(?i)operation interrupted")).unwrap();
+    #[cfg(not(windows))]
+    {
+        terminal.expect(expectrl::Eof).unwrap();
+        wait_for_exit(terminal.get_process(), 130);
+    }
+    #[cfg(windows)]
+    assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 130);
+}
+
+#[cfg(not(windows))]
+fn wait_for_exit(
+    process: &impl expectrl::process::Healthcheck<Status = expectrl::process::unix::WaitStatus>,
+    expected: i32,
+) {
+    use expectrl::process::unix::WaitStatus;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        match process.get_status().unwrap() {
+            WaitStatus::Exited(_, code) if code == expected => break,
+            WaitStatus::StillAlive => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "terminal child did not exit"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            status => panic!("terminal child did not exit with {expected}: {status:?}"),
+        }
+    }
 }
 
 #[cfg(unix)]

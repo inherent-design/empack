@@ -288,6 +288,34 @@ fn cli_budget_admits_installer_with_retained_build_inputs() {
 }
 
 #[test]
+fn retained_recovery_coordinates_preserve_the_original_terminal_result() {
+    use crate::engine::publication::RecoveryLocation;
+    let root = tempfile::tempdir().unwrap();
+    let location = RecoveryLocation {
+        project: root.path().join("actual project"),
+        state: root.path().join("actual state"),
+    };
+    let outcome = std::sync::Arc::new(OperationOutcome::Completed(
+        ExecutionOutcome::RecoveryRequired {
+            operation: "op-fixture".into(),
+            cause: location.attach(super::super::process_runtime::Interrupted.into()),
+        },
+    ));
+    let error = retained_failure(outcome.clone(), "Build requires recovery".into());
+    drop(outcome);
+    let error = super::super::recovery_guidance::annotate(error);
+    let text = format!("{error:#}");
+    assert!(text.contains("Recovery inspection ("), "{text}");
+    assert!(text.contains(location.project.to_str().unwrap()), "{text}");
+    assert!(text.contains(location.state.to_str().unwrap()), "{text}");
+    assert!(text.contains("Operation interrupted"), "{text}");
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Interrupted
+    );
+}
+
+#[test]
 fn launch_failure_summary_preserves_runtime_phase_and_cause() {
     for phase in [
         "Runtime did not start",

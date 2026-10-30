@@ -40,6 +40,25 @@ static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 /// Private host state is separate from project data and evictable download caches.
 pub(crate) struct Publisher {
     host: Dir,
+    // Diagnostic coordinates only; all publication continues through `host`.
+    location: std::path::PathBuf,
+}
+
+/// Read-only coordinates for recovery presentation, never publication authority.
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("Recovery context retained")]
+pub(crate) struct RecoveryLocation {
+    pub(crate) project: std::path::PathBuf,
+    pub(crate) state: std::path::PathBuf,
+}
+impl RecoveryLocation {
+    pub(crate) fn attach(&self, error: anyhow::Error) -> anyhow::Error {
+        if error.is::<Self>() {
+            error
+        } else {
+            error.context(self.clone())
+        }
+    }
 }
 /// Read-only journal access for snapshot preparation. It cannot create or recover state.
 #[derive(Clone)]
@@ -94,10 +113,15 @@ impl RecoveryReader {
                 .context("Project publication is busy")?;
         }
         // Inspect after acquiring coordination; corrupt and hot journals both prevent ordinary reads.
-        ensure!(
-            !publisher.recovery_required(root)?,
-            "Project requires publication recovery before ordinary reads"
-        );
+        if publisher.recovery_required(root)? {
+            return Err(RecoveryLocation {
+                project: root.selected().into(),
+                state: self.host_state.clone(),
+            }
+            .attach(anyhow::anyhow!(
+                "Project requires publication recovery before ordinary reads"
+            )));
+        }
         Ok(ProjectReadGuard { _lock: file })
     }
 }
@@ -240,7 +264,20 @@ impl Publisher {
     fn open_impl(host_state: &Path, create: bool) -> Result<Self> {
         Ok(Self {
             host: open_private_directory(host_state, create)?,
+            location: std::path::absolute(host_state).unwrap_or_else(|_| host_state.into()),
         })
+    }
+
+    fn locate_recovery(&self, project: &Path, error: anyhow::Error) -> anyhow::Error {
+        if error.is::<RecoveryRequired>() {
+            RecoveryLocation {
+                project: project.into(),
+                state: self.location.clone(),
+            }
+            .attach(error)
+        } else {
+            error
+        }
     }
 
     /// Open already-created private state without creating directories during preview.
@@ -280,6 +317,7 @@ impl Publisher {
         cancel: &Cancellation,
     ) -> Result<PublicationReceipt> {
         self.publish_with_hook(root, verified, cancel, &mut |_| Ok(()))
+            .map_err(|error| self.locate_recovery(root.selected(), error))
     }
 
     fn publish_with_hook(

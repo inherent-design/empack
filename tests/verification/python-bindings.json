@@ -1537,6 +1537,14 @@
       "requirements": [
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_standard_suite_supplies_bound_inventory_to_test_process",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-088"
+      ]
     }
   ]
 }

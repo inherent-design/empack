@@ -108,7 +108,9 @@ impl Publisher {
         prepared: PreparedRootCreation,
         cancel: &Cancellation,
     ) -> Result<PublicationReceipt> {
+        let selected = prepared.target.selected().to_owned();
         self.publish_new_with_hook(prepared, cancel, &mut |_| Ok(()))
+            .map_err(|error| self.locate_recovery(&selected, error))
     }
     fn publish_new_with_hook(
         &self,
@@ -355,11 +357,17 @@ impl RecoveryReader {
         }
         if let Some(journal) = load_creation(&state)? {
             validate_creation(parent, child, &journal)?;
-            ensure!(
-                authoritative_creation(&publisher, &journal)?
-                    .is_some_and(|(_, record)| record.committed),
-                "Project requires creation recovery before ordinary reads"
-            );
+            if !authoritative_creation(&publisher, &journal)?
+                .is_some_and(|(_, record)| record.committed)
+            {
+                return Err(RecoveryLocation {
+                    project: parent.selected().join(child),
+                    state: self.host_state.clone(),
+                }
+                .attach(anyhow::anyhow!(
+                    "Project requires creation recovery before ordinary reads"
+                )));
+            }
         }
         Ok(ProjectReadGuard { _lock: file })
     }

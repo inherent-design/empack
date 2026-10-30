@@ -3,77 +3,16 @@
 #![cfg(target_os = "macos")]
 
 use empack_tests::harness::{
-    native_volume::ApfsFixture,
-    process::{offline_command, offline_empack_cmd},
+    native_volume::ApfsFixture, process::offline_command, publication::Driver,
 };
 use predicates::str::contains;
-use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 #[path = "support/files.rs"]
 mod files;
-
-fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-/// Resolve a test executable from this attempt's compiler output, never PATH or
-/// a target-directory glob that could select an older feature graph.
-fn publication_driver() -> (PathBuf, String) {
-    let inventory = PathBuf::from(
-        std::env::var_os("EMPACK_TEST_INVENTORY")
-            .expect("run this case through scripts/verify.py native-remount"),
-    );
-    assert!(inventory.is_absolute());
-    let bytes = fs::read(&inventory).unwrap();
-    assert_eq!(
-        digest(&bytes),
-        std::env::var("EMPACK_TEST_INVENTORY_SHA256").unwrap()
-    );
-    let inventory: Value = serde_json::from_slice(&bytes).unwrap();
-    let drivers: Vec<_> = inventory["rust-suites"]
-        .as_object()
-        .unwrap()
-        .values()
-        .filter(|suite| suite["package-name"] == "empack-lib" && suite["kind"] == "lib")
-        .collect();
-    assert_eq!(
-        drivers.len(),
-        1,
-        "one compiler-discovered library test binary required"
-    );
-    let driver = PathBuf::from(drivers[0]["binary-path"].as_str().unwrap());
-    assert!(driver.is_absolute() && driver.is_file());
-    let hash = digest(&fs::read(&driver).unwrap());
-    eprintln!(
-        "Publication crash driver: {} SHA256={hash}",
-        driver.display()
-    );
-    (driver, hash)
-}
-
-fn driver_command(driver: &Path, invocation: &Path) -> assert_cmd::Command {
-    let environment = offline_empack_cmd(invocation);
-    let mut command = assert_cmd::Command::new(driver);
-    command
-        .env_clear()
-        .current_dir(invocation)
-        .timeout(Duration::from_secs(45));
-    for (key, value) in environment.get_envs() {
-        if let Some(value) = value {
-            command.env(key, value);
-        }
-    }
-    command
-}
 
 fn operation(output: &str) -> String {
     let operation = output
@@ -114,7 +53,7 @@ fn inspect(invocation: &Path, selected: &Path, state: &Path) -> String {
 #[test]
 #[ignore = "creates disposable APFS images; selected by native-remount"]
 fn journey_creation_recovery_survives_crash_and_native_remount() {
-    let (driver, driver_hash) = publication_driver();
+    let driver = Driver::from_inventory();
     let volume = ApfsFixture::new().unwrap();
     let host = tempfile::tempdir().unwrap();
     let invocation = host.path();
@@ -131,7 +70,7 @@ fn journey_creation_recovery_survives_crash_and_native_remount() {
         let selected = parent.join("new");
         // offline_command supplies the isolated environment, then only this
         // test executable receives the private cfg(test) fault controls.
-        let mut crash = driver_command(&driver, invocation);
+        let mut crash = driver.command(invocation);
         crash
             .args([
                 "--exact",
@@ -141,10 +80,9 @@ fn journey_creation_recovery_survives_crash_and_native_remount() {
             .env("EMPACK_TEST_CREATE_SELECTED", &selected)
             .env("EMPACK_TEST_CREATE_STATE", &state)
             .env("EMPACK_TEST_CREATE_POINT", point)
-            .timeout(Duration::from_secs(45))
             .assert()
             .code(93);
-        assert_eq!(digest(&fs::read(&driver).unwrap()), driver_hash);
+        driver.verify();
         fs::write(parent.join("user-note.txt"), b"keep neighbor").unwrap();
         let output = inspect(invocation, &selected, &state);
         let operation = operation(&output);
@@ -205,7 +143,7 @@ fn journey_creation_recovery_survives_crash_and_native_remount() {
 #[test]
 #[ignore = "creates disposable APFS images; selected by native-remount"]
 fn journey_publication_finish_and_restore_survive_crash_and_native_remount() {
-    let (driver, driver_hash) = publication_driver();
+    let driver = Driver::from_inventory();
     let volume = ApfsFixture::new().unwrap();
     let host = tempfile::tempdir().unwrap();
     let invocation = host.path();
@@ -222,7 +160,8 @@ fn journey_publication_finish_and_restore_survive_crash_and_native_remount() {
             fs::create_dir(&selected).unwrap();
             fs::write(selected.join("empack.yml"), b"old intent").unwrap();
             fs::write(selected.join("user-note.txt"), b"keep user bytes").unwrap();
-            driver_command(&driver, invocation)
+            driver
+                .command(invocation)
                 .args([
                     "--exact",
                     "engine::publication::tests::crash_worker",
@@ -234,7 +173,7 @@ fn journey_publication_finish_and_restore_survive_crash_and_native_remount() {
                 .env("EMPACK_PUBLICATION_CRASH_OCCURRENCE", "1")
                 .assert()
                 .code(86);
-            assert_eq!(digest(&fs::read(&driver).unwrap()), driver_hash);
+            driver.verify();
             let operation = operation(&inspect(invocation, &selected, &state));
             operations.push((selected, operation, action));
         }

@@ -525,7 +525,27 @@
           "assertions": [
             "The explicitly selected live terminal route obtains a deliberate catalog choice and separate mutation approval rather than treating search ranking as authority"
           ],
-          "remaining_group_evidence": "Live route evidence, actual terminal EOF/cancellation variants, public recovery prompt integration and final platform/candidate execution remain required; component and closed-stdin checks do not qualify those boundaries"
+          "remaining_group_evidence": "Live route evidence, other terminal EOF/cancellation variants and final platform/candidate execution remain required; the public recovery fixture is a protocol fixture, not Minecraft consumer acceptance."
+        },
+        {
+          "id": "UX-003.public-recovery-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_recovery::cli_recovery_decline_and_prompt_interrupt_preserve_pending_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Recovery obtains its selector from public inspection and requires fresh approval; closed or piped input, preview, terminal decline and terminal Ctrl-C preserve pending evidence and project bytes/attributes",
+            "Prompt interruption reports status 130, and a subsequent explicitly approved recovery completes the independent expected project inventory"
+          ]
         }
       ],
       "owner_now": [
@@ -5897,7 +5917,50 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-039.publication-context-and-public-shell-commands",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_recovery::cli_recovery_commands_bind_the_reported_context_and_available_actions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Blocked ordinary reads report the actual selected project and state directory, including a not-yet-created child rather than its authoring parent",
+            "Copy the printed command into a real POSIX shell or PowerShell with apostrophe, dollar, semicolon, percent and Unicode paths; inspection is read-only and the selected operation finishes or restores an independently expected inventory",
+            "Creation and restoring operations advertise finish only; stale or wrong operation selectors, unapproved requests and dry-run preserve project, neighbor and durable state bytes and attributes"
+          ]
+        },
+        {
+          "id": "UX-039.recovery-prompt-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_recovery::cli_recovery_decline_and_prompt_interrupt_preserve_pending_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public inspection supplies the selected operation; closed/piped answers, preview and actual terminal decline cannot apply it",
+            "An actual terminal Ctrl-C at the recovery approval prompt reports interruption and exits 130 without losing pending evidence; a later explicit approval completes the exact candidate"
+          ],
+          "remaining_group_evidence": "Human discoverability using only public output/help, other pending workflows, required platform variants and final candidate execution remain unqualified."
+        }
+      ],
       "owner_now": [
         "empack executable + empack-lib::application",
         "engine::pending + workflow-specific persisted records; application::engine_host"
@@ -5906,7 +5969,7 @@
         "empack-cli",
         "shared pending semantics + native/browser retention and UI"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-040",

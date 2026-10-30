@@ -216,6 +216,15 @@ finalizer and Unix interruption evidence without treating a constructed result a
 an actual process transition. `UX-008` remains partial pending its other platform,
 interactive and final-package evidence.
 
+Public recovery fixtures use compiler-discovered private crash drivers only to create
+interrupted protocol state. The runner binds that inventory by digest in the test
+process; the ordinary product receives no fault controls. The tests execute printed
+commands through the labelled real shell, including adversarial path spellings, and
+check selected roots, allowed actions, refusal, stale selectors and exact recovered
+inventories. A real terminal checks decline and Ctrl-C at approval, preserving pending
+evidence before a later explicit recovery. These are executable/interactive checks,
+not human discoverability, a usable modpack, or packaged consumer qualification.
+
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a
 controlled child, changes its ownership record, sends a host interrupt, and checks
