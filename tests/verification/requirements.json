@@ -8291,7 +8291,31 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-062.bootstrap-retains-active-release",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A generated native bootstrap descriptor refuses installation without required publisher enrollment, then bootstraps after explicit enrollment",
+            "After a signed channel update to B, repeated preparation using bootstrap A retains the active B inventory and player-owned bytes",
+            "Preparation repairs a missing B file from retained content instead of restoring A; a wrong selected digest or changed bootstrap bytes refuse without altering instance bytes or attributes",
+            "The original bootstrap export remains unchanged"
+          ],
+          "remaining_group_evidence": "This offline public journey does not launch Java or Prism, establish generated-wrapper refusal, or qualify final packages; actual consumer and package evidence remain required."
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::release + api::release_publication/subscription",
@@ -8302,7 +8326,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-063",

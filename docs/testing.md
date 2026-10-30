@@ -455,7 +455,11 @@ private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
 and change trust. Assertions cover refused tampering and expiry, explicit conflict
 resolution, replay floors, and preservation of player configuration and initialized
-worlds. These are the documented local-envelope routes. They do not execute hosted
+worlds. A generated bootstrap descriptor requires enrollment before its first
+preparation. After a signed update, repeating that older bootstrap command retains
+and repairs the active release instead of downgrading it. Wrong digests and changed
+bootstrap bytes are rejected without changing the installed instance. These are
+the documented local-envelope routes. They do not execute hosted
 HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
 
 The opt-in `native-remount` suite repeats that signed publisher/player journey on

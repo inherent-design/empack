@@ -2,6 +2,7 @@
 //! Local envelopes exercise the documented CLI path, not HTTPS deployment.
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use empack_tests::harness::process::{assert_dist_artifact_suffix, offline_command};
+use empack_tests::harness::workspace::snapshot;
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -202,6 +203,15 @@ fn observe(instance: &Path, channel: &Path) -> assert_cmd::assert::Assert {
         .assert()
 }
 
+fn prepare_bootstrap(instance: &Path, export: &Path, digest: &str) -> assert_cmd::Command {
+    let mut command = offline_command(instance);
+    command
+        .args(["--yes", "instance", "prepare"])
+        .arg(export.join("release.json"))
+        .args(["--sha256", digest, "--require-subscription"]);
+    command
+}
+
 fn installed(instance: &Path, release: &str, managed: &[u8]) {
     assert!(
         !instance
@@ -297,6 +307,13 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         &a,
         &export_a.join("release.json"),
     );
+    let bootstrap = snapshot(&export_a);
+    prepare_bootstrap(&instance, &export_a, &a)
+        .assert()
+        .failure()
+        .stderr(contains("requires explicit publisher enrollment"));
+    assert!(!instance.join("game").exists());
+    assert_eq!(snapshot(&export_a), bootstrap);
     let channel_a = root.join("channel-a.json");
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -319,8 +336,18 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .assert()
         .success();
     assert!(!instance.join("game").exists());
+    // The generated snapshot bootstraps only after explicit enrollment. A later
+    // signed update must remain active when the same startup command is reused.
+    prepare_bootstrap(&instance, &export_a, &a)
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read(instance.join("game/managed.txt")).unwrap(),
+        b"1.0.0"
+    );
+    let initial_game = snapshot(&instance.join("game"));
     observe(&instance, &channel_a).success();
-    assert!(!instance.join("game").exists());
+    assert_eq!(snapshot(&instance.join("game")), initial_game);
     offline_command(&instance)
         .args(["--yes", "instance", "update"])
         .arg(&envelope_a)
@@ -397,6 +424,35 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .assert()
         .success();
     installed(&instance, &b, b"2.0.0");
+    let tampered_export = root.join("tampered bootstrap");
+    fs::create_dir(&tampered_export).unwrap();
+    let mut tampered = fs::read(export_a.join("release.json")).unwrap();
+    tampered.push(b'\n'); // Still valid JSON, but no longer the selected exact bytes.
+    fs::write(tampered_export.join("release.json"), &tampered).unwrap();
+    let before_bad_selection = snapshot(&instance);
+    for (offered, digest) in [(&export_a, "0".repeat(64)), (&tampered_export, a.clone())] {
+        prepare_bootstrap(&instance, offered, &digest)
+            .assert()
+            .failure()
+            .stderr(contains("Selected release payload identity mismatch"));
+        assert_eq!(snapshot(&instance), before_bad_selection);
+    }
+    let active_game = snapshot(&instance.join("game"));
+    for _ in 0..2 {
+        prepare_bootstrap(&instance, &export_a, &a)
+            .assert()
+            .success();
+        installed(&instance, &b, b"2.0.0");
+        assert_eq!(snapshot(&instance.join("game")), active_game);
+    }
+    assert_eq!(snapshot(&export_a), bootstrap);
+    fs::remove_file(instance.join("game/managed.txt")).unwrap();
+    prepare_bootstrap(&instance, &export_a, &a)
+        .assert()
+        .success();
+    installed(&instance, &b, b"2.0.0");
+    // Explicit repair remains a separate public workflow after preparation has
+    // already repaired the active release rather than replaying the bootstrap.
     fs::remove_file(instance.join("game/managed.txt")).unwrap();
     offline_command(&instance)
         .args(["--yes", "instance", "repair", "--assets"])
