@@ -29,6 +29,7 @@ fn native_windows_prompt_reads_retire_after_console_interrupt() {
         terminal.set_expect_timeout(Some(std::time::Duration::from_secs(20)));
         terminal.expect(Regex("Console prompt")).unwrap();
         terminal.send(expectrl::ControlCode::EndOfText).unwrap();
+        terminal.expect(Regex("Host interrupt observed")).unwrap();
         terminal.expect(Regex("Operation interrupted")).unwrap();
         terminal.expect(Regex("Follow-up prompt")).unwrap();
         terminal.send_line("n").unwrap();
@@ -55,6 +56,7 @@ fn native_prompt_child() {
         let signal_token = cancellation.clone();
         let listener = tokio::spawn(async move {
             interrupt.recv().await.unwrap();
+            eprintln!("Host interrupt observed");
             signal_token.cancel();
         });
         let provider = LiveInteractiveProvider::new(false, cancellation);

@@ -230,6 +230,24 @@ fn cli_recovery_commands_bind_the_reported_context_and_available_actions() {
         ("creation", "finish"),
     ] {
         let fixture = Fixture::new(kind, &driver, bin);
+        #[cfg(windows)]
+        if kind == "publication" && action == "finish" {
+            // Separate shell startup, executable lookup and the printed command's
+            // interpretation. A blank shell failure must identify its boundary.
+            fixture
+                .shell("[Console]::WriteLine('Recovery shell ready')")
+                .assert()
+                .success()
+                .stdout(predicates::str::contains("Recovery shell ready"));
+            fixture
+                .shell("empack --version")
+                .assert()
+                .success()
+                .stdout(predicates::str::contains(format!(
+                    "empack {}",
+                    empack_tests::harness::process::expected_cli_version()
+                )));
+        }
         let before = fixture.observe();
         let mut blocked = if kind == "creation" {
             let mut command = offline_command(&fixture.invocation);
