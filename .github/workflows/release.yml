@@ -89,15 +89,19 @@ jobs:
 
       - name: Install cross
         if: ${{ matrix.use_cross }}
-        uses: taiki-e/install-action@cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
 
-      - name: Build with cargo
-        if: ${{ !matrix.use_cross }}
-        run: cargo build --locked --release -p empack --target ${{ matrix.target }}
-
-      - name: Build with cross
-        if: ${{ matrix.use_cross }}
-        run: cross build --locked --release -p empack --target ${{ matrix.target }}
+      - name: Build and audit ordinary product
+        shell: bash
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILDER: ${{ matrix.use_cross && 'cross' || 'cargo' }}
+        run: |
+          compilation=".git/product-build/${{ github.run_id }}-${{ github.run_attempt }}"
+          python3 scripts/release-artifacts.py build --target "$BUILD_TARGET" --builder "$BUILDER" --output "$compilation"
+          echo "PRODUCT_COMPILATION=$compilation" >> "$GITHUB_ENV"
 
       - name: Package archive (Unix)
         if: ${{ matrix.archive_ext == 'tar.gz' }}
@@ -129,7 +133,7 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }}
           BUILDER: ${{ matrix.use_cross && 'cross' || 'cargo' }}
-        run: python3 scripts/release-artifacts.py record --inputs .git/release-inputs.json --archive "$ARCHIVE_PATH" --target "$BUILD_TARGET" --builder "$BUILDER" --output .git/release-build
+        run: python3 scripts/release-artifacts.py record --inputs .git/release-inputs.json --archive "$ARCHIVE_PATH" --target "$BUILD_TARGET" --builder "$BUILDER" --compilation "$PRODUCT_COMPILATION" --output .git/release-build
 
       - uses: actions/upload-artifact@v7
         with:

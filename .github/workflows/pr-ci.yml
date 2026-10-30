@@ -109,9 +109,18 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cross
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
       # Compilation evidence only; ARM64 execution remains a release obligation.
-      - run: cross build --release -p empack --locked --target aarch64-unknown-linux-gnu
+      - run: python3 scripts/release-artifacts.py build --target aarch64-unknown-linux-gnu --builder cross --output .git/cross-product-build/${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-cross-product-build
+          path: .git/cross-product-build/${{ github.run_id }}-${{ github.run_attempt }}/
+          include-hidden-files: true
+          if-no-files-found: error
 
   test:
     name: test (${{ matrix.target }})

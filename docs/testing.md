@@ -1136,8 +1136,27 @@ Build metadata uses the source commit's date, and both Cargo and cross build wit
 not implicit dependency resolution during publication. `Cross.toml` forwards only the
 public `GIT_HASH` and `BUILD_DATE` stamping variables into the cross-build container.
 
-Build artifacts retain `build.json`; execution artifacts retain the package and suite
-receipts. `scripts/release-artifacts.py gate` validates their complete five-target set
+The fixed `scripts/release-artifacts.py build` producer compiles only the ordinary
+product and retains Cargo's JSON compilation units, metadata, tool version and a
+replayable feature audit in `compile.json` and its three evidence files. Native and
+cross builds use the same verifier. Cross 0.2.5 runs metadata inside the selected
+build container, so package identities and output paths use the same namespace as
+its compiler records; admission never guesses host/container path substitutions.
+PR cross-build checks retain these records as compilation evidence, with execution
+still required on the Linux ARM64 target.
+Reusing a compilation output directory is refused; choose a fresh attempt so an
+unsuccessful build cannot overwrite or inherit a previous successful record.
+
+Archive recording requires that compilation bundle, matches it to the reviewed
+source/stamped inputs and exact executable, and copies its evidence without another
+build. Archive admission recomputes the compiled feature graph, including cached
+units, before accepting package execution. A payload missing that binding is refused.
+The native runner, archive producer and telemetry producer share the retained-audit
+writer and reader. Synthetic admission fixtures and small Cargo workspaces verify
+the tooling; they are not final-package acceptance.
+
+Build artifacts retain `build.json` and the compilation bundle; execution artifacts
+retain the package and suite receipts. `scripts/release-artifacts.py gate` validates their complete five-target set
 and writes `archive-evidence.json` plus `SHA256SUMS` alongside the unchanged archives.
 The evidence explicitly records that full candidate qualification remains separate.
 
@@ -1167,7 +1186,9 @@ separate target directory, the pinned native compiler and the candidate's build 
 The original source checkout and default archives remain unchanged. Add each emitted
 `build.json` to candidate evaluation with repeated `--auxiliary` options; keep its
 executable and `suite/` evidence alongside it. Admission checks the prepared inputs,
-compiler, fixed command, executable bytes and independently replayed suite results.
+compiler, fixed command, actual compiled feature graph, executable bytes and
+independently replayed suite results. The same retained compilation bundle is required;
+a declared telemetry feature or a matching version string cannot replace it.
 These are trusted workflow producer records, not third-party signed attestations.
 
 Auxiliary builds can satisfy their explicit feature/host cases, but never package

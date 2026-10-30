@@ -7,13 +7,13 @@ import tomllib
 from .evidence import sha256
 from .receipts import inspect_suite_receipt
 from .release import TARGETS, check_inputs
+from .product_build import build_command as product_command, inspect_compilation
 
 SUITES = ["cli", "telemetry"]
 
 
 def build_command(target):
-    return ["cargo", "build", "--locked", "--release", "-p", "empack", "--target", target,
-            "--features", "telemetry"]
+    return product_command(target, features="telemetry")
 
 
 def inspect_auxiliary(path, root, revision, version):
@@ -50,6 +50,11 @@ def inspect_auxiliary(path, root, revision, version):
     if (executable.is_symlink() or not executable.is_file()
             or record["executable"] != {"sha256": sha256(executable), "length": executable.stat().st_size}):
         raise ValueError("Auxiliary executable differs from its build record")
+    compiled = inspect_compilation(path.parent, target, "cargo", "telemetry", revision,
+                                   record["inputs"]["stamped"], channel)
+    if (record.get("compilation_sha256") != sha256(path.parent / "compile.json")
+            or compiled["artifact"]["sha256"] != record["executable"]["sha256"]):
+        raise ValueError("Auxiliary executable differs from compiled product evidence")
     # Fixed layout; a producer cannot point admission outside its evidence bundle.
     receipts = list((path.parent / "suite").glob("*/receipt.json"))
     if len(receipts) != 1 or receipts[0].is_symlink() or not receipts[0].resolve().is_relative_to(path.parent.resolve()):
@@ -62,4 +67,4 @@ def inspect_auxiliary(path, root, revision, version):
         raise ValueError("Auxiliary execution does not describe the built executable or outcome")
     return {"build_sha256": sha256(path), "inputs": record["inputs"], "compiler": record["compiler"],
             "command": record["command"], "executable": record["executable"],
-            "shipped": False, "suite": suite}
+            "compiled_product": compiled["artifact"], "shipped": False, "suite": suite}

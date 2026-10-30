@@ -16,6 +16,7 @@ from verification.evidence import sha256, write_json
 from verification.process import run
 from verification.release import TARGETS, git
 from verification.release_inputs import prepare
+from verification.product_build import compile_product
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,11 +62,9 @@ def main():
             # Separate from workspace tests and the distributed default build.
             target_dir = ROOT / "target/verification-auxiliary-product"
             build_environment = dict(environment, **metadata, CARGO_TARGET_DIR=str(target_dir))
-            code, _, timed_out = run(record["command"], cwd=source, env=build_environment,
-                                     log=attempt / "build.log", timeout=2400)
-            record.update(build_exit_code=code, build_timed_out=timed_out)
-            if code or timed_out:
-                raise RuntimeError("Auxiliary build failed; see build.log")
+            compile_product(source, target, "cargo", attempt, build_environment, "telemetry")
+            record.update(build_exit_code=0, build_timed_out=False,
+                          compilation_sha256=sha256(attempt / "compile.json"))
             changed = set(git(source, "diff", "HEAD", "--name-only").splitlines())
             if changed - {"Cargo.toml", "Cargo.lock"} or any(sha256(source / n) != d for n, d in inputs["stamped"].items()):
                 raise ValueError("Auxiliary compilation changed reviewed source inputs")

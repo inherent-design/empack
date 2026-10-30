@@ -52,6 +52,22 @@ class ReleaseChannelContracts(unittest.TestCase):
         self.assertIn('doctest_args+=(--doctest "$record")', gate)
         self.assertIn('"${doctest_args[@]}"', gate)
 
+    def test_archive_and_cross_builds_use_the_audited_producer_and_pinned_cross(self):
+        root = Path(__file__).parents[2]
+        release = (root / ".github/workflows/release.yml").read_text()
+        pr = (root / ".github/workflows/pr-ci.yml").read_text()
+        build = release.split("  build:", 1)[1].split("  test-archives:", 1)[0]
+        self.assertEqual(build.count("scripts/release-artifacts.py build "), 1)
+        self.assertIn('--compilation "$PRODUCT_COMPILATION"', build)
+        self.assertIn('compilation=".git/product-build/${{ github.run_id }}-${{ github.run_attempt }}"', build)
+        self.assertLess(build.index("scripts/release-artifacts.py build "), build.index("name: Package archive"))
+        self.assertNotIn("run: cargo build", build)
+        self.assertNotIn("run: cross build", build)
+        for workflow in (release, pr):
+            self.assertIn("tool: cross@0.2.5", workflow)
+        self.assertIn("--builder cross --output .git/cross-product-build", pr)
+        self.assertIn("name: verification-cross-product-build", pr)
+
 
 if __name__ == "__main__":
     unittest.main()

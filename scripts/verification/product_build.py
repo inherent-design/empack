@@ -1,9 +1,118 @@
 """Check the units Cargo actually built, independently of declared CLI features."""
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import tomllib
 
-from .evidence import sha256
+from .evidence import sha256, write_json
+from .process import run
+
+EVIDENCE_FILES = {"product-build-messages.jsonl", "product-metadata.json", "product-build-audit.json"}
+COMPILATION_FILES = EVIDENCE_FILES | {"compile.json"}
+
+
+def build_command(target, builder="cargo", features="default"):
+    if builder not in {"cargo", "cross"} or features not in {"default", "telemetry"}:
+        raise ValueError("Unsupported product builder or features")
+    return [builder, "build", "--locked", "--release", "-p", "empack", "--target", target,
+            *(["--features", "telemetry"] if features == "telemetry" else []), "--message-format=json"]
+
+
+def metadata_command(target, builder="cargo"):
+    return [builder, "metadata", "--locked", "--no-deps", "--format-version", "1",
+            *(["--target", target] if builder == "cross" else [])]
+
+
+def retain_build(directory, messages, metadata, features, executable, digest):
+    directory = Path(directory)
+    artifact = {"path": str(executable), "features": features, "sha256": digest}
+    (directory / "product-build-messages.jsonl").write_text(messages, encoding="utf-8")
+    write_json(directory / "product-metadata.json", metadata)
+    write_json(directory / "product-build-audit.json",
+               inspect_build(messages, metadata, features, executable, digest))
+    artifact["build_audit_sha256"] = sha256(directory / "product-build-audit.json")
+    return artifact
+
+
+def compile_product(root, target, builder, directory, environment, features="default"):
+    """Compile once, retaining metadata from the same native/container namespace.
+
+    Cross metadata runs inside its selected build container. Its /target mapping
+    is not interpreted as a path on the host admitting this evidence later.
+    """
+    root, directory = Path(root).resolve(), Path(directory).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    owned_names = COMPILATION_FILES | {"build.log", "metadata.log", "builder-version.log",
+                                        "source-changes.log", "source-untracked.log", "source-revision.log"}
+    if any((directory / name).exists() or (directory / name).is_symlink() for name in owned_names):
+        raise ValueError("Product build output already contains an attempt; select a fresh directory")
+    target_dir = Path(environment.get("CARGO_TARGET_DIR", root / "target"))
+    target_dir = (root / target_dir).resolve() if not target_dir.is_absolute() else target_dir.resolve()
+    environment = dict(environment, CARGO_TARGET_DIR=str(target_dir), CARGO_TERM_COLOR="never")
+
+    def checked(command, name, timeout=120):
+        code, output, timed_out = run(command, cwd=root, env=environment,
+                                     log=directory / (name + ".log"), timeout=timeout, separate_stdout=True)
+        if code or timed_out:
+            raise RuntimeError(f"{name} failed (exit {code}, timeout={timed_out}); see {directory / (name + '.log')}")
+        return output
+
+    def source():
+        if (set(checked(["git", "diff", "HEAD", "--name-only"], "source-changes").splitlines())
+                - {"Cargo.toml", "Cargo.lock"}
+                or checked(["git", "ls-files", "--others", "--exclude-standard"], "source-untracked").strip()):
+            raise ValueError("Product compilation requires reviewed source with only release stamping changes")
+        return {"revision": checked(["git", "rev-parse", "HEAD"], "source-revision").strip(),
+                "stamped": {name: sha256(root / name) for name in ("Cargo.toml", "Cargo.lock")}}
+
+    before = source()
+    version = checked([builder, "--version"], "builder-version").strip()
+    channel = tomllib.loads((root / "rust-toolchain.toml").read_text(encoding="utf-8"))["toolchain"]["channel"]
+    if builder == "cargo" and not version.startswith(f"cargo {channel} "):
+        raise ValueError("Product compilation requires the pinned Cargo version")
+    if builder == "cross" and version.splitlines()[0] != "cross 0.2.5":
+        raise ValueError("Cross build evidence requires pinned cross 0.2.5")
+    command = build_command(target, builder, features)
+    messages = checked(command, "build", timeout=2400)
+    metadata_args = metadata_command(target, builder)
+    metadata = json.loads(checked(metadata_args, "metadata"))
+    filename = "empack.exe" if target.endswith("windows-msvc") else "empack"
+    binary = target_dir / target / "release" / filename
+    if binary.is_symlink() or not binary.is_file():
+        raise ValueError("Product compilation did not produce its regular host backing file")
+    path_type = PureWindowsPath if target.endswith("windows-msvc") else PurePosixPath
+    output_path = path_type(metadata["target_directory"]) / target / "release" / filename
+    if not output_path.is_absolute():
+        raise ValueError("Cargo metadata did not identify an absolute target directory")
+    artifact = retain_build(directory, messages, metadata, features, output_path, sha256(binary))
+    if source() != before:
+        raise ValueError("Source changed during product compilation")
+    record = {"schema": 1, "kind": "compiled-product", "source": before, "target": target,
+              "features": features, "command": command, "metadata_command": metadata_args,
+              "builder_version": version, "artifact": artifact}
+    write_json(directory / "compile.json", record)
+    return record
+
+
+def inspect_compilation(directory, target, builder, features, revision, stamped, channel):
+    directory = Path(directory)
+    path = directory / "compile.json"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Missing or redirected product compilation record")
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if (record.get("schema") != 1 or record.get("kind") != "compiled-product"
+            or record.get("target") != target or record.get("features") != features
+            or record.get("source") != {"revision": revision, "stamped": stamped}
+            or record.get("command") != build_command(target, builder, features)
+            or record.get("metadata_command") != metadata_command(target, builder)
+            or record.get("artifact", {}).get("features") != features):
+        raise ValueError("Product compilation differs from candidate build inputs")
+    version = record.get("builder_version", "")
+    if (builder == "cargo" and not version.startswith(f"cargo {channel} ")
+            or builder == "cross" and version.splitlines()[:1] != ["cross 0.2.5"]):
+        raise ValueError("Unreviewed product builder version")
+    inspect_retained_build(directory, record["artifact"])
+    return record
 
 
 def inspect_build(messages, metadata, features, executable, digest):

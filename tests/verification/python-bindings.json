@@ -1627,6 +1627,60 @@
         "UX-086",
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_fixed_release_builder_retains_actual_default_and_telemetry_units",
+      "boundary": "N",
+      "requirements": [
+        "UX-085",
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_fixed_release_builder_refuses_transitive_fixture_authority",
+      "boundary": "N",
+      "requirements": [
+        "UX-085",
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_archive_record_copies_the_actual_stamped_compilation_without_rebuild",
+      "boundary": "N",
+      "requirements": [
+        "UX-085",
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_missing_changed_or_test_enabled_compilation_cannot_stage_archives",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_auxiliary_build.AuxiliaryBuild.test_auxiliary_recomputes_the_compiled_graph_even_when_hashes_are_updated",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_workflow.ReleaseChannelContracts.test_archive_and_cross_builds_use_the_audited_producer_and_pinned_cross",
+      "boundary": "U",
+      "requirements": [
+        "UX-085",
+        "UX-086",
+        "UX-088"
+      ]
     }
   ]
 }

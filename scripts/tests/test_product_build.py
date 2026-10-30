@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -47,7 +48,102 @@ def build(root, name="attempt", features="default"):
         return product(args, attempt, dict(os.environ), "fixture-host")
 
 
+def commit_source(root):
+    (root / "rust-toolchain.toml").write_bytes((Path(__file__).parents[2] / "rust-toolchain.toml").read_bytes())
+    (root / ".gitignore").write_text("/target/\n")
+    for arguments in (("init", "-q"), ("config", "user.name", "Compiler fixture"),
+                      ("config", "user.email", "fixture@example.invalid"), ("add", "."),
+                      ("-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.devnull, "commit", "-qm", "fixture")):
+        subprocess.run(["git", *arguments], cwd=root, check=True, capture_output=True)
+
+
+def native_compiler():
+    lines = subprocess.check_output(["rustc", "-vV"], text=True).splitlines()
+    return (next(line.removeprefix("host: ") for line in lines if line.startswith("host: ")),
+            next(line.removeprefix("release: ") for line in lines if line.startswith("release: ")))
+
+
 class ProductBuild(unittest.TestCase):
+    def test_fixed_release_builder_retains_actual_default_and_telemetry_units(self):
+        from verification.product_build import compile_product, inspect_compilation
+        target, channel = native_compiler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            commit_source(root)
+            for features in ("default", "telemetry"):
+                output = root / ".git" / features
+                record = compile_product(root, target, "cargo", output, dict(os.environ), features)
+                result = inspect_compilation(output, target, "cargo", features,
+                                             record["source"]["revision"], record["source"]["stamped"], channel)
+                self.assertEqual(result, record)
+                self.assertTrue(record["command"][-1].startswith("--message-format=json"))
+                self.assertEqual(record["artifact"]["sha256"], sha256(root / "target" / target / "release" /
+                                 ("empack.exe" if os.name == "nt" else "empack")))
+                before = {p.name: p.read_bytes() for p in output.iterdir()}
+                with self.assertRaisesRegex(ValueError, "already contains an attempt"):
+                    compile_product(root, target, "cargo", output, dict(os.environ), features)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in output.iterdir()})
+
+    def test_fixed_release_builder_refuses_transitive_fixture_authority(self):
+        from verification.product_build import compile_product
+        target, _ = native_compiler()
+        for leak in ("feature", "package"):
+            with self.subTest(leak=leak), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                fixture(root, leak)
+                commit_source(root)
+                output = root / ".git/compiled"
+                with self.assertRaisesRegex(ValueError, "Test-only"):
+                    compile_product(root, target, "cargo", output, dict(os.environ))
+                self.assertFalse((output / "compile.json").exists())
+
+    def test_archive_record_copies_the_actual_stamped_compilation_without_rebuild(self):
+        import tarfile
+        import zipfile
+        from verification.product_build import inspect_compilation, COMPILATION_FILES
+        from verification.release import archive_name
+        from verification.release_inputs import prepare
+        target, channel = native_compiler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture(root)
+            with (root / "Cargo.toml").open("a") as stream:
+                stream.write('[workspace.metadata.empack]\nrelease-target = "0.8.4-beta"\n')
+            commit_source(root)
+            inputs = prepare(root, "0.8.4-beta")
+            inputs_path = root / ".git/inputs.json"
+            inputs_path.write_text(json.dumps(inputs))
+            compiled = root / ".git/compiled"
+            environment = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"))
+            producer = Path(__file__).parents[1] / "release-artifacts.py"
+            command = subprocess.run([sys.executable, str(producer), "build", "--target", target,
+                                      "--builder", "cargo", "--output", str(compiled)], cwd=root,
+                                     env=environment, capture_output=True, text=True, timeout=120)
+            self.assertEqual(command.returncode, 0, command.stderr)
+            binary = root / "target" / target / "release" / ("empack.exe" if os.name == "nt" else "empack")
+            before = binary.read_bytes()
+            archive = root / ".git" / archive_name("0.8.4-beta", target)
+            if archive.suffix == ".zip":
+                with zipfile.ZipFile(archive, "w") as writer:
+                    writer.write(binary, binary.name)
+            else:
+                with tarfile.open(archive, "w:gz") as writer:
+                    writer.add(binary, arcname=binary.name)
+            output = root / ".git/recorded"
+            command = subprocess.run([sys.executable, str(producer), "record", "--inputs", str(inputs_path),
+                                      "--archive", str(archive), "--target", target, "--builder", "cargo",
+                                      "--output", str(output), "--compilation", str(compiled)], cwd=root,
+                                     env=environment, capture_output=True, text=True, timeout=120)
+            self.assertEqual(command.returncode, 0, command.stderr)
+            record = json.loads((output / "build.json").read_text())
+            self.assertEqual((output / archive.name).read_bytes(), archive.read_bytes())
+            self.assertEqual(binary.read_bytes(), before)
+            self.assertTrue(COMPILATION_FILES <= {p.name for p in output.iterdir()})
+            actual = inspect_compilation(output, target, "cargo", "default", inputs["source_revision"],
+                                         inputs["stamped"], channel)
+            self.assertEqual(actual["artifact"]["sha256"], record["executable"]["sha256"])
+
     def test_real_default_telemetry_and_cached_artifacts_are_audited(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

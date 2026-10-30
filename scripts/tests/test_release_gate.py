@@ -14,6 +14,8 @@ from verification.evidence import sha256, write_json
 from verification import release
 from verification.consumer import INPUTS
 from verification.python_tests import PRODUCER_INPUTS
+from compiled_product_fixture import compilation
+from verification.product_build import build_command
 
 
 class ReleaseArchiveGate(unittest.TestCase):
@@ -56,7 +58,8 @@ class ReleaseArchiveGate(unittest.TestCase):
                      "source_revision": self.revision, "target": target, "features": "default",
                      "profile": "release", "inputs": self.inputs,
                      "compiler": f"rustc fixture\nrelease: 1.99.1\nhost: {target}",
-                     "command": ["cargo", "build", "--locked", "--release", "-p", "empack", "--target", target],
+                     "command": build_command(target),
+                     "compilation_sha256": compilation(build_dir, target, executable["sha256"], self.revision, self.inputs["stamped"]),
                      "archive": {"name": archive.name, "sha256": sha256(archive), "length": archive.stat().st_size},
                      "executable": executable}
             write_json(build_dir / "build.json", build)
@@ -97,11 +100,44 @@ class ReleaseArchiveGate(unittest.TestCase):
         build = json.loads(path.read_text())
         build["command"][0] = "cross"
         build["compiler"] = build["compiler"].replace(target, "x86_64-unknown-linux-gnu")
+        build["compilation_sha256"] = compilation(build_dir, target, build["executable"]["sha256"],
+                                                  self.revision, self.inputs["stamped"], builder="cross")
         write_json(path, build)
         (execution / "package.json").unlink()
         with self.assertRaisesRegex(ValueError, "one archive execution"):
             self.admit()
         self.assertFalse(self.output.exists())
+
+    def test_missing_changed_or_test_enabled_compilation_cannot_stage_archives(self):
+        build_dir, _, _ = self.paths["aarch64-apple-darwin"]
+        compile_path = build_dir / "compile.json"
+        messages = build_dir / "product-build-messages.jsonl"
+        original_compile, original_messages = compile_path.read_bytes(), messages.read_bytes()
+        compile_path.unlink()
+        with self.assertRaisesRegex(ValueError, "compilation record"):
+            self.admit()
+        compile_path.write_bytes(original_compile)
+        rows = [json.loads(line) for line in messages.read_text().splitlines()]
+        library = next(r for r in rows if r.get("target", {}).get("name") == "empack_lib")
+        library["features"].append("test-utils")
+        messages.write_text("\n".join(map(json.dumps, rows)))
+        with self.assertRaisesRegex(ValueError, "Test-only"):
+            self.admit()
+        messages.write_bytes(original_messages)
+        record = json.loads(original_compile)
+        record["source"]["revision"] = "f" * 40
+        write_json(compile_path, record)
+        with self.assertRaisesRegex(ValueError, "candidate build inputs"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+        compile_path.write_bytes(original_compile)
+        self.admit()
+        payload = self.output / "archive-evidence.json"
+        record = json.loads(payload.read_text())
+        del record["targets"][0]["compiled_product"]
+        write_json(payload, record)
+        with self.assertRaisesRegex(ValueError, "lacks compiled-product evidence"):
+            release.check_payload(self.output, self.version, self.revision, sha256(payload))
 
     def test_other_version_source_features_and_dirty_execution_are_rejected(self):
         _, execution, _ = self.paths["aarch64-apple-darwin"]

@@ -11108,7 +11108,10 @@
             "python::test_product_build.ProductBuild.test_real_default_telemetry_and_cached_artifacts_are_audited",
             "python::test_product_build.ProductBuild.test_real_transitive_test_feature_and_package_leakage_are_rejected",
             "python::test_product_build.ProductBuild.test_retained_audit_is_recomputed_and_does_not_need_original_executable",
-            "python::test_product_build.ProductBuild.test_suite_admission_requires_and_rechecks_runner_build_evidence"
+            "python::test_product_build.ProductBuild.test_suite_admission_requires_and_rechecks_runner_build_evidence",
+            "python::test_product_build.ProductBuild.test_fixed_release_builder_retains_actual_default_and_telemetry_units",
+            "python::test_product_build.ProductBuild.test_fixed_release_builder_refuses_transitive_fixture_authority",
+            "python::test_product_build.ProductBuild.test_archive_record_copies_the_actual_stamped_compilation_without_rebuild"
           ],
           "required_platforms": [
             "linux",
@@ -11121,9 +11124,60 @@
           "assertions": [
             "Real isolated fixture workspaces retain actual default, telemetry and cached compiler units; transitive test-utils activation and normal test-support dependencies are refused before executing the fixture binary",
             "Malformed, incomplete, failed and test-profile compiler evidence cannot establish a successful ordinary build",
-            "Suite admission recomputes retained compiler evidence and refuses omitted or changed audit inputs without requiring the original host executable path to remain available"
+            "Suite admission recomputes retained compiler evidence and refuses omitted or changed audit inputs without requiring the original host executable path to remain available",
+            "Fixed release compilation captures its actual stamped native product and both feature variants; archive recording copies those same executable and proof bytes without rebuilding"
           ],
           "remaining_group_evidence": "These are native tests of the verification tooling using tiny synthetic workspaces, not execution or qualification of the real empack dependency graph, final archives or consumers. Ordinary product and final archive build evidence remain separate obligations."
+        },
+        {
+          "id": "UX-086.archive-auxiliary-admission",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_release_gate.ReleaseArchiveGate.test_missing_changed_or_test_enabled_compilation_cannot_stage_archives",
+            "python::test_auxiliary_build.AuxiliaryBuild.test_auxiliary_recomputes_the_compiled_graph_even_when_hashes_are_updated",
+            "python::test_release_workflow.ReleaseChannelContracts.test_archive_and_cross_builds_use_the_audited_producer_and_pinned_cross"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Synthetic archive and auxiliary records cannot omit or mutate the compiled graph, enable fixture authority or substitute an older source; refusal occurs before staging publication archives",
+            "Changing stored audit digests does not bypass reinspection of retained compiler messages; a payload missing its compiled-product binding is rejected",
+            "Release and PR cross builds use the shared audited producer with pinned Cross and retain proof before packaging"
+          ],
+          "remaining_group_evidence": "Synthetic admission and workflow-source assertions are tooling evidence; they cannot qualify an actual cross compiler, final archive execution or consumers."
+        },
+        {
+          "id": "UX-086.packaged-ordinary-product",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_local_exports::journey_local_content_export_prepare_preserves_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each of the five default-feature archives passes compiled-product audit and archive/build/execution binding before its CLI receipt can qualify this case",
+            "The exact extracted ordinary executable performs the local export/prepare journey without adding a fixture feature or recompiling shipped bytes"
+          ],
+          "remaining_group_evidence": "Requires the real five-target archive gate and its execution receipts. Tiny Cargo workspaces and synthetic package records cannot supply P evidence. Actual consumer launch remains separate."
         }
       ],
       "owner_now": [

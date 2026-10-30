@@ -12,6 +12,7 @@ import test_release_gate as archives
 from verification.auxiliary import SUITES, build_command, inspect_auxiliary
 from verification.evidence import sha256, write_json
 from verification.qualification import qualify
+from compiled_product_fixture import compilation
 
 
 class AuxiliaryBuild(unittest.TestCase):
@@ -36,6 +37,8 @@ class AuxiliaryBuild(unittest.TestCase):
                       build_exit_code=0, build_timed_out=False,
                       build_environment=dict(GIT_HASH=self.revision, BUILD_DATE=self.inputs["build_date"], CARGO_INCREMENTAL="0"),
                       executable=dict(sha256=sha256(executable), length=executable.stat().st_size),
+                      compilation_sha256=compilation(bundle, target, sha256(executable), self.revision,
+                                                     self.inputs["stamped"], features="telemetry"),
                       suite_receipt_sha256=sha256(attempt / "receipt.json"))
         write_json(bundle / "build.json", record)
         return bundle / "build.json", record, attempt / "receipt.json"
@@ -121,6 +124,21 @@ class AuxiliaryBuild(unittest.TestCase):
         extra.unlink()
         (receipt.parent / "cli/junit.xml").write_text("unbound replacement")
         with self.assertRaisesRegex(ValueError, "Changed test evidence"):
+            inspect_auxiliary(path, self.root, self.revision, self.version)
+
+    def test_auxiliary_recomputes_the_compiled_graph_even_when_hashes_are_updated(self):
+        path, record, _ = self.fixture()
+        compile_path = path.parent / "compile.json"
+        compiled = json.loads(compile_path.read_text())
+        audit_path = path.parent / "product-build-audit.json"
+        audit = json.loads(audit_path.read_text())
+        audit["units"] = []
+        write_json(audit_path, audit)
+        compiled["artifact"]["build_audit_sha256"] = sha256(audit_path)
+        write_json(compile_path, compiled)
+        record["compilation_sha256"] = sha256(compile_path)
+        write_json(path, record)
+        with self.assertRaisesRegex(ValueError, "audit differs"):
             inspect_auxiliary(path, self.root, self.revision, self.version)
 
 

@@ -15,7 +15,7 @@ import uuid
 from verification.classification import compare_rust_inventory
 from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
-from verification.product_build import inspect_build
+from verification.product_build import retain_build
 from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,16 +103,13 @@ def product(args, attempt, environment, host):
             command += ["--features", "telemetry"]
         command += ["--message-format=json"]
         messages = checked(command, attempt, "product-build", environment, timeout=1800, cwd=ROOT)
-        (attempt / "product-build-messages.jsonl").write_text(messages, encoding="utf-8")
         metadata = checked(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"],
                            attempt, "product-metadata", environment, cwd=ROOT)
-        (attempt / "product-metadata.json").write_text(metadata, encoding="utf-8")
         path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
         path = path.resolve()
         digest = sha256(path)
-        write_json(attempt / "product-build-audit.json",
-                   inspect_build(messages, json.loads(metadata), features, path, digest))
-        build_audit = {"build_audit_sha256": sha256(attempt / "product-build-audit.json")}
+        compiled = retain_build(attempt, messages, json.loads(metadata), features, path, digest)
+        build_audit = {"build_audit_sha256": compiled["build_audit_sha256"]}
         provenance = "built by this runner from the ordinary product package"
     if sha256(path) != digest:
         raise Blocked("Selected binary does not match the expected SHA-256")
