@@ -27,7 +27,7 @@ class ReleaseArchiveAdmission(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.checkout = self.root / "source checkout"
         self.checkout.mkdir()
         self.destination = self.root / "extracted"
