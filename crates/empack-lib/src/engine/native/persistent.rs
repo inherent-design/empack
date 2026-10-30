@@ -2,6 +2,7 @@
 use super::ObjectIdentity;
 use anyhow::Result;
 use sha2::{Digest, Sha256};
+#[cfg(any(not(target_os = "linux"), test))]
 use std::fs::File;
 
 fn digest(namespace: &[u8], volume: &[u8], object: &[u8], created: (u64, u32)) -> [u8; 32] {
