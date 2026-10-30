@@ -748,6 +748,248 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     );
 }
 
+fn stage_runtime_fixture(
+    root: &Path,
+    publisher: &Path,
+    key: &Path,
+    version: &str,
+    fabric: bool,
+) -> (std::path::PathBuf, String, std::path::PathBuf) {
+    let export = root.join(format!("runtime export {version}"));
+    fs::create_dir(&export).unwrap();
+    let runtime = if fabric {
+        json!({"minecraft":"1.21.2","loader":{"kind":"fabric","version":"0.16.0"},"java_major":21})
+    } else {
+        json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+    };
+    let files: Vec<_> = [
+        ("mod", if fabric { "mods/b.jar" } else { "mods/a.jar" }, "managed", version.as_bytes()),
+        ("config", "config/player.txt", "seed", b"publisher defaults".as_slice()),
+    ].into_iter().map(|(key, destination, policy, bytes)| {
+        write(&export, &format!("assets/{key}"), bytes);
+        json!({"key":key,"destination":destination,"layer":"common","policy":policy,
+            "client":{"kind":"required"},"server":{"kind":"unsupported"},
+            "sha256":hex(&Sha256::digest(bytes)),"bytes":bytes.len(),"readonly":false,"executable":false,
+            "assertions":[],"source":{"kind":"asset","path":format!("assets/{key}")}})
+    }).collect();
+    // Literal native input; no game/mod bytes or provider/build planner creates the oracle.
+    let payload = serde_json::to_vec(&json!({"schema":1,"pack":"verification.publisher","version":version,
+        "minimum_engine":">=0.8.0-beta","require_subscription":true,"runtime":runtime,"files":files,"choices":[]})).unwrap();
+    write(&export, "release.json", &payload);
+    let id = hex(&Sha256::digest(&payload));
+    offline_command(publisher)
+        .args(["--yes", "release", "stage"])
+        .arg(&export)
+        .arg("--key-file")
+        .arg(key)
+        .assert()
+        .success()
+        .stdout(contains(&id));
+    let envelope = publisher.join(format!("dist/releases/{id}/release.json"));
+    (export, id, envelope)
+}
+
+#[test]
+fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
+    let root = tempfile::Builder::new()
+        .prefix("runtime transition Ω ")
+        .tempdir()
+        .unwrap();
+    let publisher = root.path().join("publisher");
+    let instance = root.path().join("Prism instance");
+    fs::create_dir(&publisher).unwrap();
+    fs::create_dir(&instance).unwrap();
+    let keys = root.path().join("keys");
+    private_directory(&keys);
+    let key = SigningKey::from_bytes(&[59; 32]);
+    let key_file = keys.join("public-fixture.key");
+    fs::write(&key_file, format!("{}\n", hex(&[59; 32]))).unwrap();
+    let (export_a, a, envelope_a) =
+        stage_runtime_fixture(root.path(), &publisher, &key_file, "A", false);
+    let (export_b, b, envelope_b) =
+        stage_runtime_fixture(root.path(), &publisher, &key_file, "B", true);
+    for (export, id, envelope) in [(&export_a, &a, &envelope_a), (&export_b, &b, &envelope_b)] {
+        verify_staged(
+            envelope,
+            &key.verifying_key(),
+            id,
+            &export.join("release.json"),
+        );
+    }
+    let sources = [
+        snapshot(&export_a),
+        snapshot(&export_b),
+        snapshot(&publisher),
+        snapshot(&keys),
+    ];
+    offline_command(&instance)
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.publisher",
+            "--channel",
+            "stable",
+            "https://publisher.invalid/channels/stable.json",
+            "--key",
+        ])
+        .arg(hex(key.verifying_key().as_bytes()))
+        .assert()
+        .success();
+    prepare_bootstrap(&instance, &export_a, &a)
+        .args(["--layout", "prism"])
+        .assert()
+        .success();
+    write(
+        &instance,
+        ".minecraft/config/player.txt",
+        b"player settings",
+    );
+    write(
+        &instance,
+        ".minecraft/saves/played/level.dat",
+        b"played world",
+    );
+    write(&instance, "instance.cfg", b"[General]\nname=Player name\n");
+    let profile_path = instance.join("mmc-pack.json");
+    let profile_a = json!({"formatVersion":1,"authorMetadata":{"keep":["custom",false]},"components":[
+        {"uid":"net.minecraft","version":"1.21.1","important":true,"cachedName":"Game label"},
+        {"uid":"user.component","version":"7","cachedName":"keep"}]});
+    fs::write(
+        &profile_path,
+        serde_json::to_vec_pretty(&profile_a).unwrap(),
+    )
+    .unwrap();
+    let profile_b = json!({"formatVersion":1,"authorMetadata":{"keep":["custom",false]},"components":[
+        {"uid":"net.minecraft","version":"1.21.2","important":true,"cachedName":"Game label"},
+        {"uid":"user.component","version":"7","cachedName":"keep"},
+        {"uid":"net.fabricmc.fabric-loader","version":"0.16.0"}]});
+    let expected = |id: &str, profile: &serde_json::Value, mod_path: &str, bytes: &[u8]| {
+        assert!(
+            !instance.join("game").exists(),
+            "persisted Prism layout must remain selected"
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&fs::read(&profile_path).unwrap()).unwrap(),
+            *profile
+        );
+        let game = snapshot(&instance.join(".minecraft"));
+        assert_eq!(
+            game.files,
+            std::collections::BTreeMap::from([
+                (
+                    std::path::PathBuf::from(".empack-layout"),
+                    b"empack-prism-layout-v1\n".to_vec()
+                ),
+                (std::path::PathBuf::from(mod_path), bytes.to_vec()),
+                (
+                    std::path::PathBuf::from("config/player.txt"),
+                    b"player settings".to_vec()
+                ),
+                (
+                    std::path::PathBuf::from("saves/played/level.dat"),
+                    b"played world".to_vec()
+                ),
+            ])
+        );
+        assert_eq!(
+            fs::read(instance.join("instance.cfg")).unwrap(),
+            b"[General]\nname=Player name\n"
+        );
+        offline_command(&instance)
+            .args(["instance", "inspect"])
+            .assert()
+            .success()
+            .stdout(contains(format!("release {id};")));
+    };
+    expected(&a, &profile_a, "mods/a.jar", b"A");
+    let expires = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+    let channel_a = root.path().join("runtime-channel-a.json");
+    let channel_b = root.path().join("runtime-channel-b.json");
+    channel(&channel_a, &key, &a, &envelope_a, 1, expires);
+    channel(&channel_b, &key, &b, &envelope_b, 2, expires);
+    observe(&instance, &channel_a).success();
+    observe(&instance, &channel_b).success();
+    let before = snapshot(&instance);
+    offline_command(&instance)
+        .args(["--yes", "--dry-run", "instance", "update"])
+        .arg(&envelope_b)
+        .assert()
+        .success()
+        .stdout(contains("Dry run complete - no changes applied"));
+    offline_command(&instance)
+        .args(["instance", "update"])
+        .arg(&envelope_b)
+        .assert()
+        .failure()
+        .stderr(contains("Noninteractive execution requires --yes"));
+    assert_eq!(snapshot(&instance), before);
+    let mut invalid = profile_a.clone();
+    invalid["components"][0]["important"] = json!(false);
+    fs::write(&profile_path, serde_json::to_vec_pretty(&invalid).unwrap()).unwrap();
+    let edited = snapshot(&instance);
+    offline_command(&instance)
+        .args(["--yes", "instance", "update"])
+        .arg(&envelope_b)
+        .assert()
+        .failure()
+        .stderr(contains("Client game differs from locked runtime"));
+    assert_eq!(snapshot(&instance), edited);
+    fs::write(
+        &profile_path,
+        serde_json::to_vec_pretty(&profile_a).unwrap(),
+    )
+    .unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "update"])
+        .arg(&envelope_b)
+        .assert()
+        .success();
+    expected(&b, &profile_b, "mods/b.jar", b"B");
+    let current_game = snapshot(&instance.join(".minecraft"));
+    let current_profile = fs::read(&profile_path).unwrap();
+    let subscription = fs::read(instance.join(".empack/subscription.json")).unwrap();
+    for _ in 0..2 {
+        prepare_bootstrap(&instance, &export_a, &a)
+            .assert()
+            .success();
+        assert_eq!(snapshot(&instance.join(".minecraft")), current_game);
+        assert_eq!(fs::read(&profile_path).unwrap(), current_profile);
+        expected(&b, &profile_b, "mods/b.jar", b"B");
+    }
+    offline_command(&instance)
+        .args(["--yes", "instance", "rollback"])
+        .arg(&a)
+        .arg("--assets")
+        .arg(envelope_a.parent().unwrap())
+        .assert()
+        .success();
+    expected(&a, &profile_a, "mods/a.jar", b"A");
+    assert_eq!(
+        fs::read(instance.join(".empack/subscription.json")).unwrap(),
+        subscription
+    );
+    let restored = snapshot(&instance);
+    observe(&instance, &channel_a)
+        .failure()
+        .stderr(contains("Channel sequence replay rejected"));
+    assert_eq!(snapshot(&instance), restored);
+    assert_eq!(
+        [
+            snapshot(&export_a),
+            snapshot(&export_b),
+            snapshot(&publisher),
+            snapshot(&keys)
+        ],
+        sources
+    );
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 #[ignore = "opt-in native APFS images; no GUI, Java or normal instances"]

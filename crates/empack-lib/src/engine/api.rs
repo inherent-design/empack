@@ -824,6 +824,13 @@ impl Engine {
         self.content_cache = Some(cache);
         self
     }
+
+    /// Unit-test host adapters share one controlled transport for metadata and assets.
+    #[cfg(test)]
+    pub(crate) fn with_test_transport(mut self, transport: HttpAcquisition) -> Self {
+        self.transport = transport;
+        self
+    }
     /// Attach read-only provider resolution for authorized execution. Preparation receives only
     /// its availability description, never the network client or credentials.
     pub fn with_provider_catalog(

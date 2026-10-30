@@ -48,6 +48,7 @@ def selection(paths, *, trusted, full=False):
     runtime = shared or any(p.startswith((
         "crates/empack-lib/src/engine/runtime", "crates/empack-lib/src/engine/build/server",
         "crates/empack-lib/src/application/process_runtime", "crates/empack-lib/src/application/java",
+        "crates/empack-lib/src/application/engine_host/instance",
         "crates/empack-lib/src/engine/api/launch", "crates/empack-lib/src/engine/instance",
         "crates/empack-tests/tests/live_cli_init", "crates/empack-tests/tests/live_server",
         "crates/empack-tests/tests/cli_server", "crates/empack-tests/src/bin/java-fixture.rs",
@@ -55,7 +56,7 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-lib/tests/runtime_",
     )) for p in code)
     consumer = shared or any(p.startswith((
-        "crates/empack-lib/src/engine/build/client", "crates/empack-lib/templates/client/",
+        "crates/empack-lib/src/engine/build/client", "crates/empack-lib/src/engine/prism.rs", "crates/empack-lib/templates/client/",
         "scripts/consumer/", "scripts/check-prism-config.py", "scripts/tests/test_consumer_evidence.py",
     )) for p in code)
     live = []
@@ -77,6 +78,7 @@ def selection(paths, *, trusted, full=False):
         live.append("publisher-cli")
     if shared or any(p.startswith((
         "crates/empack-lib/src/engine/import", "crates/empack-lib/src/engine/build/",
+        "crates/empack-lib/src/engine/prism.rs",
         "crates/empack-lib/src/application/engine_host/cli/import",
         "crates/empack-tests/tests/live_pinned_import", "tests/fixtures/import-corpus/",
     )) for p in code):

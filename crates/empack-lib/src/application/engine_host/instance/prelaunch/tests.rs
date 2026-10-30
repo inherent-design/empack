@@ -48,9 +48,9 @@ fn release(version: &str) -> DecodedRelease {
     .unwrap()
 }
 async fn fixture(root: &Path) -> SigningKey {
-    fixture_side(root, "client").await
+    fixture_side(root, "client", None).await
 }
-async fn fixture_side(root: &Path, side: &str) -> SigningKey {
+async fn fixture_side(root: &Path, side: &str, layout: Option<&str>) -> SigningKey {
     fs::create_dir(root.join("project")).unwrap();
     let release = release("A");
     fs::write(root.join("initial.json"), release.bytes()).unwrap();
@@ -61,7 +61,7 @@ async fn fixture_side(root: &Path, side: &str) -> SigningKey {
             release: "initial.json".into(),
             sha256: release.id().into(),
             side: Some(side.into()),
-            layout: None,
+            layout: layout.map(str::to_owned),
             choices: vec![],
             files: vec![],
         },
@@ -117,6 +117,243 @@ fn channel(release: &DecodedRelease, key: &SigningKey, maximum: u64) -> Vec<u8> 
         &[key],
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn runtime_transition_retains_observation_but_requires_supported_launch_integration() {
+    use crate::application::session_mocks::MockResponse;
+    use sha2::Digest;
+    fn assert_observation(prior: &[u8], saved: &[u8], pointer: &[u8]) {
+        let record = crate::engine::api::SubscriptionRecord::decode(saved).unwrap();
+        assert_eq!(record.floor.as_ref().unwrap().sequence, 1);
+        assert_eq!(
+            record.observed.as_deref(),
+            Some(std::str::from_utf8(pointer).unwrap())
+        );
+        let mut previous: serde_json::Value = serde_json::from_slice(prior).unwrap();
+        let mut observed: serde_json::Value = serde_json::from_slice(saved).unwrap();
+        for value in [&mut previous, &mut observed] {
+            value.as_object_mut().unwrap().remove("floor");
+            value.as_object_mut().unwrap().remove("observed");
+        }
+        assert_eq!(
+            observed, previous,
+            "only the approved observation may advance trust"
+        );
+    }
+    for (name, side, layout, server_mode, entrypoint, accepted, diagnostic) in [
+        (
+            "Prism client",
+            "client",
+            Some("prism"),
+            false,
+            true,
+            false,
+            "stop Prism, run instance update, then relaunch",
+        ),
+        (
+            "Prism cannot claim server mode",
+            "client",
+            Some("prism"),
+            true,
+            true,
+            false,
+            "stop Prism, run instance update, then relaunch",
+        ),
+        (
+            "game client",
+            "client",
+            None,
+            false,
+            false,
+            false,
+            "prepare its launcher/runtime integration",
+        ),
+        (
+            "server without server mode",
+            "server",
+            None,
+            false,
+            true,
+            false,
+            "prepare its launcher/runtime integration",
+        ),
+        (
+            "server without entrypoint",
+            "server",
+            None,
+            true,
+            false,
+            false,
+            "prepare its launcher/runtime integration",
+        ),
+        ("managed server", "server", None, true, true, true, ""),
+    ] {
+        for allow_offline in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let key = fixture_side(root.path(), side, layout).await;
+            let project = root.path().join("project");
+            let game = project.join(if layout == Some("prism") {
+                ".minecraft"
+            } else {
+                "game"
+            });
+            fs::create_dir_all(game.join("saves/played")).unwrap();
+            fs::write(game.join("saves/played/level.dat"), b"played world").unwrap();
+            fs::write(project.join("launcher-note.txt"), b"unrelated settings").unwrap();
+            let mut document = release("B").document().clone();
+            document.runtime.minecraft = "1.21.2".into();
+            document.runtime.loader = ReleaseLoader::Fabric {
+                version: "0.16.0".into(),
+            };
+            if entrypoint {
+                document.server_launch = Some(ReleaseServerLaunch::Jar {
+                    path: "server.jar".into(),
+                });
+                document.files.push(ReleaseFile {
+                    world_root: None,
+                    key: "runtime".into(),
+                    destination: "server.jar".into(),
+                    layer: ReleaseLayer::Common,
+                    policy: FilePolicy::Managed,
+                    client: Participation::Unsupported,
+                    server: Participation::Required,
+                    sha256: sha2::Sha256::digest(b"incoming runtime")
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                    bytes: b"incoming runtime".len() as u64,
+                    readonly: false,
+                    executable: false,
+                    assertions: vec![],
+                    asset: None,
+                    source: ReleaseSource::Asset {
+                        path: "assets/runtime".into(),
+                    },
+                });
+            }
+            let offered = DecodedRelease::encode(document).unwrap();
+            let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+            let pointer = channel(&offered, &key, envelope.len() as u64);
+            let mut remote = mockito::Server::new_async().await;
+            let channel_route = remote
+                .mock("GET", "/channel.json")
+                .with_body(pointer.clone())
+                .expect(if accepted { 2 } else { 1 })
+                .create_async()
+                .await;
+            let release_route = remote
+                .mock("GET", "/release.json")
+                .with_body(envelope)
+                .expect(if accepted { 2 } else { 1 })
+                .create_async()
+                .await;
+            let mut asset_route = remote
+                .mock("GET", "/assets/runtime")
+                .with_body("incoming runtime")
+                .expect(0)
+                .create_async()
+                .await;
+            let mut before = crate::application::engine_host::tests::snapshot(&project);
+            let prior = before
+                .remove(Path::new(".empack/subscription.json"))
+                .unwrap();
+            if accepted {
+                let interactive = MockInteractiveProvider::new();
+                interactive
+                    .response_queue
+                    .lock()
+                    .unwrap()
+                    .extend([MockResponse::Confirm(true), MockResponse::Confirm(false)]);
+                let prompts = interactive.confirm_calls.clone();
+                let host = session(root.path(), false, false).with_interactive(interactive);
+                assert!(
+                    update_with_transport(
+                        &host,
+                        allow_offline,
+                        server_mode,
+                        transport(&remote.url())
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+                );
+                assert_eq!(prompts.lock().unwrap().len(), 2);
+                let mut declined = crate::application::engine_host::tests::snapshot(&project);
+                let saved = declined
+                    .remove(Path::new(".empack/subscription.json"))
+                    .unwrap();
+                assert_observation(&prior, &saved, &pointer);
+                assert_eq!(
+                    declined, before,
+                    "declining installation must retain the completed project"
+                );
+                asset_route.assert_async().await;
+                asset_route.remove_async().await;
+                asset_route = remote
+                    .mock("GET", "/assets/runtime")
+                    .with_body("incoming runtime")
+                    .expect(1)
+                    .create_async()
+                    .await;
+            }
+            let interactive = MockInteractiveProvider::new().with_confirm(true);
+            let prompts = interactive.confirm_calls.clone();
+            let host = session(root.path(), false, false).with_interactive(interactive);
+            let result =
+                update_with_transport(&host, allow_offline, server_mode, transport(&remote.url()))
+                    .await;
+            let mut after = crate::application::engine_host::tests::snapshot(&project);
+            let saved = after
+                .remove(Path::new(".empack/subscription.json"))
+                .unwrap();
+            assert_observation(&prior, &saved, &pointer);
+            if accepted {
+                assert_eq!(result.unwrap(), Some(offered.id().to_owned()));
+                assert_eq!(prompts.lock().unwrap().len(), 2);
+                assert_eq!(
+                    fs::read(game.join("server.jar")).unwrap(),
+                    b"incoming runtime"
+                );
+                let installed = inspect(&host, project.clone(), None, root.path().join("state"))
+                    .await
+                    .unwrap();
+                assert_eq!(installed.0.release, offered.id());
+                assert_eq!(installed.1.document().runtime, offered.document().runtime);
+            } else {
+                let error =
+                    result.expect_err("unsupported runtime transition became launch permission");
+                assert!(
+                    format!("{error:#}").contains(diagnostic),
+                    "{name}: {error:#}"
+                );
+                assert_eq!(
+                    prompts.lock().unwrap().len(),
+                    1,
+                    "{name}: installation must not be approved"
+                );
+                assert_eq!(
+                    after, before,
+                    "{name}: rejected runtime change mutated the installation"
+                );
+                let installed = inspect(&host, project.clone(), None, root.path().join("state"))
+                    .await
+                    .unwrap();
+                assert_eq!(installed.0.release, release("A").id());
+            }
+            assert_eq!(
+                fs::read(game.join("saves/played/level.dat")).unwrap(),
+                b"played world"
+            );
+            assert_eq!(
+                fs::read(project.join("launcher-note.txt")).unwrap(),
+                b"unrelated settings"
+            );
+            channel_route.assert_async().await;
+            release_route.assert_async().await;
+            asset_route.assert_async().await;
+        }
+    }
 }
 
 #[tokio::test]
@@ -446,7 +683,7 @@ async fn invalid_authenticated_channels_never_select_offline_launch_or_change_fl
 async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
     use crate::application::session_mocks::MockResponse;
     let root = tempfile::tempdir().unwrap();
-    let key = fixture_side(root.path(), "server").await;
+    let key = fixture_side(root.path(), "server", None).await;
     let offered = release("B");
     let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
     let mut server = mockito::Server::new_async().await;

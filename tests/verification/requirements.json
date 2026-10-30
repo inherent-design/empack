@@ -8943,9 +8943,11 @@
         "BUILD"
       ],
       "required_assertions": "Prepared runtime/profile and content published consistently; unrelated Prism components preserved; prelaunch cannot mutate loaded plan unsafely.",
-      "required_work": "A/B runtime fixture + actual consumer restart checks; failure preserves old runnable instance.",
+      "required_work": "Pure profile transitions, coupled native publication/rollback, authenticated host prelaunch and a signed public Prism journey are bound. Actual supported-consumer restart/import checks and all declared host/product variants remain required; metadata and fixture execution are not launcher acceptance.",
       "evidence_tiers": [
+        "U",
         "H",
+        "N",
         "X",
         "L",
         "C"
@@ -8954,7 +8956,114 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-071.profile-transition-semantics",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::prism::tests::runtime_transitions_switch_known_loaders_and_preserve_user_metadata",
+            "empack-lib::engine::prism::tests::component_authority_rejects_duplicate_fields_and_preserves_unchanged_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Vanilla/Fabric/Quilt/Forge/NeoForge transitions replace known loader identities with exact expected versions while preserving complete user components and unknown metadata",
+            "Wrong or duplicate authority fields are refused; unchanged profiles and Java-policy-only changes retain original profile bytes"
+          ]
+        },
+        {
+          "id": "UX-071.coupled-prism-publication",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::prism_runtime_and_content_publish_together_and_keep_extra_components"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A late profile edit produces StaleSnapshot before new mod bytes are published, preserving the exact edited inventory",
+            "Runtime and content update together with the complete expected Minecraft/Fabric profile, user components and metadata",
+            "Old bootstrap preparation cannot roll back the installed update; explicit rollback restores the complete prior profile and mod inventory while preserving a played world"
+          ]
+        },
+        {
+          "id": "UX-071.server-runtime-update-and-rollback",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::server_release_updates_runtime_and_rolls_back_without_touching_user_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The selected server runtime jar and entrypoint change together across update and rollback",
+            "Player world and seed-owned JVM arguments survive both transitions, and an older bootstrap cannot silently downgrade the completed release; this case does not execute Java"
+          ]
+        },
+        {
+          "id": "UX-071.authenticated-prelaunch-runtime-policy",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::runtime_transition_retains_observation_but_requires_supported_launch_integration"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Both allow-offline settings retain the approved exact authenticated observation and replay floor when a runtime-changing client release is refused",
+            "Prism clients receive stop/update/relaunch instructions; selecting server mode cannot authorize a client instance or an absent server entrypoint",
+            "Refused changes preserve all other project bytes and do not request runtime assets or installation approval; declining a supported server update preserves the approved observation without acquiring assets, and later approval verifies incoming bytes before publication",
+            "The controlled metadata transport also supplies engine acquisition in unit builds; no production endpoint or transport override is exposed"
+          ]
+        },
+        {
+          "id": "UX-071.signed-prism-update-journey",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_runtime_changes_preserve_prism_components_and_player_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Literal native A/B inputs pass through ordinary signing/staging/enrollment/bootstrap, authenticated channel observation, explicit Prism update and rollback",
+            "Complete game inventories, layout marker, full component profiles, unrelated launcher settings, seed-owned player configuration and world data agree with independent literal expectations",
+            "Preview and missing approval preserve the workspace; an invalid user profile is refused without replacing it or publishing new content; repeated old-bootstrap preparation retains the active update",
+            "Rollback preserves the authenticated sequence floor and replay refusal; immutable publisher inputs, keys and staged releases are unchanged. No actual Prism or Java startup is claimed"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
@@ -8965,7 +9074,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-072",

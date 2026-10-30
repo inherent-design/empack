@@ -1920,6 +1920,8 @@ async fn required_subscription_is_captured_and_late_revocation_prevents_installa
 
 #[tokio::test]
 async fn prism_runtime_and_content_publish_together_and_keep_extra_components() {
+    use super::super::tests::inventory as snapshot;
+    use crate::engine::diagnostics::{Diagnostic, DiagnosticCode};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let (engine, _) = super::super::tests::engine(host.path().join("state"));
@@ -1936,6 +1938,8 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!({"uid":"user.component","version":"1","cachedName":"keep"}));
+    profile["components"][0]["cachedName"] = serde_json::json!("Game label");
+    profile["authorMetadata"] = serde_json::json!({"keep":["custom",false]});
     fs::write(&profile_path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
     fs::create_dir_all(root.path().join(".minecraft/saves/world")).unwrap();
     fs::write(
@@ -1972,25 +1976,40 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
     };
     // A profile edit after planning invalidates the whole installation, including new game bytes.
     fs::write(&profile_path, b"late edit").unwrap();
+    let edited = snapshot(root.path());
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
-    assert!(matches!(
-        &*operation.wait().await,
-        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
-    ));
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) = &*outcome
+    else {
+        panic!("late profile edit lost its preparation failure")
+    };
+    assert_eq!(
+        error.downcast_ref::<Diagnostic>().unwrap().code,
+        DiagnosticCode::StaleSnapshot,
+        "{error:#}"
+    );
+    assert_eq!(snapshot(root.path()), edited);
+    drop(outcome);
+    assert!(engine.release_completed(operation.id()));
     assert!(!root.path().join(".minecraft/mods/b.jar").exists());
     fs::write(&profile_path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
     let after = apply(&engine, root.path(), updated()).await;
     assert_ne!(before.release, after.release);
     let changed: serde_json::Value =
         serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
-    assert_eq!(changed["components"][0]["version"], "1.21.2");
-    assert!(
-        changed["components"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|item| item["uid"] == "user.component" && item["cachedName"] == "keep")
+    let mut expected = profile.clone();
+    expected["components"][0]["version"] = serde_json::json!("1.21.2");
+    expected["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"uid":"net.fabricmc.fabric-loader","version":"0.16.0"}));
+    assert_eq!(changed, expected);
+    assert!(!root.path().join(".minecraft/mods/a.jar").exists());
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/b.jar")).unwrap(),
+        b"B"
     );
+    let current = snapshot(root.path());
     let mut original_launcher = initial();
     original_launcher.action = InstanceAction::Prepare;
     original_launcher.supplied.clear();
@@ -1998,13 +2017,18 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
         apply(&engine, root.path(), original_launcher).await.release,
         after.release
     );
+    assert_eq!(snapshot(root.path()), current);
     let mut rollback = initial();
     rollback.action = InstanceAction::Rollback;
     apply(&engine, root.path(), rollback).await;
     let restored: serde_json::Value =
         serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
-    assert_eq!(restored["components"][0]["version"], "1.21.1");
-    assert_eq!(restored["components"].as_array().unwrap().len(), 2);
+    assert_eq!(restored, profile);
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    assert!(!root.path().join(".minecraft/mods/b.jar").exists());
     assert_eq!(
         fs::read(root.path().join(".minecraft/saves/world/level.dat")).unwrap(),
         b"played"

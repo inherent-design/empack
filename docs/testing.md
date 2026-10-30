@@ -509,6 +509,25 @@ bootstrap bytes are rejected without changing the installed instance. These are
 the documented local-envelope routes. They do not execute hosted
 HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
 
+Runtime/profile checks reuse those signature helpers with literal native inputs.
+A public Prism-layout journey stages and enrolls A, observes B, then exercises
+preview, refusal, explicit update, repeated old-bootstrap preparation and rollback.
+Independent complete game/profile expectations include the layout marker, exact
+Minecraft and Fabric components, user metadata, player configuration and a played
+world. Publisher inputs, keys and immutable releases remain unchanged. This checks
+installed metadata through the executable; it does not start Prism or Minecraft.
+
+Native engine tests separately bind the complete profile and game read set:
+a late profile edit must survive a stale-snapshot refusal before new content is
+published. Pure transition tests cover all supported loader component identities,
+preserved user attributes and unchanged byte reuse. The host prelaunch fixture
+checks approved channel observation separately from installation: clients retain
+their current release when the runtime changes, and only a supported managed-server
+entry point can proceed after separate update approval. Both offline settings are
+tested. A unit-only transport adapter supplies real controlled asset acquisition;
+it is absent from the ordinary product API. Actual consumer reload/import and
+interactive runtime qualification remain separate acceptance work.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid

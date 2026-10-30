@@ -51,6 +51,8 @@ class ChangeSelection(unittest.TestCase):
             ("crates/empack-lib/src/engine/build/server/unix.rs", ["live-catalog", "server-cli", "runtime-current", "pinned-import"], False),
             ("crates/empack-tests/tests/cli_server.rs", ["live-catalog", "server-cli", "runtime-current"], False),
             ("crates/empack-tests/src/bin/java-fixture.rs", ["live-catalog", "server-cli", "runtime-current"], False),
+            ("crates/empack-lib/src/application/engine_host/instance/prelaunch.rs", ["live-catalog", "server-cli", "runtime-current"], False),
+            ("crates/empack-lib/src/engine/prism.rs", ["pinned-import"], True),
             ("crates/empack-lib/src/engine/build/client/fixtures.json", ["pinned-import"], True),
             ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["live-provider-cli", "live-modrinth", "pinned-import"], False),
             ("crates/empack-tests/tests/live_pinned_import.rs", ["pinned-import"], False),

@@ -349,6 +349,12 @@ its component metadata and prepares the required game, loader and Java. Changing
 `mmc-pack.json` after Prism has loaded metadata does not update its in-memory launch
 plan. Empack does not download client game binaries or silently replace Java.
 
+An approved authenticated channel observation remains saved when the runtime check
+refuses installation. Its anti-replay floor can advance while the completed game,
+profile and release stay unchanged. `--allow-offline` applies to the earlier channel
+connection failure; it does not authorize a runtime-changing authenticated release.
+Selecting server mode cannot turn a client installation into a managed server.
+
 ## Managed server runtime transitions
 
 Server releases include verified runtime files and a typed `server_launch` entry
