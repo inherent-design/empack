@@ -116,6 +116,12 @@ or the Windows read-only attribute;
 timestamps are excluded and links/special entries are not admitted by this observer.
 Native recovery has a separate headless-host refusal check. These checks do not
 qualify terminal EOF/cancellation, actual consumers or packaged execution.
+Windows recovery-shell fixtures initialize a fresh PowerShell native-output
+pipeline with an OS command before measuring the printed empack commands. Setup
+may create only the three known empty profile directories inside the fixture;
+project/state/cache changes or new files fail. The version and recovery operations
+then retain their full no-write snapshots. This setup is local to shell fixtures;
+ordinary executable help/inspection tests still begin with an absent home.
 
 Requirements inspection runs with an empty controlled `PATH`, then with synthetic
 Java tools advertising old, current or malformed versions if executed. It must

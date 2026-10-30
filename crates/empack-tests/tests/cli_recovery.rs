@@ -173,6 +173,63 @@ impl Fixture {
         String::from_utf8(output).unwrap()
     }
 
+    #[cfg(windows)]
+    fn initialize_shell(&self, check_lookup: bool) {
+        let before = self.observe();
+        if check_lookup {
+            self.shell_script("[Console]::WriteLine('Bare shell ready'); exit 0")
+                .assert()
+                .success()
+                .stdout(predicates::str::contains("Bare shell ready"));
+            self.shell("[Console]::WriteLine('Recovery shell ready')")
+                .assert()
+                .success()
+                .stdout(predicates::str::contains("Recovery shell ready"));
+        }
+        // Each fixture has a fresh USERPROFILE. Initialize PowerShell's native
+        // output pipeline with an OS command before measuring empack's effects.
+        // /d prevents cmd.exe from running user AutoRun commands.
+        self.shell(
+            r#"& "$env:SystemRoot\System32\cmd.exe" /d /c echo Native recovery shell ready"#,
+        )
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Native recovery shell ready"));
+        let mut after = self.observe();
+        let mut initialized = Vec::new();
+        for directory in [
+            "invocation/.harness-home",
+            "invocation/.harness-home/AppData",
+            "invocation/.harness-home/AppData/Roaming",
+        ] {
+            let path = Path::new(directory);
+            if !before.entries.contains_key(path) && after.entries.contains_key(path) {
+                assert_eq!(after.entries.remove(path), Some((true, 0)));
+                initialized.push(directory);
+            }
+        }
+        assert_eq!(
+            after, before,
+            "shell setup changed more than empty profile directories"
+        );
+        eprintln!("Windows native shell initialized empty profile directories: {initialized:?}");
+        if check_lookup {
+            let initialized = self.observe();
+            self.shell("empack --version")
+                .assert()
+                .success()
+                .stdout(predicates::str::contains(format!(
+                    "empack {}",
+                    empack_tests::harness::process::expected_cli_version()
+                )));
+            assert_eq!(
+                self.observe(),
+                initialized,
+                "version changed the initialized shell's state"
+            );
+        }
+    }
+
     fn completed(&self, kind: &str, action: &str) {
         let expected = if kind == "creation" {
             BTreeMap::from([
@@ -238,28 +295,7 @@ fn cli_recovery_commands_bind_the_reported_context_and_available_actions() {
     ] {
         let fixture = Fixture::new(kind, &driver, bin);
         #[cfg(windows)]
-        if kind == "publication" && action == "finish" {
-            // Separate shell startup, executable lookup and the printed command's
-            // interpretation. A blank shell failure must identify its boundary.
-            fixture
-                .shell_script("[Console]::WriteLine('Bare shell ready'); exit 0")
-                .assert()
-                .success()
-                .stdout(predicates::str::contains("Bare shell ready"));
-            fixture
-                .shell("[Console]::WriteLine('Recovery shell ready')")
-                .assert()
-                .success()
-                .stdout(predicates::str::contains("Recovery shell ready"));
-            fixture
-                .shell("empack --version")
-                .assert()
-                .success()
-                .stdout(predicates::str::contains(format!(
-                    "empack {}",
-                    empack_tests::harness::process::expected_cli_version()
-                )));
-        }
+        fixture.initialize_shell(kind == "publication" && action == "finish");
         let before = fixture.observe();
         let mut blocked = if kind == "creation" {
             let mut command = offline_command(&fixture.invocation);
