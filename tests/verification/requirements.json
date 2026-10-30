@@ -8942,7 +8942,51 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-074.native-supervisor-terminal-lifecycle",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::terminal_tests::inherited_runtime_owns_terminal_and_restores_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real controlling PTY checks runtime foreground ownership before reads, input and graceful terminal Ctrl-C, host cancellation, nonzero exit and failed exec",
+            "Disabled terminal suspend characters, external stop/resume and cancellation while stopped preserve owned-process retirement",
+            "Duplicate terminal ownership and background takeover are refused; original foreground group and terminal settings are restored"
+          ],
+          "remaining_group_evidence": "Generated server entry-point/Java integration, Windows console/job behavior and actual-consumer acceptance remain separate obligations"
+        },
+        {
+          "id": "UX-074.executable-terminal-round-trip",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A public native export is installed and launched by the selected unmodified executable through a controlling PTY in paths with spaces and Unicode",
+            "A runtime that changes terminal echo reads real console input; graceful terminal Ctrl-C returns success, runtime exit 7 becomes CLI exit 1 with diagnostic, and host cancellation returns 130 with diagnostic",
+            "The invoking shell observes identical terminal settings, reads follow-up input and exits with the actual product status; owned runtime group is absent and a later public launch succeeds",
+            "Player bytes, managed publisher content and the release descriptor remain unchanged"
+          ],
+          "remaining_group_evidence": "Generated server entry-point/Java integration, Windows console/job behavior and actual-consumer acceptance remain separate obligations"
+        }
+      ],
       "owner_now": [
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
         "empack executable + empack-lib::application"
@@ -8951,7 +8995,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-075",

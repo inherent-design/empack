@@ -149,8 +149,9 @@ pub fn interrupt(command: std::process::Command, prompt: &str) {
     assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 130);
 }
 
+/// Establish terminal-child exit after draining its output.
 #[cfg(not(windows))]
-fn wait_for_exit(
+pub fn wait_for_exit(
     process: &impl expectrl::process::Healthcheck<Status = expectrl::process::unix::WaitStatus>,
     expected: i32,
 ) {

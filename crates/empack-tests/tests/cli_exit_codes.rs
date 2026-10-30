@@ -376,34 +376,10 @@ fn cli_interrupt_exits_130() {
 }
 
 #[cfg(unix)]
-#[test]
-fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
-    use empack_tests::harness::process::{
-        assert_dist_artifact_suffix, empack_cmd, offline_command,
-    };
-    use predicates::str::contains;
+fn runtime_release(root: &std::path::Path) -> (std::path::PathBuf, String, Vec<u8>) {
+    use empack_tests::harness::process::{assert_dist_artifact_suffix, offline_command};
     use sha2::{Digest, Sha256};
-
-    struct Runtime {
-        host: std::process::Child,
-        pid: Option<String>,
-    }
-    impl Drop for Runtime {
-        fn drop(&mut self) {
-            if let Some(pid) = &self.pid {
-                let _ = Command::new("/bin/kill")
-                    .args(["-KILL", pid])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-            let _ = self.host.kill();
-            let _ = self.host.wait();
-        }
-    }
-
-    let root = tempfile::tempdir().unwrap();
-    let author = root.path().join("author");
+    let author = root.join("author");
     fs::create_dir_all(author.join("pack")).unwrap();
     fs::write(author.join("pack/managed.txt"), b"publisher content").unwrap();
     fs::write(
@@ -439,7 +415,7 @@ build:
         .assert()
         .success();
     let archive = assert_dist_artifact_suffix(&author, "-empack-bundled-client.empack");
-    let export = root.path().join("release");
+    let export = root.join("release");
     fs::create_dir(&export).unwrap();
     zip::ZipArchive::new(fs::File::open(archive).unwrap())
         .unwrap()
@@ -450,6 +426,36 @@ build:
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
+
+    (export, id, payload)
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
+    use empack_tests::harness::process::{empack_cmd, offline_command};
+    use predicates::str::contains;
+
+    struct Runtime {
+        host: std::process::Child,
+        pid: Option<String>,
+    }
+    impl Drop for Runtime {
+        fn drop(&mut self) {
+            if let Some(pid) = &self.pid {
+                let _ = Command::new("/bin/kill")
+                    .args(["-KILL", pid])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            let _ = self.host.kill();
+            let _ = self.host.wait();
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
 
     for interfere_with_cleanup in [false, true] {
         let instance = root
@@ -615,6 +621,159 @@ fn cli_unknown_native_build_target_exits_two() {
         EmpackExitCode::Usage,
         "invalid value 'not-a-target'",
     );
+}
+
+/// The final product must pass console ownership back through its invoking shell.
+#[cfg(unix)]
+#[test]
+fn cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure() {
+    use empack_tests::harness::{
+        process::{empack_cmd, offline_command},
+        terminal::{spawn, wait_for_exit},
+    };
+    use expectrl::{ControlCode, Eof, Expect, Regex};
+
+    struct RuntimeGroup(Option<u32>);
+    impl Drop for RuntimeGroup {
+        fn drop(&mut self) {
+            if let Some(pid) = self.0 {
+                let _ = Command::new("/bin/kill")
+                    .args(["-KILL", "--", &format!("-{pid}")])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+    for (mode, status) in [
+        ("input", 0),
+        ("interrupt", 0),
+        ("failure", 1),
+        ("cancel", 130),
+    ] {
+        let instance = root.path().join(format!("console Ω {mode}"));
+        fs::create_dir(&instance).unwrap();
+        offline_command(&instance)
+            .args(["--yes", "instance", "install"])
+            .arg(export.join("release.json"))
+            .args(["--sha256", &id])
+            .assert()
+            .success();
+        fs::write(instance.join("game/player-note.txt"), b"keep player bytes").unwrap();
+
+        // A test-owned shell invokes the selected unmodified product. It compares
+        // the terminal before/after and reads again, so EOF alone cannot pass.
+        let wrapper = r#"before=$(/bin/stty -g) || exit 91
+"$@"
+result=$?
+after=$(/bin/stty -g) || exit 92
+test "$before" = "$after" || exit 93
+printf 'TERMINAL_RESTORED\nFOLLOWUP_READY\n'
+read -r reply || exit 94
+test "$reply" = usable || exit 95
+printf 'FOLLOWUP_INPUT=%s\n' "$reply"
+exit "$result"
+"#;
+        let runtime = r#"trap 'printf "RUNTIME_INTERRUPTED\n"; exit 0' INT
+printf '%s %s\n' "$PPID" "$$" > runtime-host
+/bin/stty -echo || exit 96
+printf 'RUNTIME_READY\n'
+while read -r line; do
+    printf 'RUNTIME_INPUT=%s\n' "$line"
+    case "$line" in stop) exit 0;; fail) exit 7;; esac
+done
+exit 97
+"#;
+        let product = empack_cmd(&instance);
+        let mut command = Command::new("/bin/sh");
+        command
+            .env_clear()
+            .current_dir(&instance)
+            .args(["-c", wrapper, "console-wrapper"])
+            .arg(product.get_program())
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", runtime,
+            ]);
+        for (name, value) in product.get_envs() {
+            if let Some(value) = value {
+                command.env(name, value);
+            }
+        }
+        let mut terminal = expectrl::session::log(spawn(command), std::io::stderr()).unwrap();
+        terminal.set_expect_timeout(Some(Duration::from_secs(20)));
+        terminal.expect("RUNTIME_READY").unwrap();
+        let processes = fs::read_to_string(instance.join("game/runtime-host")).unwrap();
+        let processes = processes
+            .split_whitespace()
+            .map(|pid| pid.parse::<u32>().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(processes.len(), 2);
+        let (host, runtime) = (processes[0], processes[1]);
+        assert!(host > 1 && runtime > 1 && host != runtime);
+        // Failed terminal assertions must not strand the separately owned group.
+        let mut runtime_group = RuntimeGroup(Some(runtime));
+        // Real console input first establishes that the runtime can read its TTY.
+        terminal.send_line("list").unwrap();
+        terminal.expect("RUNTIME_INPUT=list").unwrap();
+        match mode {
+            "input" => terminal.send_line("stop").unwrap(),
+            "failure" => terminal.send_line("fail").unwrap(),
+            "interrupt" => {
+                terminal.send(ControlCode::EndOfText).unwrap();
+                terminal.expect("RUNTIME_INTERRUPTED").unwrap();
+            }
+            "cancel" => {
+                assert!(
+                    Command::new("/bin/kill")
+                        .args(["-INT", &host.to_string()])
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+                terminal.expect(Regex("Operation interrupted")).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        if mode == "failure" {
+            terminal
+                .expect("Instance runtime exited with exit status: 7")
+                .unwrap();
+        }
+        terminal.expect("TERMINAL_RESTORED").unwrap();
+        terminal.expect("FOLLOWUP_READY").unwrap();
+        terminal.send_line("usable").unwrap();
+        terminal.expect("FOLLOWUP_INPUT=usable").unwrap();
+        terminal.expect(Eof).unwrap();
+        wait_for_exit(terminal.get_process(), status);
+        let remaining = Command::new("/bin/kill")
+            .args(["-0", "--", &format!("-{runtime}")])
+            .env("LC_ALL", "C")
+            .output()
+            .unwrap();
+        assert!(!remaining.status.success(), "Owned runtime group survived");
+        assert!(String::from_utf8_lossy(&remaining.stderr).contains("No such process"));
+        runtime_group.0 = None;
+
+        assert_eq!(
+            fs::read(instance.join("game/player-note.txt")).unwrap(),
+            b"keep player bytes"
+        );
+        assert_eq!(
+            fs::read(instance.join("game/managed.txt")).unwrap(),
+            b"publisher content"
+        );
+        assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+        // A new public operation must not find a false live-runtime requirement.
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 0",
+            ])
+            .assert()
+            .success();
+    }
 }
 
 #[test]
