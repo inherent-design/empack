@@ -63,6 +63,13 @@ impl RecoveryReader {
     pub fn new(host_state: std::path::PathBuf) -> Self {
         Self { host_state }
     }
+    pub(super) fn bound_root_key(&self, root: &ProjectReadRoot) -> Result<String> {
+        root.check_binding()?;
+        match Publisher::open_existing(&self.host_state)? {
+            Some(publisher) => publisher.bound_root_key(root),
+            None => root_key(root),
+        }
+    }
     pub(super) fn enter(&self, root: &ProjectReadRoot) -> Result<ProjectReadGuard> {
         let Some(publisher) = Publisher::open_existing(&self.host_state)? else {
             return Ok(ProjectReadGuard { _lock: None });

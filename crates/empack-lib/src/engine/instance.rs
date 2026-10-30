@@ -95,7 +95,8 @@ pub struct InstanceRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub initialized_worlds: Vec<String>,
     pub schema: u32,
-    /// Native root identity prevents copied state from silently granting ownership elsewhere.
+    /// Opaque local key verified against the live root and its private association.
+    /// Copying the record does not transfer ownership to another root.
     pub root: String,
     pub pack: String,
     pub release: String,
@@ -202,6 +203,10 @@ impl PreparedInstance {
         if let Some(expires) = self.subscription_expires {
             subscription::ensure_fresh(expires)?;
         }
+        ensure!(
+            publisher.bound_root_key(&self.root)? == self.record.root,
+            "Instance root association changed after preparation"
+        );
         let receipt = publisher.publish(&self.root, self.change, cancel)?;
         Ok((receipt, self.record))
     }
@@ -345,7 +350,7 @@ pub fn inspect_optional(
     };
     let record = InstanceRecord::decode(&bytes)?;
     ensure!(
-        record.root == super::publication::root_key(&root)?,
+        record.root == recovery.bound_root_key(&root)?,
         "Instance record belongs to another native root"
     );
     let id = release.unwrap_or(&record.release);
@@ -424,7 +429,7 @@ pub(super) fn plan(
         }
         match &selected {
             SelectedRelease::Subscribed(proof) => {
-                proof.validate_current(&super::publication::root_key(&root)?, &bytes)?
+                proof.validate_current(&recovery.bound_root_key(&root)?, &bytes)?
             }
             SelectedRelease::Publisher(_) => {
                 anyhow::bail!("Select the release against the instance's enrolled subscription")
@@ -432,7 +437,7 @@ pub(super) fn plan(
             SelectedRelease::Snapshot(_) => {}
         }
         ensure!(
-            subscription.root == super::publication::root_key(&root)?
+            subscription.root == recovery.bound_root_key(&root)?
                 && subscription.pack == selected.release().document().pack,
             "Selected release belongs to another instance subscription"
         );
@@ -501,7 +506,7 @@ pub(super) fn plan(
                 "Preparation retains completed choices; change them explicitly"
             );
             ensure!(
-                previous.root == super::publication::root_key(&root)?,
+                previous.root == recovery.bound_root_key(&root)?,
                 "Instance record belongs to another native root"
             );
             let target = descriptor(&previous.release)?;
@@ -586,7 +591,7 @@ pub(super) fn plan(
             );
         }
     }
-    let root_identity = super::publication::root_key(&root)?;
+    let root_identity = recovery.bound_root_key(&root)?;
     let mut old_files = BTreeMap::new();
     let mut old_runtime = release.document().runtime.clone();
     if let Some(previous) = &previous {

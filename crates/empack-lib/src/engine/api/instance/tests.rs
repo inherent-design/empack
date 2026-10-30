@@ -2363,3 +2363,105 @@ async fn legacy_managed_prism_icon_migrates_to_seed_without_conflict() {
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn instance_inspection_and_preparation_use_the_associated_root_key() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let host = state.path().join("state");
+    let (engine, _) = super::super::tests::engine(host.clone());
+    let input = || request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+    let first = apply(&engine, root.path(), input()).await;
+    let original_bytes = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let Preparation::Ready(stale) = engine
+        .prepare(
+            root.path().to_owned(),
+            request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("fixture unexpectedly requires input");
+    };
+    let grant = ExecutionGrant {
+        plan: stale.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+        replacement: stale.view().replacement(),
+    };
+    let stale = stale.authorize(grant).unwrap();
+    // Simulate consistent persisted data from the same volume under a previous
+    // device assignment. The live object and its persistent proof are unchanged.
+    let directory = host.join(&first.root);
+    let mut association: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("root-identity.json")).unwrap()).unwrap();
+    let volume = association["original"]["volume"].as_u64().unwrap() ^ 1;
+    association["original"]["volume"] = volume.into();
+    let (_, suffix) = first
+        .root
+        .strip_prefix("project-")
+        .unwrap()
+        .split_once('-')
+        .unwrap();
+    let prior_key = format!("project-{volume:016x}-{suffix}");
+    fs::write(
+        directory.join("root-identity.json"),
+        serde_json::to_vec(&association).unwrap(),
+    )
+    .unwrap();
+    fs::rename(&directory, host.join(&prior_key)).unwrap();
+    let mut operation = engine.start(stale).unwrap();
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) = &*outcome
+    else {
+        panic!("stale association unexpectedly published");
+    };
+    assert!(format!("{error:#}").contains("Instance root association changed after preparation"));
+    drop(outcome);
+    engine.release_completed(operation.id());
+    drop(operation);
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        original_bytes
+    );
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    let mut prior = first.clone();
+    prior.root = prior_key.clone();
+    let bytes = serde_json::to_vec(&prior).unwrap();
+    fs::write(root.path().join(".empack/instance.json"), &bytes).unwrap();
+    let (inspected, _) = crate::engine::instance::inspect(
+        root.path(),
+        None,
+        crate::engine::publication::RecoveryReader::new(host.clone()),
+        crate::engine::snapshot::SnapshotLimits::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(inspected, prior);
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        bytes
+    );
+    let mut prepare = input();
+    prepare.action = InstanceAction::Prepare;
+    let prepared = apply(&engine, root.path(), prepare).await;
+    assert_eq!(prepared.root, prior_key);
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    assert!(
+        !host.join(&first.root).exists(),
+        "preparation must retain original coordination"
+    );
+    let copied = tempfile::tempdir().unwrap();
+    fs::create_dir(copied.path().join(".empack")).unwrap();
+    fs::write(copied.path().join(".empack/instance.json"), &bytes).unwrap();
+    let error = crate::engine::instance::inspect(
+        copied.path(),
+        None,
+        crate::engine::publication::RecoveryReader::new(host),
+        crate::engine::snapshot::SnapshotLimits::default(),
+        &Cancellation::default(),
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("another native root"));
+}

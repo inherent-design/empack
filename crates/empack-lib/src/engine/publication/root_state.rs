@@ -51,6 +51,18 @@ fn matches(association: &Association, name: &str, root: &ProjectReadRoot) -> Res
 impl Publisher {
     /// Read-only discovery never creates an association, lock or directory.
     pub(super) fn find_project_state(&self, root: &ProjectReadRoot) -> Result<Option<Dir>> {
+        Ok(self
+            .resolve_project_state(root)?
+            .map(|(_, directory)| directory))
+    }
+    /// An association's opaque original key remains bound to this live root.
+    pub(in crate::engine) fn bound_root_key(&self, root: &ProjectReadRoot) -> Result<String> {
+        match self.resolve_project_state(root)? {
+            Some((key, _)) => Ok(key),
+            None => root_key(root),
+        }
+    }
+    fn resolve_project_state(&self, root: &ProjectReadRoot) -> Result<Option<(String, Dir)>> {
         root.check_binding()?;
         let current = root_key(root)?;
         let (_, suffix) = current
@@ -93,14 +105,14 @@ impl Publisher {
                         selected.is_none(),
                         "Multiple native state directories claim this persistent root"
                     );
-                    selected = Some(directory);
+                    selected = Some((name.to_owned(), directory));
                 }
                 None if name == current => {
                     ensure!(
                         selected.is_none(),
                         "Multiple native state directories may belong to this root"
                     );
-                    selected = Some(directory);
+                    selected = Some((name.to_owned(), directory));
                 }
                 None => unresolved = true,
             }

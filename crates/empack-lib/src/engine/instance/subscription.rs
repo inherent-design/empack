@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 #[serde(deny_unknown_fields)]
 pub struct SubscriptionRecord {
     pub schema: u32,
+    /// Local root key retained through its verified native association.
     pub root: String,
     pub pack: String,
     pub channel: String,
@@ -173,7 +174,6 @@ fn read_current(
 ) -> Result<(SubscriptionRecord, String)> {
     use crate::engine::{
         layout::ProjectLayout,
-        publication::root_key,
         snapshot::{ProjectReadRoot, SnapshotLimits},
     };
     use empack_core::files::ManagedPath;
@@ -196,7 +196,7 @@ fn read_current(
     let bytes = super::read_optional(&root, &snapshot, &target, cancel)?
         .context("Instance has no enrolled subscription")?;
     let record = SubscriptionRecord::decode(&bytes)?;
-    let binding = root_key(&root)?;
+    let binding = recovery.bound_root_key(&root)?;
     ensure!(
         record.root == binding,
         "Subscription belongs to another instance root"

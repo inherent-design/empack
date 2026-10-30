@@ -7277,7 +7277,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-063.associated-instance-root",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::instance_inspection_and_preparation_use_the_associated_root_key"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Inspection and consumer preparation retain the saved opaque key proven by the native association after controlled prior-device metadata simulation",
+            "A prepared update refuses a changed native association before publishing instance metadata or content",
+            "Copying the instance record to a different root does not transfer the associated root proof"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "empack executable + empack-lib::application"
@@ -7286,7 +7308,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-064",

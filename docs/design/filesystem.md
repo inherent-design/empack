@@ -64,14 +64,17 @@ with its persistent root identity and original native key. Writers establish it
 under the existing publication lock. Read-only discovery never creates associations
 or coordination files. A bounded search checks matching object/creation candidates
 and verifies their persistent evidence; it keeps the original directory, journal,
-runtime marker and lock files in place. Foreign, moved, corrupt or duplicate claims
+runtime marker and lock files in place. Foreign, moved, corrupt or duplicate claims among matching candidates
 refuse access. A potentially matching legacy directory without persistent evidence
 cannot silently disappear after its device assignment changes.
 
 **Migration remains unfinished in the v0.8.4 development branch.** This association
-supports publication and runtime state discovery; instance/subscription root strings,
-pending-operation filenames and creation metadata still require the corresponding
-lookup and legacy migration. Old journal and retention proofs remain strict. An
+supports publication and runtime state discovery. Local instance and subscription
+records compare their saved opaque key against that proven association, retaining
+its original value across device reassignment. Publication checks the selected key
+again so a changed association cannot inherit a previously prepared instance or
+subscription mutation. Pending-operation filenames, creation metadata and old saved
+snapshots still require the corresponding lookup and legacy migration. Old journal and retention proofs remain strict. An
 association does not manufacture missing historical file identity or translate old
 snapshot fingerprints. Existing evidence must remain intact until its binding can
 be established; an ambiguous old device binding cannot authorize writes.
