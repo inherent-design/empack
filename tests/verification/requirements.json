@@ -4675,6 +4675,25 @@
             "New schema-5 build records and existing schema-4 records resume through their respective fingerprint versions",
             "Inspection and preparation preserve saved record bytes; retained inputs are reverified and completed publication still requires fresh approval"
           ]
+        },
+        {
+          "id": "UX-035.linux-filesystem-uuid-readers",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::native::persistent::linux::tests::filesystem_uuid_matches_handle_bound_ext4_evidence_when_available"
+          ],
+          "required_platforms": [
+            "linux"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The Linux fixture records its kernel and filesystem type and requires persistent UUID availability for file and directory handles",
+            "On ext4 the selected UUID agrees with the filesystem-specific read-only interface; other filesystem types cannot use the ext4 ioctl",
+            "Missing native filesystem support remains a failed prerequisite rather than skipped or synthetic evidence"
+          ]
         }
       ],
       "owner_now": [

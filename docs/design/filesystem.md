@@ -32,7 +32,8 @@ handle still checks the current device, object and creation metadata. Persistent
 comparison must not treat a Unix device number as a volume identifier across
 reboot or remount. The v0.8.4 adapter additionally observes a volume UUID and object
 identity through the retained handle: macOS uses `fgetattrlist`; Linux uses
-`FS_IOC_GETFSUUID` and the filesystem's export handle; Windows retains the volume
+`FS_IOC_GETFSUUID` (or the read-only ext4 UUID query when the generic query is
+unavailable) and the filesystem's export handle; Windows retains the volume
 serial and file ID from `FILE_ID_INFO`. Linux export handles distinguish filesystem
 object namespaces, including subvolumes. All three include creation identity and
 use separate platform domains. No pathname is accepted as substitute evidence.
@@ -50,7 +51,12 @@ Old saved-build records likewise retain their original strict comparison.
 Unavailable UUID/export-handle support or creation metadata refuses retention that
 needs this evidence; it does not fall back to the current device number. The Linux
 generic UUID ioctl requires kernel support introduced in 6.9 and support from the
-selected filesystem. Missing native-host evidence is not a supported-platform claim.
+selected filesystem. On older ext4 kernels, `EXT4_IOC_GETFSUUID` queries the same
+volume UUID through the retained file or directory. The adapter checks the filesystem
+type before issuing that request; it does not infer a UUID from a device number or
+mount path. Permission failures do not authorize a fallback. The native fixture
+records kernel and filesystem type, and compares the UUID readers on ext4. Missing
+native-host evidence is not a supported-platform claim.
 
 **Migration remains unfinished in the v0.8.4 development branch.** Root keys, other
 continuations and recovery journals still need the corresponding durable lookup and

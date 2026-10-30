@@ -72,104 +72,9 @@ pub(super) fn identity(file: &File, observed: &ObjectIdentity) -> Result<Option<
 }
 
 #[cfg(target_os = "linux")]
-pub(super) fn identity(file: &File, observed: &ObjectIdentity) -> Result<Option<[u8; 32]>> {
-    use anyhow::ensure;
-    use std::os::fd::{AsRawFd, FromRawFd};
-    let Some(created) = observed.created else {
-        return Ok(None);
-    };
-    // Capability directories may be O_PATH, which ioctl cannot query. Reopen the
-    // retained directory itself, not an ambient path recovered from /proc.
-    // SAFETY: F_GETFL takes no pointer arguments and file owns the descriptor.
-    let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
-    ensure!(flags >= 0, "Cannot inspect retained descriptor flags");
-    let readable;
-    let file = if flags & libc::O_PATH != 0 {
-        // SAFETY: the path is a static NUL-terminated '.', relative to the retained fd.
-        let fd = unsafe {
-            libc::openat(
-                file.as_raw_fd(),
-                c".".as_ptr(),
-                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            return unsupported_or_error(std::io::Error::last_os_error());
-        }
-        // SAFETY: openat returned a new owned descriptor.
-        readable = unsafe { File::from_raw_fd(fd) };
-        &readable
-    } else {
-        file
-    };
-    // Linux 6.9 UAPI: fsuuid2 is one length byte followed by sixteen UUID bytes.
-    #[repr(C)]
-    struct FilesystemUuid {
-        length: u8,
-        bytes: [u8; 16],
-    }
-    let mut uuid = FilesystemUuid {
-        length: 0,
-        bytes: [0; 16],
-    };
-    // SAFETY: the ioctl encodes exactly this fixed output structure's size.
-    let result = unsafe {
-        libc::ioctl(
-            file.as_raw_fd(),
-            libc::_IOR::<FilesystemUuid>(0x15, 0),
-            &mut uuid,
-        )
-    };
-    if result != 0 {
-        return unsupported_or_error(std::io::Error::last_os_error());
-    }
-    // Short serial numbers are not accepted as filesystem UUIDs.
-    if uuid.length != 16 || uuid.bytes == [0; 16] {
-        return Ok(None);
-    }
-    // The filesystem's export handle includes its object namespace/generation.
-    // An inode alone is insufficient for filesystems with multiple subvolumes.
-    #[repr(C)]
-    struct ExportHandle {
-        bytes: u32,
-        kind: i32,
-        data: [u8; 128],
-    }
-    let mut handle = ExportHandle {
-        bytes: 128,
-        kind: 0,
-        data: [0; 128],
-    };
-    let mut mount_id = 0;
-    // SAFETY: the buffer starts with the UAPI file_handle header and provides the
-    // advertised bounded trailing storage. AT_EMPTY_PATH selects the live descriptor.
-    let result = unsafe {
-        libc::name_to_handle_at(
-            file.as_raw_fd(),
-            c"".as_ptr(),
-            (&mut handle as *mut ExportHandle).cast(),
-            &mut mount_id,
-            libc::AT_EMPTY_PATH,
-        )
-    };
-    if result != 0 {
-        return unsupported_or_error(std::io::Error::last_os_error());
-    }
-    ensure!(
-        handle.bytes > 0 && handle.bytes <= 128 && handle.kind > 0,
-        "Invalid persistent filesystem object handle"
-    );
-    let mut object = [0; 132];
-    let length = handle.bytes as usize;
-    object[..4].copy_from_slice(&handle.kind.to_le_bytes());
-    object[4..4 + length].copy_from_slice(&handle.data[..length]);
-    Ok(Some(digest(
-        b"linux-filesystem-export-handle",
-        &uuid.bytes,
-        &object[..4 + length],
-        created,
-    )))
-}
+mod linux;
+#[cfg(target_os = "linux")]
+pub(super) use linux::identity;
 
 #[cfg(windows)]
 pub(super) fn identity(_file: &File, observed: &ObjectIdentity) -> Result<Option<[u8; 32]>> {
@@ -224,7 +129,8 @@ mod tests {
         let before = crate::engine::native::identity(&file).unwrap();
         assert!(
             before.persistent.is_some(),
-            "test filesystem must support durable identity"
+            "test filesystem must support durable identity; creation evidence: {:?}",
+            before.created
         );
         std::fs::rename(&path, temp.path().join("moved")).unwrap();
         let reopened = File::open(temp.path().join("moved")).unwrap();
