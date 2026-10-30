@@ -159,6 +159,11 @@ separately from disposable cache. Retention uses the shared continuation cleanup
 lock; content remains protected while any record in that category exists. Records
 contain no original host file paths or execution grant. Accepted merge bytes remain
 local deviations, and subscription envelopes retain their authentication context.
+New schema-2 pending records use persistent filesystem fingerprints for the
+observed base. Schema-1 records retain their original strict native comparison;
+inspection and continuation do not rewrite their format. Unsupported schemas or a
+fingerprint for the wrong schema are rejected without discarding saved input.
+A persistent fingerprint does not replace live observation checks or fresh approval.
 `instance continue --file KEY=PATH` supplies remaining exact inputs.
 `instance discard-pending` conditionally removes an observed record, including an
 invalid or stale record; it does not touch installed game files.

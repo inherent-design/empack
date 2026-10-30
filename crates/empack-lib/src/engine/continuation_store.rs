@@ -71,6 +71,13 @@ pub(in crate::engine) enum Kind {
     Instance,
 }
 impl Kind {
+    pub(in crate::engine) fn supports_schema(self, schema: u64) -> bool {
+        match self {
+            Self::Import => schema == 1,
+            Self::Synchronization => schema == 2,
+            Self::Instance => matches!(schema, 1 | 2),
+        }
+    }
     fn directory(self) -> &'static str {
         match self {
             Self::Import => "pending-imports",
@@ -311,7 +318,7 @@ pub(in crate::engine) fn read<R: BoundRecord>(
     )?;
     let record: R = serde_json::from_slice(&bytes).context("Invalid pending operation record")?;
     ensure!(
-        record.schema() == if kind == Kind::Synchronization { 2 } else { 1 },
+        kind.supports_schema(u64::from(record.schema())),
         "Unsupported pending operation schema"
     );
     ensure!(

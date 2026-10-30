@@ -7318,7 +7318,8 @@
           "assertions": [
             "Inspection and consumer preparation retain the saved opaque key proven by the native association after controlled prior-device metadata simulation",
             "A prepared update refuses a changed native association before publishing instance metadata or content",
-            "Copying the instance record to a different root does not transfer the associated root proof"
+            "Copying the instance record to a different root does not transfer the associated root proof",
+            "Workspace status reports the same valid installed release under its proven association; subscription status still rejects another root"
           ]
         }
       ],
@@ -7587,7 +7588,30 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-069.versioned-instance-base",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::saved_instance_fingerprint_versions_preserve_legacy_records_without_reinterpretation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "New schema-2 pending instance records retain persistent base fingerprints; legacy schema-1 records use the original strict native fingerprint",
+            "Unknown schemas and fingerprints encoded for the other schema refuse continuation without changing retained records or the instance",
+            "Both supported schemas resume exact retained/supplied content through fresh preparation without rewriting saved wire bytes or authorizing publication"
+          ],
+          "remaining_group_evidence": "Actual native remount, pending discard conflicts and the full restart/input matrix remain separately required"
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::pending + workflow-specific persisted records; application::engine_host",
@@ -7598,7 +7622,7 @@
         "shared pending semantics + native/browser retention and UI",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-070",

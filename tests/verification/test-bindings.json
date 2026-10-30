@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::engine::api::instance::tests::saved_instance_fingerprint_versions_preserve_legacy_records_without_reinterpretation", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::tests::root_state::pending_records_use_associated_parent_and_target_without_rebinding_copies", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::api::instance::tests::instance_inspection_and_preparation_use_the_associated_root_key", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::tests::root_state::native_root_associations_reject_corrupt_foreign_and_duplicate_claims_without_effects", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
