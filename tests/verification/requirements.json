@@ -8989,7 +8989,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Server command preparation combines the host-selected program and literal host arguments with the completed release's validated jar entry point",
+            "Prepared server executable is explicitly compared with the host-selected program, the working directory with the installed game root, and the full argument vector with the completed release jar entry point plus literal host arguments",
             "Changing the selected server entry-point bytes refuses later launch preparation"
           ],
           "remaining_group_evidence": "Command preparation and native drift checks do not establish actual Java startup, installer success or gameplay"
@@ -9951,7 +9951,7 @@
           ],
           "assertions": [
             "Each shared fixture exercises public build preparation for reference snapshots and both subscribed managed recipes, with acceptance/refusal and specific diagnostics matching its declared grammar policy",
-            "Author documents, templates and prior artifact bytes remain unchanged by preparation, including rejected configuration",
+            "Author documents, templates and prior artifact bytes and portable file permissions remain unchanged by preparation, including rejected configuration",
             "Standalone bundled customization remains outside the stricter managed lifecycle grammar"
           ],
           "remaining_group_evidence": "These engine-boundary assertions do not replace the independent supported-consumer parser observations or UX-084 actual launcher acceptance"
