@@ -168,6 +168,7 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
         policy = json.loads(ci.CLASSIFICATION.read_text())
         platform = policy["targets"][target]
         rows = [row for row in policy["tests"] if platform in row["platforms"] and test_features in row["test_features"]
+                and row["binary_name"] not in SUITES[name].excluded_binaries
                 and (not SUITES[name].binaries or row["binary_name"] in SUITES[name].binaries)]
         inventory = {"test-count": len(rows), "rust-build-meta": {"platforms": {
             "host": {"platform": {"triple": target}}, "targets": []}}, "rust-suites": {}}
@@ -176,9 +177,12 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
             test = row["id"].removeprefix(binary + "::")
             suite = inventory["rust-suites"].setdefault(binary, {
                 "status": "listed", "binary-name": row["binary_name"], "testcases": {}})
-            suite["testcases"][test] = {"ignored": row["ignored"], "filter-match": {"status": "matches"}}
+            matches = not SUITES[name].cases or test in SUITES[name].cases
+            suite["testcases"][test] = {"ignored": row["ignored"],
+                                       "filter-match": {"status": "matches" if matches else "mismatch"}}
         write_json(suite_dir / "inventory.json", inventory)
-        identities, _ = selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries, SUITES[name].cases)
+        identities, _ = selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries, SUITES[name].cases,
+                                        SUITES[name].excluded_binaries)
         # Synthetic successful rows test gate mechanics; these are not executions
         # of the real test IDs used to construct the expected receipt shape.
         xml = []
@@ -246,15 +250,21 @@ class RequiredGate(unittest.TestCase):
             git("config", "core.safecrlf", "false")
             attributes = SCRIPTS.parent / ".gitattributes"
             (root / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.exists() else b"")
-            target = root / "tests/verification/test-bindings.json"
-            target.parent.mkdir(parents=True)
-            original = ci.CLASSIFICATION.read_bytes().replace(b"\r\n", b"\n")
-            target.write_bytes(original)
+            from verification.python_tests import inputs
+            paths = {"tests/verification/test-bindings.json", *inputs(SCRIPTS.parent)}
+            originals = {}
+            for name in paths:
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                originals[name] = (SCRIPTS.parent / name).read_bytes().replace(b"\r\n", b"\n")
+                target.write_bytes(originals[name])
             git("add", ".")
-            target.unlink()
+            for name in paths:
+                (root / name).unlink()
             git("checkout-index", "--all", "--force")
-            self.assertEqual(target.read_bytes(), original,
-                             "Evidence classification bytes changed under native checkout conversion")
+            for name, original in originals.items():
+                self.assertEqual((root / name).read_bytes(), original,
+                                 f"Evidence input bytes changed under native checkout conversion: {name}")
 
     def test_consumer_source_dependency_and_fixture_identity_are_required(self):
         record = prism_record(REVISION)

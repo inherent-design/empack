@@ -910,10 +910,18 @@ and compiler wrappers are not inherited. The receipt identifies the compiler and
 Cargo used by the small offline build fixtures. On Windows, compiler workers retain
 the installed MSVC discovery roots and configured toolset/library paths so Rust can
 find its linker. Ordinary product invocations do not inherit those compiler-only
-settings. Command logs preserve UTF-8 bytes and line endings without host newline
+settings. The shared CI toolchain action initializes an x64 MSVC developer
+environment. Compiler workers prefer its validated native `cl.exe`/`link.exe`
+directory so Git Bash's unrelated `link.exe` cannot shadow it; they do not remove
+host tools. Local Windows compiler checks should run from an initialized x64
+developer environment. Command logs preserve UTF-8 bytes and line endings without host newline
 translation. A missing pinned installation
 blocks the suite before tests run; Cargo's `--offline` alone does not prevent
 Rustup from downloading a toolchain.
+
+Hashed Python producer sources, the toolchain file and verification JSON use LF
+checkout attributes on every host. Cross-host admission compares those exact bytes;
+it does not normalize or rewrite received evidence to accept another source snapshot.
 
 Doctests are discovered and executed separately and their receipts are joined to
 their own acceptance cases. Source-edited or interrupted tooling attempts remain
@@ -1214,7 +1222,8 @@ executable and `suite/` evidence alongside it. Admission checks the prepared inp
 compiler, fixed command, actual compiled feature graph, executable bytes and
 independently replayed suite results. The same retained compilation bundle is required;
 a declared telemetry feature or a matching version string cannot replace it.
-The upload selection includes `compile.json` and all three compiler-proof files;
+The upload selection includes `compile.json`, all three compiler-proof files and
+both captured stdout files;
 the admission tests stage those exact globs and recheck the downloaded bundle.
 These are trusted workflow producer records, not third-party signed attestations.
 
@@ -1222,6 +1231,37 @@ Auxiliary builds can satisfy their explicit feature/host cases, but never packag
 cases or replace any of the five shipped archives. Failures remain failures even if
 a later attempt passes. The candidate workflow produces telemetry evidence on Linux,
 macOS and Windows; it does not treat cross-compilation as native execution.
+
+After archive admission, run the fixed native/live producer once on each of the
+three primary native hosts:
+
+```sh
+python3 scripts/check-candidate-execution.py --payload /path/to/checked-native-archives --archive-evidence-sha256 EXPECTED_GATE_DIGEST --auxiliary /path/to/telemetry/build.json --revision FULL_COMMIT_SHA --version 0.8.4-beta --output .git/candidate-execution
+```
+
+It captures and extracts that host's admitted default archive outside the checkout
+and reuses the retained telemetry executable. It does not rebuild either product.
+Telemetry bytes are captured into an owned temporary copy; Unix execution modes
+are established there because downloaded workflow artifacts need not retain them.
+The downloaded build proof and executable remain unchanged.
+Four independent attempts cover native and live selections with default/minimal
+and telemetry/all-feature test graphs. `candidate-native` excludes the ordinary CLI
+binaries already exercised by the archive and telemetry producers; ignored APFS
+remount tests run separately on macOS. Discovery accepts only those declared binary
+exclusions and rejects unexplained omissions. The live phase selects the full
+runtime suite, including historical Java 8 loaders, plus the required catalogs,
+providers, pinned import, hosted publication, server and Unix desktop-assistance
+routes. CI supplies Zulu 8 and Temurin 21 and records the actual Java observations.
+
+A blocked live prerequisite does not stop the other attempts or erase their results.
+The final execution status remains blocked or failed as observed. Add each emitted
+`execution.json` with repeated `--execution` options, retaining its neighboring
+feature/phase directories. Admission replays every receipt, compiler, source, payload
+and binary identity; missing, duplicate or altered attempts cannot select a passing
+winner. These supplemental observations do not confer package or actual-consumer
+proof. The candidate gate collects all three host records and still reports blocked
+or failed execution when the corresponding job is unsuccessful.
+
 Repeated `--consumer` inputs admit the fixed Prism parser producer for the same clean
 source. Admission checks the supported Qt/compiler environment, probe and fixture
 identities, and every recorded setting. A claimed PASS with broken required commands

@@ -41,6 +41,8 @@ def main():
                       help="Observed rustdoc receipt for one native host and workspace feature graph")
     gate.add_argument("--auxiliary", type=Path, action="append", default=[],
                       help="Telemetry build.json with its retained executable and suite evidence")
+    gate.add_argument("--execution", type=Path, action="append", default=[],
+                      help="Fixed native/live execution.json bound to the admitted default and telemetry builds")
     gate.add_argument("--output", type=Path, required=True)
     publish = commands.add_parser("verify")
     publish.add_argument("--record", type=Path, required=True)
@@ -57,7 +59,8 @@ def main():
     try:
         record = qualify(Path.cwd(), args.payload, args.archive_evidence_sha256,
                          args.revision, args.version, receipt_paths=args.receipt, consumer_paths=args.consumer,
-                         tooling_paths=args.tooling, auxiliary_paths=args.auxiliary, doctest_paths=args.doctest)
+                         tooling_paths=args.tooling, auxiliary_paths=args.auxiliary, doctest_paths=args.doctest,
+                         execution_paths=args.execution)
     except (ValueError, OSError, KeyError, TypeError) as error:
         record = dict(schema=1, kind="release-candidate-qualification", status="FAIL", qualification=False,
                       source_revision=args.revision, version=args.version,

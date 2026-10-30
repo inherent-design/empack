@@ -194,6 +194,21 @@ class AttemptPolicy(unittest.TestCase):
         self.assertEqual(worker["EMPACK_STATE_DIR"], str(home))
         for key in hostile.keys() - {"HOME", "EMPACK_STATE_DIR"}:
             self.assertNotIn(key, worker)
+        with tempfile.TemporaryDirectory() as temp:
+            installation = Path(temp)
+            native = installation / "bin/Hostx64/x64"
+            native.mkdir(parents=True)
+            for tool in ("cl.exe", "link.exe"):
+                (native / tool).write_bytes(b"inert installed-tool fixture")
+            environment = toolset | hostile | {"VCToolsInstallDir": str(installation), "PATH": "git-tools"}
+            with patch.dict(os.environ, environment, clear=True), patch("verify.os.name", "nt"):
+                worker = isolated_environment(home, compiler=True)
+                runtime = isolated_environment(home)
+                self.assertEqual(worker["PATH"], str(native) + os.pathsep + "git-tools")
+                self.assertEqual(runtime["PATH"], "git-tools")
+                (native / "link.exe").unlink()
+                with self.assertRaisesRegex(RuntimeError, "MSVC compiler tools are missing"):
+                    isolated_environment(home, compiler=True)
 
     def test_standard_suite_supplies_bound_inventory_to_test_process(self):
         import hashlib

@@ -13,6 +13,7 @@ from unittest.mock import patch
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from verification import package_archive as archive_reader
 spec = importlib.util.spec_from_file_location(
     "release_archive", Path(__file__).resolve().parents[1] / "check-release-archive.py")
 package = importlib.util.module_from_spec(spec)
@@ -140,10 +141,10 @@ class ReleaseArchiveAdmission(unittest.TestCase):
     def test_capture_and_uncompressed_binary_have_independent_bounds(self):
         source = self.root / "source"
         source.write_bytes(b"too large")
-        with patch.object(package, "MAX_ARCHIVE", 2), self.assertRaisesRegex(ValueError, "byte limit"):
+        with patch.object(archive_reader, "MAX_ARCHIVE", 2), self.assertRaisesRegex(ValueError, "byte limit"):
             package.capture_archive(source, self.root / "captured", package.sha256(source))
         archive = self.tar([("empack", tarfile.REGTYPE, 0o755, b"large" * 1000)])
-        with patch.object(package, "MAX_BINARY", 100), self.assertRaisesRegex(ValueError, "size"):
+        with patch.object(archive_reader, "MAX_BINARY", 100), self.assertRaisesRegex(ValueError, "size"):
             package.extract_binary(archive, self.destination, "x86_64-unknown-linux-gnu")
 
 

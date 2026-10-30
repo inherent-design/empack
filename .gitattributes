@@ -1,5 +1,7 @@
-# Verification receipts hash registry bytes across native checkout platforms.
+# Verification receipts hash producer and registry bytes across native checkouts.
 tests/verification/*.json text eol=lf
+scripts/**/*.py text eol=lf
+rust-toolchain.toml text eol=lf
 
 # Hosted fixture signatures and content identities cover exact checked-in bytes.
 tests/fixtures/hosted-publication/** -text

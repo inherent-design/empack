@@ -3,7 +3,8 @@
 BOUNDARIES = {"U", "H", "N", "X", "I", "L", "C", "P", "W", "M"}
 
 
-def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=(), test_features="all"):
+def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=(), test_features="all",
+                           excluded_binaries=()):
     if bindings.get("schema") != 3 or bindings.get("selection") != "workspace-feature-graphs":
         raise ValueError("Expected workspace feature-graph Rust classification")
     if test_features not in {"all", "minimal"}:
@@ -20,6 +21,9 @@ def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=(), t
         raise ValueError(f"Unclassified Rust target: {target}")
     platform = targets[target]
     selected_binaries = set(required_binaries)
+    excluded = set(excluded_binaries)
+    if selected_binaries & excluded:
+        raise ValueError("Rust binary cannot be both required and excluded")
     classified, names = {}, {}
     for row in bindings["tests"]:
         identity = row["id"]
@@ -40,14 +44,16 @@ def compare_rust_inventory(inventory, bindings, api_ids, required_binaries=(), t
         classified[identity] = row
     if not classified:
         raise ValueError("Rust classification must be nonempty")
-    if selected_binaries - set(names.values()):
+    if (selected_binaries | excluded) - set(names.values()):
         raise ValueError("Required binary is absent from Rust classification")
     expected = {identity: row for identity, row in classified.items()
                 if platform in row["platforms"] and test_features in row["test_features"]
+                and row["binary_name"] not in excluded
                 and (not selected_binaries or row["binary_name"] in selected_binaries)}
     discovered = {}
     for binary, suite in inventory["rust-suites"].items():
-        outside = selected_binaries and suite["binary-name"] not in selected_binaries
+        outside = (suite["binary-name"] in excluded
+                   or selected_binaries and suite["binary-name"] not in selected_binaries)
         if suite["status"] == "skipped" and outside and not suite["testcases"]:
             continue
         if suite["status"] != "listed":

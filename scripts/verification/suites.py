@@ -5,6 +5,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Suite:
     binaries: tuple[str, ...] = ()
+    excluded_binaries: tuple[str, ...] = ()
     ignored: bool = False
     telemetry: bool = False
     unix_only: bool = False
@@ -24,6 +25,9 @@ class Suite:
     @property
     def filter(self):
         binaries = " | ".join(f"binary(={name})" for name in self.binaries) or "all()"
+        if self.excluded_binaries:
+            excluded = " | ".join(f"binary(={name})" for name in self.excluded_binaries)
+            binaries = f"({binaries}) & !({excluded})"
         if self.cases:
             return f"({binaries}) & (" + " | ".join(f"test(={name})" for name in self.cases) + ")"
         return binaries
@@ -38,6 +42,8 @@ CLI = (
 )
 SUITES = {
     "deterministic": Suite(),
+    # CLI execution is already retained by the archive and auxiliary producers.
+    "candidate-native": Suite(excluded_binaries=CLI),
     "cli": Suite(CLI),
     "native-remount": Suite(("journey_publisher", "journey_pending_import", "journey_pending_instance", "journey_pending", "journey_recovery", "empack_tests"),
                             ignored=True, macos_only=True, timeout=600, cases=(

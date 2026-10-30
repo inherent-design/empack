@@ -8,6 +8,7 @@ from .consumer import inspect_prism_evidence
 from .python_tests import inspect_python_evidence
 from .doctests import inspect_doctest_evidence
 from .auxiliary import inspect_auxiliary
+from .candidate_execution import inspect_execution
 from .receipts import inspect_suite_receipt
 from .release import TARGETS, check_payload, git
 from .release_inputs import release_version, stamped_sources
@@ -69,7 +70,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
             "waivers": [], "waiver_policy": "No waiver admission; all applicable obligations must pass"}
 
 
-def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=(), tooling_paths=(), auxiliary_paths=(), doctest_paths=()):
+def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=(), tooling_paths=(), auxiliary_paths=(), doctest_paths=(), execution_paths=()):
     root = Path(root)
     if git(root, "rev-parse", "HEAD") != revision or git(root, "status", "--porcelain"):
         raise ValueError("Candidate gate requires its exact clean source checkout")
@@ -83,6 +84,11 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     binaries = {entry["suite"]["target"]: entry["executable"]["sha256"] for entry in archives["targets"]}
     auxiliary = [inspect_auxiliary(path, root, revision, version) for path in auxiliary_paths]
     evidence.extend(record["suite"] for record in auxiliary)
+    executions = [inspect_execution(path, archives, auxiliary, payload_sha256, revision, version)
+                  for path in execution_paths]
+    if len({record["target"] for record in executions}) != len(executions):
+        raise ValueError("Candidate execution cannot select repeated attempts for one native host")
+    evidence.extend(suite for record in executions for suite in record["suites"])
     for path in receipt_paths:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         artifact = raw["artifact"]
@@ -104,6 +110,7 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
                   created_at=datetime.now(timezone.utc).isoformat(), archive_evidence_sha256=payload_sha256,
                   consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests,
                   auxiliary_builds=[{key: value for key, value in record.items() if key != "suite"} for record in auxiliary],
+                  candidate_executions=[{key: value for key, value in record.items() if key != "suites"} for record in executions],
                   suite_evidence=[{key: value for key, value in record.items() if key != "tests"} for record in evidence])
     return result
 

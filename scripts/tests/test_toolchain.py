@@ -9,6 +9,13 @@ import unittest
 
 
 class ToolchainContracts(unittest.TestCase):
+    def test_windows_msvc_setup_is_pinned_and_precedes_compiler_installation(self):
+        action = (Path(__file__).parents[2] / ".github/actions/rust-toolchain/action.yml").read_text()
+        setup = "ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756"
+        self.assertIn("if: runner.os == 'Windows'", action)
+        self.assertIn("arch: x64", action)
+        self.assertLess(action.index(setup), action.index("uses: dtolnay/rust-toolchain@master"))
+
     def test_repository_pin_and_extra_components_reach_the_installer(self):
         root = Path(__file__).parents[2]
         action = (root / ".github/actions/rust-toolchain/action.yml").read_text()

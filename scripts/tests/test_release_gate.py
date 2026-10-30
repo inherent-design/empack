@@ -204,7 +204,7 @@ class ReleaseArchiveGate(unittest.TestCase):
         self.assertIn("os: ubuntu-24.04-arm", tests)
         self.assertIn("needs: [build, test-archives]", gate)
         self.assertIn("needs: [archive-gate, candidate-gate]", publication)
-        self.assertIn("needs: [archive-gate, consumer, auxiliary]", gate)
+        self.assertIn("needs: [archive-gate, consumer, auxiliary, candidate-execution]", gate)
         candidate = gate.split("  candidate-gate:\n", 1)[1]
         self.assertLess(candidate.index("uses: ./.github/actions/rust-toolchain"),
                         candidate.index("python3 scripts/verify.py python"))

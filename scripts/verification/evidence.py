@@ -10,16 +10,19 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def selected_tests(document, ignored, required_binaries=(), required_cases=()):
+def selected_tests(document, ignored, required_binaries=(), required_cases=(), excluded_binaries=()):
     selected, all_ids, matched_binaries, matched_cases = [], set(), set(), set()
     for binary, suite in document["rust-suites"].items():
         # Nextest omits discovery of binaries excluded by an exact binary filter.
         # That is permitted only outside this fixed suite's declared selection.
-        if (suite["status"] == "skipped" and required_binaries
-                and suite["binary-name"] not in required_binaries and not suite["testcases"]):
+        outside = (suite["binary-name"] in excluded_binaries
+                   or required_binaries and suite["binary-name"] not in required_binaries)
+        if suite["status"] == "skipped" and outside and not suite["testcases"]:
             continue
         if suite["status"] != "listed":
             raise ValueError(f"Unlisted test binary: {binary}")
+        if suite["binary-name"] in excluded_binaries:
+            raise ValueError(f"Excluded test binary was discovered: {binary}")
         for name, case in suite["testcases"].items():
             identity = f"{binary}::{name}"
             if identity in all_ids:

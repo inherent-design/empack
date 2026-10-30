@@ -1758,6 +1758,62 @@
       "requirements": [
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_candidate_execution.CandidateDispatch.test_fixed_dispatch_continues_after_blocked_phase_without_rebuilding_products",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_execution.CandidateDispatch.test_fixed_exclusion_rejects_unexpected_skipped_or_discovered_binaries",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_execution.CandidateExecution.test_blocked_live_evidence_retains_other_phases_and_cannot_be_reported_as_pass",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_execution.CandidateExecution.test_both_features_native_and_live_are_bound_without_becoming_package_evidence",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_candidate_execution.CandidateExecution.test_changed_payload_source_binary_selection_or_missing_attempt_cannot_qualify",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_release_workflow.ReleaseChannelContracts.test_native_live_candidate_execution_uses_admitted_products_and_retains_failed_observations",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_toolchain.ToolchainContracts.test_windows_msvc_setup_is_pinned_and_precedes_compiler_installation",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_candidate_execution.CandidateCapture.test_retained_binary_capture_preserves_input_and_sets_only_owned_output_attributes",
+      "boundary": "N",
+      "requirements": [
+        "UX-088"
+      ]
     }
   ]
 }

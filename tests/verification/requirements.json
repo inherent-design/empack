@@ -11183,6 +11183,34 @@
             "The exact extracted ordinary executable performs the local export/prepare journey without adding a fixture feature or recompiling shipped bytes"
           ],
           "remaining_group_evidence": "Requires the real five-target archive gate and its execution receipts. Tiny Cargo workspaces and synthetic package records cannot supply P evidence. Actual consumer launch remains separate."
+        },
+        {
+          "id": "UX-086.candidate-native-live-admission",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_candidate_execution.CandidateDispatch.test_fixed_dispatch_continues_after_blocked_phase_without_rebuilding_products",
+            "python::test_candidate_execution.CandidateDispatch.test_fixed_exclusion_rejects_unexpected_skipped_or_discovered_binaries",
+            "python::test_candidate_execution.CandidateExecution.test_blocked_live_evidence_retains_other_phases_and_cannot_be_reported_as_pass",
+            "python::test_candidate_execution.CandidateExecution.test_both_features_native_and_live_are_bound_without_becoming_package_evidence",
+            "python::test_candidate_execution.CandidateExecution.test_changed_payload_source_binary_selection_or_missing_attempt_cannot_qualify",
+            "python::test_release_workflow.ReleaseChannelContracts.test_native_live_candidate_execution_uses_admitted_products_and_retains_failed_observations"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Four fixed native/live attempts bind both product variants to the admitted archive, telemetry executable, source and compiler; changed selections and missing or duplicate attempts cannot qualify",
+            "Blocked live evidence retains the independently passing native/other-feature observations and cannot be relabeled as success",
+            "Dispatch reuses retained binaries without rebuilding products, selects the complete historical/current runtime suite, and continues independent phases after blocked prerequisites",
+            "The explicit CLI exclusion leaves already-admitted CLI execution separate, preserves ignored remount coverage and rejects unexplained skipped or discovered binaries",
+            "The three-host workflow forwards retained execution records to qualification even when a live execution job fails or is blocked"
+          ],
+          "remaining_group_evidence": "Synthetic dispatch and admission fixtures prove tooling behavior only; actual candidate native/live execution, final archives and consumers remain independently required."
         }
       ],
       "owner_now": [
@@ -11412,7 +11440,8 @@
             "python::test_python_evidence.PythonAdmission.test_platform_requires_compiler_host_but_not_identical_interpreter_architecture",
             "python::test_release_workflow.ReleaseChannelContracts.test_python_host_evidence_is_produced_and_forwarded_without_repeating_linux",
             "python::test_verification_runner.AttemptPolicy.test_windows_compiler_discovery_survives_without_host_cargo_or_application_state",
-            "python::test_python_evidence.PythonLifecycle.test_explicit_host_scope_retains_skips_without_excusing_applicable_or_missing_work"
+            "python::test_python_evidence.PythonLifecycle.test_explicit_host_scope_retains_skips_without_excusing_applicable_or_missing_work",
+            "python::test_toolchain.ToolchainContracts.test_windows_msvc_setup_is_pinned_and_precedes_compiler_installation"
           ],
           "required_platforms": [
             "linux",
@@ -11428,7 +11457,8 @@
             "The interpreter architecture is retained separately from its compiler host; a translated interpreter is allowed while conflicting OS labels are refused",
             "Release workflow collection forwards all three independent host receipts without treating them as product-feature or package execution",
             "Only compiler workers retain the installed Windows toolset discovery and library paths; runtime homes, application state, Cargo configuration, credentials and injected compiler flags remain isolated",
-            "Declared platform exclusions require an actual observed skip and remain NOT_RUN; applicable skips, missing work, failures and altered applicability cannot qualify"
+            "Declared platform exclusions require an actual observed skip and remain NOT_RUN; applicable skips, missing work, failures and altered applicability cannot qualify",
+            "Pinned Windows developer-tool setup precedes Rust installation; isolated compiler PATH prefers validated native cl/link tools over Git tools without altering runtime PATH or deleting host files"
           ],
           "remaining_group_evidence": "Synthetic metadata and workflow-source assertions validate the tooling, not actual execution on another OS. Real native Python jobs, Rust suites and final archives remain independently required."
         },
@@ -11451,6 +11481,46 @@
             "Log redaction preserves Cargo registry crate/version identities without retaining URL credentials or query values",
             "Known secrets, overlapping values and ordinary URL fragments remain redacted without treating a masking placeholder as URL syntax"
           ]
+        },
+        {
+          "id": "UX-088.source-checkout-byte-identity",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_ci_verification.RequiredGate.test_registry_bytes_are_stable_in_autocrlf_checkout"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "An actual Git checkout with autocrlf enabled retains exact LF bytes for every hashed Python producer, toolchain and verification registry input",
+            "The fixture exercises checkout conversion without normalizing received receipts or changing signed pack content"
+          ],
+          "remaining_group_evidence": "Each native host still needs its own observed Python run; one host simulation is not execution on another OS."
+        },
+        {
+          "id": "UX-088.candidate-executable-capture",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_candidate_execution.CandidateCapture.test_retained_binary_capture_preserves_input_and_sets_only_owned_output_attributes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Candidate telemetry bytes are bounded, digest-checked and captured to an owned file; input bytes and source attributes remain unchanged",
+            "The owned Unix copy receives executable mode; existing destinations, wrong hashes and oversized input refuse without overwriting the retained input"
+          ],
+          "remaining_group_evidence": "Inert native file capture is not execution of a product or a consumer; actual candidate suites remain separately required."
         }
       ],
       "owner_now": [

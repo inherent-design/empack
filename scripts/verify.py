@@ -46,9 +46,18 @@ def isolated_environment(root, *, compiler=False):
         # Rust's MSVC discovery needs installation roots (vswhere) or the
         # configured developer toolset. Keep these, not Cargo flags/credentials.
         toolset = {"PROGRAMFILES", "PROGRAMFILES(X86)", "VSINSTALLDIR", "VCINSTALLDIR",
-                   "VCTOOLSVERSION", "VSCMD_ARG_TGT_ARCH", "VSCMD_ARG_VCVARS_SPECTRE",
+                   "VCTOOLSVERSION", "VCTOOLSINSTALLDIR", "VSCMD_ARG_TGT_ARCH", "VSCMD_ARG_VCVARS_SPECTRE",
                    "WINDOWSSDKDIR", "WINDOWSSDKVERSION", "LIB", "LIBPATH", "INCLUDE"}
         result.update((key, value) for key, value in os.environ.items() if key.upper() in toolset)
+        installation = os.environ.get("VCToolsInstallDir")
+        if installation:
+            # Git Bash can prepend its unrelated link.exe after CI tool setup.
+            # Prefer the configured native tools only in compiler workers.
+            directory = os.path.join(installation, "bin", "Hostx64", "x64")
+            if not all(os.path.isfile(os.path.join(directory, tool)) for tool in ("cl.exe", "link.exe")):
+                raise RuntimeError("Configured x64 MSVC compiler tools are missing")
+            result["PATH"] = directory + os.pathsep + result.get("PATH", result.get("Path", ""))
+            result.pop("Path", None)
     for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
                 "XDG_DATA_HOME", "XDG_CACHE_HOME", "EMPACK_CACHE_DIR", "EMPACK_STATE_DIR",
                 "TMP", "TEMP", "TMPDIR"):
@@ -180,10 +189,11 @@ junit.store-failure-output = false
     output = checked(discovery_command, suite_dir, "discovery", environment, timeout=1800)
     inventory = json.loads(output)
     write_json(suite_dir / "inventory.json", inventory)
-    selected, all_ids = selected_tests(inventory, suite.ignored, suite.binaries, suite.cases)
+    selected, all_ids = selected_tests(inventory, suite.ignored, suite.binaries, suite.cases, suite.excluded_binaries)
     bindings = json.loads((ROOT / "tests/verification/test-bindings.json").read_text(encoding="utf-8"))
     requirements = json.loads((ROOT / "tests/verification/requirements.json").read_text(encoding="utf-8"))
-    compare_rust_inventory(inventory, bindings, requirements["api_routes"], suite.binaries, test_features)
+    compare_rust_inventory(inventory, bindings, requirements["api_routes"], suite.binaries, test_features,
+                           suite.excluded_binaries)
     record["classification_sha256"] = sha256(ROOT / "tests/verification/test-bindings.json")
     record["selected"] = selected
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")

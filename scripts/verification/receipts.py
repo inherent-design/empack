@@ -104,10 +104,12 @@ def inspect_suite_receipt(path, expected_suites, target, revision, features="tel
             raise ValueError(f"Changed Rust classification: {row['suite']}")
         discovered = json.loads(inventory.read_text())
         compare_rust_inventory(discovered, json.loads(CLASSIFICATION.read_text()),
-                               json.loads(REQUIREMENTS.read_text())["api_routes"], suite.binaries, test_features)
+                               json.loads(REQUIREMENTS.read_text())["api_routes"], suite.binaries, test_features,
+                               suite.excluded_binaries)
         if discovered["rust-build-meta"]["platforms"]["host"]["platform"]["triple"] != target:
             raise ValueError(f"Inventory target disagrees with required target: {row['suite']}")
-        selected, all_ids = selected_tests(discovered, suite.ignored, suite.binaries, suite.cases)
+        selected, all_ids = selected_tests(discovered, suite.ignored, suite.binaries, suite.cases,
+                                           suite.excluded_binaries)
         if "junit_sha256" in row:
             if sha256(junit) != row["junit_sha256"]:
                 raise ValueError(f"Changed test evidence: {row['suite']}")

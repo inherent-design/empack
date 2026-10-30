@@ -57,7 +57,7 @@ class ReleaseChannelContracts(unittest.TestCase):
         self.assertIn('--qmake qmake6', action)
         self.assertIn('7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4', action)
         gate = release.split('  candidate-gate:', 1)[1].split('\n  release:', 1)[0]
-        self.assertIn('needs: [archive-gate, consumer, auxiliary]', gate)
+        self.assertIn('needs: [archive-gate, consumer, auxiliary, candidate-execution]', gate)
         self.assertIn('name: consumer-prism', gate)
         self.assertIn('--consumer .git/candidate-consumer/prism.json', gate)
         auxiliary = release.split('  auxiliary:', 1)[1].split('  candidate-gate:', 1)[0]
@@ -68,6 +68,26 @@ class ReleaseChannelContracts(unittest.TestCase):
         self.assertIn('test "${#doctest_records[@]}" -eq 6', gate)
         self.assertIn('doctest_args+=(--doctest "$record")', gate)
         self.assertIn('"${doctest_args[@]}"', gate)
+
+    def test_native_live_candidate_execution_uses_admitted_products_and_retains_failed_observations(self):
+        workflow = (Path(__file__).parents[2] / ".github/workflows/release.yml").read_text()
+        producer = workflow.split("  candidate-execution:", 1)[1].split("  candidate-gate:", 1)[0]
+        gate = workflow.split("  candidate-gate:", 1)[1].split("  release:", 1)[0]
+        for target in ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"):
+            self.assertIn("target: " + target, producer)
+        self.assertIn("name: checked-native-archives", producer)
+        self.assertIn("name: candidate-auxiliary-${{ matrix.os }}", producer)
+        self.assertIn("scripts/check-candidate-execution.py --payload", producer)
+        self.assertNotIn("cargo build", producer)
+        self.assertIn('java-version: "8"', producer)
+        self.assertIn('java-version: "21"', producer)
+        self.assertIn("distribution: zulu", producer)
+        self.assertIn("always() && needs.archive-gate.result == 'success'", producer)
+        self.assertIn("pattern: candidate-execution-*", gate)
+        self.assertIn('test "${#execution_records[@]}" -eq 3', gate)
+        self.assertIn('execution_args+=(--execution "$record")', gate)
+        self.assertIn("always() && needs.archive-gate.result == 'success'", gate)
+        self.assertNotIn("needs.candidate-execution.result == 'success'", gate)
 
     def test_archive_and_cross_builds_use_the_audited_producer_and_pinned_cross(self):
         root = Path(__file__).parents[2]
