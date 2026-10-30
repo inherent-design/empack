@@ -38,8 +38,9 @@ serial and file ID from `FILE_ID_INFO`. Linux export handles distinguish filesys
 object namespaces, including subvolumes. All three include creation identity and
 use separate platform domains. No pathname is accepted as substitute evidence.
 
-New saved-build fingerprints and schema-5 publication journals use these persistent
-observations. Journals bind both the root and each file's pre-publication identity.
+New saved-build fingerprints, schema-5 publication journals and schema-2 retention
+records use these persistent observations. Journals bind both the root and each file's pre-publication identity.
+Schema-1 retention records retain strict native root checks during cleanup.
 Schema-4 journals retain their original strict comparison for inspection, finish and
 restore; inspection does not rewrite them or infer missing volume evidence. Mixed
 identity formats are rejected. Replacing an unchanged pre-publication file with
@@ -61,7 +62,7 @@ native-host evidence is not a supported-platform claim.
 **Migration remains unfinished in the v0.8.4 development branch.** Root keys, other
 continuations and recovery journals still need the corresponding durable lookup and
 legacy migration. Journal format support does not migrate state directories or
-creation/runtime/retention records. Persistent fingerprint support alone does not fix instance reopen
+creation records or runtime state lookup. Persistent fingerprint support alone does not fix instance reopen
 or pending discovery after remount. Existing state must remain intact until its
 binding can be established; an ambiguous old device binding cannot authorize writes.
 

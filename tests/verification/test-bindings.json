@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::engine::publication::tests::identity::retained_preparation_identity_refuses_foreign_or_mixed_records_before_cleanup", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::native::persistent::linux::tests::filesystem_uuid_matches_handle_bound_ext4_evidence_when_available", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "IO", "platforms": ["linux"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::tests::identity::recovery_journals_bind_persistent_objects_and_preserve_strict_legacy_records", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::tests::identity::recovery_refuses_mixed_identity_formats_and_same_bytes_replacements", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

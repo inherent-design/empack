@@ -222,3 +222,66 @@ fn journal_identity_separates_persistent_comparison_from_live_and_legacy_checks(
     );
     assert!(!project.path().join("pack").exists());
 }
+
+#[test]
+fn retained_preparation_identity_refuses_foreign_or_mixed_records_before_cleanup() {
+    for legacy in [false, true] {
+        let project = tempfile::tempdir().unwrap();
+        fixture(project.path());
+        let host = tempfile::tempdir().unwrap();
+        let publisher = Publisher::open(&host.path().join("private")).unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        let state = publisher.project_state(&root).unwrap();
+        let _lock = lock(&state).unwrap();
+        state.create_dir("op-fixture").unwrap();
+        state.write("op-fixture/before-0", b"retained").unwrap();
+        state.write("neighbor", b"unowned").unwrap();
+        retention::record_preparation(
+            &state,
+            &root,
+            "op-fixture",
+            BTreeSet::from(["before-0".into()]),
+        )
+        .unwrap();
+        let mut wire: serde_json::Value =
+            serde_json::from_slice(&state.read("retention.json").unwrap()).unwrap();
+        assert_eq!(wire["schema"], 2);
+        assert_eq!(
+            wire["root"],
+            serde_json::json!({"persistent": root.binding.persistent.unwrap()})
+        );
+        if legacy {
+            wire["schema"] = 1.into();
+            wire["root"] = serde_json::to_value(Binding::from(root.binding)).unwrap();
+        }
+        for malformed in [false, true] {
+            let mut invalid = wire.clone();
+            if malformed {
+                invalid["schema"] = if legacy { 2.into() } else { 1.into() };
+            } else if legacy {
+                invalid["root"]["volume"] = (root.binding.volume ^ 1).into();
+            } else {
+                invalid["root"]["persistent"][0] = (root.binding.persistent.unwrap()[0] ^ 1).into();
+            }
+            let bytes = serde_json::to_vec(&invalid).unwrap();
+            state.write("retention.json", &bytes).unwrap();
+            let error = retention::reclaim_preparation(&state, &root).unwrap_err();
+            assert!(format!("{error:#}").contains("Retention root or schema mismatch"));
+            assert_eq!(state.read("retention.json").unwrap(), bytes);
+            assert_eq!(state.read("op-fixture/before-0").unwrap(), b"retained");
+            assert_eq!(state.read("neighbor").unwrap(), b"unowned");
+        }
+        state
+            .write("retention.json", serde_json::to_vec(&wire).unwrap())
+            .unwrap();
+        retention::reclaim_preparation(&state, &root).unwrap();
+        assert!(!state.exists("op-fixture"));
+        assert!(!state.exists("retention.json"));
+        assert_eq!(state.read("neighbor").unwrap(), b"unowned");
+        assert_eq!(
+            fs::read(project.path().join("empack.yml")).unwrap(),
+            b"old intent"
+        );
+        retention::reclaim_preparation(&state, &root).unwrap();
+    }
+}

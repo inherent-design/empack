@@ -8065,7 +8065,29 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-079.retention-record-identity",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::identity::retained_preparation_identity_refuses_foreign_or_mixed_records_before_cleanup"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "New pre-publication retention records bind persistent root identity; legacy records retain strict native identity",
+            "Foreign root evidence and mixed schema/identity forms refuse cleanup before deleting owned bytes or changing the descriptor",
+            "Validated cleanup reclaims only recorded objects, preserves neighboring files and author bytes, and converges on repeated cleanup"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::native/snapshot/staging/verification/publication",
         "engine::acquisition/content/archive_source/import",
@@ -8076,7 +8098,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared pending semantics + native/browser retention and UI"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-080",

@@ -5,7 +5,7 @@ use super::*;
 #[serde(deny_unknown_fields)]
 struct Preparation {
     schema: u32,
-    root: Binding,
+    root: JournalBinding,
     operation: String,
     files: BTreeSet<String>,
 }
@@ -20,8 +20,8 @@ pub(super) fn record_preparation(
         state,
         "retention.json",
         &Preparation {
-            schema: 1,
-            root: root.binding.into(),
+            schema: 2,
+            root: JournalBinding::capture(5, root.binding)?,
             operation: operation.into(),
             files,
         },
@@ -51,8 +51,15 @@ pub(super) fn reclaim_preparation(state: &Dir, root: &ProjectReadRoot) -> Result
     )?;
     drop(file);
     let record: Preparation = serde_json::from_slice(&bytes).context("Corrupt retention record")?;
+    // Retention 1 uses the strict native identity encoded by journal 4;
+    // retention 2 uses journal 5's persistent identity. Never mix the wire forms.
+    let identity_schema = match record.schema {
+        1 => 4,
+        2 => 5,
+        _ => 0,
+    };
     ensure!(
-        record.schema == 1 && record.root == Binding::from(root.binding),
+        record.root.supports_schema(identity_schema) && record.root.matches(root.binding),
         "Retention root or schema mismatch"
     );
     let journal = load_journal(state)?;
