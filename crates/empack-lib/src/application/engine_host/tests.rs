@@ -140,7 +140,17 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
                     crate::application::classify_error(&error),
                     crate::application::EmpackExitCode::Usage
                 );
-                assert!(error.to_string().contains("requires --yes"), "{error:#}");
+                let rendered = format!("{error:#}");
+                assert!(rendered.contains("requires --yes"), "{rendered}");
+                assert!(rendered.contains("Recovery inspection ("), "{rendered}");
+                assert!(
+                    rendered.contains(project.path().to_str().unwrap()),
+                    "{rendered}"
+                );
+                assert!(
+                    rendered.contains(host.path().to_str().unwrap()),
+                    "{rendered}"
+                );
                 assert!(session.interactive_provider.get_confirm_calls().is_empty());
             }
             assert_eq!(snapshot(project.path()), before_project);
