@@ -1814,6 +1814,27 @@
       "requirements": [
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_compiler_environment.CompilerDispatch.test_all_owned_compilation_paths_use_the_shared_selection",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_compiler_environment.CompilerDispatch.test_external_product_version_probe_does_not_select_compiler_tools",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_compiler_environment.CompilerSelection.test_configured_toolset_is_case_insensitive_idempotent_and_not_global",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
     }
   ]
 }

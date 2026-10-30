@@ -911,9 +911,14 @@ Cargo used by the small offline build fixtures. On Windows, compiler workers ret
 the installed MSVC discovery roots and configured toolset/library paths so Rust can
 find its linker. Ordinary product invocations do not inherit those compiler-only
 settings. The shared CI toolchain action initializes an x64 MSVC developer
-environment. Compiler workers prefer its validated native `cl.exe`/`link.exe`
-directory so Git Bash's unrelated `link.exe` cannot shadow it; they do not remove
-host tools. Local Windows compiler checks should run from an initialized x64
+environment. Shared compiler selection prefers its validated native `cl.exe`/`link.exe`
+directory so Git Bash's unrelated `link.exe` cannot shadow it. Ordinary product
+and release builds, Nextest discovery/execution, rustdoc and compiled registry
+discovery use that same selection. Initializing the toolchain alone is insufficient
+when a later shell prepends Git tools. Selection changes only the command's copied
+environment; it does not remove host tools or change the global environment.
+An external product's version probe still uses runtime isolation.
+Local Windows compiler checks should run from an initialized x64
 developer environment. Command logs preserve UTF-8 bytes and line endings without host newline
 translation. A missing pinned installation
 blocks the suite before tests run; Cargo's `--offline` alone does not prevent

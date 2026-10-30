@@ -7,6 +7,7 @@ import tomllib
 
 from .evidence import sha256, write_json
 from .process import run
+from .compiler import compiler_environment
 
 EVIDENCE_FILES = {"product-build-messages.jsonl", "product-metadata.json", "product-build-audit.json"}
 COMPILATION_FILES = EVIDENCE_FILES | {"compile.json", "build.stdout", "metadata.stdout"}
@@ -68,7 +69,7 @@ def compile_product(root, target, builder, directory, environment, features="def
         raise ValueError("Product build output already contains an attempt; select a fresh directory")
     target_dir = Path(environment.get("CARGO_TARGET_DIR", root / "target"))
     target_dir = (root / target_dir).resolve() if not target_dir.is_absolute() else target_dir.resolve()
-    environment = dict(environment, CARGO_TARGET_DIR=str(target_dir), CARGO_TERM_COLOR="never")
+    environment = compiler_environment(dict(environment, CARGO_TARGET_DIR=str(target_dir), CARGO_TERM_COLOR="never"))
 
     def checked(command, name, timeout=120):
         code, output, timed_out = run(command, cwd=root, env=environment,

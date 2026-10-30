@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from verification.classification import BOUNDARIES, compare_rust_inventory
+from verification.compiler import compiler_environment
 from verification.consumer import PRISM_TEST
 from verification.python_tests import compare_inventory as compare_python_inventory
 from verification.suites import TEST_FEATURES
@@ -103,9 +104,10 @@ def compare_doctests(inventory, bindings, requirements):
 def discover_tooling(output, requirements):
     """Compile/list public surfaces and verify ownership, without executing cases."""
     output.mkdir(parents=True, exist_ok=True)
+    environment = compiler_environment(os.environ)
     def invoke(command, name):
         log = output / f"{name}-discovery.log"
-        code, stdout, timed_out = run(command, cwd=ROOT, env=dict(os.environ),
+        code, stdout, timed_out = run(command, cwd=ROOT, env=environment,
             log=log, timeout=900, separate_stdout=True)
         if code or timed_out:
             raise ValueError(f"{name} discovery failed (exit {code}, timeout={timed_out}); see {log}")

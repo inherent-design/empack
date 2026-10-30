@@ -11611,6 +11611,47 @@
             "The owned Unix copy receives executable mode; existing destinations, wrong hashes and oversized input refuse without overwriting the retained input"
           ],
           "remaining_group_evidence": "Inert native file capture is not execution of a product or a consumer; actual candidate suites remain separately required."
+        },
+        {
+          "id": "UX-088.configured-native-compiler",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_compiler_environment.CompilerSelection.test_configured_toolset_is_case_insensitive_idempotent_and_not_global"
+          ],
+          "assertions": [
+            "The configured x64 MSVC toolset wins over Git tools with case-insensitive Windows environment names, a single PATH spelling and idempotent selection",
+            "Missing configured tools refuse; an unconfigured toolset and non-Windows host retain the original policy; caller environment and explicit flags are not mutated"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "remaining_group_evidence": "Controlled helper dispatch and inert tool files do not establish native Windows compilation or product execution. Those require the actual native and candidate receipts, retaining earlier failures."
+        },
+        {
+          "id": "UX-088.owned-compilation-dispatch",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_compiler_environment.CompilerDispatch.test_all_owned_compilation_paths_use_the_shared_selection",
+            "python::test_compiler_environment.CompilerDispatch.test_external_product_version_probe_does_not_select_compiler_tools"
+          ],
+          "assertions": [
+            "Ordinary product, native release, Nextest discovery/execution, rustdoc and registry-discovery commands all use the shared compiler selector",
+            "Invalid synthetic inventories remain invalid; a selected external executable version probe uses runtime isolation without requesting compiler tools; rustdoc still removes unsupported inherited options"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "remaining_group_evidence": "Controlled helper dispatch and inert tool files do not establish native Windows compilation or product execution. Those require the actual native and candidate receipts, retaining earlier failures."
         }
       ],
       "owner_now": [

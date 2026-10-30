@@ -13,6 +13,7 @@ import tomllib
 import uuid
 
 from verification.classification import compare_rust_inventory
+from verification.compiler import compiler_environment
 from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
 from verification.product_build import retain_build
@@ -49,15 +50,7 @@ def isolated_environment(root, *, compiler=False):
                    "VCTOOLSVERSION", "VCTOOLSINSTALLDIR", "VSCMD_ARG_TGT_ARCH", "VSCMD_ARG_VCVARS_SPECTRE",
                    "WINDOWSSDKDIR", "WINDOWSSDKVERSION", "LIB", "LIBPATH", "INCLUDE"}
         result.update((key, value) for key, value in os.environ.items() if key.upper() in toolset)
-        installation = os.environ.get("VCToolsInstallDir")
-        if installation:
-            # Git Bash can prepend its unrelated link.exe after CI tool setup.
-            # Prefer the configured native tools only in compiler workers.
-            directory = os.path.join(installation, "bin", "Hostx64", "x64")
-            if not all(os.path.isfile(os.path.join(directory, tool)) for tool in ("cl.exe", "link.exe")):
-                raise RuntimeError("Configured x64 MSVC compiler tools are missing")
-            result["PATH"] = directory + os.pathsep + result.get("PATH", result.get("Path", ""))
-            result.pop("Path", None)
+        result = compiler_environment(result)
     for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
                 "XDG_DATA_HOME", "XDG_CACHE_HOME", "EMPACK_CACHE_DIR", "EMPACK_STATE_DIR",
                 "TMP", "TEMP", "TMPDIR"):
@@ -118,9 +111,10 @@ def product(args, attempt, environment, host):
         if features == "telemetry":
             command += ["--features", "telemetry"]
         command += ["--message-format=json"]
-        messages = checked(command, attempt, "product-build", environment, timeout=1800, cwd=ROOT)
+        compiler = compiler_environment(environment)
+        messages = checked(command, attempt, "product-build", compiler, timeout=1800, cwd=ROOT)
         metadata = checked(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"],
-                           attempt, "product-metadata", environment, cwd=ROOT)
+                           attempt, "product-metadata", compiler, cwd=ROOT)
         path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
         path = path.resolve()
         digest = sha256(path)
@@ -170,6 +164,7 @@ def run_suite(name, suite, attempt, environment, artifact, record, test_features
         record["java"] = java_probe(attempt, environment)
         if "EMPACK_TEST_JAVA8_HOME" in suite.required_env:
             record["java8"] = java_probe(attempt, environment, "java8", "EMPACK_TEST_JAVA8_HOME")
+    environment = compiler_environment(environment)
     suite_dir = attempt / name
     suite_dir.mkdir()
     junit = suite_dir / "junit.xml"
@@ -291,6 +286,7 @@ def run_doctests(attempt, environment, features):
     # replace the pinned rustdoc executable while retaining a nominal Cargo command.
     environment = {key: value for key, value in environment.items() if key not in {
         "RUSTDOC", "RUSTDOCFLAGS", "CARGO_ENCODED_RUSTDOCFLAGS", "RUSTC_BOOTSTRAP"}}
+    environment = compiler_environment(environment)
     record = dict(schema=1, kind="doctest-suite-run", qualification=False, tests=[],
                   created_at=datetime.now(timezone.utc).isoformat(), test_features=features,
                   commands={action: command(features, action) for action in ("list", "ignored", "run")})
