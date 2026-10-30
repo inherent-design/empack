@@ -31,7 +31,7 @@ class Suite:
 
 CLI = (
     "cli_arguments", "cli_automation", "cli_build", "cli_dependencies", "cli_entry", "cli_exit_codes",
-    "cli_init", "cli_interactive", "cli_manifest", "cli_pending_build", "cli_publisher", "cli_recovery", "cli_status", "journey_authoring",
+    "cli_init", "cli_interactive", "cli_manifest", "cli_pending_build", "cli_publisher", "cli_recovery", "cli_server", "cli_status", "journey_authoring",
     "journey_content_kinds", "journey_selection",
     "journey_import", "journey_local_exports", "journey_pending", "journey_pending_import", "journey_pending_instance",
     "journey_publisher", "journey_verified_import", "smoke",

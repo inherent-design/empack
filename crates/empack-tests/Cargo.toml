@@ -6,6 +6,12 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "java-fixture"
+path = "src/bin/java-fixture.rs"
+test = false
+bench = false
+
 [dependencies]
 anyhow.workspace = true
 assert_cmd.workspace = true

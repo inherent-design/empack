@@ -1162,6 +1162,23 @@ Native shell and Windows command fixtures verify the default `nogui` argument, i
 absence from GUI launchers, argument boundaries, preparation ordering and exit codes.
 Live runtime probes exercise console launchers; they do not certify desktop GUI rendering.
 
+`cli_server` uses a Cargo-built executable in the external test package to observe
+Java probe and runtime invocations. It checks explicit/PATH program selection,
+approval, minimum versions, malformed probe output, exact arguments and game cwd.
+Failed probes and unsuccessful runtime exits must allow a later launch without
+stale runtime ownership. Player data, `eula=false`, completed installation records
+and input/tool bytes remain unchanged. The fixture records its digest and is absent
+from the ordinary product package's dependency graph.
+
+A compiler-discovered private driver supplies the actual generated server scripts
+as component setup. The test executes those files unchanged through the selected
+product and local fixture, using Bash on Unix and `cmd.exe` on Windows. Console/GUI
+arguments, `JAVA_HOME`/PATH selection, preparation-before-probe, failure refusal and
+managed versus direct-runtime exit status have separate assertions. These checks
+do not start a JVM or a graphical application; official loader help/EULA probes and
+actual interactive consumer acceptance remain separate obligations. The setup
+driver's empty ordinary invocation is not counted as acceptance evidence.
+
 ## Managed consumer interpretation
 
 Managed Prism configuration tests include absent, unsupported, duplicated and

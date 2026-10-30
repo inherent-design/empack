@@ -50,6 +50,7 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-lib/src/application/process_runtime", "crates/empack-lib/src/application/java",
         "crates/empack-lib/src/engine/api/launch", "crates/empack-lib/src/engine/instance",
         "crates/empack-tests/tests/live_cli_init", "crates/empack-tests/tests/live_server",
+        "crates/empack-tests/tests/cli_server", "crates/empack-tests/src/bin/java-fixture.rs",
         "crates/empack-tests/tests/runtime_", "crates/empack-lib/templates/server/",
         "crates/empack-lib/tests/runtime_",
     )) for p in code)

@@ -5,6 +5,13 @@ beside `game/`; Minecraft configuration, logs and worlds live inside that direct
 Install the Java version required by the pack. Scripts use `JAVA_HOME/bin/java`
 when `JAVA_HOME` is set, otherwise Java on `PATH`.
 
+For a managed installation, `empack instance launch --server -- /path/to/java`
+uses the local program you select. A bare program name is resolved on `PATH`;
+`JAVA_HOME` selection belongs to the generated scripts. After approval, empack
+probes that executable's Java specification version and checks it against the
+completed release's minimum before starting the server. Preview does not run the
+probe. A failed or incompatible probe stops the launch and reports the reason.
+
 ## Starting the server
 
 | Interface | Windows | macOS and Linux |

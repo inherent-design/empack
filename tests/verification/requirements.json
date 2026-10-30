@@ -9081,9 +9081,11 @@
         "BUILD"
       ],
       "required_assertions": "Local Java selection/probe, minimum policy and args truthful; reference prepare ordering; GUI/console nogui differences; EULA not accepted automatically.",
-      "required_work": "Fake Java/empack checks on three OS plus pinned official loader starts.",
+      "required_work": "Local parser/native/executable/script cases and existing official loader probes are bound. Actual interactive Java and supported GUI consumer qualification remain separate, including all declared host/product variants; fixture execution is not JVM or gameplay acceptance.",
       "evidence_tiers": [
+        "U",
         "H",
+        "N",
         "X",
         "L",
         "C"
@@ -9092,7 +9094,203 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-073.java-specification-parser",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::java_properties_reject_ambiguous_missing_or_malformed_versions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Java 1.8 and modern major versions parse; missing, duplicate, signed and malformed specification versions are refused without native effects"
+          ]
+        },
+        {
+          "id": "UX-073.completed-entrypoint-and-runtime-drift",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::server_launch_uses_completed_entry_point_and_refuses_runtime_drift"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The prepared command uses the explicit host-selected program, completed server entry point, game directory and literal arguments",
+            "Changed managed runtime bytes invalidate preparation; this case inspects a native prepared command and does not execute Java"
+          ]
+        },
+        {
+          "id": "UX-073.approved-native-java-probe",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::java_validation_requires_approval_and_retires_before_rejecting_old_java"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Preparation and denied grants cannot probe the selected local executable",
+            "An approved old-Java probe refuses runtime execution and retires ownership; a compatible probe precedes the exact jar/nogui invocation"
+          ]
+        },
+        {
+          "id": "UX-073.executable-java-selection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_server::cli_server_java_selection_requires_approval_and_preserves_installation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Preview despite --yes and missing approval do not execute the selected program; missing PATH selection fails without changing the instance, fixture inputs or tools",
+            "Explicit local programs and PATH Java selection work with paths containing spaces and Unicode, independently of an unselected JAVA_HOME",
+            "The probe receives exactly -XshowSettings:properties/-version; compatible and newer Java majors precede exact server.jar/nogui/literal arguments in the game cwd",
+            "The completed installation, arbitrary managed fixture bytes, player content and eula=false remain unchanged; the executable fixture is not Java"
+          ]
+        },
+        {
+          "id": "UX-073.executable-probe-and-runtime-failures",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_server::cli_server_java_probe_failures_retire_before_followup_launch"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Old, absent, duplicate and malformed specification versions and nonzero probe status return specific diagnostics without invoking the runtime",
+            "Every refusal allows an immediate compatible follow-up launch without runtime-recovery acknowledgement; publisher inputs, tools, player data and installation record remain intact",
+            "A fixture runtime exiting 7 produces empack General status with its original runtime-status diagnostic, followed by a successful later launch"
+          ]
+        },
+        {
+          "id": "UX-073.unmodified-generated-entrypoints",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_server::cli_generated_server_scripts_preserve_java_selection_and_classified_status"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A compiler-discovered private driver emits actual recipe scripts as component setup; the shell/batch files execute unmodified through the selected ordinary empack and local executable fixture",
+            "Managed console and GUI entrypoints select JAVA_HOME or PATH, probe first, run in game cwd, preserve literal arguments and differ only by nogui",
+            "Failed preparation prevents both probe and runtime; old Java prevents runtime; managed scripts preserve empack status while standalone scripts return the direct runtime status 7 without a managed probe",
+            "Script/bootstrap/tool bytes, completed ownership, player content and eula=false remain unchanged; fake execution does not establish Java startup, GUI usability or gameplay"
+          ]
+        },
+        {
+          "id": "UX-073.unix-script-and-argument-file-contract",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::generated_shell_scripts_keep_java_path_and_user_arguments_separate",
+            "empack-lib::engine::build::server::tests::native_start_prepares_first_and_failure_blocks_the_server",
+            "empack-lib::engine::build::server::tests::typed_runtime_launch_preserves_argument_files_and_historical_jars"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled native shell fixtures preserve JAVA_HOME with spaces, console/GUI nogui policy and user arguments",
+            "Preparation failure prevents runtime invocation; selected jar and argument-file forms remain distinct; fake tools are not official loader startup"
+          ]
+        },
+        {
+          "id": "UX-073.windows-script-control-contract",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::native_windows_start_prepares_first_and_propagates_failure_without_bash",
+            "empack-lib::engine::build::server::tests::windows_bundled_entry_points_preserve_status_and_runtime_arguments"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled cmd.exe fixtures preserve preparation-before-runtime ordering, console/GUI arguments and failure/status behavior without Bash",
+            "These existing fixtures substitute returning batch tools; the separate executable case runs the generated files unchanged"
+          ]
+        },
+        {
+          "id": "UX-073.official-runtime-entrypoints",
+          "boundary": "L",
+          "test_ids": [
+            "empack-lib::runtime_server_smoke::runtime_server_vanilla",
+            "empack-lib::runtime_server_smoke::runtime_server_fabric_classpath",
+            "empack-lib::runtime_server_smoke::runtime_server_fabric_shaded",
+            "empack-lib::runtime_server_smoke::runtime_server_quilt",
+            "empack-lib::runtime_server_smoke::runtime_server_forge",
+            "empack-lib::runtime_server_smoke::runtime_server_neoforge",
+            "empack-lib::runtime_server_smoke::runtime_server_neoforge_early",
+            "empack-lib::runtime_server_smoke::runtime_server_forge_112",
+            "empack-lib::runtime_server_smoke::runtime_server_forge_1710",
+            "empack-lib::runtime_server_smoke::runtime_server_forge_116",
+            "empack-lib::runtime_server_smoke::runtime_managed_server_vanilla",
+            "empack-lib::runtime_server_smoke::runtime_managed_server_neoforge"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Generated entrypoints execute pinned vanilla/Fabric/Quilt/Forge/NeoForge runtime fixtures with explicitly selected Java; managed variants use the selected ordinary product",
+            "Current variants reach help without creating an EULA; historical variants preserve EULA refusal and require the separately identified Java 8 prerequisite",
+            "These bounded help/EULA probes do not prove interactive console, GUI or gameplay acceptance"
+          ]
+        }
+      ],
       "owner_now": [
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
         "engine_host::build/profiles; engine::build; templates/artifacts"
@@ -9101,7 +9299,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-074",

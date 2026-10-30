@@ -17,6 +17,50 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(file, bytes).unwrap();
 }
+
+/// Component setup for executable tests of the unmodified generated entry points.
+/// The ordinary product never reads this marker or selects this private driver.
+#[test]
+fn generated_server_entrypoint_fixture() {
+    let root = std::env::current_dir().unwrap();
+    let marker = root.join("server-script-fixture.json");
+    if !marker.is_file() {
+        return;
+    }
+    let input: serde_json::Value = serde_json::from_slice(&fs::read(marker).unwrap()).unwrap();
+    let managed = input["managed"].as_bool().unwrap();
+    let digest = input["release_sha256"].as_str().unwrap();
+    let release = managed.then_some(digest);
+    let launch = ServerLaunch::Jar(path("server.jar").unwrap());
+    for (name, bytes) in [
+        ("install_pack.sh", install_script(release)),
+        ("install_pack.bat", install_batch(release)),
+        (
+            "start.sh",
+            runtime_start(&launch, managed, false, ServerInterface::Console),
+        ),
+        (
+            "start.bat",
+            runtime_start(&launch, managed, true, ServerInterface::Console),
+        ),
+        (
+            "start_gui.sh",
+            runtime_start(&launch, managed, false, ServerInterface::Gui),
+        ),
+        (
+            "start_gui.bat",
+            runtime_start(&launch, managed, true, ServerInterface::Gui),
+        ),
+    ] {
+        put(&root, name, bytes.as_bytes());
+        #[cfg(unix)]
+        if name.ends_with(".sh") {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(root.join(name), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+}
+
 pub(in crate::engine::build) fn fixture(root: &Path) -> BuildAcquisitions {
     let original = project(false, false);
     let mut intent = original.intent().clone();
