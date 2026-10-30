@@ -9681,7 +9681,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Long fixture with explicit small bounds; no sleeps as deadline proof; fake-clock unit + actual IO integration.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound. Still qualify the remaining resource dimensions, public multi-operation budget/cancellation journeys, Windows output/backpressure behavior and fake-clock deadline variants; reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -9691,7 +9691,181 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-080.atomic-admission",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::resources::tests::multidimensional_admission_is_atomic_and_checked_without_overflow",
+            "empack-lib::engine::resources::tests::admission_failures_report_requested_capacity_without_charging_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Simultaneous job and memory reservations are atomic; Busy, TooLarge and overflow cases leave existing charges unchanged",
+            "Diagnostics report requested/available reservations and distinguish the estimate from measured RAM usage"
+          ]
+        },
+        {
+          "id": "UX-080.retained-results",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::runtime::tests::completed_registry_is_bounded_until_explicit_release",
+            "empack-lib::engine::runtime::tests::stale_results_are_rejected_and_retained_outputs_stay_charged",
+            "empack-lib::engine::runtime::tests::retained_output_can_release_unused_allowance_but_cannot_grow_authority",
+            "empack-lib::engine::runtime::tests::publication_receipt_survives_cancellation_after_worker_completion"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Completed results occupy bounded registry capacity until explicit release; observer-owned output retains its reservation beyond registry eviction",
+            "Stale results release their reservations, shrinking cannot increase authority, and cancellation cannot erase a completed publication receipt"
+          ]
+        },
+        {
+          "id": "UX-080.owned-worker-retirement",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::resources::tests::cancellation_does_not_release_a_running_blocking_worker_reservation",
+            "empack-lib::engine::runtime::tests::panicking_driver_still_retires_its_workers",
+            "empack-lib::engine::runtime::tests::unobserved_worker_panic_cannot_be_reported_as_completed",
+            "empack-lib::engine::runtime::tests::shutdown_serializes_with_admission_and_concurrent_shutdown_waits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Cancellation, driver panic, unobserved worker panic and concurrent shutdown cannot release active worker reservations or report completion before retirement",
+            "Closed runtime admission refuses new work and retired workers leave no reservations"
+          ]
+        },
+        {
+          "id": "UX-080.native-file-owner",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::runtime::tests::dropped_handle_cannot_release_running_blocking_work_or_skip_retirement"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A blocking worker opens, writes and synchronizes an actual four-byte file under explicit resource reservations; channel barriers establish readiness and release without elapsed sleeps as proof",
+            "Dropping the caller cancels its worker token, but Retiring status, full reservations and occupied registry persist while the file owner is held",
+            "Only after file-handle retirement can the typed cancelled outcome complete; reservations return to zero, file bytes remain exact and a new operation starts after explicit registry release"
+          ]
+        },
+        {
+          "id": "UX-080.captured-process-bounds",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::async_tests::output_limit_retires_owned_group_when_progress_is_full",
+            "empack-lib::application::process_runtime::async_tests::full_or_disconnected_progress_cannot_block_process_supervision",
+            "empack-lib::application::process_runtime::async_tests::host_runtime_remains_responsive_and_closed_pipes_do_not_remove_deadline",
+            "empack-lib::application::process_runtime::async_tests::inherited_descendant_pipes_and_parent_cancellation_retire",
+            "empack-lib::application::process_runtime::async_tests::signal_failure_does_not_authorize_retirement_of_a_live_group"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Each captured stream can use its exact byte allowance independently; overflow with an already-full progress queue returns a specific output-limit failure only after the owned process group is absent",
+            "Full/disconnected progress observers cannot block bounded output collection; closed pipes retain the process deadline and inherited descendant pipes retire on cancellation",
+            "These checks exercise Unix captured-process supervision, not inherited interactive-console output limits or Windows process qualification",
+            "An injected signal-denial result for an actual live owned group cannot establish retirement; the bounded failure retains both termination and recovery diagnostics and the fixture retires its child"
+          ]
+        },
+        {
+          "id": "UX-080.acquisition-retention",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::acquisition::discovery::tests::discovery_retires_admitted_workers_and_retains_bounded_results",
+            "empack-lib::engine::acquisition::metadata::tests::chunked_metadata_enforces_running_limit_and_total_deadline"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real local-file discovery retires job reservations while retained results remain charged until owners release them",
+            "Controlled chunked HTTP input reports the specific byte-allowance or total-deadline diagnostic rather than any arbitrary error; socket closure and final zero reservations are checked"
+          ]
+        },
+        {
+          "id": "UX-080.api-receipt-retention",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::tests::owned_build_publishes_all_outputs_and_retains_receipt_resources",
+            "empack-lib::engine::api::tests::owned_import_publishes_complete_content_and_retains_a_typed_receipt"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real engine build/import operations publish complete verified outputs, retain the configured receipt reservation and release it only after registry and outcome owners retire",
+            "These in-process API fixtures do not substitute for final-executable multi-operation budget/backpressure qualification"
+          ]
+        },
+        {
+          "id": "UX-080.macos-zombie-retirement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::async_tests::zombie_signal_failure_does_not_override_confirmed_retirement"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual exited child is held as an unreaped zombie using waitid with WNOWAIT; the macOS group signal returns EPERM before reaping",
+            "After the same child is reaped and the group is absent, the shared retirement boundary preserves known retirement despite the earlier signal error; live-group denial remains a separate refusal case"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::api + runtime + resources",
         "engine::acquisition/content/archive_source/import",
@@ -9704,7 +9878,7 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-081",

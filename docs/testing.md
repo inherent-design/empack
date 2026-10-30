@@ -690,6 +690,30 @@ cargo build -p empack --all-features
 cargo test -p empack-tests --all-features --test cli_exit_codes cli_interrupt_exits_130
 ```
 
+Resource-lifetime checks distinguish cancellation from worker retirement. The
+runtime's dropped-handle test writes and synchronizes a real four-byte file, then
+holds its owner behind a channel. Dropping the caller must cancel the worker token
+without releasing reservations, evicting the active operation or publishing a
+terminal result. Releasing the owner permits a typed cancelled result and zero
+remaining reservations. The bounded registry still requires explicit result
+release before admitting another operation. Readiness, retirement and release use
+channels and observed phases rather than elapsed sleeps as evidence.
+
+Captured Unix processes have a separate tiny-limit check: each stream may use its
+full allowance, while overflow with an already-full progress queue must report the
+limit failure after the owned group is gone. Existing tests retain closed-pipe
+deadlines, descendant retirement and disconnected progress observers. These
+checks bind UX-080 alongside acquisition and API receipt retention; they do not
+complete its remaining platform and public-workflow variants. A macOS zombie
+fixture holds an exited child unreaped, observes the real group-signal failure,
+then reaps it and confirms absence. A signal error cannot override subsequent
+proof of retirement. A separate real live group with an injected signal-denial
+result must still fail retirement and retain the recovery diagnostic. Chunked HTTP
+fixtures check the specific byte-limit and deadline errors, including socket
+retirement, rather than accepting any failure. Reservations are
+admission estimates, not measured OS memory use or enforced filesystem quotas.
+Inherited interactive consoles do not have captured-output limits.
+
 ## Shared suite runner
 
 ```sh

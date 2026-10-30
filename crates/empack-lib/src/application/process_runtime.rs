@@ -184,8 +184,7 @@ pub(crate) async fn execute_captured(
             .context("Subprocess reaping timed out; retirement is unconfirmed")?
             .context("Failed to retire subprocess")?;
     }
-    termination?;
-    tree.wait_retired().await?;
+    tree.wait_retired(termination).await?;
     Ok(RetiredCapture(result))
 }
 
@@ -272,8 +271,7 @@ pub(crate) async fn execute_inherited(
             .context("Instance runtime reaping timed out; retirement is unconfirmed")?
             .context("Failed to retire instance runtime")?;
     }
-    termination?;
-    tree.wait_retired().await?;
+    tree.wait_retired(termination).await?;
     // Retirement is established. Console cleanup cannot revoke that fact or
     // leave the caller's runtime ownership record claiming a live process tree.
     #[cfg(unix)]
@@ -302,15 +300,27 @@ impl ProcessTree {
     }
 }
 impl ProcessTree {
-    async fn wait_retired(self) -> Result<()> {
-        tokio::time::timeout(Duration::from_secs(2), async {
+    async fn wait_retired(self, termination: Result<()>) -> Result<()> {
+        let retired = tokio::time::timeout(Duration::from_secs(2), async {
             while self.has_processes()? {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             Ok::<_, anyhow::Error>(())
         })
         .await
-        .context("Runtime descendants have not retired; recovery acknowledgment is required")??;
+        .context("Runtime descendants have not retired; recovery acknowledgment is required")
+        .and_then(std::convert::identity);
+        if let Err(retirement) = retired {
+            return Err(match termination {
+                Ok(()) => retirement,
+                Err(termination) => retirement.context(format!(
+                    "Owned process-tree termination failed: {termination:#}"
+                )),
+            });
+        }
+        // A signal error cannot revoke subsequently established absence. In
+        // particular, macOS may return EPERM for a group containing only zombies
+        // before the immediate child is reaped. Persistent denial remains an error.
         self.disarm();
         Ok(())
     }
@@ -641,6 +651,131 @@ mod async_tests {
         .unwrap();
         assert_eq!(output.stdout, "retained\n");
     }
+    #[tokio::test]
+    async fn output_limit_retires_owned_group_when_progress_is_full() {
+        let exact = execute_captured(
+            shell("printf '1234567890abcdef'; printf 'fedcba0987654321' >&2"),
+            Duration::from_secs(5),
+            Cancellation::default(),
+            None,
+            16,
+        )
+        .await
+        .unwrap()
+        .0
+        .unwrap();
+        assert!(exact.success);
+        assert_eq!(exact.stdout, "1234567890abcdef");
+        assert_eq!(exact.stderr, "fedcba0987654321");
+
+        let root = tempfile::tempdir().unwrap();
+        let mut command =
+            shell("printf '%s' \"$$\" > child.pid; while :; do printf 'overflow\\n'; done");
+        command.current_dir(root.path());
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        sender
+            .send((ProcessStream::Stdout, b"occupied".to_vec()))
+            .unwrap();
+        let retired = execute_captured(
+            command,
+            Duration::from_secs(5),
+            Cancellation::default(),
+            Some(sender),
+            16,
+        )
+        .await;
+        let pid: i32 = std::fs::read_to_string(root.path().join("child.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(pid > 0);
+        let observed = unsafe { libc::kill(-pid, 0) };
+        let observed_error = std::io::Error::last_os_error();
+        let retired = retired.unwrap_or_else(|error| {
+            panic!("output overflow must establish retirement: {error:#}; group {pid} probe={observed}, error={observed_error}")
+        });
+        let error = retired.0.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Subprocess output exceeds 16 bytes per stream"),
+            "unexpected process failure: {error:#}"
+        );
+        let result = unsafe { libc::kill(-pid, 0) };
+        let error = std::io::Error::last_os_error();
+        assert_eq!(result, -1, "owned process group still exists");
+        assert_eq!(error.raw_os_error(), Some(libc::ESRCH));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn zombie_signal_failure_does_not_override_confirmed_retirement() {
+        use std::os::unix::process::CommandExt;
+
+        let mut command = shell("exit 0");
+        command.process_group(0);
+        let mut child = command.spawn().unwrap();
+        let pid = child.id();
+        let tree = ProcessTree(pid);
+        let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+        assert_eq!(
+            unsafe { libc::waitid(libc::P_PID, pid, &mut info, libc::WEXITED | libc::WNOWAIT,) },
+            0
+        );
+        let termination = tree.terminate();
+        assert_eq!(
+            termination
+                .as_ref()
+                .unwrap_err()
+                .root_cause()
+                .downcast_ref::<std::io::Error>()
+                .unwrap()
+                .raw_os_error(),
+            Some(libc::EPERM)
+        );
+        assert!(child.wait().unwrap().success());
+        tree.wait_retired(termination)
+            .await
+            .expect("a reaped, absent group has established retirement");
+        assert_eq!(unsafe { libc::kill(-(pid as i32), 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+
+    #[tokio::test]
+    async fn signal_failure_does_not_authorize_retirement_of_a_live_group() {
+        let mut command = tokio::process::Command::from(shell("exec sleep 30"));
+        command.process_group(0).kill_on_drop(true);
+        let mut child = command.spawn().unwrap();
+        let tree = ProcessTree::new(&child).unwrap();
+        let pid = child.id().unwrap();
+        assert_eq!(unsafe { libc::kill(-(pid as i32), 0) }, 0);
+        // Inject only the signal result; the group remains a real live process.
+        // The fixture's owner still kills it when the failed retirement drops.
+        let termination = Err(
+            anyhow::Error::from(std::io::Error::from_raw_os_error(libc::EPERM))
+                .context("fixture termination denied"),
+        );
+        let error = tree.wait_retired(termination).await.unwrap_err();
+        let diagnostic = format!("{error:#}");
+        assert!(diagnostic.contains("fixture termination denied"));
+        assert!(diagnostic.contains("Owned process-tree termination failed"));
+        assert!(diagnostic.contains("Runtime descendants have not retired"));
+        assert!(diagnostic.contains("recovery acknowledgment is required"));
+        let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!status.success());
+        assert_eq!(unsafe { libc::kill(-(pid as i32), 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+
     #[tokio::test]
     async fn host_runtime_remains_responsive_and_closed_pipes_do_not_remove_deadline() {
         let began = std::time::Instant::now();
