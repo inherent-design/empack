@@ -22,9 +22,11 @@ empack --workdir ./publisher --yes release init --key-file ~/.config/empack-publ
 The parent key directory must already exist and be private to the current user
 (0700 on Unix, protected native ACL on Windows). The key is created exclusively
 with private permissions; an existing file or symlink is never replaced. Preview
-creates no key. A failed write retires only its own temporary file. No publisher
-configuration is needed: `--workdir` selects the workspace and `--key-file` remains
-an explicit input to each signing operation. Keep keys outside every export root,
+creates no key. Cleanup targets only the attempt's own temporary link. If creation
+succeeds but directory synchronization or link cleanup fails, the diagnostic says
+that the key was created. No publisher configuration is needed: `--workdir` selects
+the workspace and `--key-file` remains an explicit input to each signing operation.
+Keep keys outside every export root,
 including exports unrelated to this publisher workspace.
 
 The command prints the public key, fingerprint and deployment order, never the

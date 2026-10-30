@@ -167,6 +167,85 @@ fn cli_publisher_key_setup_refuses_unsafe_or_occupied_destinations_without_chang
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn cli_publisher_key_setup_refuses_shared_windows_directory_without_changing_acl() {
+    let root = tempfile::tempdir().unwrap();
+    let publisher = root.path().join("publisher");
+    fs::create_dir(&publisher).unwrap();
+    write(&publisher, "author notes.txt", b"retain publisher work");
+    write(&publisher, "dist/prior.zip", b"retain prior output");
+    let private = root.path().join("private keys");
+    private_directory(&private);
+    let retained = private.join("retained.key");
+    fs::write(&retained, b"unrelated private fixture material").unwrap();
+    let key = private.join("publisher.key");
+    let tool = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32/icacls.exe");
+    let acl = |path: &Path, options: &[&str]| {
+        assert_cmd::Command::new(&tool)
+            .arg(path)
+            .args(options)
+            .timeout(std::time::Duration::from_secs(30))
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone()
+    };
+    let private_acl = acl(&private, &[]);
+    let retained_acl = acl(&retained, &[]);
+    // Numeric SIDs keep fixture setup independent of Windows display language.
+    // Only this owned temporary directory and its contents receive the grant.
+    acl(&private, &["/grant", "*S-1-1-0:(OI)(CI)F"]);
+    let shared_acl = acl(&private, &[]);
+    let shared_retained_acl = acl(&retained, &[]);
+    assert_ne!(shared_acl, private_acl);
+    let before = snapshot(root.path());
+    offline_command(&publisher)
+        .args(["--yes", "release", "init", "--key-file"])
+        .arg(&key)
+        .assert()
+        .failure()
+        .stderr(contains("existing private directory"))
+        .stdout(contains("unrelated private fixture material").not())
+        .stderr(contains("unrelated private fixture material").not());
+    assert_eq!(snapshot(root.path()), before);
+    assert!(!key.exists());
+    assert_eq!(acl(&private, &[]), shared_acl);
+    assert_eq!(acl(&retained, &[]), shared_retained_acl);
+
+    // Fixture-owned restoration, not automatic permission repair by empack.
+    acl(&private, &["/remove:g", "*S-1-1-0"]);
+    assert_eq!(acl(&private, &[]), private_acl);
+    assert_eq!(acl(&retained, &[]), retained_acl);
+    let publisher_before = snapshot(&publisher);
+    let created = offline_command(&publisher)
+        .args(["--yes", "release", "init", "--key-file"])
+        .arg(&key)
+        .assert()
+        .success();
+    let encoded = fs::read_to_string(&key).unwrap();
+    let seed: [u8; 32] = unhex(encoded.trim()).try_into().unwrap();
+    let signer = SigningKey::from_bytes(&seed);
+    let challenge = b"publisher key setup fixture";
+    signer
+        .verifying_key()
+        .verify_strict(challenge, &signer.sign(challenge))
+        .unwrap();
+    created
+        .stdout(contains(hex(signer.verifying_key().as_bytes())))
+        .stdout(contains(encoded.trim()).not())
+        .stderr(contains(encoded.trim()).not());
+    assert_eq!(snapshot(&publisher), publisher_before);
+    assert_eq!(
+        fs::read(&retained).unwrap(),
+        b"unrelated private fixture material"
+    );
+    assert_eq!(acl(&private, &[]), private_acl);
+    assert_eq!(acl(&retained, &[]), retained_acl);
+    assert_eq!(fs::read_dir(&private).unwrap().count(), 2);
+}
+
 fn build_and_stage(
     author: &Path,
     publisher: &Path,

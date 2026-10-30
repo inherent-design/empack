@@ -7999,6 +7999,43 @@
             "The diagnostic retains its cause without the private seed; unrelated private and publisher files remain unchanged"
           ],
           "remaining_group_evidence": "Unix-only directory synchronization; Windows follows the existing native creation path without this operation. Injected error tests propagation and state, not a physical power-loss experiment."
+        },
+        {
+          "id": "UX-054.windows-private-directory-refusal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_publisher_key_setup_refuses_shared_windows_directory_without_changing_acl"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real Everyone grant on the selected temporary Windows key directory causes public key setup to refuse before creating a key; publisher files, unrelated private material and both observed DACLs remain unchanged",
+            "After fixture-owned removal of that grant, the identical selected path creates one usable key and reports its independently derived public identity without the private seed; earlier files and directory privacy remain intact"
+          ]
+        },
+        {
+          "id": "UX-054.selected-key-input-confinement",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::release_publication::tests::signing_key_selection_rejects_project_sources_and_wrong_kinds"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Shared key loading accepts the selected external fixture seed, rejects a key inside the selected export and rejects a directory as key input; setup and native permission checks retain separate cases"
+          ]
         }
       ],
       "owner_now": [
@@ -8011,7 +8048,7 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-055",

@@ -40,7 +40,9 @@ cancellation and exclusive-publication collisions after preparation. Private
 operation checkpoints also cover write, file/directory synchronization, exclusive
 linking and cleanup failures on real files. Those controlled failures do not prove
 kernel-generated partial writes or physical crash durability. The signing group
-remains partially decomposed.
+also binds the public Windows refusal for a shared directory, its unchanged DACLs
+and the shared key-input confinement cases. Those bindings complete its definitions;
+required host/feature observations remain separate acceptance obligations.
 
 Immutable staging has separate source-validation, public inventory/signature,
 approval and final-archive cases. Its case decomposition covers the original

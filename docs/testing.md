@@ -541,6 +541,9 @@ and after publication. The ordinary caller supplies a no-op callback; no command
 configuration or environment variable exposes it. Injected errors establish control
 flow and on-disk postconditions, not kernel-generated I/O faults or physical
 power-loss durability. Public approval and unsafe-destination checks remain separate.
+The Windows command case grants Everyone access only to its disposable key directory,
+checks refusal and unchanged files/DACLs, then restores that fixture's private access
+and verifies successful creation on the same selected path.
 
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Its staging
