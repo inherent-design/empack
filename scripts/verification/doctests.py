@@ -26,7 +26,7 @@ def command(features, action):
 
 
 def inputs(root=ROOT):
-    names = (BINDINGS, "Cargo.lock", "rust-toolchain.toml", "scripts/verify.py",
+    names = (BINDINGS, "tests/verification/requirements.json", "Cargo.lock", "rust-toolchain.toml", "scripts/verify.py",
              "scripts/verification/doctests.py", "scripts/verification/discovery.py",
              "scripts/verification/process.py", "scripts/verification/suites.py")
     return {name: sha256(Path(root) / name) for name in names}

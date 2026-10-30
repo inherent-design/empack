@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 from test_ci_verification import REVISION, SCRIPTS, ci, fixture_attempt
@@ -42,6 +43,24 @@ class AttemptAdmission(unittest.TestCase):
     def inspect(self):
         write_json(self.attempt / "receipt.json", self.receipt)
         return inspect_suite_receipt(self.attempt / "receipt.json", ["telemetry"], TARGET, REVISION)
+
+    def test_requirement_edits_cannot_relabel_earlier_test_results(self):
+        self.assertEqual(self.inspect()["status"], "PASS")
+        requirements = self.root / "changed-requirements.json"
+        requirements.write_bytes(ci.REQUIREMENTS.read_bytes())
+        with patch("verification.receipts.REQUIREMENTS", requirements):
+            self.assertEqual(self.inspect()["status"], "PASS")
+            changed = json.loads(requirements.read_text())
+            changed["requirements"][0]["required_assertions"] += "; a newly required assertion"
+            write_json(requirements, changed)
+            with self.assertRaisesRegex(ValueError, "Requirements differ"):
+                self.inspect()
+        for metadata in ({}, {"tests/verification/requirements.json": "not an input record"}):
+            with self.subTest(metadata=metadata):
+                write_json(self.attempt / "source-snapshot.json", metadata)
+                self.receipt["source_snapshot_sha256"] = sha256(self.attempt / "source-snapshot.json")
+                with self.assertRaisesRegex(ValueError, "Requirements differ"):
+                    self.inspect()
 
     def test_failed_junit_is_retained_but_never_accepted_by_strict_gate(self):
         identity = fail_case(self.attempt, self.receipt)

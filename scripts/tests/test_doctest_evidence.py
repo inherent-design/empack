@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -115,6 +116,23 @@ class RustdocOutcomes(unittest.TestCase):
 
 
 class RustdocAdmission(unittest.TestCase):
+    def test_requirement_edits_cannot_relabel_earlier_doctests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, attempt = root / "source", root / "attempt"
+            for name in inputs(ROOT):
+                target = source / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
+            fixture(attempt, source=source)
+            self.assertEqual(inspect_doctest_evidence(attempt / "receipt.json", REVISION, source)["status"], "PASS")
+            requirements = source / "tests/verification/requirements.json"
+            changed = json.loads(requirements.read_text())
+            changed["requirements"][0]["required_assertions"] += "; a newly required assertion"
+            write_json(requirements, changed)
+            with self.assertRaisesRegex(ValueError, "unsupported rustdoc evidence"):
+                inspect_doctest_evidence(attempt / "receipt.json", REVISION, source)
+
     def test_receipt_replays_exact_graph_modes_and_observations(self):
         with tempfile.TemporaryDirectory() as directory:
             for target in ('x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc'):

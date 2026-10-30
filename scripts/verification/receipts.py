@@ -33,6 +33,10 @@ def inspect_suite_receipt(path, expected_suites, target, revision, features="tel
         raise ValueError(f"Wrong workspace test feature graph: {path}")
     if sha256(path.parent / "source-snapshot.json") != receipt["source_snapshot_sha256"]:
         raise ValueError(f"Changed source snapshot: {path}")
+    snapshot = json.loads((path.parent / "source-snapshot.json").read_text(encoding="utf-8"))
+    requirement_input = snapshot.get("tests/verification/requirements.json") if isinstance(snapshot, dict) else None
+    if not isinstance(requirement_input, dict) or requirement_input.get("sha256") != sha256(REQUIREMENTS):
+        raise ValueError(f"Requirements differ from the executed source snapshot: {path}")
     created_at = receipt.get("created_at")
     if not isinstance(created_at, str) or datetime.fromisoformat(created_at).utcoffset() is None:
         raise ValueError(f"Missing timezone-aware attempt date: {path}")

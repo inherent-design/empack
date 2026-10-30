@@ -91,7 +91,9 @@ alongside later passes. These observations do not establish a product executable
 consumer launch or final-package qualification. Doctest cases declare their required
 mode and both workspace feature graphs separately from product features. Reports
 retain each host/graph result and source snapshot; an all-features pass cannot fill
-a missing minimal run. A failed attempt remains a failure even when its compiler
+a missing minimal run. Admission also requires the recorded requirement registry
+to match the current registry, so unchanged test names cannot credit new assertions
+using earlier results. A failed attempt remains a failure even when its compiler
 output cannot supply individual rows. The candidate gate rechecks the same records
 through `--doctest`; release jobs produce both graphs on Linux, macOS and Windows.
 These unit-level observations supplement the package-boundary and executable-docs

@@ -123,7 +123,10 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
     suites = suites or ["deterministic", "telemetry"]
     attempt = directory / "one-attempt"
     attempt.mkdir(parents=True)
-    write_json(attempt / "source-snapshot.json", {"fixture": "unit-test, not real acceptance"})
+    write_json(attempt / "source-snapshot.json", {
+        "fixture": "unit-test, not real acceptance",
+        "tests/verification/requirements.json": {"sha256": sha256(ci.REQUIREMENTS), "executable": False},
+    })
     receipt = dict(schema=1, kind="test-suite-run", status="PASS", source_revision=REVISION, worktree_dirty=False,
                    created_at="2026-10-23T00:00:00+00:00",
                    source_snapshot_sha256=sha256(attempt / "source-snapshot.json"),

@@ -817,6 +817,10 @@ python3 scripts/report-verification.py --revision FULL_COMMIT_SHA --version 0.8.
 
 This command writes `attempts.json` and `attempts.md` after rechecking the selected
 receipts against their retained inventories, JUnit and the checkout's classification.
+The requirement registry must also match the input captured by the run. Changing
+an assertion or case requires new evidence; an unchanged test name cannot carry
+an old passing result into the new requirements. Rust, Python and rustdoc admission
+all enforce this binding.
 Keep each attempt directory intact. Use the source revision and product version
 actually recorded by the selected runs; this command does not execute tests or qualify
 a different candidate. Select all relevant attempts explicitly: it cannot discover

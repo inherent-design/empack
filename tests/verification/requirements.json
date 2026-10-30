@@ -9916,6 +9916,7 @@
       "required_work": "Self-tests for classifier, inventory, retry policy, receipt tamper, wrong binary, stale coverage and unknown tests.",
       "evidence_tiers": [
         "U",
+        "H",
         "X",
         "N"
       ],
@@ -9981,6 +9982,28 @@
             "Real held files produce OS busy status; releasing the reader and reassigning devices cannot cause a retry to detach the other backing",
             "Permanent busy reaches its finite attempt bound, reports failure and retains the owned backing; closing the held file permits ordinary non-forced cleanup"
           ]
+        },
+        {
+          "id": "UX-088.requirement-evidence-identity",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_attempt_reports.AttemptAdmission.test_requirement_edits_cannot_relabel_earlier_test_results",
+            "python::test_doctest_evidence.RustdocAdmission.test_requirement_edits_cannot_relabel_earlier_doctests"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Rust suite admission compares the current requirement registry with the captured source input before joining results; unchanged test names cannot credit newly added obligations",
+            "Rustdoc records bind the same requirement registry; edited requirements invalidate older observations",
+            "Matching registry bytes remain admissible while missing or malformed captured requirement identity is refused"
+          ],
+          "remaining_group_evidence": "These controlled helper tests establish evidence admission behavior, not product, actual consumer or package acceptance."
         }
       ],
       "owner_now": [

@@ -1573,6 +1573,20 @@
       "requirements": [
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_attempt_reports.AttemptAdmission.test_requirement_edits_cannot_relabel_earlier_test_results",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_doctest_evidence.RustdocAdmission.test_requirement_edits_cannot_relabel_earlier_doctests",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
     }
   ]
 }
