@@ -448,3 +448,255 @@ fn failure_before_first_creation_index_publication_cleans_private_candidate() {
     assert!(!selected.exists());
     assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn creation_state_survives_associated_prior_device_labels_without_moving_coordination() {
+    for point in [
+        PublicationPoint::CreationIndexDurable,
+        PublicationPoint::IntentDurable,
+        PublicationPoint::TargetChanged,
+        PublicationPoint::Committed,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let selected = temp.path().join("new");
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("private");
+        let publisher = Publisher::open(&state).unwrap();
+        publisher
+            .publish_new_with_hook(
+                prepare(&selected, &state),
+                &Cancellation::default(),
+                &mut |actual| {
+                    if actual == point {
+                        anyhow::bail!("stop at {point:?}");
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+        let parent = ProjectReadRoot::open(temp.path()).unwrap();
+        // Controlled host-metadata simulation, not an operating-system remount.
+        // Seed existing identity evidence on the original implementation as well.
+        publisher.project_state(&parent).unwrap();
+        let index_name = format!(
+            "create-{}-{}",
+            root_key(&parent).unwrap(),
+            empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"new").into()).hex()
+        );
+        let index = publisher.host.open_dir_nofollow(&index_name).unwrap();
+        let mut journal = load_creation(&index).unwrap().unwrap();
+        let actual = if selected.exists() {
+            selected.clone()
+        } else {
+            temp.path().join(&journal.candidate)
+        };
+        let root = ProjectReadRoot::open(&actual).unwrap();
+        publisher.project_state(&root).unwrap();
+        let original_root_key = root_key(&root).unwrap();
+        let original_parent_key = root_key(&parent).unwrap();
+        journal.parent.volume ^= 1;
+        journal.binding.volume ^= 1;
+        let prior_parent_key = binding_key(&journal.parent).unwrap();
+        let prior_root_key = binding_key(&journal.binding).unwrap();
+        let prior_index_name = format!(
+            "create-{prior_parent_key}-{}",
+            empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"new").into()).hex()
+        );
+        for (current, prior, original) in [
+            (&original_parent_key, &prior_parent_key, &journal.parent),
+            (&original_root_key, &prior_root_key, &journal.binding),
+        ] {
+            let directory = publisher.host.open_dir_nofollow(current).unwrap();
+            let mut association: serde_json::Value =
+                serde_json::from_slice(&directory.read("root-identity.json").unwrap()).unwrap();
+            association["original"] = serde_json::to_value(original).unwrap();
+            directory
+                .write(
+                    "root-identity.json",
+                    serde_json::to_vec(&association).unwrap(),
+                )
+                .unwrap();
+            drop(directory);
+            publisher
+                .host
+                .rename(current, &publisher.host, prior)
+                .unwrap();
+        }
+        let root_state = publisher.host.open_dir_nofollow(&prior_root_key).unwrap();
+        if let Some(previous) = load_creation(&root_state).unwrap() {
+            let mut authoritative = journal.clone();
+            authoritative.committed = previous.committed;
+            write_creation(&root_state, &authoritative).unwrap();
+        }
+        write_creation(&index, &journal).unwrap();
+        drop(index);
+        publisher
+            .host
+            .rename(&index_name, &publisher.host, &prior_index_name)
+            .unwrap();
+        let bytes = serde_json::to_vec(&journal).unwrap();
+        drop(root); // Windows must release the captured candidate before publication.
+        if point == PublicationPoint::Committed {
+            let root = ProjectReadRoot::open(&selected).unwrap();
+            assert!(
+                publisher
+                    .inspect_creation_recovery(&selected)
+                    .unwrap()
+                    .is_none()
+            );
+            RecoveryReader::new(state.clone()).enter(&root).unwrap();
+        } else {
+            let observed = publisher
+                .inspect_creation_recovery(&selected)
+                .unwrap()
+                .expect("original creation must remain discoverable");
+            assert_eq!(observed.operation, journal.operation);
+            assert_eq!(
+                publisher
+                    .host
+                    .open_dir_nofollow(&prior_index_name)
+                    .unwrap()
+                    .read("creation.json")
+                    .unwrap(),
+                bytes
+            );
+            let held = lock(&root_state).unwrap();
+            assert!(
+                publisher.prepare_creation_recovery(&selected).is_err(),
+                "original lock must coordinate recovery"
+            );
+            drop(held);
+            let ready = publisher
+                .prepare_creation_recovery(&selected)
+                .unwrap()
+                .unwrap();
+            let receipt = publisher
+                .recover_prepared_creation(&selected, ready)
+                .unwrap();
+            assert_eq!(receipt.operation, journal.operation);
+            check_contents(&selected);
+        }
+        assert!(!publisher.host.exists(&index_name));
+        assert!(!publisher.host.exists(&original_root_key));
+        assert!(!publisher.host.exists(&original_parent_key));
+    }
+}
+
+#[test]
+fn creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_recovery() {
+    for visible in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let selected = temp.path().join("new");
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("private");
+        let publisher = Publisher::open(&state).unwrap();
+        let stop = if visible {
+            PublicationPoint::TargetChanged
+        } else {
+            PublicationPoint::IntentDurable
+        };
+        publisher
+            .publish_new_with_hook(
+                prepare(&selected, &state),
+                &Cancellation::default(),
+                &mut |point| {
+                    if point == stop {
+                        anyhow::bail!("stop");
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+        let parent = ProjectReadRoot::open(temp.path()).unwrap();
+        let index = creation_state(&publisher, &parent, "new", false)
+            .unwrap()
+            .unwrap();
+        let original = load_creation(&index).unwrap().unwrap();
+        assert_eq!(original.schema, 2);
+        let root_state = creation_root_state(&publisher, &original, false)
+            .unwrap()
+            .unwrap();
+        for invalid in 0..if visible { 5 } else { 6 } {
+            let mut changed = original.clone();
+            match invalid {
+                0 => changed.schema = 3,
+                1 => changed.schema = 1, // A legacy record cannot carry a new proof.
+                2 => changed.persistent = None,
+                3 => changed.persistent.as_mut().unwrap().root[0] ^= 1,
+                4 => changed.binding.volume ^= 1, // Physical address must match its association.
+                5 => changed.persistent.as_mut().unwrap().parent[0] ^= 1,
+                _ => unreachable!(),
+            }
+            write_creation(&index, &changed).unwrap();
+            write_creation(&root_state, &changed).unwrap();
+            let before = serde_json::to_vec(&changed).unwrap();
+            assert!(
+                publisher.inspect_creation_recovery(&selected).is_err(),
+                "{visible}/{invalid}"
+            );
+            assert!(
+                publisher.prepare_creation_recovery(&selected).is_err(),
+                "{visible}/{invalid}"
+            );
+            assert_eq!(index.read("creation.json").unwrap(), before);
+            assert_eq!(root_state.read("creation.json").unwrap(), before);
+            assert_eq!(selected.exists(), visible);
+        }
+        let mut legacy = original.clone();
+        legacy.schema = 1;
+        legacy.persistent = None;
+        write_creation(&index, &legacy).unwrap();
+        write_creation(&root_state, &legacy).unwrap();
+        let before = serde_json::to_vec(&legacy).unwrap();
+        assert!(
+            !String::from_utf8(before.clone())
+                .unwrap()
+                .contains("persistent")
+        );
+        assert_eq!(
+            publisher
+                .inspect_creation_recovery(&selected)
+                .unwrap()
+                .unwrap()
+                .operation,
+            original.operation
+        );
+        let ready = publisher
+            .prepare_creation_recovery(&selected)
+            .unwrap()
+            .unwrap();
+        assert_eq!(index.read("creation.json").unwrap(), before);
+        assert_eq!(root_state.read("creation.json").unwrap(), before);
+        let mut wrong = legacy.clone();
+        wrong.parent.volume ^= 1;
+        wrong.binding.volume ^= 1;
+        write_creation(&index, &wrong).unwrap();
+        write_creation(&root_state, &wrong).unwrap();
+        assert!(
+            publisher.prepare_creation_recovery(&selected).is_err(),
+            "legacy native comparison remains strict"
+        );
+        assert!(
+            publisher
+                .recover_prepared_creation(&selected, ready)
+                .is_err()
+        );
+        assert_eq!(
+            root_state.read("creation.json").unwrap(),
+            serde_json::to_vec(&wrong).unwrap()
+        );
+        write_creation(&index, &legacy).unwrap();
+        write_creation(&root_state, &legacy).unwrap();
+        let ready = publisher
+            .prepare_creation_recovery(&selected)
+            .unwrap()
+            .unwrap();
+        publisher
+            .recover_prepared_creation(&selected, ready)
+            .unwrap();
+        check_contents(&selected);
+        let committed = load_creation(&root_state).unwrap().unwrap();
+        assert_eq!(committed.schema, 1);
+        assert!(committed.persistent.is_none() && committed.committed);
+    }
+}

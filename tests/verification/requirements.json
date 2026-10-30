@@ -8124,6 +8124,30 @@
             "Unassociated legacy candidates fail explicitly instead of disappearing; acknowledgment requires the selected retained runtime evidence",
             "Malformed, oversized, relocated, foreign and duplicate associations refuse reads and publication without changing author bytes, metadata or neighboring files"
           ]
+        },
+        {
+          "id": "UX-078.versioned-creation-identity",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::creation::tests::creation_state_survives_associated_prior_device_labels_without_moving_coordination",
+            "empack-lib::engine::publication::creation::tests::creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_recovery",
+            "empack-lib::engine::publication::creation::recovery::tests::prepared_creation_recovery_retains_strict_live_object_identity"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Schema-2 creation recovery finds associated original parent/index/root state across controlled prior-device labels before and after root visibility, retaining the original coordination locks",
+            "Legacy schema-1 native identity comparison remains strict and its wire format is not rewritten by inspection or completion; unknown schemas, mixed/missing proofs and inconsistent candidate associations refuse without changing retained records",
+            "Prepared creation recovery retains the freshly observed native candidate/root identity and rejects a native mismatch even when its persistent proof and journal revision still match"
+          ],
+          "remaining_group_evidence": "Actual remount, already-unanchored legacy migration and full same-candidate qualification remain separately required"
         }
       ],
       "owner_now": [

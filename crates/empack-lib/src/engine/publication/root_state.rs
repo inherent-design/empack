@@ -135,37 +135,61 @@ impl Publisher {
         state: &Dir,
         root: &ProjectReadRoot,
     ) -> Result<()> {
-        if let Some(association) = read(state)? {
-            ensure!(
-                association.persistent
-                    == root
-                        .binding
-                        .persistent
-                        .context("Filesystem lacks persistent object identity")?,
-                "Native state association belongs to another root"
-            );
-            return Ok(());
-        }
-        let _lock = lock(state)?;
-        // Another cooperating publisher may have established the same association.
-        if let Some(association) = read(state)? {
-            ensure!(
-                association.persistent
-                    == root
-                        .binding
-                        .persistent
-                        .context("Filesystem lacks persistent object identity")?,
-                "Native state association belongs to another root"
-            );
-            return Ok(());
-        }
         root.check_binding()?;
-        let record = Association {
-            schema: 1,
-            persistent: root.binding.persistent.context("Filesystem lacks persistent object identity; native state association is unsupported")?,
-            original: root.binding.into(),
-        };
-        write_record(state, ASSOCIATION, &record)?;
+        self.associate_identity(state, root.binding)?;
         root.check_binding()
     }
+    /// Observe through the existing owning candidate handle; do not retain another
+    /// Windows capability across the no-replace directory rename.
+    pub(super) fn associate_owned_directory(&self, state: &Dir, directory: &Dir) -> Result<()> {
+        let identity = native::directory_identity(directory)?;
+        self.associate_identity(state, identity)?;
+        ensure!(
+            native::directory_identity(directory)? == identity,
+            "Creation candidate changed while retaining its identity"
+        );
+        Ok(())
+    }
+    fn associate_identity(&self, state: &Dir, identity: ObjectIdentity) -> Result<()> {
+        let persistent = identity.persistent.context(
+            "Filesystem lacks persistent object identity; native state association is unsupported",
+        )?;
+        let check = |association: Association| -> Result<()> {
+            ensure!(
+                association.persistent == persistent,
+                "Native state association belongs to another root"
+            );
+            Ok(())
+        };
+        if let Some(association) = read(state)? {
+            return check(association);
+        }
+        let _lock = lock(state)?;
+        if let Some(association) = read(state)? {
+            return check(association);
+        }
+        write_record(
+            state,
+            ASSOCIATION,
+            &Association {
+                schema: 1,
+                persistent,
+                original: identity.into(),
+            },
+        )
+    }
+}
+/// A journal's physical address must retain the candidate proof established before intent.
+pub(super) fn check_association(
+    state: &Dir,
+    original: &Binding,
+    persistent: &[u8; 32],
+) -> Result<()> {
+    let association =
+        read(state)?.context("Creation state lacks its retained candidate association")?;
+    ensure!(
+        association.original == *original && association.persistent == *persistent,
+        "Creation state association differs from its journal"
+    );
+    Ok(())
 }
