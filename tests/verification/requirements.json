@@ -11213,7 +11213,7 @@
         "empack-cli",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-086",

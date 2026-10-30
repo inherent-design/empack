@@ -1294,8 +1294,12 @@ Package cases reference ordinary executable test IDs, but require additional pro
 from the archive gate. Running the same test through ordinary CLI CI does not satisfy
 its package case. Each package variant identifies an exact target triple; Intel and
 ARM64 evidence cannot substitute for each other merely because they share an OS.
-The initial `UX-085` package case checks local content export and instance preparation
-on all five targets. It is a partial binding, not complete package acceptance.
+The `UX-085` package case checks local content export and instance preparation on
+all five targets. Its remaining cases cover header admission, observation capture
+and installed native inspectors. These complete the group's case definitions;
+acceptance still requires execution of every applicable variant. Packaged identity,
+help and usage errors belong to `UX-001`; generated helper execution belongs to
+`UX-081`. Their package cases also require all five exact target triples.
 
 Before the archive's CLI suite runs, the package producer reads a bounded native
 header and records architecture plus native linker/load reports. It uses GNU
