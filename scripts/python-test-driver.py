@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Fixed unittest worker for scripts/verify.py; no product is executed implicitly."""
 import argparse
+import json
 from pathlib import Path
+import platform
 import unittest
 
 from verification.evidence import write_json
-from verification.python_tests import ROOT, ObservedResult, load_suite, outcomes
+from verification.python_tests import BINDINGS, ROOT, ObservedResult, load_suite, platform_outcomes
 
 
 def main():
@@ -16,7 +18,9 @@ def main():
     write_json(args.output / "inventory.json", inventory)
     result = unittest.TextTestRunner(verbosity=2, resultclass=ObservedResult).run(suite)
     write_json(args.output / "events.json", result.events)
-    _, status = outcomes(inventory, result.events)
+    classification = json.loads((ROOT / BINDINGS).read_text(encoding="utf-8"))
+    host = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()]
+    _, status = platform_outcomes(inventory, result.events, classification, host)
     return 0 if status == "PASS" else 1
 
 

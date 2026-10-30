@@ -38,10 +38,17 @@ def checked(command, attempt, name, environment, timeout=120, cwd=ROOT):
     return output
 
 
-def isolated_environment(root):
+def isolated_environment(root, *, compiler=False):
     names = ("PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC",
              "PATHEXT", "JAVA_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR")
     result = {key: os.environ[key] for key in names if key in os.environ}
+    if compiler and os.name == "nt":
+        # Rust's MSVC discovery needs installation roots (vswhere) or the
+        # configured developer toolset. Keep these, not Cargo flags/credentials.
+        toolset = {"PROGRAMFILES", "PROGRAMFILES(X86)", "VSINSTALLDIR", "VCINSTALLDIR",
+                   "VCTOOLSVERSION", "VSCMD_ARG_TGT_ARCH", "VSCMD_ARG_VCVARS_SPECTRE",
+                   "WINDOWSSDKDIR", "WINDOWSSDKVERSION", "LIB", "LIBPATH", "INCLUDE"}
+        result.update((key, value) for key, value in os.environ.items() if key.upper() in toolset)
     for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
                 "XDG_DATA_HOME", "XDG_CACHE_HOME", "EMPACK_CACHE_DIR", "EMPACK_STATE_DIR",
                 "TMP", "TEMP", "TMPDIR"):
@@ -58,7 +65,7 @@ def python_environment(home, attempt, environment):
     if not rustup_home.is_absolute() or not rustup_home.is_dir():
         raise Blocked("Python verification requires an existing absolute Rustup home")
     pin = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
-    worker = isolated_environment(home)
+    worker = isolated_environment(home, compiler=True)
     worker.update(RUSTUP_HOME=str(rustup_home), RUSTUP_TOOLCHAIN=pin, RUSTUP_AUTO_INSTALL="0",
                   CARGO_HOME=str(home / ".cargo"))
     try:
@@ -229,7 +236,7 @@ def aggregate_status(results):
 
 
 def run_python(attempt, environment):
-    from verification.python_tests import BINDINGS, compare_inventory, inputs, outcomes
+    from verification.python_tests import BINDINGS, compare_inventory, inputs, platform_outcomes
     record = dict(schema=1, kind="python-suite-run", status="NOT_RUN", qualification=False,
                   created_at=datetime.now(timezone.utc).isoformat(), features="independent",
                   platform={"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()],
@@ -249,11 +256,12 @@ def run_python(attempt, environment):
             cwd=ROOT, env=worker, log=attempt / "run.log", timeout=900)
         record.update(exit_code=code, timed_out=timed_out)
         inventory = json.loads((attempt / "inventory.json").read_text(encoding="utf-8"))
-        compare_inventory(inventory, json.loads((ROOT / BINDINGS).read_text(encoding="utf-8")))
+        classification = json.loads((ROOT / BINDINGS).read_text(encoding="utf-8"))
+        compare_inventory(inventory, classification)
         events = json.loads((attempt / "events.json").read_text(encoding="utf-8"))
         record["inventory_sha256"] = sha256(attempt / "inventory.json")
         record["events_sha256"] = sha256(attempt / "events.json")
-        record["tests"], record["status"] = outcomes(inventory, events)
+        record["tests"], record["status"] = platform_outcomes(inventory, events, classification, record["platform"])
         if code or timed_out:
             record["status"] = "FAIL"
         if source_snapshot(attempt, environment) != snapshot:

@@ -805,7 +805,12 @@
       "requirements": [
         "UX-081",
         "UX-082"
-      ]
+      ],
+      "platforms": [
+        "linux",
+        "macos"
+      ],
+      "platform_reason": "Uses Unix symlink creation; Windows reparse-point behavior remains a separate native obligation."
     },
     {
       "id": "python::test_project_automation.ProjectAutomation.test_unsafe_paths_and_name_collisions_rejected",
@@ -946,7 +951,12 @@
       "requirements": [
         "UX-085",
         "UX-088"
-      ]
+      ],
+      "platforms": [
+        "linux",
+        "macos"
+      ],
+      "platform_reason": "Executes the Unix tar workflow block; Windows ZIP packaging has its own fixture."
     },
     {
       "id": "python::test_release_archive.ReleaseArchiveAdmission.test_windows_zip_is_exact_and_crc_checked",
@@ -1730,6 +1740,20 @@
     },
     {
       "id": "python::test_verification_runner.CommandEvidence.test_registry_package_identity_survives_without_preserving_url_credentials",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.AttemptPolicy.test_windows_compiler_discovery_survives_without_host_cargo_or_application_state",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonLifecycle.test_explicit_host_scope_retains_skips_without_excusing_applicable_or_missing_work",
       "boundary": "U",
       "requirements": [
         "UX-088"

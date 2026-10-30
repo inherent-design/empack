@@ -94,18 +94,20 @@ class CommandEvidence(unittest.TestCase):
         from unittest.mock import patch
         original = Path.write_text
         def windows_encoding(path, data, encoding=None, errors=None, newline=None):
-            return original(path, data, encoding=encoding or "cp1252", errors=errors, newline=newline)
+            return original(path, data, encoding=encoding or "cp1252", errors=errors,
+                            newline="\r\n" if newline is None else newline)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            text = "Nextest ──── 日誌\n"
-            with patch.object(Path, "write_text", windows_encoding):
-                status, output, expired = run(
-                    [sys.executable, "-c", "import os; os.write(1, " + repr(text.encode("utf-8")) + ")"],
-                    cwd=root, env=dict(os.environ), log=root / "log", timeout=10)
-            self.assertEqual(status, 0)
-            self.assertFalse(expired)
-            self.assertEqual(output, text)
-            self.assertEqual((root / "log").read_bytes(), text.encode("utf-8"))
+            for ending in ("\n", "\r\n"):
+                text = "Nextest ──── 日誌" + ending
+                with self.subTest(ending=ending), patch.object(Path, "write_text", windows_encoding):
+                    status, output, expired = run(
+                        [sys.executable, "-c", "import os; os.write(1, " + repr(text.encode("utf-8")) + ")"],
+                        cwd=root, env=dict(os.environ), log=root / "log", timeout=10)
+                    self.assertEqual(status, 0)
+                    self.assertFalse(expired)
+                    self.assertEqual(output, text)
+                    self.assertEqual((root / "log").read_bytes(), text.encode("utf-8"))
 
     def test_credentials_and_url_queries_are_redacted(self):
         text = 'token=secret-value https://user:pass@example.org/download?signature=private#anchor'
@@ -166,6 +168,33 @@ class CommandEvidence(unittest.TestCase):
 
 
 class AttemptPolicy(unittest.TestCase):
+    def test_windows_compiler_discovery_survives_without_host_cargo_or_application_state(self):
+        from unittest.mock import patch
+        from verify import isolated_environment
+        home = Path("isolated-home")
+        toolset = {"PROGRAMFILES(X86)": "installed-vswhere-root", "ProgramFiles": "installed-programs",
+                   "VSINSTALLDIR": "installed-vs", "VCINSTALLDIR": "installed-vc",
+                   "VCToolsVersion": "14.44", "VSCMD_ARG_TGT_ARCH": "x64",
+                   "VSCMD_ARG_VCVARS_SPECTRE": "spectre", "WindowsSdkDir": "installed-sdk",
+                   "WindowsSDKVersion": "10.0", "LIB": "installed-libs", "LIBPATH": "installed-libpath",
+                   "INCLUDE": "installed-includes"}
+        hostile = {"HOME": "host-home", "CARGO_HOME": "host-cargo", "RUSTC_WRAPPER": "host-wrapper",
+                   "CARGO_REGISTRIES_CRATES_IO_TOKEN": "host-token", "RUSTFLAGS": "host-flags",
+                   "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER": "host-linker",
+                   "EMPACK_STATE_DIR": "host-state", "UNRELATED": "host-value"}
+        with patch.dict(os.environ, toolset | hostile, clear=True), patch("verify.os.name", "nt"):
+            worker = isolated_environment(home, compiler=True)
+            runtime = isolated_environment(home)
+        worker_tools = {key.upper(): value for key, value in worker.items()}
+        runtime_tools = {key.upper(): value for key, value in runtime.items()}
+        for key, value in toolset.items():
+            self.assertEqual(worker_tools[key.upper()], value)
+            self.assertNotIn(key.upper(), runtime_tools)
+        self.assertEqual(worker["HOME"], str(home))
+        self.assertEqual(worker["EMPACK_STATE_DIR"], str(home))
+        for key in hostile.keys() - {"HOME", "EMPACK_STATE_DIR"}:
+            self.assertNotIn(key, worker)
+
     def test_standard_suite_supplies_bound_inventory_to_test_process(self):
         import hashlib
         import json

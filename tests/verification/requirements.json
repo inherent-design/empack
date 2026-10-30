@@ -11410,7 +11410,9 @@
           "test_ids": [
             "python::test_ci_verification.RequiredGate.test_missing_failed_duplicate_or_relabelled_native_python_cannot_satisfy_gate",
             "python::test_python_evidence.PythonAdmission.test_platform_requires_compiler_host_but_not_identical_interpreter_architecture",
-            "python::test_release_workflow.ReleaseChannelContracts.test_python_host_evidence_is_produced_and_forwarded_without_repeating_linux"
+            "python::test_release_workflow.ReleaseChannelContracts.test_python_host_evidence_is_produced_and_forwarded_without_repeating_linux",
+            "python::test_verification_runner.AttemptPolicy.test_windows_compiler_discovery_survives_without_host_cargo_or_application_state",
+            "python::test_python_evidence.PythonLifecycle.test_explicit_host_scope_retains_skips_without_excusing_applicable_or_missing_work"
           ],
           "required_platforms": [
             "linux",
@@ -11424,7 +11426,9 @@
             "PR admission requires one source-bound passing Python receipt from each required compiler host, reusing the existing Linux tooling observation",
             "Missing, failed, duplicate, unrelated-source and wrong-host Python evidence cannot satisfy a native host obligation",
             "The interpreter architecture is retained separately from its compiler host; a translated interpreter is allowed while conflicting OS labels are refused",
-            "Release workflow collection forwards all three independent host receipts without treating them as product-feature or package execution"
+            "Release workflow collection forwards all three independent host receipts without treating them as product-feature or package execution",
+            "Only compiler workers retain the installed Windows toolset discovery and library paths; runtime homes, application state, Cargo configuration, credentials and injected compiler flags remain isolated",
+            "Declared platform exclusions require an actual observed skip and remain NOT_RUN; applicable skips, missing work, failures and altered applicability cannot qualify"
           ],
           "remaining_group_evidence": "Synthetic metadata and workflow-source assertions validate the tooling, not actual execution on another OS. Real native Python jobs, Rust suites and final archives remain independently required."
         },

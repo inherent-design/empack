@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from verification.evidence import sha256, write_json
 from verification.python_tests import (BINDINGS, PRODUCER_INPUTS, ObservedResult, compare_inventory,
-                                       inputs, inspect_python_evidence, outcomes)
+                                       inputs, inspect_python_evidence, outcomes, platform_outcomes)
 
 REVISION = "a" * 40
 
@@ -30,15 +30,19 @@ def fixture(root, output, classification=None, target="x86_64-unknown-linux-gnu"
         (root / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "1.99.1"\n')
         write_json(root / BINDINGS, classification)
         write_json(root / "tests/verification/requirements.json", {"synthetic": True})
+    platform = "macos" if "-apple-darwin" in target else "windows" if "-windows-" in target else "linux"
     inventory = {"schema": 1, "source": "unittest-loader", "tests": [
-        {"id": row["id"].removeprefix("python::"), "ignored": False} for row in classification["tests"]]}
+        {"id": row["id"].removeprefix("python::"),
+         "ignored": platform not in row.get("platforms", ["linux", "macos", "windows"])}
+        for row in classification["tests"]]}
     events = [event for row in inventory["tests"] for event in (
-        dict(id=row["id"], event="start"), dict(id=row["id"], event="result", status="PASS"), dict(id=row["id"], event="stop"))]
+        dict(id=row["id"], event="start"),
+        dict(id=row["id"], event="result", status="NOT_RUN" if row["ignored"] else "PASS"),
+        dict(id=row["id"], event="stop"))]
     write_json(output / "inventory.json", inventory)
     write_json(output / "events.json", events)
-    tests, status = outcomes(inventory, events)
+    tests, status = platform_outcomes(inventory, events, classification, platform)
     pin = tomllib.loads((root / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
-    platform = "macos" if "-apple-darwin" in target else "windows" if "-windows-" in target else "linux"
     record = dict(schema=1, kind="python-suite-run", source_revision=REVISION, worktree_dirty=False,
                   features="independent", platform=platform, architecture="x86_64", python_version="3.14.0",
                   interpreter_sha256="c" * 64, created_at="2026-10-23T00:00:00+00:00", inputs=inputs(root),
@@ -51,6 +55,33 @@ def fixture(root, output, classification=None, target="x86_64-unknown-linux-gnu"
 
 
 class PythonLifecycle(unittest.TestCase):
+    def test_explicit_host_scope_retains_skips_without_excusing_applicable_or_missing_work(self):
+        inventory = dict(schema=1, source="unittest-loader", tests=[
+            dict(id="unix", ignored=True), dict(id="portable", ignored=False)])
+        classification = dict(tests=[
+            dict(id="python::unix", boundary="N", platforms=["linux", "macos"], platform_reason="Unix tool"),
+            dict(id="python::portable", boundary="U")])
+        events = [event for identity, status in (("unix", "NOT_RUN"), ("portable", "PASS"))
+                  for event in (dict(id=identity, event="start"), dict(id=identity, event="result", status=status),
+                                dict(id=identity, event="stop"))]
+        tests, status = platform_outcomes(inventory, events, classification, "windows")
+        self.assertEqual(status, "PASS")
+        self.assertEqual(tests, [{"id": "python::portable", "status": "PASS"},
+                                 {"id": "python::unix", "status": "NOT_RUN"}])
+        self.assertEqual(platform_outcomes(inventory, events, classification, "linux")[1], "NOT_RUN")
+        with self.assertRaisesRegex(ValueError, "observed skip"):
+            platform_outcomes(inventory, events[3:], classification, "windows")
+        failed = [dict(event, status="FAIL") if event.get("status") == "PASS" else event for event in events]
+        self.assertEqual(platform_outcomes(inventory, failed, classification, "windows")[1], "FAIL")
+        fixture_failure = events + [dict(id="fixture setup", event="result", status="FAIL")]
+        self.assertEqual(platform_outcomes(inventory, fixture_failure, classification, "windows")[1], "FAIL")
+        failed_unix = [dict(event, status="FAIL") if event.get("status") == "NOT_RUN" else event for event in events]
+        with self.assertRaisesRegex(ValueError, "observed skip"):
+            platform_outcomes(inventory, failed_unix, classification, "windows")
+        unignored = dict(inventory, tests=[dict(row, ignored=False) for row in inventory["tests"]])
+        with self.assertRaisesRegex(ValueError, "observed skip"):
+            platform_outcomes(unignored, events, classification, "windows")
+
     def test_actual_callbacks_keep_subtest_failure_skip_and_expected_failure(self):
         class Cases(unittest.TestCase):
             def test_pass(self):
@@ -178,6 +209,12 @@ class PythonAdmission(unittest.TestCase):
                        dict(tests=[dict(id="python::case", boundary="C")]),
                        dict(tests=[dict(id="python::other", boundary="U")])]:
             with self.subTest(change=change), self.assertRaises(ValueError):
+                compare_inventory(inventory, change)
+        for platforms, reason in (([], "empty"), (["windows", "windows"], "duplicate"),
+                                  (["unknown"], "unsupported"), (["linux"], ""), (["linux"], 1)):
+            change = dict(tests=[dict(id="python::case", boundary="U", platforms=platforms,
+                                      platform_reason=reason)])
+            with self.subTest(platforms=platforms), self.assertRaisesRegex(ValueError, "applicability"):
                 compare_inventory(inventory, change)
 
 

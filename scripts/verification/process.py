@@ -89,7 +89,7 @@ def run(command, *, cwd, env, log, timeout, separate_stdout=False):
         if truncated[index]:
             clean += "\n[output truncated at admitted log limit]\n"
         output.append(clean)
-    log.write_text(output[1] + output[0], encoding="utf-8")
+    log.write_text(output[1] + output[0], encoding="utf-8", newline="")
     if interrupted:
         raise KeyboardInterrupt
     return process.returncode, output[0], timed_out

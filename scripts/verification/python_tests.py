@@ -56,6 +56,13 @@ def compare_inventory(inventory, classification):
     if any(not key.startswith("python::") or row["boundary"] not in {"U", "H", "N", "X"}
            for key, row in expected.items()):
         raise ValueError("Python helper tests cannot claim consumer or product qualification")
+    for row in expected.values():
+        platforms = row.get("platforms", list(PLATFORMS))
+        reason = row.get("platform_reason", "")
+        if (not isinstance(platforms, list) or not platforms
+                or any(p not in PLATFORMS for p in platforms) or len(set(platforms)) != len(platforms)
+                or set(platforms) != set(PLATFORMS) and (not isinstance(reason, str) or not reason.strip())):
+            raise ValueError("Python platform applicability needs supported hosts and an explicit reason")
     return actual
 
 
@@ -147,6 +154,28 @@ def outcomes(inventory, events):
     return tests, status
 
 
+def platform_outcomes(inventory, events, classification, platform):
+    """Keep skipped rows visible; only explicit host applicability affects totals."""
+    if platform not in PLATFORMS:
+        raise ValueError("Unsupported Python execution platform")
+    compare_inventory(inventory, classification)
+    tests, status = outcomes(inventory, events)
+    bindings = {row["id"]: row for row in classification["tests"]}
+    discovered = {"python::" + row["id"]: row for row in inventory["tests"]}
+    skipped = {"python::" + event["id"] for event in events
+               if event["event"] == "result" and event.get("status") == "NOT_RUN"}
+    stopped = {"python::" + event["id"] for event in events if event["event"] == "stop"}
+    applicable = []
+    for row in tests:
+        identity = row["id"]
+        if platform in bindings[identity].get("platforms", PLATFORMS):
+            applicable.append(row["status"])
+        elif (not discovered[identity]["ignored"] or row["status"] != "NOT_RUN"
+              or identity not in skipped or identity not in stopped):
+            raise ValueError("Inapplicable Python test needs an observed skip, not hidden or unstarted work")
+    return tests, "FAIL" if status == "FAIL" else aggregate_outcomes(applicable)
+
+
 def read_json(path):
     with Path(path).open("rb") as stream:
         data = stream.read(4 * 1024 * 1024 + 1)
@@ -189,7 +218,7 @@ def inspect_python_evidence(path, revision, root=ROOT):
         if (record["inventory_sha256"] != inventory_digest or record["events_sha256"] != events_digest
                 or record["classification_sha256"] != sha256(Path(root) / BINDINGS)):
             raise ValueError("Python discovery, observations or classification changed")
-        tests, status = outcomes(inventory, events)
+        tests, status = platform_outcomes(inventory, events, classification, record["platform"])
         if record["timed_out"] or record["exit_code"] != 0:
             status = "FAIL"
         if record["tests"] != tests or record["status"] != status:

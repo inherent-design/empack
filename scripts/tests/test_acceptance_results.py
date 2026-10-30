@@ -114,6 +114,12 @@ class AcceptanceResults(unittest.TestCase):
         self.evidence = []
         with self.assertRaisesRegex(ValueError, "unclassified platform"):
             self.result()
+        self.row["evidence_tiers"] = ["N"]
+        self.case.update(boundary="N", required_platforms=["windows"],
+                         required_product_features=["independent"], test_ids=[
+                             "python::test_release_archive.ReleaseArchiveAdmission.test_unix_workflow_packaging_excludes_host_metadata"])
+        with self.assertRaisesRegex(ValueError, "unclassified platform"):
+            self.result()
 
     def test_case_variants_and_concrete_membership_must_be_unambiguous(self):
         for key, value in (("required_platforms", ["linuz"]), ("required_platforms", ["linux", "linux"]),

@@ -84,7 +84,7 @@ def case_results(document, classification, evidence, revision, *, package_receip
     for binding in python_bindings:
         if binding["id"] in bindings or not binding["id"].startswith("python::"):
             raise ValueError("Python tooling identity conflicts with product classification")
-        bindings[binding["id"]] = dict(binding, platforms=list(PLATFORMS))
+        bindings[binding["id"]] = dict(binding, platforms=binding.get("platforms", list(PLATFORMS)))
     doctest_bindings = json.loads((ROOT / DOCTEST_BINDINGS).read_text(encoding="utf-8"))["tests"]
     for binding in doctest_bindings:
         if binding["id"] in bindings or not binding["id"].startswith("doctest::"):

@@ -37,7 +37,7 @@ def main():
     print(f"Auxiliary build attempt: {attempt}", flush=True)
     # Compiler tool locations may be retained, but feature/compiler injection and
     # user git/Cargo configuration are not inherited by the disposable build.
-    environment = verify.isolated_environment(attempt / "home")
+    environment = verify.isolated_environment(attempt / "home", compiler=True)
     (attempt / "home").mkdir()
     environment["CARGO_HOME"] = str(attempt / "home/cargo")
     environment["RUSTUP_HOME"] = os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup"))

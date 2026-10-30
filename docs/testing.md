@@ -895,11 +895,23 @@ is insufficient. Python cases use the `independent` feature variant and cannot
 substitute for empack, packaged artifacts or actual consumers. Raw `unittest` remains
 useful for focused debugging but does not produce an admissible receipt.
 
+Python bindings may declare a narrower host scope with an explicit reason. The
+Unix tar-workflow and privileged symlink fixtures apply to Linux/macOS; Windows ZIP
+and reparse-point behavior remain separate obligations. An excluded test must
+produce an observed skip and remains `NOT_RUN` in the receipt. It cannot become a
+passed case. The suite succeeds only when every applicable test passes; unexpected
+skips, missing work, fixture failures and failures outside the declared host scope
+still prevent success. Admission replays this policy from the bound classification.
+
 The worker uses the existing Rustup installation and selects the repository's
 pinned compiler with automatic toolchain installation disabled. Cargo home and
 application home/state/cache remain isolated; host Cargo credentials, configuration
 and compiler wrappers are not inherited. The receipt identifies the compiler and
-Cargo used by the small offline build fixtures. A missing pinned installation
+Cargo used by the small offline build fixtures. On Windows, compiler workers retain
+the installed MSVC discovery roots and configured toolset/library paths so Rust can
+find its linker. Ordinary product invocations do not inherit those compiler-only
+settings. Command logs preserve UTF-8 bytes and line endings without host newline
+translation. A missing pinned installation
 blocks the suite before tests run; Cargo's `--offline` alone does not prevent
 Rustup from downloading a toolchain.
 
