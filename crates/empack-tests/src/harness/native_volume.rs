@@ -15,18 +15,28 @@ const DETACH_ATTEMPTS: usize = 5;
 struct CommandFailure {
     program: String,
     status: std::process::ExitStatus,
+    stdout: String,
     stderr: String,
 }
 impl std::fmt::Display for CommandFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "{} failed ({}): {}",
-            self.program, self.status, self.stderr
+            "{} failed ({}):\nstdout:\n{}\nstderr:\n{}",
+            self.program, self.status, self.stdout, self.stderr
         )
     }
 }
 impl std::error::Error for CommandFailure {}
+
+fn diagnostic(bytes: &[u8]) -> String {
+    let limit = bytes.len().min(32 * 1024);
+    let mut text = String::from_utf8_lossy(&bytes[..limit]).into_owned();
+    if limit < bytes.len() {
+        text.push_str("\n[native tool diagnostic truncated]\n");
+    }
+    text
+}
 
 fn is_busy(error: &anyhow::Error) -> bool {
     error
@@ -51,7 +61,8 @@ fn run(program: &str, args: &[&std::ffi::OsStr], input: Option<Vec<u8>>) -> Resu
         return Err(CommandFailure {
             program: program.into(),
             status: output.status,
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            stdout: diagnostic(&output.stdout),
+            stderr: diagnostic(&output.stderr),
         }
         .into());
     }
@@ -205,7 +216,7 @@ impl ApfsFixture {
             };
             match run(
                 "/usr/bin/hdiutil",
-                &["detach".as_ref(), device.as_ref()],
+                &["detach".as_ref(), "-verbose".as_ref(), device.as_ref()],
                 None,
             ) {
                 Ok(_) => {
@@ -435,11 +446,44 @@ mod tests {
             let error = anyhow::Error::new(CommandFailure {
                 program: program.into(),
                 status: std::process::ExitStatus::from_raw(code << 8),
+                stdout: "native progress".into(),
                 stderr: message.into(),
             });
             assert_eq!(is_busy(&error), expected);
         }
         assert!(!is_busy(&anyhow::anyhow!("Resource busy")));
+    }
+
+    #[test]
+    fn native_command_failure_preserves_bounded_stdout_and_stderr() {
+        let error = run(
+            "/bin/sh",
+            &[
+                "-c".as_ref(),
+                "printf 'native progress'; printf 'native failure' >&2; exit 16".as_ref(),
+            ],
+            None,
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<CommandFailure>().unwrap();
+        assert_eq!(failure.status.code(), Some(16));
+        assert_eq!(failure.stdout, "native progress");
+        assert_eq!(failure.stderr, "native failure");
+        assert_eq!(
+            format!("{error:#}"),
+            "/bin/sh failed (exit status: 16):\nstdout:\nnative progress\nstderr:\nnative failure"
+        );
+        assert!(!is_busy(&error), "an unrelated command grants no retry");
+        let mut oversized = vec![b'x'; 32 * 1024];
+        oversized.extend_from_slice(b"not retained");
+        assert_eq!(
+            diagnostic(&oversized),
+            format!(
+                "{}\n[native tool diagnostic truncated]\n",
+                "x".repeat(32 * 1024)
+            )
+        );
+        assert_eq!(diagnostic(b"\xff"), "\u{fffd}");
     }
 
     #[test]

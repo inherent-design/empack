@@ -610,6 +610,9 @@ confirmed absence completes retirement even after an earlier tool failure. A sti
 attached image is an error, and failed cleanup preserves its temporary directory
 for diagnosis. The held-file regression covers device reassignment, retirement
 between attempts, repeated detach and bounded refusal while a reader remains open.
+Detach requests use the tool's verbose diagnostics; failures retain bounded stdout
+and stderr alongside the fresh ownership and open-file observations. These reports
+do not authorize another device or increase the retry bound.
 No forced detach is used. Those assertions do not establish the cause of a separate
 host failure where the image's devices remain attached after unmount.
 

@@ -11541,7 +11541,8 @@
           "id": "UX-088.owned-image-retirement",
           "boundary": "N",
           "test_ids": [
-            "empack-tests::harness::native_volume::tests::native_image_cleanup_rechecks_ownership_after_busy_and_bounds_retirement"
+            "empack-tests::harness::native_volume::tests::native_image_cleanup_rechecks_ownership_after_busy_and_bounds_retirement",
+            "empack-tests::harness::native_volume::tests::native_command_failure_preserves_bounded_stdout_and_stderr"
           ],
           "required_platforms": [
             "macos"
@@ -11553,7 +11554,8 @@
           "assertions": [
             "Real held files produce OS busy status; releasing the reader and reassigning devices cannot cause a retry to detach the other backing",
             "If the exact backing retires after a busy request, fresh absence completes retirement without touching the other image or deleting the backing; repeating detach is harmless",
-            "Permanent busy reaches its finite attempt bound, reports failure and retains the owned backing; closing the held file permits ordinary non-forced cleanup"
+            "Permanent busy reaches its finite attempt bound, reports failure and retains the owned backing; closing the held file permits ordinary non-forced cleanup",
+            "A failed native tool retains its actual exit status and bounded stdout/stderr, including explicit truncation; failure text alone cannot authorize a busy retry for another command. Detach requests retain verbose progress for diagnosis without relaxing ownership or retirement checks."
           ]
         },
         {

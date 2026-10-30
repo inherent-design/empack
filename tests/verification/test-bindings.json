@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::harness::native_volume::tests::native_command_failure_preserves_bounded_stdout_and_stderr", "binary": "empack-tests", "binary_name": "empack_tests", "boundary": "N", "api": "PACKAGE", "platforms": ["macos"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::native_exports::cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed_state", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::prism::tests::runtime_transitions_switch_known_loaders_and_preserve_user_metadata", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::engine_host::instance::prelaunch::tests::runtime_transition_retains_observation_but_requires_supported_launch_integration", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "RUN", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
