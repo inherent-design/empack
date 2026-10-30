@@ -15,6 +15,7 @@ import uuid
 from verification.classification import compare_rust_inventory
 from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
+from verification.product_build import inspect_build
 from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +74,7 @@ def python_environment(home, attempt, environment):
 def product(args, attempt, environment, host):
     features = args.product_features
     profile = args.product_profile
+    build_audit = {}
     if args.binary:
         if not all((args.sha256, args.version, args.target, features, profile)):
             raise Blocked("--binary requires --sha256, --version, --target, --product-features and --product-profile")
@@ -99,9 +101,17 @@ def product(args, attempt, environment, host):
             command += ["--release"]
         if features == "telemetry":
             command += ["--features", "telemetry"]
-        checked(command, attempt, "product-build", environment, timeout=1800, cwd=ROOT)
+        command += ["--message-format=json"]
+        messages = checked(command, attempt, "product-build", environment, timeout=1800, cwd=ROOT)
+        (attempt / "product-build-messages.jsonl").write_text(messages, encoding="utf-8")
+        metadata = checked(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"],
+                           attempt, "product-metadata", environment, cwd=ROOT)
+        (attempt / "product-metadata.json").write_text(metadata, encoding="utf-8")
         path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
         digest = sha256(path)
+        write_json(attempt / "product-build-audit.json",
+                   inspect_build(messages, json.loads(metadata), features, path, digest))
+        build_audit = {"build_audit_sha256": sha256(attempt / "product-build-audit.json")}
         provenance = "built by this runner from the ordinary product package"
     if sha256(path) != digest:
         raise Blocked("Selected binary does not match the expected SHA-256")
@@ -112,7 +122,8 @@ def product(args, attempt, environment, host):
     if output.strip() != f"empack {version}":
         raise Blocked("Selected binary does not match the expected version")
     return {"path": str(path), "sha256": digest, "version": version,
-            "target": target, "features": features, "profile": profile, "provenance": provenance}
+            "target": target, "features": features, "profile": profile, "provenance": provenance,
+            **build_audit}
 
 
 def java_probe(attempt, environment, label="java", home_variable="JAVA_HOME"):

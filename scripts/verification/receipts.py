@@ -7,6 +7,7 @@ import re
 from .classification import compare_rust_inventory
 from .evidence import aggregate_outcomes, read_results, selected_tests, sha256
 from .suites import SUITES, nextest_command
+from .product_build import inspect_retained_build
 
 ROOT = Path(__file__).resolve().parents[2]
 CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
@@ -50,6 +51,9 @@ def inspect_suite_receipt(path, expected_suites, target, revision, features="tel
             raise ValueError(f"Wrong product version: {path}")
         if not re.fullmatch("[0-9a-f]{64}", artifact["sha256"]):
             raise ValueError(f"Invalid product identity: {path}")
+        if (artifact.get("build_audit_sha256") is not None
+                or artifact.get("provenance") == "built by this runner from the ordinary product package"):
+            inspect_retained_build(path.parent, artifact)
     suites = receipt["suites"]
     if (not expected_suites or len(set(expected_suites)) != len(expected_suites)
             or not set(expected_suites) <= SUITES.keys()

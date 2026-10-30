@@ -1587,6 +1587,46 @@
       "requirements": [
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_missing_failed_truncated_or_inconsistent_build_records_are_rejected",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_real_default_telemetry_and_cached_artifacts_are_audited",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_real_transitive_test_feature_and_package_leakage_are_rejected",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_retained_audit_is_recomputed_and_does_not_need_original_executable",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_product_build.ProductBuild.test_suite_admission_requires_and_rechecks_runner_build_evidence",
+      "boundary": "N",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
     }
   ]
 }

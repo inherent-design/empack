@@ -11064,6 +11064,7 @@
       "required_work": "Audit transitive normal features; build -p empack isolated locked graph; no debug_assertions shortcut; compare default vs telemetry.",
       "evidence_tiers": [
         "U",
+        "N",
         "P"
       ],
       "risk": "critical",
@@ -11098,6 +11099,31 @@
             "Expected compilation failures establish constructor/import refusal, not product execution or normal dependency-graph purity"
           ],
           "remaining_group_evidence": "These rustdoc observations supplement, and cannot replace, the required ordinary-product/package checks or executable documentation and fresh-user review."
+        },
+        {
+          "id": "UX-086.cargo-build-evidence-validator",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_product_build.ProductBuild.test_missing_failed_truncated_or_inconsistent_build_records_are_rejected",
+            "python::test_product_build.ProductBuild.test_real_default_telemetry_and_cached_artifacts_are_audited",
+            "python::test_product_build.ProductBuild.test_real_transitive_test_feature_and_package_leakage_are_rejected",
+            "python::test_product_build.ProductBuild.test_retained_audit_is_recomputed_and_does_not_need_original_executable",
+            "python::test_product_build.ProductBuild.test_suite_admission_requires_and_rechecks_runner_build_evidence"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Real isolated fixture workspaces retain actual default, telemetry and cached compiler units; transitive test-utils activation and normal test-support dependencies are refused before executing the fixture binary",
+            "Malformed, incomplete, failed and test-profile compiler evidence cannot establish a successful ordinary build",
+            "Suite admission recomputes retained compiler evidence and refuses omitted or changed audit inputs without requiring the original host executable path to remain available"
+          ],
+          "remaining_group_evidence": "These are native tests of the verification tooling using tiny synthetic workspaces, not execution or qualification of the real empack dependency graph, final archives or consumers. Ordinary product and final archive build evidence remain separate obligations."
         }
       ],
       "owner_now": [

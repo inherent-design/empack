@@ -307,14 +307,21 @@ class AttemptPolicy(unittest.TestCase):
             root = Path(directory)
             (root / "empack/src").mkdir(parents=True)
             (root / "Cargo.toml").write_text(
-                '[workspace]\nmembers = ["empack"]\nresolver = "2"\n'
+                '[workspace]\nmembers = ["empack", "empack-core", "empack-lib"]\nresolver = "2"\n'
                 '[workspace.package]\nversion = "1.2.3"\n')
-            (root / "Cargo.lock").write_text(
-                'version = 4\n[[package]]\nname = "empack"\nversion = "1.2.3"\n')
             (root / "empack/Cargo.toml").write_text(
-                '[package]\nname = "empack"\nversion.workspace = true\nedition = "2024"\n')
+                '[package]\nname = "empack"\nversion.workspace = true\nedition = "2024"\n'
+                '[dependencies]\nempack-lib = { path = "../empack-lib" }\n')
+            for name, dependency in (("empack-core", ""), ("empack-lib", '[dependencies]\nempack-core = {path = "../empack-core"}\n')):
+                (root / name / "src").mkdir(parents=True)
+                (root / name / "src/lib.rs").write_text("")
+                (root / name / "Cargo.toml").write_text(
+                    f'[package]\nname = "{name}"\nversion.workspace = true\nedition = "2024"\n' + dependency)
             (root / "empack/src/main.rs").write_text(
                 'fn main() { println!("empack {}", env!("CARGO_PKG_VERSION")); }\n')
+            import subprocess
+            lock = subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, capture_output=True, text=True)
+            self.assertEqual(lock.returncode, 0, lock.stderr)
             attempt = root / "attempt"
             attempt.mkdir()
             args = SimpleNamespace(binary=None, sha256=None, version=None, target=None,

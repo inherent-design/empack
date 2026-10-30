@@ -20,7 +20,15 @@ mise run smoke
 `mise run test` runs Python script contracts, the fixed deterministic workspace
 suite (including executable tests), and doctests. `scripts/verify.py` is the shared
 local/CI runner. Rust suites build the ordinary product package in a separate target
-directory before compiling the workspace test graph. The `python` suite executes
+directory before compiling the workspace test graph. For these runner-built
+products, Cargo's emitted compilation units establish the enabled features:
+`empack-tests`, `empack-lib/test-utils`, test targets, and mismatched telemetry
+features fail before execution. Metadata only associates package identities with
+workspace names; workspace feature resolution is not the product-build oracle.
+The retained compiler records and audit are rechecked during receipt admission,
+including cached compilation units. An externally supplied binary's declared
+features are not independently established by its digest or version check.
+The `python` suite executes
 script contracts independently, without selecting an empack binary. The `doctest`
 suite runs the pinned rustdoc in both workspace feature graphs and records whether
 each example ran, only compiled, or established an expected compilation failure.
