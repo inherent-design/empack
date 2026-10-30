@@ -1,5 +1,5 @@
 //! Restricted content exercises native saved recipes, not simulated packwiz output.
-use crate::e2e::TestProject;
+use crate::harness::process::TestProject;
 use empack_core::{
     digest::{DigestSet, ExpectedDigest},
     identity::{CurseForgeProjectId, ProviderProjectId},
@@ -11,8 +11,14 @@ use empack_lib::engine::documents::DocumentCodec;
 use std::fs;
 
 pub fn fixture(name: &str) -> TestProject {
+    fixture_on(TestProject::new(), name)
+}
+
+/// Use the same restricted inputs on a caller-owned temporary filesystem.
+pub fn fixture_on(root: TestProject, name: &str) -> TestProject {
     let project = ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap());
-    with_provider(
+    with_provider_on(
+        root,
         name,
         ResolvedPin {
             selection: project.parse_pin("456").unwrap(),
@@ -21,7 +27,12 @@ pub fn fixture(name: &str) -> TestProject {
     )
 }
 pub fn with_provider(name: &str, pin: ResolvedPin) -> TestProject {
+    with_provider_on(TestProject::new(), name, pin)
+}
+
+fn with_provider_on(root: TestProject, name: &str, pin: ResolvedPin) -> TestProject {
     with_assets(
+        root,
         name,
         vec![ManualAsset {
             key: "manual-assets",
@@ -40,6 +51,11 @@ pub fn with_provider(name: &str, pin: ResolvedPin) -> TestProject {
 /// Two exact provider inputs for partial synchronization and retention journeys.
 /// These are component fixtures, not provider-resolution or runnable-JAR evidence.
 pub fn pair(name: &str) -> TestProject {
+    pair_on(TestProject::new(), name)
+}
+
+/// Preserve the component fixture while choosing its temporary filesystem.
+pub fn pair_on(root: TestProject, name: &str) -> TestProject {
     let assets = [
         ("one", "123", "456", "mods/one.jar", 5,
          "7fdd80dbdded156323d36c459e5fd133a4d888c227320cfb7042be9feb35d7f07201e535697af914e69d6f46b2a88655c86c2371288052ccd4fa92058b01d3fd"),
@@ -56,7 +72,7 @@ pub fn pair(name: &str) -> TestProject {
             digest: ("sha512", digest),
         }
     }).collect();
-    with_assets(name, assets)
+    with_assets(root, name, assets)
 }
 
 struct ManualAsset {
@@ -68,8 +84,8 @@ struct ManualAsset {
     digest: (&'static str, &'static str),
 }
 
-fn with_assets(name: &str, assets: Vec<ManualAsset>) -> TestProject {
-    let project = TestProject::workflow_fixture(name, "fabric", "1.21.1");
+fn with_assets(root: TestProject, name: &str, assets: Vec<ManualAsset>) -> TestProject {
+    let project = root.with_workflow_fixture(name, "fabric", "1.21.1");
     let source = DocumentCodec
         .decode_intent(&fs::read(project.dir().join("empack.yml")).unwrap(), "test")
         .unwrap();

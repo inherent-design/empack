@@ -440,6 +440,14 @@ status and convergent sync/export. Native cases run serially to avoid interferen
 between their device-allocation experiments; the same two images support repeat
 remounts without growing the fixture.
 
+Saved-build and synchronization cases cover the other continuation families. A
+build may have no cache directory; its absence is preserved just like existing
+cache contents. Synchronization resumes retained bytes after the original download
+and ordinary cache are removed, then checks exact materialization, convergent sync
+and safe retained-content cleanup through both continuation commands. Restricted
+provider records are component setup; these cases do not establish live provider
+access or runnable mod content.
+
 Native PR verification requires the suite in both product/test graphs on macOS.
 Other hosts record explicit `NOT_APPLICABLE` evidence; missing permissions on
 macOS are a failure, not an applicability exemption. The native suite retains its

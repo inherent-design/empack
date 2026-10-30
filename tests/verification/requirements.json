@@ -4774,6 +4774,42 @@
             "Wrong bytes preserve saved work; correct renamed input and retained content complete the exact independent game inventory without altering player notes",
             "Fresh preparation after completion converges; fixture-owned volumes are cleaned up, with no Java or gameplay claim"
           ]
+        },
+        {
+          "id": "UX-035.native-build-remount",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_survives_native_remount_with_public_keys"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real APFS device reassignment preserves the public saved-build identity, source/host bytes and cache absence or contents",
+            "Original public keys reject equal-length wrong bytes, unknown and duplicate associations; correct renamed input produces the independent complete mrpack inventory without changing author documents"
+          ]
+        },
+        {
+          "id": "UX-035.native-sync-remount",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_sync_survives_native_remount_with_retained_inputs"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual APFS remount preserves saved synchronization identity and partially retained input after the source download and ordinary cache are removed",
+            "Both existing continuation commands complete the exact two-file inventory, preserve author intent and converge; retained cleanup protects pending inputs and reclaims only after completion"
+          ]
         }
       ],
       "owner_now": [

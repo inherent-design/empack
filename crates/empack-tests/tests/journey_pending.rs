@@ -32,8 +32,18 @@ fn pending(project: &TestProject, state: &Path, kind: &str) -> Value {
 
 #[test]
 fn journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes() {
-    let project = fixture("pending-public");
-    let host = tempfile::tempdir().unwrap();
+    build_roundtrip(
+        fixture("pending-public"),
+        tempfile::tempdir().unwrap(),
+        |_, _, _| {},
+    );
+}
+
+fn build_roundtrip(
+    project: TestProject,
+    host: tempfile::TempDir,
+    after_suspend: impl FnOnce(&TestProject, &Path, &Value),
+) {
     let state = host.path().join("state");
     let before = snapshot(project.dir());
     command(&project, &state)
@@ -50,6 +60,7 @@ fn journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes() {
     assert_eq!(snapshot(project.dir()), before);
 
     let operation = pending(&project, &state, "build");
+    after_suspend(&project, &state, &operation);
     assert_ne!(operation["state"], "stale");
     assert_eq!(operation["inputs"].as_array().unwrap().len(), 1);
     let input = &operation["inputs"][0];
@@ -198,8 +209,20 @@ fn journey_pending_sync_legacy_continue_retains_partial_inputs_across_restart_an
 }
 
 fn sync_restart_and_cleanup(legacy: bool) {
-    let project = empack_tests::fixtures::restricted::pair("pending-sync");
-    let host = tempfile::tempdir().unwrap();
+    sync_roundtrip(
+        empack_tests::fixtures::restricted::pair("pending-sync"),
+        tempfile::tempdir().unwrap(),
+        legacy,
+        |_, _, _| {},
+    );
+}
+
+fn sync_roundtrip(
+    project: TestProject,
+    host: tempfile::TempDir,
+    legacy: bool,
+    after_partial: impl FnOnce(&TestProject, &Path, &Value),
+) {
     let state = host.path().join("state");
     let original = snapshot(project.dir());
     command(&project, &state)
@@ -296,6 +319,8 @@ fn sync_restart_and_cleanup(legacy: bool) {
     );
     assert_eq!(pending(&project, &state, "sync"), partial);
     assert_eq!(snapshot(project.dir()), original);
+
+    after_partial(&project, &state, &partial);
 
     let second_path = host.path().join("second renamed.bin");
     fs::write(&second_path, b"second").unwrap();
@@ -715,4 +740,57 @@ fn retained_payload_recovery(kind: &str) {
     for (path, bytes) in neighbor_state {
         assert_eq!(fs::read(state.join(path)).unwrap(), bytes);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn remount_pending(
+    volume: &empack_tests::harness::native_volume::ApfsFixture,
+    project: &TestProject,
+    state: &Path,
+    kind: &str,
+    operation: &Value,
+) {
+    let project_before = snapshot(project.dir());
+    let retained = snapshot(state);
+    let cache_path = state.with_extension("cache");
+    let cache = cache_path.exists().then(|| snapshot(&cache_path));
+    volume.remount().unwrap();
+    assert_eq!(snapshot(project.dir()), project_before);
+    assert_eq!(snapshot(state), retained);
+    assert_eq!(cache_path.exists().then(|| snapshot(&cache_path)), cache);
+    assert_eq!(&pending(project, state, kind), operation);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "opt-in native APFS images; no GUI, Java or normal projects"]
+fn journey_pending_build_survives_native_remount_with_public_keys() {
+    let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
+    let project = empack_tests::fixtures::restricted::fixture_on(
+        TestProject::new_in(volume.root()),
+        "pending-public",
+    );
+    let host = tempfile::tempdir_in(volume.root()).unwrap();
+    build_roundtrip(project, host, |project, state, operation| {
+        remount_pending(&volume, project, state, "build", operation);
+    });
+    volume.finish().unwrap();
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "opt-in native APFS images; no GUI, Java or normal projects"]
+fn journey_pending_sync_survives_native_remount_with_retained_inputs() {
+    let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
+    for legacy in [false, true] {
+        let project = empack_tests::fixtures::restricted::pair_on(
+            TestProject::new_in(volume.root()),
+            "pending-sync",
+        );
+        let host = tempfile::tempdir_in(volume.root()).unwrap();
+        sync_roundtrip(project, host, legacy, |project, state, operation| {
+            remount_pending(&volume, project, state, "sync", operation);
+        });
+    }
+    volume.finish().unwrap();
 }

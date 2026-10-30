@@ -290,14 +290,18 @@ impl TestProject {
 
     /// Create a test project from the shared workflow fixture without live init.
     pub fn workflow_fixture(name: &str, loader: &str, mc_version: &str) -> Self {
-        let project = Self::new();
+        Self::new().with_workflow_fixture(name, loader, mc_version)
+    }
+
+    /// Populate an owned temporary project without choosing another filesystem.
+    pub fn with_workflow_fixture(self, name: &str, loader: &str, mc_version: &str) -> Self {
         let mut fixture = WorkflowProjectFixture::new(name.to_string());
         fixture.loader = loader.to_string();
         fixture.minecraft_version = mc_version.to_string();
         fixture
-            .write_to(&project.root)
+            .write_to(&self.root)
             .unwrap_or_else(|e| panic!("failed to write workflow fixture: {e}"));
-        project
+        self
     }
 
     /// Supply explicit publisher/runtime policy for native-consumer fixtures.
