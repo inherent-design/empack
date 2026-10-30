@@ -234,6 +234,10 @@ wiring. Prompt cancellation shares the host request's token. Its scoped monitor
 targets the prompt thread's synchronous I/O and retires before that thread can
 continue; it injects no answers and does not terminate the thread. Windows CI must
 execute these cases; a successful Unix build does not establish their behavior.
+The owned console fixture restores normal Ctrl-C processing before spawning ConPTY
+children, since the verification runner creates process groups with Ctrl-C suppressed.
+The test deliberately starts with suppression and requires notification at the host,
+retirement of the prompt read, and a usable follow-up prompt on the same thread.
 
 APFS cleanup retries only the owned tool's OS busy status, with a finite attempt
 bound and fresh backing-to-device ownership before each request. Other failures

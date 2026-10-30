@@ -12,6 +12,13 @@ fn native_windows_prompt_reads_retire_after_console_interrupt() {
     let root = tempfile::tempdir().unwrap();
     let before = snapshot(root.path());
     for mode in ["confirm", "text", "select", "fuzzy"] {
+        // Reproduce the verification runner's inherited ignored-signal policy.
+        assert_ne!(
+            unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 1) },
+            0,
+            "establish inherited Ctrl-C suppression: {}",
+            std::io::Error::last_os_error()
+        );
         let environment = offline_empack_cmd(root.path());
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
         command
@@ -47,6 +54,17 @@ fn native_windows_prompt_reads_retire_after_console_interrupt() {
 #[ignore = "private native console child, selected only by its owning fixture"]
 fn native_prompt_child() {
     let mode = std::env::var("EMPACK_CONSOLE_PROMPT_FIXTURE").unwrap();
+    let mut input_mode = 0;
+    let console_mode_available = unsafe {
+        use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE};
+        GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mut input_mode) != 0
+    };
+    let input_mode = if console_mode_available {
+        format!("{input_mode:#x}")
+    } else {
+        format!("unavailable: {}", std::io::Error::last_os_error())
+    };
+    eprintln!("Console fixture: {mode}; input mode: {input_mode}");
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let result = runtime.block_on(async {
         let cancellation = Cancellation::default();

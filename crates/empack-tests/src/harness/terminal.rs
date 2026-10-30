@@ -6,6 +6,15 @@ pub fn spawn(command: std::process::Command) -> expectrl::session::OsSession {
 
 #[cfg(windows)]
 pub fn spawn(command: std::process::Command) -> expectrl::Session<conpty::Process, Stream> {
+    // The verification runner's CREATE_NEW_PROCESS_GROUP suppresses Ctrl-C for
+    // descendants. This owned test host must give its console children ordinary
+    // signal processing. Handler registrations and the outer containment remain.
+    assert_ne!(
+        unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 0) },
+        0,
+        "restore Ctrl-C processing for the owned console fixture: {}",
+        std::io::Error::last_os_error()
+    );
     // ConPTY constructs its own command line and environment rather than using Command::spawn.
     let mut process = conpty::Process::spawn(conpty_command(&command)).unwrap();
     let stream = Stream {

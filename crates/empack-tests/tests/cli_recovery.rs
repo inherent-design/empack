@@ -123,6 +123,16 @@ impl Fixture {
     }
 
     fn shell(&self, text: &str) -> assert_cmd::Command {
+        #[cfg(unix)]
+        let script = text.to_owned();
+        #[cfg(windows)]
+        let script = format!(
+            "try {{ [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding -ErrorAction Stop }} catch {{ [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }}; {text}; exit $LASTEXITCODE"
+        );
+        self.shell_script(&script)
+    }
+
+    fn shell_script(&self, text: &str) -> assert_cmd::Command {
         let environment = offline_empack_cmd(&self.invocation);
         #[cfg(unix)]
         let mut command = Command::new("/bin/sh");
@@ -141,12 +151,7 @@ impl Fixture {
         #[cfg(unix)]
         command.args(["-c", text]);
         #[cfg(windows)]
-        command.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &format!("[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; {text}; exit $LASTEXITCODE"),
-        ]);
+        command.args(["-NoProfile", "-NonInteractive", "-Command", text]);
         let mut command = assert_cmd::Command::from_std(command);
         command.timeout(Duration::from_secs(30));
         command
@@ -234,6 +239,11 @@ fn cli_recovery_commands_bind_the_reported_context_and_available_actions() {
         if kind == "publication" && action == "finish" {
             // Separate shell startup, executable lookup and the printed command's
             // interpretation. A blank shell failure must identify its boundary.
+            fixture
+                .shell_script("[Console]::WriteLine('Bare shell ready'); exit 0")
+                .assert()
+                .success()
+                .stdout(predicates::str::contains("Bare shell ready"));
             fixture
                 .shell("[Console]::WriteLine('Recovery shell ready')")
                 .assert()
