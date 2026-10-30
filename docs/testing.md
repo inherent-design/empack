@@ -638,11 +638,16 @@ python3 scripts/verify.py telemetry
 python3 scripts/verify.py live-catalog live-provider-cli live-modrinth server-cli --product-profile release
 ```
 
-Fixed selections live in `scripts/verification/suites.py`. `mise run e2e` remains a
-compatibility alias for the offline executable suite. `mise run e2e:strict` explicitly
-selects live CLI routes and the rolling import survey as well. Telemetry checks are
+Fixed selections live in `scripts/verification/suites.py`. `mise run test:cli` runs
+the offline executable suite. `mise run test:live` explicitly selects live CLI
+routes and the rolling import survey as well. Telemetry checks are
 ignored by default and fail if an explicitly selected product cannot produce a trace;
 absence of the feature is not a successful test.
+
+`mise run test:filter NAME` is a local exploratory Nextest substring filter, not a
+qualification suite. `mise run survey:imports:pr` and
+`mise run survey:imports:curated` survey the selected latest upstream packs; the
+pinned corpus remains a separate check under `mise run test:import:corpus`.
 
 `live-provider` includes both providers and requires `EMPACK_KEY_CURSEFORGE`.
 The separate `live-modrinth` and `live-curseforge` selections name exact discovered
@@ -650,7 +655,7 @@ provider tests. `runtime-current` selects the managed vanilla and NeoForge launc
 checks plus the Fabric classpath check. `live-runtime` retains the full historical
 matrix and additionally requires `EMPACK_TEST_JAVA8_HOME`. Missing named tests or
 prerequisites cannot silently reduce one of these selections. CI live probes and
-`e2e:strict` build an independent release-profile product; normal deterministic and
+`test:live` build an independent release-profile product; normal deterministic and
 CLI checks retain their development-profile builds. The test driver remains separate
 from that product. Use `--product-profile release` for comparable local live evidence.
 The receipt records the selected profile, and the CI gate rejects a development
@@ -829,7 +834,7 @@ configuration. The report does not grant waivers or replace those gates.
 ## Strict external checks
 
 ```sh
-mise run e2e:strict
+mise run test:live
 mise run smoke:runtime
 mise run smoke:providers
 ```

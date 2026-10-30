@@ -19,7 +19,7 @@ mise run check
 mise run clippy
 mise run test
 mise run smoke
-mise run e2e:strict
+mise run test:live
 ```
 
 Use a development branch and submit a PR to `main`. Commit coherent, reviewable

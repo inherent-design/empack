@@ -66,22 +66,20 @@ description = "Check CLI, Python and rustdoc discovery against reviewed bindings
 run = "python3 scripts/check-test-map.py --discover-tooling target/verification-inventory"
 run_windows = "python scripts/check-test-map.py --discover-tooling target/verification-inventory"
 
-[tasks.e2e]
-alias = "e"
-description = "Compatibility alias: run offline executable contracts"
+[tasks."test:cli"]
+description = "Run offline executable contracts"
 run = "python3 scripts/verify.py cli"
 run_windows = "python scripts/verify.py cli"
 
-[tasks."e2e:filter"]
-alias = "fe"
+[tasks."test:filter"]
 depends = ["build:bin"]
 description = "Run a local exploratory test filter (not a qualification suite)"
 usage = 'arg "filter" help="nextest test-name substring"'
 run = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
 run_windows = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
 
-[tasks."e2e:strict"]
-description = "Explicit live CLI qualification, including rolling imports"
+[tasks."test:live"]
+description = "Run explicit live CLI selections and rolling imports"
 run = "python3 scripts/verify.py cli telemetry live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry --product-profile release"
 run_windows = "python scripts/verify.py cli telemetry live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry --product-profile release"
 
@@ -100,9 +98,9 @@ description = "Check pinned import archives and independent expected inventories
 run = "python3 scripts/check-import-corpus.py"
 run_windows = "python scripts/check-import-corpus.py"
 
-[tasks."smoke:import:pr"]
+[tasks."survey:imports:pr"]
 depends = ["build:bin"]
-description = "Survey the latest platform-selected upstream pack (legacy task alias)"
+description = "Survey the latest platform-selected upstream pack"
 run = "python3 scripts/survey-imports.py --profile pr"
 run_windows = "python scripts/survey-imports.py --profile pr"
 
@@ -144,9 +142,9 @@ description = "Verify and publish explicit imports in temporary projects"
 run = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
 run_windows = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
 
-[tasks."smoke:import:curated"]
+[tasks."survey:imports:curated"]
 depends = ["build:bin"]
-description = "Survey the latest curated upstream packs (legacy task alias)"
+description = "Survey the latest curated upstream packs"
 run = "python3 scripts/survey-imports.py --profile curated"
 run_windows = "python scripts/survey-imports.py --profile curated"
 
