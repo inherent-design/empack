@@ -1545,6 +1545,34 @@
         "UX-085",
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_coverage_runner.CoverageRunner.test_failed_discovery_does_not_execute_tests_or_report",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_coverage_runner.CoverageRunner.test_inventory_binds_test_process_and_report_cannot_erase_test_failure",
+      "boundary": "H",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_coverage_runner.CoverageRunner.test_quoted_environment_preserves_instrumentation_without_shell_evaluation",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_coverage_runner.CoverageRunner.test_unexpected_or_missing_instrumentation_assignments_fail",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
     }
   ]
 }

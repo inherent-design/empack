@@ -225,6 +225,13 @@ inventories. A real terminal checks decline and Ctrl-C at approval, preserving p
 evidence before a later explicit recovery. These are executable/interactive checks,
 not human discoverability, a usable modpack, or packaged consumer qualification.
 
+`mise run coverage` uses [run-coverage.py](../../scripts/run-coverage.py) to obtain the
+instrumentation environment, build the product, and capture the instrumented Nextest
+inventory before execution. Its digest is supplied to test processes; product children
+still receive no fixture controls. Test and report failures remain separate, and a
+successful report cannot erase a failed test run. Coverage does not produce release
+qualification receipts.
+
 Cancellation and recovery bindings distinguish constructed finalizer results, real
 engine ownership, and an ordinary Unix executable chain. The latter launches a
 controlled child, changes its ownership record, sends a host interrupt, and checks
