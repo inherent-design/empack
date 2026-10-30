@@ -202,8 +202,19 @@ impl Fixture {
     fn initialize_shell(&self, check_lookup: bool) {
         let before = self.observe();
         if check_lookup {
-            self.shell_script("[Console]::WriteLine('Bare shell ready'); exit 0")
-                .assert()
+            let started = std::time::Instant::now();
+            let probe = self
+                .shell_script("[Console]::WriteLine('Bare shell ready'); exit 0")
+                .assert();
+            // assert_cmd returns the killed child's status when its deadline
+            // expires. Code 1 alone cannot establish a natural PowerShell exit.
+            eprintln!(
+                "Windows bare shell: elapsed={:?}, status={:?}, profile_exists={}, deadline=30s (deadline termination may supply the status)",
+                started.elapsed(),
+                probe.get_output().status,
+                self.invocation.join(".harness-home").exists()
+            );
+            probe
                 .success()
                 .stdout(predicates::str::contains("Bare shell ready"));
             self.shell("[Console]::WriteLine('Recovery shell ready')")
