@@ -12,18 +12,29 @@ LOG_LIMIT = 4 * 1024 * 1024
 def redact(text, environment):
     secrets = [value for name, value in environment.items()
                if len(value) >= 6 and re.search(r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH", name, re.I)]
-    for value in sorted(secrets, key=len, reverse=True):
-        text = text.replace(value, "<redacted>")
+    marker = "__EMPACK_LOG_REDACTED__"
+    while marker in text:
+        marker += "_"
+    if secrets:
+        # Angle brackets would terminate URL matching before later query values
+        # and fragments could be removed. Render the placeholder only afterward.
+        text = re.sub("|".join(map(re.escape, sorted(set(secrets), key=len, reverse=True))),
+                      lambda _: marker, text)
 
     def url(match):
         try:
             value = urlsplit(match.group())
             host = value.netloc.rsplit("@", 1)[-1]
+            # Cargo's registry package IDs use the fragment for crate identity,
+            # not credentials. Removing it merges different compiled packages.
+            registry = text[max(0, match.start() - len("registry+")):match.start()] == "registry+"
+            fragment = value.fragment if registry and re.fullmatch(
+                r"[A-Za-z0-9_-]+@\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.+-]+)?", value.fragment) else ""
             return urlunsplit((value.scheme, host, value.path,
-                               "<redacted>" if value.query else "", ""))
+                               "<redacted>" if value.query else "", fragment))
         except ValueError:
             return "<redacted-url>"
-    return re.sub(r"https?://[^\s<>\"']+", url, text)
+    return re.sub(r"https?://[^\s<>\"']+", url, text).replace(marker, "<redacted>")
 
 
 def run(command, *, cwd, env, log, timeout, separate_stdout=False):

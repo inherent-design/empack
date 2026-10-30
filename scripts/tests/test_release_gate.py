@@ -112,6 +112,7 @@ class ReleaseArchiveGate(unittest.TestCase):
         build_dir, _, _ = self.paths["aarch64-apple-darwin"]
         compile_path = build_dir / "compile.json"
         messages = build_dir / "product-build-messages.jsonl"
+        stdout = build_dir / "build.stdout"
         original_compile, original_messages = compile_path.read_bytes(), messages.read_bytes()
         compile_path.unlink()
         with self.assertRaisesRegex(ValueError, "compilation record"):
@@ -121,9 +122,11 @@ class ReleaseArchiveGate(unittest.TestCase):
         library = next(r for r in rows if r.get("target", {}).get("name") == "empack_lib")
         library["features"].append("test-utils")
         messages.write_text("\n".join(map(json.dumps, rows)))
+        stdout.write_bytes(messages.read_bytes())
         with self.assertRaisesRegex(ValueError, "Test-only"):
             self.admit()
         messages.write_bytes(original_messages)
+        stdout.write_bytes(original_messages)
         record = json.loads(original_compile)
         record["source"]["revision"] = "f" * 40
         write_json(compile_path, record)

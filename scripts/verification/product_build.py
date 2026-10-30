@@ -2,13 +2,33 @@
 import hashlib
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import re
 import tomllib
 
 from .evidence import sha256, write_json
 from .process import run
 
 EVIDENCE_FILES = {"product-build-messages.jsonl", "product-metadata.json", "product-build-audit.json"}
-COMPILATION_FILES = EVIDENCE_FILES | {"compile.json"}
+COMPILATION_FILES = EVIDENCE_FILES | {"compile.json", "build.stdout", "metadata.stdout"}
+
+
+def compiler_stdout(output, builder, channel):
+    """Remove only the observed pinned Cross/Rustup prelude, retaining strict JSON.
+
+    Native Cargo has no launcher prelude. Unknown output and anything after the
+    first JSON line still reach the strict decoder rather than being discarded.
+    """
+    if builder != "cross":
+        return output
+    banner = re.compile(r"  " + re.escape(channel) + r"-x86_64-unknown-linux-gnu unchanged - rustc "
+                        + re.escape(channel) + r" \([0-9a-f]{7,40} \d{4}-\d{2}-\d{2}\)")
+    lines = output.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.startswith("{"):
+            return "".join(lines[index:])
+        if line.strip() and not banner.fullmatch(line.rstrip("\r\n")):
+            raise ValueError("Unexpected Cross launcher output before compiler JSON")
+    raise ValueError("Cross did not supply compiler JSON")
 
 
 def build_command(target, builder="cargo", features="default"):
@@ -55,6 +75,7 @@ def compile_product(root, target, builder, directory, environment, features="def
                                      log=directory / (name + ".log"), timeout=timeout, separate_stdout=True)
         if code or timed_out:
             raise RuntimeError(f"{name} failed (exit {code}, timeout={timed_out}); see {directory / (name + '.log')}")
+        (directory / (name + ".stdout")).write_text(output, encoding="utf-8")
         return output
 
     def source():
@@ -73,9 +94,9 @@ def compile_product(root, target, builder, directory, environment, features="def
     if builder == "cross" and version.splitlines()[0] != "cross 0.2.5":
         raise ValueError("Cross build evidence requires pinned cross 0.2.5")
     command = build_command(target, builder, features)
-    messages = checked(command, "build", timeout=2400)
+    messages = compiler_stdout(checked(command, "build", timeout=2400), builder, channel)
     metadata_args = metadata_command(target, builder)
-    metadata = json.loads(checked(metadata_args, "metadata"))
+    metadata = json.loads(compiler_stdout(checked(metadata_args, "metadata"), builder, channel))
     filename = "empack.exe" if target.endswith("windows-msvc") else "empack"
     binary = target_dir / target / "release" / filename
     if binary.is_symlink() or not binary.is_file():
@@ -111,6 +132,14 @@ def inspect_compilation(directory, target, builder, features, revision, stamped,
     if (builder == "cargo" and not version.startswith(f"cargo {channel} ")
             or builder == "cross" and version.splitlines()[:1] != ["cross 0.2.5"]):
         raise ValueError("Unreviewed product builder version")
+    for name in ("build.stdout", "metadata.stdout"):
+        if (directory / name).is_symlink() or not (directory / name).is_file():
+            raise ValueError("Missing or redirected compiler stdout")
+    emitted = compiler_stdout((directory / "build.stdout").read_text(encoding="utf-8"), builder, channel)
+    metadata = json.loads(compiler_stdout((directory / "metadata.stdout").read_text(encoding="utf-8"), builder, channel))
+    if (emitted != (directory / "product-build-messages.jsonl").read_text(encoding="utf-8")
+            or metadata != json.loads((directory / "product-metadata.json").read_text(encoding="utf-8"))):
+        raise ValueError("Compiled product differs from captured compiler stdout")
     inspect_retained_build(directory, record["artifact"])
     return record
 

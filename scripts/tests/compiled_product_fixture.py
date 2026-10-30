@@ -23,9 +23,12 @@ def compilation(directory, target, digest, revision, stamped, features="default"
                        "profile": {"test": False, "debug_assertions": False, "opt_level": "3"},
                        "executable": str(executable) if name == "empack" else None})
     events.append({"reason": "build-finished", "success": True})
-    artifact = retain_build(directory, "\n".join(map(json.dumps, events)),
-                            {"packages": packages, "target_directory": str(target_dir)},
+    messages = "\n".join(map(json.dumps, events))
+    metadata = {"packages": packages, "target_directory": str(target_dir)}
+    artifact = retain_build(directory, messages, metadata,
                             features, executable, digest)
+    (directory / "build.stdout").write_text(messages, encoding="utf-8")
+    (directory / "metadata.stdout").write_text(json.dumps(metadata), encoding="utf-8")
     record = {"schema": 1, "kind": "compiled-product", "source": {"revision": revision, "stamped": stamped},
               "target": target, "features": features, "command": build_command(target, builder, features),
               "metadata_command": metadata_command(target, builder),

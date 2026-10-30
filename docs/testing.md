@@ -1146,8 +1146,13 @@ public `GIT_HASH` and `BUILD_DATE` stamping variables into the cross-build conta
 
 The fixed `scripts/release-artifacts.py build` producer compiles only the ordinary
 product and retains Cargo's JSON compilation units, metadata, tool version and a
-replayable feature audit in `compile.json` and its three evidence files. Native and
-cross builds use the same verifier. Cross 0.2.5 runs metadata inside the selected
+replayable feature audit in `compile.json` and its evidence files. Compilation
+bundles also retain `build.stdout` and `metadata.stdout` after credential redaction.
+Admission replays the narrow, pinned Rustup-banner handling for Cross and compares
+the result with the recorded compiler JSON; unknown launcher output is refused.
+Registry package IDs retain their crate/version fragment while URL credentials
+and query values remain redacted. Native and cross builds use the same verifier.
+Cross 0.2.5 runs metadata inside the selected
 build container, so package identities and output paths use the same namespace as
 its compiler records; admission never guesses host/container path substitutions.
 PR cross-build checks retain these records as compilation evidence, with execution

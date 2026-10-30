@@ -63,6 +63,50 @@ def native_compiler():
             next(line.removeprefix("release: ") for line in lines if line.startswith("release: ")))
 
 
+class CompilerOutputEvidence(unittest.TestCase):
+    def test_observed_cross_prelude_is_replayed_from_retained_stdout(self):
+        from compiled_product_fixture import compilation
+        from verification.product_build import inspect_compilation
+        target = "aarch64-unknown-linux-gnu"
+        banner = "\n  1.99.1-x86_64-unknown-linux-gnu unchanged - rustc 1.99.1 (58cf8f9c3 2026-10-13)\n\n"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compilation(root, target, "c" * 64, "a" * 40, {}, builder="cross")
+            for name in ("build.stdout", "metadata.stdout"):
+                path = root / name
+                path.write_text(banner + path.read_text(), encoding="utf-8")
+            record = inspect_compilation(root, target, "cross", "default", "a" * 40, {}, "1.99.1")
+            self.assertEqual(record["artifact"]["features"], "default")
+            for name, changed in (("build.stdout", '{"reason":"build-finished","success":true}\n'),
+                                  ("metadata.stdout", '{"packages":[]}')):
+                with self.subTest(name=name):
+                    path = root / name
+                    original = path.read_bytes()
+                    path.write_text(banner + changed, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "captured compiler stdout"):
+                        inspect_compilation(root, target, "cross", "default", "a" * 40, {}, "1.99.1")
+                    path.unlink()
+                    with self.assertRaisesRegex(ValueError, "compiler stdout"):
+                        inspect_compilation(root, target, "cross", "default", "a" * 40, {}, "1.99.1")
+                    path.write_bytes(original)
+
+    def test_cross_decoder_does_not_discard_unknown_output_or_native_errors(self):
+        from verification.product_build import compiler_stdout
+        banner = "  1.99.1-x86_64-unknown-linux-gnu unchanged - rustc 1.99.1 (58cf8f9c3 2026-10-13)\n"
+        for prefix in ("unrecognized launcher text\n", banner.replace("1.99.1", "1.99.0"),
+                       banner.replace("unchanged", "failed"), banner):
+            output = prefix + '{}\n' if prefix != banner else prefix
+            with self.subTest(output=output), self.assertRaises(ValueError):
+                compiler_stdout(output, "cross", "1.99.1")
+        native = banner + '{}\n'
+        self.assertEqual(compiler_stdout(native, "cargo", "1.99.1"), native)
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(compiler_stdout(native, "cargo", "1.99.1"))
+        late = '{}\n' + banner
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(compiler_stdout(late, "cross", "1.99.1"))
+
+
 class ProductBuild(unittest.TestCase):
     def test_fixed_release_builder_retains_actual_default_and_telemetry_units(self):
         from verification.product_build import compile_product, inspect_compilation

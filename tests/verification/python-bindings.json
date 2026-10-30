@@ -1713,6 +1713,27 @@
         "UX-086",
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_product_build.CompilerOutputEvidence.test_cross_decoder_does_not_discard_unknown_output_or_native_errors",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_product_build.CompilerOutputEvidence.test_observed_cross_prelude_is_replayed_from_retained_stdout",
+      "boundary": "U",
+      "requirements": [
+        "UX-086"
+      ]
+    },
+    {
+      "id": "python::test_verification_runner.CommandEvidence.test_registry_package_identity_survives_without_preserving_url_credentials",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
     }
   ]
 }

@@ -304,6 +304,8 @@ jobs:
             .git/auxiliary/*/product-build-messages.jsonl
             .git/auxiliary/*/product-metadata.json
             .git/auxiliary/*/product-build-audit.json
+            .git/auxiliary/*/build.stdout
+            .git/auxiliary/*/metadata.stdout
             .git/auxiliary/*/empack*
             .git/auxiliary/*/*.log
             .git/auxiliary/*/suite/**/*.json

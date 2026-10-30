@@ -114,6 +114,24 @@ class CommandEvidence(unittest.TestCase):
             self.assertNotIn(private, clean)
         self.assertIn('https://example.org/download', clean)
 
+    def test_registry_package_identity_survives_without_preserving_url_credentials(self):
+        identity = 'registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28'
+        self.assertEqual(redact(identity, {}), identity)
+        text = 'registry+https://user:password@example.org/index?token=private#semver@1.0.28'
+        clean = redact(text, {"ACCESS_TOKEN": "private"})
+        self.assertIn('#semver@1.0.28', clean)
+        for secret in ('user:password', 'token=private'):
+            self.assertNotIn(secret, clean)
+        ordinary = redact('https://example.org/index#semver@1.0.28', {})
+        self.assertNotIn('#', ordinary)
+        compound = redact('https://user:pass@example.org/?token=known-secret&signature=other-secret#private-fragment',
+                          {"TOKEN": "known-secret"})
+        for secret in ('known-secret', 'other-secret', 'private-fragment', 'user:pass'):
+            self.assertNotIn(secret, compound)
+        overlapping = redact('known-secret EMPACK __EMPACK_LOG_REDACTED__',
+                             {"TOKEN": "known-secret", "KEY": "EMPACK"})
+        self.assertEqual(overlapping, '<redacted> <redacted> __<redacted>_LOG_REDACTED__')
+
     def test_nonzero_status_and_separate_stdout_are_preserved(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
