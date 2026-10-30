@@ -8309,7 +8309,8 @@
       "required_work": "Spawned instance command + exact before/after trust files using public observations, not editing private state.",
       "evidence_tiers": [
         "H",
-        "X"
+        "X",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -8335,7 +8336,49 @@
             "Public enrollment uses an explicit pack, channel, HTTPS origin and disposable public key",
             "Enrollment and subsequent channel observation do not create the game directory"
           ],
-          "remaining_group_evidence": "Existing installation mismatches, enrollment preview and decline remain separate cases"
+          "remaining_group_evidence": "Local executable enrollment and later authenticated publisher/player flow; hosted transport and channel freshness retain separate requirements."
+        },
+        {
+          "id": "UX-057.explicit-inputs-approval-and-existing-installation",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_snapshot"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Missing pack/channel/URL/key arguments, non-HTTPS URL, weak key and noncanonical key encoding refuse without changing instance, selected host state or local release input; an existing installation refuses another pack",
+            "Closed/piped stdin, dry-run and actual terminal decline preserve fresh and completed-instance contexts; explicit approval on the same selection creates only the subscription control file, reports the exact chosen key fingerprint and does not install content or change prior installed bytes/metadata",
+            "A fresh public status command retains the exact installed release and reports the enrolled channel; duplicate enrollment cannot replace trust or mutate saved instance/host state"
+          ]
+        },
+        {
+          "id": "UX-057.enrollment-identity-and-root-authority",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::subscription::tests::enrollment_rotation_revocation_and_restart_retain_sequence_authority",
+            "empack-lib::engine::api::subscription::tests::subscription_rejects_copied_roots_and_late_trust_edits"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Engine enrollment retains the exact selected pack, channel, full HTTPS URL and public key bytes; a fresh engine reopens the same identity/URL without changing the persisted trust bytes during preview",
+            "A copied current-format enrollment cannot authorize observation at another root; a local trust edit after preparation invalidates execution and is preserved rather than overwritten"
+          ]
         }
       ],
       "owner_now": [
@@ -8346,7 +8389,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-058",

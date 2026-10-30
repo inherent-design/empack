@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::journey_publisher::cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_snapshot", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "I", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::cli_publisher_key_setup_refuses_shared_windows_directory_without_changing_acl", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "REL", "platforms": ["windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_publisher::cli_pty_release_staging_requires_approval_and_preserves_preview_inputs", "binary": "empack-tests::cli_publisher", "binary_name": "cli_publisher", "boundary": "I", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_conflicts", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

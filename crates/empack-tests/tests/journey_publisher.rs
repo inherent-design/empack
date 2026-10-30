@@ -246,6 +246,183 @@ fn cli_publisher_key_setup_refuses_shared_windows_directory_without_changing_acl
     assert_eq!(fs::read_dir(&private).unwrap().count(), 2);
 }
 
+#[test]
+fn cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_snapshot() {
+    let signer = SigningKey::from_bytes(&[83; 32]);
+    let public = hex(signer.verifying_key().as_bytes());
+    let fingerprint = hex(&Sha256::digest(signer.verifying_key().as_bytes()));
+    let url = "https://publisher.invalid/channels/stable.json";
+    let args = [
+        "instance",
+        "subscribe",
+        "--pack",
+        "verification.publisher",
+        "--channel",
+        "stable",
+        url,
+        "--key",
+        public.as_str(),
+    ];
+    for installed in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let instance = root.path().join("instance");
+        let inputs = root.path().join("inputs");
+        let host = root.path().join("host");
+        for path in [&instance, &inputs, &host] {
+            fs::create_dir(path).unwrap();
+        }
+        write(&instance, "player notes.txt", b"keep player work");
+        let state = host.join("selected state");
+        let command = || {
+            let mut command = offline_command(&instance);
+            command
+                .arg("--state-dir")
+                .arg(&state)
+                .arg("--cache-dir")
+                .arg(state.with_extension("cache"));
+            command
+        };
+        // Literal supported input, not an edited private installation record.
+        let payload = serde_json::to_vec(&json!({
+            "schema":1, "pack":"verification.publisher", "version":"1.0.0",
+            "minimum_engine":">=0.8.0-beta", "require_subscription":false,
+            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+            "files":[], "choices":[]
+        }))
+        .unwrap();
+        let release = hex(&Sha256::digest(&payload));
+        write(&inputs, "release.json", &payload);
+        if installed {
+            command()
+                .args(["--yes", "instance", "install"])
+                .arg(inputs.join("release.json"))
+                .args(["--sha256", &release, "--side", "client", "--layout", "game"])
+                .assert()
+                .success();
+            write(
+                &instance,
+                "game/saves/player/level.dat",
+                b"keep player world",
+            );
+        }
+        let before = snapshot(&instance);
+        let host_before = snapshot(&host);
+        let inputs_before = snapshot(&inputs);
+        let unchanged = || {
+            assert_eq!(snapshot(&instance), before);
+            assert_eq!(snapshot(&host), host_before);
+            assert_eq!(snapshot(&inputs), inputs_before);
+        };
+        if !installed {
+            for omitted in [2..4, 4..6, 6..7, 7..9] {
+                let missing: Vec<_> = args
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !omitted.contains(index))
+                    .map(|(_, value)| *value)
+                    .collect();
+                command().arg("--yes").args(missing).assert().code(2);
+                unchanged();
+            }
+            let weak = "0".repeat(64);
+            let upper = "FF".repeat(32);
+            for (position, value) in [
+                (6, "http://publisher.invalid/channels/stable.json"),
+                (8, weak.as_str()),
+                (8, upper.as_str()),
+            ] {
+                let mut invalid = args;
+                invalid[position] = value;
+                command().arg("--yes").args(invalid).assert().failure();
+                unchanged();
+            }
+        } else {
+            let mut different_pack = args;
+            different_pack[3] = "verification.other";
+            command()
+                .arg("--yes")
+                .args(different_pack)
+                .assert()
+                .failure()
+                .stderr(contains("Subscription belongs to another installed pack"));
+            unchanged();
+        }
+        approval::preserve_without_approval(
+            &instance,
+            &instance,
+            &state,
+            &args,
+            "(?i)apply this publisher trust and channel observation plan",
+        );
+        unchanged();
+        command()
+            .arg("--yes")
+            .args(args)
+            .assert()
+            .success()
+            .stdout(contains(&fingerprint))
+            .stdout(contains("1 enrolled keys; sequence 0"))
+            .stdout(contains(
+                "Saved subscription for verification.publisher / stable",
+            ));
+        let after = snapshot(&instance);
+        for (path, bytes) in &before.files {
+            assert_eq!(&after.files[path], bytes);
+        }
+        for (path, entry) in &before.entries {
+            assert_eq!(&after.entries[path], entry);
+        }
+        let added: BTreeSet<_> = after
+            .files
+            .keys()
+            .filter(|path| !before.files.contains_key(*path))
+            .cloned()
+            .collect();
+        assert_eq!(
+            added,
+            BTreeSet::from([PathBuf::from(".empack/subscription.json")])
+        );
+        assert_eq!(snapshot(&inputs), inputs_before);
+        let stored = snapshot(&host);
+        let output = command()
+            .args(["status", "--context", "instance", "--json"])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+        let context = report["contexts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|value| value["context"] == "instance")
+            .unwrap();
+        assert_eq!(report["content_verified"], false);
+        assert_eq!(
+            context["update_owner"],
+            "publisher channel stable (authenticate before applying)"
+        );
+        if installed {
+            assert_eq!(context["name"], "verification.publisher");
+            assert_eq!(context["exact"], release);
+            assert_eq!(context["state"], "valid");
+        } else {
+            assert!(context["exact"].is_null());
+            assert!(!instance.join("game").exists());
+        }
+        command()
+            .arg("--yes")
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(contains("Instance already has a subscription"));
+        assert_eq!(snapshot(&instance), after);
+        assert_eq!(snapshot(&host), stored);
+        assert_eq!(snapshot(&inputs), inputs_before);
+    }
+}
+
 fn build_and_stage(
     author: &Path,
     publisher: &Path,

@@ -408,7 +408,7 @@ class RequiredGate(unittest.TestCase):
             native_complete = {
                 "UX-002", "UX-005", "UX-007", "UX-011", "UX-022", "UX-023",
                 "UX-024", "UX-027", "UX-028", "UX-029", "UX-036", "UX-038",
-                "UX-040", "UX-051", "UX-052", "UX-054",
+                "UX-040", "UX-051", "UX-052", "UX-054", "UX-057",
             }
             for requirement in acceptance:
                 # This synthetic full native matrix now supplies every bound
@@ -450,6 +450,8 @@ class RequiredGate(unittest.TestCase):
             )
             key_setup = next(r for r in partial["requirements"] if r["id"] == "UX-054")
             self.assertEqual(key_setup["status"], "NOT_RUN")
+            enrollment = next(r for r in partial["requirements"] if r["id"] == "UX-057")
+            self.assertEqual(enrollment["status"], "NOT_RUN")
             windows = next(c for c in key_setup["cases"]
                            if c["id"] == "UX-054.windows-private-directory-refusal")
             self.assertEqual({(v["features"], v["status"]) for v in windows["variants"]},

@@ -52,6 +52,12 @@ This completes the staging definitions, not their acceptance: without the requir
 source/feature/target observations the group remains unexecuted. Hosted publication
 and channel advancement have their own requirements.
 
+Publisher enrollment binds its public decision/input case, the connected
+publisher/player journey and host tests for copied roots and stale trust edits.
+Its definitions cover fresh and installed contexts without treating enrollment as
+installation or implicit key replacement. Execution on each host/feature graph
+remains required; defining the cases supplies no passing observations.
+
 Instance inspection has a public-command case that installs two exact snapshots,
 retains a selected optional choice, and checks the displayed release history.
 Both human inspection and JSON metadata status preserve the instance, external

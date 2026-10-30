@@ -545,6 +545,13 @@ The Windows command case grants Everyone access only to its disposable key direc
 checks refusal and unchanged files/DACLs, then restores that fixture's private access
 and verifies successful creation on the same selected path.
 
+Publisher enrollment has a separate public decision case for fresh roots and
+completed installations. It checks explicit identity/key/URL inputs, preview and
+terminal refusal, installed-pack mismatch, preserved player bytes, public metadata
+after enrollment and refusal to replace existing trust through a second enrollment.
+Local release input is installed through the supported CLI; the test does not edit
+private instance or trust records to manufacture that state.
+
 The publisher journey builds literal native projects, stages them using a disposable
 private key, and checks the signed payload independently with Ed25519. Its staging
 assertions compare all destinations, asset digests and lengths against
