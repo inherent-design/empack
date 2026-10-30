@@ -383,12 +383,20 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
         let (bytes, mode) = shell.unwrap();
         fs::write(&executable, bytes).unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(mode)).unwrap();
-        assert_cmd::Command::new(&executable)
+        use assert_cmd::assert::OutputAssertExt;
+        let started = std::time::Instant::now();
+        // Match the isolated child allowance during parallel native verification.
+        let output = assert_cmd::Command::new(&executable)
             .env_clear()
-            .timeout(std::time::Duration::from_secs(5))
-            .assert()
-            .success()
-            .stdout(description);
+            .timeout(std::time::Duration::from_secs(30))
+            .output()
+            .unwrap();
+        eprintln!(
+            "Archived shell execution: elapsed={:?}, status={:?}",
+            started.elapsed(),
+            output.status
+        );
+        output.assert().success().stdout(description);
         assert_eq!(
             fs::metadata(root.join("templates/client/show.sh.template"))
                 .unwrap()
