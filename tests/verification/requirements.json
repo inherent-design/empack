@@ -11244,9 +11244,9 @@
             "independent"
           ],
           "assertions": [
-            "The installed native readelf, otool or dumpbin inspects a copy of the already-running interpreter; it records header architecture, nonempty native reports, exact tool identity and stable copied bytes without executing the copy"
+            "The installed native readelf, otool or dumpbin inspects a copy of the installed native compiler selected through rustup metadata; it records header architecture, nonempty native reports, exact tool identity and stable copied bytes without executing the copy"
           ],
-          "remaining_group_evidence": "Native tooling integration on a copied interpreter, not an empack archive, consumer workflow or cross-platform product qualification."
+          "remaining_group_evidence": "Native tooling integration on a copied installed compiler, not an empack archive, consumer workflow or cross-platform product qualification. Python launcher packaging is independent and need not match the thin shipping-image profile."
         }
       ],
       "owner_now": [

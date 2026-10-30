@@ -143,22 +143,31 @@ class NativeImageEvidence(unittest.TestCase):
 
 class NativeImageInspector(unittest.TestCase):
     def test_installed_native_inspector_reads_a_copy_without_executing_it(self):
-        # The running interpreter is already admitted by the Python test host.
-        # Copy its image, inspect it, never invoke the copy or compile a fixture.
-        # This N case is distinct from P evidence for the actual empack archive.
-        source = Path(sys.executable).resolve()
-        system = platform.system()
-        targets = [target for target, profile in native_image.IMAGES.items() if profile[3] == system]
-        matches = []
-        for target in targets:
-            try:
-                matches.append((target, native_image.inspect_architecture(source, target)))
-            except ValueError:
-                pass
-        self.assertEqual(len(matches), 1, "Interpreter must have one supported thin native image profile")
-        target, expected = matches[0]
+        # Use an installed native compiler image, not Python's independently
+        # packaged launcher. Rustup is already a prerequisite of this test host.
+        # Never invoke the copy or compile a fixture; this is not P evidence.
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
+            code, output, expired = native_image.run(
+                ["rustup", "which", "rustc"], cwd=Path(__file__).resolve().parents[2],
+                env=dict(os.environ), log=root / "rustup-which.log", timeout=30, separate_stdout=True)
+            self.assertFalse(expired)
+            self.assertEqual(code, 0, (root / "rustup-which.log").read_text()[-4096:])
+            source = Path(output.strip()).resolve(strict=True)
+            self.assertTrue(source.is_absolute() and source.is_file())
+            system = platform.system()
+            targets = [target for target, profile in native_image.IMAGES.items() if profile[3] == system]
+            matches = []
+            for target in targets:
+                try:
+                    matches.append((target, native_image.inspect_architecture(source, target)))
+                except ValueError:
+                    pass
+            with source.open("rb") as stream:
+                prefix = stream.read(32).hex()
+            self.assertEqual(len(matches), 1,
+                f"Installed compiler must have one thin native image profile: {source}; header={prefix}")
+            target, expected = matches[0]
             binary = root / ("empack.exe" if system == "Windows" else "empack")
             shutil.copyfile(source, binary)
             digest = sha256(binary)

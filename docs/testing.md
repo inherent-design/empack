@@ -1327,7 +1327,7 @@ architecture and preserves dependency/load metadata; it is not a complete image
 validator or a claim of compatibility with untested OS versions. Actual execution
 on each native target remains a separate obligation. The controlled Python fixtures
 contain inert ABI headers and fabricated reports. The native inspector test reads
-a copy of its already-running interpreter without executing the copy; neither
+a copy of the installed native compiler without executing the copy; neither
 fixture kind supplies evidence for an actual empack distribution.
 
 Header rules follow the [Linux ELF definitions](https://github.com/torvalds/linux/blob/master/include/uapi/linux/elf.h),
