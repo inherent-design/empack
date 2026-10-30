@@ -1192,6 +1192,12 @@ Build artifacts retain `build.json` and the compilation bundle; execution artifa
 retain the package and suite receipts. `scripts/release-artifacts.py gate` validates their complete five-target set
 and writes `archive-evidence.json` plus `SHA256SUMS` alongside the unchanged archives.
 The evidence explicitly records that full candidate qualification remains separate.
+The workflow also uploads each compilation-attempt directory as
+`release-compilation-TARGET`, including bounded logs when compilation fails before
+an archive exists. That diagnostic upload uses the attempt path directly, rather
+than an environment value assigned only after a successful build. A failed or
+incomplete bundle remains diagnostic evidence and cannot authorize packaging or
+publication.
 
 To evaluate an already checked payload without publishing:
 

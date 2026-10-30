@@ -103,6 +103,15 @@ jobs:
           python3 scripts/release-artifacts.py build --target "$BUILD_TARGET" --builder "$BUILDER" --output "$compilation"
           echo "PRODUCT_COMPILATION=$compilation" >> "$GITHUB_ENV"
 
+      - name: Retain compilation diagnostics even when no archive exists
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-compilation-${{ matrix.target }}
+          path: .git/product-build/${{ github.run_id }}-${{ github.run_attempt }}/
+          include-hidden-files: true
+          if-no-files-found: warn
+
       - name: Package archive (Unix)
         if: ${{ matrix.archive_ext == 'tar.gz' }}
         shell: bash

@@ -100,6 +100,16 @@ class ReleaseChannelContracts(unittest.TestCase):
         self.assertLess(build.index("scripts/release-artifacts.py build "), build.index("name: Package archive"))
         self.assertNotIn("run: cargo build", build)
         self.assertNotIn("run: cross build", build)
+        # A compiler error occurs before archive creation. Its diagnostic upload
+        # must not depend on packaging or the successful build's environment.
+        diagnostics = build.split("      - name: Retain compilation diagnostics", 1)[1].split("      - name: Package archive", 1)[0]
+        self.assertIn("if: always()", diagnostics)
+        self.assertIn("name: release-compilation-${{ matrix.target }}", diagnostics)
+        self.assertIn("path: .git/product-build/${{ github.run_id }}-${{ github.run_attempt }}/", diagnostics)
+        self.assertIn("include-hidden-files: true", diagnostics)
+        self.assertNotIn("$PRODUCT_COMPILATION", diagnostics)
+        self.assertLess(build.index("scripts/release-artifacts.py build "), build.index("name: Retain compilation diagnostics"))
+        self.assertLess(build.index("name: Retain compilation diagnostics"), build.index("name: Package archive"))
         for workflow in (release, pr):
             self.assertIn("tool: cross@0.2.5", workflow)
         self.assertIn("--builder cross --output .git/cross-product-build", pr)
