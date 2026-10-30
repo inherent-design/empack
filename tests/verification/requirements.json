@@ -11211,7 +11211,8 @@
             "python::test_native_image.NativeImageEvidence.test_native_metadata_is_rechecked_against_checked_image_and_report_bytes",
             "python::test_native_image.NativeImageEvidence.test_unavailable_failed_empty_oversized_or_changed_inputs_do_not_finish_capture",
             "python::test_release_archive.ReleaseArchiveAdmission.test_missing_native_inspector_blocks_package_before_product_execution",
-            "python::test_release_archive.ReleaseArchiveAdmission.test_package_producer_binds_native_observation_before_running_the_cli_suite"
+            "python::test_release_archive.ReleaseArchiveAdmission.test_package_producer_binds_native_observation_before_running_the_cli_suite",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_checkout_extraction_is_refused_before_native_inspection_or_product_execution"
           ],
           "required_platforms": [
             "linux",
@@ -11223,7 +11224,8 @@
           ],
           "assertions": [
             "Controlled inspector calls retain report bytes and exact executable/tool identities, never invoke the captured product, and refuse missing, failed, timed-out, empty, oversized or changed observations",
-            "The public archive producer captures native metadata before its fixed CLI suite and binds the observation digest; an unavailable native inspector blocks before product execution"
+            "The public archive producer captures native metadata before its fixed CLI suite and binds the observation digest; an unavailable native inspector blocks before product execution",
+            "Controlled producer tests declare their own fixture checkout independently of the runner temporary directory; an extraction inside that checkout is refused before native inspection or any product invocation, preserving the checkout"
           ],
           "remaining_group_evidence": "Controlled tool calls exercise the producer boundary; actual installed inspectors and final product execution remain separate."
         },

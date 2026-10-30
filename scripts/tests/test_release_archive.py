@@ -1,4 +1,5 @@
 """Archive admission tests use inert fixture bytes, not a release executable."""
+from contextlib import nullcontext
 import importlib.util
 import io
 import json
@@ -27,6 +28,8 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.checkout = self.root / "source checkout"
+        self.checkout.mkdir()
         self.destination = self.root / "extracted"
         self.destination.mkdir()
 
@@ -169,7 +172,8 @@ class ReleaseArchiveAdmission(unittest.TestCase):
                         status="PASS", source_revision="a" * 40, source_snapshot_sha256="b" * 64,
                         worktree_dirty=False))
                     return 0
-                with patch.object(package.verify, "checked", return_value=f"host: {target}"), \
+                with patch.object(package.verify, "ROOT", self.checkout), \
+                        patch.object(package.verify, "checked", return_value=f"host: {target}"), \
                         patch.object(package, "capture_image", side_effect=capture), \
                         patch.object(package.verify, "main", side_effect=suite):
                     code = package.main(["--archive", str(archive), "--sha256", package.sha256(archive),
@@ -185,7 +189,8 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         target = "x86_64-pc-windows-msvc"
         archive = self.root / f"empack-0.8.4-beta-{target}.zip"
         native_image_fixture.archive(archive, target)
-        with patch.object(package.verify, "checked", return_value=f"host: {target}"), \
+        with patch.object(package.verify, "ROOT", self.checkout), \
+                patch.object(package.verify, "checked", return_value=f"host: {target}"), \
                 patch.object(package, "capture_image", side_effect=package.InspectionUnavailable("missing native inspector")), \
                 patch.object(package.verify, "main") as suite:
             code = package.main(["--archive", str(archive), "--sha256", package.sha256(archive),
@@ -196,6 +201,26 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         record = json.loads(next((self.root / "attempts").glob("*/package.json")).read_text())
         self.assertEqual(record["status"], "BLOCKED")
         self.assertIn("missing native inspector", record["reason"])
+
+    def test_checkout_extraction_is_refused_before_native_inspection_or_product_execution(self):
+        target = "x86_64-pc-windows-msvc"
+        archive = self.root / f"empack-0.8.4-beta-{target}.zip"
+        native_image_fixture.archive(archive, target)
+        with patch.object(package.verify, "ROOT", self.checkout), \
+                patch.object(package.verify, "checked", return_value=f"host: {target}"), \
+                patch.object(package.tempfile, "TemporaryDirectory", return_value=nullcontext(str(self.checkout))), \
+                patch.object(package, "capture_image") as inspect, \
+                patch.object(package.verify, "main") as suite:
+            code = package.main(["--archive", str(archive), "--sha256", package.sha256(archive),
+                                 "--version", "0.8.4-beta", "--target", target,
+                                 "--output", str(self.root / "attempts")])
+        self.assertEqual(code, 1)
+        inspect.assert_not_called()
+        suite.assert_not_called()
+        record = json.loads(next((self.root / "attempts").glob("*/package.json")).read_text())
+        self.assertEqual(record["status"], "FAIL")
+        self.assertIn("outside the source checkout", record["reason"])
+        self.assertEqual(list(self.checkout.iterdir()), [])
 
 
 if __name__ == "__main__":

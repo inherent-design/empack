@@ -1912,6 +1912,13 @@
       "requirements": [
         "UX-085"
       ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_checkout_extraction_is_refused_before_native_inspection_or_product_execution",
+      "boundary": "H",
+      "requirements": [
+        "UX-085"
+      ]
     }
   ]
 }
