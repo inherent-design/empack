@@ -945,9 +945,11 @@ translation. A missing pinned installation
 blocks the suite before tests run; Cargo's `--offline` alone does not prevent
 Rustup from downloading a toolchain.
 
-Hashed Python producer sources, the toolchain file and verification JSON use LF
-checkout attributes on every host. Cross-host admission compares those exact bytes;
-it does not normalize or rewrite received evidence to accept another source snapshot.
+Hashed Python producer sources, the toolchain file, Cargo lockfile and verification
+JSON use LF checkout attributes on every host. A native Git fixture enables
+`autocrlf`, checks the hashed Python/rustdoc inputs, and retains controls for ordinary
+text conversion and exact signed-fixture bytes. Cross-host admission compares exact
+bytes; it does not normalize received evidence to accept another source snapshot.
 
 Doctests are discovered and executed separately and their receipts are joined to
 their own acceptance cases. Source-edited or interrupted tooling attempts remain

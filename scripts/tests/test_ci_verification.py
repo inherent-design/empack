@@ -240,7 +240,7 @@ class RequiredGate(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "another host"):
                 ci.check_gate(plan, successes(plan), root)
 
-    def test_registry_bytes_are_stable_in_autocrlf_checkout(self):
+    def test_evidence_inputs_are_stable_in_autocrlf_checkout(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             def git(*args):
@@ -251,20 +251,31 @@ class RequiredGate(unittest.TestCase):
             attributes = SCRIPTS.parent / ".gitattributes"
             (root / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.exists() else b"")
             from verification.python_tests import inputs
-            paths = {"tests/verification/test-bindings.json", *inputs(SCRIPTS.parent)}
+            from verification.doctests import inputs as doctest_inputs
+            paths = {"tests/verification/test-bindings.json", *inputs(SCRIPTS.parent),
+                     *doctest_inputs(SCRIPTS.parent)}
             originals = {}
             for name in paths:
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 originals[name] = (SCRIPTS.parent / name).read_bytes().replace(b"\r\n", b"\n")
                 target.write_bytes(originals[name])
+            # Prove conversion really runs, without extending evidence rules to
+            # ordinary author files or changing exact signed-fixture bytes.
+            author = root / "author/note.txt"
+            signed = root / "tests/fixtures/hosted-publication/opaque.bin"
+            for path, content in [(author, b"author note\n"), (signed, b"signed\r\n\0opaque\n")]:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
             git("add", ".")
-            for name in paths:
-                (root / name).unlink()
+            for path in [*(root / name for name in paths), author, signed]:
+                path.unlink()
             git("checkout-index", "--all", "--force")
             for name, original in originals.items():
                 self.assertEqual((root / name).read_bytes(), original,
                                  f"Evidence input bytes changed under native checkout conversion: {name}")
+            self.assertEqual(author.read_bytes(), b"author note\r\n")
+            self.assertEqual(signed.read_bytes(), b"signed\r\n\0opaque\n")
 
     def test_consumer_source_dependency_and_fixture_identity_are_required(self):
         record = prism_record(REVISION)

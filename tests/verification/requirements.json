@@ -11790,7 +11790,7 @@
           "id": "UX-088.source-checkout-byte-identity",
           "boundary": "N",
           "test_ids": [
-            "python::test_ci_verification.RequiredGate.test_registry_bytes_are_stable_in_autocrlf_checkout"
+            "python::test_ci_verification.RequiredGate.test_evidence_inputs_are_stable_in_autocrlf_checkout"
           ],
           "required_platforms": [
             "linux",
@@ -11801,8 +11801,8 @@
             "independent"
           ],
           "assertions": [
-            "An actual Git checkout with autocrlf enabled retains exact LF bytes for every hashed Python producer, toolchain and verification registry input",
-            "The fixture exercises checkout conversion without normalizing received receipts or changing signed pack content"
+            "An actual Git checkout with autocrlf enabled retains exact LF bytes for every hashed Python producer, rustdoc input (including Cargo.lock), toolchain and verification registry input",
+            "Ordinary author text still undergoes checkout conversion while exact signed-fixture bytes remain unchanged; admission does not normalize received receipts"
           ],
           "remaining_group_evidence": "Each native host still needs its own observed Python run; one host simulation is not execution on another OS."
         },

@@ -396,7 +396,7 @@
       ]
     },
     {
-      "id": "python::test_ci_verification.RequiredGate.test_registry_bytes_are_stable_in_autocrlf_checkout",
+      "id": "python::test_ci_verification.RequiredGate.test_evidence_inputs_are_stable_in_autocrlf_checkout",
       "boundary": "N",
       "requirements": [
         "UX-088"
