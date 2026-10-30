@@ -187,6 +187,13 @@ have distinct names and payload identities. A receipt reports the exact release 
 identity separately from the surrounding archive inventory. Optional choices remain
 in the release for installation; native-only builds reject materialization choices.
 
+`--optional` and `--optional-defaults` apply to selected Prism, server and CurseForge
+outputs. A batch containing only Modrinth/native outputs rejects these switches.
+In a mixed batch those reference-preserving outputs retain authored participation;
+choices apply to the other outputs. Explanation reports the requested batch policy
+and each output's effective policy. Metadata-loss consent permits a representable
+conversion; it does not select optional content.
+
 ## Modrinth
 
 Write `modrinth.index.json`, exact SHA-1/SHA-512 assertions, sizes, HTTPS alternatives,

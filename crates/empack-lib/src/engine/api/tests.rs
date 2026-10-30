@@ -117,6 +117,90 @@ pub(super) fn request() -> BuildRequest {
         evidence: SourceEvidencePolicy::Compatibility,
     }
 }
+
+#[tokio::test]
+async fn reference_only_build_choices_refuse_before_capture_or_host_state() {
+    for recipes in [
+        vec![Recipe::MODRINTH],
+        vec![Recipe::EMPACK_REFERENCES],
+        vec![Recipe::MODRINTH, Recipe::EMPACK_REFERENCES],
+    ] {
+        for use_defaults in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            fixture(root.path());
+            // A late capture would fail to parse, distinguishing argument refusal
+            // from accidentally reaching authoring or payload interpretation.
+            put(root.path(), "empack.yml", b"invalid: [");
+            put(host.path(), "neighbor.txt", b"keep neighbor");
+            let paths = [
+                "empack.yml",
+                "empack.lock",
+                "dist/result.mrpack",
+                "dist/client.zip",
+            ];
+            let before = paths.map(|path| fs::read(root.path().join(path)).unwrap());
+            let (engine, _) = engine(host.path().join("state"));
+            let mut request = request();
+            request.outputs = NonEmpty::new(
+                recipes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, recipe)| BuildOutput {
+                        archive: DistributionArchive::Zip,
+                        target: *recipe,
+                        artifact: path(&format!(
+                            "output-{index}.{}",
+                            if *recipe == Recipe::MODRINTH {
+                                "mrpack"
+                            } else {
+                                "empack"
+                            }
+                        )),
+                    })
+                    .collect(),
+            )
+            .unwrap();
+            request.optional = OptionalPolicy::Resolve {
+                choices: if use_defaults {
+                    BTreeMap::new()
+                } else {
+                    BTreeMap::from([("art".into(), true)])
+                },
+                use_defaults,
+            };
+            let error = engine
+                .prepare(root.path().to_path_buf(), request)
+                .await
+                .err()
+                .expect("unsupported choices must refuse");
+            let diagnostic = format!("{error:#}");
+            assert!(
+                diagnostic.contains(
+                    if recipes
+                        .iter()
+                        .all(|recipe| *recipe == Recipe::EMPACK_REFERENCES)
+                    {
+                        "Native releases retain installation choices"
+                    } else {
+                        "preserve optional participation"
+                    }
+                ),
+                "{diagnostic}"
+            );
+            for (path, bytes) in paths.into_iter().zip(before) {
+                assert_eq!(fs::read(root.path().join(path)).unwrap(), bytes);
+            }
+            assert!(!host.path().join("state").exists());
+            assert_eq!(fs::read_dir(host.path()).unwrap().count(), 1);
+            assert_eq!(
+                fs::read(host.path().join("neighbor.txt")).unwrap(),
+                b"keep neighbor"
+            );
+        }
+    }
+}
+
 async fn ready(engine: &Engine, root: &Path, request: BuildRequest) -> PreparedOperation {
     match engine.prepare(root.to_path_buf(), request).await.unwrap() {
         Preparation::Ready(value) => value,

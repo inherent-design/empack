@@ -7,6 +7,8 @@ mod files;
 mod native_exports;
 #[path = "support/build_profiles.rs"]
 mod profiles;
+#[path = "support/provider_exports.rs"]
+mod provider_exports;
 
 #[test]
 fn cli_build_relative_workdir_writes_expected_mrpack_metadata() {

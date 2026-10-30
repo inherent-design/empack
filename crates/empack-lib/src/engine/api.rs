@@ -127,6 +127,39 @@ pub struct BuildPreparationRequest {
     expected_intent: Option<SemanticRevision>,
 }
 impl BuildRequest {
+    /// Exchange and native releases retain participation for their recipients.
+    /// Choices in a mixed batch apply only to consumers that materialize them.
+    pub(crate) fn optional_for(&self, recipe: Recipe) -> &OptionalPolicy {
+        if crate::engine::mrpack::supports(recipe) || crate::engine::build::native::supports(recipe)
+        {
+            &OptionalPolicy::Preserve
+        } else {
+            &self.optional
+        }
+    }
+
+    pub(crate) fn validate_optional_policy(&self) -> Result<()> {
+        if matches!(self.optional, OptionalPolicy::Preserve) {
+            return Ok(());
+        }
+        ensure!(
+            !self
+                .outputs
+                .as_slice()
+                .iter()
+                .all(|output| crate::engine::build::native::supports(output.target)),
+            "Native releases retain installation choices; select options when installing"
+        );
+        ensure!(
+            self.outputs.as_slice().iter().any(|output| !matches!(
+                self.optional_for(output.target),
+                OptionalPolicy::Preserve
+            )),
+            "Selected Modrinth/native outputs preserve optional participation; --optional and --optional-defaults require a Prism, server or CurseForge output"
+        );
+        Ok(())
+    }
+
     pub fn with_content(self, supplied: BuildAcquisitions) -> BuildPreparationRequest {
         BuildPreparationRequest {
             request: self,
@@ -1312,17 +1345,7 @@ fn capture(
         }
     }
     ensure!(project.is_absolute(), "Project selection must be absolute");
-    if request
-        .outputs
-        .as_slice()
-        .iter()
-        .all(|output| crate::engine::build::native::supports(output.target))
-    {
-        ensure!(
-            matches!(request.optional, OptionalPolicy::Preserve),
-            "Native releases retain installation choices; select options when installing"
-        );
-    }
+    request.validate_optional_policy()?;
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
         ensure!(
@@ -1400,13 +1423,7 @@ fn capture(
     let runtime = resolved.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
-        let optional = if crate::engine::mrpack::supports(output.target)
-            || crate::engine::build::native::supports(output.target)
-        {
-            &OptionalPolicy::Preserve
-        } else {
-            &request.optional
-        };
+        let optional = request.optional_for(output.target);
         plans.push(plan_target_build_acquisitions(
             &workspace,
             &BuildAcquisitions::default(),

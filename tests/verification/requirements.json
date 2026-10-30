@@ -6295,7 +6295,139 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-044.side-inventory-projection",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::inventory::sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Mrpack retains common/client/server participation and distinct payload identities while standalone client/server views select their effective bytes",
+            "Projection is stable under input reordering and records deliberate precedence instead of depending on iteration order"
+          ]
+        },
+        {
+          "id": "UX-044.reference-assertions-and-source-evidence",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::mrpack::tests::normalized_multi_file_multi_placement_export_preserves_references_and_side_bytes",
+            "empack-lib::engine::mrpack::tests::weak_source_assertions_require_acquisition_for_export_hashes_without_upgrading_the_lock",
+            "empack-lib::engine::mrpack::tests::native_references_ignore_foreign_identity_and_digest_claims"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Multi-file and multi-placement exports retain exact paths, reference hashes/sizes, participation and captured override bytes",
+            "Weak reference assertions require verified acquisition for export evidence without upgrading original lock declarations",
+            "Foreign metadata and filename claims do not redefine native source identities or alter the resulting mrpack index"
+          ]
+        },
+        {
+          "id": "UX-044.layered-and-environment-exports",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::mrpack::tests::layered_downloads_preserve_common_and_side_bytes_without_duplicate_references",
+            "empack-lib::engine::mrpack::tests::common_override_and_side_replacements_reexport_the_effective_bytes",
+            "empack-lib::engine::mrpack::tests::environment_export_preserves_selected_layers_without_excluded_evidence",
+            "empack-lib::engine::mrpack::tests::optional_layered_fallback_requires_a_representable_conversion"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Layered downloads and common overrides preserve effective side bytes without ambiguous duplicate path references",
+            "Server-only selection excludes client obligations while selecting the client still requires its missing reference evidence",
+            "Unrepresentable optional layered fallback refuses even with metadata-loss consent"
+          ]
+        },
+        {
+          "id": "UX-044.hosting-eligibility-boundary",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::mrpack::tests::hosting_domains_are_exact_and_generic_exports_remain_valid",
+            "empack-lib::engine::mrpack::tests::platform_recipe_requires_hosting_domains_without_inventing_an_association"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact allowed domains are distinguished from substring/suffix lookalikes while valid generic HTTPS archives retain a hosting-domain report",
+            "Platform recipes enforce the declared hosting-domain restriction and report required association without inventing a hosted project or update enrollment"
+          ]
+        },
+        {
+          "id": "UX-044.cli-reference-index-and-consent",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::provider_exports::cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An offline real CLI exports a complete independent Modrinth index with exact digests, lengths, download URL, runtime and client/server participation, plus the exact override file inventory",
+            "Preserved optional participation requires metadata-loss consent; unsupported selection-only requests fail before changing author or host bytes",
+            "Mixed Modrinth/CurseForge builds preserve mrpack optionality while resolving CurseForge choices; a late CurseForge refusal preserves both prior outputs"
+          ]
+        },
+        {
+          "id": "UX-044.cli-retained-and-imported-exports",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_import::journey_local_mrpack_import_reexport",
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A pinned local mrpack imports and reexports the independently expected complete index and files without changing source/archive/lock bytes",
+            "Public missing-input selectors survive restart, reject incorrect associations and bytes, and complete a verified export from correctly supplied renamed input"
+          ],
+          "remaining_group_evidence": "Actual supported consumer import, broader environment/provider/format qualification and final packaged-candidate execution remain required"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::acquisition/content/archive_source/import"
@@ -6304,7 +6436,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-045",
@@ -6327,7 +6459,118 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-045.exact-platform-references",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::curseforge::tests::exact_references_and_client_overrides_publish_without_downloads_or_installers",
+            "empack-lib::engine::build::curseforge::tests::renamed_provider_file_is_not_silently_restored_under_original_name",
+            "empack-lib::engine::build::curseforge::tests::acquired_provider_content_does_not_become_an_authored_override",
+            "empack-lib::engine::build::curseforge::tests::restricted_file_with_exact_pin_stays_a_reference_after_acquisition",
+            "empack-lib::engine::build::curseforge::tests::manual_pin_without_filename_cannot_claim_platform_placement"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact CurseForge project/file references and selected client overrides publish without download or installer execution",
+            "Renamed placement and manual pins without captured filename evidence refuse rather than claiming a different installation destination",
+            "Acquiring provider bytes does not reclassify them as authored overrides or discard restricted-provider filename evidence"
+          ]
+        },
+        {
+          "id": "UX-045.semantic-and-attribute-verification",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::curseforge::tests::semantic_verifier_rejects_writer_errors_and_duplicate_fields",
+            "empack-lib::engine::build::curseforge::tests::captured_reference_permissions_cannot_disappear_during_export",
+            "empack-lib::engine::build::curseforge::tests::shared_batch_permissions_are_checked_only_in_selected_environments"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Manifest verification rejects conflicting fields and consumer-semantic corruption beyond ZIP readability",
+            "Unsupported reference/override attributes cannot disappear during conversion, while excluded environment attributes do not invalidate selected outputs"
+          ]
+        },
+        {
+          "id": "UX-045.conversion-and-batch-refusal",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::curseforge::tests::optional_reference_requires_explicit_metadata_conversion",
+            "empack-lib::engine::build::curseforge::tests::late_incompatible_export_preserves_every_previous_artifact"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Optional references require explicit metadata-loss consent and record the conversion before becoming required:false",
+            "A late incompatible consumer in a batch leaves every previous archive unchanged"
+          ]
+        },
+        {
+          "id": "UX-045.cli-manifest-and-selection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::provider_exports::cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The public CLI emits the complete independently expected CurseForge manifest, exact provider identities, runtime and client override inventory while excluding server-only bytes",
+            "Preserved optionality needs explicit consent; selecting true yields required:true, false/default-disabled removes the reference, and unknown choices refuse",
+            "Builds preserve author documents, lock data and unrelated/prior artifacts"
+          ]
+        },
+        {
+          "id": "UX-045.cli-filename-and-late-batch-refusal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::provider_exports::cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A captured provider filename differing from the authored destination refuses CurseForge export before replacing prior outputs",
+            "The same late refusal in a Modrinth/CurseForge batch preserves both archives; a separate generic mrpack export can retain the authored destination explicitly"
+          ],
+          "remaining_group_evidence": "Actual supported importer, provider-resolution/hosting evidence, broader source conversions and complete platform qualification remain required"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::acquisition/content/archive_source/import"
@@ -6336,7 +6579,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-046",
@@ -6675,7 +6918,157 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-049.choice-definition-and-fallback",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::inventory::optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices",
+            "empack-core::inventory::duplicate_destinations_and_conflicting_choice_definitions_fail",
+            "empack-core::inventory::optional_overlay_keeps_fallback_or_requires_a_materialized_choice",
+            "empack-core::inventory::optional_common_override_requires_a_choice_and_preserves_disabled_fallback",
+            "empack-core::requirements::independent_choices_must_not_collapse"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Choice-preserving projections retain metadata; materialized projections require explicit selections/defaults and reject unknown/conflicting choices",
+            "Disabled optional overlays retain common fallback, replaced optional inputs do not demand irrelevant decisions, and distinct choice definitions cannot collapse"
+          ]
+        },
+        {
+          "id": "UX-049.selected-byte-obligations",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::materialized::tests::disabled_unacquired_optional_overlays_preserve_common_fallback",
+            "empack-lib::engine::build::acquisition::tests::acquisition_selection_matches_materialized_missing_content_and_optional_choices"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Default-disabled unavailable overlays require no acquisition and keep fallback bytes; enabling them creates exact required-content obligations",
+            "Acquisition selection and materialized missing-content identities agree for client/server recipes; supplied verified content completes the selected projection"
+          ]
+        },
+        {
+          "id": "UX-049.explicit-metadata-loss",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::mrpack::tests::optional_metadata_conversion_is_explicit_and_embedded_optionality_never_flattens_silently",
+            "empack-lib::engine::mrpack::tests::optional_layered_fallback_requires_a_representable_conversion",
+            "empack-lib::engine::build::curseforge::tests::optional_reference_requires_explicit_metadata_conversion"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Modrinth/CurseForge conversions require explicit consent for lost choice metadata and retain representable optional participation",
+            "Unrepresentable embedded or layered optional content still refuses after consent; consent cannot silently enable it"
+          ]
+        },
+        {
+          "id": "UX-049.reference-only-policy-preflight",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::tests::reference_only_build_choices_refuse_before_capture_or_host_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Modrinth-only, native-only and mixed Modrinth/native requests reject explicit/default materialization policies before document or payload capture",
+            "Malformed author text does not replace the unsupported-policy diagnostic; original files, neighboring data and absent host state remain unchanged"
+          ]
+        },
+        {
+          "id": "UX-049.cli-content-kind-choices",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_content_kinds::journey_cli_content_kinds_preserve_sides_choices_and_world_groups"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit choices include/exclude the expected client content without altering server participation or world grouping",
+            "Missing/unknown choices preserve prior artifacts; deleting the optional source, materialized file and cache still permits disabled/default output but prevents selected output without exact bytes"
+          ]
+        },
+        {
+          "id": "UX-049.cli-installed-choice-retention",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Native release exports retain the authored choice and exact assets across deliveries and formats; public installation respects enabled/disabled alternatives",
+            "Repeated preparation retains installed choices and edited seed bytes without changing the source release"
+          ]
+        },
+        {
+          "id": "UX-049.cli-consumer-policy-and-explanation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::provider_exports::cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Modrinth-only selection switches reject explicitly during build and explanation, even with metadata-loss consent, preserving author/host/prior-output bytes",
+            "CurseForge supports explicit/default selection and unknown-key refusal; mixed batches apply choices there while preserving mrpack participation",
+            "Mixed Modrinth/Prism explanation reports the requested batch policy and separate effective output policies without effects"
+          ],
+          "remaining_group_evidence": "Remaining recipe/choice-group combinations, real consumer interpretation and full same-candidate platform qualification remain required"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "engine::instance + api::instance; empack-core::instance"
@@ -6684,7 +7077,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-050",

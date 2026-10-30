@@ -155,6 +155,16 @@ remain inspectable without effects and cannot authorize a build. The external TA
 reader checks bounded members and consumes the gzip trailer; its dependencies belong
 to the test harness, not the distributed product.
 
+The provider-reference export journey starts from a captured component record,
+not a live catalog. The same real CLI exports complete Modrinth and CurseForge
+manifests with exact identities, digest/size assertions and side-specific overrides.
+Preserved optional metadata needs explicit loss consent. CurseForge selections
+become required or disappear; reference-only materialization switches fail before
+replacing artifacts, including during explanation. A mixed Modrinth/Prism explanation
+reports the different effective policies. Renamed provider filenames are rejected by
+CurseForge and remain explicit mrpack destinations. These checks do not qualify
+provider responses, hosting eligibility or actual consumer imports.
+
 The template/archive case reuses that literal profile fixture for reference and
 standalone bundled Prism outputs in ZIP, TAR.GZ and 7z. Independent readers compare
 complete member sets, bytes, lengths, digests and modes across formats. Binary

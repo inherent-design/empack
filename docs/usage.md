@@ -239,7 +239,12 @@ empack build prism --optional-defaults
 empack build server --optional 'CHOICE=true'
 ```
 
-Use the choice key printed by the command. Reference exports may require
+Use the choice key printed by the command. Prism, server and CurseForge outputs
+support these selections. Modrinth/native-only builds reject the switches; mixed
+builds retain their authored participation while applying choices to the other
+outputs. `build --explain` shows each output's effective policy.
+
+Reference exports may require
 `--allow-optional-metadata-loss` when their format cannot retain choice keys, defaults
 or descriptions. This acknowledges the stated conversion; it does not permit lost
 required files.
