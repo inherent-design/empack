@@ -629,6 +629,7 @@ fn cli_unknown_native_build_target_exits_two() {
 fn cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure() {
     use empack_tests::harness::{
         process::{empack_cmd, offline_command},
+        publication::Driver,
         terminal::{spawn, wait_for_exit},
     };
     use expectrl::{ControlCode, Eof, Expect, Regex};
@@ -646,6 +647,8 @@ fn cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure() 
         }
     }
 
+    const CHILD: &str = "application::process_runtime::terminal_tests::terminal_child_fixture";
+    let driver = Driver::native_fixture(CHILD);
     let root = tempfile::tempdir().unwrap();
     let (export, id, payload) = runtime_release(root.path());
     for (mode, status) in [
@@ -677,16 +680,6 @@ test "$reply" = usable || exit 95
 printf 'FOLLOWUP_INPUT=%s\n' "$reply"
 exit "$result"
 "#;
-        let runtime = r#"trap 'printf "RUNTIME_INTERRUPTED\n"; exit 0' INT
-printf '%s %s\n' "$PPID" "$$" > runtime-host
-/bin/stty -echo || exit 96
-printf 'RUNTIME_READY\n'
-while read -r line; do
-    printf 'RUNTIME_INPUT=%s\n' "$line"
-    case "$line" in stop) exit 0;; fail) exit 7;; esac
-done
-exit 97
-"#;
         let product = empack_cmd(&instance);
         let mut command = Command::new("/bin/sh");
         command
@@ -695,8 +688,15 @@ exit 97
             .args(["-c", wrapper, "console-wrapper"])
             .arg(product.get_program())
             .args([
-                "--yes", "instance", "launch", "--", "/bin/sh", "-c", runtime,
-            ]);
+                "--yes",
+                "instance",
+                "launch",
+                "--",
+                "/usr/bin/env",
+                "EMPACK_PTY_ROLE=child",
+            ])
+            .arg(driver.program())
+            .args(["--exact", CHILD, "--nocapture", "--test-threads=1"]);
         for (name, value) in product.get_envs() {
             if let Some(value) = value {
                 command.env(name, value);
@@ -704,26 +704,29 @@ exit 97
         }
         let mut terminal = expectrl::session::log(spawn(command), std::io::stderr()).unwrap();
         terminal.set_expect_timeout(Some(Duration::from_secs(20)));
-        terminal.expect("RUNTIME_READY").unwrap();
-        let processes = fs::read_to_string(instance.join("game/runtime-host")).unwrap();
-        let processes = processes
-            .split_whitespace()
-            .map(|pid| pid.parse::<u32>().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(processes.len(), 2);
-        let (host, runtime) = (processes[0], processes[1]);
+        terminal.expect("CONSOLE_READY").unwrap();
+        let host: u32 = fs::read_to_string(instance.join("game/runtime-host"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let runtime: u32 = fs::read_to_string(instance.join("game/runtime-pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
         assert!(host > 1 && runtime > 1 && host != runtime);
         // Failed terminal assertions must not strand the separately owned group.
         let mut runtime_group = RuntimeGroup(Some(runtime));
         // Real console input first establishes that the runtime can read its TTY.
         terminal.send_line("list").unwrap();
-        terminal.expect("RUNTIME_INPUT=list").unwrap();
+        terminal.expect("CONSOLE_INPUT=list").unwrap();
         match mode {
             "input" => terminal.send_line("stop").unwrap(),
             "failure" => terminal.send_line("fail").unwrap(),
             "interrupt" => {
                 terminal.send(ControlCode::EndOfText).unwrap();
-                terminal.expect("RUNTIME_INTERRUPTED").unwrap();
+                terminal.expect("INTERRUPTED_GRACEFULLY").unwrap();
             }
             "cancel" => {
                 assert!(
@@ -756,6 +759,7 @@ exit 97
         assert!(!remaining.status.success(), "Owned runtime group survived");
         assert!(String::from_utf8_lossy(&remaining.stderr).contains("No such process"));
         runtime_group.0 = None;
+        driver.verify();
 
         assert_eq!(
             fs::read(instance.join("game/player-note.txt")).unwrap(),

@@ -1,4 +1,4 @@
-//! Private crash fixtures selected from compiler discovery, never product controls.
+//! Private native fixtures selected from compiler discovery, never product controls.
 use super::process::{file_sha256, offline_empack_cmd};
 use serde_json::Value;
 use std::{
@@ -14,6 +14,17 @@ pub struct Driver {
 
 impl Driver {
     pub fn from_inventory() -> Self {
+        Self::with_fixtures(&[
+            "engine::publication::tests::crash_worker",
+            "engine::publication::creation::tests::new_root_crash_child",
+        ])
+    }
+
+    pub fn native_fixture(name: &str) -> Self {
+        Self::with_fixtures(&[name])
+    }
+
+    fn with_fixtures(fixtures: &[&str]) -> Self {
         let inventory = PathBuf::from(
             std::env::var_os("EMPACK_TEST_INVENTORY")
                 .expect("run publication fixtures through scripts/verify.py"),
@@ -42,10 +53,7 @@ impl Driver {
         let listing_root = tempfile::tempdir().unwrap();
         // Filtered Nextest inventories retain the compiled binary but omit its
         // unselected cases. Ask that exact binary to list each private fixture.
-        for name in [
-            "engine::publication::tests::crash_worker",
-            "engine::publication::creation::tests::new_root_crash_child",
-        ] {
+        for name in fixtures {
             let output = driver
                 .command(listing_root.path())
                 .args(["--exact", name, "--list"])
@@ -61,15 +69,20 @@ impl Driver {
                 .map(str::to_owned)
                 .collect();
             assert_eq!(names, [format!("{name}: test")]);
-            eprintln!("Publication crash fixture: {name}");
+            eprintln!("Compiler-built native fixture: {name}");
         }
         driver.verify();
         eprintln!(
-            "Publication crash driver: {} SHA256={}",
+            "Compiler-built library driver: {} SHA256={}",
             driver.path.display(),
             driver.digest
         );
         driver
+    }
+
+    pub fn program(&self) -> &Path {
+        self.verify();
+        &self.path
     }
 
     pub fn command(&self, invocation: &Path) -> assert_cmd::Command {

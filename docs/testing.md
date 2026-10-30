@@ -627,8 +627,9 @@ a controlling PTY. A fixture runtime reads console input and changes echo settin
 normal shutdown, graceful terminal Ctrl-C, nonzero exit and host cancellation must
 restore the invoking shell's settings and allow a follow-up read. The test checks
 the final diagnostic/status, retirement of the owned group, preserved player bytes
-and a subsequent public launch. It uses a shell runtime, not Java or generated
-server entry points; those and Windows console behavior require separate evidence.
+and a subsequent public launch. It uses the compiler-bound native test runtime with an explicit signal handler,
+not Java or generated server entry points; those and Windows console behavior
+require separate evidence.
 Managed Prism tests separately verify the root icon's seed policy and rejection of
 an explicit managed policy before publication, while keeping other PNGs managed.
 Engine launch fault injection separately establishes that failed terminal cleanup
