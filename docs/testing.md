@@ -303,6 +303,21 @@ file deletion: the service must retire and return its actual result, including p
 completion context or completed success. Precancellation cannot start a service.
 These component tests do not substitute for the broader process-crash recovery matrix.
 
+Public cleanup checks build a real artifact, then exercise default, builds, cache
+and combined selections through preview, missing approval, invalid targets,
+application and repetition. They preserve invalid author text, templates, player
+files, another project's recovery evidence and unknown cache neighbors. A new
+artifact publication may replace the selected project's completed journal; cache
+cleanup alone leaves its entire prior state unchanged. Cache storage is initialized
+by component setup, so these checks do not establish acquisition behavior.
+
+Empty cache, continuation, import, sync and retained cleanup also run without author
+documents and must create no host or project entries. Native tests separately cover
+stale selections, retained readers, links, interrupted artifact finish/restore and
+partial eviction followed by re-ingestion. Populated pending-record CLI cleanup,
+permission failures and remaining interruption/platform variants are still distinct
+UX-079 obligations.
+
 Remote-acquisition fixtures count bytes across failed mirrors, exercise stalled
 headers and bodies, and retain author files through refused replacement. A shared
 native HTTP fixture signals when a request actually arrives before triggering

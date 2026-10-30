@@ -10026,6 +10026,206 @@
             "Foreign root evidence and mixed schema/identity forms refuse cleanup before deleting owned bytes or changing the descriptor",
             "Validated cleanup reclaims only recorded objects, preserves neighboring files and author bytes, and converges on repeated cleanup"
           ]
+        },
+        {
+          "id": "UX-079.artifact-selection-and-staleness",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::cleanup::tests::artifact_cleanup_previews_exact_files_and_preserves_every_other_namespace",
+            "empack-lib::engine::api::cleanup::tests::artifact_cleanup_rejects_late_edits_additions_and_wrong_engine",
+            "empack-lib::engine::api::cleanup::tests::cleanup_accepts_artifacts_larger_than_source_file_limit"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Artifact preview is read-only, binds the engine/plan/footprint and counts exact removed bytes while preserving author text, templates and source namespaces",
+            "Late member edits or additions refuse the entire prepared cleanup before deleting any artifact",
+            "An admitted artifact larger than the source-member limit remains eligible for bounded cleanup"
+          ]
+        },
+        {
+          "id": "UX-079.artifact-interruption-recovery",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::cleanup::tests::interrupted_artifact_cleanup_uses_shared_finish_and_restore_recovery"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An interrupted real artifact publication blocks another cleanup until shared recovery finishes or restores the selected operation",
+            "Finish removes both selected artifacts; restore retains both; each preserves author data and reports the proper publication disposition"
+          ]
+        },
+        {
+          "id": "UX-079.native-link-confinement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::cleanup::tests::artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion",
+            "empack-lib::engine::content::store::cleanup::tests::eviction_never_follows_owned_name_links_and_can_remove_corrupt_regular_objects"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A linked artifact root or nested member cannot authorize deletion of external bytes",
+            "Replacing a captured cache object with a symlink refuses deletion without following it; a new capture can evict corrupt regular cache bytes while retaining the outside sentinel"
+          ]
+        },
+        {
+          "id": "UX-079.cache-selection-and-readers",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::cache_cleanup::tests::maintenance_requires_explicit_store_and_no_project_or_recovery_state",
+            "empack-lib::engine::api::cache_cleanup::tests::cache_approval_binds_engine_plan_and_exact_selection",
+            "empack-lib::engine::api::cache_cleanup::tests::changed_cache_object_invalidates_execution_before_deletion",
+            "empack-lib::engine::content::store::cleanup::tests::cache_cleanup_preserves_unknown_files_and_retained_readers_without_a_project",
+            "empack-lib::engine::content::store::cleanup::tests::cache_cleanup_refuses_stale_selections_and_other_stores_before_deleting_anything"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Cache cleanup requires explicit store and matching engine/plan/footprint approval, with no project or recovery-state initialization",
+            "Changed objects or a different store refuse the prepared selection before deletion; newly inserted objects and unknown neighboring files remain",
+            "Previously retained input bytes remain readable after disposable cache eviction and reservations retire when the outcome is released"
+          ]
+        },
+        {
+          "id": "UX-079.cache-partial-retirement-and-reingestion",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::content::store::cleanup::tests::eviction_reports_completed_effects_when_later_work_fails_or_is_cancelled",
+            "empack-lib::engine::content::store::cleanup::tests::cleanup_reclaims_only_observed_abandoned_candidates",
+            "empack-lib::engine::content::store::cleanup::tests::changed_abandoned_candidate_invalidates_the_complete_cleanup"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A failed or cancelled later eviction reports the completed removal; a fresh selection reclaims the remainder and the same content can be ingested again",
+            "Only observed owned abandoned candidates are removed; unknown candidate spellings and newer candidates remain",
+            "A changed abandoned candidate invalidates the full selection before deleting the canonical content object"
+          ]
+        },
+        {
+          "id": "UX-079.retained-categories-and-save-ownership",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::retained_cleanup::tests::retained_cleanup_preserves_pending_categories_live_leases_and_unowned_state",
+            "empack-lib::engine::retained_cleanup::tests::retained_cleanup_refuses_active_save_new_records_and_changed_objects",
+            "empack-lib::engine::retained_cleanup::tests::retained_cleanup_reports_completed_scopes_and_reopens_surviving_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Preview does not create missing state and preserves pending record categories, unknown neighbors and recovery preimages; retained inputs remain readable",
+            "Active saves, newly published pending records and changed retained objects refuse cleanup without changing its captured footprint",
+            "A later category failure reports the earlier completed scopes; remaining content can be reclaimed, reopened and re-ingested without losing recovery evidence"
+          ]
+        },
+        {
+          "id": "UX-079.host-combined-preflight-and-outcomes",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cleanup::tests::cleanup_previews_every_scope_and_confirms_once_without_requiring_valid_documents",
+            "empack-lib::application::engine_host::cleanup::tests::cache_cleanup_does_not_require_a_project_or_create_an_absent_store",
+            "empack-lib::application::engine_host::cleanup::tests::artifact_defaults_unknown_targets_and_failed_second_preflight_preserve_other_scopes",
+            "empack-lib::application::engine_host::cleanup::tests::combined_cleanup_rejects_overlapping_storage_before_approval",
+            "empack-lib::application::engine_host::cleanup::tests::later_cleanup_failure_reports_earlier_artifact_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Combined artifact/cache plans preflight before one approval; dry run and declined approval preserve captured bytes even with invalid author text",
+            "Default cleanup selects artifacts; all selects artifacts and cache; missing cache does not create project or host storage",
+            "Invalid targets, malformed cache entries and overlapping namespaces refuse before mutation; a later execution failure reports earlier artifact publication without claiming rollback"
+          ]
+        },
+        {
+          "id": "UX-079.executable-cleanup-scope-control",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The ordinary executable builds an artifact, then previews, refuses unapproved/invalid cleanup, applies and repeats default/builds/cache/all selections",
+            "Invalid author text, source configuration, templates, player data, another project and its recovery evidence remain byte-identical; cache cleanup alone preserves the artifact and complete prior state",
+            "Build cleanup affects only dist; cache cleanup affects only the selected initialized content store, retaining unknown downloads and neighboring cache files; repeated cleanup is a byte-inventory no-op"
+          ]
+        },
+        {
+          "id": "UX-079.executable-empty-scope-no-state",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::cli_clean_empty_cache_and_pending_scopes_create_no_storage"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Without author documents or initialized storage, preview and approved cache/continuation/import/sync/retained cleanup create no entries in either invocation or host roots"
+          ],
+          "remaining_group_evidence": "Public cleanup of populated pending records, permission/busy-root failures, executable interruption and all declared platform/product variants remain separate obligations; the group remains partial."
         }
       ],
       "owner_now": [

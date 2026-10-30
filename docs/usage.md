@@ -313,6 +313,12 @@ stop all associated processes before `instance recover-runtime --acknowledge-sto
 cached content. `clean all` means builds and cache; it does not erase author sources,
 installed worlds or recovery evidence. Preview the selected cleanup with `--dry-run`.
 
+`clean continuation`, `clean import` and `clean sync` discard saved work for the
+selected project or import destination; retained input bytes remain. `clean retained`
+reclaims disposable inputs only from categories with no saved records. It preserves
+unknown neighboring files and recovery evidence, and refuses cleanup while a save
+owns the storage. These scopes are explicit; `clean all` does not select them.
+
 Workdir and relative input paths resolve from the directory where empack was invoked.
 Relative `--state-dir` and `--cache-dir` paths use that same directory, independently
 of `--workdir`. A relative initialization destination is a child of the selected

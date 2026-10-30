@@ -130,41 +130,230 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
 }
 
 #[test]
-fn cli_clean_builds_removes_generated_artifacts() {
-    let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
-    project.configure_native_distribution("test.pack", 21);
-    let output = offline_command(project.dir())
-        .args(["--yes", "build", "modrinth"])
-        .output()
-        .expect("failed to spawn");
-    assert!(output.status.success(), "empack build modrinth failed");
+fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
+    use empack_lib::engine::content::store::{ContentStoreLimits, FileContentStore};
+    use std::{fs, path::Path};
 
-    let manifest = std::fs::read(project.dir().join("empack.yml")).unwrap();
-    let lock = std::fs::read(project.dir().join("empack.lock")).unwrap();
-    let dist = project.dir().join("dist");
-    assert!(dist.is_dir(), "dist/ should exist after build");
+    for target in [None, Some("builds"), Some("cache"), Some("all")] {
+        let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        let cache = host.path().join("cache");
+        let command = || {
+            let mut command = offline_command(project.dir());
+            command
+                .arg("--state-dir")
+                .arg(&state)
+                .arg("--cache-dir")
+                .arg(&cache);
+            command
+        };
+        for (name, bytes) in [
+            (
+                "pack/config/author.txt",
+                b"authored configuration".as_slice(),
+            ),
+            (
+                "templates/client/author.txt",
+                b"authored template".as_slice(),
+            ),
+            ("world/level.dat", b"player data".as_slice()),
+            ("author-notes.txt", b"author notes".as_slice()),
+        ] {
+            let path = project.dir().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        command()
+            .args(["--yes", "build", "modrinth"])
+            .assert()
+            .success();
+        let state_before_neighbor = files::snapshot(&state);
+        let neighbor = TestProject::workflow_fixture("neighbor", "fabric", "1.21.1");
+        offline_command(neighbor.dir())
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(&cache)
+            .args(["--yes", "build", "modrinth"])
+            .assert()
+            .success();
+        let neighbor_files = files::snapshot(neighbor.dir());
+        let neighbor_state: Vec<_> = files::snapshot(&state)
+            .into_iter()
+            .filter(|(path, bytes)| state_before_neighbor.get(path) != Some(bytes))
+            .collect();
+        assert!(!neighbor_state.is_empty());
+        let artifact = assert_dist_artifact_suffix(project.dir(), ".mrpack");
+        let artifact_bytes = fs::read(&artifact).unwrap();
+        // Cleanup needs the selected native namespace, not valid authoring semantics.
+        fs::write(
+            project.dir().join("empack.yml"),
+            b"unfinished: [author text",
+        )
+        .unwrap();
+        fs::write(state.join("author-note"), b"keep host note").unwrap();
+        let store = cache.join("content-v1");
+        // Component setup initializes disposable native storage; this is not acquisition evidence.
+        drop(FileContentStore::open(&store, ContentStoreLimits::default()).unwrap());
+        let blob = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.blob";
+        fs::write(store.join(blob), b"abc").unwrap();
+        fs::write(store.join("author-download.jar"), b"keep download").unwrap();
+        fs::write(cache.join("neighbor.png"), b"keep neighboring cache file").unwrap();
+        let before_project = files::snapshot(project.dir());
+        let before_host = files::snapshot(host.path());
+        let before_state = files::snapshot(&state);
+        let mut expected_cache = files::snapshot(&cache);
+        let selection = || {
+            let mut args = vec!["clean"];
+            args.extend(target);
+            args
+        };
 
-    let output = offline_command(project.dir())
-        .args(["--yes", "clean"])
-        .output()
-        .expect("failed to spawn");
-    assert!(output.status.success(), "empack clean failed");
+        let preview = command()
+            .arg("--dry-run")
+            .args(selection())
+            .assert()
+            .success();
+        let output = preview.get_output();
+        let console = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            console.contains("Dry run complete - no changes applied"),
+            "{console}"
+        );
+        assert_eq!(
+            files::snapshot(project.dir()),
+            before_project,
+            "preview {target:?}"
+        );
+        assert_eq!(
+            files::snapshot(host.path()),
+            before_host,
+            "preview {target:?}"
+        );
 
-    let dist_empty = !dist.exists()
-        || std::fs::read_dir(&dist)
-            .expect("failed to read dist/")
-            .filter_map(Result::ok)
-            .next()
-            .is_none();
-    assert!(dist_empty, "dist/ should be empty or absent after clean");
-    assert_eq!(
-        std::fs::read(project.dir().join("empack.yml")).unwrap(),
-        manifest
-    );
-    assert_eq!(
-        std::fs::read(project.dir().join("empack.lock")).unwrap(),
-        lock
-    );
+        command()
+            .args(selection())
+            .assert()
+            .code(2)
+            .stderr(predicates::str::contains(
+                "Noninteractive execution requires --yes",
+            ));
+        assert_eq!(
+            files::snapshot(project.dir()),
+            before_project,
+            "unapproved {target:?}"
+        );
+        assert_eq!(
+            files::snapshot(host.path()),
+            before_host,
+            "unapproved {target:?}"
+        );
+        command()
+            .arg("--yes")
+            .args(selection())
+            .arg("unknown")
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("Unknown cleanup target"));
+        assert_eq!(
+            files::snapshot(project.dir()),
+            before_project,
+            "invalid target {target:?}"
+        );
+        assert_eq!(
+            files::snapshot(host.path()),
+            before_host,
+            "invalid target {target:?}"
+        );
+
+        command().arg("--yes").args(selection()).assert().success();
+        let mut expected_project = before_project;
+        if target != Some("cache") {
+            expected_project.retain(|path, _| !path.starts_with("dist"));
+        } else {
+            assert_eq!(fs::read(&artifact).unwrap(), artifact_bytes);
+        }
+        if matches!(target, Some("cache" | "all")) {
+            expected_cache
+                .remove(&Path::new("content-v1").join(blob))
+                .unwrap();
+        }
+        assert_eq!(
+            files::snapshot(project.dir()),
+            expected_project,
+            "applied {target:?}"
+        );
+        assert_eq!(
+            files::snapshot(&cache),
+            expected_cache,
+            "applied {target:?}"
+        );
+        // A new publication replaces this project's completed journal. Another
+        // project's evidence and unrelated state must stay byte-for-byte intact.
+        if target == Some("cache") {
+            assert_eq!(files::snapshot(&state), before_state);
+        }
+        for (path, bytes) in neighbor_state {
+            assert_eq!(
+                fs::read(state.join(&path)).unwrap(),
+                bytes,
+                "neighbor recovery {path:?} / {target:?}"
+            );
+        }
+        assert_eq!(
+            fs::read(state.join("author-note")).unwrap(),
+            b"keep host note"
+        );
+        assert_eq!(files::snapshot(neighbor.dir()), neighbor_files);
+        let after_host = files::snapshot(host.path());
+        command().arg("--yes").args(selection()).assert().success();
+        assert_eq!(
+            files::snapshot(project.dir()),
+            expected_project,
+            "repeated {target:?}"
+        );
+        assert_eq!(
+            files::snapshot(host.path()),
+            after_host,
+            "repeated {target:?}"
+        );
+    }
+}
+
+#[test]
+fn cli_clean_empty_cache_and_pending_scopes_create_no_storage() {
+    use std::fs;
+    let invocation = TestProject::new();
+    let host = tempfile::tempdir().unwrap();
+    for target in ["cache", "continuation", "import", "sync", "retained"] {
+        for dry_run in [true, false] {
+            let mut command = offline_command(invocation.dir());
+            command
+                .arg("--state-dir")
+                .arg(host.path().join("state"))
+                .arg("--cache-dir")
+                .arg(host.path().join("cache"))
+                .arg(if dry_run { "--dry-run" } else { "--yes" })
+                .args(["clean", target])
+                .assert()
+                .success();
+            assert_eq!(
+                fs::read_dir(invocation.dir()).unwrap().count(),
+                0,
+                "{target} dry={dry_run}"
+            );
+            assert_eq!(
+                fs::read_dir(host.path()).unwrap().count(),
+                0,
+                "{target} dry={dry_run}"
+            );
+        }
+    }
 }
 
 #[test]
