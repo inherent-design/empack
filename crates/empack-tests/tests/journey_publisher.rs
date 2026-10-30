@@ -8,6 +8,8 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path, time::SystemTime};
 
+#[path = "support/approval.rs"]
+mod approval;
 #[path = "support/publisher.rs"]
 mod publisher_checks;
 use publisher_checks::{hex, unhex, verify_staged};
@@ -39,6 +41,118 @@ fn private_directory(path: &Path) {
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
+    }
+}
+
+#[test]
+fn cli_pty_publisher_key_setup_requires_approval_without_creating_private_state() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("publisher");
+    fs::create_dir(&workspace).unwrap();
+    write(&workspace, "author notes.txt", b"retain publisher work\n");
+    write(&workspace, "dist/prior.zip", b"retain prior distribution");
+    let private = root.path().join("private keys");
+    private_directory(&private);
+    let key = private.join("publisher.key");
+    let before = snapshot(root.path());
+    let publisher_before = snapshot(&workspace);
+    approval::preserve_without_approval(
+        &workspace,
+        &workspace,
+        &root.path().join("host state"),
+        &["release", "init", "--key-file", key.to_str().unwrap()],
+        "(?i)apply this publisher key setup plan",
+    );
+    assert_eq!(snapshot(root.path()), before);
+    assert!(!key.exists());
+    // The same selected path succeeds after explicit approval. This prevents an
+    // unrelated setup error from making all the refusal checks look successful.
+    offline_command(&workspace)
+        .args(["--yes", "release", "init", "--key-file"])
+        .arg(&key)
+        .assert()
+        .success()
+        .stdout(contains("Created publisher key; public key:"));
+    assert_eq!(fs::read_dir(&private).unwrap().count(), 1);
+    assert_eq!(snapshot(&workspace), publisher_before);
+}
+
+#[test]
+fn cli_publisher_key_setup_refuses_unsafe_or_occupied_destinations_without_changes() {
+    for case in [
+        "workspace",
+        "missing-parent",
+        "file",
+        "directory",
+        "reserved-name",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("publisher");
+        fs::create_dir(&workspace).unwrap();
+        write(&workspace, "author notes.txt", b"retain publisher work\n");
+        write(&workspace, "dist/prior.zip", b"retain prior distribution");
+        let private = root.path().join("private keys");
+        private_directory(&private);
+        let key = match case {
+            "workspace" => workspace.join("publisher.key"),
+            "missing-parent" => root.path().join("absent/publisher.key"),
+            "file" => {
+                let key = private.join("publisher.key");
+                fs::write(&key, b"existing private material\n").unwrap();
+                key
+            }
+            "directory" => {
+                let key = private.join("publisher.key");
+                fs::create_dir(&key).unwrap();
+                key
+            }
+            "reserved-name" => private.join("CON"),
+            _ => unreachable!(),
+        };
+        let before = snapshot(root.path());
+        offline_command(&workspace)
+            .args(["--yes", "release", "init", "--key-file"])
+            .arg(&key)
+            .assert()
+            .failure()
+            .stdout(contains("existing private material").not())
+            .stderr(contains("existing private material").not());
+        assert_eq!(snapshot(root.path()), before, "{case}");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::{fs::PermissionsExt, fs::symlink};
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("publisher");
+        fs::create_dir(&workspace).unwrap();
+        let private = root.path().join("private");
+        private_directory(&private);
+        let before = snapshot(root.path());
+        let key = private.join("publisher.key");
+        fs::set_permissions(&private, fs::Permissions::from_mode(0o755)).unwrap();
+        offline_command(&workspace)
+            .args(["--yes", "release", "init", "--key-file"])
+            .arg(&key)
+            .assert()
+            .failure()
+            .stderr(contains("existing private directory"));
+        assert!(!key.exists());
+        fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(snapshot(root.path()), before);
+        let target = root.path().join("untouched.key");
+        fs::write(&target, b"existing private material\n").unwrap();
+        symlink(&target, &key).unwrap();
+        offline_command(&workspace)
+            .args(["--yes", "release", "init", "--key-file"])
+            .arg(&key)
+            .assert()
+            .failure()
+            .stderr(contains("refusing to overwrite"));
+        assert_eq!(fs::read_link(&key).unwrap(), target);
+        assert_eq!(fs::read(&target).unwrap(), b"existing private material\n");
+        fs::remove_file(key).unwrap();
+        fs::remove_file(target).unwrap();
+        assert_eq!(snapshot(root.path()), before);
     }
 }
 

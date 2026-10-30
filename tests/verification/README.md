@@ -32,6 +32,14 @@ being searched for in Nextest's executable-test inventory.
 Native Python subprocess checks of the registry are supplemental `N` evidence for
 UX-088; they do not replace its required product-executable (`X`) checks.
 
+Publisher key setup has separate executable, terminal and native cases. The
+terminal case checks closed/piped input, preview and refusal before accepting the
+same path with explicit approval. Destination cases preserve publisher work and
+external secrets when paths are unsafe or already occupied. Native cases cover
+cancellation and exclusive-publication collisions after preparation. These checks
+do not complete the separate write, synchronization and cleanup failure matrix;
+the signing requirement remains partially decomposed until those cases are bound.
+
 `mise run test:map` runs the same discovery and classification check as the PR
 tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,
 and asks rustdoc for both the complete and ignored workspace doctest listings.

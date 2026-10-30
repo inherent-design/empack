@@ -7861,7 +7861,8 @@
       "evidence_tiers": [
         "H",
         "X",
-        "N"
+        "N",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -7888,7 +7889,72 @@
             "Initialization in a protected directory prints its independently derived public key without the private seed",
             "Repeated initialization refuses to overwrite the original signing bytes"
           ],
-          "remaining_group_evidence": "Declined approval, unsafe key-directory matrices and failures during key creation remain separate native/interactive cases"
+          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+        },
+        {
+          "id": "UX-054.explicit-key-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_pty_publisher_key_setup_requires_approval_without_creating_private_state"
+          ],
+          "assertions": [
+            "Closed and piped stdin cannot authorize private-key setup; dry-run and real terminal decline leave the entire publisher, external private directory and state/cache absent or unchanged",
+            "Explicit approval on the same selected path creates exactly one private key without modifying author notes or previous distributions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+        },
+        {
+          "id": "UX-054.key-destination-refusal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_publisher_key_setup_refuses_unsafe_or_occupied_destinations_without_changes"
+          ],
+          "assertions": [
+            "Workspace-local keys, missing parents, occupied files/directories and nonportable names refuse before modifying author work, prior outputs or private storage; existing secret bytes never appear in stdout/stderr",
+            "Unix checks also refuse an insufficiently private directory and an occupied symlink without changing its target, removing the link or leaking existing private material"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
+        },
+        {
+          "id": "UX-054.native-exclusive-key-creation",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::release::signing::tests::publisher_setup_is_exclusive_private_and_signs_round_trip",
+            "empack-lib::engine::release::signing::tests::publisher_setup_late_destination_is_never_removed",
+            "empack-lib::engine::release::signing::tests::publisher_setup_cancellation_and_replaced_entry_preserve_private_directory"
+          ],
+          "assertions": [
+            "Native key creation returns the independently derived public identity and a usable signature; Unix seed mode is 0600 and preparing again cannot overwrite it",
+            "Cancellation before execution creates no private candidate; a file or populated directory appearing after preparation survives exclusive publication failure and owned temporary cleanup"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "remaining_group_evidence": "The key-creation write/sync/temporary-cleanup failure matrix and full host observations remain separate; preparation refusal, cancellation and exclusive-link collision cases do not prove every durable failure boundary."
         }
       ],
       "owner_now": [

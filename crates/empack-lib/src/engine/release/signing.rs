@@ -217,4 +217,29 @@ mod tests {
         assert_eq!(std::fs::read(path).unwrap(), b"preexisting key");
         assert_eq!(std::fs::read_dir(&private).unwrap().count(), 1);
     }
+
+    #[test]
+    fn publisher_setup_cancellation_and_replaced_entry_preserve_private_directory() {
+        let workspace = tempfile::tempdir().unwrap();
+        let secrets = tempfile::tempdir().unwrap();
+        let private = secrets.path().join("private");
+        crate::engine::publication::open_private_directory(&private, true).unwrap();
+        let path = private.join("publisher.key");
+        let prepared = PublisherSetup::prepare(workspace.path(), &path).unwrap();
+        let cancel = Cancellation::default();
+        cancel.cancel();
+        assert!(prepared.create(&cancel).is_err());
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_dir(&private).unwrap().count(), 0);
+
+        let prepared = PublisherSetup::prepare(workspace.path(), &path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("retained"), b"unrelated private work").unwrap();
+        assert!(prepared.create(&Cancellation::default()).is_err());
+        assert_eq!(
+            std::fs::read(path.join("retained")).unwrap(),
+            b"unrelated private work"
+        );
+        assert_eq!(std::fs::read_dir(&private).unwrap().count(), 1);
+    }
 }
