@@ -108,6 +108,7 @@ def product(args, attempt, environment, host):
                            attempt, "product-metadata", environment, cwd=ROOT)
         (attempt / "product-metadata.json").write_text(metadata, encoding="utf-8")
         path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
+        path = path.resolve()
         digest = sha256(path)
         write_json(attempt / "product-build-audit.json",
                    inspect_build(messages, json.loads(metadata), features, path, digest))

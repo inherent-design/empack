@@ -110,7 +110,8 @@ class ProductBuild(unittest.TestCase):
             artifact = build(root)
             attempt = root / "attempt"
             Path(artifact["path"]).unlink()  # Admission also runs on a different machine.
-            inspect_retained_build(attempt, artifact)
+            with patch("pathlib.Path.resolve", side_effect=AssertionError("producer filesystem unavailable")):
+                inspect_retained_build(attempt, artifact)
             audit = attempt / "product-build-audit.json"
             document = json.loads(audit.read_text())
             document["units"] = []

@@ -45,7 +45,9 @@ def inspect_build(messages, metadata, features, executable, digest):
                 if sorted(enabled) != expected:
                     raise ValueError("Compiled empack features differ from requested product")
                 if kind == ["bin"] and event["target"]["name"] == "empack":
-                    if not event.get("executable") or Path(event["executable"]).resolve() != Path(executable).resolve():
+                    # The producer records a canonical absolute path. Admission
+                    # may run on another OS without that host's symlink map.
+                    if event.get("executable") != str(executable):
                         raise ValueError("Cargo executable differs from selected product")
                     binaries.append(event["executable"])
             if name == "empack-lib" and ("telemetry" in enabled) != (features == "telemetry"):
