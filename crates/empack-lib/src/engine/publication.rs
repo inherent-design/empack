@@ -291,11 +291,11 @@ impl Publisher {
     ) -> Result<PublicationReceipt> {
         let (plan, mut stage, base) = verified.into_parts();
         // Admit durable evidence before creating coordination or retention state.
-        let root_binding = JournalBinding::capture(JOURNAL_SCHEMA, root.binding)?;
+        let root_binding = JournalBinding::capture(root.binding)?;
         for change in plan.changes() {
             let path = ProjectLayout::path(change.target())?;
             if let Some(Observation::File(file)) = base.entries().get(&path) {
-                JournalBinding::capture(JOURNAL_SCHEMA, file.object)?;
+                JournalBinding::capture(file.object)?;
             }
         }
         let state = self.project_state(root)?;
@@ -376,7 +376,7 @@ impl Publisher {
                     .map(|_| format!(".empack-publish-{operation}-{index}")),
                 before: old.map(|value| Fingerprint::from(&content(value))),
                 before_object: old
-                    .map(|value| JournalBinding::capture(JOURNAL_SCHEMA, value.object))
+                    .map(|value| JournalBinding::capture(value.object))
                     .transpose()?,
                 after,
                 #[cfg(unix)]
@@ -588,7 +588,7 @@ impl Publisher {
                     before: fingerprint,
                     before_object: actual
                         .as_ref()
-                        .map(|file| JournalBinding::capture(journal.schema, file.object))
+                        .map(|file| JournalBinding::capture(file.object))
                         .transpose()?,
                     after: change.before.clone(),
                     sibling: change
@@ -964,14 +964,14 @@ fn load_journal(directory: &Dir) -> Result<Option<Journal>> {
     )?;
     let journal: Journal = serde_json::from_slice(&bytes).context("Corrupt publication journal")?;
     ensure!(
-        matches!(journal.schema, 4 | 5),
+        journal.schema == JOURNAL_SCHEMA,
         "Unsupported publication journal schema"
     );
     Ok(Some(journal))
 }
 fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
     ensure!(
-        journal.root.supports_schema(journal.schema) && journal.root.matches(root.binding),
+        journal.root.matches(root.binding),
         "Journal root or schema mismatch"
     );
     PortableRelPath::parse(&journal.operation, PathSyntax::ArtifactName)?;
@@ -993,11 +993,7 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
         ProjectLayout::classify(&path)?;
         collisions.insert_file(&path)?;
         ensure!(
-            change.before.is_some() == change.before_object.is_some()
-                && change
-                    .before_object
-                    .as_ref()
-                    .is_none_or(|binding| binding.supports_schema(journal.schema)),
+            change.before.is_some() == change.before_object.is_some(),
             "Invalid prior object binding"
         );
         ensure!(

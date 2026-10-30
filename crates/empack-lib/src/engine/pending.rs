@@ -272,7 +272,7 @@ fn details(
         _ => Kind::Synchronization,
     };
     let supported = if op.kind == PendingKind::Build {
-        matches!(record["schema"].as_u64(), Some(4 | 5))
+        record["schema"].as_u64() == Some(5)
     } else {
         record["schema"]
             .as_u64()
@@ -280,7 +280,7 @@ fn details(
     };
     ensure!(
         supported,
-        "Unsupported saved record schema; use the original workflow continuation or explicitly discard this ID"
+        "Unsupported saved record schema; prepare new work with this empack version or explicitly discard this ID"
     );
     let binding = store::bind_for(state, kind, &op.root, cancel)?.1;
     let current = if op.kind == PendingKind::Build {

@@ -4219,7 +4219,7 @@
         "CLI"
       ],
       "required_assertions": "Exact selected operation and requirements; missing/corrupt/stale distinctions; no reads interpreted as verification; no network/durable writes.",
-      "required_work": "All build/import/sync/instance record families and ambiguous IDs. T27: persistent root/state lookup and recoverable legacy migration must preserve pending discovery and resume across native remount; fingerprint components alone do not establish this.",
+      "required_work": "All build/import/sync/instance record families and ambiguous IDs. T27: current-format persistent root/state lookup must preserve pending discovery and resume across native remount; incompatible older formats must be refused without mutation; fingerprint components alone do not establish this.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4439,7 +4439,7 @@
         "LIFE"
       ],
       "required_assertions": "Wrong bytes/same filename rejected; correct bytes/new filename accepted; ambiguous role rejected; receipt retains original evidence.",
-      "required_work": "Use public printed keys; never discover private state schema to perform UX step. T27: persistent root/state lookup and recoverable legacy migration must preserve pending discovery and resume across native remount; fingerprint components alone do not establish this.",
+      "required_work": "Use public printed keys; never discover private state schema to perform UX step. T27: current-format persistent root/state lookup must preserve pending discovery and resume across native remount; incompatible older formats must be refused without mutation; fingerprint components alone do not establish this.",
       "evidence_tiers": [
         "H",
         "X",
@@ -4715,6 +4715,26 @@
             "The Linux fixture records its kernel and filesystem type and requires persistent UUID availability for file and directory handles",
             "On ext4 the selected UUID agrees with the filesystem-specific read-only interface; other filesystem types cannot use the ext4 ioctl",
             "Missing native filesystem support remains a failed prerequisite rather than skipped or synthetic evidence"
+          ]
+        },
+        {
+          "id": "UX-035.unsupported-build-formats",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::suspension::tests::obsolete_build_schemas_are_refused_without_rewriting_saved_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Obsolete and unknown build schemas are refused through public engine resume without modifying saved bytes, author documents or artifacts",
+            "Restoring the original supported record permits fresh preparation and does not itself authorize execution"
           ]
         }
       ],
@@ -7593,7 +7613,7 @@
           "id": "UX-069.versioned-instance-base",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::engine::api::instance::tests::saved_instance_fingerprint_versions_preserve_legacy_records_without_reinterpretation"
+            "empack-lib::engine::api::instance::tests::saved_instance_refuses_obsolete_schemas_without_rewriting_records"
           ],
           "required_platforms": [
             "linux",
@@ -7605,9 +7625,9 @@
             "telemetry"
           ],
           "assertions": [
-            "New schema-2 pending instance records retain persistent base fingerprints; legacy schema-1 records use the original strict native fingerprint",
-            "Unknown schemas and fingerprints encoded for the other schema refuse continuation without changing retained records or the instance",
-            "Both supported schemas resume exact retained/supplied content through fresh preparation without rewriting saved wire bytes or authorizing publication"
+            "Only schema-2 pending instance records can resume, using the persistent base fingerprint",
+            "Obsolete/unknown schemas and mismatched fingerprints refuse continuation without changing retained records or the instance",
+            "The supported record resumes exact retained/supplied content through fresh preparation without rewriting saved bytes or authorizing publication"
           ],
           "remaining_group_evidence": "Actual native remount, pending discard conflicts and the full restart/input matrix remain separately required"
         }
@@ -8082,9 +8102,9 @@
           "id": "UX-078.versioned-recovery-identity",
           "boundary": "N",
           "test_ids": [
-            "empack-lib::engine::publication::tests::identity::recovery_journals_bind_persistent_objects_and_preserve_strict_legacy_records",
+            "empack-lib::engine::publication::tests::identity::recovery_journals_bind_persistent_objects_without_rewriting_records",
             "empack-lib::engine::publication::tests::identity::recovery_refuses_mixed_identity_formats_and_same_bytes_replacements",
-            "empack-lib::engine::publication::tests::identity::journal_identity_separates_persistent_comparison_from_live_and_legacy_checks"
+            "empack-lib::engine::publication::tests::identity::journal_identity_separates_persistent_comparison_from_live_checks"
           ],
           "required_platforms": [
             "linux",
@@ -8096,9 +8116,9 @@
             "telemetry"
           ],
           "assertions": [
-            "New recovery journals retain persistent root and prior-file identities; finish and restore remain available for strict legacy schema-4 records without rewriting inspection",
-            "Mixed schemas, conflicting identities and same-byte replacement files refuse recovery without changing project bytes or the journal",
-            "Persistent comparison survives simulated device reassignment while live and legacy checks remain strict; unavailable identity refuses new publication before host coordination or retention state is created"
+            "Schema-5 recovery journals bind persistent root and prior-file identities; supported finish and restore preserve the inspection boundary",
+            "Obsolete schemas, conflicting identities and same-byte replacements refuse recovery without changing project bytes or the journal",
+            "Persistent comparison survives simulated device reassignment while live checks remain strict; unavailable identity refuses new publication before host coordination or retention state is created"
           ]
         },
         {
@@ -8130,7 +8150,7 @@
           "boundary": "N",
           "test_ids": [
             "empack-lib::engine::publication::creation::tests::creation_state_survives_associated_prior_device_labels_without_moving_coordination",
-            "empack-lib::engine::publication::creation::tests::creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_recovery",
+            "empack-lib::engine::publication::creation::tests::creation_identity_formats_refuse_obsolete_or_missing_proofs_without_mutation",
             "empack-lib::engine::publication::creation::recovery::tests::prepared_creation_recovery_retains_strict_live_object_identity"
           ],
           "required_platforms": [
@@ -8144,7 +8164,7 @@
           ],
           "assertions": [
             "Schema-2 creation recovery finds associated original parent/index/root state across controlled prior-device labels before and after root visibility, retaining the original coordination locks",
-            "Legacy schema-1 native identity comparison remains strict and its wire format is not rewritten by inspection or completion; unknown schemas, mixed/missing proofs and inconsistent candidate associations refuse without changing retained records",
+            "Obsolete schema-1, unknown schemas, missing/malformed proofs and inconsistent candidate associations refuse without changing retained records; supported schema-2 recovery still completes",
             "Prepared creation recovery retains the freshly observed native candidate/root identity and rejects a native mismatch even when its persistent proof and journal revision still match"
           ],
           "remaining_group_evidence": "Actual remount, already-unanchored legacy migration and full same-candidate qualification remain separately required"
@@ -8186,7 +8206,7 @@
           "id": "UX-079.retention-record-identity",
           "boundary": "N",
           "test_ids": [
-            "empack-lib::engine::publication::tests::identity::retained_preparation_identity_refuses_foreign_or_mixed_records_before_cleanup"
+            "empack-lib::engine::publication::tests::identity::retained_preparation_identity_refuses_foreign_or_obsolete_records_before_cleanup"
           ],
           "required_platforms": [
             "linux",
@@ -8198,7 +8218,7 @@
             "telemetry"
           ],
           "assertions": [
-            "New pre-publication retention records bind persistent root identity; legacy records retain strict native identity",
+            "Schema-2 pre-publication retention records bind persistent root identity; obsolete or unknown schemas are unsupported",
             "Foreign root evidence and mixed schema/identity forms refuse cleanup before deleting owned bytes or changing the descriptor",
             "Validated cleanup reclaims only recorded objects, preserves neighboring files and author bytes, and converges on repeated cleanup"
           ]

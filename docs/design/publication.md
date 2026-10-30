@@ -11,6 +11,15 @@ Keep the **authoritative operation journal in host-private application state**, 
 
 Candidate/preimage storage needed for recovery has explicit retention and is not ordinary evictable cache. Protect host-state permissions, bound parsing, and bind records to the actual root identity. A same-user malicious native program is outside the security boundary, but a malicious imported project should not be able to manufacture a previously approved operation.
 
+This development target uses publication journal schema 5, creation journal
+schema 2 and preparation-retention schema 2. Each requires persistent identity
+evidence. Older internal formats are unsupported; readers do not reinterpret,
+migrate or delete them. Preserve incompatible interrupted-operation data and use
+an executable that supports it to resolve that operation before selecting new
+state. A format error does not establish that a project is unchanged or that
+retained recovery copies are disposable. Current-format restart, finish and
+restore retain their normal guarantees across device reassignment.
+
 ### Publication plan
 
 There is no arbitrary `DeleteTree(PathBuf)` action. A forced import computes an explicit managed change set. Removing obsolete managed directories happens only after file-level changes, when owned emptiness is verified.

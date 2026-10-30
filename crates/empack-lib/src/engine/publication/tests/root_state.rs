@@ -81,32 +81,55 @@ fn native_root_associations_recover_original_state_without_moving_locks() {
 
 #[test]
 fn native_root_associations_preserve_runtime_evidence_and_refuse_unassociated_state() {
-    let project = tempfile::tempdir().unwrap();
-    fixture(project.path());
-    let host = tempfile::tempdir().unwrap();
-    let publisher = Publisher::open(&host.path().join("private")).unwrap();
-    let root = ProjectReadRoot::open(project.path()).unwrap();
-    let mut lease = publisher.lease_instance(&root).unwrap();
-    lease.begin().unwrap();
-    drop(lease); // Retirement was not established.
-    let old_key = move_state_to_prior_device(&publisher, &root);
-    let directory = publisher.host.open_dir_nofollow(&old_key).unwrap();
-    let marker = directory.read("root-identity.json").unwrap();
-    assert!(publisher.observe_runtime(&root).unwrap().is_some());
-    assert!(publisher.lease_instance(&root).is_err());
-    directory.remove_file("root-identity.json").unwrap();
-    let error = publisher
-        .observe_runtime(&root)
-        .err()
-        .expect("unassociated state must not disappear");
-    assert!(format!("{error:#}").contains("lacks persistent identity evidence"));
-    assert!(!publisher.host.exists(root_key(&root).unwrap()));
-    directory.write("root-identity.json", &marker).unwrap();
-    let observed = publisher.observe_runtime(&root).unwrap().unwrap();
-    publisher.acknowledge_stopped(&root, observed).unwrap();
-    assert!(publisher.observe_runtime(&root).unwrap().is_none());
-    assert_eq!(directory.read("root-identity.json").unwrap(), marker);
-    assert!(!publisher.host.exists(root_key(&root).unwrap()));
+    for reassigned in [false, true] {
+        let project = tempfile::tempdir().unwrap();
+        fixture(project.path());
+        let host = tempfile::tempdir().unwrap();
+        let publisher = Publisher::open(&host.path().join("private")).unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        // An empty directory left before association publication has no old
+        // mutation/runtime evidence and can be initialized by a current writer.
+        let key = root_key(&root).unwrap();
+        publisher.host.create_dir(&key).unwrap();
+        let empty = publisher.host.open_dir_nofollow(&key).unwrap();
+        private_directory(&empty).unwrap();
+        drop(empty);
+        assert!(publisher.observe_runtime(&root).unwrap().is_none());
+        let mut lease = publisher.lease_instance(&root).unwrap();
+        lease.begin().unwrap();
+        drop(lease); // Retirement was not established.
+        let key = if reassigned {
+            move_state_to_prior_device(&publisher, &root)
+        } else {
+            key
+        };
+        let directory = publisher.host.open_dir_nofollow(&key).unwrap();
+        let marker = directory.read("root-identity.json").unwrap();
+        assert!(publisher.observe_runtime(&root).unwrap().is_some());
+        assert!(publisher.lease_instance(&root).is_err());
+        directory.remove_file("root-identity.json").unwrap();
+        let evidence = directory.read("runtime.json").unwrap();
+        for failed in [
+            publisher.observe_runtime(&root).err(),
+            publisher.lease_instance(&root).err(),
+        ] {
+            let error = failed.expect("unassociated ownership must not be adopted");
+            assert!(format!("{error:#}").contains("lacks persistent identity evidence"));
+        }
+        assert_eq!(directory.read("runtime.json").unwrap(), evidence);
+        assert!(!directory.exists("root-identity.json"));
+        if reassigned {
+            assert!(!publisher.host.exists(root_key(&root).unwrap()));
+        }
+        directory.write("root-identity.json", &marker).unwrap();
+        let observed = publisher.observe_runtime(&root).unwrap().unwrap();
+        publisher.acknowledge_stopped(&root, observed).unwrap();
+        assert!(publisher.observe_runtime(&root).unwrap().is_none());
+        assert_eq!(directory.read("root-identity.json").unwrap(), marker);
+        if reassigned {
+            assert!(!publisher.host.exists(root_key(&root).unwrap()));
+        }
+    }
 }
 
 #[test]

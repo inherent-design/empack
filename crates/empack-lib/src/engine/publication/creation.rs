@@ -71,8 +71,7 @@ struct CreationJournal {
     expected: BTreeMap<String, Fingerprint>,
     limits: SnapshotLimits,
     committed: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    persistent: Option<CreationIdentity>,
+    persistent: CreationIdentity,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,7 +82,7 @@ struct CreationIdentity {
 impl CreationJournal {
     fn validate_identity_format(&self) -> Result<()> {
         ensure!(
-            matches!((self.schema, &self.persistent), (1, None) | (2, Some(_))),
+            self.schema == 2,
             "Unsupported or mixed creation identity schema"
         );
         binding_key(&self.parent)?;
@@ -92,24 +91,15 @@ impl CreationJournal {
     }
     fn parent_matches(&self, identity: ObjectIdentity) -> Result<bool> {
         self.validate_identity_format()?;
-        Ok(match &self.persistent {
-            Some(proof) => Some(proof.parent) == identity.persistent,
-            None => self.parent == Binding::from(identity),
-        })
+        Ok(Some(self.persistent.parent) == identity.persistent)
     }
     fn root_matches(&self, identity: ObjectIdentity) -> Result<bool> {
         self.validate_identity_format()?;
-        Ok(match &self.persistent {
-            Some(proof) => Some(proof.root) == identity.persistent,
-            None => self.binding == Binding::from(identity),
-        })
+        Ok(Some(self.persistent.root) == identity.persistent)
     }
     fn check_state(&self, state: &Dir) -> Result<()> {
         self.validate_identity_format()?;
-        if let Some(proof) = &self.persistent {
-            root_state::check_association(state, &self.binding, &proof.root)?;
-        }
-        Ok(())
+        root_state::check_association(state, &self.binding, &self.persistent.root)
     }
 }
 impl Publisher {
@@ -209,7 +199,7 @@ impl Publisher {
             expected,
             limits,
             committed: false,
-            persistent: Some(CreationIdentity {
+            persistent: CreationIdentity {
                 parent: target
                     .parent
                     .binding
@@ -218,7 +208,7 @@ impl Publisher {
                 root: binding
                     .persistent
                     .context("Filesystem lacks persistent candidate identity")?,
-            }),
+            },
         };
         verify_created_root(&target.parent, &journal.candidate, &journal, cancel)?;
         hook(PublicationPoint::RecoveryDataDurable)?;
@@ -309,8 +299,7 @@ impl Publisher {
         if let Some(expected) = expected {
             expected.check(&parent, &child, &initial)?;
         }
-        let root_state = creation_root_state(self, &initial, true)?
-            .context("Missing retained creation state")?;
+        let root_state = creation_root_state(self, &initial)?;
         let _root_lock = lock(&root_state)?;
         let mut journal = match load_creation(&root_state)? {
             Some(record) => {
@@ -388,9 +377,7 @@ fn authoritative_creation(
     publisher: &Publisher,
     initial: &CreationJournal,
 ) -> Result<Option<(Dir, CreationJournal)>> {
-    let Some(state) = creation_root_state(publisher, initial, false)? else {
-        return Ok(None);
-    };
+    let state = creation_root_state(publisher, initial)?;
     let Some(record) = load_creation(&state)? else {
         return Ok(None);
     };
@@ -409,24 +396,15 @@ pub(super) fn requires_root_recovery(state: &Dir, root: &ProjectReadRoot) -> Res
     );
     Ok(!journal.committed)
 }
-fn creation_root_state(
-    publisher: &Publisher,
-    journal: &CreationJournal,
-    create: bool,
-) -> Result<Option<Dir>> {
-    // Schema 2 always retains its candidate association before index intent. A
-    // missing association is corruption, never permission to recreate authority.
-    let state = bound_state(publisher, &journal.binding, create && journal.schema == 1)?;
-    if let Some(state) = &state {
-        journal.check_state(state)?;
-    } else {
-        ensure!(
-            journal.schema == 1,
-            "Missing retained candidate association"
-        );
-    }
+fn creation_root_state(publisher: &Publisher, journal: &CreationJournal) -> Result<Dir> {
+    // Candidate identity is retained before index intent. Missing state is
+    // corruption, never permission to reconstruct recovery authority.
+    let state = bound_state(publisher, &journal.binding, false)?
+        .context("Missing retained candidate association")?;
+    journal.check_state(&state)?;
     Ok(state)
 }
+
 fn bound_state(publisher: &Publisher, binding: &Binding, create: bool) -> Result<Option<Dir>> {
     state_by_key(publisher, &binding_key(binding)?, create)
 }

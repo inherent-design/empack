@@ -215,46 +215,22 @@ pub struct NativeSnapshot {
     entries: BTreeMap<PortableRelPath, Observation>,
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum FingerprintVersion {
-    /// Existing records still require their original, strict native comparison.
-    NativeV1,
-    /// New retained work binds persistent objects without boot-local device numbers.
-    PersistentV2,
-}
-
 impl NativeSnapshot {
     /// Persisted comparison data only. A matching hash does not reconstruct read authority.
-    pub(super) fn fingerprint(&self, version: FingerprintVersion) -> Result<[u8; 32]> {
+    pub(super) fn fingerprint(&self) -> Result<[u8; 32]> {
         use sha2::{Digest, Sha256};
         fn bytes(hash: &mut Sha256, value: &[u8]) {
             hash.update((value.len() as u64).to_le_bytes());
             hash.update(value);
         }
         let object = |hash: &mut Sha256, value: ObjectIdentity| -> Result<()> {
-            if matches!(version, FingerprintVersion::PersistentV2) {
-                hash.update(value.persistent.context(
-                    "Filesystem lacks persistent object identity; retaining this operation is unsupported",
-                )?);
-                return Ok(());
-            }
-            hash.update(value.volume.to_le_bytes());
-            hash.update(value.object.to_le_bytes());
-            match value.created {
-                Some((seconds, nanos)) => {
-                    hash.update([1]);
-                    hash.update(seconds.to_le_bytes());
-                    hash.update(nanos.to_le_bytes());
-                }
-                None => hash.update([0]),
-            }
+            hash.update(value.persistent.context(
+                "Filesystem lacks persistent object identity; retaining this operation is unsupported",
+            )?);
             Ok(())
         };
         let mut hash = Sha256::new();
-        hash.update(match version {
-            FingerprintVersion::NativeV1 => b"empack-native-inputs-v1",
-            FingerprintVersion::PersistentV2 => b"empack-native-inputs-v2",
-        });
+        hash.update(b"empack-native-inputs-v2");
         object(&mut hash, self.root)?;
         hash.update((self.entries.len() as u64).to_le_bytes());
         for (path, observed) in &self.entries {

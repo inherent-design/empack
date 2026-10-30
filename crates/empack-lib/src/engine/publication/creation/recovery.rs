@@ -112,17 +112,14 @@ fn read(publisher: &Publisher, selected: &Path) -> Result<Option<ReadCreation>> 
         return Ok(None);
     };
     validate_creation(&parent, &child, &initial)?;
-    let journal = if let Some(state) = creation_root_state(publisher, &initial, false)? {
-        guards.push(shared_lock(&state)?);
-        match load_creation(&state)? {
-            Some(journal) => {
-                match_creation(&initial, &journal)?;
-                journal
-            }
-            None => initial,
+    let root_state = creation_root_state(publisher, &initial)?;
+    guards.push(shared_lock(&root_state)?);
+    let journal = match load_creation(&root_state)? {
+        Some(journal) => {
+            match_creation(&initial, &journal)?;
+            journal
         }
-    } else {
-        initial
+        None => initial,
     };
     if journal.committed {
         return Ok(None);

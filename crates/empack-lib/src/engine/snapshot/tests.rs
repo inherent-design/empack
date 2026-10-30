@@ -24,10 +24,7 @@ fn persistent_fingerprint_keeps_object_evidence_without_boot_local_devices() {
     let root = ProjectReadRoot::open(temp.path()).unwrap();
     let scopes = ["pack/config/file", "other", "absent", "directory"];
     let mut snapshot = capture(&root, &scopes);
-    let legacy = snapshot.fingerprint(FingerprintVersion::NativeV1).unwrap();
-    let persistent = snapshot
-        .fingerprint(FingerprintVersion::PersistentV2)
-        .unwrap();
+    let persistent = snapshot.fingerprint().unwrap();
     snapshot.root.volume ^= 1;
     for observed in snapshot.entries.values_mut() {
         match observed {
@@ -38,16 +35,7 @@ fn persistent_fingerprint_keeps_object_evidence_without_boot_local_devices() {
             Observation::Absent => (),
         }
     }
-    assert_ne!(
-        snapshot.fingerprint(FingerprintVersion::NativeV1).unwrap(),
-        legacy
-    );
-    assert_eq!(
-        snapshot
-            .fingerprint(FingerprintVersion::PersistentV2)
-            .unwrap(),
-        persistent
-    );
+    assert_eq!(snapshot.fingerprint().unwrap(), persistent);
     // Durable comparison never grants permission to reuse a stale live observation.
     assert!(
         root.revalidate(&snapshot, &Cancellation::default())
@@ -69,17 +57,12 @@ fn persistent_fingerprint_keeps_object_evidence_without_boot_local_devices() {
     };
     assert_ne!(selected.object.persistent, other_identity);
     selected.object.persistent = other_identity;
-    assert_ne!(
-        snapshot
-            .fingerprint(FingerprintVersion::PersistentV2)
-            .unwrap(),
-        persistent
-    );
+    assert_ne!(snapshot.fingerprint().unwrap(), persistent);
     // Unsupported identity must not quietly fall back to the device-based fingerprint.
     snapshot.root.persistent = None;
     assert!(
         snapshot
-            .fingerprint(FingerprintVersion::PersistentV2)
+            .fingerprint()
             .unwrap_err()
             .to_string()
             .contains("Filesystem lacks persistent object identity")

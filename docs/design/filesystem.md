@@ -38,17 +38,14 @@ serial and file ID from `FILE_ID_INFO`. Linux export handles distinguish filesys
 object namespaces, including subvolumes. All three include creation identity and
 use separate platform domains. No pathname is accepted as substitute evidence.
 
-New saved-build fingerprints, schema-5 publication journals and schema-2 retention
-records use these persistent observations. Journals bind both the root and each file's pre-publication identity.
-Schema-1 retention records retain strict native root checks during cleanup.
-Schema-4 journals retain their original strict comparison for inspection, finish and
-restore; inspection does not rewrite them or infer missing volume evidence. Mixed
-identity formats are rejected. Replacing an unchanged pre-publication file with
-identical bytes still changes its object identity and cannot authorize recovery over
-that replacement. Recovery
-approval separately captures live observations and the exact journal revision.
+Saved-build and pending-instance fingerprints, schema-5 publication journals and
+schema-2 retention/creation records use persistent observations. Journals bind
+both the root and each file's pre-publication identity. Older internal formats
+are unsupported and are neither migrated nor rewritten by inspection. Replacing
+an unchanged pre-publication file with identical bytes still changes its object
+identity and cannot authorize recovery over that replacement. Recovery approval
+separately captures live observations and the exact journal revision.
 
-Old saved-build records likewise retain their original strict comparison.
 Unavailable UUID/export-handle support or creation metadata refuses retention that
 needs this evidence; it does not fall back to the current device number. The Linux
 generic UUID ioctl requires kernel support introduced in 6.9 and support from the
@@ -68,16 +65,14 @@ runtime marker and lock files in place. Foreign, moved, corrupt or duplicate cla
 refuse access. A potentially matching legacy directory without persistent evidence
 cannot silently disappear after its device assignment changes.
 
-**Migration remains unfinished in the v0.8.4 development branch.** This association
-supports publication and runtime state discovery. Local instance and subscription
-records compare their saved opaque key against that proven association, retaining
-its original value across device reassignment. Publication checks the selected key
-again so a changed association cannot inherit a previously prepared instance or
-subscription mutation. Pending-operation filenames, creation metadata and old saved
-snapshots still require the corresponding lookup and legacy migration. Old journal and retention proofs remain strict. An
-association does not manufacture missing historical file identity or translate old
-snapshot fingerprints. Existing evidence must remain intact until its binding can
-be established; an ambiguous old device binding cannot authorize writes.
+Local instance and subscription records compare their saved opaque key against
+the proven association, retaining its original value across device reassignment.
+Publication checks the selected key again so a changed association cannot inherit
+a previously prepared instance or subscription mutation. Current-format pending
+operations and creation recovery use corresponding associations and persistent
+proofs. An association does not manufacture missing historical identity or
+translate obsolete fingerprints. Incompatible state is preserved and refused;
+legacy discovery, adoption and migration are outside this release requirement.
 
 Required behavior:
 

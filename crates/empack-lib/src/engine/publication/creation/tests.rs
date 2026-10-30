@@ -583,7 +583,7 @@ fn creation_state_survives_associated_prior_device_labels_without_moving_coordin
 }
 
 #[test]
-fn creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_recovery() {
+fn creation_identity_formats_refuse_obsolete_or_missing_proofs_without_mutation() {
     for visible in [false, true] {
         let temp = tempfile::tempdir().unwrap();
         let selected = temp.path().join("new");
@@ -613,23 +613,37 @@ fn creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_reco
             .unwrap();
         let original = load_creation(&index).unwrap().unwrap();
         assert_eq!(original.schema, 2);
-        let root_state = creation_root_state(&publisher, &original, false)
-            .unwrap()
-            .unwrap();
-        for invalid in 0..if visible { 5 } else { 6 } {
-            let mut changed = original.clone();
+        let root_state = creation_root_state(&publisher, &original).unwrap();
+        let original_bytes = serde_json::to_vec(&original).unwrap();
+        let wire: serde_json::Value = serde_json::from_slice(&original_bytes).unwrap();
+        for invalid in 0..8 {
+            let mut changed = wire.clone();
             match invalid {
-                0 => changed.schema = 3,
-                1 => changed.schema = 1, // A legacy record cannot carry a new proof.
-                2 => changed.persistent = None,
-                3 => changed.persistent.as_mut().unwrap().root[0] ^= 1,
-                4 => changed.binding.volume ^= 1, // Physical address must match its association.
-                5 => changed.persistent.as_mut().unwrap().parent[0] ^= 1,
+                0 => changed["schema"] = 3.into(),
+                1 => changed["schema"] = 1.into(),
+                2 => {
+                    changed.as_object_mut().unwrap().remove("persistent");
+                }
+                3 => changed["persistent"]["root"][0] = (original.persistent.root[0] ^ 1).into(),
+                4 => changed["binding"]["volume"] = (original.binding.volume ^ 1).into(),
+                5 => {
+                    changed["persistent"]["parent"][0] = (original.persistent.parent[0] ^ 1).into()
+                }
+                6 => {
+                    changed["schema"] = 1.into();
+                    changed.as_object_mut().unwrap().remove("persistent");
+                }
+                7 => changed["persistent"] = serde_json::Value::Null,
                 _ => unreachable!(),
             }
-            write_creation(&index, &changed).unwrap();
-            write_creation(&root_state, &changed).unwrap();
-            let before = serde_json::to_vec(&changed).unwrap();
+            let bytes = serde_json::to_vec(&changed).unwrap();
+            index.write("creation.json", &bytes).unwrap();
+            root_state.write("creation.json", &bytes).unwrap();
+            // Visible-root inspection does not need its parent binding. All
+            // other proof/schema failures must fail on both lookup routes.
+            if visible && invalid == 5 {
+                continue;
+            }
             assert!(
                 publisher.inspect_creation_recovery(&selected).is_err(),
                 "{visible}/{invalid}"
@@ -638,55 +652,12 @@ fn creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_reco
                 publisher.prepare_creation_recovery(&selected).is_err(),
                 "{visible}/{invalid}"
             );
-            assert_eq!(index.read("creation.json").unwrap(), before);
-            assert_eq!(root_state.read("creation.json").unwrap(), before);
+            assert_eq!(index.read("creation.json").unwrap(), bytes);
+            assert_eq!(root_state.read("creation.json").unwrap(), bytes);
             assert_eq!(selected.exists(), visible);
         }
-        let mut legacy = original.clone();
-        legacy.schema = 1;
-        legacy.persistent = None;
-        write_creation(&index, &legacy).unwrap();
-        write_creation(&root_state, &legacy).unwrap();
-        let before = serde_json::to_vec(&legacy).unwrap();
-        assert!(
-            !String::from_utf8(before.clone())
-                .unwrap()
-                .contains("persistent")
-        );
-        assert_eq!(
-            publisher
-                .inspect_creation_recovery(&selected)
-                .unwrap()
-                .unwrap()
-                .operation,
-            original.operation
-        );
-        let ready = publisher
-            .prepare_creation_recovery(&selected)
-            .unwrap()
-            .unwrap();
-        assert_eq!(index.read("creation.json").unwrap(), before);
-        assert_eq!(root_state.read("creation.json").unwrap(), before);
-        let mut wrong = legacy.clone();
-        wrong.parent.volume ^= 1;
-        wrong.binding.volume ^= 1;
-        write_creation(&index, &wrong).unwrap();
-        write_creation(&root_state, &wrong).unwrap();
-        assert!(
-            publisher.prepare_creation_recovery(&selected).is_err(),
-            "legacy native comparison remains strict"
-        );
-        assert!(
-            publisher
-                .recover_prepared_creation(&selected, ready)
-                .is_err()
-        );
-        assert_eq!(
-            root_state.read("creation.json").unwrap(),
-            serde_json::to_vec(&wrong).unwrap()
-        );
-        write_creation(&index, &legacy).unwrap();
-        write_creation(&root_state, &legacy).unwrap();
+        index.write("creation.json", &original_bytes).unwrap();
+        root_state.write("creation.json", &original_bytes).unwrap();
         let ready = publisher
             .prepare_creation_recovery(&selected)
             .unwrap()
@@ -696,7 +667,7 @@ fn creation_identity_formats_refuse_mixed_proofs_and_preserve_strict_legacy_reco
             .unwrap();
         check_contents(&selected);
         let committed = load_creation(&root_state).unwrap().unwrap();
-        assert_eq!(committed.schema, 1);
-        assert!(committed.persistent.is_none() && committed.committed);
+        assert_eq!(committed.schema, 2);
+        assert!(committed.committed);
     }
 }

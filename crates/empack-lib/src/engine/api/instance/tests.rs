@@ -2521,91 +2521,74 @@ async fn instance_inspection_and_preparation_use_the_associated_root_key() {
 }
 
 #[tokio::test]
-async fn saved_instance_fingerprint_versions_preserve_legacy_records_without_reinterpretation() {
-    for legacy in [false, true] {
-        let root = tempfile::tempdir().unwrap();
-        let state = tempfile::tempdir().unwrap();
-        let host = state.path().join("state");
-        let (engine, governor) = super::super::tests::engine(host.clone());
-        let mut input = request(&[
-            ("a", "mods/a.jar", b"A", FilePolicy::Managed),
-            ("b", "mods/b.jar", b"B", FilePolicy::Managed),
-        ]);
-        input.supplied.remove("b");
-        let Preparation::NeedsInput(pending) =
-            engine.prepare(root.path().to_owned(), input).await.unwrap()
-        else {
-            panic!("fixture requires b");
-        };
-        let PreparedKind::Instance(data) = &**pending.prepared.data else {
-            unreachable!()
-        };
-        let legacy_base = data
-            .instance
-            .base(
-                crate::engine::snapshot::FingerprintVersion::NativeV1,
-                &Cancellation::default(),
-            )
-            .unwrap();
-        let saved = engine.suspend_instance(*pending, None).await.unwrap();
-        let path = fs::read_dir(host.join("pending-instances"))
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|p| p.extension().is_some_and(|s| s == "json"))
-            .unwrap();
-        let mut record: serde_json::Value =
-            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(
-            record["schema"], 2,
-            "new saves require persistent fingerprints"
-        );
-        let persistent_base: [u8; 32] = serde_json::from_value(record["base"].clone()).unwrap();
-        assert_ne!(persistent_base, legacy_base);
-        let supplied = state.path().join("b.jar");
-        fs::write(&supplied, b"B").unwrap();
-        let inputs = || BTreeMap::from([("b".into(), supplied.clone())]);
-        // Neither an unsupported schema nor a fingerprint encoded for the other
-        // schema may be silently reinterpreted or rewritten during inspection.
-        for schema in [3, if legacy { 1 } else { 2 }] {
-            record["schema"] = schema.into();
-            record["base"] =
-                serde_json::to_value(if legacy { persistent_base } else { legacy_base }).unwrap();
-            let bytes = serde_json::to_vec(&record).unwrap();
-            fs::write(&path, &bytes).unwrap();
-            assert!(
-                engine
-                    .resume_saved_instance(root.path().to_owned(), inputs(), None)
-                    .await
-                    .is_err()
-            );
-            assert_eq!(fs::read(&path).unwrap(), bytes);
-            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
-        }
-        record["schema"] = if legacy { 1 } else { 2 }.into();
-        record["base"] =
-            serde_json::to_value(if legacy { legacy_base } else { persistent_base }).unwrap();
-        let bytes = serde_json::to_vec(&record).unwrap();
+async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let host = state.path().join("state");
+    let (engine, governor) = super::super::tests::engine(host.clone());
+    let mut input = request(&[
+        ("a", "mods/a.jar", b"A", FilePolicy::Managed),
+        ("b", "mods/b.jar", b"B", FilePolicy::Managed),
+    ]);
+    input.supplied.remove("b");
+    let Preparation::NeedsInput(pending) =
+        engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("fixture requires b");
+    };
+    let saved = engine.suspend_instance(*pending, None).await.unwrap();
+    let path = fs::read_dir(host.join("pending-instances"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|p| p.extension().is_some_and(|s| s == "json"))
+        .unwrap();
+    let current = fs::read(&path).unwrap();
+    let supplied = state.path().join("b.jar");
+    fs::write(&supplied, b"B").unwrap();
+    let inputs = || BTreeMap::from([("b".into(), supplied.clone())]);
+    for schema in [0, 1, 3] {
+        let mut wire: serde_json::Value = serde_json::from_slice(&current).unwrap();
+        wire["schema"] = schema.into();
+        let bytes = serde_json::to_vec(&wire).unwrap();
         fs::write(&path, &bytes).unwrap();
-        let resumed = engine
+        let error = engine
             .resume_saved_instance(root.path().to_owned(), inputs(), None)
             .await
-            .unwrap()
-            .unwrap();
-        assert!(matches!(resumed.preparation, Preparation::Ready(_)));
-        assert_eq!(
-            fs::read(&path).unwrap(),
-            bytes,
-            "resume does not rewrite the saved wire format"
+            .err()
+            .expect("an obsolete format cannot resume");
+        assert!(
+            format!("{error:#}").contains("Unsupported pending operation schema"),
+            "{error:#}"
         );
-        assert_eq!(
-            fs::read_dir(root.path()).unwrap().count(),
-            0,
-            "fresh execution approval is still required"
-        );
-        assert_eq!(fs::read(&supplied).unwrap(), b"B");
-        drop(resumed);
-        drop(saved);
-        engine.shutdown().await;
-        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     }
+    let mut changed: serde_json::Value = serde_json::from_slice(&current).unwrap();
+    changed["base"] = serde_json::to_value([0u8; 32]).unwrap();
+    let bytes = serde_json::to_vec(&changed).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    assert!(
+        engine
+            .resume_saved_instance(root.path().to_owned(), inputs(), None)
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    fs::write(&path, &current).unwrap();
+    let resumed = engine
+        .resume_saved_instance(root.path().to_owned(), inputs(), None)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(resumed.preparation, Preparation::Ready(_)));
+    assert_eq!(fs::read(&path).unwrap(), current);
+    assert_eq!(
+        fs::read_dir(root.path()).unwrap().count(),
+        0,
+        "fresh approval is required"
+    );
+    assert_eq!(fs::read(&supplied).unwrap(), b"B");
+    drop((resumed, saved));
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }

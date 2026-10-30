@@ -96,16 +96,6 @@ struct Record {
     files: Vec<ReleaseFile>,
     manual: Vec<String>,
 }
-impl Record {
-    fn fingerprint_version(&self) -> Result<crate::engine::snapshot::FingerprintVersion> {
-        use crate::engine::snapshot::FingerprintVersion;
-        match self.schema {
-            1 => Ok(FingerprintVersion::NativeV1),
-            2 => Ok(FingerprintVersion::PersistentV2),
-            _ => anyhow::bail!("Unsupported pending instance schema"),
-        }
-    }
-}
 impl BoundRecord for Record {
     fn binding(&self) -> &Binding {
         &self.binding
@@ -281,10 +271,7 @@ async fn save(
         move |cancel| {
             let (_, binding) =
                 store::bind_for(&binding_state, Kind::Instance, &data.target, &cancel)?;
-            let base = data.instance.base(
-                crate::engine::snapshot::FingerprintVersion::PersistentV2,
-                &cancel,
-            )?;
+            let base = data.instance.base(&cancel)?;
             let record = Record {
                 schema: 2,
                 binding,
@@ -331,7 +318,7 @@ async fn save(
         move |cancel| {
             let _guard = save_guard;
             ensure!(
-                data.instance.base(record.fingerprint_version()?, &cancel)? == record.base,
+                data.instance.base(&cancel)? == record.base,
                 "Instance changed before suspension"
             );
             store::save(
@@ -578,10 +565,7 @@ async fn resume(
         move |cancel| {
             let (mut prepared, reservation) = prepared.into_parts();
             ensure!(
-                prepared
-                    .instance
-                    .base(record.fingerprint_version()?, &cancel)?
-                    == record.base
+                prepared.instance.base(&cancel)? == record.base
                     && prepared.instance.record == record.candidate,
                 "Saved instance is stale: selected files or candidate changed"
             );

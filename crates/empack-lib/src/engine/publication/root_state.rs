@@ -113,19 +113,26 @@ impl Publisher {
                     );
                     selected = Some((name.to_owned(), directory));
                 }
-                None if name == current => {
-                    ensure!(
-                        selected.is_none(),
-                        "Multiple native state directories may belong to this root"
-                    );
-                    selected = Some((name.to_owned(), directory));
+                None => {
+                    // An empty directory/lock can remain if a current writer
+                    // exits before retaining its association. It carries no
+                    // journal or runtime authority and is safe to initialize.
+                    let mut empty = true;
+                    for entry in directory.entries()? {
+                        if entry?.file_name() != "state.lock" {
+                            empty = false;
+                            break;
+                        }
+                    }
+                    if name != current || !empty {
+                        unresolved = true;
+                    }
                 }
-                None => unresolved = true,
             }
         }
         ensure!(
             !unresolved,
-            "Legacy native state may belong to this root but lacks persistent identity evidence; preserve it for explicit migration"
+            "Incompatible native state may belong to this root but lacks persistent identity evidence; preserve it; this empack version cannot adopt its ownership evidence"
         );
         root.check_binding()?;
         Ok(selected)

@@ -43,98 +43,110 @@ async fn suspend_first(owner: &Engine, root: &Path) -> SuspendedBuildReceipt {
 }
 #[tokio::test]
 async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
-    for legacy in [false, true] {
-        let root = tempfile::tempdir().unwrap();
-        let host = tempfile::tempdir().unwrap();
-        fixture(root.path(), true);
-        let before = documents(root.path());
-        let state = host.path().join("state");
-        let (owner, governor) = engine(state.clone());
-        let receipt = suspend_first(&owner, root.path()).await;
-        assert_eq!(receipt.retained_files, 1);
-        assert_eq!(receipt.retained_bytes, 7);
-        assert_eq!(receipt.pending_files, 1);
-        assert!(!receipt.replaced);
-        assert_eq!(documents(root.path()), before);
-        assert!(!root.path().join("dist").exists());
-        assert_eq!(governor.status().reserved, ResourceRequest::default());
-        let record_path = records(&state).pop().unwrap();
-        let mut wire: serde_json::Value =
-            serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
-        assert_eq!(wire["schema"], 5);
-        if legacy {
-            // Exercise the old wire schema and its original strict native fingerprint.
-            let prepared = match owner
-                .prepare(root.path().to_path_buf(), request())
-                .await
-                .unwrap()
-            {
-                Preparation::NeedsInput(pending) => pending.prepared,
-                _ => panic!("manual inputs must remain pending"),
-            };
-            let PreparedKind::Build(build) = &**prepared.data else {
-                unreachable!()
-            };
-            wire["schema"] = 4.into();
-            wire["fingerprint"] = serde_json::to_value(
-                build
-                    .workspace
-                    .observations()
-                    .fingerprint(crate::engine::snapshot::FingerprintVersion::NativeV1)
-                    .unwrap(),
-            )
-            .unwrap();
-            fs::write(&record_path, serde_json::to_vec(&wire).unwrap()).unwrap();
-        }
-        owner.shutdown().await;
-        drop(owner);
-        let record_before = fs::read(&record_path).unwrap();
-        let (owner, governor) = engine(state.clone());
-        let resumed = owner
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let before = documents(root.path());
+    let state = host.path().join("state");
+    let (owner, governor) = engine(state.clone());
+    let receipt = suspend_first(&owner, root.path()).await;
+    assert_eq!(receipt.retained_files, 1);
+    assert_eq!(receipt.retained_bytes, 7);
+    assert_eq!(receipt.pending_files, 1);
+    assert!(!receipt.replaced);
+    assert_eq!(documents(root.path()), before);
+    assert!(!root.path().join("dist").exists());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let record_path = records(&state).pop().unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
+    assert_eq!(wire["schema"], 5);
+    owner.shutdown().await;
+    drop(owner);
+    let record_before = fs::read(&record_path).unwrap();
+    let (owner, governor) = engine(state.clone());
+    let resumed = owner
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap();
+    let SavedBuildResume::Prepared(prepared) = resumed else {
+        panic!("saved build not prepared")
+    };
+    let Preparation::NeedsInput(pending) = prepared.preparation else {
+        panic!("second input should remain pending")
+    };
+    assert_eq!(pending.build().unwrap().unresolved.len(), 1);
+    assert_eq!(fs::read(&record_path).unwrap(), record_before);
+    assert_eq!(documents(root.path()), before);
+    assert!(!root.path().join("dist").exists());
+    let prepared = match owner
+        .resume(*pending, supplied("second", b"payload"))
+        .await
+        .unwrap()
+    {
+        Preparation::Ready(prepared) => prepared,
+        _ => panic!("both inputs supplied"),
+    };
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        replacement: prepared.view().replacement(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+    };
+    let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_)))
+    ));
+    assert!(root.path().join("dist/result.mrpack").is_file());
+    assert!(root.path().join("dist/client.zip").is_file());
+    assert_eq!(documents(root.path()), before);
+    assert_eq!(fs::read(&record_path).unwrap(), record_before);
+    owner.release_completed(handle.id());
+    drop((outcome, handle));
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn obsolete_build_schemas_are_refused_without_rewriting_saved_work() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let state = host.path().join("state");
+    let (owner, governor) = engine(state.clone());
+    suspend_first(&owner, root.path()).await;
+    let path = records(&state).pop().unwrap();
+    let current = fs::read(&path).unwrap();
+    let before = documents(root.path());
+    for schema in [0, 4, 6] {
+        let mut wire: serde_json::Value = serde_json::from_slice(&current).unwrap();
+        wire["schema"] = schema.into();
+        let bytes = serde_json::to_vec(&wire).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let error = owner
             .resume_saved_build(root.path().to_path_buf())
             .await
-            .unwrap();
-        let SavedBuildResume::Prepared(prepared) = resumed else {
-            panic!("saved build not prepared")
-        };
-        let Preparation::NeedsInput(pending) = prepared.preparation else {
-            panic!("second input should remain pending")
-        };
-        assert_eq!(pending.build().unwrap().unresolved.len(), 1);
-        assert_eq!(fs::read(&record_path).unwrap(), record_before);
+            .err()
+            .expect("an obsolete format cannot resume");
+        assert!(format!("{error:#}").contains("Unsupported pending build schema"));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
         assert_eq!(documents(root.path()), before);
         assert!(!root.path().join("dist").exists());
-        let prepared = match owner
-            .resume(*pending, supplied("second", b"payload"))
-            .await
-            .unwrap()
-        {
-            Preparation::Ready(prepared) => prepared,
-            _ => panic!("both inputs supplied"),
-        };
-        let grant = ExecutionGrant {
-            plan: prepared.view().plan(),
-            replacement: prepared.view().replacement(),
-            network: NetworkPermission::Offline,
-            run_installer: false,
-            run_runtime: false,
-        };
-        let mut handle = owner.start(prepared.authorize(grant).unwrap()).unwrap();
-        let outcome = handle.wait().await;
-        assert!(matches!(
-            &*outcome,
-            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_)))
-        ));
-        assert!(root.path().join("dist/result.mrpack").is_file());
-        assert!(root.path().join("dist/client.zip").is_file());
-        assert_eq!(documents(root.path()), before);
-        assert_eq!(fs::read(&record_path).unwrap(), record_before);
-        owner.release_completed(handle.id());
-        drop((outcome, handle));
-        owner.shutdown().await;
-        assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
+    fs::write(&path, &current).unwrap();
+    assert!(matches!(
+        owner
+            .resume_saved_build(root.path().to_path_buf())
+            .await
+            .unwrap(),
+        SavedBuildResume::Prepared(_)
+    ));
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
 #[tokio::test]
 async fn stale_and_missing_saved_build_inspection_is_read_only() {
     for changed in ["intent", "bindings", "lock", "source"] {

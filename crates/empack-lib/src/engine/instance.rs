@@ -1000,13 +1000,9 @@ fn verify_current_file(
 }
 
 impl InstancePlan {
-    pub(super) fn base(
-        &self,
-        version: super::snapshot::FingerprintVersion,
-        cancel: &Cancellation,
-    ) -> Result<[u8; 32]> {
+    pub(super) fn base(&self, cancel: &Cancellation) -> Result<[u8; 32]> {
         self.root.revalidate(&self.snapshot, cancel)?;
-        self.snapshot.fingerprint(version)
+        self.snapshot.fingerprint()
     }
     pub(super) fn launch_lease(
         &self,

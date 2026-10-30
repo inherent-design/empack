@@ -19,15 +19,12 @@ pub(super) struct Record {
     pub files: Vec<SavedFile>,
 }
 impl Record {
-    pub(super) fn fingerprint_version(
-        &self,
-    ) -> Result<crate::engine::snapshot::FingerprintVersion> {
-        use crate::engine::snapshot::FingerprintVersion;
-        match self.schema {
-            4 => Ok(FingerprintVersion::NativeV1),
-            5 => Ok(FingerprintVersion::PersistentV2),
-            _ => anyhow::bail!("Unsupported pending build schema"),
-        }
+    pub(super) fn validate_schema(&self) -> Result<()> {
+        ensure!(
+            self.schema == 5,
+            "Unsupported pending build schema; prepare the build again with this empack version"
+        );
+        Ok(())
     }
 }
 #[derive(Serialize, Deserialize)]
