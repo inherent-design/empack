@@ -55,6 +55,12 @@ impl Publisher {
             .resolve_project_state(root)?
             .map(|(_, directory)| directory))
     }
+    /// Retain only root identity, under publication coordination, before saving host work.
+    /// This creates no project mutation or execution authority.
+    pub(in crate::engine) fn retain_root_association(&self, root: &ProjectReadRoot) -> Result<()> {
+        self.project_state(root)?;
+        root.check_binding()
+    }
     /// An association's opaque original key remains bound to this live root.
     pub(in crate::engine) fn bound_root_key(&self, root: &ProjectReadRoot) -> Result<String> {
         match self.resolve_project_state(root)? {

@@ -264,11 +264,13 @@ async fn save(
     let retained_files = data.content.len();
     let pending_files = data.downloads.len();
     let state = config.state_root.clone();
+    let binding_state = state.clone();
     let record = scope.spawn_blocking(
         config.resources.capture,
         config.resources.prepared,
         move |cancel| {
-            let (_, binding) = store::bind_for(Kind::Instance, &data.target, &cancel)?;
+            let (_, binding) =
+                store::bind_for(&binding_state, Kind::Instance, &data.target, &cancel)?;
             let base = data.instance.base(&cancel)?;
             let record = Record {
                 schema: 1,

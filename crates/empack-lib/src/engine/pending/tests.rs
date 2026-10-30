@@ -62,7 +62,7 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
     for kind in [Kind::Import, Kind::Synchronization, Kind::Instance] {
         let record = OpaqueRecord {
             schema: if kind == Kind::Synchronization { 2 } else { 1 },
-            binding: store::bind_for(kind, &target, &cancel).unwrap().1,
+            binding: store::bind_for(&state, kind, &target, &cancel).unwrap().1,
             marker: 0,
         };
         store::save(&state, kind, &target, &record, None, &cancel).unwrap();
@@ -268,7 +268,7 @@ fn pending_replacement_rejects_stale_cleanup_and_cross_root_selection() {
     let cancel = Cancellation::default();
     let record = OpaqueRecord {
         schema: 1,
-        binding: store::bind(&target, &cancel).unwrap().1,
+        binding: store::bind(&state, &target, &cancel).unwrap().1,
         marker: 0,
     };
     let saved = store::save(&state, Kind::Import, &target, &record, None, &cancel).unwrap();

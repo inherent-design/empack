@@ -172,3 +172,94 @@ fn native_root_associations_reject_corrupt_foreign_and_duplicate_claims_without_
         assert!(!state.exists("retention.json"));
     }
 }
+
+#[test]
+fn pending_records_use_associated_parent_and_target_without_rebinding_copies() {
+    use crate::engine::continuation_store::{self as store, BoundRecord, Kind};
+    use empack_core::digest::ExpectedDigest;
+    #[derive(Serialize, Deserialize)]
+    struct Record {
+        schema: u32,
+        binding: store::Binding,
+    }
+    impl BoundRecord for Record {
+        fn binding(&self) -> &store::Binding {
+            &self.binding
+        }
+        fn schema(&self) -> u32 {
+            self.schema
+        }
+    }
+    for exists in [false, true] {
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("project");
+        if exists {
+            fixture(&target);
+        }
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("private");
+        let parent_root = ProjectReadRoot::open(parent.path()).unwrap();
+        let target_root = exists.then(|| ProjectReadRoot::open(&target).unwrap());
+        let cancel = Cancellation::default();
+        assert!(
+            store::observe(&state, Kind::Import, &target, &cancel)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !state.exists(),
+            "inspection cannot create identity evidence"
+        );
+        let mut record = Record {
+            schema: 1,
+            binding: store::bind(&state, &target, &cancel).unwrap().1,
+        };
+        let saved = store::save(&state, Kind::Import, &target, &record, None, &cancel).unwrap();
+        let publisher = Publisher::open(&state).unwrap();
+        // Model a record saved under the prior device label. Production never
+        // edits saved bindings or moves the physical coordination directory.
+        record.binding.parent = move_state_to_prior_device(&publisher, &parent_root);
+        if let Some(root) = &target_root {
+            record.binding.project = Some(move_state_to_prior_device(&publisher, root));
+        }
+        let mut digest = Sha256::new();
+        digest.update(record.binding.parent.as_bytes());
+        digest.update([0]);
+        digest.update(b"project");
+        let name = format!(
+            "{}.json",
+            ExpectedDigest::Sha256(digest.finalize().into()).hex()
+        );
+        let pending = state.join("pending-imports");
+        fs::remove_file(pending.join(saved.name)).unwrap();
+        let bytes = serde_json::to_vec(&record).unwrap();
+        fs::write(pending.join(&name), &bytes).unwrap();
+        let loaded =
+            store::read::<Record>(&state, Kind::Import, &target, store::MAX_RECORD, &cancel)
+                .unwrap()
+                .expect("saved import must remain discoverable under its associated parent");
+        assert_eq!(loaded.0.name, name);
+        assert_eq!(loaded.1.binding.parent, record.binding.parent);
+        assert_eq!(loaded.1.binding.project, record.binding.project);
+        let observed = store::observe(&state, Kind::Import, &target, &cancel)
+            .unwrap()
+            .unwrap();
+        assert_eq!(observed.identity(), loaded.0.identity());
+        assert_eq!(fs::read(pending.join(&name)).unwrap(), bytes);
+        assert!(!state.join(root_key(&parent_root).unwrap()).exists());
+        if let Some(root) = &target_root {
+            assert!(!state.join(root_key(root).unwrap()).exists());
+        }
+        if exists {
+            // Release the captured directory before the replacement fixture's rename.
+            drop(target_root);
+            fs::rename(&target, parent.path().join("original")).unwrap();
+            fixture(&target);
+            assert!(
+                store::read::<Record>(&state, Kind::Import, &target, store::MAX_RECORD, &cancel)
+                    .is_err()
+            );
+            assert_eq!(fs::read(pending.join(&name)).unwrap(), bytes);
+        }
+    }
+}

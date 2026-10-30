@@ -280,7 +280,7 @@ fn details(
         PendingKind::Import => Kind::Import,
         _ => Kind::Synchronization,
     };
-    let binding = store::bind_for(kind, &op.root, cancel)?.1;
+    let binding = store::bind_for(state, kind, &op.root, cancel)?.1;
     let current = if op.kind == PendingKind::Build {
         serde_json::from_value::<Vec<Option<[u8; 32]>>>(record["documents"].clone())?
             == binding.documents

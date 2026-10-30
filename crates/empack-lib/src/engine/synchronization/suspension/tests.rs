@@ -27,7 +27,8 @@ async fn small_record_roundtrip(preseed: bool, migration: bool) {
         )
         .unwrap();
     let context =
-        SyncInputContext::capture(target.clone(), &workspace, &Cancellation::default()).unwrap();
+        SyncInputContext::capture(&state, target.clone(), &workspace, &Cancellation::default())
+            .unwrap();
     let project = if migration {
         let mut intent = project.intent().clone();
         intent.runtime.minecraft = empack_core::model::GameVersion::parse("1.20.2").unwrap();

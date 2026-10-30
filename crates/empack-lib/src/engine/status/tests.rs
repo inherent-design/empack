@@ -137,7 +137,7 @@ fn status_reports_pending_presence_without_validating_or_rewriting_it() {
     fs::create_dir(&root).unwrap();
     let state = parent.path().join("state");
     let cancel = Cancellation::default();
-    let (_, binding) = store::bind(&root, &cancel).unwrap();
+    let (_, binding) = store::bind(&state, &root, &cancel).unwrap();
     store::save(
         &state,
         Kind::Import,

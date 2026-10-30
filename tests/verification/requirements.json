@@ -4223,7 +4223,8 @@
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "X",
+        "N"
       ],
       "risk": "important",
       "run_gate": "pr",
@@ -4393,6 +4394,27 @@
           "assertions": [
             "Four native record families preserve distinct unavailable diagnostics and incomplete requirements; captured host JSON/text agrees with inspected identities and public next commands",
             "Inspection and preview preserve neighboring state and reject selecting an operation from another root"
+          ]
+        },
+        {
+          "id": "UX-034.associated-pending-root",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::root_state::pending_records_use_associated_parent_and_target_without_rebinding_copies"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Previously associated parent and existing-target identities preserve pending-record lookup under a controlled prior-device namespace without creating replacement state during reads",
+            "Absent targets remain distinguishable from replaced existing targets; replacement rejects resume without changing the retained record",
+            "Opaque inspection and typed loading select the same unchanged pending record and operation identity"
           ]
         }
       ],

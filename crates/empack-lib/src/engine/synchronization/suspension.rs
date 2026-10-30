@@ -10,7 +10,7 @@ use crate::{
         documents::DocumentCodec,
         mrpack::{AcquiredBuildFile, LockedFileKey},
         project::{ProjectRevision, WorkspaceSnapshot},
-        publication::root_key,
+        publication::RecoveryReader,
         resources::ResourceRequest,
         runtime::{RetainedOutput, WorkScope},
         snapshot::Observation,
@@ -35,13 +35,15 @@ pub struct SyncInputContext {
 impl SyncInputContext {
     /// Bind the exact captured documents, including an absent first lock.
     pub fn capture(
+        state: &std::path::Path,
         target: PathBuf,
         workspace: &WorkspaceSnapshot,
         cancel: &Cancellation,
     ) -> Result<Self> {
-        let (_, binding) = store::bind(&target, cancel)?;
+        let (_, binding) = store::bind(state, &target, cancel)?;
         ensure!(
-            binding.project.as_ref() == Some(&root_key(workspace.root())?),
+            binding.project.as_ref()
+                == Some(&RecoveryReader::new(state.into()).bound_root_key(workspace.root())?),
             "Synchronization target changed"
         );
         for (index, name) in ["empack.yml", "empack.bindings.yml", "empack.lock"]

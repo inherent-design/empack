@@ -2,7 +2,7 @@
 use crate::application::process_runtime::Cancellation;
 use crate::engine::{
     native,
-    publication::{open_private_directory, root_key},
+    publication::{Publisher, RecoveryReader, open_private_directory},
     snapshot::{Observation, ProjectReadRoot, SnapshotLimits},
     staging::create_temporary,
 };
@@ -118,7 +118,7 @@ impl SavedRecord {
         }
     }
 }
-fn location(target: &Path) -> Result<(ProjectReadRoot, String, String)> {
+fn location(state: &Path, target: &Path) -> Result<(ProjectReadRoot, String, String)> {
     ensure!(target.is_absolute(), "Operation target must be absolute");
     let parent =
         ProjectReadRoot::open(target.parent().context("Operation target needs a parent")?)?;
@@ -128,7 +128,7 @@ fn location(target: &Path) -> Result<(ProjectReadRoot, String, String)> {
         .context("Operation target needs a portable name")?;
     PortableRelPath::parse(leaf, PathSyntax::ArtifactName)?;
 
-    let parent_key = root_key(&parent)?;
+    let parent_key = RecoveryReader::new(state.into()).bound_root_key(&parent)?;
     let mut digest = Sha256::new();
     digest.update(parent_key.as_bytes());
     digest.update([0]);
@@ -139,16 +139,21 @@ fn location(target: &Path) -> Result<(ProjectReadRoot, String, String)> {
     );
     Ok((parent, leaf.to_owned(), name))
 }
-pub(in crate::engine) fn bind(target: &Path, cancel: &Cancellation) -> Result<(String, Binding)> {
-    bind_for(Kind::Import, target, cancel)
+pub(in crate::engine) fn bind(
+    state: &Path,
+    target: &Path,
+    cancel: &Cancellation,
+) -> Result<(String, Binding)> {
+    bind_for(state, Kind::Import, target, cancel)
 }
 pub(in crate::engine) fn bind_for(
+    state: &Path,
     kind: Kind,
     target: &Path,
     cancel: &Cancellation,
 ) -> Result<(String, Binding)> {
-    let (parent, leaf, name) = location(target)?;
-    let parent_key = root_key(&parent)?;
+    let (parent, leaf, name) = location(state, target)?;
+    let parent_key = RecoveryReader::new(state.into()).bound_root_key(&parent)?;
     let project = match parent.directory.symlink_metadata(&leaf) {
         Ok(metadata) => {
             ensure!(
@@ -193,7 +198,10 @@ pub(in crate::engine) fn bind_for(
         name,
         Binding {
             parent: parent_key,
-            project: project.as_ref().map(root_key).transpose()?,
+            project: project
+                .as_ref()
+                .map(|root| RecoveryReader::new(state.into()).bound_root_key(root))
+                .transpose()?,
             documents,
         },
     ))
@@ -226,7 +234,7 @@ fn observe_to(
     maximum: u64,
     cancel: &Cancellation,
 ) -> Result<Option<Cleanup>> {
-    let (_, _, name) = location(target)?;
+    let (_, _, name) = location(state, target)?;
     let directory = match open_private_directory(&state.join(kind.directory()), false) {
         Ok(directory) => directory,
         Err(error) if missing(&error) => return Ok(None),
@@ -255,7 +263,7 @@ pub(in crate::engine) fn record_bytes(
     kind: Kind,
     target: &Path,
 ) -> Result<Option<u64>> {
-    let (_, _, name) = location(target)?;
+    let (_, _, name) = location(state, target)?;
     let directory = match open_private_directory(&state.join(kind.directory()), false) {
         Ok(directory) => directory,
         Err(error) if missing(&error) => return Ok(None),
@@ -280,7 +288,7 @@ pub(in crate::engine) fn read<R: BoundRecord>(
     maximum: u64,
     cancel: &Cancellation,
 ) -> Result<Option<(SavedRecord, R)>> {
-    let (name, binding) = bind_for(kind, target, cancel)?;
+    let (name, binding) = bind_for(state, kind, target, cancel)?;
     let directory = match open_private_directory(&state.join(kind.directory()), false) {
         Ok(directory) => directory,
         Err(error) if missing(&error) => return Ok(None),
@@ -311,7 +319,7 @@ pub(in crate::engine) fn read<R: BoundRecord>(
         "Saved operation is stale: target identity or documents changed"
     );
     ensure!(
-        bind_for(kind, target, cancel)?.1 == binding,
+        bind_for(state, kind, target, cancel)?.1 == binding,
         "Operation target changed during inspection"
     );
     Ok(Some((
@@ -333,10 +341,25 @@ pub(in crate::engine) fn save<R: BoundRecord>(
     prior: Option<&SavedRecord>,
     cancel: &Cancellation,
 ) -> Result<SavedRecord> {
-    let (name, binding) = bind_for(kind, target, cancel)?;
+    cancel.check()?;
+    let (name, binding) = bind_for(state, kind, target, cancel)?;
     ensure!(
         record.binding() == &binding,
         "Operation target changed before suspension"
+    );
+    // Establish identity before publishing a durable record. Read-only lookup must
+    // never create these associations. Release each publication lock before taking
+    // the continuation lock; parent and target acquisition are never nested.
+    let (parent, leaf, _) = location(state, target)?;
+    let publisher = Publisher::open(state)?;
+    publisher.retain_root_association(&parent)?;
+    if binding.project.is_some() {
+        let project = ProjectReadRoot::open_child(&parent, &leaf)?;
+        publisher.retain_root_association(&project)?;
+    }
+    ensure!(
+        bind_for(state, kind, target, cancel)?.1 == binding,
+        "Operation target changed while retaining its identity"
     );
     let directory = open_private_directory(&state.join(kind.directory()), true)?;
     let _lock = lock(&directory)?;
@@ -379,7 +402,7 @@ pub(in crate::engine) fn save<R: BoundRecord>(
         drop(file);
         cancel.check()?;
         ensure!(
-            bind_for(kind, target, cancel)?.1 == binding,
+            bind_for(state, kind, target, cancel)?.1 == binding,
             "Operation target changed before suspension"
         );
         directory.rename(&temporary, &directory, &name)?;

@@ -413,6 +413,7 @@ pub(super) fn plan(
     };
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
+    let root_identity = recovery.bound_root_key(&root)?;
     let record_path = ProjectLayout::path(&ManagedPath::InstanceRecord)?;
     let subscription_path = ProjectLayout::path(&ManagedPath::InstanceSubscription)?;
     let mut snapshot = root.capture(
@@ -428,16 +429,14 @@ pub(super) fn plan(
             subscription.trust()?;
         }
         match &selected {
-            SelectedRelease::Subscribed(proof) => {
-                proof.validate_current(&recovery.bound_root_key(&root)?, &bytes)?
-            }
+            SelectedRelease::Subscribed(proof) => proof.validate_current(&root_identity, &bytes)?,
             SelectedRelease::Publisher(_) => {
                 anyhow::bail!("Select the release against the instance's enrolled subscription")
             }
             SelectedRelease::Snapshot(_) => {}
         }
         ensure!(
-            subscription.root == recovery.bound_root_key(&root)?
+            subscription.root == root_identity
                 && subscription.pack == selected.release().document().pack,
             "Selected release belongs to another instance subscription"
         );
@@ -506,7 +505,7 @@ pub(super) fn plan(
                 "Preparation retains completed choices; change them explicitly"
             );
             ensure!(
-                previous.root == recovery.bound_root_key(&root)?,
+                previous.root == root_identity,
                 "Instance record belongs to another native root"
             );
             let target = descriptor(&previous.release)?;
@@ -591,7 +590,6 @@ pub(super) fn plan(
             );
         }
     }
-    let root_identity = recovery.bound_root_key(&root)?;
     let mut old_files = BTreeMap::new();
     let mut old_runtime = release.document().runtime.clone();
     if let Some(previous) = &previous {

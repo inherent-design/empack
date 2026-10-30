@@ -1099,7 +1099,13 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         let workspace = ProjectReader::new(RecoveryReader::new(root.path().join("state")))
             .capture(&target, &[], SnapshotLimits::default(), &Default::default())
             .unwrap();
-        let context = SyncInputContext::capture(target, &workspace, &Default::default()).unwrap();
+        let context = SyncInputContext::capture(
+            &root.path().join("state"),
+            target,
+            &workspace,
+            &Default::default(),
+        )
+        .unwrap();
         let mut intent = resolved.intent().clone();
         intent.runtime.minecraft = GameVersion::parse("1.21.2").unwrap();
         let revision = DocumentCodec
