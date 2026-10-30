@@ -34,8 +34,16 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let project = TestProject::new();
-        let host = tempfile::tempdir().unwrap();
+        Self::with_storage(TestProject::new(), tempfile::tempdir().unwrap())
+    }
+    #[cfg(target_os = "macos")]
+    fn new_in(parent: &std::path::Path) -> Self {
+        Self::with_storage(
+            TestProject::new_in(parent),
+            tempfile::tempdir_in(parent).unwrap(),
+        )
+    }
+    fn with_storage(project: TestProject, host: tempfile::TempDir) -> Self {
         let target = project.dir().join("instance");
         fs::create_dir(&target).unwrap();
         fs::write(target.join("player-notes.txt"), b"keep player notes").unwrap();
@@ -111,159 +119,167 @@ impl Fixture {
 #[test]
 fn journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys() {
     for legacy in [false, true] {
-        let fixture = Fixture::new();
-        let before = snapshot(fixture.project.dir());
-        fixture.prepare().arg("--dry-run").assert().success();
-        assert_eq!(snapshot(fixture.project.dir()), before);
-        assert!(!fixture.state.exists());
-        fixture.suspend(legacy);
-        if !legacy {
-            let initial = fixture.pending();
-            let inputs = initial["inputs"].as_array().unwrap();
-            assert!(inputs.iter().all(|input| input["needed"] == true));
-            let key = inputs
-                .iter()
-                .find(|input| input["filename"] == "first.jar")
-                .unwrap()["key"]
-                .as_str()
-                .unwrap();
-            let first = fixture.host.path().join("first renamed.bin");
-            fs::write(&first, ONE).unwrap();
-            fixture
-                .command()
-                .args([
-                    "pending",
-                    "resume",
-                    initial["id"].as_str().unwrap(),
-                    "--file",
-                    &format!("{key}={}", first.display()),
-                ])
-                .assert()
-                .failure()
-                .stderr(contains("exact manual inputs remain pending"));
-            assert_eq!(snapshot(fixture.project.dir()), before);
-            assert_ne!(fixture.pending()["id"], initial["id"]);
-        }
-        let operation = fixture.pending();
-        assert_eq!(operation["state"], "unverified");
-        assert_eq!(operation["requirements_complete"], true);
-        let inputs = operation["inputs"].as_array().unwrap();
-        assert_eq!(inputs.len(), 2);
-        for (key, bytes, verification, needed) in [
-            ("first-role", ONE, "retained; verification required", false),
-            (
-                "second-role",
-                TWO,
-                "not supplied; verification required",
-                true,
-            ),
-        ] {
-            let row = inputs.iter().find(|r| r["key"] == key).unwrap();
-            assert_eq!(row["digests"], json!([["selected-sha256", hash(bytes)]]));
-            assert_eq!(row["bytes"], bytes.len());
-            assert_eq!(row["verification"], verification);
-            assert_eq!(row["needed"], needed);
-            assert_eq!(row["provider_selection"], Value::Null);
-        }
-        let id = operation["id"].as_str().unwrap();
-        let key = inputs.iter().find(|r| r["needed"] == true).unwrap()["key"]
+        instance_roundtrip(Fixture::new(), legacy, |_, _| {});
+    }
+}
+
+fn instance_roundtrip(
+    fixture: Fixture,
+    legacy: bool,
+    after_suspend: impl FnOnce(&Fixture, &Value),
+) {
+    let before = snapshot(fixture.project.dir());
+    fixture.prepare().arg("--dry-run").assert().success();
+    assert_eq!(snapshot(fixture.project.dir()), before);
+    assert!(!fixture.state.exists());
+    fixture.suspend(legacy);
+    if !legacy {
+        let initial = fixture.pending();
+        let inputs = initial["inputs"].as_array().unwrap();
+        assert!(inputs.iter().all(|input| input["needed"] == true));
+        let key = inputs
+            .iter()
+            .find(|input| input["filename"] == "first.jar")
+            .unwrap()["key"]
             .as_str()
             .unwrap();
-        let supplied = fixture.host.path().join("second renamed.bin");
-        fs::write(&supplied, b"WRONG!").unwrap();
-        let association = format!("{key}={}", supplied.display());
-        let retained = snapshot(&fixture.state);
-        for (args, diagnostic) in [
-            (
-                vec!["pending", "resume", id, "--file", &association],
-                "Content differs from the accepted observation",
-            ),
-            (
-                vec!["pending", "resume", id, "--file", "unknown=missing"],
-                "exactly one displayed input",
-            ),
-            (
-                vec![
-                    "pending",
-                    "resume",
-                    id,
-                    "--file",
-                    &association,
-                    "--file",
-                    &association,
-                ],
-                "more than once",
-            ),
-        ] {
-            fixture
-                .command()
-                .args(args)
-                .assert()
-                .failure()
-                .stderr(contains(diagnostic));
-            assert_eq!(snapshot(fixture.project.dir()), before);
-            assert_eq!(snapshot(&fixture.state), retained);
-            assert_eq!(fixture.pending(), operation);
-        }
-        fs::remove_file(fixture.host.path().join("first renamed.bin")).unwrap();
-        fs::remove_file(&fixture.release).unwrap();
-        // Retention must survive ordinary cache eviction, not rely on a cache hit.
+        let first = fixture.host.path().join("first renamed.bin");
+        fs::write(&first, ONE).unwrap();
         fixture
             .command()
-            .args(["clean", "cache"])
-            .assert()
-            .success();
-        let cache = fixture.state.with_extension("cache");
-        assert!(!cache.exists() || snapshot(&cache).values().all(|bytes| bytes != ONE));
-        let protected = snapshot(&fixture.state);
-        fixture
-            .command()
-            .args(["clean", "retained"])
-            .assert()
-            .success();
-        assert_eq!(snapshot(&fixture.state), protected);
-        assert_eq!(fixture.pending(), operation);
-        fs::write(&supplied, TWO).unwrap();
-        let mut command = fixture.command();
-        if legacy {
-            command.args(["instance", "continue"]);
-        } else {
-            command.args(
-                operation["next"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_str().unwrap()),
-            );
-        }
-        command
-            .args(["--file", &association])
-            .assert()
-            .success()
-            .stdout(contains(hash(&fixture.payload)));
-        assert_eq!(fixture.list()["operations"], json!([]));
-        assert_eq!(
-            snapshot(&fixture.target.join("game")),
-            BTreeMap::from([
-                (
-                    PathBuf::from(".empack-layout"),
-                    b"empack-game-layout-v1\n".to_vec()
-                ),
-                (PathBuf::from("mods/first.jar"), ONE.to_vec()),
-                (PathBuf::from("mods/second.jar"), TWO.to_vec()),
+            .args([
+                "pending",
+                "resume",
+                initial["id"].as_str().unwrap(),
+                "--file",
+                &format!("{key}={}", first.display()),
             ])
+            .assert()
+            .failure()
+            .stderr(contains("exact manual inputs remain pending"));
+        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_ne!(fixture.pending()["id"], initial["id"]);
+    }
+    let operation = fixture.pending();
+    after_suspend(&fixture, &operation);
+    assert_eq!(operation["state"], "unverified");
+    assert_eq!(operation["requirements_complete"], true);
+    let inputs = operation["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 2);
+    for (key, bytes, verification, needed) in [
+        ("first-role", ONE, "retained; verification required", false),
+        (
+            "second-role",
+            TWO,
+            "not supplied; verification required",
+            true,
+        ),
+    ] {
+        let row = inputs.iter().find(|r| r["key"] == key).unwrap();
+        assert_eq!(row["digests"], json!([["selected-sha256", hash(bytes)]]));
+        assert_eq!(row["bytes"], bytes.len());
+        assert_eq!(row["verification"], verification);
+        assert_eq!(row["needed"], needed);
+        assert_eq!(row["provider_selection"], Value::Null);
+    }
+    let id = operation["id"].as_str().unwrap();
+    let key = inputs.iter().find(|r| r["needed"] == true).unwrap()["key"]
+        .as_str()
+        .unwrap();
+    let supplied = fixture.host.path().join("second renamed.bin");
+    fs::write(&supplied, b"WRONG!").unwrap();
+    let association = format!("{key}={}", supplied.display());
+    let retained = snapshot(&fixture.state);
+    for (args, diagnostic) in [
+        (
+            vec!["pending", "resume", id, "--file", &association],
+            "Content differs from the accepted observation",
+        ),
+        (
+            vec!["pending", "resume", id, "--file", "unknown=missing"],
+            "exactly one displayed input",
+        ),
+        (
+            vec![
+                "pending",
+                "resume",
+                id,
+                "--file",
+                &association,
+                "--file",
+                &association,
+            ],
+            "more than once",
+        ),
+    ] {
+        fixture
+            .command()
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(contains(diagnostic));
+        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_eq!(snapshot(&fixture.state), retained);
+        assert_eq!(fixture.pending(), operation);
+    }
+    fs::remove_file(fixture.host.path().join("first renamed.bin")).unwrap();
+    fs::remove_file(&fixture.release).unwrap();
+    // Retention must survive ordinary cache eviction, not rely on a cache hit.
+    fixture
+        .command()
+        .args(["clean", "cache"])
+        .assert()
+        .success();
+    let cache = fixture.state.with_extension("cache");
+    assert!(!cache.exists() || snapshot(&cache).values().all(|bytes| bytes != ONE));
+    let protected = snapshot(&fixture.state);
+    fixture
+        .command()
+        .args(["clean", "retained"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&fixture.state), protected);
+    assert_eq!(fixture.pending(), operation);
+    fs::write(&supplied, TWO).unwrap();
+    let mut command = fixture.command();
+    if legacy {
+        command.args(["instance", "continue"]);
+    } else {
+        command.args(
+            operation["next"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap()),
         );
-        assert_eq!(
-            fs::read(fixture.target.join("player-notes.txt")).unwrap(),
-            b"keep player notes"
-        );
-        assert_eq!(fs::read(&supplied).unwrap(), TWO);
-        fs::write(&fixture.release, &fixture.payload).unwrap();
-        let completed = snapshot(fixture.project.dir());
-        for _ in 0..2 {
-            fixture.prepare().assert().success();
-            assert_eq!(snapshot(fixture.project.dir()), completed);
-        }
+    }
+    command
+        .args(["--file", &association])
+        .assert()
+        .success()
+        .stdout(contains(hash(&fixture.payload)));
+    assert_eq!(fixture.list()["operations"], json!([]));
+    assert_eq!(
+        snapshot(&fixture.target.join("game")),
+        BTreeMap::from([
+            (
+                PathBuf::from(".empack-layout"),
+                b"empack-game-layout-v1\n".to_vec()
+            ),
+            (PathBuf::from("mods/first.jar"), ONE.to_vec()),
+            (PathBuf::from("mods/second.jar"), TWO.to_vec()),
+        ])
+    );
+    assert_eq!(
+        fs::read(fixture.target.join("player-notes.txt")).unwrap(),
+        b"keep player notes"
+    );
+    assert_eq!(fs::read(&supplied).unwrap(), TWO);
+    fs::write(&fixture.release, &fixture.payload).unwrap();
+    let completed = snapshot(fixture.project.dir());
+    for _ in 0..2 {
+        fixture.prepare().assert().success();
+        assert_eq!(snapshot(fixture.project.dir()), completed);
     }
 }
 
@@ -490,4 +506,30 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
     assert_eq!(fs::read(&first).unwrap(), ONE);
     assert!(!second.exists());
     assert!(!fixture.release.exists());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "opt-in native APFS images; no GUI, Java or normal instances"]
+fn journey_pending_instance_survives_native_remount_with_retained_inputs() {
+    let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
+    for legacy in [false, true] {
+        instance_roundtrip(
+            Fixture::new_in(volume.root()),
+            legacy,
+            |fixture, operation| {
+                let project = snapshot(fixture.project.dir());
+                let host = snapshot(fixture.host.path());
+                volume.remount().unwrap();
+                assert_eq!(snapshot(fixture.project.dir()), project);
+                assert_eq!(snapshot(fixture.host.path()), host);
+                assert_eq!(
+                    &fixture.pending(),
+                    operation,
+                    "retained work must survive remount"
+                );
+            },
+        );
+    }
+    volume.finish().unwrap();
 }

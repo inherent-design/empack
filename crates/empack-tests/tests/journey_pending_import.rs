@@ -29,15 +29,27 @@ struct ImportFixture {
 }
 impl ImportFixture {
     fn new() -> Self {
-        Self::with_files(json!([{
+        Self::with_files(Self::default_files())
+    }
+    fn default_files() -> Value {
+        json!([{
             "path":"resourcepacks/declared.zip", "downloads":["http://example.invalid/input.bin"],
             "fileSize":7, "hashes":{"sha256":"239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5"},
             "env":{"client":"required", "server":"required"}
-        }]))
+        }])
     }
     fn with_files(files: Value) -> Self {
-        let project = TestProject::new();
-        let host = tempfile::tempdir().unwrap();
+        Self::with_storage(files, TestProject::new(), tempfile::tempdir().unwrap())
+    }
+    #[cfg(target_os = "macos")]
+    fn new_in(parent: &std::path::Path) -> Self {
+        Self::with_storage(
+            Self::default_files(),
+            TestProject::new_in(parent),
+            tempfile::tempdir_in(parent).unwrap(),
+        )
+    }
+    fn with_storage(files: Value, project: TestProject, host: tempfile::TempDir) -> Self {
         let archive = project.dir().join("input.mrpack");
         let target = project.dir().join("restored");
         let state = host.path().join("state");
@@ -122,9 +134,17 @@ impl ImportFixture {
 
 #[test]
 fn journey_pending_import_replays_retained_archive_using_public_selector() {
-    let fixture = ImportFixture::new();
+    import_roundtrip(ImportFixture::new(), |_, _| {}, |_| {});
+}
+
+fn import_roundtrip(
+    fixture: ImportFixture,
+    after_suspend: impl FnOnce(&ImportFixture, &Value),
+    after_import: impl FnOnce(&ImportFixture),
+) {
     let selector = fixture.suspend();
     let operation = fixture.pending();
+    after_suspend(&fixture, &operation);
     assert_eq!(operation["state"], "unverified");
     assert_eq!(operation["requirements_complete"], false);
     assert_eq!(operation["inputs"], json!([]));
@@ -171,6 +191,7 @@ fn journey_pending_import_replays_retained_archive_using_public_selector() {
         .args(["--file", &association, "--import-local-files"])
         .assert()
         .success();
+    after_import(&fixture);
     assert_eq!(fixture.list()["operations"], json!([]));
     assert!(!fixture.archive.exists());
     assert_eq!(fs::read(&supplied).unwrap(), b"payload");
@@ -529,4 +550,49 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
             assert_eq!(snapshot(&fixture.target), completed);
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "opt-in native APFS images; no GUI, Java or normal projects"]
+fn journey_pending_import_survives_native_remount_and_reopens_created_root() {
+    let volume = empack_tests::harness::native_volume::ApfsFixture::new().unwrap();
+    let fixture = ImportFixture::new_in(volume.root());
+    import_roundtrip(
+        fixture,
+        |fixture, operation| {
+            let project = snapshot(fixture.project.dir());
+            let host = snapshot(fixture.host.path());
+            volume.remount().unwrap();
+            assert_eq!(snapshot(fixture.project.dir()), project);
+            assert_eq!(snapshot(fixture.host.path()), host);
+            assert_eq!(
+                &fixture.pending(),
+                operation,
+                "saved identity must survive remount"
+            );
+        },
+        |fixture| {
+            let project = snapshot(fixture.project.dir());
+            let host = snapshot(fixture.host.path());
+            volume.remount().unwrap();
+            let status = public_pending::report(
+                fixture.project.dir(),
+                &fixture.target,
+                &fixture.state,
+                &["status", "--json"],
+            );
+            assert_eq!(status["selected"], "author");
+            let author = status["contexts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["context"] == "author")
+                .unwrap();
+            assert_eq!(author["state"], "valid");
+            assert_eq!(snapshot(fixture.project.dir()), project);
+            assert_eq!(snapshot(fixture.host.path()), host);
+        },
+    );
+    volume.finish().unwrap();
 }

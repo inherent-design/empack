@@ -265,7 +265,15 @@ impl Default for TestProject {
 impl TestProject {
     /// Create a new empty test project directory.
     pub fn new() -> Self {
-        let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+        Self::from_temporary(tempfile::TempDir::new().expect("failed to create temp dir"))
+    }
+
+    /// Allocate only a new owned child, for fixtures on a selected test filesystem.
+    pub fn new_in(parent: &Path) -> Self {
+        Self::from_temporary(tempfile::tempdir_in(parent).expect("failed to create child temp dir"))
+    }
+
+    fn from_temporary(tmp: tempfile::TempDir) -> Self {
         let root = tmp.path().to_path_buf();
         Self { _tmp: tmp, root }
     }

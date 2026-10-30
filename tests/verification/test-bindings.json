@@ -10,6 +10,8 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::journey_pending_import::journey_pending_import_survives_native_remount_and_reopens_created_root", "binary": "empack-tests::journey_pending_import", "binary_name": "journey_pending_import", "boundary": "X", "api": "PEND", "platforms": ["macos"], "ignored": true, "test_features": ["minimal", "all"]},
+    {"id": "empack-tests::journey_pending_instance::journey_pending_instance_survives_native_remount_with_retained_inputs", "binary": "empack-tests::journey_pending_instance", "binary_name": "journey_pending_instance", "boundary": "X", "api": "PEND", "platforms": ["macos"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::journey_signed_channels_survive_native_remount", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "INST", "platforms": ["macos"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::api::suspension::tests::obsolete_build_schemas_are_refused_without_rewriting_saved_work", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::publication::creation::tests::creation_state_survives_associated_prior_device_labels_without_moving_coordination", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "PUB", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

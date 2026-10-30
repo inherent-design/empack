@@ -39,8 +39,11 @@ CLI = (
 SUITES = {
     "deterministic": Suite(),
     "cli": Suite(CLI),
-    "native-remount": Suite(("journey_publisher",), ignored=True, macos_only=True,
-                            cases=("journey_signed_channels_survive_native_remount",), timeout=600),
+    "native-remount": Suite(("journey_publisher", "journey_pending_import", "journey_pending_instance"),
+                            ignored=True, macos_only=True, timeout=600, cases=(
+                                "journey_signed_channels_survive_native_remount",
+                                "journey_pending_import_survives_native_remount_and_reopens_created_root",
+                                "journey_pending_instance_survives_native_remount_with_retained_inputs")),
     "import-corpus": Suite(("journey_import",)),
     "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
@@ -88,5 +91,5 @@ def nextest_command(action, suite, config, test_features):
         return command + ["--message-format", "json"]
     command += ["--no-tests", "fail", "--retries", "0", "--no-fail-fast"]
     if suite.ignored:
-        command += ["--test-threads", "2"]
+        command += ["--test-threads", "1" if suite.macos_only else "2"]
     return command

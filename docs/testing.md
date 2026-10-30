@@ -432,6 +432,14 @@ failed cleanup preserves its temporary directory for diagnosis.
 python3 scripts/verify.py native-remount --product-features default --test-features minimal
 ```
 
+The same suite remounts saved import and instance continuations. Public IDs and
+host/project bytes remain unchanged; continuation verifies supplied and retained
+inputs, preserves player notes and checks independent output inventories. The
+import case remounts again after creating the project, then requires valid author
+status and convergent sync/export. Native cases run serially to avoid interference
+between their device-allocation experiments; the same two images support repeat
+remounts without growing the fixture.
+
 Native PR verification requires the suite in both product/test graphs on macOS.
 Other hosts record explicit `NOT_APPLICABLE` evidence; missing permissions on
 macOS are a failure, not an applicability exemption. The native suite retains its

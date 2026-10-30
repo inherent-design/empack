@@ -185,8 +185,19 @@ impl ApfsFixture {
     pub fn remount(&self) -> Result<()> {
         let before = fs::metadata(&self.mount)?;
         let uuid = self.uuid()?;
-        self.detach(0)?;
-        self.attach(1, &self.blocker_mount)?;
+        if self
+            .owned()?
+            .iter()
+            .any(|(path, _)| path == &self.images[1])
+        {
+            // Release the earlier device before the subject, so the subject
+            // can take it on the next remount without allocating more images.
+            self.detach(1)?;
+            self.detach(0)?;
+        } else {
+            self.detach(0)?;
+            self.attach(1, &self.blocker_mount)?;
+        }
         self.attach(0, &self.mount)?;
         let after = fs::metadata(&self.mount)?;
         ensure!(

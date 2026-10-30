@@ -148,7 +148,7 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
                 "status": "listed", "binary-name": row["binary_name"], "testcases": {}})
             suite["testcases"][test] = {"ignored": row["ignored"], "filter-match": {"status": "matches"}}
         write_json(suite_dir / "inventory.json", inventory)
-        identities, _ = selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries)
+        identities, _ = selected_tests(inventory, SUITES[name].ignored, SUITES[name].binaries, SUITES[name].cases)
         # Synthetic successful rows test gate mechanics; these are not executions
         # of the real test IDs used to construct the expected receipt shape.
         xml = []

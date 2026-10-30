@@ -230,6 +230,9 @@ class AttemptPolicy(unittest.TestCase):
         from verification.suites import SUITES
         suite = SUITES["native-remount"]
         self.assertTrue(suite.ignored)
+        from verification.suites import nextest_command
+        command = nextest_command("run", suite, Path("fixture.toml"), "minimal")
+        self.assertEqual(command[-2:], ["--test-threads", "1"], "native fixtures share device allocation")
         self.assertIsNone(suite.inapplicable_reason("aarch64-apple-darwin"))
         for target in ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
             record = {}

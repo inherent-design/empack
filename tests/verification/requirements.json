@@ -4736,6 +4736,44 @@
             "Obsolete and unknown build schemas are refused through public engine resume without modifying saved bytes, author documents or artifacts",
             "Restoring the original supported record permits fresh preparation and does not itself authorize execution"
           ]
+        },
+        {
+          "id": "UX-035.native-import-remount",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_survives_native_remount_and_reopens_created_root"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual APFS device reassignment preserves the public saved-import ID and retained host/project bytes before continuation",
+            "Resume uses the original public selector after removal of the source archive, rejects wrong inputs, and independently verifies the exported inventory",
+            "A second remount after project creation preserves a valid author status and convergent sync/export; no saved metadata is edited"
+          ]
+        },
+        {
+          "id": "UX-035.native-instance-remount",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_survives_native_remount_with_retained_inputs"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual APFS remount preserves the public pending instance ID, retained first input and source/host bytes across both existing continuation commands",
+            "Wrong bytes preserve saved work; correct renamed input and retained content complete the exact independent game inventory without altering player notes",
+            "Fresh preparation after completion converges; fixture-owned volumes are cleaned up, with no Java or gameplay claim"
+          ]
         }
       ],
       "owner_now": [
