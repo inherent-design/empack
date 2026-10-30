@@ -10940,6 +10940,7 @@
           ],
           "assertions": [
             "Real held files produce OS busy status; releasing the reader and reassigning devices cannot cause a retry to detach the other backing",
+            "If the exact backing retires after a busy request, fresh absence completes retirement without touching the other image or deleting the backing; repeating detach is harmless",
             "Permanent busy reaches its finite attempt bound, reports failure and retains the owned backing; closing the held file permits ordinary non-forced cleanup"
           ]
         },

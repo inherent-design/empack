@@ -194,12 +194,15 @@ impl ApfsFixture {
         for attempt in 1..=DETACH_ATTEMPTS {
             // Every request is authorized by a fresh backing-to-device mapping.
             // A device returned by a failed attempt is never reused as authority.
-            let device = self
+            let Some((_, device)) = self
                 .owned()?
                 .into_iter()
                 .find(|(path, _)| path == &self.images[image])
-                .context("Owned image disappeared before detach")?
-                .1;
+            else {
+                // Retirement is the postcondition. An earlier busy status
+                // cannot invalidate a fresh observation of this exact backing.
+                return Ok(());
+            };
             match run(
                 "/usr/bin/hdiutil",
                 &["detach".as_ref(), device.as_ref()],
@@ -216,6 +219,16 @@ impl ApfsFixture {
                     return Ok(());
                 }
                 Err(error) => {
+                    if !self
+                        .owned()?
+                        .iter()
+                        .any(|(path, _)| path == &self.images[image])
+                    {
+                        eprintln!(
+                            "Owned APFS backing retired after a failed detach request: {error:#}"
+                        );
+                        return Ok(());
+                    }
                     if attempt == 1 || attempt == DETACH_ATTEMPTS || !is_busy(&error) {
                         self.report_open_files(image);
                     }
@@ -361,13 +374,20 @@ impl ApfsFixture {
                 failures.push(format!("{error:#}"));
             }
         }
-        ensure!(
-            failures.is_empty(),
-            "Image cleanup failed: {}",
-            failures.join("; ")
-        );
-        ensure!(self.owned()?.is_empty(), "Fixture images remain attached");
-        Ok(())
+        if self.owned()?.is_empty() {
+            if !failures.is_empty() {
+                eprintln!(
+                    "Fixture images retired after earlier cleanup failures: {}",
+                    failures.join("; ")
+                );
+            }
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Fixture images remain attached; cleanup failures: {}",
+                failures.join("; ")
+            )
+        }
     }
 
     fn preserve(&mut self) {
@@ -442,6 +462,27 @@ mod tests {
         let owned = volume.owned()?;
         assert!(!owned.iter().any(|(path, _)| path == &volume.images[0]));
         assert!(owned.iter().any(|(path, _)| path == &volume.images[1]));
+
+        volume.attach(0, &volume.mount)?;
+        let mut held = Some(fs::File::create(
+            volume.root().join("retired-after-busy.txt"),
+        )?);
+        let mut retired_after_busy = 0;
+        volume.detach_with_busy(0, || {
+            retired_after_busy += 1;
+            drop(held.take());
+            // The earlier request failed, but the exact owned backing can
+            // retire before its next retry. Fresh absence must win over that
+            // earlier status, without touching the blocker or deleting bytes.
+            volume.detach(0)
+        })?;
+        assert_eq!(retired_after_busy, 1);
+        let owned = volume.owned()?;
+        assert!(!owned.iter().any(|(path, _)| path == &volume.images[0]));
+        assert!(owned.iter().any(|(path, _)| path == &volume.images[1]));
+        assert!(volume.images[0].is_file());
+        volume.detach(0)?;
+        assert!(volume.images[0].is_file());
 
         volume.attach(0, &volume.mount)?;
         let held = fs::File::create(volume.root().join("held-until-failure.txt"))?;

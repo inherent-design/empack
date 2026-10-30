@@ -561,7 +561,12 @@ change after enrollment and installation, checks that UUID/inode/creation identi
 and fixture bytes survive, then exercises inspection, authenticated update, repair,
 rollback and trust floors. It uses `hdiutil`, `diskutil` and `plutil`, with Finder
 browsing/auto-open disabled. Fixture cleanup rechecks image ownership before detach;
-failed cleanup preserves its temporary directory for diagnosis.
+confirmed absence completes retirement even after an earlier tool failure. A still
+attached image is an error, and failed cleanup preserves its temporary directory
+for diagnosis. The held-file regression covers device reassignment, retirement
+between attempts, repeated detach and bounded refusal while a reader remains open.
+No forced detach is used. Those assertions do not establish the cause of a separate
+host failure where the image's devices remain attached after unmount.
 
 ```sh
 python3 scripts/verify.py native-remount --product-features default --test-features minimal
