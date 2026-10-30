@@ -377,7 +377,8 @@
       "evidence_tiers": [
         "H",
         "X",
-        "I"
+        "I",
+        "N"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -389,7 +390,8 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::application::commands::tests::dispatcher_preview_decline_and_invalid_input_preserve_whole_project",
-            "empack-lib::application::engine_host::tests::recovery_dispatch_inspects_previews_declines_and_recovers_native_publication"
+            "empack-lib::application::engine_host::tests::recovery_dispatch_inspects_previews_declines_and_recovers_native_publication",
+            "empack-lib::application::session::tests::cancelled_session_prompts_do_not_return_default_authorization"
           ],
           "required_platforms": [
             "linux",
@@ -402,7 +404,8 @@
           ],
           "assertions": [
             "Native dispatcher preview, decline and invalid additions preserve complete project bytes",
-            "Recovery inspect/preview/refusal preserve project and host records for both finish and restore; a headless host refuses with usage status and no confirmation prompt, while explicit approval completes the intended recovery"
+            "Recovery inspect/preview/refusal preserve project and host records for both finish and restore; a headless host refuses with usage status and no confirmation prompt, while explicit approval completes the intended recovery",
+            "A cancelled native session refuses default confirmations, text and selection values rather than returning fresh authorization from a headless prompt"
           ]
         },
         {
@@ -545,6 +548,24 @@
           "assertions": [
             "Recovery obtains its selector from public inspection and requires fresh approval; closed or piped input, preview, terminal decline and terminal Ctrl-C preserve pending evidence and project bytes/attributes",
             "Prompt interruption reports status 130, and a subsequent explicitly approved recovery completes the independent expected project inventory"
+          ]
+        },
+        {
+          "id": "UX-003.windows-native-prompt-cancellation",
+          "boundary": "N",
+          "test_ids": [
+            "empack-tests::native_interactive::native_windows_prompt_reads_retire_after_console_interrupt"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Confirmation, text, selection and fuzzy-selection adapters handle actual console Ctrl-C as interruption without returning default authorization",
+            "The private native child can obtain a separate follow-up decision on the same thread and preserves fixture files; the public recovery journey independently checks actual CLI wiring"
           ]
         }
       ],
@@ -9917,6 +9938,24 @@
             "The registry command accepts synthetic native inventories for macOS/Windows and minimal/all graphs while keeping rustdoc, Python and consumer identities with their separate producers",
             "Removing a required native identity from the selected host/graph fails the command; other-platform declarations cannot hide missing native coverage",
             "Synthetic inventories test command validation only and never establish execution on the represented platform"
+          ]
+        },
+        {
+          "id": "UX-088.owned-image-retirement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-tests::harness::native_volume::tests::native_image_cleanup_rechecks_ownership_after_busy_and_bounds_retirement"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real held files produce OS busy status; releasing the reader and reassigning devices cannot cause a retry to detach the other backing",
+            "Permanent busy reaches its finite attempt bound, reports failure and retains the owned backing; closing the held file permits ordinary non-forced cleanup"
           ]
         }
       ],

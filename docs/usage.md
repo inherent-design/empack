@@ -18,6 +18,8 @@ partial report, such as `outdated --strict`; its diagnostic goes to stderr. A fa
 before a report is available does not produce a successful empty report. Cancellation
 requests do not replace the completed result: cleanup and recovery failures remain
 visible, and an operation that already completed successfully remains successful.
+Ctrl-C while answering a prompt cancels that decision; it does not grant approval.
+A later resume or recovery still requires fresh confirmation.
 
 ## Workspace status
 

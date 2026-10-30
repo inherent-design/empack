@@ -40,17 +40,27 @@ async fn main() -> std::process::ExitCode {
     empack_lib::terminal::cursor::install_panic_hook();
     let cancellation = Cancellation::default();
     let signal_token = cancellation.clone();
-    let listener = tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            signal_token.cancel();
-        }
+    // Register before a command can enter a synchronous prompt. Registering
+    // inside a spawned future would leave its first poll racing that prompt.
+    #[cfg(unix)]
+    let interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt());
+    #[cfg(windows)]
+    let interrupt = tokio::signal::windows::ctrl_c();
+    let listener = interrupt.ok().map(|mut interrupt| {
+        tokio::spawn(async move {
+            if interrupt.recv().await.is_some() {
+                signal_token.cancel();
+            }
+        })
     });
     let result = empack_lib::application::commands::execute_command_with_cancellation(
         config,
         cancellation.clone(),
     )
     .await;
-    listener.abort();
+    if let Some(listener) = listener {
+        listener.abort();
+    }
     empack_lib::terminal::cursor::force_show_cursor();
     empack_lib::logger::global_shutdown();
     finish_command(result, &mut std::io::stderr().lock()).as_process_exit_code()

@@ -225,6 +225,22 @@ inventories. A real terminal checks decline and Ctrl-C at approval, preserving p
 evidence before a later explicit recovery. These are executable/interactive checks,
 not human discoverability, a usable modpack, or packaged consumer qualification.
 
+The Windows native prompt fixture checks console interruption for confirmation,
+text input, selection and fuzzy selection. It invokes the real native adapter in
+a private test child; the public recovery journey separately checks executable
+wiring. Prompt cancellation shares the host request's token. Its scoped monitor
+targets the prompt thread's synchronous I/O and retires before that thread can
+continue; it injects no answers and does not terminate the thread. Windows CI must
+execute these cases; a successful Unix build does not establish their behavior.
+
+APFS cleanup retries only the owned tool's OS busy status, with a finite attempt
+bound and fresh backing-to-device ownership before each request. Other failures
+remain failures. Diagnostics query open files only after confirming the exact
+owned mount; they cannot fall back to the host filesystem. The opt-in regression
+reassigns devices between busy failure and retry, checks that the other backing
+stays attached, and retains permanently busy backing until its reader is closed.
+This retries resource cleanup, not a failed product workflow or test scenario.
+
 `mise run coverage` uses [run-coverage.py](../../scripts/run-coverage.py) to obtain the
 instrumentation environment, build the product, and capture the instrumented Nextest
 inventory before execution. Its digest is supplied to test processes; product children

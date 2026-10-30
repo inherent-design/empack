@@ -203,7 +203,14 @@ fn configure_environment(
 ) {
     cmd.env_clear();
     for (key, value) in inherited {
-        if CHILD_ENVIRONMENT.iter().any(|allowed| key == allowed) {
+        if CHILD_ENVIRONMENT.iter().any(|allowed| {
+            if cfg!(windows) {
+                key.to_str()
+                    .is_some_and(|key| key.eq_ignore_ascii_case(allowed))
+            } else {
+                key == allowed
+            }
+        }) {
             cmd.env(key, value);
         }
     }
@@ -847,6 +854,38 @@ mod harness_tests {
             validate_qualification_binary(Some(&executable), Some(&digest), Some("0.8.3-beta"))
                 .unwrap_err();
         assert!(error.to_string().contains("version differs"));
+    }
+
+    #[test]
+    fn child_environment_uses_native_variable_name_case_rules() {
+        let root = tempfile::tempdir().unwrap();
+        let inherited = [
+            ("windir".into(), "Windows Ω".into()),
+            ("ComSpec".into(), "command path".into()),
+            ("pAtHeXt".into(), ".EXE".into()),
+            ("private_fixture_secret".into(), "excluded".into()),
+        ];
+        let mut command = Command::new("unused");
+        configure_environment(&mut command, root.path(), &inherited);
+        for (name, expected) in &inherited[..3] {
+            let value = command
+                .get_envs()
+                .find(|(key, _)| {
+                    key.to_str()
+                        .is_some_and(|key| key.eq_ignore_ascii_case(name.to_str().unwrap()))
+                })
+                .and_then(|(_, value)| value);
+            if cfg!(windows) {
+                assert_eq!(value, Some(expected.as_os_str()), "{name:?}");
+            } else {
+                assert_eq!(value, None, "Unix names remain case-sensitive: {name:?}");
+            }
+        }
+        assert!(
+            !command
+                .get_envs()
+                .any(|(key, _)| key == "private_fixture_secret")
+        );
     }
 
     #[test]
