@@ -1,6 +1,7 @@
 """Archive admission tests use inert fixture bytes, not a release executable."""
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import stat
@@ -14,6 +15,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from verification import package_archive as archive_reader
+import native_image_fixture
 spec = importlib.util.spec_from_file_location(
     "release_archive", Path(__file__).resolve().parents[1] / "check-release-archive.py")
 package = importlib.util.module_from_spec(spec)
@@ -146,6 +148,54 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         archive = self.tar([("empack", tarfile.REGTYPE, 0o755, b"large" * 1000)])
         with patch.object(archive_reader, "MAX_BINARY", 100), self.assertRaisesRegex(ValueError, "size"):
             package.extract_binary(archive, self.destination, "x86_64-unknown-linux-gnu")
+
+    def test_package_producer_binds_native_observation_before_running_the_cli_suite(self):
+        for target in package.TARGETS:
+            with self.subTest(target=target):
+                archive = self.root / f"empack-0.8.4-beta-{target}.{package.TARGETS[target][0]}"
+                digest, length = native_image_fixture.archive(archive, target)
+                output = self.root / target
+                def capture(binary, observed_target, observed_digest, directory, environment):
+                    self.assertEqual((observed_target, observed_digest), (target, digest))
+                    self.assertEqual(binary.read_bytes(), native_image_fixture.header(target))
+                    native_image_fixture.observation(directory, target, digest, length)
+                    return package.sha256(directory / "image.json")
+                def suite(arguments):
+                    suite_root = Path(arguments[arguments.index("--output") + 1])
+                    self.assertTrue((suite_root.parent / "native-image/image.json").is_file())
+                    self.assertEqual(arguments[arguments.index("--sha256") + 1], digest)
+                    (suite_root / "attempt").mkdir(parents=True)
+                    package.write_json(suite_root / "attempt/receipt.json", dict(
+                        status="PASS", source_revision="a" * 40, source_snapshot_sha256="b" * 64,
+                        worktree_dirty=False))
+                    return 0
+                with patch.object(package.verify, "checked", return_value=f"host: {target}"), \
+                        patch.object(package, "capture_image", side_effect=capture), \
+                        patch.object(package.verify, "main", side_effect=suite):
+                    code = package.main(["--archive", str(archive), "--sha256", package.sha256(archive),
+                                         "--version", "0.8.4-beta", "--target", target, "--output", str(output)])
+                self.assertEqual(code, 0)
+                path = next(output.glob("*/package.json"))
+                record = json.loads(path.read_text())
+                self.assertEqual(record["schema"], 2)
+                self.assertEqual(record["native_image_sha256"], package.sha256(path.parent / "native-image/image.json"))
+                self.assertEqual(record["executable"], dict(sha256=digest, length=length))
+
+    def test_missing_native_inspector_blocks_package_before_product_execution(self):
+        target = "x86_64-pc-windows-msvc"
+        archive = self.root / f"empack-0.8.4-beta-{target}.zip"
+        native_image_fixture.archive(archive, target)
+        with patch.object(package.verify, "checked", return_value=f"host: {target}"), \
+                patch.object(package, "capture_image", side_effect=package.InspectionUnavailable("missing native inspector")), \
+                patch.object(package.verify, "main") as suite:
+            code = package.main(["--archive", str(archive), "--sha256", package.sha256(archive),
+                                 "--version", "0.8.4-beta", "--target", target,
+                                 "--output", str(self.root / "attempts")])
+        self.assertEqual(code, 2)
+        suite.assert_not_called()
+        record = json.loads(next((self.root / "attempts").glob("*/package.json")).read_text())
+        self.assertEqual(record["status"], "BLOCKED")
+        self.assertIn("missing native inspector", record["reason"])
 
 
 if __name__ == "__main__":

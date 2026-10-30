@@ -5,12 +5,14 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import tomllib
 
 from .evidence import sha256, write_json
 from .receipts import check_suite_receipt
 from .release_inputs import release_version, stamped_sources
 from .product_build import COMPILATION_FILES, build_command, inspect_compilation
+from . import native_image
 
 TARGETS = {
     "x86_64-unknown-linux-gnu": ("tar.gz", "empack"),
@@ -135,7 +137,8 @@ def check_target(root, build_directory, execution_directory, version, target, re
         raise ValueError(f"Expected one archive execution attempt: {target}")
     path = packages[0]
     package = json.loads(path.read_text(encoding="utf-8"))
-    if (package.get("schema") != 1 or package.get("kind") != "extracted-release-archive"
+    if (package.get("schema") != 2 or package.get("kind") != "extracted-release-archive"
+            or package.get("qualification") is not False
             or package.get("status") != "PASS" or package.get("target") != target
             or package.get("version") != version or package.get("features") != "default"
             or package.get("profile") != "release"
@@ -143,6 +146,23 @@ def check_target(root, build_directory, execution_directory, version, target, re
             or package.get("archive") != {"name": expected_name, "sha256": build["archive"]["sha256"]}
             or package.get("executable") != build["executable"]):
         raise ValueError(f"Missing or unrelated archive execution: {target}")
+    observation = path.parent / "native-image" / "image.json"
+    if (path.is_symlink() or path.parent.is_symlink() or observation.parent.is_symlink()
+            or not observation.is_file() or observation.is_symlink()
+            or sha256(observation) != package.get("native_image_sha256")):
+        raise ValueError(f"Missing or changed native image observation: {target}")
+    # Inspect the bytes inside the checked archive, not a target label or a
+    # producer-supplied header summary. This never runs the extracted executable.
+    from .package_archive import capture_archive, extract_binary
+    with tempfile.TemporaryDirectory(prefix="empack archive admission ") as temporary:
+        directory = Path(temporary)
+        captured = directory / "captured-archive"
+        capture_archive(archive, captured, build["archive"]["sha256"])
+        binary, digest, length = extract_binary(captured, directory, target)
+        if {"sha256": digest, "length": length} != build["executable"]:
+            raise ValueError(f"Archived native image differs from the compiled executable: {target}")
+        image = native_image.inspect(observation, target, build["executable"],
+                                     native_image.inspect_architecture(binary, target))
     suite = check_suite_receipt(path.parent / "suite", ["cli"], target, revision, "default", version, "release")
     actual_receipt = next((path.parent / "suite").glob("*/receipt.json"))
     if (package.get("suite_receipt") != actual_receipt.relative_to(path.parent).as_posix()
@@ -152,7 +172,7 @@ def check_target(root, build_directory, execution_directory, version, target, re
         raise ValueError(f"Archive receipt does not bind the executed product: {target}")
     return {"build_sha256": sha256(build_directory / "build.json"),
             "package_sha256": sha256(path), "archive": build["archive"],
-            "executable": build["executable"], "suite": suite,
+            "executable": build["executable"], "suite": suite, "native_image": image,
             "compiled_product": {"target": target, "features": "default", "sha256": compiled["artifact"]["sha256"],
                                  "build_audit_sha256": compiled["artifact"]["build_audit_sha256"],
                                  "compilation_sha256": build["compilation_sha256"]}}
@@ -178,7 +198,7 @@ def admit_archives(root, artifacts, version, revision, output):
             raise ValueError("Archive changed while staging publication payload")
     (output / "SHA256SUMS").write_text("".join(
         f"{record['archive']['sha256']}  {record['archive']['name']}\n" for record in records), encoding="utf-8", newline="\n")
-    result = {"schema": 1, "kind": "release-archive-gate", "status": "PASS", "qualification": False,
+    result = {"schema": 2, "kind": "release-archive-gate", "status": "PASS", "qualification": False,
               "source_revision": revision, "version": version, "targets": records,
               "scope": "all five final archives and offline CLI suites; full candidate acceptance remains separate"}
     write_json(output / "archive-evidence.json", result)
@@ -190,7 +210,7 @@ def check_payload(directory, version, revision, evidence_sha256):
     if sha256(path) != evidence_sha256:
         raise ValueError("Publication evidence differs from the archive gate output")
     record = json.loads(path.read_text(encoding="utf-8"))
-    if (record.get("schema") != 1 or record.get("kind") != "release-archive-gate"
+    if (record.get("schema") != 2 or record.get("kind") != "release-archive-gate"
             or record.get("status") != "PASS" or record.get("source_revision") != revision
             or record.get("version") != version or len(record.get("targets", [])) != len(TARGETS)):
         raise ValueError("Publication payload belongs to another or incomplete candidate")
@@ -207,6 +227,10 @@ def check_payload(directory, version, revision, evidence_sha256):
                 or any(not re.fullmatch("[a-f0-9]{64}", compiled.get(key, ""))
                        for key in ("build_audit_sha256", "compilation_sha256"))):
             raise ValueError(f"Publication payload lacks compiled-product evidence: {target}")
+        image = entry.get("native_image", {})
+        if (image.get("target") != target or image.get("executable_sha256") != entry["executable"]["sha256"]
+                or not re.fullmatch("[a-f0-9]{64}", image.get("observation_sha256", ""))):
+            raise ValueError(f"Publication payload lacks native image evidence: {target}")
         if (entry["suite"]["target"] != target or entry["archive"]["name"] != name
                 or archive.is_symlink() or sha256(archive) != entry["archive"]["sha256"]
                 or archive.stat().st_size != entry["archive"]["length"]):

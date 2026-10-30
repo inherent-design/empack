@@ -16,6 +16,7 @@ from verification.consumer import INPUTS
 from verification.python_tests import PRODUCER_INPUTS
 from compiled_product_fixture import compilation
 from verification.product_build import build_command
+import native_image_fixture
 
 
 class ReleaseArchiveGate(unittest.TestCase):
@@ -52,8 +53,8 @@ class ReleaseArchiveGate(unittest.TestCase):
             build_dir = self.artifacts / f"release-build-{target}"
             build_dir.mkdir()
             archive = build_dir / release.archive_name(self.version, target)
-            archive.write_bytes(b"inert fixture bytes; not a distribution")
-            executable = {"sha256": "c" * 64, "length": 17}
+            digest, length = native_image_fixture.archive(archive, target)
+            executable = {"sha256": digest, "length": length}
             build = {"schema": 1, "kind": "release-archive-build", "version": self.version,
                      "source_revision": self.revision, "target": target, "features": "default",
                      "profile": "release", "inputs": self.inputs,
@@ -68,12 +69,15 @@ class ReleaseArchiveGate(unittest.TestCase):
                 attempt, receipt = ci_fixtures.fixture_attempt(execution / "suite", target, "default", ["cli"])
             receipt["artifact"]["version"] = self.version
             receipt["artifact"]["profile"] = "release"
+            receipt["artifact"]["sha256"] = digest
             write_json(attempt / "receipt.json", receipt)
-            package = {"schema": 1, "kind": "extracted-release-archive", "status": "PASS",
+            native_image_fixture.observation(execution / "native-image", target, digest, length)
+            package = {"schema": 2, "kind": "extracted-release-archive", "status": "PASS", "qualification": False,
                        "version": self.version, "target": target, "features": "default", "profile": "release",
                        "test_source_revision": self.revision, "test_worktree_dirty": False,
                        "test_source_snapshot_sha256": receipt["source_snapshot_sha256"],
                        "archive": {"name": archive.name, "sha256": sha256(archive)}, "executable": executable,
+                       "native_image_sha256": sha256(execution / "native-image/image.json"),
                        "suite_receipt": (attempt / "receipt.json").relative_to(execution).as_posix(),
                        "suite_receipt_sha256": sha256(attempt / "receipt.json")}
             write_json(execution / "package.json", package)
@@ -92,6 +96,79 @@ class ReleaseArchiveGate(unittest.TestCase):
             self.assertEqual((self.output / name).read_bytes(), (build / name).read_bytes())
         digest = sha256(self.output / "archive-evidence.json")
         self.assertEqual(release.check_payload(self.output, self.version, self.revision, digest), result)
+        manifest = self.output / "archive-evidence.json"
+        old = dict(result, schema=1)
+        write_json(manifest, old)
+        with self.assertRaisesRegex(ValueError, "incomplete candidate"):
+            release.check_payload(self.output, self.version, self.revision, sha256(manifest))
+        missing = copy.deepcopy(result)
+        del missing["targets"][0]["native_image"]
+        write_json(manifest, missing)
+        with self.assertRaisesRegex(ValueError, "native image evidence"):
+            release.check_payload(self.output, self.version, self.revision, sha256(manifest))
+
+    def test_archive_without_native_image_observation_cannot_be_staged(self):
+        _, execution, _ = self.paths["aarch64-apple-darwin"]
+        path = execution / "package.json"
+        package = json.loads(path.read_text())
+        write_json(path, dict(package, schema=1))
+        with self.assertRaisesRegex(ValueError, "unrelated archive execution"):
+            self.admit()
+        package.pop("native_image_sha256", None)
+        write_json(path, package)
+        with self.assertRaisesRegex(ValueError, "native image"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_native_image_metadata_and_backing_reports_are_rechecked_before_staging(self):
+        target = "aarch64-apple-darwin"
+        _, execution, _ = self.paths[target]
+        image = execution / "native-image/image.json"
+        package = execution / "package.json"
+        original_package, original_image = package.read_bytes(), image.read_bytes()
+        for field in ("image", "target", "commands", "tool"):
+            changed = json.loads(original_image)
+            if field == "image": changed[field]["architecture"] = "x86_64"
+            elif field == "target": changed[field] = "x86_64-apple-darwin"
+            elif field == "commands": changed[field]["dependencies"][-1] = "/unrelated/empack"
+            else: changed[field]["version"] = "another tool"
+            write_json(image, changed)
+            updated = json.loads(original_package)
+            updated["native_image_sha256"] = sha256(image)
+            write_json(package, updated)
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.assertFalse(self.output.exists())
+        package.write_bytes(original_package)
+        image.write_bytes(original_image)
+        (image.parent / "dependencies.log").write_text("replaced report")
+        with self.assertRaisesRegex(ValueError, "report changed"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_declared_target_cannot_substitute_for_the_archived_image_header(self):
+        target = "aarch64-apple-darwin"
+        build_dir, execution, attempt = self.paths[target]
+        archive = build_dir / release.archive_name(self.version, target)
+        # Rebind all byte identities to an x86 image while keeping the claimed
+        # ARM target and fabricated observation unchanged. No process is run.
+        digest, length = native_image_fixture.archive(
+            archive, target, native_image_fixture.header("x86_64-apple-darwin"))
+        build = json.loads((build_dir / "build.json").read_text())
+        build["executable"] = dict(sha256=digest, length=length)
+        build["archive"].update(sha256=sha256(archive), length=archive.stat().st_size)
+        build["compilation_sha256"] = compilation(build_dir, target, digest, self.revision, self.inputs["stamped"])
+        write_json(build_dir / "build.json", build)
+        receipt = json.loads((attempt / "receipt.json").read_text())
+        receipt["artifact"]["sha256"] = digest
+        write_json(attempt / "receipt.json", receipt)
+        package = json.loads((execution / "package.json").read_text())
+        package.update(executable=build["executable"], suite_receipt_sha256=sha256(attempt / "receipt.json"))
+        package["archive"]["sha256"] = sha256(archive)
+        write_json(execution / "package.json", package)
+        with self.assertRaisesRegex(ValueError, "architecture differs"):
+            self.admit()
+        self.assertFalse(self.output.exists())
 
     def test_cross_build_without_native_execution_is_not_a_pass(self):
         target = "aarch64-unknown-linux-gnu"

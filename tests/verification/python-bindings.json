@@ -1835,6 +1835,83 @@
       "requirements": [
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_native_image.NativeArchitecture.test_five_literal_abi_headers_report_expected_architecture_without_execution",
+      "boundary": "U",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_native_image.NativeArchitecture.test_wrong_architecture_formats_truncation_and_header_bounds_are_refused",
+      "boundary": "U",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_native_image.NativeImageEvidence.test_capture_uses_only_native_inspector_and_never_invokes_captured_product",
+      "boundary": "H",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_native_image.NativeImageEvidence.test_native_metadata_is_rechecked_against_checked_image_and_report_bytes",
+      "boundary": "H",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_native_image.NativeImageEvidence.test_unavailable_failed_empty_oversized_or_changed_inputs_do_not_finish_capture",
+      "boundary": "H",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_native_image.NativeImageInspector.test_installed_native_inspector_reads_a_copy_without_executing_it",
+      "boundary": "N",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_missing_native_inspector_blocks_package_before_product_execution",
+      "boundary": "H",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_release_archive.ReleaseArchiveAdmission.test_package_producer_binds_native_observation_before_running_the_cli_suite",
+      "boundary": "H",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_archive_without_native_image_observation_cannot_be_staged",
+      "boundary": "U",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_declared_target_cannot_substitute_for_the_archived_image_header",
+      "boundary": "U",
+      "requirements": [
+        "UX-085"
+      ]
+    },
+    {
+      "id": "python::test_release_gate.ReleaseArchiveGate.test_native_image_metadata_and_backing_reports_are_rechecked_before_staging",
+      "boundary": "U",
+      "requirements": [
+        "UX-085"
+      ]
     }
   ]
 }

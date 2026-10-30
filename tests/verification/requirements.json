@@ -11098,6 +11098,9 @@
       "required_assertions": "Extracted real binary executes offline journey; checksums, permissions, arch, dynamic dependencies and default features recorded; no workspace fallback.",
       "required_work": "Build/version/package once; native runner for ARM64 or label unavailable blocker; publish exact tested bytes.",
       "evidence_tiers": [
+        "U",
+        "H",
+        "N",
         "P"
       ],
       "risk": "critical",
@@ -11125,7 +11128,79 @@
           ],
           "required_product_features": [
             "default"
+          ],
+          "assertions": [
+            "Each exact target archive binds its compiled product, executable checksum and length, independently re-read native header and retained native dependency/load observation before the offline CLI journey can supply package evidence",
+            "The extracted real default-feature binary completes the local export/prepare journey outside the checkout without recompilation or fallback"
           ]
+        },
+        {
+          "id": "UX-085.image-header-admission",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_native_image.NativeArchitecture.test_five_literal_abi_headers_report_expected_architecture_without_execution",
+            "python::test_native_image.NativeArchitecture.test_wrong_architecture_formats_truncation_and_header_bounds_are_refused",
+            "python::test_release_gate.ReleaseArchiveGate.test_archive_without_native_image_observation_cannot_be_staged",
+            "python::test_release_gate.ReleaseArchiveGate.test_declared_target_cannot_substitute_for_the_archived_image_header",
+            "python::test_release_gate.ReleaseArchiveGate.test_native_image_metadata_and_backing_reports_are_rechecked_before_staging"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Independent literal ELF64, thin Mach-O64 and PE32+ headers cover the five shipping targets; wrong architecture, truncated or invalid headers and bounded PE offsets are refused without executing any image",
+            "Synthetic archive records require schema-2 native observations; the gate independently extracts real containers and rejects target/header disagreement even when all claimed content hashes are rebound",
+            "Missing or changed observations, inspector commands, versions and dependency reports cannot stage publication; a payload without the gate binding or with an obsolete schema is refused"
+          ],
+          "remaining_group_evidence": "Tooling policy and byte parsing only; inert ABI headers and fabricated reports cannot qualify a real release image or platform."
+        },
+        {
+          "id": "UX-085.image-observation-capture",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_native_image.NativeImageEvidence.test_capture_uses_only_native_inspector_and_never_invokes_captured_product",
+            "python::test_native_image.NativeImageEvidence.test_native_metadata_is_rechecked_against_checked_image_and_report_bytes",
+            "python::test_native_image.NativeImageEvidence.test_unavailable_failed_empty_oversized_or_changed_inputs_do_not_finish_capture",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_missing_native_inspector_blocks_package_before_product_execution",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_package_producer_binds_native_observation_before_running_the_cli_suite"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Controlled inspector calls retain report bytes and exact executable/tool identities, never invoke the captured product, and refuse missing, failed, timed-out, empty, oversized or changed observations",
+            "The public archive producer captures native metadata before its fixed CLI suite and binds the observation digest; an unavailable native inspector blocks before product execution"
+          ],
+          "remaining_group_evidence": "Controlled tool calls exercise the producer boundary; actual installed inspectors and final product execution remain separate."
+        },
+        {
+          "id": "UX-085.installed-image-inspector",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_native_image.NativeImageInspector.test_installed_native_inspector_reads_a_copy_without_executing_it"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "The installed native readelf, otool or dumpbin inspects a copy of the already-running interpreter; it records header architecture, nonempty native reports, exact tool identity and stable copied bytes without executing the copy"
+          ],
+          "remaining_group_evidence": "Native tooling integration on a copied interpreter, not an empack archive, consumer workflow or cross-platform product qualification."
         }
       ],
       "owner_now": [

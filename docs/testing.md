@@ -1294,6 +1294,30 @@ ARM64 evidence cannot substitute for each other merely because they share an OS.
 The initial `UX-085` package case checks local content export and instance preparation
 on all five targets. It is a partial binding, not complete package acceptance.
 
+Before the archive's CLI suite runs, the package producer reads a bounded native
+header and records architecture plus native linker/load reports. It uses GNU
+`readelf --dynamic --program-headers --version-info --wide` on Linux, Apple
+`otool -L -l` on macOS, and MSVC `dumpbin /HEADERS /DEPENDENTS` on Windows.
+The record retains the executable digest and length, actual inspector path, digest
+and version, exact arguments, host and timestamp, and bounded report bytes with
+their digests. A missing inspector blocks this package check; failed inspection or
+changed inputs fail it. No inspector invocation executes the analyzed binary.
+
+The archive gate independently extracts the checked archive and reads its header
+again before admitting the observation. It accepts only the five shipping thin,
+little-endian 64-bit profiles. Package and archive-gate records use schema 2;
+older records must be regenerated, not migrated. This establishes the recorded
+architecture and preserves dependency/load metadata; it is not a complete image
+validator or a claim of compatibility with untested OS versions. Actual execution
+on each native target remains a separate obligation. The controlled Python fixtures
+contain inert ABI headers and fabricated reports. The native inspector test reads
+a copy of its already-running interpreter without executing the copy; neither
+fixture kind supplies evidence for an actual empack distribution.
+
+Header rules follow the [Linux ELF definitions](https://github.com/torvalds/linux/blob/master/include/uapi/linux/elf.h),
+[Apple Mach-O definitions](https://github.com/apple-oss-distributions/xnu/blob/main/EXTERNAL_HEADERS/mach-o/loader.h)
+and [Microsoft PE format](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format).
+
 The release job rechecks both the archive-evidence digest and the qualification
 digest from its prerequisite jobs, including source, version and payload association,
 before publishing unchanged bytes. Candidate diagnostics stay in a separate workflow

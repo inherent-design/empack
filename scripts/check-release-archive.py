@@ -13,6 +13,7 @@ import zipfile
 
 import verify
 from verification.evidence import sha256, write_json
+from verification.native_image import capture as capture_image, InspectionUnavailable
 from verification.release import TARGETS
 
 from verification.package_archive import capture_archive, extract_binary
@@ -32,7 +33,7 @@ def main(argv=None):
     args.output.mkdir(parents=True, exist_ok=True)
     attempt = args.output.resolve() / str(uuid.uuid4())
     attempt.mkdir()
-    record = {"schema": 1, "kind": "extracted-release-archive", "status": "NOT_RUN",
+    record = {"schema": 2, "kind": "extracted-release-archive", "status": "NOT_RUN",
               "qualification": False, "created_at": datetime.now(timezone.utc).isoformat(),
               "archive": {"name": archive.name, "sha256": args.sha256},
               "version": args.version, "target": args.target, "features": "default", "profile": args.profile,
@@ -55,6 +56,8 @@ def main(argv=None):
             capture_archive(archive, captured, args.sha256)
             executable, digest, length = extract_binary(captured, root, args.target)
             record["executable"] = {"sha256": digest, "length": length}
+            record["native_image_sha256"] = capture_image(
+                executable, args.target, digest, attempt / "native-image", environment)
             suite_root = attempt / "suite"
             code = verify.main(["cli", "--binary", str(executable), "--sha256", digest,
                                 "--version", args.version, "--target", args.target,
@@ -76,7 +79,7 @@ def main(argv=None):
             if sha256(archive) != args.sha256 or sha256(captured) != args.sha256 or sha256(executable) != digest:
                 raise ValueError("Archive or extracted executable changed during verification")
             record["status"] = "PASS"
-    except verify.Blocked as error:
+    except (verify.Blocked, InspectionUnavailable) as error:
         record.update(status="BLOCKED", reason=str(error))
     except KeyboardInterrupt:
         record.update(status="FAIL", reason="Archive verification interrupted")
