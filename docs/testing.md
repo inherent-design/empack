@@ -426,8 +426,7 @@ Run `python3 scripts/check-import-corpus.py` or `mise run test:import:corpus` fo
 that selection; it also runs in the ordinary CLI and deterministic suites.
 `scripts/survey-imports.py` deliberately resolves moving upstream packs. Its reports
 identify themselves as rolling observations, record acquired archive and executable
-digests, and cannot qualify the pinned corpus. `scripts/import-smoke-test.py` remains
-a compatibility entry point for the survey. The small synthetic corpus does not
+digests, and cannot qualify the pinned corpus. The small synthetic corpus does not
 replace real-pack acceptance. The separate `python3 scripts/verify.py pinned-import`
 suite acquires the fixed Fabulously Optimized 6.5.0 archive and checks complete
 index/override preservation, two-sync convergence, and every downloaded mod's

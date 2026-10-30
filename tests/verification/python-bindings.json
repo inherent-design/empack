@@ -651,7 +651,7 @@
       ]
     },
     {
-      "id": "python::test_import_smoke.NativeSmokeContracts.test_legacy_survey_entrypoint_preserves_help_without_running_live_work",
+      "id": "python::test_import_smoke.NativeSmokeContracts.test_survey_help_does_not_run_live_work",
       "boundary": "H",
       "requirements": [
         "UX-017",

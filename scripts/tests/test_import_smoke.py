@@ -117,14 +117,14 @@ class NativeSmokeContracts(unittest.TestCase):
             self.assertEqual(list(layout.packs_dir.iterdir()), [])
             self.assertEqual(candidate.local_path, "")
 
-    def test_legacy_survey_entrypoint_preserves_help_without_running_live_work(self):
-        for name in ("survey-imports.py", "import-smoke-test.py"):
-            with self.subTest(name=name):
-                result = subprocess.run([sys.executable, str(Path(__file__).parents[1] / name), "--help"],
-                                        capture_output=True, text=True, timeout=10)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("not pinned regression qualification", result.stdout)
-                self.assertIn("--profile", result.stdout)
+    def test_survey_help_does_not_run_live_work(self):
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parents[1] / "survey-imports.py"), "--help"],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not pinned regression qualification", result.stdout)
+        self.assertIn("--profile", result.stdout)
 
     def test_survey_report_retains_observations_without_becoming_qualification(self):
         with tempfile.TemporaryDirectory() as temp:
