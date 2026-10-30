@@ -1230,3 +1230,5 @@ fn abrupt_runtime_owner_exit_blocks_publication_until_exact_acknowledgment() {
     );
     assert_eq!(fs::read(&neighbor).unwrap(), b"keep");
 }
+
+mod identity;

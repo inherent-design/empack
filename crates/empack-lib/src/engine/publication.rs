@@ -25,7 +25,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const JOURNAL_SCHEMA: u32 = 4;
+const JOURNAL_SCHEMA: u32 = 5;
+mod journal_identity;
+use journal_identity::JournalBinding;
 mod creation;
 mod recovery;
 mod retention;
@@ -174,7 +176,7 @@ impl From<&FileContent> for Fingerprint {
 struct Change {
     target: String,
     before: Option<Fingerprint>,
-    before_object: Option<Binding>,
+    before_object: Option<JournalBinding>,
     after: Option<Fingerprint>,
     sibling: Option<String>,
     unix_mode: Option<u32>,
@@ -184,7 +186,7 @@ struct Change {
 #[serde(deny_unknown_fields)]
 struct Journal {
     schema: u32,
-    root: Binding,
+    root: JournalBinding,
     operation: String,
     changes: Vec<Change>,
     groups: Vec<JournalCapture>,
@@ -287,6 +289,14 @@ impl Publisher {
         hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
     ) -> Result<PublicationReceipt> {
         let (plan, mut stage, base) = verified.into_parts();
+        // Admit durable evidence before creating coordination or retention state.
+        let root_binding = JournalBinding::capture(JOURNAL_SCHEMA, root.binding)?;
+        for change in plan.changes() {
+            let path = ProjectLayout::path(change.target())?;
+            if let Some(Observation::File(file)) = base.entries().get(&path) {
+                JournalBinding::capture(JOURNAL_SCHEMA, file.object)?;
+            }
+        }
         let state = self.project_state(root)?;
         let _lock = lock(&state)?;
         ensure!(
@@ -364,7 +374,9 @@ impl Publisher {
                     .as_ref()
                     .map(|_| format!(".empack-publish-{operation}-{index}")),
                 before: old.map(|value| Fingerprint::from(&content(value))),
-                before_object: old.map(|value| value.object.into()),
+                before_object: old
+                    .map(|value| JournalBinding::capture(JOURNAL_SCHEMA, value.object))
+                    .transpose()?,
                 after,
                 #[cfg(unix)]
                 unix_mode: old.map(|value| value.mode & 0o777),
@@ -406,7 +418,7 @@ impl Publisher {
         }
         let mut journal = Journal {
             schema: JOURNAL_SCHEMA,
-            root: root.binding.into(),
+            root: root_binding,
             operation,
             changes,
             groups: base
@@ -573,7 +585,10 @@ impl Publisher {
                 inverse.push(Change {
                     target: change.target.clone(),
                     before: fingerprint,
-                    before_object: actual.as_ref().map(|file| file.object.into()),
+                    before_object: actual
+                        .as_ref()
+                        .map(|file| JournalBinding::capture(journal.schema, file.object))
+                        .transpose()?,
                     after: change.before.clone(),
                     sibling: change
                         .before
@@ -634,8 +649,10 @@ impl Publisher {
             if !fingerprints_match(fingerprint.as_ref(), change.after.as_ref()) {
                 ensure!(
                     fingerprints_match(fingerprint.as_ref(), change.before.as_ref())
-                        && current.as_ref().map(|file| Binding::from(file.object))
-                            == change.before_object,
+                        && journal_identity::matches_optional(
+                            change.before_object.as_ref(),
+                            current.as_ref().map(|file| file.object),
+                        ),
                     publication_conflict(
                         &change.target,
                         change.before.as_ref(),
@@ -941,14 +958,14 @@ fn load_journal(directory: &Dir) -> Result<Option<Journal>> {
     )?;
     let journal: Journal = serde_json::from_slice(&bytes).context("Corrupt publication journal")?;
     ensure!(
-        journal.schema == JOURNAL_SCHEMA,
+        matches!(journal.schema, 4 | 5),
         "Unsupported publication journal schema"
     );
     Ok(Some(journal))
 }
 fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
     ensure!(
-        journal.schema == JOURNAL_SCHEMA && journal.root == Binding::from(root.binding),
+        journal.root.supports_schema(journal.schema) && journal.root.matches(root.binding),
         "Journal root or schema mismatch"
     );
     PortableRelPath::parse(&journal.operation, PathSyntax::ArtifactName)?;
@@ -970,7 +987,11 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
         ProjectLayout::classify(&path)?;
         collisions.insert_file(&path)?;
         ensure!(
-            change.before.is_some() == change.before_object.is_some(),
+            change.before.is_some() == change.before_object.is_some()
+                && change
+                    .before_object
+                    .as_ref()
+                    .is_none_or(|binding| binding.supports_schema(journal.schema)),
             "Invalid prior object binding"
         );
         ensure!(
@@ -1083,7 +1104,10 @@ fn check_pending(root: &ProjectReadRoot, path: &PortableRelPath, change: &Change
                 .map(|value| Fingerprint::from(&content(value)))
                 .as_ref(),
             change.before.as_ref()
-        ) && current.as_ref().map(|value| Binding::from(value.object)) == change.before_object,
+        ) && journal_identity::matches_optional(
+            change.before_object.as_ref(),
+            current.as_ref().map(|value| value.object),
+        ),
         publication_conflict(
             &change.target,
             change.before.as_ref(),

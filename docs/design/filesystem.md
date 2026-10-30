@@ -37,8 +37,16 @@ serial and file ID from `FILE_ID_INFO`. Linux export handles distinguish filesys
 object namespaces, including subvolumes. All three include creation identity and
 use separate platform domains. No pathname is accepted as substitute evidence.
 
-New saved-build fingerprints use these persistent observations. Old saved-build
-records retain their original strict comparison and are not rewritten by inspection.
+New saved-build fingerprints and schema-5 publication journals use these persistent
+observations. Journals bind both the root and each file's pre-publication identity.
+Schema-4 journals retain their original strict comparison for inspection, finish and
+restore; inspection does not rewrite them or infer missing volume evidence. Mixed
+identity formats are rejected. Replacing an unchanged pre-publication file with
+identical bytes still changes its object identity and cannot authorize recovery over
+that replacement. Recovery
+approval separately captures live observations and the exact journal revision.
+
+Old saved-build records likewise retain their original strict comparison.
 Unavailable UUID/export-handle support or creation metadata refuses retention that
 needs this evidence; it does not fall back to the current device number. The Linux
 generic UUID ioctl requires kernel support introduced in 6.9 and support from the
@@ -46,7 +54,8 @@ selected filesystem. Missing native-host evidence is not a supported-platform cl
 
 **Migration remains unfinished in the v0.8.4 development branch.** Root keys, other
 continuations and recovery journals still need the corresponding durable lookup and
-legacy migration. Persistent fingerprint support alone does not fix instance reopen
+legacy migration. Journal format support does not migrate state directories or
+creation/runtime/retention records. Persistent fingerprint support alone does not fix instance reopen
 or pending discovery after remount. Existing state must remain intact until its
 binding can be established; an ambiguous old device binding cannot authorize writes.
 

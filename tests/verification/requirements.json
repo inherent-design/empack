@@ -7990,7 +7990,31 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-078.versioned-recovery-identity",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::identity::recovery_journals_bind_persistent_objects_and_preserve_strict_legacy_records",
+            "empack-lib::engine::publication::tests::identity::recovery_refuses_mixed_identity_formats_and_same_bytes_replacements",
+            "empack-lib::engine::publication::tests::identity::journal_identity_separates_persistent_comparison_from_live_and_legacy_checks"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "New recovery journals retain persistent root and prior-file identities; finish and restore remain available for strict legacy schema-4 records without rewriting inspection",
+            "Mixed schemas, conflicting identities and same-byte replacement files refuse recovery without changing project bytes or the journal",
+            "Persistent comparison survives simulated device reassignment while live and legacy checks remain strict; unavailable identity refuses new publication before host coordination or retention state is created"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::native/snapshot/staging/verification/publication",
         "empack executable + empack-lib::application"
@@ -7999,7 +8023,7 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-079",
