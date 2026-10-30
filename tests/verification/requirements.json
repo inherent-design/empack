@@ -11220,7 +11220,7 @@
             "Release and PR cross builds use the shared audited producer with pinned Cross and retain proof before packaging",
             "Applying the release workflow upload globs retains the compiler proof and suite files required by auxiliary admission after download",
             "Captured compiler stdout is replayed through only the observed pinned Cross/Rustup prelude; altered evidence and unknown launcher output cannot qualify a build",
-            "The fixed archive workflow uploads the exact compilation-attempt directory even when Cargo fails before packaging; failed-build diagnostics do not depend on a success-only environment assignment or count as admitted archive proof"
+            "The fixed archive workflow uploads the exact compilation-attempt directory even when Cargo fails before packaging; failed-build diagnostics do not depend on a success-only environment assignment or count as admitted archive proof; diagnostic artifact names remain outside the archive gate download pattern, preserving its exact build/test input set"
           ],
           "remaining_group_evidence": "Synthetic admission and workflow-source assertions are tooling evidence; they cannot qualify an actual cross compiler, final archive execution or consumers."
         },

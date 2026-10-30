@@ -107,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: release-compilation-${{ matrix.target }}
+          name: product-compilation-${{ matrix.target }}
           path: .git/product-build/${{ github.run_id }}-${{ github.run_attempt }}/
           include-hidden-files: true
           if-no-files-found: warn

@@ -1,5 +1,6 @@
 """Execute the release workflow's channel classification against supported tags."""
 import os
+import fnmatch
 from pathlib import Path
 import shutil
 import subprocess
@@ -104,12 +105,21 @@ class ReleaseChannelContracts(unittest.TestCase):
         # must not depend on packaging or the successful build's environment.
         diagnostics = build.split("      - name: Retain compilation diagnostics", 1)[1].split("      - name: Package archive", 1)[0]
         self.assertIn("if: always()", diagnostics)
-        self.assertIn("name: release-compilation-${{ matrix.target }}", diagnostics)
+        self.assertIn("name: product-compilation-${{ matrix.target }}", diagnostics)
         self.assertIn("path: .git/product-build/${{ github.run_id }}-${{ github.run_attempt }}/", diagnostics)
         self.assertIn("include-hidden-files: true", diagnostics)
         self.assertNotIn("$PRODUCT_COMPILATION", diagnostics)
         self.assertLess(build.index("scripts/release-artifacts.py build "), build.index("name: Retain compilation diagnostics"))
         self.assertLess(build.index("name: Retain compilation diagnostics"), build.index("name: Package archive"))
+        gate = release.split("  archive-gate:", 1)[1].split("  consumer:", 1)[0]
+        pattern = gate.split("pattern: ", 1)[1].splitlines()[0].strip()
+        diagnostic_name = diagnostics.split("name: ", 1)[1].splitlines()[0].strip()
+        for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+                       "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"):
+            names = [prefix + target for prefix in ("release-build-", "release-test-")]
+            names.append(diagnostic_name.replace("${{ matrix.target }}", target))
+            self.assertEqual([name for name in names if fnmatch.fnmatchcase(name, pattern)], names[:2],
+                             "diagnostic uploads must not enter the strict archive-evidence input set")
         for workflow in (release, pr):
             self.assertIn("tool: cross@0.2.5", workflow)
         self.assertIn("--builder cross --output .git/cross-product-build", pr)
