@@ -15,7 +15,7 @@ from verification.python_tests import (BINDINGS, PRODUCER_INPUTS, ObservedResult
 REVISION = "a" * 40
 
 
-def fixture(root, output, classification=None):
+def fixture(root, output, classification=None, target="x86_64-unknown-linux-gnu"):
     """Small synthetic evidence set; never executed or used as real qualification."""
     output.mkdir(parents=True, exist_ok=True)
     if classification is None:
@@ -38,11 +38,12 @@ def fixture(root, output, classification=None):
     write_json(output / "events.json", events)
     tests, status = outcomes(inventory, events)
     pin = tomllib.loads((root / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+    platform = "macos" if "-apple-darwin" in target else "windows" if "-windows-" in target else "linux"
     record = dict(schema=1, kind="python-suite-run", source_revision=REVISION, worktree_dirty=False,
-                  features="independent", platform="linux", architecture="x86_64", python_version="3.14.0",
+                  features="independent", platform=platform, architecture="x86_64", python_version="3.14.0",
                   interpreter_sha256="c" * 64, created_at="2026-10-23T00:00:00+00:00", inputs=inputs(root),
                   compiler_tools=dict(toolchain=pin, automatic_installation=False,
-                                      rustc=f"rustc fixture\nrelease: {pin}", cargo=f"cargo {pin} (fixture)"),
+                                      rustc=f"rustc fixture\nrelease: {pin}\nhost: {target}", cargo=f"cargo {pin} (fixture)"),
                   inventory_sha256=sha256(output / "inventory.json"), events_sha256=sha256(output / "events.json"),
                   classification_sha256=sha256(root / BINDINGS), tests=tests, status=status, exit_code=0, timed_out=False)
     write_json(output / "receipt.json", record)
@@ -100,6 +101,25 @@ class PythonLifecycle(unittest.TestCase):
 
 
 class PythonAdmission(unittest.TestCase):
+    def test_platform_requires_compiler_host_but_not_identical_interpreter_architecture(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, output = Path(temp), Path(temp) / "attempt"
+            record = fixture(root, output, target="aarch64-apple-darwin")
+            # A translated Python interpreter can supervise a native compiler.
+            self.assertEqual(record["architecture"], "x86_64")
+            admitted = inspect_python_evidence(output / "receipt.json", REVISION, root)
+            self.assertEqual(admitted["compiler_host"], "aarch64-apple-darwin")
+            changed = dict(record, platform="windows")
+            write_json(output / "receipt.json", changed)
+            with self.assertRaisesRegex(ValueError, "platform disagrees"):
+                inspect_python_evidence(output / "receipt.json", REVISION, root)
+            for host in ("", "\nhost: x86_64-unknown-linux-gnu\nhost: aarch64-apple-darwin"):
+                changed = dict(record, compiler_tools=dict(record["compiler_tools"],
+                               rustc="rustc fixture\nrelease: 1.99.1" + host))
+                write_json(output / "receipt.json", changed)
+                with self.assertRaisesRegex(ValueError, "one native host"):
+                    inspect_python_evidence(output / "receipt.json", REVISION, root)
+
     def test_missing_unpinned_or_installing_compiler_evidence_is_rejected(self):
         import copy
         with tempfile.TemporaryDirectory() as temp:

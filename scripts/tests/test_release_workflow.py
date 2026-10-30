@@ -9,6 +9,23 @@ import unittest
 
 
 class ReleaseChannelContracts(unittest.TestCase):
+    def test_python_host_evidence_is_produced_and_forwarded_without_repeating_linux(self):
+        root = Path(__file__).parents[2]
+        pr = (root / ".github/workflows/pr-ci.yml").read_text()
+        release = (root / ".github/workflows/release.yml").read_text()
+        native = pr.split("  test:", 1)[1].split("  live:", 1)[0]
+        self.assertIn("python scripts/verify.py python --output target/verification-native-python", native)
+        self.assertIn("if: matrix.target != 'x86_64-unknown-linux-gnu'", native)
+        self.assertIn("name: verification-python-${{ matrix.target }}", native)
+        auxiliary = release.split("  auxiliary:", 1)[1].split("  candidate-gate:", 1)[0]
+        self.assertIn("if: runner.os != 'Linux'", auxiliary)
+        self.assertIn("name: candidate-python-native-${{ matrix.os }}", auxiliary)
+        gate = release.split("  candidate-gate:", 1)[1].split("  release:", 1)[0]
+        self.assertIn("pattern: candidate-python-native-*", gate)
+        self.assertIn('test "${#python_receipts[@]}" -eq 3', gate)
+        self.assertIn('python_args+=(--tooling "$record")', gate)
+        self.assertIn('"${python_args[@]}"', gate)
+
     def test_numbered_and_unnumbered_prereleases_are_not_stable(self):
         bash = "bash"
         if os.name == "nt":

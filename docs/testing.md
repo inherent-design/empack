@@ -34,6 +34,14 @@ suite runs the pinned rustdoc in both workspace feature graphs and records wheth
 each example ran, only compiled, or established an expected compilation failure.
 Native CI requires these records on each host; a listing or a successful build does
 not replace them. Use Nextest 0.9.148 for the executable and library selections.
+Python evidence also spans the three native operating systems. The PR gate reuses
+the Linux tooling job and requires separate macOS and Windows receipts. Candidate
+qualification collects those two native records alongside its Linux run. Admission
+checks the source, observed outcomes and compiler host; relabelling Linux output
+cannot satisfy another host. The interpreter architecture remains a separate fact,
+so a translated interpreter can supervise a native compiler without falsifying it.
+Local diagnostic selections must identify excluded boundaries and cannot replace
+the full native suites executed on isolated CI hosts.
 Also check library tests with minimal features so workspace feature unification
 cannot hide test-only dependencies. Architecture checks keep `empack-core` free of I/O/runtime dependencies.
 
@@ -1189,6 +1197,8 @@ executable and `suite/` evidence alongside it. Admission checks the prepared inp
 compiler, fixed command, actual compiled feature graph, executable bytes and
 independently replayed suite results. The same retained compilation bundle is required;
 a declared telemetry feature or a matching version string cannot replace it.
+The upload selection includes `compile.json` and all three compiler-proof files;
+the admission tests stage those exact globs and recheck the downloaded bundle.
 These are trusted workflow producer records, not third-party signed attestations.
 
 Auxiliary builds can satisfy their explicit feature/host cases, but never package

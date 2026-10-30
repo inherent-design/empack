@@ -269,6 +269,19 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
+      - run: python scripts/verify.py python --output .git/candidate-python-native
+        if: runner.os != 'Linux'
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() && runner.os != 'Linux' }}
+        with:
+          name: candidate-python-native-${{ matrix.os }}
+          path: |
+            .git/candidate-python-native/*/receipt.json
+            .git/candidate-python-native/*/inventory.json
+            .git/candidate-python-native/*/events.json
+            .git/candidate-python-native/*/*.log
+          include-hidden-files: true
+          if-no-files-found: error
       - run: python scripts/verify.py doctest --test-features minimal --output .git/candidate-doctest/minimal
       - run: python scripts/verify.py doctest --test-features all --output .git/candidate-doctest/all
       - uses: actions/upload-artifact@v7
@@ -287,6 +300,10 @@ jobs:
           name: candidate-auxiliary-${{ matrix.os }}
           path: |
             .git/auxiliary/*/build.json
+            .git/auxiliary/*/compile.json
+            .git/auxiliary/*/product-build-messages.jsonl
+            .git/auxiliary/*/product-metadata.json
+            .git/auxiliary/*/product-build-audit.json
             .git/auxiliary/*/empack*
             .git/auxiliary/*/*.log
             .git/auxiliary/*/suite/**/*.json
@@ -321,6 +338,10 @@ jobs:
       - run: python3 scripts/verify.py python --output .git/candidate-python
       - uses: actions/download-artifact@v8
         with:
+          pattern: candidate-python-native-*
+          path: .git/candidate-native-python
+      - uses: actions/download-artifact@v8
+        with:
           pattern: candidate-auxiliary-*
           path: .git/candidate-auxiliary
       - uses: actions/download-artifact@v8
@@ -334,8 +355,8 @@ jobs:
           RELEASE_REVISION: ${{ github.sha }}
           ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
         run: |
-          python_receipts=(.git/candidate-python/*/receipt.json)
-          test "${#python_receipts[@]}" -eq 1
+          python_receipts=(.git/candidate-python/*/receipt.json .git/candidate-native-python/candidate-python-native-*/*/receipt.json)
+          test "${#python_receipts[@]}" -eq 3
           auxiliary_records=(.git/candidate-auxiliary/candidate-auxiliary-*/*/build.json)
           test "${#auxiliary_records[@]}" -eq 3
           doctest_records=(.git/candidate-doctest/candidate-doctest-*/*/*/receipt.json)
@@ -344,7 +365,9 @@ jobs:
           for record in "${doctest_records[@]}"; do doctest_args+=(--doctest "$record"); done
           auxiliary_args=()
           for record in "${auxiliary_records[@]}"; do auxiliary_args+=(--auxiliary "$record"); done
-          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" "${doctest_args[@]}" --tooling "${python_receipts[0]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python_args=()
+          for record in "${python_receipts[@]}"; do python_args+=(--tooling "$record"); done
+          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" "${doctest_args[@]}" "${python_args[@]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
           python3 - <<'PYTHON'
           import hashlib, os
           from pathlib import Path

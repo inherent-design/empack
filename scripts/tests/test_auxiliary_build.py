@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import unittest
@@ -19,6 +20,27 @@ class AuxiliaryBuild(unittest.TestCase):
     git = archives.ReleaseArchiveGate.git
     setUp = archives.ReleaseArchiveGate.setUp
     admit = archives.ReleaseArchiveGate.admit
+
+    def test_workflow_upload_keeps_compilation_and_suite_evidence_for_admission(self):
+        workflow = (ci.SCRIPTS.parent / ".github/workflows/release.yml").read_text()
+        auxiliary = workflow.split("  auxiliary:", 1)[1].split("  candidate-gate:", 1)[0]
+        upload = auxiliary.split("name: candidate-auxiliary-", 1)[1]
+        patterns = upload.split("path: |", 1)[1].split("include-hidden-files:", 1)[0]
+        parent = self.root / ".git/auxiliary"
+        parent.mkdir()
+        self.fixture("auxiliary/one-build")
+        downloaded = self.root / ".git/downloaded"
+        for pattern in patterns.splitlines():
+            if not pattern.strip():
+                continue
+            for source in self.root.glob(pattern.strip()):
+                if source.is_file():
+                    destination = downloaded / source.relative_to(parent)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, destination)
+        result = inspect_auxiliary(downloaded / "one-build/build.json", self.root, self.revision, self.version)
+        self.assertEqual(result["suite"]["status"], "PASS")
+        self.assertFalse(result["shipped"])
 
     def fixture(self, name="auxiliary"):
         bundle = self.root / ".git" / name

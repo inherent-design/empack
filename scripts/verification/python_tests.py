@@ -164,10 +164,19 @@ def inspect_python_evidence(path, revision, root=ROOT):
                 or f"release: {pin}" not in tools["rustc"].splitlines()
                 or not tools["cargo"].startswith(f"cargo {pin} ")):
             raise ValueError("Python compiler evidence does not match the installed pinned toolchain")
+        hosts = [line.removeprefix("host: ") for line in tools["rustc"].splitlines() if line.startswith("host: ")]
+        if len(hosts) != 1:
+            raise ValueError("Python compiler evidence needs one native host")
+        host = hosts[0]
+        host_platforms = [name for marker, name in (("-linux-", "linux"), ("-apple-darwin", "macos"),
+                                                   ("-windows-", "windows")) if marker in host]
+        if host_platforms != [record["platform"]]:
+            raise ValueError("Python platform disagrees with its native compiler host")
         if (record.get("schema") != 1 or record.get("kind") != "python-suite-run"
                 or record["source_revision"] != revision or record["worktree_dirty"] is not False
                 or record["inputs"] != inputs(root) or record["features"] != "independent"
-                or record["platform"] not in PLATFORMS or not record["architecture"]
+                or record["platform"] not in PLATFORMS
+                or not isinstance(record["architecture"], str) or not record["architecture"]
                 or not datetime.fromisoformat(record["created_at"]).tzinfo
                 or not re.fullmatch(r"3\.(?:1[1-9]|[2-9][0-9])\.\d+", record["python_version"])
                 or type(record["timed_out"]) is not bool or type(record["exit_code"]) is not int
@@ -189,6 +198,7 @@ def inspect_python_evidence(path, revision, root=ROOT):
                     status=status, platform=record["platform"], architecture=record["architecture"],
                     python_version=record["python_version"], interpreter_sha256=record["interpreter_sha256"],
                     compiler_tools=tools,
+                    compiler_host=host,
                     created_at=record["created_at"], receipt_sha256=digest,
                     inventory_sha256=inventory_digest, events_sha256=events_digest)
     except (KeyError, TypeError, AttributeError) as error:

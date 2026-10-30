@@ -266,6 +266,24 @@ class CandidateCommand(unittest.TestCase):
         self.assertNotIn("artifact_sha256", tooling)
         case = next(c for r in result["acceptance"]["requirements"] for c in r["cases"] if c["id"] == "UX-088.python-lifecycle")
         self.assertEqual(case["status"], "PASS")
+        # Independent native Python observations need their own actual host;
+        # they never acquire a product feature or package identity.
+        complete_command = list(command)
+        for target in ("aarch64-apple-darwin", "x86_64-pc-windows-msvc"):
+            native_output = self.root / ".git" / target
+            native_record = fixture(self.root, native_output, classification, target)
+            native_record["source_revision"] = self.revision
+            write_json(native_output / "receipt.json", native_record)
+            complete_command += ["--tooling", str(native_output / "receipt.json")]
+        process = subprocess.run(complete_command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 2, process.stderr)
+        complete = json.loads(candidate.read_text())
+        self.assertEqual({r["platform"] for r in complete["tooling_evidence"]}, {"linux", "macos", "windows"})
+        self.assertTrue(all("artifact_sha256" not in r for r in complete["tooling_evidence"]))
+        native_case = next(c for r in complete["acceptance"]["requirements"] for c in r["cases"]
+                           if c["id"] == "UX-086.cargo-build-evidence-validator")
+        self.assertEqual(native_case["status"], "PASS")
+        self.assertFalse(complete["qualification"])
         data["features"] = "telemetry"
         write_json(path, data)
         process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)

@@ -128,7 +128,22 @@ def successes(plan):
 
 def tooling_attempt(directory):
     classification = json.loads((ci.ROOT / "tests/verification/python-bindings.json").read_text())
-    return python_fixture(ci.ROOT, directory / "verification-python/one-attempt", classification)
+    records = []
+    for target in ci.TARGETS:
+        name = "verification-python" if target == ci.TARGETS[0] else f"verification-python-{target}"
+        records.append(python_fixture(ci.ROOT, directory / name / "one-attempt", classification, target))
+    return records[0]
+
+
+def native_attempts(directory):
+    """Synthetic native matrix; no compiler, executable or consumer is invoked."""
+    tooling_attempt(directory)
+    for target in ci.TARGETS:
+        for features, suites in ci.NATIVE_SUITES.items():
+            fixture_attempt(directory / f"verification-{target}" / features, target, features, suites,
+                            ci.NATIVE_TEST_FEATURES[features])
+            graph = ci.NATIVE_TEST_FEATURES[features]
+            doctest_fixture(directory / f"verification-{target}" / f"doctest-{graph}" / "attempt", target, graph)
 
 
 def fixture_attempt(directory, target, features="telemetry", suites=None, test_features="all"):
@@ -183,6 +198,44 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
 
 
 class RequiredGate(unittest.TestCase):
+    def test_missing_failed_duplicate_or_relabelled_native_python_cannot_satisfy_gate(self):
+        plan = bound(ci.selection(["crates/empack-tests/tests/cli_entry.rs"], trusted=True))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            native_attempts(root)
+            result = ci.check_gate(plan, successes(plan), root)
+            self.assertEqual({r["compiler_host"] for r in result["tooling_evidence"]}, set(ci.TARGETS))
+            for target in ci.TARGETS[1:]:
+                path = root / f"verification-python-{target}/one-attempt/receipt.json"
+                original = path.read_bytes()
+                path.unlink()
+                with self.assertRaisesRegex(ValueError, "one Python attempt"):
+                    ci.check_gate(plan, successes(plan), root)
+                path.write_bytes(original)
+                data = json.loads(original)
+                data.update(status="FAIL", exit_code=1)
+                write_json(path, data)
+                with self.assertRaisesRegex(ValueError, "Native Python execution failed"):
+                    ci.check_gate(plan, successes(plan), root)
+                data = json.loads(original)
+                data["source_revision"] = "f" * 40
+                write_json(path, data)
+                with self.assertRaisesRegex(ValueError, "Unrelated"):
+                    ci.check_gate(plan, successes(plan), root)
+                path.write_bytes(original)
+                duplicate = path.parent.parent / "duplicate/receipt.json"
+                duplicate.parent.mkdir()
+                duplicate.write_bytes(original)
+                with self.assertRaisesRegex(ValueError, "one Python attempt"):
+                    ci.check_gate(plan, successes(plan), root)
+                duplicate.unlink()
+            path = root / "verification-python-aarch64-apple-darwin/one-attempt/receipt.json"
+            data = json.loads(path.read_text())
+            data["compiler_tools"]["rustc"] = data["compiler_tools"]["rustc"].replace("aarch64-apple-darwin", "x86_64-apple-darwin")
+            write_json(path, data)
+            with self.assertRaisesRegex(ValueError, "another host"):
+                ci.check_gate(plan, successes(plan), root)
+
     def test_registry_bytes_are_stable_in_autocrlf_checkout(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -225,12 +278,7 @@ class RequiredGate(unittest.TestCase):
         plan = bound(ci.selection(["scripts/check-prism-config.py"], trusted=True))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tooling_attempt(root)
-            for target in ci.TARGETS:
-                for features, suites in ci.NATIVE_SUITES.items():
-                    fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
-                    graph = ci.NATIVE_TEST_FEATURES[features]
-                    doctest_fixture(root / f"verification-{target}" / f"doctest-{graph}" / "attempt", target, graph)
+            native_attempts(root)
             path = root / "consumer-prism/prism.json"
             path.parent.mkdir()
             record = prism_record(REVISION)
@@ -295,15 +343,11 @@ class RequiredGate(unittest.TestCase):
         plan = bound(ci.selection(["crates/empack/src/main.rs"], trusted=True))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tooling_attempt(root)
-            for target in ci.TARGETS:
-                for features, suites in ci.NATIVE_SUITES.items():
-                    fixture_attempt(root / f"verification-{target}" / features, target, features, suites, ci.NATIVE_TEST_FEATURES[features])
-                    graph = ci.NATIVE_TEST_FEATURES[features]
-                    doctest_fixture(root / f"verification-{target}" / f"doctest-{graph}" / "attempt", target, graph)
+            native_attempts(root)
             result = ci.check_gate(plan, successes(plan), root)
             self.assertEqual(len(result["suite_evidence"]), 6)
             self.assertEqual(len(result["doctest_evidence"]), 6)
+            self.assertEqual({r["compiler_host"] for r in result["tooling_evidence"]}, set(ci.TARGETS))
             mac = root / "verification-aarch64-apple-darwin/default/one-attempt/receipt.json"
             original = json.loads(mac.read_text())
             forged = copy.deepcopy(original)

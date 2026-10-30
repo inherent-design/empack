@@ -1681,6 +1681,38 @@
         "UX-086",
         "UX-088"
       ]
+    },
+    {
+      "id": "python::test_auxiliary_build.AuxiliaryBuild.test_workflow_upload_keeps_compilation_and_suite_evidence_for_admission",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_ci_verification.RequiredGate.test_missing_failed_duplicate_or_relabelled_native_python_cannot_satisfy_gate",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_python_evidence.PythonAdmission.test_platform_requires_compiler_host_but_not_identical_interpreter_architecture",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
+    },
+    {
+      "id": "python::test_release_workflow.ReleaseChannelContracts.test_python_host_evidence_is_produced_and_forwarded_without_repeating_linux",
+      "boundary": "U",
+      "requirements": [
+        "UX-086",
+        "UX-088"
+      ]
     }
   ]
 }

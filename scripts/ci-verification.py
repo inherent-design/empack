@@ -160,10 +160,19 @@ def check_gate(plan, needs, artifacts):
     if len(python_paths) != 1:
         raise ValueError("Tooling requires exactly one Python execution receipt")
     tooling = [inspect_python_evidence(python_paths[0], plan["source_revision"])]
-    if tooling[0]["status"] != "PASS":
+    if (tooling[0]["status"] != "PASS" or tooling[0]["platform"] != "linux"
+            or tooling[0]["compiler_host"] != TARGETS[0]):
         raise ValueError("Required Python tooling execution did not pass")
     evidence, doctests = [], []
     for target in plan["native_targets"]:
+        if target != TARGETS[0]:
+            paths = list((artifacts / f"verification-python-{target}").glob("*/receipt.json"))
+            if len(paths) != 1:
+                raise ValueError("Native gate requires exactly one Python attempt per missing tooling host")
+            record = inspect_python_evidence(paths[0], plan["source_revision"])
+            if record["status"] != "PASS" or record["compiler_host"] != target:
+                raise ValueError("Native Python execution failed or used another host")
+            tooling.append(record)
         for features, suites in NATIVE_SUITES.items():
             evidence.append(check_suite_receipt(artifacts / f"verification-{target}" / features,
                             suites, target, plan["source_revision"], features,

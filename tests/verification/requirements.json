@@ -11135,7 +11135,8 @@
           "test_ids": [
             "python::test_release_gate.ReleaseArchiveGate.test_missing_changed_or_test_enabled_compilation_cannot_stage_archives",
             "python::test_auxiliary_build.AuxiliaryBuild.test_auxiliary_recomputes_the_compiled_graph_even_when_hashes_are_updated",
-            "python::test_release_workflow.ReleaseChannelContracts.test_archive_and_cross_builds_use_the_audited_producer_and_pinned_cross"
+            "python::test_release_workflow.ReleaseChannelContracts.test_archive_and_cross_builds_use_the_audited_producer_and_pinned_cross",
+            "python::test_auxiliary_build.AuxiliaryBuild.test_workflow_upload_keeps_compilation_and_suite_evidence_for_admission"
           ],
           "required_platforms": [
             "linux",
@@ -11148,7 +11149,8 @@
           "assertions": [
             "Synthetic archive and auxiliary records cannot omit or mutate the compiled graph, enable fixture authority or substitute an older source; refusal occurs before staging publication archives",
             "Changing stored audit digests does not bypass reinspection of retained compiler messages; a payload missing its compiled-product binding is rejected",
-            "Release and PR cross builds use the shared audited producer with pinned Cross and retain proof before packaging"
+            "Release and PR cross builds use the shared audited producer with pinned Cross and retain proof before packaging",
+            "Applying the release workflow upload globs retains the compiler proof and suite files required by auxiliary admission after download"
           ],
           "remaining_group_evidence": "Synthetic admission and workflow-source assertions are tooling evidence; they cannot qualify an actual cross compiler, final archive execution or consumers."
         },
@@ -11398,6 +11400,30 @@
             "Once the same locked file contains bytes, observation refuses rather than omitting or inventing its content; after unlock the exact data is observed"
           ],
           "remaining_group_evidence": "This is native Windows harness behavior, not a replacement for actual application ownership/publication tests"
+        },
+        {
+          "id": "UX-088.native-python-host-admission",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_ci_verification.RequiredGate.test_missing_failed_duplicate_or_relabelled_native_python_cannot_satisfy_gate",
+            "python::test_python_evidence.PythonAdmission.test_platform_requires_compiler_host_but_not_identical_interpreter_architecture",
+            "python::test_release_workflow.ReleaseChannelContracts.test_python_host_evidence_is_produced_and_forwarded_without_repeating_linux"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "PR admission requires one source-bound passing Python receipt from each required compiler host, reusing the existing Linux tooling observation",
+            "Missing, failed, duplicate, unrelated-source and wrong-host Python evidence cannot satisfy a native host obligation",
+            "The interpreter architecture is retained separately from its compiler host; a translated interpreter is allowed while conflicting OS labels are refused",
+            "Release workflow collection forwards all three independent host receipts without treating them as product-feature or package execution"
+          ],
+          "remaining_group_evidence": "Synthetic metadata and workflow-source assertions validate the tooling, not actual execution on another OS. Real native Python jobs, Rust suites and final archives remain independently required."
         }
       ],
       "owner_now": [

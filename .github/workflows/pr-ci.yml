@@ -151,6 +151,22 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
+      - uses: actions/setup-python@v6
+        if: matrix.target != 'x86_64-unknown-linux-gnu'
+        with:
+          python-version: "3.14"
+      - run: python scripts/verify.py python --output target/verification-native-python
+        if: matrix.target != 'x86_64-unknown-linux-gnu'
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() && matrix.target != 'x86_64-unknown-linux-gnu' }}
+        with:
+          name: verification-python-${{ matrix.target }}
+          path: |
+            target/verification-native-python/*/receipt.json
+            target/verification-native-python/*/inventory.json
+            target/verification-native-python/*/events.json
+            target/verification-native-python/*/*.log
+          if-no-files-found: error
       - run: python scripts/verify.py deterministic native-remount --test-features minimal --product-features default --output target/verification/default
       - run: python scripts/verify.py deterministic telemetry native-remount --test-features all --product-features telemetry --output target/verification/telemetry
       - run: python scripts/verify.py doctest --test-features minimal --output target/verification/doctest-minimal
