@@ -117,11 +117,12 @@ jobs:
     name: test (${{ matrix.target }})
     needs: [plan, lint]
     if: needs.plan.outputs.native == 'true'
-    runs-on: ${{ matrix.os }}
-    # Linux's full default run measured ~18m including compilation. Leave room
-    # for the independently built telemetry product and CLI run as on Windows.
+    runs-on: ${{ matrix.target == 'x86_64-unknown-linux-gnu' && needs.plan.outputs.trusted == 'true' && 'blacksmith-4vcpu-ubuntu-2404' || matrix.os }}
+    # The standard Linux runner needed ~25m for default alone; the 45m job limit
+    # cancelled telemetry. Trusted Linux uses the existing Ubuntu runner pool.
+    # Allow both independent graphs on the standard fallback runner as well.
     # Individual suite/process limits remain enforced by the shared executor.
-    timeout-minutes: 45
+    timeout-minutes: 65
     strategy:
       fail-fast: false
       matrix:
