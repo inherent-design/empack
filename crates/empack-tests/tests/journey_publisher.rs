@@ -1,6 +1,6 @@
 //! Offline publisher/player commands with real signatures and disposable keys.
 //! Local envelopes exercise the documented CLI path, not HTTPS deployment.
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signer, SigningKey};
 use empack_tests::harness::process::{assert_dist_artifact_suffix, offline_command};
 use empack_tests::harness::workspace::snapshot;
 use predicates::{prelude::PredicateBooleanExt, str::contains};
@@ -8,41 +8,9 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path, time::SystemTime};
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn unhex(value: &str) -> Vec<u8> {
-    assert_eq!(value.len() % 2, 0);
-    (0..value.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).unwrap())
-        .collect()
-}
-
-fn verify_staged(envelope: &Path, public: &VerifyingKey, id: &str, original: &Path) {
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(envelope).unwrap()).unwrap();
-    assert_eq!(value["schema"], 1);
-    assert_eq!(value["kind"], "release");
-    let payload = unhex(value["payload"].as_str().unwrap());
-    assert_eq!(payload, fs::read(original).unwrap());
-    assert_eq!(hex(&Sha256::digest(&payload)), id);
-    let signatures = value["signatures"].as_array().unwrap();
-    assert_eq!(signatures.len(), 1);
-    assert_eq!(signatures[0]["algorithm"], "ed25519");
-    assert_eq!(
-        signatures[0]["key"],
-        hex(&Sha256::digest(public.as_bytes()))
-    );
-    let signature =
-        Signature::from_slice(&unhex(signatures[0]["signature"].as_str().unwrap())).unwrap();
-    public
-        .verify_strict(
-            &[b"empack.release.v1\0".as_slice(), &payload].concat(),
-            &signature,
-        )
-        .unwrap();
-}
+#[path = "support/publisher.rs"]
+mod publisher_checks;
+use publisher_checks::{hex, unhex, verify_staged};
 
 fn write(root: &Path, name: &str, bytes: &[u8]) {
     let path = root.join(name);

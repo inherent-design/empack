@@ -52,6 +52,13 @@ class ChangeSelection(unittest.TestCase):
             ("crates/empack-lib/src/engine/build/client/fixtures.json", ["pinned-import"], True),
             ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["live-provider-cli", "live-modrinth", "pinned-import"], False),
             ("crates/empack-tests/tests/live_pinned_import.rs", ["pinned-import"], False),
+            (".gitattributes", ["publisher-cli"], False),
+            ("crates/empack-lib/src/engine/api/release_publication/channel.rs", ["publisher-cli"], False),
+            ("crates/empack-lib/src/engine/release/trust.rs", ["publisher-cli"], False),
+            ("crates/empack-lib/src/application/engine_host/release.rs", ["publisher-cli"], False),
+            ("crates/empack-tests/tests/cli_publisher.rs", ["publisher-cli"], False),
+            ("crates/empack-tests/tests/support/publisher.rs", ["publisher-cli"], False),
+            ("tests/fixtures/hosted-publication/manifest.json", ["publisher-cli"], False),
         ]
         for path, suites, consumer in cases:
             with self.subTest(path=path):
@@ -70,6 +77,7 @@ class ChangeSelection(unittest.TestCase):
     def test_manual_full_run_keeps_credentialed_and_survey_obligations(self):
         plan = ci.selection([], trusted=True, full=True)
         self.assertIn("live-curseforge", plan["live_suites"])
+        self.assertIn("publisher-cli", plan["live_suites"])
         self.assertIn("survey", plan["required_jobs"])
         self.assertTrue(plan["consumer"])
 

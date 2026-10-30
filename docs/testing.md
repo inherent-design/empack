@@ -509,6 +509,33 @@ bootstrap bytes are rejected without changing the installed instance. These are
 the documented local-envelope routes. They do not execute hosted
 HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
 
+Hosted channel publication has separate evidence. Its controlled-host engine test
+first establishes a verified warm cache, then requires fresh envelope and asset
+requests before replacing the pointer. It checks typed remote failures, invalid
+sequence/expiry, denied network approval and a late local edit while preserving
+publisher, source and host bytes. The ordinary executable suite stages two literal
+release fixtures, verifies their frozen envelopes, and checks preview/refusal with
+no observed proxy connection. A passive proxy is not an OS network sandbox.
+
+The opt-in `publisher-cli` suite uses the selected product against an immutable
+GitHub HTTPS fixture commit. It checks corrupt/missing hosted inputs, explicit
+previous-key verification during rotation, replay and same-sequence metadata
+refusals, exact republication and independently verified channel signatures and
+fields. Inputs, immutable releases, unrelated notes and prior pointers are compared
+across failures. A successful command creates only the local channel file and
+instructs uploading it last; it does not deploy that file or start a consumer.
+
+```sh
+python3 scripts/verify.py publisher-cli --product-profile release
+```
+
+The corpus is original synthetic Apache-2.0 data with public fixture keys and
+recorded input/asset/envelope hashes. Git attributes retain exact bytes on every
+checkout. The real HTTPS test remains ignored in offline suites and is selected by
+the shared runner, relevant trusted CI changes and scheduled compatibility checks.
+All declared platform/product variants still need execution; one Linux live job or
+an in-process loopback test cannot establish all of them.
+
 The opt-in `native-remount` suite repeats that signed publisher/player journey on
 macOS using two disposable 128 MiB APFS sparse images. It forces a device-number
 change after enrollment and installation, checks that UUID/inode/creation identity

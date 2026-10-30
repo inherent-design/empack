@@ -71,7 +71,7 @@ jobs:
           name: verification-tooling-inventory
           path: target/verification-inventory/
           if-no-files-found: error
-      - run: python3 scripts/check-docs.py README.md docs tests/verification
+      - run: python3 scripts/check-docs.py README.md CONTRIBUTING.md docs tests/verification tests/fixtures
       - run: cargo build --locked -p empack --target-dir target/verification-tools
       - run: uv run scripts/check-authoring-schema.py target/verification-tools/debug/empack
 

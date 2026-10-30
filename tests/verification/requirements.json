@@ -7971,7 +7971,7 @@
         "PUB"
       ],
       "required_assertions": "Hosted release and assets exact; sequence/expiry/previous keys validated; pointer cannot precede assets; local publication versus network deployment clear.",
-      "required_work": "Controlled verified HTTPS host at engine seam; public CLI approved hosting sentinel; deterministic fault table.",
+      "required_work": "All controlled-host, offline executable and real HTTPS cases are bound; execution is still required for every declared host/product variant. Literal fixtures pin an immutable Git commit and publication remains local, distinct from network deployment.",
       "evidence_tiers": [
         "H",
         "X",
@@ -7981,7 +7981,71 @@
       "run_gate": "pr+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-056.hosted-verification-and-stale-input",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::release_publication::tests::channel_publication_verifies_hosted_assets_before_replacing_pointer"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A verified warm cache is established separately; publication still requests the exact hosted envelope and the shared asset with all source assertions before writing its pointer",
+            "Wrong/missing/encoded envelope and corrupt/missing/oversized asset failures retain typed causes and preserve publisher/input/host bytes and the previous pointer",
+            "Denied network approval, invalid sequence/expiry and a late local asset edit cannot advance the pointer; the external edit survives and all reservations retire"
+          ]
+        },
+        {
+          "id": "UX-056.executable-preview-and-local-validation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_publisher::cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_network"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The product stages both literal releases into exact frozen envelopes and assets using explicit external public fixture keys; input/key bytes and attributes remain unchanged",
+            "Dry run despite --yes, missing approval, non-HTTPS URL, zero sequence, expired metadata and excessive expiry preserve the whole publisher workspace and make no observed proxy connection; the proxy is not a network sandbox"
+          ]
+        },
+        {
+          "id": "UX-056.live-executable-hosted-publication",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::cli_publisher::live_cli_hosted_channel_verifies_inputs_before_local_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Through actual HTTPS at an immutable fixture commit, exact staged release A permits local channel publication; changed envelopes and corrupt/missing assets preserve all prior publisher bytes",
+            "Release B requires explicit previous-key authority to authenticate the old pointer; successful rotation produces the exact selected URL, identity, byte bound, sequence, expiry and independently verified Ed25519 signature",
+            "Dry run and invalid replay/changed-at-same-sequence requests preserve the pointer; exact republication retains its bytes; original immutable releases, input/key attributes and unrelated notes survive",
+            "Output identifies the local channel file and instructs uploading it last; this does not claim network deployment, launcher startup or gameplay"
+          ]
+        }
+      ],
       "owner_now": [
         "engine::release + api::release_publication/subscription",
         "engine::acquisition/content/archive_source/import",
@@ -7992,7 +8056,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-057",

@@ -67,6 +67,13 @@ def selection(paths, *, trusted, full=False):
         live.append("live-curseforge")
     if runtime:
         live += ["live-catalog", "server-cli", "runtime-current"]
+    if shared or any(p == ".gitattributes" or p.startswith((
+        "crates/empack-lib/src/engine/release", "crates/empack-lib/src/engine/api/release_publication",
+        "crates/empack-lib/src/application/engine_host/release",
+        "crates/empack-tests/tests/cli_publisher", "crates/empack-tests/tests/support/publisher",
+        "tests/fixtures/hosted-publication/",
+    )) for p in code):
+        live.append("publisher-cli")
     if shared or any(p.startswith((
         "crates/empack-lib/src/engine/import", "crates/empack-lib/src/engine/build/",
         "crates/empack-lib/src/application/engine_host/cli/import",

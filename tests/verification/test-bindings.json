@@ -10,6 +10,8 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::cli_publisher::cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_network", "binary": "empack-tests::cli_publisher", "binary_name": "cli_publisher", "boundary": "X", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
+    {"id": "empack-tests::cli_publisher::live_cli_hosted_channel_verifies_inputs_before_local_publication", "binary": "empack-tests::cli_publisher", "binary_name": "cli_publisher", "boundary": "L", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": true, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::process_runtime::async_tests::zombie_signal_failure_does_not_override_confirmed_retirement", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "RUN", "platforms": ["macos"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::process_runtime::async_tests::signal_failure_does_not_authorize_retirement_of_a_live_group", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "RUN", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::process_runtime::async_tests::output_limit_retires_owned_group_when_progress_is_full", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "RUN", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},

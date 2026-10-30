@@ -80,8 +80,8 @@ run_windows = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}
 
 [tasks."test:live"]
 description = "Run explicit live CLI selections and rolling imports"
-run = "python3 scripts/verify.py cli telemetry live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry --product-profile release"
-run_windows = "python scripts/verify.py cli telemetry live-catalog live-provider server-cli live-assistance import-survey --product-features telemetry --product-profile release"
+run = "python3 scripts/verify.py cli telemetry live-catalog live-provider publisher-cli server-cli live-assistance import-survey --product-features telemetry --product-profile release"
+run_windows = "python scripts/verify.py cli telemetry live-catalog live-provider publisher-cli server-cli live-assistance import-survey --product-features telemetry --product-profile release"
 
 [tasks."test:telemetry"]
 description = "Run executable telemetry contracts against a telemetry product"

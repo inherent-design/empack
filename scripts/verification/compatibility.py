@@ -11,4 +11,4 @@ def weekly_index(day: date, count: int) -> int:
 
 def scheduled_suites(day: date) -> list[str]:
     return ["import-corpus", "pinned-import", "live-provider-cli", "live-modrinth", "live-curseforge",
-            "live-catalog", "live-runtime" if day.day <= 7 else "runtime-current"]
+            "live-catalog", "publisher-cli", "live-runtime" if day.day <= 7 else "runtime-current"]

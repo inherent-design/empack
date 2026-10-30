@@ -31,7 +31,7 @@ class Suite:
 
 CLI = (
     "cli_arguments", "cli_automation", "cli_build", "cli_dependencies", "cli_entry", "cli_exit_codes",
-    "cli_init", "cli_interactive", "cli_manifest", "cli_pending_build", "cli_recovery", "cli_status", "journey_authoring",
+    "cli_init", "cli_interactive", "cli_manifest", "cli_pending_build", "cli_publisher", "cli_recovery", "cli_status", "journey_authoring",
     "journey_content_kinds", "journey_selection",
     "journey_import", "journey_local_exports", "journey_pending", "journey_pending_import", "journey_pending_instance",
     "journey_publisher", "journey_verified_import", "smoke",
@@ -53,6 +53,8 @@ SUITES = {
     "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
     "live-catalog": Suite(("live_cli_init", "runtime_catalog_smoke"), ignored=True),
+    "publisher-cli": Suite(("cli_publisher",), ignored=True, timeout=600,
+                           cases=("live_cli_hosted_channel_verifies_inputs_before_local_publication",)),
     "live-provider": Suite(("live_provider_cli", "provider_catalog_smoke"), ignored=True,
                            required_env=("EMPACK_KEY_CURSEFORGE",)),
     "live-provider-cli": Suite(("live_provider_cli",), ignored=True, cases=(

@@ -216,7 +216,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         replacement: None,
     }
 }
-fn inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+pub(super) fn inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, path: &Path, map: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(path).unwrap() {
             let entry = entry.unwrap();

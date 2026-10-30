@@ -37,6 +37,7 @@ class CompatibilitySelection(unittest.TestCase):
             self.assertTrue(set(suites) <= SUITES.keys())
             self.assertIn("import-corpus", suites)
             self.assertIn("pinned-import", suites)
+            self.assertIn("publisher-cli", suites)
             self.assertIn("live-curseforge", suites)
             self.assertNotIn("import-survey", suites)
 
