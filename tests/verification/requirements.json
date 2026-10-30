@@ -9810,7 +9810,12 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::engine::acquisition::discovery::tests::discovery_retires_admitted_workers_and_retains_bounded_results",
-            "empack-lib::engine::acquisition::metadata::tests::chunked_metadata_enforces_running_limit_and_total_deadline"
+            "empack-lib::engine::acquisition::metadata::tests::chunked_metadata_enforces_running_limit_and_total_deadline",
+            "empack-lib::engine::acquisition::tests::verified_bytes_keep_reservations_until_the_last_reader_retires",
+            "empack-lib::engine::acquisition::tests::chunk_overflow_and_deadline_do_not_wait_for_a_stalled_eof",
+            "empack-lib::engine::acquisition::tests::cancellation_retires_the_blocking_verifier_and_response",
+            "empack-lib::engine::acquisition::tests::dropping_acquisition_future_closes_and_retires_its_verifier",
+            "empack-lib::engine::acquisition::tests::small_files_share_a_tight_scratch_budget_with_or_without_declared_sizes"
           ],
           "required_platforms": [
             "linux",
@@ -9823,7 +9828,9 @@
           ],
           "assertions": [
             "Real local-file discovery retires job reservations while retained results remain charged until owners release them",
-            "Controlled chunked HTTP input reports the specific byte-allowance or total-deadline diagnostic rather than any arbitrary error; socket closure and final zero reservations are checked"
+            "Controlled chunked HTTP input reports the specific byte-allowance or total-deadline diagnostic rather than any arbitrary error; socket closure and final zero reservations are checked",
+            "Verified HTTP content remains charged through its last open reader; two seven-byte payloads fit a sixteen-byte scratch allowance with and without declared sizes, and releasing the outcome returns all reservations",
+            "Explicit cancellation and dropping a stalled acquisition future retire the actual verifier and close its response; observed server readiness and socket closure establish the transition rather than elapsed sleeps"
           ]
         },
         {

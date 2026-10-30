@@ -486,6 +486,8 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
                         Err(error) => panic!("proxy accept: {error}"),
                     }
                 };
+                // Winsock accepts inherit the listener's nonblocking mode.
+                connection.set_nonblocking(false).unwrap();
                 connection.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                 let mut request = Vec::new();
                 while !request.ends_with(b"\r\n\r\n") {
@@ -501,7 +503,9 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
                 .timeout(Duration::from_secs(30))
                 .output()
                 .unwrap();
-            let request = server.join().unwrap();
+            let request = server
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
             assert!(
                 request.starts_with("CONNECT publisher.invalid:443 HTTP/1.1\r\n"),
                 "{request}"

@@ -710,9 +710,22 @@ then reaps it and confirms absence. A signal error cannot override subsequent
 proof of retirement. A separate real live group with an injected signal-denial
 result must still fail retirement and retain the recovery diagnostic. Chunked HTTP
 fixtures check the specific byte-limit and deadline errors, including socket
-retirement, rather than accepting any failure. Reservations are
-admission estimates, not measured OS memory use or enforced filesystem quotas.
+retirement, rather than accepting any failure. Payload acquisition checks also
+retain reservations through the last reader, fit two seven-byte inputs into a
+sixteen-byte scratch allowance, and retire stalled verifier/response ownership
+when the caller cancels or drops its future. These reuse existing component tests.
+Reservations are admission estimates, not measured OS memory use or enforced
+filesystem quotas.
 Inherited interactive consoles do not have captured-output limits.
+
+The executable's local proxy fixture explicitly selects blocking reads after
+accepting a connection, then applies its bounded read timeout. It cannot rely on
+platform-specific inheritance of the listener's nonblocking mode. Proxy-thread
+panics retain their original cause. Native image cleanup reports the freshly
+observed owned backing's entities and exact-file open handles when its expected
+mount is already absent. It never selects the host filesystem in that state or
+grants new detach authority. A busy-detach failure remains a failure; these
+diagnostics do not establish its cause or extend cleanup limits.
 
 ## Shared suite runner
 

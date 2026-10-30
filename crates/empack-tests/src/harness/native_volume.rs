@@ -250,32 +250,47 @@ impl ApfsFixture {
                 return;
             }
         };
-        let mounted = info["images"].as_array().is_some_and(|images| {
-            images.iter().any(|row| {
+        let owned = info["images"].as_array().and_then(|images| {
+            images.iter().find(|row| {
                 row["image-path"]
                     .as_str()
                     .is_some_and(|path| Path::new(path) == self.images[image].as_path())
-                    && row["system-entities"].as_array().is_some_and(|entities| {
-                        entities.iter().any(|entity| {
-                            entity["mount-point"]
-                                .as_str()
-                                .is_some_and(|path| Path::new(path) == mount.as_path())
-                        })
-                    })
             })
         });
-        if !mounted {
-            eprintln!("Owned image no longer has the expected mount; open-file diagnostic skipped");
+        let Some(owned) = owned else {
+            eprintln!("Owned image is no longer attached; open-file diagnostic skipped");
             return;
-        }
-        let output = Command::new("/usr/sbin/lsof")
-            .args(["-Fpcn", "+f", "--"])
-            .arg(mount)
-            .timeout(Duration::from_secs(5))
-            .output();
+        };
+        let mounted = owned["system-entities"].as_array().is_some_and(|entities| {
+            entities.iter().any(|entity| {
+                entity["mount-point"]
+                    .as_str()
+                    .is_some_and(|path| Path::new(path) == mount.as_path())
+            })
+        });
+        let mut command = Command::new("/usr/sbin/lsof");
+        command.arg("-Fpcn");
+        let selection = if mounted {
+            command.args(["+f", "--"]).arg(mount);
+            "mount"
+        } else {
+            eprintln!(
+                "Owned image lacks the expected mount; current entities: {}",
+                owned["system-entities"]
+                    .to_string()
+                    .chars()
+                    .take(8192)
+                    .collect::<String>()
+            );
+            // Select one freshly observed backing file, never the host filesystem
+            // containing the now-unmounted directory. This grants no detach authority.
+            command.arg("--").arg(&self.images[image]);
+            "backing"
+        };
+        let output = command.timeout(Duration::from_secs(5)).output();
         match output {
             Ok(output) => eprintln!(
-                "Owned mount open-file diagnostic ({}):\n{}\n{}",
+                "Owned {selection} open-file diagnostic ({}):\n{}\n{}",
                 output.status,
                 String::from_utf8_lossy(&output.stdout[..output.stdout.len().min(32 * 1024)]),
                 String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(32 * 1024)])
