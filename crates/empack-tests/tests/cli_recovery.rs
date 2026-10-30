@@ -126,8 +126,10 @@ impl Fixture {
         #[cfg(unix)]
         let script = text.to_owned();
         #[cfg(windows)]
+        // Use the built-in .NET constructor; the isolated shell does not need
+        // cmdlet/module discovery merely to configure its output encoding.
         let script = format!(
-            "try {{ [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding -ErrorAction Stop }} catch {{ [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }}; {text}; exit $LASTEXITCODE"
+            "try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{ [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }}; {text}; exit $LASTEXITCODE"
         );
         self.shell_script(&script)
     }
