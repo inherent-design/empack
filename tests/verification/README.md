@@ -79,6 +79,17 @@ recovered keys. The private hook injects controlled errors on real files; it doe
 not simulate an actual process kill, kernel I/O failure or power loss. These are
 case definitions until the required host/feature observations are admitted.
 
+Publisher/player composition also has a three-release fixture with an explicitly
+selected optional choice and a manually supplied restricted file. Missing input
+must leave the installed release intact; public pending inspection identifies its
+exact role, hash and length. Wrong bytes preserve pending work, while a fresh
+resume installs the selected release. Later update and rollback retain the choice,
+player data and replay protection. Complete literal game and publisher-asset
+inventories distinguish installed content from bytes that must remain unbundled.
+The Prism runtime-transition journey and five-target archive case are separate
+bindings. Hosted installation and actual consumer acceptance remain open, so the
+composition group stays partial even when its currently bound cases pass.
+
 Instance inspection has a public-command case that installs two exact snapshots,
 retains a selected optional choice, and checks the displayed release history.
 Both human inspection and JSON metadata status preserve the instance, external

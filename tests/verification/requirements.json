@@ -8674,7 +8674,7 @@
             "Release A to B updates require an explicit managed-file replacement decision and preserve player configuration and world bytes",
             "Repair and rollback select exact retained content across fresh executable invocations"
           ],
-          "remaining_group_evidence": "Hosted HTTPS publication, optional choices, restricted input, runtime changes and actual consumer acceptance remain required"
+          "remaining_group_evidence": "Hosted HTTPS installation and actual consumer acceptance remain required; choices/restricted input, runtime transition and final-archive execution have separate cases below"
         },
         {
           "id": "UX-060.native-remount-subscription",
@@ -8693,6 +8693,78 @@
             "A real disposable APFS remount changes the device number while preserving volume UUID, inode, creation time and fixture bytes",
             "Signed subscription remains inspectable without durable changes, then authenticated update, repair, rollback, key rotation/revocation and sequence floors continue without rewriting release meaning or player data",
             "Only fixture-owned images are detached, with fresh ownership checks and explicit cleanup; no physical reboot, Java, GUI or hosted HTTPS acceptance is claimed"
+          ]
+        },
+        {
+          "id": "UX-060.signed-three-release-choices-and-restrictions",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Three literal releases are staged and independently verified; public enrollment, channel observation and update retain an explicitly selected nondefault optional choice",
+            "Restricted bytes are absent from publisher assets; missing selected input leaves installed A unchanged and exposes its exact role/hash/length through public pending inspection",
+            "Incorrect bytes refuse without changing pending or installed work; fresh public resume installs B with exact manually supplied content and preserved player settings/world",
+            "Update C removes retired publisher content and retains the selected choice; explicit rollback B restores exact content without lowering channel replay protection",
+            "Complete game inventories are compared with independent literal expectations; publisher, key and export bytes/attributes remain unchanged; no game process or real restricted download is exercised"
+          ]
+        },
+        {
+          "id": "UX-060.signed-prism-runtime-transition",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_runtime_changes_preserve_prism_components_and_player_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Authenticated runtime update preserves exact Minecraft/loader component meaning and unrelated Prism metadata, user settings and world bytes",
+            "Preview/refusal and invalid custom profile preserve the instance; update/repair/rollback keep their expected runtime and content inventories",
+            "This fixture exercises installed configuration, not a Prism GUI or Minecraft launch"
+          ]
+        },
+        {
+          "id": "UX-060.packaged-publisher-player-composition",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust",
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases",
+            "empack-tests::journey_publisher::journey_signed_runtime_changes_preserve_prism_components_and_player_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "assertions": [
+            "The exact extracted production archive executes the signed publisher/player, optional/restricted-input and runtime-transition journeys on each declared native target",
+            "Ordinary native suite passes do not substitute for archive identity and package execution evidence"
           ]
         }
       ],

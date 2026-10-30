@@ -1669,18 +1669,328 @@ fn stage_runtime_fixture(
     // Literal native input; no game/mod bytes or provider/build planner creates the oracle.
     let payload = serde_json::to_vec(&json!({"schema":1,"pack":"verification.publisher","version":version,
         "minimum_engine":">=0.8.0-beta","require_subscription":true,"runtime":runtime,"files":files,"choices":[]})).unwrap();
-    write(&export, "release.json", &payload);
-    let id = hex(&Sha256::digest(&payload));
+    let (id, envelope) = stage_literal_release(&export, publisher, key, &payload);
+    (export, id, envelope)
+}
+
+fn stage_literal_release(
+    export: &Path,
+    publisher: &Path,
+    key: &Path,
+    payload: &[u8],
+) -> (String, PathBuf) {
+    write(export, "release.json", payload);
+    let id = hex(&Sha256::digest(payload));
     offline_command(publisher)
         .args(["--yes", "release", "stage"])
-        .arg(&export)
+        .arg(export)
         .arg("--key-file")
         .arg(key)
         .assert()
         .success()
         .stdout(contains(&id));
     let envelope = publisher.join(format!("dist/releases/{id}/release.json"));
-    (export, id, envelope)
+    (id, envelope)
+}
+
+#[test]
+fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
+    let root = tempfile::tempdir().unwrap();
+    let publisher = root.path().join("publisher");
+    let instance = root.path().join("instance");
+    let inputs = root.path().join("inputs");
+    let keys = root.path().join("private keys");
+    for path in [&publisher, &instance, &inputs] {
+        fs::create_dir(path).unwrap();
+    }
+    private_directory(&keys);
+    let key = SigningKey::from_bytes(&[91; 32]);
+    let key_file = keys.join("fixture.key");
+    fs::write(&key_file, format!("{}\n", hex(&[91; 32]))).unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("selected state");
+    let command = || {
+        let mut command = offline_command(&instance);
+        command
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(state.with_extension("cache"));
+        command
+    };
+    let mut releases = Vec::new();
+    for version in ["A", "B", "C"] {
+        let export = root.path().join(format!("literal export {version}"));
+        fs::create_dir(&export).unwrap();
+        let rich = format!("rich {version}");
+        let mut files = Vec::new();
+        for (name, destination, policy, bytes, participation) in [
+            (
+                "core",
+                "mods/core.jar",
+                "managed",
+                version.as_bytes(),
+                json!({"kind":"required"}),
+            ),
+            (
+                "rich",
+                "mods/rich.jar",
+                "managed",
+                rich.as_bytes(),
+                json!({"kind":"choice","key":"visuals","value":"rich"}),
+            ),
+            (
+                "config",
+                "config/player.txt",
+                "seed",
+                b"publisher defaults".as_slice(),
+                json!({"kind":"required"}),
+            ),
+        ] {
+            write(&export, &format!("assets/{name}"), bytes);
+            files.push(json!({"key":name,"destination":destination,"layer":"common","policy":policy,
+                "client":participation,"server":{"kind":"unsupported"},"sha256":hex(&Sha256::digest(bytes)),
+                "bytes":bytes.len(),"readonly":false,"executable":false,"assertions":[],
+                "source":{"kind":"asset","path":format!("assets/{name}")}}));
+        }
+        if version == "B" {
+            files.push(json!({"key":"private-addon","destination":"mods/private.jar","layer":"common","policy":"managed",
+                "client":{"kind":"required"},"server":{"kind":"unsupported"},"sha256":hex(&Sha256::digest(b"private B")),
+                "bytes":9,"readonly":false,"executable":false,"assertions":[],
+                "source":{"kind":"manual","instructions":"Supply the exact private add-on","selection":null}}));
+        }
+        let runtime = if version == "C" {
+            json!({"minecraft":"1.21.2","loader":{"kind":"fabric","version":"0.16.0"},"java_major":21})
+        } else {
+            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+        };
+        let payload = serde_json::to_vec(&json!({"schema":1,"pack":"verification.publisher","version":version,
+            "minimum_engine":">=0.8.0-beta","require_subscription":true,"runtime":runtime,"files":files,
+            "choices":[{"key":"visuals","alternatives":["lite","rich"],"default":"lite","description":"Optional visual content"}]})).unwrap();
+        let (id, envelope) = stage_literal_release(&export, &publisher, &key_file, &payload);
+        verify_staged(
+            &envelope,
+            &key.verifying_key(),
+            &id,
+            &export.join("release.json"),
+        );
+        assert_eq!(
+            snapshot(&envelope.parent().unwrap().join("assets")).files,
+            BTreeMap::from([
+                (PathBuf::from("core"), version.as_bytes().to_vec()),
+                (PathBuf::from("rich"), rich.into_bytes()),
+                (PathBuf::from("config"), b"publisher defaults".to_vec()),
+            ]),
+            "restricted bytes must not enter the publisher assets"
+        );
+        releases.push((id, envelope));
+    }
+    // The fixture's publisher, keys, exports and external manual inputs are
+    // independently retained; only the instance and channel input may change.
+    let publisher_before = snapshot(&publisher);
+    let keys_before = snapshot(&keys);
+    let exports_before: Vec<_> = ["A", "B", "C"]
+        .into_iter()
+        .map(|version| {
+            let export = root.path().join(format!("literal export {version}"));
+            let before = snapshot(&export);
+            (export, before)
+        })
+        .collect();
+    command()
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.publisher",
+            "--channel",
+            "stable",
+            "https://publisher.invalid/channels/stable.json",
+            "--key",
+        ])
+        .arg(hex(key.verifying_key().as_bytes()))
+        .assert()
+        .success();
+    let expires = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+    let offered = inputs.join("channel.json");
+    let observe = |index: usize| {
+        let (id, envelope) = &releases[index];
+        channel(&offered, &key, id, envelope, index as u64 + 1, expires);
+        command()
+            .args(["--yes", "instance", "check-updates"])
+            .arg(&offered)
+            .assert()
+            .success();
+    };
+    observe(0);
+    command()
+        .args(["--yes", "instance", "update"])
+        .arg(&releases[0].1)
+        .args([
+            "--side",
+            "client",
+            "--layout",
+            "game",
+            "--choice",
+            "visuals=rich",
+        ])
+        .assert()
+        .success();
+    write(&instance, "game/config/player.txt", b"player settings");
+    write(&instance, "game/saves/played/level.dat", b"player world");
+    write(&instance, "player notes.txt", b"player notes");
+    let expected = |version: &str, index: usize, private: bool| {
+        let mut files = BTreeMap::from([
+            (
+                PathBuf::from(".empack-layout"),
+                b"empack-game-layout-v1\n".to_vec(),
+            ),
+            (PathBuf::from("mods/core.jar"), version.as_bytes().to_vec()),
+            (
+                PathBuf::from("mods/rich.jar"),
+                format!("rich {version}").into_bytes(),
+            ),
+            (
+                PathBuf::from("config/player.txt"),
+                b"player settings".to_vec(),
+            ),
+            (
+                PathBuf::from("saves/played/level.dat"),
+                b"player world".to_vec(),
+            ),
+        ]);
+        if private {
+            files.insert(PathBuf::from("mods/private.jar"), b"private B".to_vec());
+        }
+        assert_eq!(snapshot(&instance.join("game")).files, files);
+        assert_eq!(
+            fs::read(instance.join("player notes.txt")).unwrap(),
+            b"player notes"
+        );
+        command()
+            .args(["instance", "inspect"])
+            .assert()
+            .success()
+            .stdout(contains(format!("release {};", releases[index].0)))
+            .stdout(contains("visuals=rich"));
+    };
+    expected("A", 0, false);
+    observe(1);
+    let before_b = snapshot(&instance);
+    command()
+        .args(["--yes", "instance", "update"])
+        .arg(&releases[1].1)
+        .args(["--choice", "visuals=unknown"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&instance), before_b);
+    command()
+        .args(["--yes", "instance", "update"])
+        .arg(&releases[1].1)
+        .assert()
+        .failure()
+        .stderr(contains("exact manual inputs remain pending"));
+    assert_eq!(snapshot(&instance), before_b);
+    let before_list = snapshot(host.path());
+    let pending = command()
+        .args(["pending", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let pending: serde_json::Value = serde_json::from_slice(&pending).unwrap();
+    assert_eq!(snapshot(host.path()), before_list);
+    assert_eq!(snapshot(&instance), before_b);
+    assert_eq!(pending["schema"], 1);
+    let operations = pending["operations"].as_array().unwrap();
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0]["kind"], "instance");
+    let pending_id = operations[0]["id"].as_str().unwrap();
+    let requirements = operations[0]["inputs"].as_array().unwrap();
+    let input = requirements
+        .iter()
+        .find(|row| row["key"] == "private-addon")
+        .unwrap();
+    assert_eq!(input["bytes"], 9);
+    assert_eq!(input["needed"], true);
+    assert_eq!(
+        input["digests"],
+        json!([["selected-sha256", hex(&Sha256::digest(b"private B"))]])
+    );
+    let supplied = inputs.join("renamed private add-on.bin");
+    fs::write(&supplied, b"incorrect").unwrap();
+    let association = format!("private-addon={}", supplied.display());
+    let pending_before = snapshot(host.path());
+    command()
+        .args([
+            "--yes",
+            "pending",
+            "resume",
+            pending_id,
+            "--file",
+            &association,
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("Content differs from the accepted observation"));
+    assert_eq!(snapshot(&instance), before_b);
+    assert_eq!(snapshot(host.path()), pending_before);
+    fs::write(&supplied, b"private B").unwrap();
+    command()
+        .args([
+            "--yes",
+            "pending",
+            "resume",
+            pending_id,
+            "--file",
+            &association,
+        ])
+        .assert()
+        .success();
+    expected("B", 1, true);
+    observe(2);
+    command()
+        .args(["--yes", "instance", "update"])
+        .arg(&releases[2].1)
+        .assert()
+        .success();
+    expected("C", 2, false);
+    command()
+        .args(["--yes", "instance", "rollback", &releases[1].0, "--assets"])
+        .arg(releases[1].1.parent().unwrap())
+        .args(["--file", &association])
+        .assert()
+        .success();
+    expected("B", 1, true);
+    let rolled_back = snapshot(&instance);
+    channel(&offered, &key, &releases[0].0, &releases[0].1, 1, expires);
+    command()
+        .args(["--yes", "instance", "check-updates"])
+        .arg(&offered)
+        .assert()
+        .failure()
+        .stderr(contains("Channel sequence replay rejected"));
+    assert_eq!(snapshot(&instance), rolled_back);
+    let pending = command()
+        .args(["pending", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let pending: serde_json::Value = serde_json::from_slice(&pending).unwrap();
+    assert_eq!(pending["operations"], json!([]));
+    assert_eq!(snapshot(&publisher), publisher_before);
+    assert_eq!(snapshot(&keys), keys_before);
+    for (export, before) in exports_before {
+        assert_eq!(snapshot(&export), before);
+    }
 }
 
 #[test]

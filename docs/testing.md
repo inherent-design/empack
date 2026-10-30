@@ -620,6 +620,17 @@ replacement, reopened recovery and lost commit acknowledgement while preserving
 the observation, floor, identity and unrelated player work. Their controlled hook
 failures are separate from actual process termination or physical crash evidence.
 
+The signed A/B/C composition fixture starts with an explicit optional choice.
+Release B requires a restricted file that is absent from publisher assets. Missing
+input leaves A intact; public pending inspection displays the exact requirement,
+wrong bytes preserve pending work, and a fresh resume installs B. Update C and
+rollback B retain the chosen alternative and player settings/world while keeping
+the channel replay floor. Literal full inventories check the game and staged
+assets. This is metadata/file integration with synthetic payloads, not a real
+restricted download, GUI or gameplay test. The same journeys are bound to final
+archive execution separately; hosted installation and consumer acceptance remain
+unqualified requirements.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid
