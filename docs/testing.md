@@ -216,7 +216,14 @@ and a default-disabled choice through both delivery policies and ZIP/TAR.GZ/7z.
 Independent readers compare complete membership, content digests and output modes.
 The public instance command rejects a wrong descriptor digest and corrupted included
 bytes before installing the exact selected inventory. Repeated preparation preserves
-saved choices, player-written seed data and unrelated files. Missing pack identity
+saved choices, player-written seed data and unrelated files. Game client/server and
+Prism client placements are checked separately. Prism placement preserves the
+existing component metadata and launcher settings; invalid author text is not
+interpreted as intent for an instance operation. First installation refuses existing
+selected files without an explicit replacement decision, even if their bytes match
+and `--yes` was supplied. An unowned layout marker cannot establish ownership, and
+Prism refuses server selection or a competing `minecraft/` directory. These refusal
+checks preserve target bytes and attributes. Missing pack identity
 or Java declarations preserve prior output and host storage. These local sources
 require included assets for both policies; controlled producer tests separately
 verify URL references, bundled assets and original source assertions. Final-package

@@ -3,6 +3,7 @@ use crate::files::snapshot;
 use empack_tests::harness::{
     archive::{Member, distribution_inventory},
     process::{TestProject, assert_dist_artifact_suffix, offline_command},
+    workspace::snapshot as observe_workspace,
 };
 use predicates::str::contains;
 use serde_json::{Value, json};
@@ -187,16 +188,38 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
             }
             let exported = snapshot(export.path());
             let descriptor = export.path().join("release.json");
-            for side in ["client", "server"] {
+            let mut installations = vec![("game", "client"), ("game", "server")];
+            // Archive format and side inventory are already covered above. One
+            // format proves the independent Prism placement/profile boundary.
+            if delivery == "references" && format == "zip" {
+                installations.push(("prism", "client"));
+            }
+            for (layout, side) in installations {
                 for extra in [false, true] {
                     let root = tempfile::tempdir().unwrap();
                     let instance = root.path().join("instance Ω with spaces");
-                    put(&instance, "game/unowned.txt", b"player sentinel");
+                    let game = if layout == "prism" {
+                        ".minecraft"
+                    } else {
+                        "game"
+                    };
+                    put(
+                        &instance,
+                        &format!("{game}/unowned.txt"),
+                        b"player sentinel",
+                    );
+                    // Instance installation does not reinterpret an author draft.
+                    put(&instance, "empack.yml", b"invalid author draft: [\n");
+                    let profile = br#"{ "formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.21.1","important":true},{"uid":"fixture.extra","version":"1","note":"keep"}],"note":"retain formatting" }"#;
+                    if layout == "prism" {
+                        put(&instance, "mmc-pack.json", profile);
+                        put(&instance, "instance.cfg", b"user launcher settings\n");
+                    }
                     let install = |digest: &str| {
                         let mut cmd = command(&instance, host.path());
                         cmd.args(["--yes", "instance", "install"])
                             .arg(&descriptor)
-                            .args(["--sha256", digest, "--side", side, "--layout", "game"]);
+                            .args(["--sha256", digest, "--side", side, "--layout", layout]);
                         if extra {
                             cmd.args(["--choice", "extras=enabled"]);
                         }
@@ -224,7 +247,10 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                     fs::write(&asset, CONTENT[3].2).unwrap();
                     install(&identity).assert().success();
                     let mut expected = BTreeMap::from([
-                        (".empack-layout".into(), b"empack-game-layout-v1\n".to_vec()),
+                        (
+                            ".empack-layout".into(),
+                            format!("empack-{layout}-layout-v1\n").into_bytes(),
+                        ),
                         ("unowned.txt".into(), b"player sentinel".to_vec()),
                         (
                             "managed.txt".into(),
@@ -240,7 +266,20 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                     if extra {
                         expected.insert("config/extra.txt".into(), CONTENT[4].2.to_vec());
                     }
-                    assert_eq!(snapshot(&instance.join("game")), expected);
+                    assert_eq!(snapshot(&instance.join(game)), expected);
+                    assert_eq!(
+                        fs::read(instance.join("empack.yml")).unwrap(),
+                        b"invalid author draft: [\n"
+                    );
+                    if layout == "prism" {
+                        assert_eq!(fs::read(instance.join("mmc-pack.json")).unwrap(), profile);
+                        assert_eq!(
+                            fs::read(instance.join("instance.cfg")).unwrap(),
+                            b"user launcher settings\n"
+                        );
+                        assert!(!instance.join("game").exists());
+                        assert!(!instance.join("minecraft").exists());
+                    }
                     command(&instance, host.path())
                         .args(["instance", "inspect"])
                         .assert()
@@ -248,7 +287,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         .stdout(contains(&identity));
                     put(
                         &instance,
-                        "game/config/settings.txt",
+                        &format!("{game}/config/settings.txt"),
                         b"player configuration",
                     );
                     let installed = snapshot(&instance);
@@ -271,6 +310,111 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
         }
     }
     assert_eq!(snapshot(project.dir()), author);
+}
+
+#[test]
+fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
+    let (project, host) = fixture();
+    command(project.dir(), host.path())
+        .args(["--yes", "build"])
+        .assert()
+        .success();
+    let archive = assert_dist_artifact_suffix(project.dir(), "-empack-references.empack");
+    let members = distribution_inventory(&archive, "zip");
+    let identity = inventory(&members);
+    let export = tempfile::tempdir().unwrap();
+    for (name, member) in &members {
+        put(export.path(), name, member.small.as_ref().unwrap());
+    }
+    let authored = snapshot(project.dir());
+    let exported = observe_workspace(export.path());
+    for layout in ["game", "prism"] {
+        let root = tempfile::tempdir().unwrap();
+        let instance = root.path().join("unowned instance Ω");
+        let game = if layout == "prism" {
+            ".minecraft"
+        } else {
+            "game"
+        };
+        put(&instance, "notes.txt", b"unrelated root content");
+        put(&instance, "empack.yml", b"invalid author draft: [\n");
+        put(
+            &instance,
+            &format!("{game}/unowned.txt"),
+            b"player sentinel",
+        );
+        let managed = instance.join(game).join("managed.txt");
+        let install = |side: &str| {
+            let mut cmd = command(&instance, host.path());
+            cmd.args(["--yes", "instance", "install"])
+                .arg(export.path().join("release.json"))
+                .args(["--sha256", &identity, "--side", side, "--layout", layout]);
+            cmd
+        };
+        // Identical bytes do not establish ownership, nor does blanket --yes.
+        for bytes in [CONTENT[1].2, b"different local bytes".as_slice()] {
+            fs::write(&managed, bytes).unwrap();
+            let before = observe_workspace(&instance);
+            install("client")
+                .assert()
+                .failure()
+                .stderr(contains("UnownedDestination"));
+            assert_eq!(observe_workspace(&instance), before);
+        }
+        fs::remove_file(&managed).unwrap();
+        let marker = instance.join(game).join(".empack-layout");
+        fs::write(&marker, format!("empack-{layout}-layout-v1\n")).unwrap();
+        let before = observe_workspace(&instance);
+        install("client").assert().failure().stderr(contains(
+            "Layout marker is not owned by this completed instance",
+        ));
+        assert_eq!(observe_workspace(&instance), before);
+        fs::remove_file(marker).unwrap();
+        if layout == "prism" {
+            let before = observe_workspace(&instance);
+            install("server")
+                .assert()
+                .failure()
+                .stderr(contains("Prism layout requires the client environment"));
+            assert_eq!(observe_workspace(&instance), before);
+            put(
+                &instance,
+                "minecraft/notes.txt",
+                b"other launcher game root",
+            );
+            let before = observe_workspace(&instance);
+            install("client")
+                .assert()
+                .failure()
+                .stderr(contains("Prism layout requires minecraft/ to be absent"));
+            assert_eq!(observe_workspace(&instance), before);
+            fs::remove_file(instance.join("minecraft/notes.txt")).unwrap();
+            fs::remove_dir(instance.join("minecraft")).unwrap();
+        }
+        fs::write(&managed, b"explicitly replaced local bytes").unwrap();
+        install("client")
+            .args(["--replace", "managed.txt"])
+            .assert()
+            .success();
+        assert_eq!(fs::read(&managed).unwrap(), CONTENT[1].2);
+        assert_eq!(
+            fs::read(instance.join("notes.txt")).unwrap(),
+            b"unrelated root content"
+        );
+        assert_eq!(
+            fs::read(instance.join("empack.yml")).unwrap(),
+            b"invalid author draft: [\n"
+        );
+        assert_eq!(
+            fs::read(instance.join(game).join("unowned.txt")).unwrap(),
+            b"player sentinel"
+        );
+        let installed = observe_workspace(&instance);
+        install("client").assert().success();
+        assert_eq!(observe_workspace(&instance), installed);
+        assert_eq!(observe_workspace(export.path()), exported);
+        assert_eq!(snapshot(project.dir()), authored);
+    }
 }
 
 #[test]

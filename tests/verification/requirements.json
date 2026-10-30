@@ -8256,7 +8256,54 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-061.exact-selected-snapshot-layouts",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Generated exact native snapshots install the independently checked side/optional inventory into game client/server and Prism client placements",
+            "A wrong descriptor hash or corrupt included asset refuses without changing target bytes; repeat preparation retains choices, seed content and unrelated files",
+            "Prism placement preserves unrelated component metadata and launcher settings byte-for-byte while retaining the exact selected runtime",
+            "Invalid author text in the instance is not interpreted as authoring intent during snapshot installation"
+          ],
+          "remaining_group_evidence": "Manual-acquisition continuations, actual launcher import/startup and final-package execution require separate evidence; this fixture does not establish those boundaries."
+        },
+        {
+          "id": "UX-061.explicit-first-ownership",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_snapshot_install_requires_explicit_ownership_in_both_layouts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Existing selected files require explicit replacement in both layouts, even when their bytes match and --yes was supplied",
+            "A layout marker without a completed instance record cannot establish ownership; refusal preserves target bytes and attributes",
+            "Prism rejects server selection and a competing minecraft directory before changing the instance",
+            "Explicitly replacing the named destination establishes an idempotent installation while preserving invalid author text and unrelated root/game files"
+          ],
+          "remaining_group_evidence": "This controlled offline executable fixture does not establish real launcher or game acceptance, live acquisition or final-package qualification."
+        }
+      ],
       "owner_now": [
         "engine::instance + api::instance; empack-core::instance",
         "engine::acquisition/content/archive_source/import",
@@ -8267,7 +8314,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-062",
