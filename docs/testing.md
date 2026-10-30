@@ -472,7 +472,12 @@ private key, and checks the signed payload independently with Ed25519. Fresh CLI
 processes enroll, observe local channel envelopes, install, update, repair, roll back,
 and change trust. Assertions cover refused tampering and expiry, explicit conflict
 resolution, replay floors, and preservation of player configuration and initialized
-worlds. Explicit preserve and merge decisions remain identifiable as local
+worlds. A compiler-bound local runtime observes literal arguments and the game
+working directory while signed update, repair, duplicate launch and stopped-runtime
+acknowledgement are refused. Refused publication can retain one exact verified
+incoming cache blob; installation, ownership evidence and existing cache content
+remain unchanged. Normal retirement permits the authenticated update to proceed.
+Explicit preserve and merge decisions remain identifiable as local
 overrides through fresh repair and update processes. A later edit needs a new
 decision; explicit replacement restores publisher bytes and removes the override.
 The signed envelope and publisher payload remain unchanged throughout. A generated
@@ -811,6 +816,10 @@ to succeed, including the complete native matrix, and checks each uploaded suite
 receipt against its compiler inventory and JUnit: source revision, target, product
 features, selected identities, first-attempt results and evidence digests must agree.
 Missing, cancelled, skipped, blocked or inconsistent evidence fails the gate.
+Use the plan's actual checkout revision when inspecting CI receipts. A pull-request
+checkout can be a synthetic merge commit with the PR head as a parent; the API's
+head SHA alone is not the receipt's source revision. This does not permit substituting
+an older source tree or treating a later merge as already qualified.
 For admitted Rust receipts, its `acceptance` section retains each bound case's exact
 tests, required host/product variants, artifact digests and supporting receipt digests.
 It rejects substituted evidence boundaries, mismatched revisions and contradictory
@@ -1089,8 +1098,11 @@ time and source-input digests. The schema-2 record retains every fixture observa
 settings failures return a nonzero status after writing the observations. The gate
 recomputes the outcome from those settings rather than trusting the status field.
 Dirty-source results remain diagnostic only. The producer currently runs on Linux
-and macOS; the required parser case selects Linux, matching the CI runner. This does
-not qualify other consumer operations or hosts. The probe compiles upstream `INIFile.cpp` and `Json.cpp`
+and macOS; the required parser case selects Linux, matching the CI runner. The same
+observations support UX-053's Prism integration and UX-083's headless configuration
+contract without multiplying execution counts. Actual import and startup remain
+UX-084 obligations. This does not qualify other consumer operations or hosts.
+The probe compiles upstream `INIFile.cpp` and `Json.cpp`
 without vendoring or changing their parsing code:
 
 ```sh

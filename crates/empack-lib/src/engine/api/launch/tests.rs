@@ -37,6 +37,22 @@ fn runtime_fixture() {
         drop(descendant);
         return;
     }
+    let observed = serde_json::json!({
+        "cwd": current,
+        "program": std::env::current_exe().unwrap(),
+        "arguments": std::env::args().skip(1).collect::<Vec<_>>(),
+        "pid": std::process::id(),
+    });
+    fs::write(
+        current.join("launch-observed.tmp"),
+        serde_json::to_vec(&observed).unwrap(),
+    )
+    .unwrap();
+    fs::rename(
+        current.join("launch-observed.tmp"),
+        current.join("launch-observed.json"),
+    )
+    .unwrap();
     fs::write(current.join("launch-started"), b"running").unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
     while !current.join("launch-exit").exists() {

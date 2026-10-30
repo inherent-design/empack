@@ -8925,7 +8925,76 @@
       "run_gate": "pr",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-072.public-literal-runtime-and-live-mutations",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The selected unmodified product runs a compiler-bound local executable through paths with spaces and Unicode; empty, quoted, multiline, option-looking, variable and shell-metacharacter arguments arrive unchanged in the installed game working directory",
+            "While authenticated release A runs, signed update B, repair, duplicate launch and acknowledgement of stopped runtime are refused by the actual CLI",
+            "Installation and ownership evidence plus all pre-existing cache bytes and attributes remain unchanged; only the independently verified exact incoming B blob may be added to cache",
+            "After controlled retirement, the existing authenticated update workflow proceeds while preserving player state"
+          ],
+          "remaining_group_evidence": "Packaged-target execution, non-UTF-8 native argument variants and actual Java/consumer acceptance remain separate obligations"
+        },
+        {
+          "id": "UX-072.native-runtime-ownership-and-stale-selection",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::runtime_lease_blocks_updates_and_duplicate_launch_until_owned_retirement",
+            "empack-lib::engine::api::launch::tests::launch_rejects_missing_modified_and_late_changed_installed_content",
+            "empack-lib::engine::api::launch::tests::launch_binds_the_release_selected_by_prelaunch"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A denied runtime grant does not start a process; live runtime ownership blocks duplicate launch, stopped-runtime acknowledgement and managed updates until owned retirement",
+            "Missing or modified managed content refuses preparation, and observations changed after preparation refuse execution",
+            "A mismatched expected release refuses before runtime start; confirmed retirement releases ownership for a later launch"
+          ],
+          "remaining_group_evidence": "These are native engine/kernel tests; final-executable and packaged-candidate behavior need their own evidence"
+        },
+        {
+          "id": "UX-072.host-java-and-release-entrypoint-boundary",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::launch::tests::server_launch_uses_completed_entry_point_and_refuses_runtime_drift"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Server command preparation combines the host-selected program and literal host arguments with the completed release's validated jar entry point",
+            "Changing the selected server entry-point bytes refuses later launch preparation"
+          ],
+          "remaining_group_evidence": "Command preparation and native drift checks do not establish actual Java startup, installer success or gameplay"
+        }
+      ],
       "owner_now": [
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
         "engine::instance + api::instance; empack-core::instance",
@@ -8936,7 +9005,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-cli"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-073",
@@ -9844,7 +9913,50 @@
       "run_gate": "consumer-change+candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-083.supported-prism-parser-observations",
+          "boundary": "C",
+          "test_ids": [
+            "consumer::prism::managed-config-grammar"
+          ],
+          "required_platforms": [
+            "linux"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Pinned unmodified Prism source under supported Qt 6.4+ and C++20 observes the required effective lifecycle settings for every accepted shared configuration fixture",
+            "The probe checks declared comment, structural-whitespace, quote, continuation, format and authority-key counterexamples and records source/runtime/compiler/architecture and fixture identity",
+            "Admission rechecks actual observed values and input identities; a reported PASS or fixture name alone is insufficient"
+          ],
+          "remaining_group_evidence": "This is a complete headless parser contract; actual launcher import/preparation/startup belongs to UX-084 and is not established by this probe"
+        },
+        {
+          "id": "UX-083.shared-fixtures-through-consumer-preparation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::managed_prism_consumer_format_fixtures_use_public_preparation",
+            "empack-lib::engine::build::client::tests::standalone_prism_retains_hash_prefixed_configuration"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Each shared fixture exercises public build preparation for reference snapshots and both subscribed managed recipes, with acceptance/refusal and specific diagnostics matching its declared grammar policy",
+            "Author documents, templates and prior artifact bytes remain unchanged by preparation, including rejected configuration",
+            "Standalone bundled customization remains outside the stricter managed lifecycle grammar"
+          ],
+          "remaining_group_evidence": "These engine-boundary assertions do not replace the independent supported-consumer parser observations or UX-084 actual launcher acceptance"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "api::launch + process_runtime + runtime lease; server_runtime/installer"
@@ -9853,7 +9965,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-084",

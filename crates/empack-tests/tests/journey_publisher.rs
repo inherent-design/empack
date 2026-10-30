@@ -241,6 +241,193 @@ fn installed(instance: &Path, release: &str, managed: &[u8]) {
     );
 }
 
+fn runtime_defers_update(instance: &Path, envelope: &Path) {
+    use empack_tests::harness::{
+        process::{empack_cmd, file_sha256},
+        publication::Driver,
+    };
+    use std::{
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+
+    struct Runtime {
+        host: std::process::Child,
+        pid: Option<u32>,
+        game: std::path::PathBuf,
+    }
+    impl Drop for Runtime {
+        fn drop(&mut self) {
+            let _ = fs::write(self.game.join("launch-exit"), b"exit");
+            #[cfg(unix)]
+            if let Some(pid) = self.pid {
+                let _ = std::process::Command::new("/bin/kill")
+                    .args(["-KILL", "--", &format!("-{pid}")])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            let _ = self.host.kill();
+            let _ = self.host.wait();
+        }
+    }
+
+    const CHILD: &str = "engine::api::launch::tests::runtime_fixture";
+    let driver = Driver::native_fixture(CHILD);
+    // Keep this large executable outside the deliberately small APFS images.
+    let executable = tempfile::Builder::new()
+        .prefix("empack runtime Ω ")
+        .tempdir()
+        .unwrap();
+    let program = executable.path().join(if cfg!(windows) {
+        "fixture runtime.exe"
+    } else {
+        "fixture runtime"
+    });
+    if fs::hard_link(driver.program(), &program).is_err() {
+        fs::copy(driver.program(), &program).unwrap();
+    }
+    let digest = file_sha256(driver.program()).unwrap();
+    assert_eq!(file_sha256(&program).unwrap(), digest);
+    let arguments = [
+        "--exact",
+        CHILD,
+        "--nocapture",
+        "--test-threads=1",
+        "--",
+        "",
+        "space and Ω",
+        "literal'quote\"value",
+        "$HOME",
+        "%TEMP%",
+        "$(touch must-not-run)",
+        "`touch must-not-run`",
+        "; touch must-not-run",
+        "--looks-like-an-option",
+        "line one\nline two",
+        "trailing\\",
+    ];
+    let game = instance.join("game");
+    write(&game, "launch-fixture", b"wait for explicit retirement");
+    let stderr = tempfile::NamedTempFile::new().unwrap();
+    let mut runtime = Runtime {
+        host: empack_cmd(instance)
+            .args(["--yes", "instance", "launch", "--"])
+            .arg(&program)
+            .args(arguments)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr.reopen().unwrap()))
+            .spawn()
+            .unwrap(),
+        pid: None,
+        game: game.clone(),
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !game.join("launch-started").exists() {
+        assert!(
+            runtime.host.try_wait().unwrap().is_none(),
+            "{}",
+            fs::read_to_string(stderr.path()).unwrap()
+        );
+        assert!(Instant::now() < deadline, "runtime readiness timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let observed: serde_json::Value =
+        serde_json::from_slice(&fs::read(game.join("launch-observed.json")).unwrap()).unwrap();
+    runtime.pid = Some(u32::try_from(observed["pid"].as_u64().unwrap()).unwrap());
+    assert!(runtime.pid.unwrap() > 1);
+    assert_eq!(observed["arguments"], json!(arguments));
+    assert_eq!(
+        std::path::Path::new(observed["cwd"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        game.canonicalize().unwrap()
+    );
+    assert_eq!(
+        file_sha256(Path::new(observed["program"].as_str().unwrap())).unwrap(),
+        digest
+    );
+    assert!(!game.join("must-not-run").exists());
+    let held = snapshot(instance);
+    // Refused publication may retain verified acquisition. Permit only this exact
+    // incoming blob; all installation, ownership and pre-existing cache bytes and
+    // attributes must remain unchanged.
+    let acquired = std::path::PathBuf::from(".empack-cache/content-v1")
+        .join(format!("{}.blob", hex(&Sha256::digest(b"2.0.0"))));
+    let assert_held = || {
+        let mut current = snapshot(instance);
+        if !held.files.contains_key(&acquired) && current.files.contains_key(&acquired) {
+            assert_eq!(current.files.remove(&acquired).unwrap(), b"2.0.0");
+            #[cfg(unix)]
+            let mode = 0o600;
+            #[cfg(not(unix))]
+            let mode = 0;
+            assert_eq!(current.entries.remove(&acquired), Some((false, mode)));
+        }
+        assert_eq!(current, held);
+    };
+    offline_command(instance)
+        .args(["--yes", "instance", "update"])
+        .arg(envelope)
+        .assert()
+        .failure()
+        .stderr(contains("Project publication is busy"));
+    assert_held();
+    offline_command(instance)
+        .args(["--yes", "instance", "repair"])
+        .assert()
+        .failure()
+        .stderr(contains("Project publication is busy"));
+    assert_held();
+    offline_command(instance)
+        .args(["--yes", "instance", "launch", "--"])
+        .arg(&program)
+        .args(["--exact", CHILD, "--nocapture"])
+        .assert()
+        .failure()
+        .stderr(contains("Instance is already running"));
+    assert_held();
+    offline_command(instance)
+        .args([
+            "--yes",
+            "instance",
+            "recover-runtime",
+            "--acknowledge-stopped",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("Instance is still running"));
+    assert_held();
+
+    write(&game, "launch-exit", b"normal stop");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = runtime.host.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "runtime did not retire");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(
+        status.success(),
+        "{}",
+        fs::read_to_string(stderr.path()).unwrap()
+    );
+    runtime.pid = None;
+    drop(runtime);
+    for name in [
+        "launch-fixture",
+        "launch-exit",
+        "launch-started",
+        "launch-observed.json",
+    ] {
+        fs::remove_file(game.join(name)).unwrap();
+    }
+    driver.verify();
+    assert_eq!(file_sha256(&program).unwrap(), digest);
+}
+
 #[test]
 fn journey_signed_local_channels_update_repair_rollback_and_retain_trust() {
     let root = tempfile::tempdir().unwrap();
@@ -409,6 +596,8 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     installed(&instance, &a, b"1.0.0");
     // Refused high-sequence evidence must not poison the accepted replay floor.
     observe(&instance, &channel_b).success();
+    installed(&instance, &a, b"1.0.0");
+    runtime_defers_update(&instance, &envelope_b);
     installed(&instance, &a, b"1.0.0");
     write(&instance, "game/managed.txt", b"local conflict");
     let conflicted = snapshot(&instance);
