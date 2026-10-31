@@ -330,9 +330,50 @@ def run_doctests(attempt, environment, features):
     return 0 if record["status"] == "PASS" else 1
 
 
+def run_schema(args, attempt, environment):
+    from verification.authoring_schema import input_hashes, observation_results
+    record = dict(schema=1, kind="authoring-schema-run", qualification=False, status="NOT_RUN",
+                  created_at=datetime.now(timezone.utc).isoformat(),
+                  platform={"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()])
+    print(f"Schema verification attempt: {attempt}", flush=True)
+    try:
+        record["source_revision"] = checked(["git", "rev-parse", "HEAD"], attempt, "revision", environment).strip()
+        record["worktree_dirty"] = bool(checked(["git", "status", "--porcelain"], attempt, "worktree", environment).strip())
+        snapshot = source_snapshot(attempt, environment)
+        record["inputs"] = input_hashes(ROOT)
+        rustc = checked(["rustc", "-vV"], attempt, "rustc-version", environment)
+        record["rustc"] = rustc.strip()
+        host = next(line.removeprefix("host: ") for line in rustc.splitlines() if line.startswith("host: "))
+        # Reuse the ordinary product build and retained Cargo feature audit.
+        record["artifact"] = product(args, attempt, environment, host)
+        command = ["uv", "run", "--script", str(ROOT / "scripts/check-authoring-schema.py"),
+                   record["artifact"]["path"], "--output", str(attempt / "observations.json")]
+        code, _, timed_out = run(command, cwd=ROOT, env=environment, log=attempt / "run.log", timeout=300)
+        record.update(exit_code=code, timed_out=timed_out)
+        raw = attempt / "observations.json"
+        record["observations_sha256"] = sha256(raw)
+        observations = json.loads(raw.read_text(encoding="utf-8"))
+        results = observation_results(observations["fixtures"])
+        record["status"] = "PASS" if not code and not timed_out and all(row["status"] == "PASS" for row in results) else "FAIL"
+        if (source_snapshot(attempt, environment) != snapshot
+                or checked(["git", "rev-parse", "HEAD"], attempt, "final-revision", environment).strip() != record["source_revision"]
+                or bool(checked(["git", "status", "--porcelain"], attempt, "final-worktree", environment).strip()) != record["worktree_dirty"]
+                or sha256(record["artifact"]["path"]) != record["artifact"]["sha256"]):
+            raise RuntimeError("Source or ordinary product changed during schema verification")
+    except Blocked as error:
+        record.update(status="BLOCKED", reason=str(error))
+    except (OSError, ValueError, RuntimeError, KeyError, StopIteration, KeyboardInterrupt) as error:
+        record.update(status="FAIL", reason=str(error) or "Schema verification interrupted")
+    write_json(attempt / "receipt.json", record)
+    print(f"{record['status']}: {attempt / 'receipt.json'}", flush=True)
+    if record.get("reason"):
+        print(record["reason"], file=sys.stderr)
+    return 0 if record["status"] == "PASS" else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("suites", nargs="+", choices=[*SUITES, "python", "doctest"])
+    parser.add_argument("suites", nargs="+", choices=[*SUITES, "python", "doctest", "schema"])
     parser.add_argument("--binary", help="Absolute path to an independently built product")
     parser.add_argument("--sha256")
     parser.add_argument("--version")
@@ -352,6 +393,9 @@ def main(argv=None):
     if "doctest" in args.suites and (args.suites != ["doctest"] or any((args.binary, args.sha256,
             args.version, args.target, args.product_features, args.product_profile))):
         parser.error("Doctests run separately with a workspace test graph, without product options")
+    if "schema" in args.suites and (args.suites != ["schema"] or any((args.binary, args.sha256,
+            args.version, args.target, args.product_features, args.product_profile)) or args.test_features != "all"):
+        parser.error("Schema conformance builds its own ordinary default product; select it separately")
     args.output.mkdir(parents=True, exist_ok=True)
     attempt = args.output.resolve() / str(uuid.uuid4())
     attempt.mkdir(mode=0o700)
@@ -361,6 +405,9 @@ def main(argv=None):
         return run_python(attempt, environment)
     if args.suites == ["doctest"]:
         return run_doctests(attempt, environment, args.test_features)
+    if args.suites == ["schema"]:
+        args.product_features = "default"
+        return run_schema(args, attempt, environment)
     receipt = {"schema": 1, "kind": "test-suite-run", "status": "NOT_RUN",
                "created_at": datetime.now(timezone.utc).isoformat(), "suites": [],
                "requested_suites": args.suites, "test_features": args.test_features,

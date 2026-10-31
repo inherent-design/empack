@@ -1006,6 +1006,19 @@
             "Both URL spellings require explicit digest assertions or explicit first-observation policy; omitted/false observation policy and competing policy/assertions refuse, while valid intent round-trips"
           ],
           "remaining_group_evidence": "Pure codecs do not execute the public command, editor schema validator or host storage. Those boundaries and required platform observations remain separate; this group stays partial."
+        },
+        {
+          "id": "UX-006.editor-schema-cli-conformance",
+          "boundary": "X",
+          "required_platforms": [
+            "linux"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "test_ids": [
+            "schema::authoring::editor-cli-conformance"
+          ]
         }
       ],
       "owner_now": [

@@ -847,15 +847,21 @@ still invokes preparation again, exercising convergence before reaching Minecraf
 Installation failure cannot be counted as startup evidence. These help/EULA probes
 are separate from interactive console and gameplay acceptance.
 
-After building the executable, compare the editor schemas with the actual CLI:
+Compare the editor schemas with a separately built ordinary default CLI:
 
 ```sh
-uv run scripts/check-authoring-schema.py target/debug/empack
+python3 scripts/verify.py schema --output target/verification-schema
 ```
 
-This exercises accepted and rejected authoring forms without creating host state or
-cache storage. JSON Schema checks complement composed domain validation; they do not
-replace it.
+This requires `uv` and installs the script's pinned JSON Schema dependency. It
+records all 39 authoring and five binding fixtures, both validation results, CLI
+output, and workspace bytes and attributes before and after each command. Source
+and product identity must remain stable. Admission rechecks those observations and
+the ordinary Cargo build audit; a successful job alone supplies no passing cases.
+Docs/schema-only CI runs upload the same evidence and the required gate admits it
+as the Linux/default conformance case. Other host CLI cases remain separate.
+JSON Schema checks complement composed domain validation; they do not replace it,
+provider resolution, or actual consumer acceptance.
 
 Formatting and Clippy apply to all targets/features. Native filesystem/process
 claims require real temporary roots and OS primitives; pure planner tests cannot

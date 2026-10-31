@@ -27,8 +27,15 @@ discovery uses `unittest.TestLoader` and fails on import errors or an empty suit
 Each required platform and feature selection needs its own inventory.
 The registry command validates native membership for the selected host and feature
 graph; cases for other platforms remain bound without being claimed as executed.
-Python, rustdoc and consumer-parser identities use their own producers rather than
+Python, rustdoc, editor-schema and consumer-parser identities use their own producers rather than
 being searched for in Nextest's executable-test inventory.
+`verify.py schema` builds an ordinary default product and runs the fixed editor
+schema/CLI corpus through public `manifest check --json`. Its receipt retains raw
+validation, response and whole-workspace observations, plus product/source hashes
+and Cargo feature evidence. The CI gate requires exactly one passing Linux attempt
+even for docs/schema-only edits. Admission rejects altered inputs, incomplete
+fixtures, ambiguous product identity and false success summaries. This single
+conformance case does not complete UX-006's remaining authoring obligations.
 The `cli_offline` target replaces the former mixed smoke target. Its `journeys`
 module holds connected source/adoption, partial-add and generated-automation
 sequences; focused CLI contracts remain in the root file. They share the same

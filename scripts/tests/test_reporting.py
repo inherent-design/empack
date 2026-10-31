@@ -12,6 +12,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 from verification.reporting import render_gate
 from test_python_evidence import fixture as python_fixture
+from test_authoring_schema import fixture as schema_fixture
 from verification.evidence import write_json
 
 
@@ -90,6 +91,7 @@ class VerificationReports(unittest.TestCase):
             tooling = python_fixture(root, tooling_path, classification)
             tooling["source_revision"] = revision
             write_json(tooling_path / "receipt.json", tooling)
+            schema_fixture(output / "verification-schema/one-attempt", revision)
             # Literal docs-only plan: the subprocess still derives and checks its selection.
             plan = {"schema": 1, "qualification": False, "changed_paths": ["README.md"],
                     "trusted": True, "native": False, "live_suites": [], "consumer": False,

@@ -1,6 +1,7 @@
 """Acceptance cases and required variants, independent of suite scheduling."""
 from .classification import BOUNDARIES
 from .consumer import PRISM_TEST, PRISM_BINDING
+from .authoring_schema import TEST_ID as SCHEMA_TEST, BINDING as SCHEMA_BINDING
 from .evidence import aggregate_outcomes
 import json
 from .python_tests import ROOT, BINDINGS, PLATFORMS
@@ -63,7 +64,7 @@ def validate_requirements(document):
     return requirements, cases
 
 
-def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=()):
+def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=()):
     """Join already validated suite evidence; no test counts imply group coverage.
 
     The CI gate authenticates revision/cleanliness and re-reads inventory/JUnit
@@ -77,9 +78,10 @@ def case_results(document, classification, evidence, revision, *, package_receip
     if not package_receipts <= {record["receipt_sha256"] for record in evidence}:
         raise ValueError("Package proof lacks its admitted suite receipt")
     bindings = {row["id"]: row for row in classification["tests"]}
-    if PRISM_TEST in bindings:
-        raise ValueError("Consumer parser cannot be classified as a Rust test")
+    if {PRISM_TEST, SCHEMA_TEST} & bindings.keys():
+        raise ValueError("Script observations cannot be classified as Rust tests")
     bindings[PRISM_TEST] = PRISM_BINDING
+    bindings[SCHEMA_TEST] = SCHEMA_BINDING
     python_bindings = json.loads((ROOT / BINDINGS).read_text(encoding="utf-8"))["tests"]
     for binding in python_bindings:
         if binding["id"] in bindings or not binding["id"].startswith("python::"):
@@ -127,6 +129,21 @@ def case_results(document, classification, evidence, revision, *, package_receip
             if "suite" in test:
                 outcome["suite"] = test["suite"]
             observed.setdefault(key, {})[(digest, test.get("suite", ""))] = outcome
+
+    for record in schema_evidence:
+        if (record["source_revision"] != revision or record["kind"] != "authoring-schema"
+                or record["test_id"] != SCHEMA_TEST or record["features"] != "default"
+                or targets.get(record["target"]) != record["platform"]
+                or record["status"] not in {"PASS", "FAIL"}):
+            raise ValueError("Unrelated authoring-schema observation")
+        digest = record["receipt_sha256"]
+        if digest in receipts and receipts[digest] != record:
+            raise ValueError("Conflicting schema receipt evidence")
+        receipts[digest] = record
+        outcome = {key: record[key] for key in ("status", "artifact_sha256", "receipt_sha256", "created_at", "target")}
+        outcome.update(test_features="independent", producer="authoring-schema",
+                       observations_sha256=record["observations_sha256"])
+        observed.setdefault((SCHEMA_TEST, record["platform"], "default"), {})[(digest, "authoring-schema")] = outcome
 
     for record in consumer_evidence:
         if (record["source_revision"] != revision or record["kind"] != "prism-parser"

@@ -71,6 +71,16 @@ def _acceptance_lines(record):
                       f"  - Receipt SHA-256: {cell(tooling['receipt_sha256'])}"]
         lines += [""]
 
+    if record.get("schema_evidence"):
+        lines += ["## Editor schema and CLI conformance", "",
+                  "Fixed fixtures were checked by the editor schemas and a separately built ordinary product. This does not establish provider resolution or consumer launch.", ""]
+        for schema in record["schema_evidence"]:
+            lines += [f"- {cell(schema['target'])}: {cell(schema['status'])}; {len(schema['fixtures'])} observed fixtures",
+                      f"  - Product SHA-256: {cell(schema['artifact_sha256'])}",
+                      f"  - Receipt SHA-256: {cell(schema['receipt_sha256'])}",
+                      f"  - Observations SHA-256: {cell(schema['observations_sha256'])}"]
+        lines += [""]
+
     if record.get("doctest_evidence"):
         lines += ["## Rustdoc observations", "",
                   "Runtime examples, compile-only examples and expected compilation failures remain distinct. These do not establish product or consumer execution.", ""]

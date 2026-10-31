@@ -19,6 +19,7 @@ from verification.suites import SUITES, nextest_command
 from consumer_fixture import prism_record
 from test_python_evidence import fixture as python_fixture
 from test_doctest_evidence import fixture as doctest_fixture
+from test_authoring_schema import fixture as schema_fixture
 from verification.consumer import inspect_prism_record
 
 REVISION = "a" * 40
@@ -130,6 +131,7 @@ def successes(plan):
 
 
 def tooling_attempt(directory):
+    schema_fixture(directory / "verification-schema" / "one-attempt")
     classification = json.loads((ci.ROOT / "tests/verification/python-bindings.json").read_text())
     records = []
     for target in ci.TARGETS:
@@ -205,6 +207,33 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
 
 
 class RequiredGate(unittest.TestCase):
+    def test_schema_observations_are_required_even_for_docs_only_changes(self):
+        plan = bound(ci.selection(["docs/schemas/empack.schema-5.json"], trusted=False))
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tooling_attempt(root)
+            result = ci.check_gate(plan, successes(plan), root)
+            self.assertEqual(result["schema_evidence"][0]["status"], "PASS")
+            row = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-006")
+            case = next(case for case in row["cases"] if case["id"] == "UX-006.editor-schema-cli-conformance")
+            self.assertEqual(case["status"], "PASS")
+            from verification.reporting import render_gate
+            self.assertIn("Editor schema and CLI conformance", render_gate(result))
+            path = root / "verification-schema/one-attempt/receipt.json"
+            record = json.loads(path.read_text())
+            path.unlink()
+            with self.assertRaisesRegex(ValueError, "schema conformance receipt"):
+                ci.check_gate(plan, successes(plan), root)
+            write_json(path, dict(record, observations_sha256="e" * 64))
+            with self.assertRaisesRegex(ValueError, "changed schema observations"):
+                ci.check_gate(plan, successes(plan), root)
+            write_json(path, record)
+            other = root / "verification-schema/duplicate/receipt.json"
+            other.parent.mkdir()
+            write_json(other, record)
+            with self.assertRaisesRegex(ValueError, "exactly one schema"):
+                ci.check_gate(plan, successes(plan), root)
+
     def test_missing_failed_duplicate_or_relabelled_native_python_cannot_satisfy_gate(self):
         plan = bound(ci.selection(["crates/empack-tests/tests/cli_entry.rs"], trusted=True))
         with tempfile.TemporaryDirectory() as temp:

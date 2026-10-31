@@ -11,6 +11,7 @@ import subprocess
 from verification.evidence import sha256, write_json
 from verification.suites import SUITES
 from verification.consumer import inspect_prism_evidence
+from verification.authoring_schema import inspect_schema_evidence
 from verification.python_tests import inspect_python_evidence
 from verification.doctests import inspect_doctest_evidence
 from verification.requirements import case_results
@@ -164,6 +165,12 @@ def check_gate(plan, needs, artifacts):
     if (tooling[0]["status"] != "PASS" or tooling[0]["platform"] != "linux"
             or tooling[0]["compiler_host"] != TARGETS[0]):
         raise ValueError("Required Python tooling execution did not pass")
+    schema_paths = list((artifacts / "verification-schema").glob("*/receipt.json"))
+    if len(schema_paths) != 1:
+        raise ValueError("Tooling requires exactly one schema conformance receipt")
+    schemas = [inspect_schema_evidence(schema_paths[0], plan["source_revision"])]
+    if schemas[0]["status"] != "PASS" or schemas[0]["target"] != TARGETS[0]:
+        raise ValueError("Required schema conformance failed or used another host")
     evidence, doctests = [], []
     for target in plan["native_targets"]:
         if target != TARGETS[0]:
@@ -198,13 +205,14 @@ def check_gate(plan, needs, artifacts):
         if consumers[0]["status"] != "PASS":
             raise ValueError("Required consumer parser observations failed")
     acceptance = case_results(json.loads(REQUIREMENTS.read_text()), json.loads(CLASSIFICATION.read_text()),
-                              evidence, plan["source_revision"], consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests)
+                              evidence, plan["source_revision"], consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas)
     acceptance["requirements_sha256"] = sha256(REQUIREMENTS)
     acceptance["classification_sha256"] = sha256(CLASSIFICATION)
     return {"schema": 1, "status": "PASS", "qualification": False,
             "source_revision": plan["source_revision"], "source_tree": plan["source_tree"],
             "required_jobs": plan["required_jobs"], "acceptance": acceptance, "consumer_evidence": consumers, "tooling_evidence": tooling,
             "doctest_evidence": doctests,
+            "schema_evidence": schemas,
             "suite_evidence": [{key: value for key, value in record.items() if key != "tests"}
                                for record in evidence]}
 

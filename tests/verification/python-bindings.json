@@ -1927,6 +1927,12 @@
         "UX-085"
       ]
     },
-    {"id": "python::test_toolchain.ToolchainContracts.test_local_nextest_targets_have_classified_members", "boundary": "H", "requirements": ["UX-088"]}
+    {"id": "python::test_toolchain.ToolchainContracts.test_local_nextest_targets_have_classified_members", "boundary": "H", "requirements": ["UX-088"]},
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_fixed_fixture_set_requires_real_validation_and_read_only_responses", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_observed_failure_cannot_be_relabelled_as_a_pass", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_product_source_dependency_and_raw_observations_are_bound", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_schema_evidence_joins_only_its_product_host_and_keeps_other_boundaries_unexecuted", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
+    {"id": "python::test_ci_verification.RequiredGate.test_schema_observations_are_required_even_for_docs_only_changes", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_actual_probe_isolates_every_command_and_retains_mutation_and_timeout", "boundary": "H", "requirements": ["UX-006", "UX-088"]}
   ]
 }

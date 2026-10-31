@@ -72,8 +72,13 @@ jobs:
           path: target/verification-inventory/
           if-no-files-found: error
       - run: python3 scripts/check-docs.py README.md CONTRIBUTING.md docs tests/verification tests/fixtures
-      - run: cargo build --locked -p empack --target-dir target/verification-tools
-      - run: uv run scripts/check-authoring-schema.py target/verification-tools/debug/empack
+      - run: python3 scripts/verify.py schema --output target/verification-schema
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: verification-schema
+          path: target/verification-schema/
+          if-no-files-found: error
 
   lint:
     needs: plan
