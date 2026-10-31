@@ -228,10 +228,14 @@ class PythonReport(unittest.TestCase):
             fixture(ROOT, root / "pass", classification)
             failing = fixture(ROOT, root / "fail", classification)
             events = json.loads((root / "fail/events.json").read_text())
-            events[1]["status"] = "FAIL"
+            failed = next(row for row in failing["tests"] if row["status"] == "PASS")
+            identity = failed["id"].removeprefix("python::")
+            observed = [event for event in events if event["id"] == identity and event["event"] == "result"]
+            self.assertEqual(len(observed), 1)
+            observed[0]["status"] = "FAIL"
             write_json(root / "fail/events.json", events)
             failing["events_sha256"] = sha256(root / "fail/events.json")
-            failing["tests"][0]["status"] = "FAIL"
+            failed["status"] = "FAIL"
             failing.update(status="FAIL", exit_code=1)
             write_json(root / "fail/receipt.json", failing)
             command = [sys.executable, str(ROOT / "scripts/report-verification.py"),
@@ -241,7 +245,7 @@ class PythonReport(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stderr)
             report = json.loads((root / "report/attempts.json").read_text())
             self.assertEqual([row["status"] for row in report["attempts"]], ["FAIL", "PASS"])
-            self.assertTrue(all(row["admission"] == "ADMITTED" for row in report["attempts"]))
+            self.assertTrue(all(row["admission"] == "ADMITTED" for row in report["attempts"]), report["attempts"])
             self.assertFalse(report["qualification"])
             self.assertFalse(report["suite_evidence"])
             text = (root / "report/attempts.md").read_text()
