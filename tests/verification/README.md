@@ -59,6 +59,15 @@ live group/job retired. Dropping the test-owned containment still cleans up its
 fixture. These complete UX-075's definitions, not execution. The existing public
 PTY and JSON/status tests also bind presentation; final archives retain their own
 five-target cases and actual consumer review remains separate.
+
+Import decisions bind host interpretation/acquisition, public exclusion consent
+and verified-byte journeys, explicit initialization routes and materialized content
+inventories. Initialization and import share folder validation; omitted datapack
+routing still uses the import's existing proposals. Unsafe flags refuse before
+publication, and Unicode/nested routes remain authored values. UX-016's definitions
+are complete; missing host/feature execution still leaves them unexecuted.
+Manifest inspection uses the shared workspace snapshot for bytes, portable
+attributes and empty-directory membership rather than a separate byte-only view.
 The `cli_offline` target replaces the former mixed smoke target. Its `journeys`
 module holds connected source/adoption, partial-add and generated-automation
 sequences; focused CLI contracts remain in the root file. They share the same

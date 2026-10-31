@@ -549,16 +549,6 @@ pub fn assert_project_loader_absent(project_root: &Path) {
         empack_core::model::LoaderKind::Vanilla
     );
 }
-pub fn assert_project_datapack_folder(project_root: &Path, expected_folder: &str) {
-    assert_eq!(
-        read_project(project_root)
-            .intent()
-            .layout
-            .get(&empack_core::model::ContentKind::DataPack)
-            .map(|p| p.as_str()),
-        Some(expected_folder)
-    );
-}
 pub fn assert_locked_loader_version(project_root: &Path, loader: &str, expected_version: &str) {
     let project = read_project(project_root);
     assert_eq!(loader_name(project.lock().runtime.loader), loader);

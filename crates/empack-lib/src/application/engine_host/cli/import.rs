@@ -18,7 +18,7 @@ use empack_core::{
         DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent, GameVersion,
         LoaderKind, PackMetadata,
     },
-    path::{InstallDestination, PathSyntax, PortableRelPath},
+    path::{InstallDestination, PortableRelPath},
     requirements::{ChoiceKey, OptionalChoice},
 };
 use std::collections::BTreeMap;
@@ -239,19 +239,8 @@ fn decisions(
     let mut seen = BTreeSet::new();
     acceptable_versions
         .retain(|version| version != &source.runtime.minecraft && seen.insert(version.clone()));
-    let mut layout = BTreeMap::new();
-    if let Some(folder) = &args.world_folder {
-        layout.insert(
-            ContentKind::World,
-            PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
-        );
-    }
-    if let Some(folder) = &args.datapack_folder {
-        layout.insert(
-            ContentKind::DataPack,
-            PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
-        );
-    } else {
+    let mut layout = super::super::initialize::content_layout(args)?;
+    if args.datapack_folder.is_none() {
         let proposals = source
             .datapack_layout_proposals()
             .into_keys()

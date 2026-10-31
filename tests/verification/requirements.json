@@ -2371,6 +2371,46 @@
             "Optional metadata loss and fresh optional defaults require separate decisions; refusal preserves source documents, lock, prior artifact, supplied content and the exported archive"
           ],
           "remaining_group_evidence": "Controlled provider routing is host evidence; remaining executable routing, conversion and populated-replacement combinations require their own cases"
+        },
+        {
+          "boundary": "X",
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "id": "UX-016.explicit-routing-preflight",
+          "test_ids": [
+            "empack-tests::cli_init::cli_init_custom_content_routes_preserve_explicit_paths_and_refuse_traversal"
+          ],
+          "assertions": [
+            "Both folder flags reject traversal with usage status before publication and preserve unrelated author/player bytes, attributes and directory membership",
+            "Default and nested Unicode datapack/world routes remain explicit literal YAML values; later public metadata inspection preserves the full workspace"
+          ]
+        },
+        {
+          "boundary": "X",
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "id": "UX-016.materialized-custom-routing",
+          "test_ids": [
+            "empack-tests::journey_content_kinds::journey_cli_content_kinds_preserve_sides_choices_and_world_groups"
+          ],
+          "assertions": [
+            "The public content-kind journey materializes declared datapack/world routing alongside client/server requirements and explicit optional choices",
+            "Independent complete Prism/native inventories retain source bytes, destinations, choice definitions, world roots and seed ownership"
+          ]
         }
       ],
       "owner_now": [
@@ -2383,7 +2423,7 @@
         "portable evidence/codecs; content/transport host ports",
         "empack-engine codecs/inspection + CLI renderer"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-017",

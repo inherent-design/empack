@@ -8,8 +8,8 @@ mod replacement;
 #[path = "support/runtime_selection.rs"]
 mod runtime_selection;
 use empack_tests::harness::process::{
-    TestProject, assert_project_datapack_folder, assert_project_initialized,
-    assert_project_loader_absent, assert_project_minecraft_version, offline_command,
+    TestProject, assert_project_initialized, assert_project_loader_absent,
+    assert_project_minecraft_version, offline_command,
 };
 
 #[test]
@@ -165,26 +165,87 @@ fn cli_init_emits_versioned_automation_and_templates() {
 }
 
 #[test]
-fn cli_init_datapack_folder_is_authored() {
-    let project = TestProject::new();
-    let output = project.run_output(&[
-        "init",
-        "--yes",
-        "--modloader",
-        "none",
-        "--mc-version",
-        "1.20.1",
-        "--datapack-folder",
-        "datapacks",
-        "test-pack",
-    ]);
-    assert!(output.status.success(), "{:?}", output);
+fn cli_init_custom_content_routes_preserve_explicit_paths_and_refuse_traversal() {
+    use empack_tests::harness::workspace::snapshot;
+    use std::fs;
 
-    let pack_dir = project.dir().join("test-pack");
-    assert_project_initialized(&pack_dir);
-    assert_project_loader_absent(&pack_dir);
-    assert_project_minecraft_version(&pack_dir, "1.20.1");
-    assert_project_datapack_folder(&pack_dir, "datapacks");
+    let project = TestProject::new();
+    fs::create_dir_all(project.dir().join("neighbor/worlds/playtest")).unwrap();
+    fs::write(
+        project.dir().join("neighbor/empack.yml"),
+        b"unrelated author",
+    )
+    .unwrap();
+    fs::write(
+        project.dir().join("neighbor/worlds/playtest/level.dat"),
+        b"player bytes",
+    )
+    .unwrap();
+    let before = snapshot(project.dir());
+    for flag in ["--datapack-folder", "--world-folder"] {
+        let output = offline_command(project.dir())
+            .args([
+                "--yes",
+                "init",
+                "--modloader",
+                "none",
+                "--mc-version",
+                "1.20.1",
+                flag,
+                "../escape",
+                "refused",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{flag}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("file path contains an empty or traversal component"),
+            "{flag}: {output:?}"
+        );
+        assert_eq!(snapshot(project.dir()), before);
+        assert!(!project.dir().join("refused").exists());
+    }
+    for (datapacks, worlds) in [
+        ("datapacks", "saves"),
+        ("config/paxi/datapacks Ω", "saved worlds Ω"),
+    ] {
+        let project = TestProject::new();
+        let output = project.run_output(&[
+            "init",
+            "--yes",
+            "--modloader",
+            "none",
+            "--mc-version",
+            "1.20.1",
+            "--datapack-folder",
+            datapacks,
+            "--world-folder",
+            worlds,
+            "test-pack",
+        ]);
+        assert!(output.status.success(), "{output:?}");
+        let pack_dir = project.dir().join("test-pack");
+        assert_project_initialized(&pack_dir);
+        assert_project_loader_absent(&pack_dir);
+        assert_project_minecraft_version(&pack_dir, "1.20.1");
+        let author: serde_json::Value =
+            serde_saphyr::from_str(&fs::read_to_string(pack_dir.join("empack.yml")).unwrap())
+                .unwrap();
+        assert_eq!(
+            author["layout"],
+            serde_json::json!({"data-pack": datapacks, "world": worlds})
+        );
+        let before = snapshot(project.dir());
+        let output = offline_command(&pack_dir)
+            .args(["manifest", "check", "--json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["author_schema"], 5);
+        assert_eq!(snapshot(project.dir()), before);
+    }
 }
 
 #[test]
