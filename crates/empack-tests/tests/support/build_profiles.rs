@@ -485,6 +485,189 @@ fn profile(
 }
 
 #[test]
+fn cli_managed_prism_rejects_consumer_grammar_mismatches_before_replacing_artifacts() {
+    use empack_tests::harness::workspace::snapshot as observe_workspace;
+    let cases: Vec<Value> = serde_json::from_str(include_str!(
+        "../../../empack-lib/src/engine/build/client/fixtures.json"
+    ))
+    .unwrap();
+    let selected = BTreeSet::from([
+        "supported-1.2",
+        "unicode-display-value-1.3",
+        "legacy-shadow",
+        "hash-quote-1.2",
+        "hash-continuation-1.3",
+        "nbsp-key-prefix-1.2",
+        "nbsp-key-suffix-1.3",
+        "em-space-key-prefix-1.2",
+        "bare-cr-comment-1.3",
+        "case-OverrideCommands",
+    ]);
+    let cases: Vec<_> = cases
+        .iter()
+        .filter(|case| selected.contains(case["name"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        cases.len(),
+        selected.len(),
+        "a required shared fixture is missing"
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .map(|case| case["name"].as_str().unwrap())
+            .collect::<BTreeSet<_>>(),
+        selected,
+    );
+    for (delivery, updates, subscribed) in [
+        ("references", "snapshot", false),
+        ("references", "empack", true),
+        ("bundled", "empack", true),
+    ] {
+        let fixture = Fixture::new(false);
+        let root = fixture.project.dir();
+        let args = [
+            "--ad-hoc",
+            "prism",
+            "--delivery",
+            delivery,
+            "--updates",
+            updates,
+            "--format",
+            "zip",
+        ];
+        let output = format!(
+            "dist/Profile fixture-1-prism-{delivery}{}.zip",
+            if subscribed { "-subscribed" } else { "" }
+        );
+        fixture
+            .command()
+            .args(["--yes", "build"])
+            .args(args)
+            .assert()
+            .success();
+        // Validate the complete generated baseline using literal source content
+        // before retaining it as an unchanged-content comparison for custom INI.
+        let baseline = zip_members(&root.join(&output));
+        assert_inventory(&baseline, true, subscribed, &CONTENT);
+        let generated = std::str::from_utf8(&baseline["instance.cfg"]).unwrap();
+        let setting = |name: &str| {
+            generated
+                .lines()
+                .find_map(|line| line.strip_prefix(name))
+                .expect("generated lifecycle setting missing")
+        };
+        let prepare = setting("PreLaunchCommand=");
+        let wrapper = setting("WrapperCommand=");
+        fs::create_dir_all(root.join("templates/client")).unwrap();
+        for case in &cases {
+            let name = case["name"].as_str().unwrap();
+            let configuration = case["configuration"]
+                .as_str()
+                .unwrap()
+                .replace("@PREPARE@", prepare)
+                .replace("@WRAPPER@", wrapper);
+            fs::write(
+                root.join("templates/client/instance.cfg"),
+                configuration.as_bytes(),
+            )
+            .unwrap();
+            let mut before = observe_workspace(root);
+            let built = fixture
+                .command()
+                .args(["--yes", "build"])
+                .args(args)
+                .assert();
+            if case["accepted"].as_bool().unwrap() {
+                built.success();
+                let mut expected = baseline.clone();
+                expected.insert("instance.cfg".into(), configuration.as_bytes().to_vec());
+                assert_eq!(
+                    zip_members(&root.join(&output)),
+                    expected,
+                    "{delivery}/{updates}/{name}"
+                );
+                before
+                    .files
+                    .insert(output.clone().into(), fs::read(root.join(&output)).unwrap());
+            } else {
+                built
+                    .failure()
+                    .stderr(predicates::str::contains("Managed Prism instance.cfg"));
+            }
+            assert_eq!(
+                observe_workspace(root),
+                before,
+                "{delivery}/{updates}/{name}"
+            );
+        }
+        if delivery == "bundled" {
+            // The same absent-hook configuration is author-owned in a standalone
+            // bundled snapshot. Acceptance here is archive policy, not a launcher run.
+            let standalone =
+                "[General]\nConfigVersion=1.2\nname=Custom pack 世界\nOverrideCommands=false\n";
+            fs::write(root.join("templates/client/instance.cfg"), standalone).unwrap();
+            let mut before = observe_workspace(root);
+            fixture
+                .command()
+                .args(["--yes", "build"])
+                .args(args)
+                .assert()
+                .failure()
+                .stderr(predicates::str::contains("Managed Prism instance.cfg"));
+            assert_eq!(observe_workspace(root), before);
+            fixture
+                .command()
+                .args([
+                    "--yes",
+                    "build",
+                    "--ad-hoc",
+                    "prism",
+                    "--delivery",
+                    "bundled",
+                    "--updates",
+                    "snapshot",
+                    "--format",
+                    "zip",
+                ])
+                .assert()
+                .success();
+            let members = zip_members(&root.join(STANDALONE));
+            let mut expected_names =
+                BTreeSet::from(["instance.cfg".to_owned(), "mmc-pack.json".to_owned()]);
+            expected_names.extend(CONTENT.iter().map(|(path, _)| format!(".minecraft/{path}")));
+            assert_eq!(
+                members.keys().cloned().collect::<BTreeSet<_>>(),
+                expected_names
+            );
+            assert_eq!(members["instance.cfg"], standalone.as_bytes());
+            assert!(
+                !members
+                    .keys()
+                    .any(|name| name.starts_with(".minecraft/.empack-consumer/"))
+            );
+            for (path, bytes) in CONTENT {
+                assert_eq!(members[&format!(".minecraft/{path}")], bytes);
+            }
+            assert_eq!(
+                serde_json::from_slice::<Value>(&members["mmc-pack.json"]).unwrap(),
+                json!({"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.21.1","important":true}]})
+            );
+            let after = observe_workspace(root);
+            before.files.insert(
+                STANDALONE.into(),
+                after.files[std::path::Path::new(STANDALONE)].clone(),
+            );
+            before.entries.insert(
+                STANDALONE.into(),
+                after.entries[std::path::Path::new(STANDALONE)],
+            );
+            assert_eq!(after, before);
+        }
+    }
+}
+
+#[test]
 fn cli_profiles_preserve_authored_policy_and_explain_actual_output() {
     let fixture = Fixture::new(false);
     for (args, origin) in [

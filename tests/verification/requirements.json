@@ -7834,6 +7834,29 @@
           "assertions": [
             "The shared configuration fixtures pass or fail through public batch preparation for reference snapshots and both subscribed Prism variants while preserving author/lock/template/prior-artifact bytes; standalone bundled configuration retains its separately supported customization"
           ]
+        },
+        {
+          "id": "UX-053.public-managed-prism-grammar",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_managed_prism_rejects_consumer_grammar_mismatches_before_replacing_artifacts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Ten named shared consumer grammar fixtures execute through public CLI build across reference snapshots, reference subscriptions and bundled subscriptions; missing or duplicate selected fixtures fail",
+            "Accepted versions and Unicode display values retain exact custom instance.cfg bytes while all other members match the independently validated literal content inventory",
+            "Missing/legacy format selection, hash quote/continuation, Unicode key whitespace, bare CR and noncanonical authority keys refuse without changing author bytes, attributes or prior artifacts",
+            "Standalone bundled output accepts an author-owned configuration without managed hooks; this checks archive policy rather than launcher execution"
+          ],
+          "remaining_group_evidence": "Full shared grammar and supported Qt interpretation have separate H/C cases. Public managed server entry points and actual launcher startup remain separate obligations; this group stays partial."
         }
       ],
       "owner_now": [

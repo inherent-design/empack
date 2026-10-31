@@ -302,9 +302,13 @@ was executed. It requires every fixture's observations, a supported dependency/b
 environment, immutable source/input identity and the probe digest. The CI and candidate
 gates recheck those observations before joining them to `UX-053.prism-parser`.
 Unsupported or mismatched records are rejected; recorded failures remain failures.
-Other managed-integration cases still need public builder, executable and actual
-consumer evidence. Python tests of admission use explicitly synthetic records and
-are classified as helper/script evidence, never as consumer executions.
+The public build case selects ten named shared fixtures across reference snapshots
+and both subscribed Prism recipes, preserving exact custom bytes and prior outputs.
+Its standalone control keeps user-owned configuration separate. The full engine
+corpus, actual parser, server entry points and launcher startup remain separate
+boundaries; these cases do not complete managed integration. Python tests of
+admission use explicitly synthetic records and are classified as helper/script
+evidence, never as consumer executions.
 
 Authoring-conformance cases use literal YAML through `manifest check --json` and
 human explanation. They compare shorthand and expanded provider, URL and local

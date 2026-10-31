@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::cli_build::profiles::cli_managed_prism_rejects_consumer_grammar_mismatches_before_replacing_artifacts", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_files", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "I", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::instance::publication_tests::rollback_publication_crashes_recover_content_metadata_and_preserve_player_state", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::instance::publication_tests::rollback_crash_worker", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
