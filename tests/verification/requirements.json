@@ -958,6 +958,54 @@
           "assertions": [
             "Explicit first-observation URL policy and readable flow-node editing limitations remain visible in JSON and human explanation; comments and original bytes survive"
           ]
+        },
+        {
+          "id": "UX-006.codec-normalization-and-raw-edits",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::documents::tests::yaml_scalar_spellings_preserve_authored_strings_and_semantic_revision",
+            "empack-lib::engine::documents::tests::comment_edits_have_same_semantics_but_distinct_raw_revisions",
+            "empack-lib::engine::documents::tests::authoring_composition_keeps_common_dependencies_compact_and_advanced_intent_lossless"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Scalar spellings and escaped YAML noncharacters retain authored string values and semantic revision through encoding",
+            "Comment-only edits retain semantics while changing raw revision; no-op replacement preserves original bytes and explicit edits retain the original revision precondition and comments",
+            "Compact common authoring and advanced split bindings decode to the same complete intent and semantic revision; removing a dependency retains the existing empty binding document"
+          ],
+          "remaining_group_evidence": "Pure codecs do not execute the public command, editor schema validator or host storage. Those boundaries and required platform observations remain separate; this group stays partial."
+        },
+        {
+          "id": "UX-006.codec-rejects-competing-authority-and-implicit-url-observation",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::documents::tests::invalid_explicit_intent_never_becomes_a_search_or_default",
+            "empack-lib::engine::documents::tests::binding_semantics_raw_edits_conflicts_and_dangling_roles_remain_distinct",
+            "empack-lib::engine::documents::tests::url_spellings_require_assertions_or_explicit_first_observation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Invalid explicit sources, schemas, targets, unknown and duplicate fields refuse rather than becoming defaults or search requests",
+            "Binding comments change raw binding revision without changing semantics; dangling roles, unknown fields, unsafe placement and competing inline/binding authority fail",
+            "Both URL spellings require explicit digest assertions or explicit first-observation policy; omitted/false observation policy and competing policy/assertions refuse, while valid intent round-trips"
+          ],
+          "remaining_group_evidence": "Pure codecs do not execute the public command, editor schema validator or host storage. Those boundaries and required platform observations remain separate; this group stays partial."
         }
       ],
       "owner_now": [

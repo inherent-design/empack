@@ -318,6 +318,10 @@ flow syntax retains its editing limitations. Every case preserves author bytes a
 requires absent state/cache outputs. These executable cases complement editor-schema
 checks; they do not establish provider access, payload validity or complete schema
 coverage. `UX-006` remains partially bound while those other obligations are joined.
+Separate pure codec bindings cover scalar and comment preservation, raw versus
+semantic revisions, compact/split composition, competing authority and explicit URL
+evidence policy. They reuse existing assertions; mapping them supplies no new
+execution or editor-conformance observation.
 
 Manifest explanation cases distinguish a stale document revision from an unsatisfied
 selection. Literal local sources exercise source, automatic-directory and binding
