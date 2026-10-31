@@ -2024,6 +2024,205 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
 }
 
 #[test]
+fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let publisher = root.path().join("publisher");
+    fs::create_dir(&publisher).unwrap();
+    let keys = root.path().join("private keys");
+    private_directory(&keys);
+    let key = SigningKey::from_bytes(&[92; 32]);
+    let key_file = keys.join("fixture.key");
+    fs::write(&key_file, format!("{}\n", hex(&[92; 32]))).unwrap();
+    let mut releases = Vec::new();
+    for version in ["A", "B"] {
+        let export = root.path().join(format!("context export {version}"));
+        fs::create_dir(&export).unwrap();
+        let files: Vec<_> = [
+            ("core", "mods/core.jar", "managed", version.as_bytes()),
+            ("config", "config/player.txt", "seed", b"publisher defaults".as_slice()),
+        ].into_iter().map(|(name, destination, policy, bytes)| {
+            write(&export, &format!("assets/{name}"), bytes);
+            json!({"key":name,"destination":destination,"layer":"common","policy":policy,
+                "client":{"kind":"required"},"server":{"kind":"required"},
+                "sha256":hex(&Sha256::digest(bytes)),"bytes":bytes.len(),"readonly":false,"executable":false,
+                "assertions":[],"source":{"kind":"asset","path":format!("assets/{name}")}})
+        }).collect();
+        let payload = serde_json::to_vec(
+            &json!({"schema":1,"pack":"verification.publisher","version":version,
+            "minimum_engine":">=0.8.0-beta","require_subscription":true,
+            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+            "files":files,"choices":[]}),
+        )
+        .unwrap();
+        let (id, envelope) = stage_literal_release(&export, &publisher, &key_file, &payload);
+        verify_staged(
+            &envelope,
+            &key.verifying_key(),
+            &id,
+            &export.join("release.json"),
+        );
+        releases.push((id, envelope));
+    }
+    let publisher_before = snapshot(&publisher);
+    let keys_before = snapshot(&keys);
+    let expires = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+    for (layout, side) in [("game", "client"), ("game", "server"), ("prism", "client")] {
+        let instance = root.path().join(format!("{layout}-{side}"));
+        fs::create_dir(&instance).unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("selected state");
+        let command = || {
+            let mut command = offline_command(&instance);
+            command
+                .arg("--state-dir")
+                .arg(&state)
+                .arg("--cache-dir")
+                .arg(state.with_extension("cache"));
+            command
+        };
+        command()
+            .args([
+                "--yes",
+                "instance",
+                "subscribe",
+                "--pack",
+                "verification.publisher",
+                "--channel",
+                "stable",
+                "https://publisher.invalid/channels/stable.json",
+                "--key",
+            ])
+            .arg(hex(key.verifying_key().as_bytes()))
+            .assert()
+            .success();
+        let offered = host.path().join("channel.json");
+        channel(&offered, &key, &releases[0].0, &releases[0].1, 1, expires);
+        command()
+            .args(["--yes", "instance", "check-updates"])
+            .arg(&offered)
+            .assert()
+            .success();
+        command()
+            .args(["--yes", "instance", "update"])
+            .arg(&releases[0].1)
+            .args(["--layout", layout, "--side", side])
+            .assert()
+            .success();
+        let game = if layout == "prism" {
+            ".minecraft"
+        } else {
+            "game"
+        };
+        write(
+            &instance,
+            &format!("{game}/config/player.txt"),
+            b"player settings",
+        );
+        write(
+            &instance,
+            &format!("{game}/saves/played/level.dat"),
+            b"player world",
+        );
+        channel(&offered, &key, &releases[1].0, &releases[1].1, 2, expires);
+        let before_observation = snapshot(&instance.join(game));
+        command()
+            .args(["--yes", "instance", "check-updates"])
+            .arg(&offered)
+            .assert()
+            .success();
+        assert_eq!(snapshot(&instance.join(game)), before_observation);
+        let before = snapshot(&instance);
+        for (option, value) in [
+            ("--side", if side == "client" { "server" } else { "client" }),
+            ("--layout", if layout == "prism" { "game" } else { "prism" }),
+        ] {
+            let diagnostic = if (layout == "prism" && option == "--side")
+                || (side == "server" && option == "--layout")
+            {
+                "Prism layout requires the client environment"
+            } else {
+                "Instance pack, side or layout cannot change during an update"
+            };
+            command()
+                .args(["--yes", "instance", "update"])
+                .arg(&releases[1].1)
+                .args([option, value])
+                .assert()
+                .failure()
+                .stderr(contains(diagnostic));
+            assert_eq!(snapshot(&instance), before);
+        }
+        command()
+            .args(["--yes", "instance", "update"])
+            .arg(&releases[1].1)
+            .assert()
+            .success();
+        assert_eq!(
+            snapshot(&instance.join(game)).files,
+            BTreeMap::from([
+                (
+                    PathBuf::from(".empack-layout"),
+                    if layout == "prism" {
+                        b"empack-prism-layout-v1\n".to_vec()
+                    } else {
+                        b"empack-game-layout-v1\n".to_vec()
+                    }
+                ),
+                (PathBuf::from("mods/core.jar"), b"B".to_vec()),
+                (
+                    PathBuf::from("config/player.txt"),
+                    b"player settings".to_vec()
+                ),
+                (
+                    PathBuf::from("saves/played/level.dat"),
+                    b"player world".to_vec()
+                ),
+            ])
+        );
+        assert!(
+            !instance
+                .join(if layout == "prism" {
+                    "game"
+                } else {
+                    ".minecraft"
+                })
+                .exists()
+        );
+        command()
+            .args(["instance", "inspect"])
+            .assert()
+            .success()
+            .stdout(contains(format!("release {};", releases[1].0)))
+            .stdout(contains(format!("Retained release: {}", releases[0].0)));
+        let status = command()
+            .args(["status", "--context", "instance", "--json"])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let status: serde_json::Value = serde_json::from_slice(&status).unwrap();
+        let context = status["contexts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["context"] == "instance")
+            .unwrap();
+        assert_eq!(context["side"], side);
+        assert_eq!(context["game_directory"], game);
+        assert_eq!(context["exact"], releases[1].0);
+        assert_eq!(context["state"], "valid");
+        assert_eq!(status["content_verified"], false);
+    }
+    assert_eq!(snapshot(&publisher), publisher_before);
+    assert_eq!(snapshot(&keys), keys_before);
+}
+
+#[test]
 fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
     let root = tempfile::Builder::new()
         .prefix("runtime transition Ω ")

@@ -104,6 +104,14 @@ validation. The native publication fixture proves that a hot journal prevents
 live-context interpretation before recovery. These definitions do not provide
 execution observations or claim that metadata status verifies installed content.
 
+Update context has public signed-release coverage for game/client, game/server and
+Prism/client installations. Explicit contradictory side/layout arguments must fail
+without changing the installed root; omitted arguments retain the saved context.
+Literal game inventories, release history and metadata status must agree after
+update. The host check/update case separately verifies observation and application
+approval, including a retained sequence floor after acquisition fails. Five-target
+package execution remains required for these defined update cases.
+
 `mise run test:map` runs the same discovery and classification check as the PR
 tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,
 and asks rustdoc for both the complete and ignored workspace doctest listings.

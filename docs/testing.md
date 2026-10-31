@@ -639,6 +639,14 @@ until recovery; malformed records and ambiguous workspace roles are preserved fo
 diagnosis. The fixtures compare state before and after inspection rather than
 treating successful output alone as proof of a read-only operation.
 
+Signed update-context fixtures cover game/client, game/server and Prism/client.
+They refuse contradictory explicit side/layout options before publication, then
+omit those options and require the persisted context, exact B inventory and
+retained A history. A separate host transport fixture checks the two approvals for
+fresh observation and application, preserving observation even when fetching the
+release fails. Package cases require these public workflows on the extracted
+archives; host fixtures alone do not qualify a distribution.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid

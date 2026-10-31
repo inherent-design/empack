@@ -9102,8 +9102,78 @@
           "assertions": [
             "Observing B leaves A installed; a conflicting managed file blocks B without overwriting local data",
             "Explicit replacement installs exact B bytes while retaining player-owned configuration and world content"
+          ]
+        },
+        {
+          "id": "UX-064.inferred-context-and-contradictory-overrides",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_updates_retain_side_and_layout_and_refuse_context_changes",
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases"
           ],
-          "remaining_group_evidence": "Client/server and Prism layout variants, contradictory overrides, check/approval behavior and instance pending input remain separate cases"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Signed A/B releases are installed/updated through fresh public commands for game-client, game-server and Prism-client contexts",
+            "Observation leaves installed bytes unchanged; explicit opposite side/layout refuses with a specific context diagnostic and whole instance preservation",
+            "Omitting side/layout installs exact B into the persisted game directory; complete game inventory, retained A history and machine-reported side/layout/release agree",
+            "The connected optional/manual A/B/C fixture preserves installed A while B is pending and resumes the exact selected release without silently changing context"
+          ]
+        },
+        {
+          "id": "UX-064.fresh-check-before-separate-apply",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::combined_update_checks_before_separate_apply_and_keeps_failed_floor"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Controlled host transport exercises check+update with inferred server context, preview/refusal and two separate observation/application approvals",
+            "A missing release after approved channel observation preserves its durable sequence floor; declining application keeps A installed and accepting later applies B",
+            "This host-only transport adapter is absent from the ordinary product; it is not actual hosted HTTPS or browser capability evidence"
+          ]
+        },
+        {
+          "id": "UX-064.packaged-context-and-conflict-updates",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_updates_retain_side_and_layout_and_refuse_context_changes",
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "assertions": [
+            "Each declared final archive executes the public inferred-context/contradictory-override and managed-conflict update journeys",
+            "Native component/suite observations cannot replace the exact five-target archive execution binding"
+          ]
         }
       ],
       "owner_now": [
@@ -9116,7 +9186,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-065",
