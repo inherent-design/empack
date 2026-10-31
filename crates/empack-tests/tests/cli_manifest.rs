@@ -46,8 +46,12 @@ fn cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_reque
         let (_, tail) = text.split_once("```yaml\n").expect("documented YAML block");
         tail.split_once("\n```").expect("closed YAML block")
     }
-    let (manifest, _) = yaml_block(include_str!("../../../docs/manifest.md"));
-    let (_, native_section) = include_str!("../../../docs/usage.md")
+    // Git may check Markdown out with CRLF on Windows. Normalize only line
+    // endings before locating fences; the YAML fields still come from the docs.
+    let manifest_document = include_str!("../../../docs/manifest.md").replace("\r\n", "\n");
+    let usage_document = include_str!("../../../docs/usage.md").replace("\r\n", "\n");
+    let (manifest, _) = yaml_block(&manifest_document);
+    let (_, native_section) = usage_document
         .split_once("## Native release example\n")
         .expect("documented native release example");
     let (native, remainder) = yaml_block(native_section);

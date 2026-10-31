@@ -916,6 +916,12 @@ native release producer and a persisted Prism layout, reject managed icon update
 and preserve launcher bytes through corrected seed updates and launch preparation.
 Historical managed-icon fixtures verify migration to seed without conflict overrides.
 
+The Windows termination-denial fixture keeps a real owned job alive while checking
+that failed termination cannot establish retirement. Dropping the owner explicitly
+retries job termination before closing its kill-on-close handle; the fixture must
+then reap the child within the existing bound. This cleanup attempt does not change
+the already reported uncertainty into a retirement proof or clear recovery state.
+
 Executable finalization is tested separately from process supervision:
 
 ```sh

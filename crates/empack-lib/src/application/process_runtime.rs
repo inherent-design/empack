@@ -404,6 +404,16 @@ impl Drop for ProcessTree {
 }
 
 #[cfg(windows)]
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        // Retry termination before closing our job handle, including when the
+        // bounded retirement check failed. Kill-on-close remains a final fallback.
+        // This best-effort cleanup does not establish retirement or clear recovery.
+        let _ = self.terminate();
+    }
+}
+
+#[cfg(windows)]
 fn spawn_windows_child(
     command: &mut tokio::process::Command,
     register: impl FnOnce(&tokio::process::Child) -> Result<ProcessTree>,
@@ -635,8 +645,8 @@ mod windows_tests {
         assert!(diagnostic.contains("Owned process-tree termination failed"));
         assert!(diagnostic.contains("Runtime descendants have not retired"));
         assert!(diagnostic.contains("recovery acknowledgment is required"));
-        // Dropping the still-owned job closes its kill-on-close handle. A
-        // negative retirement result must neither authorize success nor leak it.
+        // Dropping the still-owned job retries termination before closing its
+        // kill-on-close handle. A negative result cannot authorize success or leak it.
         tokio::time::timeout(Duration::from_secs(5), child.wait())
             .await
             .unwrap()
