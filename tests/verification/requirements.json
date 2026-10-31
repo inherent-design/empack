@@ -6327,6 +6327,24 @@
             "An actual terminal Ctrl-C at the recovery approval prompt reports interruption and exits 130 without losing pending evidence; a later explicit approval completes the exact candidate"
           ],
           "remaining_group_evidence": "Human discoverability using only public output/help, other pending workflows, required platform variants and final candidate execution remain unqualified."
+        },
+        {
+          "id": "UX-039.fresh-user-recovery",
+          "boundary": "M",
+          "test_ids": [
+            "acceptance::human::pending-recovery"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A fresh user discovers, supplies and resumes a real pending obligation from public instructions while preserving author/player data"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
         }
       ],
       "owner_now": [
@@ -12657,6 +12675,24 @@
             "Native helper staging rejects escaping/missing paths and filename collisions before copying assets",
             "Verified archive extraction creates only the regular executable and writes its path; the recorded invocation is mocked, not a runtime launch"
           ]
+        },
+        {
+          "id": "UX-082.sandbox-publication",
+          "boundary": "M",
+          "test_ids": [
+            "acceptance::human::sandbox-publication"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An operator runs generated automation in a disposable repository with scoped permissions and records artifact identity, failed-validation publication refusal and the completion receipt"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
         }
       ],
       "owner_now": [
@@ -12753,7 +12789,7 @@
         "INST"
       ],
       "required_assertions": "Independent consumer reads inventory; reference hooks run and abort invalid descriptors before Java; platform snapshots do not require empack.",
-      "required_work": "Disposable actual launcher profile; human-authenticated startup only where licensed; no gameplay certification inferred.",
+      "required_work": "Actual consumer and operator task intake is bound; disposable profiles, supported consumer/dependency environments, source/distribution/inventory identity and retained observations still require execution. Human startup uses an authorized account without recording credentials; no gameplay certification inferred. The initial selected human task host is macOS; consumer records require all three native families and both product graphs.",
       "evidence_tiers": [
         "C",
         "M"
@@ -12762,7 +12798,146 @@
       "run_gate": "candidate",
       "scope": "stable",
       "variant_axes": "",
-      "cases": [],
+      "cases": [
+        {
+          "id": "UX-084.prism-reference",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::reference-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual supported Prism import, independent inventory, required preparation, invalid-descriptor refusal before Java, exact-candidate startup, seed icon preservation and signed update/relaunch"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        },
+        {
+          "id": "UX-084.prism-bundled",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::bundled-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual bundled Prism import and startup preserve the independently expected content and configuration without requiring recipient empack"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        },
+        {
+          "id": "UX-084.modrinth-import",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::consumer::modrinth-import"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual named consumer imports the mrpack and starts the exact selected content/runtime against an independent inventory"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        },
+        {
+          "id": "UX-084.curseforge-import",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::consumer::curseforge-import"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual named consumer imports the manifest, resolves required restricted content and starts the exact independently inventoried candidate"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        },
+        {
+          "id": "UX-084.managed-server-console",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::server::managed-console"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual Java through the generated managed entry point exercises preparation, input, normal shutdown, terminal interruption and retirement/restoration"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        },
+        {
+          "id": "UX-084.bundled-server-console",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::server::bundled-console"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual Java through the generated standalone entry point starts without recipient empack and preserves content, console shutdown, Java status and terminal restoration"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        },
+        {
+          "id": "UX-084.human-licensed-startup",
+          "boundary": "M",
+          "test_ids": [
+            "acceptance::human::licensed-startup"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A maintainer records authorized disposable-profile authentication and the exact startup checkpoint and limits; no credentials or gameplay certification are included"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
+        }
+      ],
       "owner_now": [
         "engine_host::build/profiles; engine::build; templates/artifacts",
         "api::launch + process_runtime + runtime lease; server_runtime/installer",
@@ -12773,7 +12948,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "pending"
+      "case_bindings_status": "partial"
     },
     {
       "id": "UX-085",
@@ -13203,6 +13378,24 @@
             "The literal complete manifest and native-release YAML examples execute through public local inspection without acquiring content or modifying inputs",
             "This checks the shown authoring syntax and requests, not every documented command or fresh-user task completion"
           ]
+        },
+        {
+          "id": "UX-087.fresh-user-documentation",
+          "boundary": "M",
+          "test_ids": [
+            "acceptance::human::documentation-tasks"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A fresh user follows the documentation through initialization, local content, explanation/build and recipient requirements, and correctly interprets failure and status"
+          ],
+          "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
         }
       ],
       "owner_now": [
@@ -13511,6 +13704,53 @@
             "The local fixed-target selection is nonempty; stale target names cannot remain after a family rename"
           ],
           "remaining_group_evidence": "This reads repository task declarations; hosted compiler inventories establish actual membership, and native/executable suites establish execution. No command is executed by this component check."
+        },
+        {
+          "id": "UX-088.operator-acceptance-admission",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_operator_acceptance.OperatorAcceptance.test_retained_observations_keep_operator_scope_and_exact_candidate_identity",
+            "python::test_operator_acceptance.OperatorAcceptance.test_source_payload_procedure_and_product_cannot_be_selected_by_the_record",
+            "python::test_operator_acceptance.OperatorAcceptance.test_unperformed_or_failed_steps_cannot_become_a_passing_receipt",
+            "python::test_operator_acceptance.OperatorAcceptance.test_required_steps_and_supporting_evidence_are_not_replaceable_by_summary_labels",
+            "python::test_operator_acceptance.OperatorAcceptance.test_supporting_file_identity_and_path_confinement_are_rechecked",
+            "python::test_operator_acceptance.OperatorAcceptance.test_attribution_environment_dates_and_bounded_json_are_required",
+            "python::test_operator_acceptance.OperatorAcceptance.test_join_retains_failed_attempts_and_missing_host_or_feature_variants",
+            "python::test_operator_acceptance.OperatorAcceptance.test_candidate_gate_requires_actual_task_records_beyond_passing_native_cases"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Synthetic records verify exact candidate/procedure binding, attributable observations, complete ordered steps, bounded supporting-file identity and path confinement",
+            "Failures, missing hosts/features and unperformed steps remain visible; a passing helper test is not actual consumer or human acceptance"
+          ],
+          "remaining_group_evidence": "Controlled evidence-reader fixtures only; actual tasks and final archive qualification remain independently required"
+        },
+        {
+          "id": "UX-088.operator-acceptance-command",
+          "boundary": "X",
+          "test_ids": [
+            "python::test_candidate_qualification.CandidateCommand.test_operator_records_bind_to_archives_without_qualifying_missing_tasks"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "The actual Python qualification command admits a source/product/payload-bound synthetic operator record and retains missing consumer hosts, feature graphs and tasks as NOT_RUN",
+            "Changed supporting files fail the command; reporting identifies operator-recorded scope without claiming an actual consumer execution"
+          ],
+          "remaining_group_evidence": "Synthetic archive/header and operator fixtures exercise tooling wiring only; they do not execute empack or an actual consumer"
         }
       ],
       "owner_now": [

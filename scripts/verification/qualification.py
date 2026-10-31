@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .evidence import aggregate_outcomes, sha256
 from .consumer import inspect_prism_evidence
+from .acceptance import inspect_acceptance_evidence
 from .python_tests import inspect_python_evidence
 from .doctests import inspect_doctest_evidence
 from .auxiliary import inspect_auxiliary
@@ -24,7 +25,7 @@ def applicable_requirements(version):
     return NATIVE | PORTABLE if (major, minor) >= (0, 9) else NATIVE
 
 
-def evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=()):
+def evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=(), acceptance_evidence=()):
     """Evaluate admitted observations, not self-reported requirement PASS labels."""
     release_version(version)
     by_id = {row["id"]: row for row in document["requirements"]}
@@ -36,7 +37,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # Portable obligations become mandatory at their planned release, never by
     # silently changing the denominator or relying on a caller's exclusions.
     applicable = applicable_requirements(version)
-    acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence, tooling_evidence=tooling_evidence, doctest_evidence=doctest_evidence, schema_evidence=schema_evidence)
+    acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence, tooling_evidence=tooling_evidence, doctest_evidence=doctest_evidence, schema_evidence=schema_evidence, acceptance_evidence=acceptance_evidence)
     blockers = []
     for row in acceptance["requirements"]:
         row["applicable"] = row["id"] in applicable
@@ -59,18 +60,18 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # No approved low-risk waiver policy is installed. Missing critical or actual
     # consumer evidence cannot be waived by setting a result field to WAIVED.
     states = [row["status"] for row in acceptance["requirements"] if row["applicable"]]
-    for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence]:
+    for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence, *acceptance_evidence]:
         if record.get("status") != "PASS":
             blockers.append({"requirement": "candidate", "reasons": [
                 f"Evidence receipt {record['receipt_sha256']} is {record.get('status', 'missing its outcome')}"]})
-    observed = aggregate_outcomes(states + [record["status"] for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence]])
+    observed = aggregate_outcomes(states + [record["status"] for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence, *acceptance_evidence]])
     status = "FAIL" if observed == "FAIL" else "BLOCKED" if blockers else "PASS"
     return {"status": status, "qualification": status == "PASS", "acceptance": acceptance,
             "applicable_requirements": sorted(applicable), "blockers": blockers,
             "waivers": [], "waiver_policy": "No waiver admission; all applicable obligations must pass"}
 
 
-def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=(), tooling_paths=(), auxiliary_paths=(), doctest_paths=(), execution_paths=()):
+def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), consumer_paths=(), tooling_paths=(), auxiliary_paths=(), doctest_paths=(), execution_paths=(), acceptance_paths=()):
     root = Path(root)
     if git(root, "rev-parse", "HEAD") != revision or git(root, "status", "--porcelain"):
         raise ValueError("Candidate gate requires its exact clean source checkout")
@@ -83,6 +84,14 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     package_receipts = {record["receipt_sha256"] for record in evidence}
     binaries = {entry["suite"]["target"]: entry["executable"]["sha256"] for entry in archives["targets"]}
     auxiliary = [inspect_auxiliary(path, root, revision, version) for path in auxiliary_paths]
+    products = {(entry["suite"]["target"], "default"): entry["executable"]["sha256"] for entry in archives["targets"]}
+    for record in auxiliary:
+        key = (record["suite"]["target"], "telemetry")
+        if key in products and products[key] != record["suite"]["artifact_sha256"]:
+            raise ValueError("Operator acceptance cannot select between conflicting product builds")
+        products[key] = record["suite"]["artifact_sha256"]
+    operator_records = [inspect_acceptance_evidence(path, revision, version, payload_sha256, products, root)
+                        for path in acceptance_paths]
     evidence.extend(record["suite"] for record in auxiliary)
     executions = [inspect_execution(path, archives, auxiliary, payload_sha256, revision, version, root)
                   for path in execution_paths]
@@ -104,12 +113,13 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     doctests = [inspect_doctest_evidence(path, revision, root) for path in doctest_paths]
     schemas = [schema for execution in executions for schema in execution["schema_evidence"]]
     result = evaluate_requirements(document, classification, evidence, revision, version, package_receipts,
-                                   consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas)
+                                   consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas, acceptance_evidence=operator_records)
     result["acceptance"].update(requirements_sha256=sha256(registry), classification_sha256=sha256(bindings))
     result.update(schema=1, kind="release-candidate-qualification", source_revision=revision,
                   source_tree=git(root, "rev-parse", "HEAD^{tree}"), version=version,
                   created_at=datetime.now(timezone.utc).isoformat(), archive_evidence_sha256=payload_sha256,
                   consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas,
+                  operator_acceptance=operator_records,
                   auxiliary_builds=[{key: value for key, value in record.items() if key != "suite"} for record in auxiliary],
                   candidate_executions=[{key: value for key, value in record.items() if key != "suites"} for record in executions],
                   suite_evidence=[{key: value for key, value in record.items() if key != "tests"} for record in evidence])

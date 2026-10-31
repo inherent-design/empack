@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BINDINGS = "tests/verification/python-bindings.json"
 PLATFORMS = ("linux", "macos", "windows")
 PRODUCER_INPUTS = ("scripts/verify.py", "scripts/python-test-driver.py", "scripts/verification/python_tests.py",
-                   "rust-toolchain.toml")
+                   "rust-toolchain.toml", "tests/verification/acceptance-procedures.json")
 
 
 def inputs(root=ROOT):

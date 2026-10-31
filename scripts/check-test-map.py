@@ -9,6 +9,7 @@ from pathlib import Path
 from verification.classification import BOUNDARIES, compare_rust_inventory
 from verification.compiler import compiler_environment
 from verification.consumer import PRISM_TEST
+from verification.acceptance import procedures
 from verification.authoring_schema import TEST_ID as SCHEMA_TEST
 from verification.python_tests import compare_inventory as compare_python_inventory
 from verification.suites import TEST_FEATURES
@@ -184,10 +185,10 @@ def main():
                       if bindings.get("schema") == 3 else discovered.keys())
         for requirement in requirements["requirements"]:
             for case in requirement["cases"]:
-                # Python, rustdoc and Qt have independent discovery/validation.
+                # Tooling, parser and operator records have separate admission.
                 # case_results above still rejects unknown or mismatched bindings.
                 missing = {identity for identity in case["test_ids"]
-                           if not identity.startswith(("python::", "doctest::"))} - {PRISM_TEST, SCHEMA_TEST} - known_rust
+                           if not identity.startswith(("python::", "doctest::"))} - {PRISM_TEST, SCHEMA_TEST} - set(procedures()) - known_rust
                 if missing:
                     raise ValueError(f"Case {case['id']} selects absent tests: {sorted(missing)}")
     for inventory_path, binding_path, label, compare in [

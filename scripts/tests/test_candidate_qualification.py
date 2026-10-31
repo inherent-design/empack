@@ -167,6 +167,36 @@ class CandidateCommand(unittest.TestCase):
     setUp = archive_fixtures.ReleaseArchiveGate.setUp
     admit = archive_fixtures.ReleaseArchiveGate.admit
 
+    def test_operator_records_bind_to_archives_without_qualifying_missing_tasks(self):
+        from test_operator_acceptance import fixture as operator_fixture
+        self.admit()
+        directory = self.root / ".git/operator-observation"
+        directory.mkdir()
+        path, data = operator_fixture(directory)
+        data.update(source_revision=self.revision, version=self.version,
+                    archive_evidence_sha256=sha256(self.output / "archive-evidence.json"),
+                    artifact_sha256=json.loads((self.artifacts / "release-build-x86_64-unknown-linux-gnu/build.json").read_text())["executable"]["sha256"])
+        write_json(path, data)
+        output = self.root / ".git/operator-candidate.json"
+        command = [sys.executable, str(SCRIPTS / "qualify-release.py"), "gate",
+                   "--payload", str(self.output), "--archive-evidence-sha256", sha256(self.output / "archive-evidence.json"),
+                   "--acceptance", str(path), "--revision", self.revision, "--version", self.version, "--output", str(output)]
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 2, process.stderr)
+        result = json.loads(output.read_text())
+        self.assertFalse(result["qualification"])
+        self.assertEqual(len(result["operator_acceptance"]), 1)
+        row = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-084")
+        self.assertEqual(row["status"], "NOT_RUN")
+        case = next(case for case in row["cases"] if case["id"] == "UX-084.prism-reference")
+        self.assertEqual(case["variants"][0]["status"], "PASS", "synthetic record admission only")
+        self.assertTrue(all(v["status"] == "NOT_RUN" for v in case["variants"][1:]))
+        self.assertIn("operator-recorded", output.with_suffix(".md").read_text().lower())
+        (directory / "observation.txt").write_text("changed", encoding="utf-8")
+        process = subprocess.run(command, cwd=self.root, capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 1, process.stderr)
+        self.assertIn("supporting evidence changed", json.loads(output.read_text())["reason"])
+
     def test_command_admits_doctest_graphs_but_rejects_failed_attempts(self):
         from test_doctest_evidence import fixture as doctest_fixture
         self.admit()
@@ -194,7 +224,9 @@ class CandidateCommand(unittest.TestCase):
         self.assertEqual(len(examples), 2)
         self.assertTrue(all(case["status"] == "PASS" for case in examples))
         literal = next(case for case in row["cases"] if case["id"] == "UX-087.literal-authoring-examples")
-        self.assertEqual(len(row["cases"]), 3)
+        self.assertEqual(len(row["cases"]), 4)
+        human = next(case for case in row["cases"] if case["boundary"] == "M")
+        self.assertEqual(human["status"], "NOT_RUN", "rustdoc is not a fresh-user task record")
         self.assertEqual(literal["status"], "NOT_RUN", "doctests cannot replace missing executable variants")
         self.assertEqual(len(literal["variants"]), 6)
         for variant in literal["variants"]:

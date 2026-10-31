@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "scope": "Operator-recorded consumer and human tasks; a checklist or example is not execution evidence.",
+  "procedures": [
+    {
+      "id": "acceptance::prism::reference-instance",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["import-reference-archive", "compare-independent-inventory", "run-required-preparation", "refuse-invalid-descriptor-before-java", "launch-exact-candidate", "preserve-launcher-written-seed-icon", "apply-signed-update-and-relaunch"]
+    },
+    {
+      "id": "acceptance::prism::bundled-instance",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["import-bundled-archive", "compare-independent-inventory", "launch-without-recipient-empack", "verify-required-configuration"]
+    },
+    {
+      "id": "acceptance::consumer::modrinth-import",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["import-mrpack", "compare-independent-inventory", "verify-selected-content-and-runtime", "launch-exact-candidate"]
+    },
+    {
+      "id": "acceptance::consumer::curseforge-import",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["import-curseforge-manifest", "resolve-required-restricted-content", "compare-independent-inventory", "launch-exact-candidate"]
+    },
+    {
+      "id": "acceptance::server::managed-console",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["run-generated-start-script", "verify-preparation-before-java", "send-console-input", "normal-server-shutdown", "terminal-interrupt", "verify-retirement-and-terminal-restoration"]
+    },
+    {
+      "id": "acceptance::server::bundled-console",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["run-generated-start-script-without-recipient-empack", "compare-independent-inventory", "send-console-input", "normal-server-shutdown", "verify-java-status-and-terminal-restoration"]
+    },
+    {
+      "id": "acceptance::human::licensed-startup",
+      "boundary": "M",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["record-disposable-profile-and-authorized-account", "authenticate-without-recording-secrets", "reach-defined-startup-checkpoint", "record-limits-without-gameplay-certification"]
+    },
+    {
+      "id": "acceptance::human::pending-recovery",
+      "boundary": "M",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["fresh-user"],
+      "steps": ["discover-pending-work-from-public-diagnostic", "identify-and-supply-required-content", "resume-using-public-instructions", "verify-author-and-player-content-preserved"]
+    },
+    {
+      "id": "acceptance::human::documentation-tasks",
+      "boundary": "M",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["fresh-user"],
+      "steps": ["initialize-from-documentation", "add-local-content", "explain-and-build-selected-profile", "inspect-recipient-requirements", "interpret-failure-and-exit-status"]
+    },
+    {
+      "id": "acceptance::human::sandbox-publication",
+      "boundary": "M",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["record-disposable-repository-and-permission-scope", "run-generated-workflow", "verify-uploaded-artifact-identity", "verify-failed-validation-cannot-publish", "verify-completion-receipt"]
+    }
+  ]
+}

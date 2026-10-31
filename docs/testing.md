@@ -1602,6 +1602,9 @@ and macOS; the required parser case selects Linux, matching the CI runner. The s
 observations support UX-053's Prism integration and UX-083's headless configuration
 contract without multiplying execution counts. Actual import and startup remain
 UX-084 obligations. This does not qualify other consumer operations or hosts.
+Actual consumer and fresh-user observations use the separate
+[operator acceptance records](verification-acceptance.md), bound to the candidate
+products and retained supporting files. Their reader tests do not perform those tasks.
 The public CLI build case selects ten named fixtures from that same corpus across
 three managed recipe variants. It validates the generated baseline against literal
 content before checking exact custom configuration bytes and unchanged remaining

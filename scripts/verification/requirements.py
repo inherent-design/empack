@@ -3,6 +3,7 @@ from .classification import BOUNDARIES
 from .consumer import PRISM_TEST, PRISM_BINDING
 from .authoring_schema import TEST_ID as SCHEMA_TEST, BINDING as SCHEMA_BINDING
 from .evidence import aggregate_outcomes
+from .acceptance import procedures
 import json
 from .python_tests import ROOT, BINDINGS, PLATFORMS
 from .doctests import BINDINGS as DOCTEST_BINDINGS, MODES, TARGETS as DOCTEST_TARGETS
@@ -64,7 +65,7 @@ def validate_requirements(document):
     return requirements, cases
 
 
-def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=()):
+def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=(), acceptance_evidence=()):
     """Join already validated suite evidence; no test counts imply group coverage.
 
     The CI gate authenticates revision/cleanliness and re-reads inventory/JUnit
@@ -82,6 +83,11 @@ def case_results(document, classification, evidence, revision, *, package_receip
         raise ValueError("Script observations cannot be classified as Rust tests")
     bindings[PRISM_TEST] = PRISM_BINDING
     bindings[SCHEMA_TEST] = SCHEMA_BINDING
+    operator_bindings = procedures()
+    for identity, definition in operator_bindings.items():
+        if identity in bindings:
+            raise ValueError("Operator acceptance identity conflicts with test classification")
+        bindings[identity] = definition
     python_bindings = json.loads((ROOT / BINDINGS).read_text(encoding="utf-8"))["tests"]
     for binding in python_bindings:
         if binding["id"] in bindings or not binding["id"].startswith("python::"):
@@ -129,6 +135,26 @@ def case_results(document, classification, evidence, revision, *, package_receip
             if "suite" in test:
                 outcome["suite"] = test["suite"]
             observed.setdefault(key, {})[(digest, test.get("suite", ""))] = outcome
+
+    for record in acceptance_evidence:
+        identity = record["test_id"]
+        if (record["source_revision"] != revision or record["kind"] != "operator-acceptance"
+                or identity not in operator_bindings
+                or record["boundary"] != bindings[identity]["boundary"]
+                or record["platform"] not in bindings[identity]["platforms"]
+                or targets.get(record["target"]) != record["platform"]
+                or record["features"] not in {"default", "telemetry"}
+                or record["status"] not in {"PASS", "FAIL", "BLOCKED", "NOT_RUN"}):
+            raise ValueError("Unrelated operator acceptance observation")
+        digest = record["receipt_sha256"]
+        if digest in receipts and receipts[digest] != record:
+            raise ValueError("Conflicting operator acceptance receipt")
+        receipts[digest] = record
+        outcome = {key: record[key] for key in ("status", "artifact_sha256", "receipt_sha256", "created_at", "target")}
+        outcome.update(test_features="independent", producer="operator-acceptance",
+                       operator=record["operator"], environment=record["environment"],
+                       evidence_scope=record["evidence_scope"], procedures_sha256=record["procedures_sha256"])
+        observed.setdefault((identity, record["platform"], record["features"]), {})[(digest, "operator-acceptance")] = outcome
 
     for record in schema_evidence:
         if (record["source_revision"] != revision or record["kind"] != "authoring-schema"

@@ -24,6 +24,14 @@ def render(record):
         lines.append(f"- {cell(blocker['requirement'])}: {cell('; '.join(blocker['reasons']))}")
     if not record["blockers"]:
         lines.append("All applicable obligations passed at their required evidence boundaries.")
+    if record.get("operator_acceptance"):
+        lines += ["", "## Operator-recorded acceptance", "",
+                  "These are attributable observations with retained supporting files. Admission does not execute the task or independently certify the operator's report.", ""]
+        for evidence in record["operator_acceptance"]:
+            lines += [f"- {cell(evidence['test_id'])}: {cell(evidence['status'])}; {cell(evidence['target'])} / {cell(evidence['features'])}",
+                      f"  - Operator: {cell(evidence['operator']['id'])}; role: {cell(evidence['operator']['role'])}",
+                      f"  - Completed: {cell(evidence['created_at'])}; product: {cell(evidence['artifact_sha256'])}",
+                      f"  - Receipt: {cell(evidence['receipt_sha256'])}; scope: {cell(evidence['evidence_scope'])}"]
     lines += ["", "Detailed case, target, feature and receipt identities remain in the companion JSON.",
               "An archive test or parser probe does not establish consumer import, startup or gameplay.", ""]
     return "\n".join(lines)
@@ -36,6 +44,8 @@ def main():
     gate.add_argument("--payload", type=Path, required=True)
     gate.add_argument("--receipt", type=Path, action="append", default=[])
     gate.add_argument("--consumer", type=Path, action="append", default=[])
+    gate.add_argument("--acceptance", type=Path, action="append", default=[],
+                      help="Operator-recorded consumer/manual record with its retained supporting files")
     gate.add_argument("--tooling", type=Path, action="append", default=[])
     gate.add_argument("--doctest", type=Path, action="append", default=[],
                       help="Observed rustdoc receipt for one native host and workspace feature graph")
@@ -60,7 +70,7 @@ def main():
         record = qualify(Path.cwd(), args.payload, args.archive_evidence_sha256,
                          args.revision, args.version, receipt_paths=args.receipt, consumer_paths=args.consumer,
                          tooling_paths=args.tooling, auxiliary_paths=args.auxiliary, doctest_paths=args.doctest,
-                         execution_paths=args.execution)
+                         execution_paths=args.execution, acceptance_paths=args.acceptance)
     except (ValueError, OSError, KeyError, TypeError) as error:
         record = dict(schema=1, kind="release-candidate-qualification", status="FAIL", qualification=False,
                       source_revision=args.revision, version=args.version,
