@@ -12145,7 +12145,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound. Still qualify the remaining resource dimensions, public multi-operation budget/cancellation journeys, Windows output/backpressure behavior and fake-clock deadline variants; reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including separate Unix and Windows captured-output/backpressure variants. Still qualify the remaining resource dimensions, public multi-operation budget/cancellation journeys and fake-clock deadline variants; reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -12268,6 +12268,26 @@
             "These checks exercise Unix captured-process supervision, not inherited interactive-console output limits or Windows process qualification",
             "An injected signal-denial result for an actual live owned group cannot establish retirement; the bounded failure retains both termination and recovery diagnostics and the fixture retires its child"
           ]
+        },
+        {
+          "id": "UX-080.windows-captured-process-bounds",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::windows_tests::captured_output_bounds_and_progress_preserve_owned_job_retirement"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual cmd.exe fixtures retain exactly 16 bytes on each captured stream while a bounded progress queue is already full",
+            "An overflowing child returns the bounded-output diagnostic only through the confirmed-retirement channel; it cannot be mistaken for a timeout or uncertain Windows job retirement",
+            "A disconnected observer cannot prevent a later owned command from completing or lose its exact 200-line output"
+          ],
+          "remaining_group_evidence": "Windows native process supervision only; public multi-operation and final-package budgets remain separately required"
         },
         {
           "id": "UX-080.acquisition-retention",

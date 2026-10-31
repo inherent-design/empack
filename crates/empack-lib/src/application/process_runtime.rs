@@ -577,6 +577,91 @@ mod windows_tests {
     }
 
     #[tokio::test]
+    async fn captured_output_bounds_and_progress_preserve_owned_job_retirement() {
+        let root = tempfile::tempdir().unwrap();
+        for (name, script) in [
+            (
+                "exact.cmd",
+                "@echo off\r\n<nul set /p \"=1234567890abcdef\"\r\n<nul set /p \"=fedcba0987654321\" 1>&2\r\nexit /b 0\r\n",
+            ),
+            (
+                "overflow.cmd",
+                "@echo off\r\necho started>started\r\n:again\r\necho overflow\r\ngoto again\r\n",
+            ),
+            (
+                "lines.cmd",
+                "@echo off\r\nfor /L %%i in (1,1,200) do echo line\r\nexit /b 0\r\n",
+            ),
+        ] {
+            std::fs::write(root.path().join(name), script).unwrap();
+        }
+        let command = |name: &str| {
+            let mut command = std::process::Command::new("cmd.exe");
+            command
+                .args(["/D", "/Q", "/C", name])
+                .current_dir(root.path());
+            command
+        };
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        sender
+            .send((ProcessStream::Stdout, b"occupied".to_vec()))
+            .unwrap();
+        let exact = execute_captured(
+            command("exact.cmd"),
+            Duration::from_secs(5),
+            Cancellation::default(),
+            Some(sender.clone()),
+            16,
+        )
+        .await
+        .expect("bounded output must retire its owned Windows job")
+        .0
+        .unwrap();
+        assert!(exact.success);
+        assert_eq!(exact.stdout, "1234567890abcdef");
+        assert_eq!(exact.stderr, "fedcba0987654321");
+
+        let overflow = execute_captured(
+            command("overflow.cmd"),
+            Duration::from_secs(5),
+            Cancellation::default(),
+            Some(sender),
+            16,
+        )
+        .await
+        .expect("output overflow must establish job retirement, not uncertainty")
+        .0
+        .unwrap_err();
+        assert!(
+            overflow
+                .to_string()
+                .contains("Subprocess output exceeds 16 bytes per stream"),
+            "{overflow:#}"
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("started")).unwrap(),
+            b"started\r\n"
+        );
+
+        let (sender, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        let disconnected = execute_captured(
+            command("lines.cmd"),
+            Duration::from_secs(5),
+            Cancellation::default(),
+            Some(sender),
+            4096,
+        )
+        .await
+        .expect("a disconnected observer cannot prevent job retirement")
+        .0
+        .unwrap();
+        assert!(disconnected.success);
+        assert_eq!(disconnected.stdout, "line\r\n".repeat(200));
+        assert!(disconnected.stderr.is_empty());
+    }
+
+    #[tokio::test]
     async fn missing_program_has_no_retirement_obligation_in_either_capture_mode() {
         let root = tempfile::tempdir().unwrap();
         let missing = root.path().join("missing.exe");

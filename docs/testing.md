@@ -972,8 +972,12 @@ Captured Unix processes have a separate tiny-limit check: each stream may use it
 full allowance, while overflow with an already-full progress queue must report the
 limit failure after the owned group is gone. Existing tests retain closed-pipe
 deadlines, descendant retirement and disconnected progress observers. These
-checks bind UX-080 alongside acquisition and API receipt retention; they do not
-complete its remaining platform and public-workflow variants. A macOS zombie
+checks have a Windows job counterpart using literal `cmd.exe` scripts: exact
+per-stream limits, overflow behind a full progress queue and complete output after
+the observer disconnects. Overflow must return its specific limit error through
+confirmed retirement, rather than timing out or losing job ownership. These checks
+bind UX-080 alongside acquisition and API receipt retention; they do not complete
+its remaining resource dimensions and public-workflow variants. A macOS zombie
 fixture holds an exited child unreaped, observes the real group-signal failure,
 then reaps it and confirms absence. A signal error cannot override subsequent
 proof of retirement. A separate real live group with an injected signal-denial
