@@ -105,6 +105,11 @@ exact role, hash and length. Wrong bytes preserve pending work, while a fresh
 resume installs the selected release. Later update and rollback retain the choice,
 player data and replay protection. Complete literal game and publisher-asset
 inventories distinguish installed content from bytes that must remain unbundled.
+The same journey changes a publisher default, introduces a required choice and
+refuses a retired key on rollback. Public inspection must retain applicable saved
+choices and drop the retired key. Together with the ordinary-update engine cases
+and pure release checks, these complete the choice definitions, not their execution
+or consumer qualification.
 The Prism runtime-transition journey and five-target archive case are separate
 bindings. Hosted installation and actual consumer acceptance remain open, so the
 composition group stays partial even when its currently bound cases pass.

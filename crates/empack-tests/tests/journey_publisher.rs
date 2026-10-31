@@ -1791,9 +1791,19 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
         } else {
             json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
         };
+        let mut choices = vec![
+            json!({"key":"visuals","alternatives":["lite","balanced","rich"],
+            "default":if version == "A" { "lite" } else { "balanced" },"description":"Optional visual content"}),
+        ];
+        if version == "C" {
+            choices.push(
+                json!({"key":"textures","alternatives":["none","extra"],"default":"none",
+                "description":"New publisher choice requires an explicit decision"}),
+            );
+        }
         let payload = serde_json::to_vec(&json!({"schema":1,"pack":"verification.publisher","version":version,
             "minimum_engine":">=0.8.0-beta","require_subscription":true,"runtime":runtime,"files":files,
-            "choices":[{"key":"visuals","alternatives":["lite","rich"],"default":"lite","description":"Optional visual content"}]})).unwrap();
+            "choices":choices})).unwrap();
         let (id, envelope) = stage_literal_release(&export, &publisher, &key_file, &payload);
         verify_staged(
             &envelope,
@@ -1899,12 +1909,17 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
             fs::read(instance.join("player notes.txt")).unwrap(),
             b"player notes"
         );
-        command()
+        let inspection = command()
             .args(["instance", "inspect"])
             .assert()
             .success()
             .stdout(contains(format!("release {};", releases[index].0)))
             .stdout(contains("visuals=rich"));
+        if version == "C" {
+            inspection.stdout(contains("textures=none"));
+        } else {
+            inspection.stdout(contains("textures=").not());
+        }
     };
     expected("A", 0, false);
     observe(1);
@@ -2012,12 +2027,35 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
         .success();
     expected("B", 1, true);
     observe(2);
+    let before_choice = snapshot(&instance);
+    let host_before_choice = snapshot(host.path());
     command()
         .args(["--yes", "instance", "update"])
         .arg(&releases[2].1)
         .assert()
+        .failure()
+        .stderr(contains("New release choice requires a decision: textures"));
+    assert_eq!(snapshot(&instance), before_choice);
+    assert_eq!(snapshot(host.path()), host_before_choice);
+    expected("B", 1, true);
+    command()
+        .args(["--yes", "instance", "update"])
+        .arg(&releases[2].1)
+        .args(["--choice", "textures=none"])
+        .assert()
         .success();
     expected("C", 2, false);
+    let before_retired = snapshot(&instance);
+    let host_before_retired = snapshot(host.path());
+    command()
+        .args(["--yes", "instance", "rollback", &releases[1].0, "--assets"])
+        .arg(releases[1].1.parent().unwrap())
+        .args(["--file", &association, "--choice", "textures=none"])
+        .assert()
+        .failure()
+        .stderr(contains("Unknown requested choice"));
+    assert_eq!(snapshot(&instance), before_retired);
+    assert_eq!(snapshot(host.path()), host_before_retired);
     command()
         .args(["--yes", "instance", "rollback", &releases[1].0, "--assets"])
         .arg(releases[1].1.parent().unwrap())

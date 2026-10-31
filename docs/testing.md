@@ -284,9 +284,12 @@ pending without changing the saved choice; the public pending key accepts exact
 renamed bytes and rejects wrong content. Disabling an unchanged managed optional
 file retires it. Modified content keeps the old selection until an explicit conflict
 decision is supplied; preservation leaves that content and unrelated player data
-intact. Choice-key changes across releases and actual consumers remain separate
-acceptance work for the public signed-update path. Engine fixtures separately check
-changed defaults, newly required choices, and removal of retired keys.
+intact. The signed publisher journey changes the default to a third alternative
+without resetting the saved selection. A newly introduced choice needs an explicit
+decision before update, and a retired key must be omitted when selecting a retained
+release. Refusals preserve complete instance and selected host snapshots; public
+inspection shows the resulting choices. Engine fixtures separately check ordinary
+update removal. Actual consumers remain a separate acceptance boundary.
 
 Reference Prism fixtures independently hash the exported descriptor and assets,
 then prepare an extracted instance through the real executable. The hash comes from

@@ -9314,7 +9314,7 @@
             "Disabling unchanged managed optional content retires it; modified content requires an explicit conflict decision and retains the old choice on refusal",
             "An explicit preserve decision retains modified optional content; seeded settings and unrelated save/game content are preserved throughout"
           ],
-          "remaining_group_evidence": "This client/game-layout fixture does not exercise release updates introducing or removing choice keys, native crash boundaries, actual consumers or final-package execution."
+          "remaining_group_evidence": "The signed-update/rollback case below covers changing publisher choice definitions; native crash behavior and actual consumers have separate requirements."
         },
         {
           "id": "UX-066.choice-definition-changes",
@@ -9336,7 +9336,52 @@
             "A newly introduced choice requires explicit input; refusal preserves the installed record and selected content",
             "An explicit retired choice key is rejected without changing completed state; omitting retired keys allows the new release and drops those saved keys"
           ],
-          "remaining_group_evidence": "This engine fixture does not establish the public signed-update command path, actual consumers or final-package qualification."
+          "remaining_group_evidence": "Normal update removal is established here; public commands separately cover a new signed release and removal when selecting a retained release."
+        },
+        {
+          "id": "UX-066.signed-choice-definition-changes",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A signed publisher release changes the default to a third alternative without resetting the explicitly installed visual selection",
+            "Introducing a new choice refuses an otherwise valid signed update until an explicit decision is supplied; complete installed and selected host snapshots remain unchanged on refusal",
+            "An explicit retired choice refuses rollback to the retained prior release without changing installed or host state; omitting the retired key retains the applicable prior selection and removes the retired choice from public inspection",
+            "Missing restricted bytes, manual resume, literal selected content, unchanged signed publisher inputs, player settings/worlds and replay floors remain part of the same connected journey"
+          ],
+          "remaining_group_evidence": "Controlled local signed envelopes do not establish hosted publication, actual consumer startup or final-package qualification; those have separate requirements."
+        },
+        {
+          "id": "UX-066.choice-wire-validation",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::release::tests::unsafe_paths_world_ownership_and_unbound_choices_fail_validation",
+            "empack-lib::engine::release::tests::release_choices_preserve_author_labels_and_descriptions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Release encoding rejects a file whose participation references an undefined choice",
+            "Valid author choice labels and descriptions survive release encoding"
+          ],
+          "remaining_group_evidence": "Pure release-value validation does not establish installation, public decisions or runtime behavior."
         }
       ],
       "owner_now": [
@@ -9347,7 +9392,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-067",
