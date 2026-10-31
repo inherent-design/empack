@@ -18,8 +18,16 @@ counts and bounds, variable-length fields, locator offsets, ZIP64 arithmetic,
 entry limits, metadata limits, and short or overflowing end records.
 
 The Rust driver applies the same bytes to metadata preflight, portable source
-inspection, opaque inspection, and exact artifact verification. It also inserts a
+inspection, opaque inspection, and exact artifact verification. It rejects every
+strict prefix of both minimal positive fixtures, covering cuts inside each fixed
+record and variable-length field. It also inserts a
 ZIP64 extension block at the metadata-budget boundary without checking in a large
 binary fixture. Separate namespace and corruption tests cover traversal, collisions,
 links, CRC failures, and legal opaque JAR names. These native fixtures do not claim
 browser codec execution or complete archive-format coverage.
+
+A separate native test captures an archive in a project read set. Unchanged bytes
+yield the independently declared member; an in-place edit must fail that member's
+digest, and replacement or deletion cannot reopen the captured object. Revalidation
+refuses every changed read set. These checks do not publish files or replace the
+public import/recovery journeys.

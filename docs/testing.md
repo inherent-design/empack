@@ -384,11 +384,15 @@ public-executable HTTPS qualification.
 The [archive header corpus](../tests/fixtures/archives/README.md) supplies literal
 ordinary ZIP and ZIP64 bytes to source inspection, opaque inspection, and artifact
 verification. It covers malformed record arithmetic and metadata admission in
-addition to the existing member-name, CRC, and extraction-budget tests. Boundary
+addition to the existing member-name, CRC, and extraction-budget tests. Every
+strict prefix of the two minimal archives is refused through all four readers. Boundary
 cases retain valid ZIP64 extension data at the combined metadata limit and reject
 the next byte. The fixture driver uses no production archive encoder to construct
-its expected inventory. Native captured-input faults and future browser execution
-remain distinct evidence obligations.
+its expected inventory. A separate native captured-input test verifies member
+digests after an in-place edit, refuses replacement/deletion, and checks that archive
+inspection never refreshes the original read-set preconditions. It preserves author
+and player sentinels without creating host state. Future browser execution remains
+a distinct evidence obligation.
 
 The mixed CurseForge host fixture uses controlled provider records with no download
 URL plus embedded author overrides. It resumes after the original archive is gone,

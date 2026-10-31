@@ -108,6 +108,15 @@ fn literal_zip_headers_agree_across_source_opaque_and_artifact_readers() {
         .collect();
     for (id, bytes) in &valid {
         check_readers(bytes, true, id);
+        // Neither minimal fixture contains a comment or an earlier complete archive.
+        // Every strict prefix must be refused, including cuts inside fixed-size fields.
+        for length in 0..bytes.len() {
+            check_readers(
+                &bytes[..length],
+                false,
+                &format!("{id}: truncated at {length}"),
+            );
+        }
     }
     for row in corpus["invalid"].as_array().unwrap() {
         let mut bytes = valid[row["base"].as_str().unwrap()].clone();

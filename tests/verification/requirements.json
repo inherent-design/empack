@@ -2184,7 +2184,7 @@
         "PUB"
       ],
       "required_assertions": "Reject unsafe extracted paths, duplicates/collisions/limits/corruption; permit legal opaque JAR member names that are never extraction authority.",
-      "required_work": "Cross-host adversarial shared corpus and malformed-header/ZIP64 arithmetic tests.",
+      "required_work": "The shared literal ZIP/ZIP64 corpus, exact namespace and source-assurance checks, all-format inventory checks, and native captured-input faults are bound. Execute every required host/feature variant; these definitions do not establish browser codec behavior or consumer startup.",
       "evidence_tiers": [
         "U",
         "H",
@@ -2265,9 +2265,97 @@
           "assertions": [
             "Literal ordinary ZIP and ZIP64 bytes yield one exact empty file with the required attributes across source, opaque and artifact readers",
             "Malformed signatures, locator/record boundaries, counts, variable-length headers and overflowing ZIP64 arithmetic fail before parser allocation",
-            "ZIP64 extension data and the central directory share the 16 MiB metadata budget; an exact-boundary file succeeds and the next byte is rejected"
+            "ZIP64 extension data and the central directory share the 16 MiB metadata budget; an exact-boundary file succeeds and the next byte is rejected",
+            "Every strict prefix of each minimal ordinary and ZIP64 positive fixture is rejected by metadata, source, opaque and artifact readers"
           ],
-          "remaining_group_evidence": "Native captured-input/publication fault cases and complete cross-platform observations remain separate; these fixtures do not establish browser codec behavior"
+          "remaining_group_evidence": "The native captured-input case and complete host/feature execution remain separate observations; publication crash recovery belongs to UX-078, and browser codec behavior remains staged."
+        },
+        {
+          "id": "UX-015.native-captured-archive",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::archive_source::tests::captured_archives_keep_member_integrity_and_native_read_set_preconditions"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An unchanged captured native archive yields the declared member bytes and portable attributes without creating host state",
+            "In-place edits fail the original member digest; replacement or deletion cannot reopen the captured native object",
+            "All changed archive read sets fail revalidation; author documents, prior output and player sentinels remain unchanged"
+          ]
+        },
+        {
+          "id": "UX-015.declared-name-encoding",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::malformed_utf8_zip_names_fail_import_and_verification_without_lossy_replacement",
+            "empack-lib::engine::artifacts::tests::legacy_cp437_names_remain_supported_without_a_utf8_declaration"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Invalid bytes in a declared UTF-8 member name are rejected rather than replaced by a lossy spelling",
+            "An unflagged legacy CP437 member retains its declared decoded name and exact expected inventory"
+          ]
+        },
+        {
+          "id": "UX-015.artifact-inventory-and-attributes",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::artifacts::tests::all_supported_containers_require_every_expected_file_and_exact_binary_bytes",
+            "empack-lib::engine::artifacts::tests::traversal_collision_extra_content_and_executable_loss_are_rejected",
+            "empack-lib::engine::artifacts::tests::duplicate_zip_records_cannot_hide_behind_the_parser_name_index",
+            "empack-lib::engine::artifacts::tests::directories_cannot_alias_files_or_other_directory_spellings",
+            "empack-lib::engine::artifacts::tests::every_encoder_preserves_portable_permissions_and_empty_directories"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "ZIP, TAR.GZ and 7z verification requires the literal complete inventory and exact bytes within decoded limits",
+            "Traversal, alias/duplicate/extra entries, invalid directory collisions and executable-attribute loss cannot establish a verified artifact",
+            "Portable attributes and empty directories survive encoding, and damaged gzip integrity and compressed-output limits are checked"
+          ]
+        },
+        {
+          "id": "UX-015.member-source-assurance",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::archive_source::tests::member_observations_keep_the_original_container_assurance_without_digest_upgrades"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Retained member bytes do not promote weak archive evidence to strong source assurance",
+            "Private extraction evidence remains bound to its original provider archive and member even after content-pool retention"
+          ]
         }
       ],
       "owner_now": [
@@ -2278,7 +2366,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-016",
