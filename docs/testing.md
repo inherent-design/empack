@@ -866,6 +866,11 @@ only against the archive gate's product identity; a development build's passing
 schema result cannot replace it. Both paths use the same fixtures and checker.
 JSON Schema checks complement composed domain validation; they do not replace it,
 provider resolution, or actual consumer acceptance.
+The separate `cli_manifest` suite reads the literal complete YAML examples from
+the manifest reference and native-release guide. It checks their normalized
+requests through public inspection while preserving author bytes and attributes
+and leaving host state/cache absent. This is syntax/inspection evidence, not a
+claim that the example mod combination was resolved or launched.
 
 Formatting and Clippy apply to all targets/features. Native filesystem/process
 claims require real temporary roots and OS primitives; pure planner tests cannot

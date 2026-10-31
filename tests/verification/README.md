@@ -35,12 +35,21 @@ validation, response and whole-workspace observations, plus product/source hashe
 and Cargo feature evidence. The CI gate requires exactly one passing Linux attempt
 even for docs/schema-only edits. Admission rejects altered inputs, incomplete
 fixtures, ambiguous product identity and false success summaries. This single
-conformance case does not complete UX-006's remaining authoring obligations.
+conformance case cannot replace the other authoring observations.
 The Linux candidate driver invokes this producer with the admitted extracted
 default binary. Its receipt must match the archive's digest, version, target and
 release profile before entering qualification. Missing, duplicate, failed or
 unrelated attempts remain incomplete; ordinary CI product evidence cannot replace
 that candidate receipt.
+
+Authoring conformance also binds the existing host synchronization/inspection and
+pure source/profile codecs, together with public YAML ambiguity, editability and
+literal documentation cases. The latter reads the complete YAML examples from
+the manifest reference and native-release guide, then verifies their public
+metadata without acquiring the named payloads. This completes UX-006's case
+definitions; absent host/feature or schema observations still leave it unexecuted.
+The same literal examples supplement executable documentation, whose other
+commands and fresh-user review remain separate obligations.
 The `cli_offline` target replaces the former mixed smoke target. Its `journeys`
 module holds connected source/adoption, partial-add and generated-automation
 sequences; focused CLI contracts remain in the root file. They share the same

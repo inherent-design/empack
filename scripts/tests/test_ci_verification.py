@@ -438,7 +438,7 @@ class RequiredGate(unittest.TestCase):
                         for row in json.loads(ci.REQUIREMENTS.read_text())["requirements"]
                         for case in row["cases"]}
             native_complete = {
-                "UX-002", "UX-005", "UX-007", "UX-011", "UX-022", "UX-023",
+                "UX-002", "UX-005", "UX-006", "UX-007", "UX-011", "UX-022", "UX-023",
                 "UX-024", "UX-027", "UX-028", "UX-029", "UX-036", "UX-038",
                 "UX-040", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066",
             }
@@ -479,6 +479,7 @@ class RequiredGate(unittest.TestCase):
                 json.loads(ci.REQUIREMENTS.read_text()),
                 json.loads(ci.CLASSIFICATION.read_text()),
                 partial_evidence, REVISION,
+                schema_evidence=result["schema_evidence"],
             )
             key_setup = next(r for r in partial["requirements"] if r["id"] == "UX-054")
             self.assertEqual(key_setup["status"], "NOT_RUN")
@@ -492,6 +493,8 @@ class RequiredGate(unittest.TestCase):
             self.assertEqual(inspection["status"], "NOT_RUN")
             choices = next(r for r in partial["requirements"] if r["id"] == "UX-066")
             self.assertEqual(choices["status"], "NOT_RUN")
+            authoring = next(r for r in partial["requirements"] if r["id"] == "UX-006")
+            self.assertEqual(authoring["status"], "NOT_RUN")
             conflicts = next(r for r in partial["requirements"] if r["id"] == "UX-065")
             self.assertEqual(conflicts["status"], "NOT_RUN")
             windows = next(c for c in key_setup["cases"]

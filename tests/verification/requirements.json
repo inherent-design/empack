@@ -981,7 +981,7 @@
             "Comment-only edits retain semantics while changing raw revision; no-op replacement preserves original bytes and explicit edits retain the original revision precondition and comments",
             "Compact common authoring and advanced split bindings decode to the same complete intent and semantic revision; removing a dependency retains the existing empty binding document"
           ],
-          "remaining_group_evidence": "Pure codecs do not execute the public command, editor schema validator or host storage. Those boundaries and required platform observations remain separate; this group stays partial."
+          "remaining_group_evidence": "These pure tests do not execute public commands, schema validation or host storage. Separate bound cases cover those boundaries; every required platform/feature observation is still necessary."
         },
         {
           "id": "UX-006.codec-rejects-competing-authority-and-implicit-url-observation",
@@ -1005,7 +1005,7 @@
             "Binding comments change raw binding revision without changing semantics; dangling roles, unknown fields, unsafe placement and competing inline/binding authority fail",
             "Both URL spellings require explicit digest assertions or explicit first-observation policy; omitted/false observation policy and competing policy/assertions refuse, while valid intent round-trips"
           ],
-          "remaining_group_evidence": "Pure codecs do not execute the public command, editor schema validator or host storage. Those boundaries and required platform observations remain separate; this group stays partial."
+          "remaining_group_evidence": "These pure tests do not execute public commands, schema validation or host storage. Separate bound cases cover those boundaries; every required platform/feature observation is still necessary."
         },
         {
           "id": "UX-006.editor-schema-cli-conformance",
@@ -1018,6 +1018,74 @@
           ],
           "test_ids": [
             "schema::authoring::editor-cli-conformance"
+          ],
+          "assertions": [
+            "All 39 authoring and five binding fixtures agree between pinned editor-schema validation and public CLI validation with unchanged workspace membership, bytes and attributes",
+            "Admission rechecks source/product/compiler identities and every raw observation; PR CI requires an audited ordinary product, while candidate qualification requires the exact admitted extracted release binary"
+          ]
+        },
+        {
+          "id": "UX-006.literal-documentation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_requests"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual manifest reference and native-release usage YAML blocks pass public manifest check without rewriting source or creating state/cache storage",
+            "The manifest example reports the complete literal dependency set with exact normalized source, content kind, side/optional requirements and missing-lock facts; the native example composes its literal bindings without acquiring payloads"
+          ]
+        },
+        {
+          "id": "UX-006.host-author-constraints",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::dependencies::tests::inspection::host_manifest_provider_constraints_match_recorded_synchronization"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Host inspection after real controlled synchronization compares current display, pin, selector and automatic-layout edits with literal recorded identities and satisfaction reasons",
+            "Whole host/project snapshot remains unchanged during inspection; retained non-root dependencies remain visible without deletion authority"
+          ]
+        },
+        {
+          "id": "UX-006.source-fields-and-profile-forms",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::documents::authoring::tests::author_only_projects_keep_identity_attribution_and_java_without_native_outputs",
+            "empack-lib::engine::documents::authoring::tests::presets_and_expanded_profiles_have_identical_meaning",
+            "empack-lib::engine::documents::authoring::tests::source_specific_forms_preserve_paths_pins_integrity_and_optional_choices",
+            "empack-lib::engine::documents::authoring::tests::inapplicable_fields_fail_before_resolution"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Author-only identity/attribution/Java requirements survive a round-trip without inventing outputs",
+            "Bundled presets and equivalent explicit profiles have the same semantic revision; changing format changes that revision",
+            "Provider pins, local sources, asserted URLs and optional choices retain their meaning; invalid source-specific fields and obsolete schema refuse before resolution"
           ]
         }
       ],
@@ -1029,7 +1097,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-007",
@@ -12645,6 +12713,26 @@
             "These examples do not establish terminal appearance, invocation of every shown API, actual consumer use or new-user task completion"
           ],
           "remaining_group_evidence": "These rustdoc observations supplement, and cannot replace, the required ordinary-product/package checks or executable documentation and fresh-user review."
+        },
+        {
+          "id": "UX-087.literal-authoring-examples",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_manifest::cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_requests"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The literal complete manifest and native-release YAML examples execute through public local inspection without acquiring content or modifying inputs",
+            "This checks the shown authoring syntax and requests, not every documented command or fresh-user task completion"
+          ]
         }
       ],
       "owner_now": [

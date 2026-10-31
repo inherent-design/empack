@@ -47,6 +47,105 @@ fn report(root: &Path) -> Value {
 }
 
 #[test]
+fn cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_requests() {
+    // Read the published examples themselves. A copied test fixture would keep
+    // passing when a documentation edit silently makes the shown YAML invalid.
+    fn yaml_block(text: &str) -> (&str, &str) {
+        let (_, tail) = text.split_once("```yaml\n").expect("documented YAML block");
+        tail.split_once("\n```").expect("closed YAML block")
+    }
+    let (manifest, _) = yaml_block(include_str!("../../../docs/manifest.md"));
+    let (_, native_section) = include_str!("../../../docs/usage.md")
+        .split_once("## Native release example\n")
+        .expect("documented native release example");
+    let (native, remainder) = yaml_block(native_section);
+    let (bindings, _) = yaml_block(remainder);
+    for (author, binding, pack) in [
+        (manifest, None, "Workshop"),
+        (native, Some(bindings), "My Pack"),
+    ] {
+        let project = TestProject::new();
+        let root = project.dir();
+        fs::write(root.join("empack.yml"), author).unwrap();
+        if let Some(binding) = binding {
+            fs::write(root.join("empack.bindings.yml"), binding).unwrap();
+        }
+        let output = inspect(root, &["check", "--json"]);
+        assert!(output.status.success(), "{pack}: {output:?}");
+        assert!(output.stderr.is_empty(), "{pack}: {output:?}");
+        let observed: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(observed["schema"], 1);
+        assert_eq!(observed["author_schema"], 5);
+        assert_eq!(observed["pack"], pack);
+        assert_eq!(observed["lock_status"], "missing");
+        assert!(observed["runtime_satisfied"].is_null());
+        let rows = observed["dependencies"].as_array().unwrap();
+        if pack == "Workshop" {
+            assert_eq!(
+                rows.iter()
+                    .map(|row| row["key"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                ["house-rules", "menu", "openloader", "textures"]
+            );
+            for (key, source, content, environment) in [
+                (
+                    "house-rules",
+                    serde_json::json!({"kind": "local", "path": "vendor/house-rules.jar"}),
+                    "mod",
+                    serde_json::json!({"client": "required", "server": "required"}),
+                ),
+                (
+                    "menu",
+                    serde_json::json!({"kind": "provider-selector", "request": {"provider": "modrinth", "selector": "fancymenu"}}),
+                    "mod",
+                    serde_json::json!({"client": "required", "server": "unsupported"}),
+                ),
+                (
+                    "openloader",
+                    serde_json::json!({"kind": "provider-selector", "request": {"provider": "modrinth", "selector": "open-loader"}}),
+                    "mod",
+                    serde_json::json!({"client": "required", "server": "required"}),
+                ),
+                (
+                    "textures",
+                    serde_json::json!({"kind": "local", "path": "vendor/textures.zip"}),
+                    "resource-pack",
+                    serde_json::json!({"client": {"optional": "textures", "default-enabled": false, "description": null}, "server": "unsupported"}),
+                ),
+            ] {
+                let row = rows.iter().find(|row| row["key"] == key).unwrap();
+                assert_eq!(row["explicit"], true);
+                assert_eq!(
+                    row["effective"],
+                    serde_json::json!({
+                        "source": source, "content": content, "environment": environment,
+                        "selection": {"mode": "automatic"}, "placement": "automatic", "releases": null
+                    })
+                );
+                assert_eq!(row["selection_satisfied"], false);
+                assert_eq!(row["reason"], "No recorded selection");
+                assert!(row["canonical_project"].is_null());
+                assert!(row["locked_selection"].is_null());
+            }
+        } else {
+            assert!(rows.is_empty());
+        }
+        // The shared inspection helper already checks the complete author
+        // snapshot and absence of host storage after each public invocation.
+        assert_eq!(
+            fs::read(root.join("empack.yml")).unwrap(),
+            author.as_bytes()
+        );
+        if let Some(binding) = binding {
+            assert_eq!(
+                fs::read(root.join("empack.bindings.yml")).unwrap(),
+                binding.as_bytes()
+            );
+        }
+    }
+}
+
+#[test]
 fn cli_manifest_equivalent_source_forms_preserve_literal_authoring() {
     let project = TestProject::new();
     let root = project.dir();
