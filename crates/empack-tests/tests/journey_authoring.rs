@@ -2,6 +2,7 @@
 use empack_tests::harness::{
     archive::zip_members,
     process::{TestProject, assert_dist_artifact_suffix, offline_command},
+    workspace::{self, Snapshot},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -9,9 +10,6 @@ use std::{
     io::{Cursor, Write},
     path::PathBuf,
 };
-
-#[path = "support/files.rs"]
-mod files;
 
 const SOURCE: &str = "vendor sources/fixture.jar";
 const INSTALLED: &str = "pack/mods/private-rules.jar";
@@ -26,10 +24,22 @@ fn write(project: &TestProject, name: &str, bytes: &[u8]) {
 }
 
 fn build_and_check(project: &TestProject, jar: Option<&[u8]>, options: &[u8]) {
+    let source_inputs = || {
+        let mut observed = author_snapshot(project);
+        observed.files.retain(|path, _| !path.starts_with("dist"));
+        observed.entries.retain(|path, _| !path.starts_with("dist"));
+        observed
+    };
+    let before = source_inputs();
     offline_command(project.dir())
         .args(["--yes", "build"])
         .assert()
         .success();
+    assert_eq!(
+        source_inputs(),
+        before,
+        "build must preserve its author inputs"
+    );
     let client = zip_members(&assert_dist_artifact_suffix(
         project.dir(),
         "-prism-bundled.zip",
@@ -144,21 +154,38 @@ fn fixture_jar(version: &str) -> Vec<u8> {
     archive.finish().unwrap().into_inner()
 }
 
-// Compare author inputs, materialized content and prior artifacts, excluding host caches/state.
-fn author_snapshot(project: &TestProject) -> BTreeMap<PathBuf, Vec<u8>> {
-    let mut result = BTreeMap::new();
-    for name in ["empack.yml", "empack.bindings.yml", "empack.lock"] {
-        result.insert(
-            PathBuf::from(name),
-            fs::read(project.dir().join(name)).unwrap(),
-        );
-    }
-    for name in ["vendor sources", "pack", "overrides", "templates", "dist"] {
+// Compare bytes, portable attributes and empty directories in author-owned scopes.
+// Host caches/state and unrelated fixture roots stay outside this observation.
+fn author_snapshot(project: &TestProject) -> Snapshot {
+    let mut result = Snapshot {
+        files: BTreeMap::new(),
+        entries: BTreeMap::new(),
+    };
+    for name in [
+        "empack.yml",
+        "empack.bindings.yml",
+        "empack.lock",
+        "vendor sources",
+        "pack",
+        "overrides",
+        "templates",
+        "dist",
+    ] {
         let root = project.dir().join(name);
         if root.exists() {
-            for (path, bytes) in files::snapshot(&root) {
-                result.insert(PathBuf::from(name).join(path), bytes);
-            }
+            let observed = workspace::snapshot(&root);
+            result.files.extend(
+                observed
+                    .files
+                    .into_iter()
+                    .map(|(path, bytes)| (PathBuf::from(name).join(path), bytes)),
+            );
+            result.entries.extend(
+                observed
+                    .entries
+                    .into_iter()
+                    .map(|(path, attributes)| (PathBuf::from(name).join(path), attributes)),
+            );
         }
     }
     result
@@ -226,8 +253,8 @@ fn adopt_changed_content(project: &TestProject) -> Vec<u8> {
     let mut after = author_snapshot(project);
     let mut expected = before;
     assert_ne!(
-        after.remove(&PathBuf::from("empack.lock")),
-        expected.remove(&PathBuf::from("empack.lock"))
+        after.files.remove(&PathBuf::from("empack.lock")),
+        expected.files.remove(&PathBuf::from("empack.lock"))
     );
     assert_eq!(
         after, expected,
@@ -412,12 +439,12 @@ fn journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the
         .unwrap();
         std::os::unix::fs::symlink(outside.path().join("mods"), project.dir().join("pack/mods"))
             .unwrap();
-        let retained = files::snapshot(outside.path());
+        let retained = workspace::snapshot(outside.path());
         offline_command(project.dir())
             .args(["--yes", "remove", "fixture"])
             .assert()
             .failure();
-        assert_eq!(files::snapshot(outside.path()), retained);
+        assert_eq!(workspace::snapshot(outside.path()), retained);
         assert!(
             fs::symlink_metadata(project.dir().join("pack/mods"))
                 .unwrap()

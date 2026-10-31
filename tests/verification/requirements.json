@@ -7382,12 +7382,56 @@
             "Exact Prism bundled and mrpack member sets with independent byte expectations",
             "Client override precedence and server-only exclusion from client output",
             "Fresh configuration exported without changing pack version or lock",
-            "Literal binding and author comments survive no-op synchronization; unrelated author files survive removal"
+            "Literal binding and author comments survive no-op synchronization; unrelated author files survive removal",
+            "Each rebuild preserves complete author-scope bytes, portable attributes and empty directories; failed mutations and adoption preserve the same complete scopes"
           ],
           "remaining_group_evidence": "Actual server output/startup, reference preparation, additional content-kind/choice cases and final packaged variants remain required",
           "required_product_features": [
             "default",
             "telemetry"
+          ]
+        },
+        {
+          "id": "UX-047.declared-inclusion-and-aliases",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::source::tests::author_rules_have_no_foreign_controls_or_archive_exclusions",
+            "empack-lib::engine::source::tests::excluded_sources_keep_roots_and_explicit_obligations",
+            "empack-lib::engine::source::tests::capture_overlap_preserves_component_and_unicode_alias_boundaries"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Only captured author exclusion rules control source inclusion; foreign metadata cannot supply ignore policy",
+            "Explicit required roots/placements survive exclusions, and alias/component boundaries remain explicit"
+          ]
+        },
+        {
+          "id": "UX-047.captured-template-side-precedence",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::templates::tests::captured_templates_keep_nested_paths_side_precedence_and_user_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reference and bundled Prism/server templates select the correct side over common content while preserving nested paths",
+            "Literal binary/copy-mode bytes and captured executable/read-only attributes retain their meaning without editing source templates",
+            "Native revalidation confirms renderer inputs remain unchanged; no distribution or private host state is created"
           ]
         }
       ],

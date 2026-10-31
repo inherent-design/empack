@@ -90,7 +90,10 @@ lock observation. Repeat synchronization and independently inspected Prism/mrpac
 archives establish convergence and fresh output without a version bump. Removal
 preserves source files, neighboring author work and empty directories, rejects an
 occupied destination directory, and on Unix refuses linked ancestors leading outside
-the project. These are executable fixtures; consumer startup and final-package
+the project. Each build and refusal compares author-scope bytes, portable attributes
+and empty directories through the shared workspace observer. Build comparisons allow
+artifact changes; refusal comparisons also retain previous artifact observations.
+These are executable fixtures; consumer startup and final-package
 qualification require separate evidence.
 
 The multi-file provider host journey connects explicit primary/companion roles through
