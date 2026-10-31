@@ -1230,13 +1230,14 @@ evidence boundaries and missing observations block qualification, even when ever
 archive test passes. Missing platform execution remains a failure, not a cross-build
 pass. A configured workflow is not proof that its five-host execution has succeeded.
 
-The current registry is incomplete, so the candidate gate deliberately blocks
-publication. Completing its native/consumer case bindings, collecting their evidence
-and adding the corresponding workflow producers remain v0.8.4 implementation work.
-The workflow currently supplies the final-archive receipts; it does not yet supply a
-complete candidate matrix. No approved low-risk waiver policy is installed, and this
-gate accepts no waivers. Critical or actual-consumer omissions cannot be excused by a
-caller-supplied result label.
+Incomplete native/consumer case bindings and missing observations still block
+candidate qualification. The workflow defines five-target archive execution,
+three-host default/telemetry native and live attempts, and the supported Prism parser
+probe. Those producers do not establish a qualified candidate merely by being
+configured: their required records and the remaining consumer/manual evidence must
+be supplied and admitted. No approved low-risk waiver policy is installed, and this
+gate accepts no waivers. Critical or actual-consumer omissions cannot be excused by
+a caller-supplied result label.
 
 Release builds now run `scripts/prepare-release.py` in a clean disposable checkout.
 The requested version must match the reviewed workspace release target. Stamping
@@ -1314,7 +1315,7 @@ For a required telemetry variant, run the fixed auxiliary producer from the clea
 candidate checkout:
 
 ```sh
-python3 scripts/check-auxiliary-build.py --version 0.8.4-beta --output .git/auxiliary
+python3 scripts/check-auxiliary-build.py --version 0.8.4-beta --output target/verification-auxiliary
 ```
 
 It stamps a disposable source clone, builds only the ordinary `empack` package with
@@ -1341,7 +1342,7 @@ After archive admission, run the fixed native/live producer once on each of the
 three primary native hosts:
 
 ```sh
-python3 scripts/check-candidate-execution.py --payload /path/to/checked-native-archives --archive-evidence-sha256 EXPECTED_GATE_DIGEST --auxiliary /path/to/telemetry/build.json --revision FULL_COMMIT_SHA --version 0.8.4-beta --output .git/candidate-execution
+python3 scripts/check-candidate-execution.py --payload /path/to/checked-native-archives --archive-evidence-sha256 EXPECTED_GATE_DIGEST --auxiliary /path/to/telemetry/build.json --revision FULL_COMMIT_SHA --version 0.8.4-beta --output target/verification-candidate
 ```
 
 It captures and extracts that host's admitted default archive outside the checkout
