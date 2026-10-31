@@ -3,7 +3,9 @@ use std::fs;
 fn fixture(state: &Path, target: &Path) -> Record {
     Record {
         schema: 1,
-        binding: bind(state, target, &Cancellation::default()).unwrap().1,
+        binding: native::bind_for(state, Kind::Import, target, &Cancellation::default())
+            .unwrap()
+            .1,
         archive: [1; 32],
         archive_bytes: 7,
         archive_digests: vec![],

@@ -146,13 +146,6 @@ fn location(state: &Path, target: &Path) -> Result<(ProjectReadRoot, String, Str
     );
     Ok((parent, leaf.to_owned(), name))
 }
-pub(in crate::engine) fn bind(
-    state: &Path,
-    target: &Path,
-    cancel: &Cancellation,
-) -> Result<(String, Binding)> {
-    bind_for(state, Kind::Import, target, cancel)
-}
 pub(in crate::engine) fn bind_for(
     state: &Path,
     kind: Kind,

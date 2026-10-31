@@ -272,7 +272,9 @@ fn pending_replacement_rejects_stale_cleanup_and_cross_root_selection() {
     let cancel = Cancellation::default();
     let record = OpaqueRecord {
         schema: 1,
-        binding: store::bind(&state, &target, &cancel).unwrap().1,
+        binding: store::bind_for(&state, Kind::Import, &target, &cancel)
+            .unwrap()
+            .1,
         marker: 0,
     };
     let saved = store::save(&state, Kind::Import, &target, &record, None, &cancel).unwrap();

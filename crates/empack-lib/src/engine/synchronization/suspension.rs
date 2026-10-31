@@ -40,7 +40,7 @@ impl SyncInputContext {
         workspace: &WorkspaceSnapshot,
         cancel: &Cancellation,
     ) -> Result<Self> {
-        let (_, binding) = store::bind(state, &target, cancel)?;
+        let (_, binding) = store::bind_for(state, Kind::Synchronization, &target, cancel)?;
         ensure!(
             binding.project.as_ref()
                 == Some(&RecoveryReader::new(state.into()).bound_root_key(workspace.root())?),

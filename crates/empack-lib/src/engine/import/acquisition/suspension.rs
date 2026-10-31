@@ -265,7 +265,7 @@ pub async fn save_pending_import(
     let selected = target.clone();
     let binding_state = state.clone();
     let work = scope.spawn_blocking(resources(0)?, ResourceRequest::default(), move |cancel| {
-        store::bind(&binding_state, &selected, &cancel)
+        native::bind_for(&binding_state, Kind::Import, &selected, &cancel)
     })?;
     let (_, binding) = scope
         .accept(work.wait().await?)?

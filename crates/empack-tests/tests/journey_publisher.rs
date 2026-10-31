@@ -2140,12 +2140,10 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             ("--side", if side == "client" { "server" } else { "client" }),
             ("--layout", if layout == "prism" { "game" } else { "prism" }),
         ] {
-            let diagnostic = if (layout == "prism" && option == "--side")
-                || (side == "server" && option == "--layout")
-            {
-                "Prism layout requires the client environment"
-            } else {
-                "Instance pack, side or layout cannot change during an update"
+            let diagnostic = match option {
+                "--side" => "Explicit side conflicts with the installed environment",
+                "--layout" => "Explicit layout conflicts with the installed layout",
+                _ => unreachable!(),
             };
             command()
                 .args(["--yes", "instance", "update"])

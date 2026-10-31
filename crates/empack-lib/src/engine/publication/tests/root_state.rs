@@ -235,7 +235,9 @@ fn pending_records_use_associated_parent_and_target_without_rebinding_copies() {
         );
         let mut record = Record {
             schema: 1,
-            binding: store::bind(&state, &target, &cancel).unwrap().1,
+            binding: store::bind_for(&state, Kind::Import, &target, &cancel)
+                .unwrap()
+                .1,
         };
         let saved = store::save(&state, Kind::Import, &target, &record, None, &cancel).unwrap();
         let publisher = Publisher::open(&state).unwrap();

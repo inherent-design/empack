@@ -144,7 +144,7 @@ fn status_reports_pending_presence_without_validating_or_rewriting_it() {
         }
         let state = parent.path().join("state");
         let cancel = Cancellation::default();
-        let (_, binding) = store::bind(&state, &root, &cancel).unwrap();
+        let (_, binding) = store::bind_for(&state, kind, &root, &cancel).unwrap();
         // Deliberately minimal host record: status observes presence without
         // claiming that resume has validated the workflow-specific payload.
         store::save(&state, kind, &root, &Record { binding }, None, &cancel).unwrap();
