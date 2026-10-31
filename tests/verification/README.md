@@ -39,6 +39,12 @@ and successful repair. Signed-release cases retain the active identity and accep
 local deviations. Required archive execution remains a separate `P` case; complete
 bindings are not passing host or package observations.
 
+Instance-continuation cases reuse public restart, stale-state, corruption and
+approval fixtures. Shared-store discard preserves another project's pending work.
+Current-format schema checks, real remount execution and final-archive workflows
+have distinct bindings; neither a schema test nor a fixture definition establishes
+the other boundaries.
+
 Publisher key setup has separate executable, terminal and native cases. The
 terminal case checks closed/piped input, preview and refusal before accepting the
 same path with explicit approval. Destination cases preserve publisher work and

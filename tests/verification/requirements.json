@@ -9571,7 +9571,9 @@
       "required_work": "Wrong/renamed files, revised release, restart, stale record and explicit discard.",
       "evidence_tiers": [
         "H",
-        "X"
+        "X",
+        "I",
+        "P"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -9597,8 +9599,121 @@
             "Only schema-2 pending instance records can resume, using the persistent base fingerprint",
             "Obsolete/unknown schemas and mismatched fingerprints refuse continuation without changing retained records or the instance",
             "The supported record resumes exact retained/supplied content through fresh preparation without rewriting saved bytes or authorizing publication"
+          ]
+        },
+        {
+          "id": "UX-069.public-retained-inputs-and-restart",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys",
+            "empack-tests::journey_pending_instance::journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes"
           ],
-          "remaining_group_evidence": "Actual native remount, pending discard conflicts and the full restart/input matrix remain separately required"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unified and workflow-specific public continuation commands retain exact selected content across fresh executables and removal of the original descriptor and supplied files",
+            "Public inspection exposes exact hashes, lengths and missing/retained states; wrong, unknown or duplicate associations refuse without changing saved work or installation",
+            "Cache eviction and retained-content cleanup preserve live continuation inputs; corrupt retained bytes refuse, while missing retained bytes become explicit new requirements",
+            "Correct renamed files finish the literal installed inventory, preserve player notes, and retire the pending selection without modifying supplied source files"
+          ]
+        },
+        {
+          "id": "UX-069.stale-selected-discard-and-corrupt-record",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work",
+            "empack-tests::journey_pending_instance::journey_pending_instance_corruption_is_visible_and_explicitly_discardable"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An independently installed newer release makes the old continuation stale; refused resume and discard preview preserve the installed project and host evidence",
+            "A second pending instance in the same host store cannot be selected from the wrong project and remains unchanged when the first project discards its selected work",
+            "Explicit discard removes only the selected record; corrupt records remain visible and require explicit discard instead of implicit repair or adoption"
+          ]
+        },
+        {
+          "id": "UX-069.fresh-public-continuation-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Piped/closed input and terminal refusal do not authorize continuation or alter installation, retained input, source files or prior artifacts",
+            "Preview is read-only and resumption still requires fresh approval after the original descriptor has been removed"
+          ]
+        },
+        {
+          "id": "UX-069.native-remount-retains-instance-continuation",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_survives_native_remount_with_retained_inputs"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real disposable APFS remount changes the device label while preserving current-format pending identity, retained input and project/host bytes",
+            "After remount, both public continuation routes reverify exact retained and renamed supplied inputs and complete the expected inventory without adopting incompatible records",
+            "This owned-volume fixture does not claim a physical reboot, GUI or game acceptance"
+          ]
+        },
+        {
+          "id": "UX-069.packaged-instance-continuation",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys",
+            "empack-tests::journey_pending_instance::journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes",
+            "empack-tests::journey_pending_instance::journey_pending_instance_rejects_changed_installation_and_discards_only_selected_work",
+            "empack-tests::journey_pending_instance::journey_pending_instance_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each declared final production archive executes the public restart/input, stale/discard, corruption and fresh-approval workflows outside the checkout",
+            "Component or ordinary native execution does not replace package-bound observations; remount evidence remains a distinct native requirement"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
         }
       ],
       "owner_now": [
@@ -9611,7 +9726,7 @@
         "shared pending semantics + native/browser retention and UI",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-070",

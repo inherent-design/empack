@@ -289,6 +289,27 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         let fixture = Fixture::new();
         fixture.suspend(false);
         let original = fixture.pending();
+        // A second root shares the host store, but its saved work must remain
+        // independently selectable and retained when this root is discarded.
+        let mut unrelated = Fixture::new();
+        unrelated.state = fixture.state.clone();
+        unrelated.suspend(true);
+        let unrelated_operation = unrelated.pending();
+        let unrelated_project = snapshot(unrelated.project.dir());
+        let shared_state = snapshot(&fixture.state);
+        fixture
+            .command()
+            .args([
+                "pending",
+                "discard",
+                unrelated_operation["id"].as_str().unwrap(),
+            ])
+            .assert()
+            .failure()
+            .stderr(contains("No pending operation matches"));
+        assert_eq!(snapshot(&fixture.state), shared_state);
+        assert_eq!(unrelated.pending(), unrelated_operation);
+        assert_eq!(snapshot(unrelated.project.dir()), unrelated_project);
         // Another ordinary installation changes the base; never edit a private record.
         let mut other: Value = serde_json::from_slice(&fixture.payload).unwrap();
         other["version"] = json!("2");
@@ -345,6 +366,8 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         for (path, bytes) in after {
             assert_eq!(retained[&path], bytes);
         }
+        assert_eq!(unrelated.pending(), unrelated_operation);
+        assert_eq!(snapshot(unrelated.project.dir()), unrelated_project);
         fixture
             .command()
             .args(["pending", "resume", id])

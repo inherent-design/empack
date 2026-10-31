@@ -167,10 +167,13 @@ keeps incomplete requirement discovery explicit. Its unsupported-transport fixtu
 does not establish a live provider's restricted-download policy. Instance journeys
 use a literal two-file manual release, retain a verified input
 through a partial resume, remove the original download and descriptor, evict ordinary
-cache and exercise retained cleanup, then complete from public keys through both
-public and legacy continuation commands. They compare the complete game inventory and preserve player notes. A separate real installation
-stales the saved operation; both discard interfaces preserve that installation and
-remove only the selected record. Retained-content fault journeys locate a known native
+cache and exercise retained cleanup, then complete from public keys through unified
+and workflow-specific continuation commands. They compare the complete game inventory
+and preserve player notes. A separate real installation stales the saved operation;
+both discard interfaces preserve that installation and remove only the selected
+record. A second pending instance shares the host store: its ID cannot select work
+from the wrong project, and its record and source files survive the first discard.
+Retained-content fault journeys locate a known native
 backing by its fixture bytes, without decoding a private record. Corruption fails
 verification; missing build, sync or instance content becomes a fresh obligation
 without partial publication. Missing import-archive content prevents restoration.
