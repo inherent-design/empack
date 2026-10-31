@@ -9,6 +9,7 @@ import sys
 
 from verification.evidence import sha256
 from verification.process import run
+from verification.progress import phase
 
 ROOT = Path(__file__).resolve().parents[1]
 FEATURES = "test-utils,telemetry"
@@ -42,9 +43,22 @@ def coverage(root=ROOT, environment=None):
 
     def invoke(arguments, name, env, *, capture=False, checked=True):
         log = output / f"{name}.log"
-        code, text, timed_out = run(arguments, cwd=root, env=env, log=log,
-                                    timeout=1800, separate_stdout=capture)
+        with phase(output, name):
+            code, text, timed_out = run(arguments, cwd=root, env=env, log=log,
+                                        timeout=1800, separate_stdout=capture)
         status = 124 if timed_out else 128 - code if code < 0 else code
+        if status:
+            try:
+                details = log.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                details = text
+            # The retained file and returned text are already redacted by run().
+            # A bounded tail is diagnostic output, never an outcome parser.
+            try:
+                print(f"Coverage {name} diagnostics (exit {status}, timeout={timed_out}):", file=sys.stderr)
+                print("\n".join(details[-8192:].splitlines()[-40:]), file=sys.stderr)
+            except (OSError, ValueError):
+                pass
         if checked and status:
             raise RuntimeError(f"{name} failed (exit {status}, timeout={timed_out}); see {log}")
         return status, text

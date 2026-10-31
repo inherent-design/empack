@@ -1,6 +1,8 @@
 """Coverage wiring and failure preservation, not instrumented-product acceptance."""
+from contextlib import redirect_stderr
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import shlex
@@ -77,6 +79,34 @@ class CoverageRunner(unittest.TestCase):
                 runner.coverage(Path(directory), {})
         self.assertNotIn("tests", seen)
         self.assertNotIn("report", seen)
+
+    def test_failed_test_diagnostics_survive_a_successful_report(self):
+        with tempfile.TemporaryDirectory() as directory, redirect_stderr(io.StringIO()) as console:
+            def worker(command, **options):
+                name = options["log"].stem
+                if name == "environment":
+                    return 0, self.settings(), False
+                if name == "discovery":
+                    return 0, json.dumps({"test-count":1,"rust-suites":{"fixture":{}}}), False
+                if name == "tests":
+                    options["log"].write_text("omitted early context\n" + "context\n" * 60 + "FAIL fixture::selected_case <redacted>\n")
+                    return 100, "stdout without the failure", False
+                return 0, "", False
+            with patch.object(runner, "run", side_effect=worker):
+                self.assertEqual(runner.coverage(Path(directory), {}), 100)
+            self.assertIn("FAIL fixture::selected_case <redacted>", console.getvalue())
+            self.assertNotIn("omitted early context", console.getvalue())
+            self.assertLessEqual(len(console.getvalue().splitlines()), 42)
+
+    def test_workflow_retains_coverage_diagnostics_after_failure(self):
+        workflow = (SCRIPTS.parent / ".github/workflows/pr-ci.yml").read_text()
+        block = workflow.split("  coverage:\n", 1)[1].split("  gate:\n", 1)[0]
+        step = block.split("      - name: Retain coverage diagnostics\n", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("if: always()", step)
+        self.assertIn("uses: actions/upload-artifact@v7", step)
+        self.assertIn("name: verification-coverage", step)
+        self.assertIn("target/verification/coverage/", step)
+        self.assertIn("lcov.info", step)
 
 
 if __name__ == "__main__":

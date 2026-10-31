@@ -1425,6 +1425,13 @@ reach publication through a passing archive job.
 
 ## Coverage and release qualification
 
+The PR coverage job retains `verification-coverage` diagnostics after failure:
+runner logs, compiler inventory, phase markers and any generated `lcov.info`.
+Failed commands also print a tail of their already-redacted log, limited to 40
+lines and 8,192 characters. A successful LCOV report does not erase a failed test
+run. These diagnostic uploads and line-coverage figures do not supply native or
+final-package qualification.
+
 Measure production-source coverage separately from inline test bodies where tooling
 permits. Coverage supplements behavioral evidence and must use the candidate revision.
 Do not combine unrelated historical runs into a same-head acceptance claim. Native

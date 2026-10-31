@@ -285,6 +285,15 @@ jobs:
       - run: mise run coverage
         env:
           EMPACK_E2E_STRICT: "1"
+      - name: Retain coverage diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-coverage
+          path: |
+            target/verification/coverage/
+            lcov.info
+          if-no-files-found: warn
       - name: Coverage summary
         run: |
           cargo llvm-cov report --failure-mode all --summary-only | tee coverage-summary.txt
