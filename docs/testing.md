@@ -61,6 +61,7 @@ The separated executable suites have explicit boundaries:
 | `journey_pending_import` | Public import selectors, retained-archive restart, exact exported bytes and changed-destination refusal |
 | `journey_pending_instance` | Public instance keys, partial retention, executable restart, stale installation and exact discard |
 | `journey_publisher` | Local signed-channel enrollment, update conflicts, repair, rollback and trust changes |
+| `cli_offline` | Focused offline CLI contracts, with connected existing-source workflows in its `journeys` module |
 | `journey_local_exports` | Offline resourcepack export and reference Prism preparation |
 | `live_cli_init` | Official loader catalog resolution |
 | `live_provider_cli` | Provider identity, pinned direct-URL acquisition and convergence |

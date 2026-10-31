@@ -29,6 +29,11 @@ The registry command validates native membership for the selected host and featu
 graph; cases for other platforms remain bound without being claimed as executed.
 Python, rustdoc and consumer-parser identities use their own producers rather than
 being searched for in Nextest's executable-test inventory.
+The `cli_offline` target replaces the former mixed smoke target. Its `journeys`
+module holds connected source/adoption, partial-add and generated-automation
+sequences; focused CLI contracts remain in the root file. They share the same
+private setup helpers. Names and source organization do not strengthen their
+assertions or turn component-authored fixtures into literal author documents.
 Native Python subprocess checks of the registry are supplemental `N` evidence for
 UX-088; they do not replace its required product-executable (`X`) checks.
 

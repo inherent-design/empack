@@ -494,7 +494,7 @@
           "id": "UX-003.headless-search-needs-selection",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::smoke::smoke_headless_search_is_not_first_result_authorization",
+            "empack-tests::cli_offline::cli_headless_search_refuses_implicit_choice",
             "empack-tests::cli_dependencies::cli_headless_search_requires_explicit_selection"
           ],
           "required_platforms": [
@@ -3628,7 +3628,7 @@
           "id": "UX-028.public-partial-add-update",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::smoke::smoke_independent_add_publishes_successes_once_and_reports_preserved_failures"
+            "empack-tests::cli_offline::journeys::journey_independent_add_reports_partial_effects_and_converges"
           ],
           "required_platforms": [
             "linux",
@@ -3649,7 +3649,7 @@
           "id": "UX-028.unowned-destination",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::smoke::smoke_independent_add_preserves_unowned_directory_and_installs_unrelated_file"
+            "empack-tests::cli_offline::cli_independent_add_preserves_conflicting_unowned_directory"
           ],
           "required_platforms": [
             "linux",
@@ -3766,7 +3766,7 @@
           "id": "UX-029.public-first-lock",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::smoke::smoke_adopt_sources_and_restore_missing_lock_without_installing_files"
+            "empack-tests::cli_offline::journeys::journey_local_adoption_restores_resolution_without_reinstall"
           ],
           "required_platforms": [
             "linux",
@@ -3859,7 +3859,7 @@
           "id": "UX-030.public-local-input",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::smoke::smoke_adopt_sources_and_restore_missing_lock_without_installing_files"
+            "empack-tests::cli_offline::journeys::journey_local_adoption_restores_resolution_without_reinstall"
           ],
           "required_platforms": [
             "linux",
@@ -4226,7 +4226,7 @@
           "boundary": "X",
           "test_ids": [
             "empack-tests::journey_selection::journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits",
-            "empack-tests::smoke::smoke_strict_outdated_accepts_complete_empty_assessment"
+            "empack-tests::cli_offline::cli_strict_outdated_accepts_complete_empty_assessment"
           ],
           "required_platforms": [
             "linux",
