@@ -166,6 +166,11 @@ class ReleaseArchiveAdmission(unittest.TestCase):
                 def suite(arguments):
                     suite_root = Path(arguments[arguments.index("--output") + 1])
                     self.assertTrue((suite_root.parent / "native-image/image.json").is_file())
+                    progress = json.loads((suite_root.parent / "run-cli-suite.progress.json").read_text())
+                    self.assertEqual(progress["kind"], "verification-progress")
+                    self.assertFalse(progress["qualification"])
+                    self.assertEqual(progress["state"], "entered")
+                    self.assertNotIn("status", progress)
                     self.assertEqual(arguments[arguments.index("--sha256") + 1], digest)
                     (suite_root / "attempt").mkdir(parents=True)
                     package.write_json(suite_root / "attempt/receipt.json", dict(
@@ -201,6 +206,9 @@ class ReleaseArchiveAdmission(unittest.TestCase):
         record = json.loads(next((self.root / "attempts").glob("*/package.json")).read_text())
         self.assertEqual(record["status"], "BLOCKED")
         self.assertIn("missing native inspector", record["reason"])
+        attempt = next((self.root / "attempts").iterdir())
+        self.assertEqual(json.loads((attempt / "inspect-native-image.progress.json").read_text())["state"], "raised")
+        self.assertFalse((attempt / "run-cli-suite.progress.json").exists())
 
     def test_checkout_extraction_is_refused_before_native_inspection_or_product_execution(self):
         target = "x86_64-pc-windows-msvc"

@@ -15,6 +15,7 @@ import verify
 from verification.evidence import sha256, write_json
 from verification.native_image import capture as capture_image, InspectionUnavailable
 from verification.release import TARGETS
+from verification.progress import phase
 
 from verification.package_archive import capture_archive, extract_binary
 
@@ -53,16 +54,19 @@ def main(argv=None):
             if root.is_relative_to(verify.ROOT):
                 raise ValueError("Release executable must be extracted outside the source checkout")
             captured = root / "captured-archive"
-            capture_archive(archive, captured, args.sha256)
-            executable, digest, length = extract_binary(captured, root, args.target)
+            with phase(attempt, "capture-archive"):
+                capture_archive(archive, captured, args.sha256)
+                executable, digest, length = extract_binary(captured, root, args.target)
             record["executable"] = {"sha256": digest, "length": length}
-            record["native_image_sha256"] = capture_image(
-                executable, args.target, digest, attempt / "native-image", environment)
+            with phase(attempt, "inspect-native-image"):
+                record["native_image_sha256"] = capture_image(
+                    executable, args.target, digest, attempt / "native-image", environment)
             suite_root = attempt / "suite"
-            code = verify.main(["cli", "--binary", str(executable), "--sha256", digest,
-                                "--version", args.version, "--target", args.target,
-                                "--product-profile", args.profile,
-                                "--product-features", "default", "--output", str(suite_root)])
+            with phase(attempt, "run-cli-suite"):
+                code = verify.main(["cli", "--binary", str(executable), "--sha256", digest,
+                                    "--version", args.version, "--target", args.target,
+                                    "--product-profile", args.profile,
+                                    "--product-features", "default", "--output", str(suite_root)])
             receipts = list(suite_root.glob("*/receipt.json"))
             if len(receipts) != 1:
                 raise ValueError("Archive execution did not produce exactly one suite attempt")

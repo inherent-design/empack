@@ -11684,6 +11684,33 @@
             "The installed native readelf, otool or dumpbin inspects a copy of the installed native compiler selected through rustup metadata; it records header architecture, nonempty native reports, exact tool identity and stable copied bytes without executing the copy"
           ],
           "remaining_group_evidence": "Native tooling integration on a copied installed compiler, not an empack archive, consumer workflow or cross-platform product qualification. Python launcher packaging is independent and need not match the thin shipping-image profile."
+        },
+        {
+          "id": "UX-085.fixed-phase-progress-without-qualification",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_verification_progress.VerificationProgress.test_checked_command_keeps_output_deadline_and_nonzero_classification",
+            "python::test_verification_progress.VerificationProgress.test_diagnostic_storage_and_console_failures_do_not_override_work",
+            "python::test_verification_progress.VerificationProgress.test_entry_precedes_work_and_return_is_not_acceptance",
+            "python::test_verification_progress.VerificationProgress.test_errors_and_interrupts_preserve_the_original_cause_without_details",
+            "python::test_verification_progress.VerificationProgress.test_unavailable_tool_retains_blocked_classification",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_package_producer_binds_native_observation_before_running_the_cli_suite",
+            "python::test_release_archive.ReleaseArchiveAdmission.test_missing_native_inspector_blocks_package_before_product_execution"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Archive capture, native inspection, CLI suite/discovery/execution have fixed-label phase breadcrumbs before the long call starts; inert producer fixtures verify native inspection precedes CLI execution on all five targets",
+            "Markers omit commands, arguments, environment, child output and exception details; nonzero/timeout/blocked classification and original exceptions are preserved",
+            "Diagnostic storage or console failure cannot override the underlying operation outcome; records are explicitly nonqualifying and actual receipt admission rejects them",
+            "This component evidence does not execute a product/compiler or establish native archive acceptance, actual hard-kill survival or the cause of historical CI timeouts"
+          ]
         }
       ],
       "owner_now": [

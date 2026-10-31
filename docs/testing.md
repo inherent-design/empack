@@ -1275,6 +1275,21 @@ than an environment value assigned only after a successful build. A failed or
 incomplete bundle remains diagnostic evidence and cannot authorize packaging or
 publication.
 
+Long runner operations emit fixed phase labels and write
+`<phase>.progress.json` in their attempt directory before entering the operation.
+Archive capture, native-image inspection and the CLI suite have separate markers;
+the suite also marks compiler discovery and execution. Records use `entered`,
+`returned`, `raised` or `interrupted` and measured elapsed time. They contain no
+command arguments, environment, child output or exception details. Diagnostic
+storage or console failure preserves the underlying command outcome.
+
+A returned phase can still have a nonzero or timed-out command. An entry without a
+terminal marker establishes only that the call was entered; it does not establish
+process retirement or the cause of an outer job cancellation. A hard job stop may
+also prevent artifact upload. These markers are best-effort diagnostics with
+`qualification: false`; receipt admission rejects them as execution evidence.
+Complete source/product, inventory and outcome receipts remain required.
+
 To evaluate an already checked payload without publishing:
 
 ```sh

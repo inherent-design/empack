@@ -16,6 +16,7 @@ from verification.classification import compare_rust_inventory
 from verification.compiler import compiler_environment
 from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
+from verification.progress import phase
 from verification.product_build import retain_build
 from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
@@ -29,9 +30,10 @@ class Blocked(Exception):
 
 def checked(command, attempt, name, environment, timeout=120, cwd=ROOT):
     try:
-        code, output, timed_out = run(command, cwd=cwd, env=environment,
-                                     log=attempt / f"{name}.log", timeout=timeout,
-                                     separate_stdout=True)
+        with phase(attempt, name):
+            code, output, timed_out = run(command, cwd=cwd, env=environment,
+                                         log=attempt / f"{name}.log", timeout=timeout,
+                                         separate_stdout=True)
     except FileNotFoundError as error:
         raise Blocked(f"Required command unavailable: {command[0]}") from error
     if code or timed_out:
@@ -201,8 +203,9 @@ junit.store-failure-output = false
                    EMPACK_TEST_INVENTORY_SHA256=record["inventory_sha256"])
     command = nextest_command("run", suite, config, test_features)
     record["command"] = command
-    code, _, timed_out = run(command, cwd=ROOT, env=run_env,
-                             log=suite_dir / "run.log", timeout=suite.timeout)
+    with phase(suite_dir, "execution"):
+        code, _, timed_out = run(command, cwd=ROOT, env=run_env,
+                                 log=suite_dir / "run.log", timeout=suite.timeout)
     if junit.is_file():
         record["tests"] = read_results(junit, selected, all_ids)
         record["junit_sha256"] = sha256(junit)
