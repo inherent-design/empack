@@ -717,15 +717,11 @@ fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
     let mut console = expectrl::session::log(terminal::spawn(command), std::io::stderr()).unwrap();
     console.set_expect_timeout(Some(Duration::from_secs(20)));
 
+    // Readiness follows atomic identity publication. Reading the console first
+    // also retains startup diagnostics and avoids blocking its output producer.
+    console.expect("WINDOWS_RUNTIME_READY").unwrap();
     let pid_file = game.join("console-runtime-pid");
-    let deadline = Instant::now() + Duration::from_secs(20);
-    let identity_bytes = loop {
-        if let Ok(bytes) = fs::read(&pid_file) {
-            break bytes;
-        }
-        assert!(Instant::now() < deadline, "console runtime did not start");
-        std::thread::sleep(Duration::from_millis(10));
-    };
+    let identity_bytes = fs::read(&pid_file).unwrap();
     let identity: BTreeMap<String, u32> = serde_json::from_slice(&identity_bytes).unwrap();
     assert_eq!(
         identity.keys().map(String::as_str).collect::<Vec<_>>(),
@@ -764,7 +760,6 @@ fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
         (identity["created_low"], identity["created_high"])
     );
     let runtime = RuntimeProcess(handle);
-    console.expect("WINDOWS_RUNTIME_READY").unwrap();
     console.send(ControlCode::EndOfText).unwrap();
     console.expect(Regex("(?i)operation interrupted")).unwrap();
     assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
