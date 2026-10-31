@@ -1933,6 +1933,9 @@
     {"id": "python::test_authoring_schema.SchemaEvidence.test_product_source_dependency_and_raw_observations_are_bound", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
     {"id": "python::test_authoring_schema.SchemaEvidence.test_schema_evidence_joins_only_its_product_host_and_keeps_other_boundaries_unexecuted", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
     {"id": "python::test_ci_verification.RequiredGate.test_schema_observations_are_required_even_for_docs_only_changes", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
-    {"id": "python::test_authoring_schema.SchemaEvidence.test_actual_probe_isolates_every_command_and_retains_mutation_and_timeout", "boundary": "H", "requirements": ["UX-006", "UX-088"]}
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_actual_probe_isolates_every_command_and_retains_mutation_and_timeout", "boundary": "H", "requirements": ["UX-006", "UX-088"]},
+    {"id": "python::test_authoring_schema.SchemaEvidence.test_release_schema_needs_exact_admitted_product_context", "boundary": "H", "requirements": ["UX-006", "UX-086", "UX-088"]},
+    {"id": "python::test_candidate_execution.CandidateDispatch.test_linux_dispatch_runs_schema_on_the_extracted_default_binary", "boundary": "H", "requirements": ["UX-006", "UX-086", "UX-088"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_schema_observations_cannot_be_replaced_by_other_passing_candidate_cases", "boundary": "H", "requirements": ["UX-006", "UX-086", "UX-088"]}
   ]
 }

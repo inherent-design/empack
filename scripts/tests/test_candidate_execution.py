@@ -52,7 +52,7 @@ class CandidateExecution(unittest.TestCase):
         self.record = dict(schema=1, kind="candidate-native-execution", qualification=False,
             source_revision=self.revision, version=self.version, target=target,
             created_at="2026-10-30T00:00:00+00:00", archive_evidence_sha256=self.archive_digest,
-            auxiliary_build_sha256=self.auxiliary[0]["build_sha256"], artifacts=artifacts, status="PASS")
+            auxiliary_build_sha256=self.auxiliary[0]["build_sha256"], artifacts=artifacts, status="PASS", schema_evidence=[])
         self.record["compiler"] = self.auxiliary[0]["compiler"]
         self.record["runs"], _ = inspect_runs(directory, target, artifacts, self.revision, self.version,
                                               self.record["compiler"])
@@ -140,6 +140,31 @@ class CandidateExecution(unittest.TestCase):
 
 
 class CandidateDispatch(unittest.TestCase):
+    def test_linux_dispatch_runs_schema_on_the_extracted_default_binary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            binaries = {name: directory / name for name in GRAPHS}
+            for name, path in binaries.items():
+                path.write_bytes(("inert " + name).encode())
+            artifacts = {name: sha256(path) for name, path in binaries.items()}
+            calls = []
+            def observed(command):
+                calls.append(command)
+                output = Path(command[command.index("--output") + 1]) / "one-attempt"
+                output.mkdir(parents=True)
+                write_json(output / "receipt.json", dict(status="PASS"))
+                return 0
+            with patch.object(driver.verify, "main", side_effect=observed):
+                driver.execute(directory / "runs", binaries, artifacts, "x86_64-unknown-linux-gnu", "0.8.4-beta")
+            self.assertEqual(len(calls), 5)
+            command = calls[-1]
+            self.assertEqual(command[0], "schema")
+            for flag, value in (("--binary", str(binaries["default"])), ("--sha256", artifacts["default"]),
+                                ("--target", "x86_64-unknown-linux-gnu"), ("--version", "0.8.4-beta"),
+                                ("--product-features", "default"), ("--product-profile", "release")):
+                self.assertEqual(command[command.index(flag) + 1], value)
+            self.assertTrue(command[-1].endswith("authoring-schema"))
+
     def test_fixed_dispatch_continues_after_blocked_phase_without_rebuilding_products(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

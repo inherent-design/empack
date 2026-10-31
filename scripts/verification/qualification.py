@@ -24,7 +24,7 @@ def applicable_requirements(version):
     return NATIVE | PORTABLE if (major, minor) >= (0, 9) else NATIVE
 
 
-def evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumer_evidence=(), tooling_evidence=(), doctest_evidence=()):
+def evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=()):
     """Evaluate admitted observations, not self-reported requirement PASS labels."""
     release_version(version)
     by_id = {row["id"]: row for row in document["requirements"]}
@@ -36,7 +36,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # Portable obligations become mandatory at their planned release, never by
     # silently changing the denominator or relying on a caller's exclusions.
     applicable = applicable_requirements(version)
-    acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence, tooling_evidence=tooling_evidence, doctest_evidence=doctest_evidence)
+    acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence, tooling_evidence=tooling_evidence, doctest_evidence=doctest_evidence, schema_evidence=schema_evidence)
     blockers = []
     for row in acceptance["requirements"]:
         row["applicable"] = row["id"] in applicable
@@ -59,11 +59,11 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     # No approved low-risk waiver policy is installed. Missing critical or actual
     # consumer evidence cannot be waived by setting a result field to WAIVED.
     states = [row["status"] for row in acceptance["requirements"] if row["applicable"]]
-    for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence]:
+    for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence]:
         if record.get("status") != "PASS":
             blockers.append({"requirement": "candidate", "reasons": [
                 f"Evidence receipt {record['receipt_sha256']} is {record.get('status', 'missing its outcome')}"]})
-    observed = aggregate_outcomes(states + [record["status"] for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence]])
+    observed = aggregate_outcomes(states + [record["status"] for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence]])
     status = "FAIL" if observed == "FAIL" else "BLOCKED" if blockers else "PASS"
     return {"status": status, "qualification": status == "PASS", "acceptance": acceptance,
             "applicable_requirements": sorted(applicable), "blockers": blockers,
@@ -84,7 +84,7 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     binaries = {entry["suite"]["target"]: entry["executable"]["sha256"] for entry in archives["targets"]}
     auxiliary = [inspect_auxiliary(path, root, revision, version) for path in auxiliary_paths]
     evidence.extend(record["suite"] for record in auxiliary)
-    executions = [inspect_execution(path, archives, auxiliary, payload_sha256, revision, version)
+    executions = [inspect_execution(path, archives, auxiliary, payload_sha256, revision, version, root)
                   for path in execution_paths]
     if len({record["target"] for record in executions}) != len(executions):
         raise ValueError("Candidate execution cannot select repeated attempts for one native host")
@@ -102,13 +102,14 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     consumers = [inspect_prism_evidence(path, revision, root) for path in consumer_paths]
     tooling = [inspect_python_evidence(path, revision, root) for path in tooling_paths]
     doctests = [inspect_doctest_evidence(path, revision, root) for path in doctest_paths]
+    schemas = [schema for execution in executions for schema in execution["schema_evidence"]]
     result = evaluate_requirements(document, classification, evidence, revision, version, package_receipts,
-                                   consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests)
+                                   consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas)
     result["acceptance"].update(requirements_sha256=sha256(registry), classification_sha256=sha256(bindings))
     result.update(schema=1, kind="release-candidate-qualification", source_revision=revision,
                   source_tree=git(root, "rev-parse", "HEAD^{tree}"), version=version,
                   created_at=datetime.now(timezone.utc).isoformat(), archive_evidence_sha256=payload_sha256,
-                  consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests,
+                  consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas,
                   auxiliary_builds=[{key: value for key, value in record.items() if key != "suite"} for record in auxiliary],
                   candidate_executions=[{key: value for key, value in record.items() if key != "suites"} for record in executions],
                   suite_evidence=[{key: value for key, value in record.items() if key != "tests"} for record in evidence])

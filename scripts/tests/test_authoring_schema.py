@@ -65,6 +65,36 @@ def fixture(directory, revision=REVISION):
 
 
 class SchemaEvidence(unittest.TestCase):
+    def test_release_schema_needs_exact_admitted_product_context(self):
+        from verification.candidate_execution import inspect_schema_runs
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            attempt = directory / "authoring-schema/one-attempt"
+            record, _ = fixture(attempt)
+            record["artifact"].update(profile="release", provenance="caller-supplied target/features; digest and version checked")
+            write_json(attempt / "receipt.json", record)
+            expected = {key: record["artifact"][key] for key in ("target", "features", "profile", "version", "sha256")}
+            with self.assertRaisesRegex(ValueError, "audited ordinary default build"):
+                inspect_schema_evidence(attempt / "receipt.json", REVISION)
+            self.assertEqual(inspect_schema_evidence(attempt / "receipt.json", REVISION, expected_artifact=expected)["status"], "PASS")
+            for key, value in (("sha256", "e" * 64), ("target", "aarch64-apple-darwin"),
+                               ("profile", "dev"), ("version", "wrong")):
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    inspect_schema_evidence(attempt / "receipt.json", REVISION, expected_artifact=dict(expected, **{key: value}))
+            args = (directory, expected["target"], {"default": expected["sha256"]}, REVISION, expected["version"])
+            self.assertEqual(inspect_schema_runs(*args)[0]["artifact_sha256"], expected["sha256"])
+            duplicate = directory / "authoring-schema/second/receipt.json"
+            duplicate.parent.mkdir()
+            write_json(duplicate, record)
+            with self.assertRaisesRegex(ValueError, "one contained schema"):
+                inspect_schema_runs(*args)
+            duplicate.unlink()
+            with self.assertRaisesRegex(ValueError, "Unexpected schema attempt"):
+                inspect_schema_runs(directory, "aarch64-apple-darwin", {}, REVISION, expected["version"])
+            (attempt / "receipt.json").unlink()
+            with self.assertRaisesRegex(ValueError, "one contained schema"):
+                inspect_schema_runs(*args)
+
     def test_actual_probe_isolates_every_command_and_retains_mutation_and_timeout(self):
         # Only imports and subprocess execution are substituted; exercise the
         # producer's actual fixture writes, environment and snapshot collection.

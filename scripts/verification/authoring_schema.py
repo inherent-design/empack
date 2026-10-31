@@ -151,7 +151,7 @@ def observation_results(observations):
     return results
 
 
-def inspect_schema_evidence(path, revision, root=ROOT):
+def inspect_schema_evidence(path, revision, root=ROOT, *, expected_artifact=None):
     """Admit a fixed producer attempt, not its self-reported success alone."""
     path = Path(path)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 4 << 20:
@@ -165,8 +165,7 @@ def inspect_schema_evidence(path, revision, root=ROOT):
                 or record["qualification"] is not False or record.get("reason")
                 or record["inputs"] != input_hashes(root)
                 or datetime.fromisoformat(record["created_at"]).tzinfo is None
-                or artifact["features"] != "default" or artifact["profile"] != "dev"
-                or artifact["provenance"] != "built by this runner from the ordinary product package"):
+                or artifact["features"] != "default"):
             raise ValueError("Unrelated or unstable schema attempt")
         targets = json.loads((Path(root) / "tests/verification/test-bindings.json").read_text())["targets"]
         package = tomllib.loads((Path(root) / "Cargo.toml").read_text())["workspace"]["package"]
@@ -174,10 +173,18 @@ def inspect_schema_evidence(path, revision, root=ROOT):
         if (targets.get(artifact["target"]) != record["platform"]
                 or f"host: {artifact['target']}" not in record["rustc"].splitlines()
                 or f"release: {pin}" not in record["rustc"].splitlines()
-                or artifact["version"] != package["version"]
+                or artifact["version"] != (expected_artifact["version"] if expected_artifact else package["version"])
                 or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"])):
             raise ValueError("Schema product and execution host disagree")
-        inspect_retained_build(path.parent, artifact)
+        if expected_artifact is None:
+            if (artifact["profile"] != "dev"
+                    or artifact["provenance"] != "built by this runner from the ordinary product package"):
+                raise ValueError("CI schema evidence requires its audited ordinary default build")
+            inspect_retained_build(path.parent, artifact)
+        elif (any(artifact.get(key) != value for key, value in expected_artifact.items())
+              or expected_artifact.get("profile") != "release"
+              or artifact["provenance"] != "caller-supplied target/features; digest and version checked"):
+            raise ValueError("Schema attempt did not execute the admitted release binary")
         if raw.is_symlink() or not raw.is_file() or raw.stat().st_size > 4 << 20 or sha256(raw) != record["observations_sha256"]:
             raise ValueError("Missing or changed schema observations")
         probe = json.loads(raw.read_text(encoding="utf-8"))

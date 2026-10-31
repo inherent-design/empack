@@ -860,6 +860,10 @@ and product identity must remain stable. Admission rechecks those observations a
 the ordinary Cargo build audit; a successful job alone supplies no passing cases.
 Docs/schema-only CI runs upload the same evidence and the required gate admits it
 as the Linux/default conformance case. Other host CLI cases remain separate.
+Candidate execution repeats the same producer on the extracted Linux release
+binary with explicit digest, version and target. Qualification admits that receipt
+only against the archive gate's product identity; a development build's passing
+schema result cannot replace it. Both paths use the same fixtures and checker.
 JSON Schema checks complement composed domain validation; they do not replace it,
 provider resolution, or actual consumer acceptance.
 

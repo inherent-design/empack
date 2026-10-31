@@ -51,6 +51,26 @@ class CandidatePolicy(unittest.TestCase):
         self.assertFalse(result["qualification"])
         self.assertEqual(result["applicable_requirements"], sorted(NATIVE | PORTABLE))
 
+    def test_schema_observations_cannot_be_replaced_by_other_passing_candidate_cases(self):
+        from test_authoring_schema import fixture
+        from verification.authoring_schema import TEST_ID, inspect_schema_evidence
+        row = next(row for row in self.document["requirements"] if row["id"] == "UX-006")
+        row["cases"] = [dict(id="UX-006.schema", boundary="X", test_ids=[TEST_ID],
+                             required_platforms=["linux"], required_product_features=["default"])]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            fixture(path)
+            evidence = inspect_schema_evidence(path / "receipt.json", REVISION)
+            def evaluate(records):
+                return evaluate_requirements(self.document, self.classification, self.evidence,
+                    REVISION, "0.8.4-beta", self.package_proofs, schema_evidence=records)
+            self.assertEqual(evaluate([])["status"], "BLOCKED")
+            self.assertEqual(evaluate([evidence])["status"], "PASS", "synthetic policy evidence only")
+            failed = dict(evidence, status="FAIL")
+            self.assertEqual(evaluate([failed])["status"], "FAIL")
+            with self.assertRaisesRegex(ValueError, "Unrelated"):
+                evaluate([dict(evidence, source_revision="b" * 40)])
+
     def test_doctest_graphs_and_failures_participate_in_candidate_qualification(self):
         from test_doctest_evidence import RustdocAcceptance
         fixture = RustdocAcceptance()

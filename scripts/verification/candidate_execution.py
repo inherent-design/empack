@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .evidence import aggregate_outcomes, sha256
 from .receipts import inspect_suite_receipt
+from .authoring_schema import ROOT, inspect_schema_evidence
 
 NATIVE_TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
 GRAPHS = {"default": "minimal", "telemetry": "all"}
@@ -40,7 +41,23 @@ def inspect_runs(directory, target, artifacts, revision, version, compiler):
     return summaries, suites
 
 
-def inspect_execution(path, archives, auxiliary, archive_digest, revision, version):
+def inspect_schema_runs(directory, target, artifacts, revision, version, root=ROOT):
+    """Only Linux owns the editor conformance case; bind it to extracted shipped bytes."""
+    directory = Path(directory)
+    paths = list((directory / "authoring-schema").glob("*/receipt.json"))
+    if target != NATIVE_TARGETS[0]:
+        if paths:
+            raise ValueError("Unexpected schema attempt on a host without that candidate obligation")
+        return []
+    if (len(paths) != 1 or paths[0].is_symlink()
+            or not paths[0].resolve().is_relative_to(directory.resolve())):
+        raise ValueError("Candidate needs one contained schema conformance attempt")
+    expected = dict(target=target, features="default", profile="release", version=version,
+                    sha256=artifacts["default"])
+    return [inspect_schema_evidence(paths[0], revision, root, expected_artifact=expected)]
+
+
+def inspect_execution(path, archives, auxiliary, archive_digest, revision, version, root=ROOT):
     """Bind supplemental native/live results to already admitted build identities."""
     path = Path(path)
     if path.is_symlink() or not path.is_file():
@@ -68,8 +85,11 @@ def inspect_execution(path, archives, auxiliary, archive_digest, revision, versi
     if record.get("compiler") != builds[0]["compiler"]:
         raise ValueError("Candidate compiler differs from the admitted native toolchain")
     summaries, suites = inspect_runs(path.parent, target, artifacts, revision, version, record["compiler"])
-    status = aggregate_outcomes(suite["status"] for suite in suites)
-    if record.get("runs") != summaries or record.get("status") != status:
+    schemas = inspect_schema_runs(path.parent, target, artifacts, revision, version, root)
+    status = aggregate_outcomes(suite["status"] for suite in [*suites, *schemas])
+    if (record.get("runs") != summaries or record.get("status") != status
+            or record.get("schema_evidence") != schemas):
         raise ValueError("Candidate execution summary differs from its retained attempts")
     return dict(target=target, status=status, execution_sha256=sha256(path), artifacts=artifacts,
-                source_revision=revision, archive_evidence_sha256=archive_digest, suites=suites)
+                source_revision=revision, archive_evidence_sha256=archive_digest, suites=suites,
+                schema_evidence=schemas)

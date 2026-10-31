@@ -13,7 +13,8 @@ import zipfile
 
 import verify
 from verification.auxiliary import inspect_auxiliary
-from verification.candidate_execution import GRAPHS, PHASES, NATIVE_TARGETS, inspect_execution, inspect_runs
+from verification.candidate_execution import (GRAPHS, PHASES, NATIVE_TARGETS, inspect_execution,
+                                               inspect_runs, inspect_schema_runs)
 from verification.evidence import aggregate_outcomes, sha256, write_json
 from verification.package_archive import capture_archive, capture_binary, extract_binary
 from verification.release import check_payload, git
@@ -40,6 +41,17 @@ def execute(directory, binaries, artifacts, target, version):
                 raise ValueError("Candidate runner status differs from its terminal result")
             if sha256(binaries[features]) != artifacts[features]:
                 raise ValueError("Candidate executable changed during execution")
+    if target == NATIVE_TARGETS[0]:
+        code = verify.main(["schema", "--binary", str(binaries["default"]),
+                            "--sha256", artifacts["default"], "--target", target,
+                            "--version", version, "--product-features", "default",
+                            "--product-profile", "release", "--output", str(directory / "authoring-schema")])
+        receipts = list((directory / "authoring-schema").glob("*/receipt.json"))
+        if len(receipts) != 1:
+            raise ValueError("Candidate runner lost its single schema attempt")
+        status = json.loads(receipts[0].read_text(encoding="utf-8"))["status"]
+        if code != {"PASS": 0, "BLOCKED": 2}.get(status, 1) or sha256(binaries["default"]) != artifacts["default"]:
+            raise ValueError("Candidate schema outcome or selected product changed")
 
 
 def main():
@@ -91,7 +103,8 @@ def main():
         if git(ROOT, "rev-parse", "HEAD") != args.revision or git(ROOT, "status", "--porcelain"):
             raise ValueError("Source changed during candidate execution")
         record["runs"], suites = inspect_runs(attempt, target, artifacts, args.revision, args.version, record["compiler"])
-        record["status"] = aggregate_outcomes(suite["status"] for suite in suites)
+        record["schema_evidence"] = inspect_schema_runs(attempt, target, artifacts, args.revision, args.version)
+        record["status"] = aggregate_outcomes(suite["status"] for suite in [*suites, *record["schema_evidence"]])
         write_json(attempt / "execution.json", record)
         inspect_execution(attempt / "execution.json", archives, [auxiliary], args.archive_evidence_sha256,
                           args.revision, args.version)

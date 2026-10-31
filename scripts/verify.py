@@ -368,7 +368,7 @@ def run_schema(args, attempt, environment):
     print(f"{record['status']}: {attempt / 'receipt.json'}", flush=True)
     if record.get("reason"):
         print(record["reason"], file=sys.stderr)
-    return 0 if record["status"] == "PASS" else 1
+    return 0 if record["status"] == "PASS" else 2 if record["status"] == "BLOCKED" else 1
 
 
 def main(argv=None):
@@ -393,9 +393,10 @@ def main(argv=None):
     if "doctest" in args.suites and (args.suites != ["doctest"] or any((args.binary, args.sha256,
             args.version, args.target, args.product_features, args.product_profile))):
         parser.error("Doctests run separately with a workspace test graph, without product options")
-    if "schema" in args.suites and (args.suites != ["schema"] or any((args.binary, args.sha256,
-            args.version, args.target, args.product_features, args.product_profile)) or args.test_features != "all"):
-        parser.error("Schema conformance builds its own ordinary default product; select it separately")
+    if "schema" in args.suites and (args.suites != ["schema"] or args.test_features != "all"
+            or args.product_features not in {None, "default"}
+            or not args.binary and any((args.sha256, args.version, args.target, args.product_profile))):
+        parser.error("Select schema separately with its own default build or explicit default-product identity")
     args.output.mkdir(parents=True, exist_ok=True)
     attempt = args.output.resolve() / str(uuid.uuid4())
     attempt.mkdir(mode=0o700)
