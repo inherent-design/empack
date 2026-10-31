@@ -58,10 +58,10 @@ SUITES = {
     "import-corpus": Suite(("journey_import",)),
     "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
-    "live-catalog": Suite(("live_cli_init", "runtime_catalog_smoke"), ignored=True),
+    "live-catalog": Suite(("live_cli_init", "live_runtime_catalog_contract"), ignored=True),
     "publisher-cli": Suite(("cli_publisher",), ignored=True, timeout=600,
                            cases=("live_cli_hosted_channel_verifies_inputs_before_local_publication",)),
-    "live-provider": Suite(("live_provider_cli", "provider_catalog_smoke"), ignored=True,
+    "live-provider": Suite(("live_provider_cli", "live_provider_contract"), ignored=True,
                            required_env=("EMPACK_KEY_CURSEFORGE",)),
     "live-provider-cli": Suite(("live_provider_cli",), ignored=True, cases=(
         "live_cli_equivalent_provider_selectors_converge",
@@ -69,18 +69,18 @@ SUITES = {
         "live_cli_selected_update_preserves_exact_pin_and_authoring",
         "live_cli_direct_url_retains_observed_content",
         "live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs")),
-    "live-modrinth": Suite(("provider_catalog_smoke",), ignored=True, cases=(
+    "live-modrinth": Suite(("live_provider_contract",), ignored=True, cases=(
         "modrinth_mod_identity_and_exact_bytes", "modrinth_resource_pack_identity_and_exact_bytes",
         "modrinth_compatible_selection_and_bytes", "modrinth_mixed_project_selects_datapack_bytes",
         "modrinth_required_closure_and_all_selected_bytes")),
-    "live-curseforge": Suite(("provider_catalog_smoke", "live_provider_cli"), ignored=True, cases=(
+    "live-curseforge": Suite(("live_provider_contract", "live_provider_cli"), ignored=True, cases=(
         "curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes",
         "live_cli_curseforge_selectors_converge"),
         required_env=("EMPACK_KEY_CURSEFORGE",)),
     "server-cli": Suite(("live_server_cli",), ignored=True, java=True),
-    "live-runtime": Suite(("runtime_server_smoke",), ignored=True, java=True, timeout=3600,
+    "live-runtime": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=3600,
                           required_env=("EMPACK_TEST_JAVA8_HOME",)),
-    "runtime-current": Suite(("runtime_server_smoke",), ignored=True, java=True, timeout=1800,
+    "runtime-current": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=1800,
                              cases=("runtime_managed_server_vanilla", "runtime_managed_server_neoforge",
                                     "runtime_server_fabric_classpath")),
     "live-assistance": Suite(("live_manual_assistance",), ignored=True, unix_only=True),

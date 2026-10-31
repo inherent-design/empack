@@ -107,40 +107,40 @@ run_windows = "python scripts/survey-imports.py --profile pr"
 [tasks.smoke]
 depends = ["build:bin"]
 description = "Run deterministic CLI smoke contracts without live providers"
-run = "cargo nextest run -p empack-tests --test smoke"
-run_windows = "cargo nextest run -p empack-tests --test smoke"
+run = "cargo nextest run -p empack-tests --test cli_offline"
+run_windows = "cargo nextest run -p empack-tests --test cli_offline"
 
 [tasks."smoke:runtime"]
 depends = ["build:bin"]
 description = "Verify CLI build budgets, official runtime bytes and Java server launchers"
 run = [
     "cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E 'test(cli_neoforge_build_all_targets_with_default_resource_budget)'",
-    "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2",
+    "cargo nextest run -p empack-lib --features test-utils --test live_server_distribution_startup --run-ignored ignored-only --test-threads 2",
 ]
 run_windows = [
     'cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E "test(cli_neoforge_build_all_targets_with_default_resource_budget)"',
-    'cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2',
+    'cargo nextest run -p empack-lib --features test-utils --test live_server_distribution_startup --run-ignored ignored-only --test-threads 2',
 ]
 
 [tasks."smoke:catalog"]
 description = "Verify official game and loader discovery catalogs"
-run = "cargo nextest run -p empack-lib --test runtime_catalog_smoke --run-ignored ignored-only"
-run_windows = "cargo nextest run -p empack-lib --test runtime_catalog_smoke --run-ignored ignored-only"
+run = "cargo nextest run -p empack-lib --test live_runtime_catalog_contract --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test live_runtime_catalog_contract --run-ignored ignored-only"
 
 [tasks."smoke:providers"]
 description = "Verify official provider identities and exact downloaded bytes"
-run = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
-run_windows = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
+run = "cargo nextest run -p empack-lib --test live_provider_contract --run-ignored ignored-only --test-threads 2"
+run_windows = "cargo nextest run -p empack-lib --test live_provider_contract --run-ignored ignored-only --test-threads 2"
 
 [tasks."smoke:import:adapters"]
 description = "Inspect explicit archives with normalized engine adapters"
-run = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
-run_windows = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
+run = "cargo nextest run -p empack-lib --test external_archive_contract --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test external_archive_contract --run-ignored ignored-only"
 
 [tasks."smoke:import:content"]
 description = "Verify and publish explicit imports in temporary projects"
-run = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
-run_windows = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
+run = "cargo nextest run -p empack-lib --test live_import_content_contract --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test live_import_content_contract --run-ignored ignored-only"
 
 [tasks."survey:imports:curated"]
 depends = ["build:bin"]

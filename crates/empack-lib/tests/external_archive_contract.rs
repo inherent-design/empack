@@ -12,7 +12,7 @@ use empack_lib::{
 };
 #[tokio::test]
 #[ignore = "requires EMPACK_TEST_IMPORT_ARCHIVES containing local pack archives"]
-async fn inspect_real_archives_and_verify_every_embedded_member() -> anyhow::Result<()> {
+async fn external_import_archive_members_match_declared_content() -> anyhow::Result<()> {
     let input = std::env::var_os("EMPACK_TEST_IMPORT_ARCHIVES")
         .ok_or_else(|| anyhow::anyhow!("Set EMPACK_TEST_IMPORT_ARCHIVES to local archive paths"))?;
     let paths: Vec<_> = std::env::split_paths(&input).collect();

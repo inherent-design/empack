@@ -67,6 +67,13 @@ The separated executable suites have explicit boundaries:
 | `live_provider_cli` | Provider identity, pinned direct-URL acquisition and convergence |
 | `live_server_cli` | Server acquisition/export and instance preparation; no game startup |
 
+The library integration targets use the same boundary names:
+`live_provider_contract`, `live_runtime_catalog_contract`,
+`live_server_distribution_startup`, `external_archive_contract` and
+`live_import_content_contract`. Renaming them does not run their ignored probes or
+change their prerequisites. Local fixed-target tasks are checked against classified
+package/target pairs; compiler discovery still establishes actual membership.
+
 Live binaries contain ignored tests so a default run cannot silently claim their
 coverage. Select them explicitly with strict prerequisites:
 

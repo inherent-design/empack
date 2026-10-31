@@ -43,7 +43,7 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-lib/src/application/engine_host/cli",
         "crates/empack-lib/src/application/session.rs",
         "crates/empack-tests/tests/live_provider", "crates/empack-tests/tests/provider_catalog",
-        "crates/empack-lib/tests/provider_catalog",
+        "crates/empack-lib/tests/live_provider_contract.rs",
     )) for p in code)
     runtime = shared or any(p.startswith((
         "crates/empack-lib/src/engine/runtime", "crates/empack-lib/src/engine/build/server",
@@ -53,7 +53,8 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-tests/tests/live_cli_init", "crates/empack-tests/tests/live_server",
         "crates/empack-tests/tests/cli_server", "crates/empack-tests/src/bin/java-fixture.rs",
         "crates/empack-tests/tests/runtime_", "crates/empack-lib/templates/server/",
-        "crates/empack-lib/tests/runtime_",
+        "crates/empack-lib/tests/live_runtime_catalog_contract.rs",
+        "crates/empack-lib/tests/live_server_distribution_startup.rs",
     )) for p in code)
     consumer = shared or any(p.startswith((
         "crates/empack-lib/src/engine/build/client", "crates/empack-lib/src/engine/prism.rs", "crates/empack-lib/templates/client/",
@@ -64,7 +65,7 @@ def selection(paths, *, trusted, full=False):
         live += ["live-provider-cli", "live-modrinth"]
     if full or any(p.startswith(("crates/empack-lib/src/engine/providers/curseforge",
                                 "crates/empack-lib/src/engine/providers/selector.rs",
-                                "crates/empack-lib/tests/provider_catalog_smoke.rs",
+                                "crates/empack-lib/tests/live_provider_contract.rs",
                                 "crates/empack-tests/tests/live_provider_cli.rs")) for p in code):
         live.append("live-curseforge")
     if runtime:

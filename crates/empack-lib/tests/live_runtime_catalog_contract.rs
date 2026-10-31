@@ -8,7 +8,7 @@ use empack_lib::engine::{
 };
 #[tokio::test]
 #[ignore = "requires official runtime catalogs"]
-async fn live_runtime_catalogs_preserve_supported_loader_families_and_historical_coordinates() {
+async fn live_catalog_supported_and_historical_loader_coordinates() {
     let governor = ResourceGovernor::new(ResourceRequest {
         jobs: 2,
         memory_bytes: 512 << 20,

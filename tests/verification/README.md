@@ -34,6 +34,10 @@ module holds connected source/adoption, partial-add and generated-automation
 sequences; focused CLI contracts remain in the root file. They share the same
 private setup helpers. Names and source organization do not strengthen their
 assertions or turn component-authored fixtures into literal author documents.
+Provider, runtime and explicit-archive integration targets also use boundary names.
+Local Nextest task targets and CI route selectors follow those names; a component
+check rejects a stale local package/target selection. It does not run the selected
+tests or replace compiler discovery.
 Native Python subprocess checks of the registry are supplemental `N` evidence for
 UX-088; they do not replace its required product-executable (`X`) checks.
 

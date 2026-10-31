@@ -19,7 +19,7 @@ use empack_lib::{
 use std::{collections::BTreeMap, sync::Arc};
 #[tokio::test]
 #[ignore = "requires explicit local archives and live provider access"]
-async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
+async fn live_import_resolves_verifies_and_publishes_selected_fixture() -> anyhow::Result<()> {
     let input = std::env::var_os("EMPACK_TEST_IMPORT_ARCHIVES")
         .ok_or_else(|| anyhow::anyhow!("Set EMPACK_TEST_IMPORT_ARCHIVES to local archive paths"))?;
     let paths: Vec<_> = std::env::split_paths(&input).collect();

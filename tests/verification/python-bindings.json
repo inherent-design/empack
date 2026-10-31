@@ -1926,6 +1926,7 @@
       "requirements": [
         "UX-085"
       ]
-    }
+    },
+    {"id": "python::test_toolchain.ToolchainContracts.test_local_nextest_targets_have_classified_members", "boundary": "H", "requirements": ["UX-088"]}
   ]
 }

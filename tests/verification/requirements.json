@@ -1445,7 +1445,7 @@
             "empack-tests::live_cli_init::live_cli_init_legacy_forge_binds_runtime",
             "empack-tests::live_cli_init::live_cli_init_early_neoforge_binds_runtime",
             "empack-tests::live_cli_init::live_cli_init_neoforge_binds_runtime",
-            "empack-lib::runtime_catalog_smoke::live_runtime_catalogs_preserve_supported_loader_families_and_historical_coordinates"
+            "empack-lib::live_runtime_catalog_contract::live_catalog_supported_and_historical_loader_coordinates"
           ],
           "required_platforms": [
             "linux",
@@ -6526,18 +6526,18 @@
           "id": "UX-043.official-launchers",
           "boundary": "L",
           "test_ids": [
-            "empack-lib::runtime_server_smoke::runtime_server_vanilla",
-            "empack-lib::runtime_server_smoke::runtime_server_fabric_classpath",
-            "empack-lib::runtime_server_smoke::runtime_server_fabric_shaded",
-            "empack-lib::runtime_server_smoke::runtime_server_quilt",
-            "empack-lib::runtime_server_smoke::runtime_server_forge",
-            "empack-lib::runtime_server_smoke::runtime_server_neoforge",
-            "empack-lib::runtime_server_smoke::runtime_server_neoforge_early",
-            "empack-lib::runtime_server_smoke::runtime_server_forge_112",
-            "empack-lib::runtime_server_smoke::runtime_server_forge_1710",
-            "empack-lib::runtime_server_smoke::runtime_server_forge_116",
-            "empack-lib::runtime_server_smoke::runtime_managed_server_vanilla",
-            "empack-lib::runtime_server_smoke::runtime_managed_server_neoforge"
+            "empack-lib::live_server_distribution_startup::runtime_server_vanilla",
+            "empack-lib::live_server_distribution_startup::runtime_server_fabric_classpath",
+            "empack-lib::live_server_distribution_startup::runtime_server_fabric_shaded",
+            "empack-lib::live_server_distribution_startup::runtime_server_quilt",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge",
+            "empack-lib::live_server_distribution_startup::runtime_server_neoforge",
+            "empack-lib::live_server_distribution_startup::runtime_server_neoforge_early",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge_112",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge_1710",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge_116",
+            "empack-lib::live_server_distribution_startup::runtime_managed_server_vanilla",
+            "empack-lib::live_server_distribution_startup::runtime_managed_server_neoforge"
           ],
           "required_platforms": [
             "linux",
@@ -10480,18 +10480,18 @@
           "id": "UX-073.official-runtime-entrypoints",
           "boundary": "L",
           "test_ids": [
-            "empack-lib::runtime_server_smoke::runtime_server_vanilla",
-            "empack-lib::runtime_server_smoke::runtime_server_fabric_classpath",
-            "empack-lib::runtime_server_smoke::runtime_server_fabric_shaded",
-            "empack-lib::runtime_server_smoke::runtime_server_quilt",
-            "empack-lib::runtime_server_smoke::runtime_server_forge",
-            "empack-lib::runtime_server_smoke::runtime_server_neoforge",
-            "empack-lib::runtime_server_smoke::runtime_server_neoforge_early",
-            "empack-lib::runtime_server_smoke::runtime_server_forge_112",
-            "empack-lib::runtime_server_smoke::runtime_server_forge_1710",
-            "empack-lib::runtime_server_smoke::runtime_server_forge_116",
-            "empack-lib::runtime_server_smoke::runtime_managed_server_vanilla",
-            "empack-lib::runtime_server_smoke::runtime_managed_server_neoforge"
+            "empack-lib::live_server_distribution_startup::runtime_server_vanilla",
+            "empack-lib::live_server_distribution_startup::runtime_server_fabric_classpath",
+            "empack-lib::live_server_distribution_startup::runtime_server_fabric_shaded",
+            "empack-lib::live_server_distribution_startup::runtime_server_quilt",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge",
+            "empack-lib::live_server_distribution_startup::runtime_server_neoforge",
+            "empack-lib::live_server_distribution_startup::runtime_server_neoforge_early",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge_112",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge_1710",
+            "empack-lib::live_server_distribution_startup::runtime_server_forge_116",
+            "empack-lib::live_server_distribution_startup::runtime_managed_server_vanilla",
+            "empack-lib::live_server_distribution_startup::runtime_managed_server_neoforge"
           ],
           "required_platforms": [
             "linux",
@@ -12801,6 +12801,26 @@
             "Failed commands expose a bounded tail of already-redacted diagnostics, including stderr retained in the log rather than stdout alone",
             "The workflow always attempts to retain coverage logs, inventory, phase records and any LCOV file after failure; this static wiring and mocked runner evidence does not prove hosted upload or instrumented test success"
           ]
+        },
+        {
+          "id": "UX-088.local-task-target-membership",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_toolchain.ToolchainContracts.test_local_nextest_targets_have_classified_members"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Every fixed local Cargo/Nextest --test selection names a package/target pair with classified tests in both run and run_windows commands",
+            "The local fixed-target selection is nonempty; stale target names cannot remain after a family rename"
+          ],
+          "remaining_group_evidence": "This reads repository task declarations; hosted compiler inventories establish actual membership, and native/executable suites establish execution. No command is executed by this component check."
         }
       ],
       "owner_now": [
@@ -13634,23 +13654,23 @@
     },
     "S23": {
       "title": "Official provider probes",
-      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/provider_catalog_smoke.rs"
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/live_provider_contract.rs"
     },
     "S24": {
       "title": "Official runtime catalog probes",
-      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/runtime_catalog_smoke.rs"
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/live_runtime_catalog_contract.rs"
     },
     "S25": {
       "title": "Official runtime and launcher probes",
-      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/runtime_server_smoke.rs"
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/live_server_distribution_startup.rs"
     },
     "S26": {
       "title": "Local external archive probes",
-      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/import_archive_smoke.rs"
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/external_archive_contract.rs"
     },
     "S27": {
       "title": "External archive acquisition probes",
-      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/import_content_smoke.rs"
+      "url": "https://github.com/inherent-design/empack/blob/51558534b5e13aadb8d979619560ce4b5db9355d/crates/empack-lib/tests/live_import_content_contract.rs"
     },
     "S28": {
       "title": "Curated and rolling survey script",

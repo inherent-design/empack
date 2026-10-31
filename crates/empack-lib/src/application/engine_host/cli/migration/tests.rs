@@ -45,7 +45,7 @@ async fn execute(
     .await
 }
 #[tokio::test]
-async fn runtime_migration_plan_preview_and_application_share_candidate_without_early_edits() {
+async fn host_runtime_migration_plan_and_apply_share_candidate() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let mut server = mockito::Server::new_async().await;
