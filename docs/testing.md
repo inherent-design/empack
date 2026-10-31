@@ -1556,6 +1556,14 @@ stale runtime ownership. Player data, `eula=false`, completed installation recor
 and input/tool bytes remain unchanged. The fixture records its digest and is absent
 from the ordinary product package's dependency graph.
 
+On Unix, a separate public launch uses a non-UTF-8 executable name and argument.
+The observer records native bytes independently of its readable JSON strings, which
+are null when UTF-8 cannot represent the value. Empty arguments, Unicode, newlines
+and shell syntax must arrive literally in the installed game directory. A bare
+non-UTF-8 program name must refuse PATH lookup with guidance to use an absolute
+path. Refusal preserves the installation; successful retirement permits another
+public launch. This checks native argument transport, not Java or packaged output.
+
 A compiler-discovered private driver supplies the actual generated server scripts
 as component setup. The test executes those files unchanged through the selected
 product and local fixture, using Bash on Unix and `cmd.exe` on Windows. Console/GUI

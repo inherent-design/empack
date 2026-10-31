@@ -10736,7 +10736,29 @@
             "Installation and ownership evidence plus all pre-existing cache bytes and attributes remain unchanged; only the independently verified exact incoming B blob may be added to cache",
             "After controlled retirement, the existing authenticated update workflow proceeds while preserving player state"
           ],
-          "remaining_group_evidence": "Packaged-target execution, non-UTF-8 native argument variants and actual Java/consumer acceptance remain separate obligations"
+          "remaining_group_evidence": "Packaged-target execution and actual Java/consumer acceptance remain separate obligations; Unix native-byte transport has its own public-executable case"
+        },
+        {
+          "id": "UX-072.unix-native-runtime-program-and-arguments",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_server::cli_runtime_preserves_non_utf8_program_and_literal_arguments"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The public CLI refuses a bare non-UTF-8 program name with an absolute-path diagnostic before runtime execution and without changing the installation or selected tools",
+            "An explicit absolute non-UTF-8 executable path receives exact native argument bytes, including invalid UTF-8, empty strings, Unicode, newlines, option-like values and shell syntax, in the installed game directory",
+            "An independent compiled observer records native bytes without lossy conversion; player content, completed release metadata and selected executable bytes and attributes remain unchanged",
+            "A later public launch succeeds after retirement without stale runtime ownership"
+          ],
+          "remaining_group_evidence": "Unix native-byte transport only; Windows argument representation, packaged targets and actual Java/consumer startup are separate obligations"
         },
         {
           "id": "UX-072.native-runtime-ownership-and-stale-selection",

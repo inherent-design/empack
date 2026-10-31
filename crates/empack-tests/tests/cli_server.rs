@@ -1,4 +1,4 @@
-//! Local Java selection and invocation through the ordinary CLI, not JVM startup.
+//! Host-selected runtimes and local Java invocation through the ordinary CLI, not JVM startup.
 use empack_lib::EmpackExitCode;
 use empack_tests::harness::{
     process::{TestProject, empack_bin, file_sha256, offline_command, offline_empack_cmd},
@@ -256,6 +256,95 @@ impl Server {
         command.timeout(Duration::from_secs(30));
         command
     }
+}
+
+#[test]
+#[cfg(unix)]
+fn cli_runtime_preserves_non_utf8_program_and_literal_arguments() {
+    use std::{
+        ffi::OsString,
+        os::unix::ffi::{OsStrExt, OsStringExt},
+    };
+
+    let server = Server::new();
+    let name = OsString::from_vec(b"selected runtime \xff".to_vec());
+    let program = server.program.parent().unwrap().join(&name);
+    fs::copy(&server.program, &program).unwrap();
+    fs::set_permissions(
+        &program,
+        fs::metadata(&server.program).unwrap().permissions(),
+    )
+    .unwrap();
+    let digest = file_sha256(&program).unwrap();
+    assert_eq!(digest, file_sha256(&server.program).unwrap());
+    let tools = snapshot(server.program.parent().unwrap());
+    let instance = snapshot(server.instance.dir());
+
+    // Bare-name PATH lookup deliberately requires UTF-8; an absolute native
+    // path is the supported route. Refusal must not run either fixture mode.
+    offline_command(server.instance.dir())
+        .args(["--yes", "instance", "launch", "--"])
+        .arg(&name)
+        .env("PATH", server.program.parent().unwrap())
+        .assert()
+        .failure()
+        .stderr(contains(
+            "Runtime program name is not UTF-8; use an absolute path",
+        ));
+    assert_eq!(snapshot(server.instance.dir()), instance);
+    assert_eq!(snapshot(server.program.parent().unwrap()), tools);
+    assert!(
+        !server
+            .fixtures
+            .path()
+            .join("observations/probe.json")
+            .exists()
+    );
+    server.not_started();
+
+    let arguments = [
+        OsString::from_vec(vec![0xff, b'a', 0xfe]),
+        OsString::new(),
+        OsString::from("space and Ω"),
+        OsString::from("--looks-like-an-option"),
+        OsString::from("line one\nline two"),
+        OsString::from("$(touch must-not-run); `touch must-not-run`"),
+        OsString::from("literal'quote\"value\\"),
+    ];
+    offline_command(server.instance.dir())
+        .args(["--yes", "instance", "launch", "--"])
+        .arg(&program)
+        .args(&arguments)
+        .assert()
+        .success()
+        .stdout(contains("Runtime completed for release"));
+    let observed: Value = serde_json::from_slice(
+        &fs::read(server.fixtures.path().join("observations/runtime.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(observed["program"].is_null());
+    assert!(observed["arguments"].is_null());
+    assert_eq!(
+        observed["native"],
+        json!({
+            "encoding": "unix-bytes",
+            "program": program.canonicalize().unwrap().as_os_str().as_bytes(),
+            "cwd": server.instance.dir().join("game").canonicalize().unwrap().as_os_str().as_bytes(),
+            "arguments": arguments.iter().map(|value| value.as_bytes()).collect::<Vec<_>>(),
+        })
+    );
+    assert!(
+        !server
+            .fixtures
+            .path()
+            .join("observations/probe.json")
+            .exists()
+    );
+    assert_eq!(snapshot(server.program.parent().unwrap()), tools);
+    assert_eq!(file_sha256(&program).unwrap(), digest);
+    server.preserved();
+    // A second public launch establishes ordinary ownership retirement too.
+    server.successful(server.program.as_os_str());
 }
 
 #[test]

@@ -9,17 +9,32 @@ fn main() {
         &fs::read(program.parent().unwrap().join("java-fixture.json")).unwrap(),
     )
     .unwrap();
-    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     let probe = arguments == ["-XshowSettings:properties", "-version"];
     let observations = PathBuf::from(config["observations"].as_str().unwrap());
+    let cwd = std::env::current_dir().unwrap();
+    // JSON strings cannot represent every native path or argument. Keep the
+    // readable observation when available, and independently retain Unix bytes.
+    let observation = json!({
+        "program": program.to_str(),
+        "cwd": cwd.to_str(),
+        "arguments": arguments.iter().map(|value| value.to_str()).collect::<Option<Vec<_>>>(),
+    });
+    #[cfg(unix)]
+    let observation = {
+        use std::os::unix::ffi::OsStrExt;
+        let mut observation = observation;
+        observation["native"] = json!({
+            "encoding": "unix-bytes",
+            "program": program.as_os_str().as_bytes(),
+            "cwd": cwd.as_os_str().as_bytes(),
+            "arguments": arguments.iter().map(|value| value.as_bytes()).collect::<Vec<_>>(),
+        });
+        observation
+    };
     fs::write(
         observations.join(if probe { "probe.json" } else { "runtime.json" }),
-        serde_json::to_vec(&json!({
-            "program": program,
-            "cwd": std::env::current_dir().unwrap(),
-            "arguments": arguments,
-        }))
-        .unwrap(),
+        serde_json::to_vec(&observation).unwrap(),
     )
     .unwrap();
     let status = if probe {
