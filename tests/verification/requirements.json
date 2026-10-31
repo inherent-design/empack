@@ -9232,7 +9232,7 @@
             "Editing accepted local bytes requires a new decision; explicit merge retains the selected result despite later source edits, and explicit replace restores publisher bytes and removes local override evidence",
             "Signed release envelope, original payload and signature remain unchanged; player configuration and initialized worlds survive every transition"
           ],
-          "remaining_group_evidence": "Interactive conflict decisions and remaining path/decision rejection variants require separate evidence; local signatures do not qualify hosted publication"
+          "remaining_group_evidence": "The PTY approval and pure decision cases below cover their separate boundaries; local signatures do not establish hosted publication."
         },
         {
           "id": "UX-065.prepared-local-evidence",
@@ -9240,7 +9240,8 @@
           "test_ids": [
             "empack-lib::engine::api::instance::tests::conflict_preservation_is_durable_local_evidence_and_replace_restores_release",
             "empack-lib::engine::api::instance::tests::explicit_merge_freezes_local_result_without_rewriting_publisher_evidence",
-            "empack-lib::engine::api::instance::tests::retired_local_override_preserves_user_content_and_unknown_decisions_fail"
+            "empack-lib::engine::api::instance::tests::retired_local_override_preserves_user_content_and_unknown_decisions_fail",
+            "empack-lib::engine::api::instance::tests::merge_requires_a_regular_source_and_rejects_competing_associations"
           ],
           "required_platforms": [
             "linux",
@@ -9254,9 +9255,56 @@
           "assertions": [
             "Saved local evidence distinguishes accepted bytes from the publisher baseline; changed publisher baselines require a new decision and replacement retires the override",
             "Preparation freezes explicit merge bytes before later source edits without rewriting retained publisher evidence",
-            "Retiring an override preserves user bytes and refuses decisions naming unknown paths"
+            "Retiring an override preserves user bytes and refuses decisions naming unknown paths",
+            "Merge preparation rejects missing/non-regular sources and competing publisher associations before changing the installed bytes"
           ],
-          "remaining_group_evidence": "Public executable execution and interactive decisions are separate boundaries"
+          "remaining_group_evidence": "Public executable and terminal decisions have their own cases; fixture preparation is not consumer startup."
+        },
+        {
+          "id": "UX-065.explicit-decisions-still-require-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The public conflict diagnostic identifies the modified file and reason; command help describes release-relative preserve/replace/merge decisions without changing instance or host state",
+            "Preserve, replace and supplied-merge flags do not grant approval: closed/piped stdin, preview and terminal decline preserve complete instance/host snapshots and original release/merge inputs",
+            "Unknown paths and competing decisions refuse unchanged state; explicit approval changes only the selected conflicting content and appropriate local evidence",
+            "Ordinary subsequent repair retains the accepted result and exact release identity; unrelated managed settings, worlds and player notes retain bytes and attributes"
+          ],
+          "remaining_group_evidence": "Required host/feature observations remain necessary; constructing these cases supplies no passing execution evidence."
+        },
+        {
+          "id": "UX-065.three-way-file-ownership",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::instance::tests::user_changes_block_replacement_and_retirement_but_accept_exact_desired_state",
+            "empack-core::instance::tests::no_destructive_decision_without_an_unchanged_managed_baseline",
+            "empack-core::instance::tests::directories_never_become_file_mutations"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pure prior/current/incoming decisions block replacement or retirement of edited managed bytes and accept exact desired state",
+            "Destructive actions require the unchanged managed baseline; directories never authorize file mutation"
+          ],
+          "remaining_group_evidence": "Required host/feature observations remain necessary; constructing these cases supplies no passing execution evidence."
         }
       ],
       "owner_now": [
@@ -9269,7 +9317,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-066",

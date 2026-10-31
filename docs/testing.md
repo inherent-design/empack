@@ -605,6 +605,14 @@ bootstrap bytes are rejected without changing the installed instance. These are
 the documented local-envelope routes. They do not execute hosted
 HTTPS publication, Java, or Prism, and do not substitute for those acceptance cases.
 
+Conflict approval has a separate terminal case. Release-relative preserve, replace
+and merge decisions still require approval; closed or piped stdin, preview and
+terminal refusal preserve the full instance, host store and source inputs. Unknown
+paths and competing decisions also refuse unchanged state. Explicit approval
+changes the selected file, preserves unrelated bytes and attributes, and leaves
+subsequent repair idempotent. This tests the existing plan confirmation, not an
+interactive menu for choosing file policies.
+
 Runtime/profile checks reuse those signature helpers with literal native inputs.
 A public Prism-layout journey stages and enrolls A, observes B, then exercises
 preview, refusal, explicit update, repeated old-bootstrap preparation and rollback.

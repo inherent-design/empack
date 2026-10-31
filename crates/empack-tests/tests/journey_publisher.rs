@@ -1,5 +1,5 @@
-//! Offline publisher/player commands with real signatures and disposable keys.
-//! Local envelopes exercise the documented CLI path, not HTTPS deployment.
+//! Offline instance and publisher/player commands over exact local releases.
+//! Signed cases use disposable keys and local envelopes, not HTTPS deployment.
 use ed25519_dalek::{Signer, SigningKey};
 use empack_tests::harness::process::{assert_dist_artifact_suffix, offline_command};
 use empack_tests::harness::workspace::snapshot;
@@ -53,6 +53,161 @@ fn staged_output(publisher: &Path) -> Option<empack_tests::harness::workspace::S
     // Capture the served tree; per-command harness state lives beside it.
     let dist = publisher.join("dist");
     dist.exists().then(|| snapshot(&dist))
+}
+
+#[test]
+fn cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_files() {
+    let root = tempfile::tempdir().unwrap();
+    let instance = root.path().join("instance");
+    let inputs = root.path().join("inputs");
+    let state = root.path().join("host/state");
+    fs::create_dir(&instance).unwrap();
+    fs::create_dir(&inputs).unwrap();
+    let files: Vec<_> = [
+        ("mod", "mods/fixture.jar", b"publisher mod".as_slice()),
+        ("settings", "config/locked.txt", b"publisher settings".as_slice()),
+    ].into_iter().map(|(key, destination, bytes)| {
+        write(&inputs, &format!("assets/{key}"), bytes);
+        json!({"key":key,"destination":destination,"layer":"common","policy":"managed",
+            "client":{"kind":"required"},"server":{"kind":"unsupported"},
+            "sha256":hex(&Sha256::digest(bytes)),"bytes":bytes.len(),"readonly":false,"executable":false,
+            "assertions":[],"source":{"kind":"asset","path":format!("assets/{key}")}})
+    }).collect();
+    // Literal bytes establish reconciliation and approval, not runnable game content.
+    let payload = serde_json::to_vec(
+        &json!({"schema":1,"pack":"verification.approval","version":"1",
+        "minimum_engine":">=0.8.0-beta","require_subscription":false,
+        "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+        "choices":[],"files":files}),
+    )
+    .unwrap();
+    write(&inputs, "release.json", &payload);
+    write(&inputs, "merge.txt", b"explicit merged mod");
+    write(&instance, "game/saves/player/level.dat", b"played world");
+    write(&instance, "player notes.txt", b"retain player notes");
+    let command = || {
+        let mut command = offline_command(&instance);
+        command
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(state.with_extension("cache"));
+        command
+    };
+    command()
+        .args(["--yes", "instance", "install"])
+        .arg(inputs.join("release.json"))
+        .args([
+            "--sha256",
+            &hex(&Sha256::digest(&payload)),
+            "--side",
+            "client",
+            "--layout",
+            "game",
+        ])
+        .assert()
+        .success();
+    let source_before = snapshot(&inputs);
+    let association = format!("mods/fixture.jar={}", inputs.join("merge.txt").display());
+    write(&instance, "game/mods/fixture.jar", b"edited local mod");
+    let before_diagnostic = snapshot(&instance);
+    let host_before_diagnostic = snapshot(&root.path().join("host"));
+    command()
+        .args(["--yes", "instance", "repair"])
+        .assert()
+        .failure()
+        .stderr(contains("game/mods/fixture.jar"))
+        .stderr(contains("ModifiedManagedFile"));
+    command()
+        .args(["instance", "repair", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("release-relative path"))
+        .stdout(contains("--preserve"))
+        .stdout(contains("--replace"))
+        .stdout(contains("--merge"));
+    assert_eq!(snapshot(&instance), before_diagnostic);
+    assert_eq!(snapshot(&root.path().join("host")), host_before_diagnostic);
+    for (option, value, expected) in [
+        (
+            "--preserve",
+            "mods/fixture.jar",
+            b"edited local mod".as_slice(),
+        ),
+        ("--replace", "mods/fixture.jar", b"publisher mod".as_slice()),
+        (
+            "--merge",
+            association.as_str(),
+            b"explicit merged mod".as_slice(),
+        ),
+    ] {
+        write(&instance, "game/mods/fixture.jar", b"edited local mod");
+        let before = snapshot(&instance);
+        let host_before = snapshot(&root.path().join("host"));
+        for decisions in [
+            vec!["--replace", "unknown.txt"],
+            vec![
+                "--preserve",
+                "mods/fixture.jar",
+                "--replace",
+                "mods/fixture.jar",
+            ],
+        ] {
+            command()
+                .args(["--yes", "instance", "repair"])
+                .args(decisions)
+                .assert()
+                .failure();
+            assert_eq!(snapshot(&instance), before);
+            assert_eq!(snapshot(&root.path().join("host")), host_before);
+        }
+        approval::preserve_without_approval(
+            &instance,
+            &instance,
+            &state,
+            &["instance", "repair", option, value],
+            "(?i)apply this instance maintenance plan",
+        );
+        assert_eq!(snapshot(&instance), before);
+        assert_eq!(snapshot(&inputs), source_before);
+        command()
+            .args(["--yes", "instance", "repair", option, value])
+            .assert()
+            .success();
+        let after = snapshot(&instance);
+        assert_eq!(after.files[Path::new("game/mods/fixture.jar")], expected);
+        assert_eq!(
+            after.files.keys().collect::<Vec<_>>(),
+            before.files.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            after.entries.keys().collect::<Vec<_>>(),
+            before.entries.keys().collect::<Vec<_>>()
+        );
+        for (path, bytes) in &before.files {
+            if path != Path::new("game/mods/fixture.jar")
+                && path != Path::new(".empack/instance.json")
+            {
+                assert_eq!(&after.files[path], bytes);
+                assert_eq!(after.entries[path], before.entries[path]);
+            }
+        }
+        let repaired = snapshot(&instance);
+        command()
+            .args(["--yes", "instance", "repair"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(&instance), repaired);
+        command()
+            .args(["instance", "inspect"])
+            .assert()
+            .success()
+            .stdout(contains(format!(
+                "release {};",
+                hex(&Sha256::digest(&payload))
+            )));
+        assert_eq!(snapshot(&inputs), source_before);
+    }
 }
 
 #[test]

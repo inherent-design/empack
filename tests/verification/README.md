@@ -60,6 +60,13 @@ record/content coupling, read barriers, player data and unchanged trust state.
 The test-only worker's ordinary no-op invocation is not recovery acceptance.
 Required host/feature execution and final archives remain separate evidence.
 
+Conflict decisions bind pure three-way ownership, prepared local evidence, the
+signed public journey and a separate PTY approval case. Supplying a decision flag
+does not grant approval. Refusal preserves instance/host snapshots and original
+merge inputs; approved changes remain local evidence with stable later repair.
+These complete the conflict definitions. Missing host/feature observations still
+leave them unexecuted; this adds no interactive policy-selection feature.
+
 Publisher key setup has separate executable, terminal and native cases. The
 terminal case checks closed/piped input, preview and refusal before accepting the
 same path with explicit approval. Destination cases preserve publisher work and
