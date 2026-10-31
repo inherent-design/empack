@@ -615,6 +615,33 @@ mod windows_tests {
             .unwrap()
             .unwrap();
     }
+
+    #[tokio::test]
+    async fn failed_job_termination_cannot_authorize_retirement_of_live_processes() {
+        let mut command = tokio::process::Command::new("cmd.exe");
+        command.args(["/C", "ping -n 30 127.0.0.1 >nul"]);
+        let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new).unwrap();
+        assert!(tree.has_processes().unwrap());
+        assert!(child.try_wait().unwrap().is_none());
+        // Only the termination result is substituted. The owned Windows job
+        // still contains a real process while retirement is being checked.
+        let termination = Err(anyhow::Error::from(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "fixture job termination denied",
+        )));
+        let error = tree.wait_retired(termination).await.unwrap_err();
+        let diagnostic = format!("{error:#}");
+        assert!(diagnostic.contains("fixture job termination denied"));
+        assert!(diagnostic.contains("Owned process-tree termination failed"));
+        assert!(diagnostic.contains("Runtime descendants have not retired"));
+        assert!(diagnostic.contains("recovery acknowledgment is required"));
+        // Dropping the still-owned job closes its kill-on-close handle. A
+        // negative retirement result must neither authorize success nor leak it.
+        tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 #[cfg(all(test, unix))]

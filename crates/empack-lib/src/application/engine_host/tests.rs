@@ -326,6 +326,85 @@ fn retained_recovery_coordinates_preserve_the_original_terminal_result() {
 }
 
 #[test]
+fn retained_uncertain_runtime_preserves_recovery_and_typed_cause_after_registry_release() {
+    use crate::engine::{
+        diagnostics::{Diagnostic, DiagnosticCode, RecoveryClassification},
+        publication::RecoveryLocation,
+    };
+    for interrupted in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let location = RecoveryLocation {
+            project: root.path().join("runtime instance"),
+            state: root.path().join("runtime state"),
+        };
+        let cause: anyhow::Error = if interrupted {
+            super::super::process_runtime::Interrupted.into()
+        } else {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "fixture termination denied",
+            )
+            .into()
+        };
+        let outcome =
+            std::sync::Arc::new(OperationOutcome::Completed(
+                ExecutionOutcome::ExecutionUncertain(location.attach(cause.context(
+                    "Runtime retirement is unconfirmed; inspect recovery before retrying",
+                ))),
+            ));
+        let error = retained_failure(
+            outcome.clone(),
+            "Instance launch outcome is uncertain; inspect recovery before retrying".into(),
+        );
+        drop(outcome);
+        let diagnostic = error.downcast_ref::<Diagnostic>().unwrap();
+        assert_eq!(diagnostic.code, DiagnosticCode::ExecutionUncertain);
+        assert_eq!(diagnostic.recovery, RecoveryClassification::InspectRecovery);
+        if interrupted {
+            assert!(
+                error
+                    .chain()
+                    .any(|cause| cause.is::<super::super::process_runtime::Interrupted>())
+            );
+        } else {
+            assert_eq!(
+                error
+                    .chain()
+                    .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+                    .unwrap()
+                    .kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+        }
+        assert_eq!(
+            crate::application::classify_error(&error),
+            if interrupted {
+                crate::application::EmpackExitCode::Interrupted
+            } else {
+                crate::application::EmpackExitCode::General
+            }
+        );
+        let text = format!("{:#}", super::super::recovery_guidance::annotate(error));
+        assert!(
+            text.contains("Instance launch outcome is uncertain"),
+            "{text}"
+        );
+        assert!(text.contains("Runtime retirement is unconfirmed"), "{text}");
+        assert!(text.contains("Recovery inspection ("), "{text}");
+        assert!(text.contains(location.project.to_str().unwrap()), "{text}");
+        assert!(text.contains(location.state.to_str().unwrap()), "{text}");
+        assert!(
+            text.contains(if interrupted {
+                "Operation interrupted"
+            } else {
+                "fixture termination denied"
+            }),
+            "{text}"
+        );
+    }
+}
+
+#[test]
 fn launch_failure_summary_preserves_runtime_phase_and_cause() {
     for phase in [
         "Runtime did not start",

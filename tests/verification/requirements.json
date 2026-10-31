@@ -1301,6 +1301,76 @@
             "A controlled OTLP collector receives the command span; failed collection does not replace successful execution"
           ],
           "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+        },
+        {
+          "id": "UX-008.retained-host-outcomes",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::retained_uncertain_runtime_preserves_recovery_and_typed_cause_after_registry_release",
+            "empack-lib::application::engine_host::tests::reported_execution_failure_retains_typed_source_after_registry_release",
+            "empack-lib::application::engine_host::tests::retained_recovery_coordinates_preserve_the_original_terminal_result",
+            "empack-lib::application::engine_host::tests::launch_failure_summary_preserves_runtime_phase_and_cause"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Retained host results preserve typed causes, cancellation classification, recovery coordinates and operation/phase-specific failure headlines after the registry reference is released",
+            "Constructed uncertain results remain distinguishable from known retired cleanup failure"
+          ]
+        },
+        {
+          "id": "UX-008.interactive-runtime-outcomes",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual product launches a fixture under a controlling PTY, accepts console input and handles normal exit, runtime failure, terminal Ctrl-C and host cancellation",
+            "The invoking shell verifies restored settings, consumes follow-up input and preserves final status; no owned process group or false lease remains"
+          ]
+        },
+        {
+          "id": "UX-008.packaged-streams-and-status",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_json_reports_separate_logging_and_preserve_author_inputs",
+            "empack-tests::cli_exit_codes::cli_parse_error_exits_two",
+            "empack-tests::cli_exit_codes::cli_unattended_build_requires_explicit_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "assertions": [
+            "The exact extracted default product preserves separate machine JSON/log streams, ANSI-free JSON, typed usage status and explicit-approval refusal on all five targets",
+            "Ordinary development/telemetry observations cannot replace archive-bound execution of these packaged cases"
+          ]
         }
       ],
       "owner_now": [
@@ -10834,7 +10904,7 @@
           "assertions": [
             "A retired result with a terminal-cleanup error preserves both cleanup and process-failure details instead of plain interruption"
           ],
-          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
         },
         {
           "id": "UX-075.finalizer-retains-outcome",
@@ -10858,7 +10928,7 @@
             "Constructed completed errors retain full diagnostics and typed exit status despite a cancellation request",
             "Clean interruption has no invented recovery warning; late cancellation does not change completed success"
           ],
-          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
         },
         {
           "id": "UX-075.known-retirement-clears-ownership",
@@ -10879,7 +10949,7 @@
             "A real child retires before a test-only terminal-restoration failure",
             "No false recovery acknowledgement is required; another installation and launch can proceed"
           ],
-          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
         },
         {
           "id": "UX-075.failed-ownership-cleanup",
@@ -10899,7 +10969,7 @@
           "assertions": [
             "Cancellation after an external ownership-record edit retains genuine recovery evidence and a typed recovery-required result"
           ],
-          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
         },
         {
           "id": "UX-075.retained-launch-headline",
@@ -10919,7 +10989,7 @@
           "assertions": [
             "Retained host errors preserve exact startup, unsuccessful exit and terminal-restoration phase messages"
           ],
-          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
         },
         {
           "id": "UX-075.executable-cancellation-recovery",
@@ -10940,7 +11010,87 @@
             "Known retirement with failed ownership cleanup reaches actual stderr with the recovery action even when exit status is 130",
             "Clean interruption clears ownership without a false recovery warning; nonzero child status remains diagnostic with empack status 1"
           ],
-          "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
+        },
+        {
+          "id": "UX-075.uncertain-runtime-error-retention",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::retained_uncertain_runtime_preserves_recovery_and_typed_cause_after_registry_release"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Constructed uncertain execution retains typed interruption or permission-denied cause, recovery coordinates and inspect-recovery classification after the registry reference is released",
+            "Cancellation classification does not suppress the uncertain headline, original cause or recovery instructions"
+          ],
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
+        },
+        {
+          "id": "UX-075.unix-live-retirement-refusal",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::async_tests::signal_failure_does_not_authorize_retirement_of_a_live_group"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real owned process group stays live while the termination result is denied at the private test boundary; the retirement wait refuses success and retains recovery acknowledgement guidance",
+            "Owned cleanup subsequently retires and reaps the fixture without stranding its process group"
+          ],
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
+        },
+        {
+          "id": "UX-075.macos-reaped-group-proof",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::async_tests::zombie_signal_failure_does_not_override_confirmed_retirement"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An observed EPERM while the owned group contains a zombie cannot override later established child reaping and group absence"
+          ],
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
+        },
+        {
+          "id": "UX-075.windows-owned-job-retirement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::windows_tests::failed_job_termination_cannot_authorize_retirement_of_live_processes",
+            "empack-lib::application::process_runtime::windows_tests::owned_job_closes_grandchild_pipes_after_ancestors_exit",
+            "empack-lib::application::process_runtime::windows_tests::stopping_one_owned_job_preserves_another"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real live Windows job cannot be declared retired after a substituted termination-denied result; recovery guidance remains and owned handle cleanup reaps the fixture",
+            "Closing the owned job releases grandchild-held pipes; retiring one job preserves another owned job"
+          ],
+          "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
         }
       ],
       "owner_now": [
@@ -10951,7 +11101,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-076",

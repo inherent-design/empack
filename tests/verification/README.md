@@ -50,6 +50,15 @@ metadata without acquiring the named payloads. This completes UX-006's case
 definitions; absent host/feature or schema observations still leave it unexecuted.
 The same literal examples supplement executable documentation, whose other
 commands and fresh-user review remain separate obligations.
+
+Cancellation cleanup separates confirmed retirement, failed ownership cleanup and
+uncertain retirement. Its definitions combine native engine faults, live Unix
+group and Windows job checks, retained host errors, finalizer units and an ordinary
+CLI receiving an actual Unix interrupt. A denied termination result never proves a
+live group/job retired. Dropping the test-owned containment still cleans up its
+fixture. These complete UX-075's definitions, not execution. The existing public
+PTY and JSON/status tests also bind presentation; final archives retain their own
+five-target cases and actual consumer review remains separate.
 The `cli_offline` target replaces the former mixed smoke target. Its `journeys`
 module holds connected source/adoption, partial-add and generated-automation
 sequences; focused CLI contracts remain in the root file. They share the same
