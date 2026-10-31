@@ -159,6 +159,11 @@ separately from disposable cache. Retention uses the shared continuation cleanup
 lock; content remains protected while any record in that category exists. Records
 contain no original host file paths or execution grant. Accepted merge bytes remain
 local deviations, and subscription envelopes retain their authentication context.
+New schema-2 pending records use persistent filesystem fingerprints for the
+observed base. Schema-1 records retain their original strict native comparison;
+inspection and continuation do not rewrite their format. Unsupported schemas or a
+fingerprint for the wrong schema are rejected without discarding saved input.
+A persistent fingerprint does not replace live observation checks or fresh approval.
 `instance continue --file KEY=PATH` supplies remaining exact inputs.
 `instance discard-pending` conditionally removes an observed record, including an
 invalid or stale record; it does not touch installed game files.
@@ -343,6 +348,12 @@ A runtime-changing channel update stops the current prelaunch sequence. Apply
 its component metadata and prepares the required game, loader and Java. Changing
 `mmc-pack.json` after Prism has loaded metadata does not update its in-memory launch
 plan. Empack does not download client game binaries or silently replace Java.
+
+An approved authenticated channel observation remains saved when the runtime check
+refuses installation. Its anti-replay floor can advance while the completed game,
+profile and release stay unchanged. `--allow-offline` applies to the earlier channel
+connection failure; it does not authorize a runtime-changing authenticated release.
+Selecting server mode cannot turn a client installation into a managed server.
 
 ## Managed server runtime transitions
 

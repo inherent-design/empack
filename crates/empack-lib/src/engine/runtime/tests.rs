@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 fn request() -> ResourceRequest {
     ResourceRequest {
@@ -43,38 +42,107 @@ async fn missed_notifications_retain_terminal_results_and_explicit_eviction() {
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dropped_handle_cannot_release_running_blocking_work_or_skip_retirement() {
-    let (runtime, governor) = runtime::<()>();
-    let released = Arc::new(AtomicBool::new(false));
-    let worker_release = released.clone();
+    use std::io::{Read, Seek, Write};
+
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("owned-worker-output");
+    let worker_path = path.clone();
+    let governor = ResourceGovernor::new(request());
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let (release, wait) = std::sync::mpsc::channel();
     let (started, ready) = oneshot::channel();
     let handle = runtime
         .start(move |scope| async move {
             let worker =
-                scope.spawn_blocking(request(), ResourceRequest::default(), move |_| {
-                    let _ = started.send(());
-                    while !worker_release.load(Ordering::SeqCst) {
-                        std::thread::sleep(Duration::from_millis(1));
+                scope.spawn_blocking(request(), ResourceRequest::default(), move |cancel| {
+                    let mut file = std::fs::OpenOptions::new()
+                        .create_new(true)
+                        .read(true)
+                        .write(true)
+                        .open(worker_path)
+                        .unwrap();
+                    file.write_all(b"data").unwrap();
+                    file.sync_all().unwrap();
+                    let _ = started.send(cancel);
+                    // Disconnect also releases the worker if an assertion panics.
+                    match wait.recv_timeout(Duration::from_secs(10)) {
+                        Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {}
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            panic!("file owner was not released before the fixture deadline")
+                        }
                     }
+                    file.rewind().unwrap();
+                    let mut bytes = Vec::new();
+                    file.read_to_end(&mut bytes).unwrap();
+                    assert_eq!(bytes, b"data");
+                    drop(file);
                 })?;
-            drop(worker); // Dropping a result receiver must not detach worker ownership.
-            Ok(())
+            scope.cancellation().cancelled().await;
+            drop(worker); // Losing the receiver cannot detach the file owner.
+            Err::<(), _>(RuntimeError::Cancelled)
         })
         .unwrap();
     let id = handle.id();
-    ready.await.unwrap();
+    let mut observer = runtime.observe(id).unwrap();
+    let worker_cancel = tokio::time::timeout(Duration::from_secs(10), ready)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!worker_cancel.is_cancelled());
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), 4);
+    assert_eq!(governor.status().reserved, request());
     drop(handle);
+    assert!(worker_cancel.is_cancelled());
+    {
+        let mut status = observer.subscribe();
+        let retiring = tokio::time::timeout(
+            Duration::from_secs(10),
+            status.wait_for(|state| {
+                matches!(
+                    state.phase,
+                    OperationPhase::Retiring | OperationPhase::Terminal
+                )
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(retiring.phase, OperationPhase::Retiring);
+        assert!(retiring.terminal.is_none());
+    }
     assert_eq!(governor.status().reserved, request());
+    assert!(matches!(
+        governor.try_admit(request()),
+        Err(AdmissionError::Busy { .. })
+    ));
     assert!(!runtime.release_completed(id));
-    let shutdown = runtime.shutdown();
-    tokio::pin!(shutdown);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(20), &mut shutdown)
-            .await
-            .is_err()
-    );
-    assert_eq!(governor.status().reserved, request());
-    released.store(true, Ordering::SeqCst);
-    shutdown.await;
+    assert!(matches!(
+        runtime.start(|_| async { Ok(()) }),
+        Err(RuntimeError::RegistryFull)
+    ));
+    release.send(()).unwrap();
+    let outcome = tokio::time::timeout(Duration::from_secs(10), observer.wait())
+        .await
+        .unwrap();
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Failed(RuntimeError::Cancelled)
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), b"data");
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    // Terminal outcomes still occupy the bounded registry until explicitly released.
+    assert!(matches!(
+        runtime.start(|_| async { Ok(()) }),
+        Err(RuntimeError::RegistryFull)
+    ));
+    assert!(runtime.release_completed(id));
+    let mut next = runtime.start(|_| async { Ok(()) }).unwrap();
+    assert!(matches!(
+        &*next.wait().await,
+        OperationOutcome::Completed(())
+    ));
+    assert!(runtime.release_completed(next.id()));
+    runtime.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
 #[tokio::test]

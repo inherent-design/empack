@@ -284,9 +284,11 @@ impl InteractiveProvider for MockInteractiveProvider {
     }
 }
 
+mod recording;
+
 pub struct MockCommandSession {
     pub multi_progress: Arc<MultiProgress>,
-    pub display_provider: LiveDisplayProvider,
+    pub display_provider: Box<dyn DisplayProvider>,
     pub terminal_capabilities: TerminalCapabilities,
     pub invocation_provider: MockInvocationProvider,
     pub process_provider: LiveProcessProvider,
@@ -298,8 +300,10 @@ impl MockCommandSession {
         let capabilities = TerminalCapabilities::minimal();
         let multi_progress = Arc::new(MultiProgress::new());
         Self {
-            display_provider: LiveDisplayProvider::new_with_arc(multi_progress.clone())
-                .with_capabilities(capabilities.clone()),
+            display_provider: Box::new(
+                LiveDisplayProvider::new_with_arc(multi_progress.clone())
+                    .with_capabilities(capabilities.clone()),
+            ),
             multi_progress,
             terminal_capabilities: capabilities,
             invocation_provider: MockInvocationProvider::new(),
@@ -307,6 +311,24 @@ impl MockCommandSession {
             config_provider: MockConfigProvider::new(AppConfig::default()),
             interactive_provider: MockInteractiveProvider::new(),
         }
+    }
+    /// Capture plain host messages without replacing progress or other presentation.
+    pub fn record_messages(self) -> (Self, Arc<Mutex<Vec<String>>>) {
+        self.record_display(false)
+    }
+    /// Also capture informational previews and completion receipts at the host boundary.
+    /// This is not an assertion about executable stdout/stderr rendering.
+    pub fn record_status_messages(self) -> (Self, Arc<Mutex<Vec<String>>>) {
+        self.record_display(true)
+    }
+    fn record_display(mut self, include_status: bool) -> (Self, Arc<Mutex<Vec<String>>>) {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        self.display_provider = Box::new(recording::RecordingDisplay {
+            inner: self.display_provider,
+            messages: messages.clone(),
+            include_status,
+        });
+        (self, messages)
     }
     pub fn with_invocation(mut self, value: MockInvocationProvider) -> Self {
         self.invocation_provider = value;
@@ -332,7 +354,7 @@ impl Default for MockCommandSession {
 }
 impl Session for MockCommandSession {
     fn display(&self) -> &dyn DisplayProvider {
-        &self.display_provider
+        self.display_provider.as_ref()
     }
     fn invocation(&self) -> &dyn InvocationProvider {
         &self.invocation_provider

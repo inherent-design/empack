@@ -1042,10 +1042,13 @@ async fn default_import_limits_fit_small_archives_under_the_native_host_budget()
 #[tokio::test]
 async fn local_provider_associations_require_exact_identity_and_original_digests() {
     let mut server = Server::new_async().await;
-    for (project, file) in [(123, 456), (124, 457)] {
+    for (project, file, digest) in [
+        (123, 456, "321c3cf486ed509164edec1e1981fec8"),
+        (124, 457, "ca8fef80e43c8db749b7c9406d535b1a"),
+    ] {
         server.mock("GET", format!("/mods/{project}").as_str()).with_body(json!({"data":{"id":project,"gameId":432,"classId":6,"slug":format!("mod-{project}"),"name":"Mod"}}).to_string()).create_async().await;
         server.mock("GET", format!("/mods/{project}/files/{file}").as_str())
-            .with_body(json!({"data":{"id":file,"gameId":432,"modId":project,"fileName":"shared.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1","Fabric"],"dependencies":[]}}).to_string())
+            .with_body(json!({"data":{"id":file,"gameId":432,"modId":project,"fileName":"shared.jar","fileLength":7,"hashes":[{"algo":2,"value":digest}],"downloadUrl":null,"gameVersions":["1.21.1","Fabric"],"dependencies":[]}}).to_string())
             .create_async().await;
     }
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture".into()));
@@ -1061,6 +1064,8 @@ async fn local_provider_associations_require_exact_identity_and_original_digests
                 let dir = tempfile::tempdir()?;
                 let path = dir.path().join("renamed.zip");
                 std::fs::write(&path, b"payload")?;
+                let second = dir.path().join("other-renamed.zip");
+                std::fs::write(&second, b"PAYLOAD")?;
                 for selector in [
                     "shared.jar",
                     "provider:modrinth:123:456:shared.jar",
@@ -1077,27 +1082,46 @@ async fn local_provider_associations_require_exact_identity_and_original_digests
                             SourceEvidencePolicy::Compatibility,
                         )
                         .await;
-                    assert!(result.is_err(), "ambiguous or foreign selector accepted");
+                    let error = result
+                        .err()
+                        .expect("ambiguous or foreign selector accepted");
+                    assert!(
+                        format!("{error:#}").contains("must match exactly one download obligation"),
+                        "{error:#}"
+                    );
                 }
                 let files = [
-                    "provider:curseforge:123:456:shared.jar",
-                    "provider:curseforge:124:457:shared.jar",
+                    ("provider:curseforge:123:456:shared.jar", path.clone()),
+                    ("provider:curseforge:124:457:shared.jar", second.clone()),
                 ]
-                .map(|selector| ImportLocalFile {
+                .map(|(selector, source)| ImportLocalFile {
                     selector: selector.into(),
-                    source: path.clone(),
+                    source,
                 });
-                std::fs::write(&path, b"changed")?;
-                assert!(
-                    plan.acquire_local_files(
-                        &mut scope,
-                        &files,
-                        BTreeMap::new(),
-                        SourceEvidencePolicy::Compatibility
-                    )
-                    .await
-                    .is_err()
-                );
+                // Equal-length wrong bytes, including another identically named provider
+                // file's payload, must retain the original selected digest as authority.
+                for swapped in [false, true] {
+                    std::fs::write(&path, if swapped { b"PAYLOAD" } else { b"changed" })?;
+                    let error = plan
+                        .acquire_local_files(
+                            &mut scope,
+                            &files,
+                            BTreeMap::new(),
+                            SourceEvidencePolicy::Compatibility,
+                        )
+                        .await
+                        .err()
+                        .unwrap();
+                    use crate::engine::diagnostics::{Diagnostic, DiagnosticCode, DiagnosticPhase};
+                    let diagnostic = Diagnostic::from_error(&error, DiagnosticPhase::Acquisition);
+                    assert_eq!(diagnostic.code, DiagnosticCode::DigestMismatch);
+                    assert_eq!(diagnostic.object.as_deref(), Some("md5"));
+                    assert_eq!(
+                        diagnostic.expected.as_deref(),
+                        Some("321c3cf486ed509164edec1e1981fec8")
+                    );
+                    assert_ne!(diagnostic.expected, diagnostic.observed);
+                }
                 std::fs::write(&path, b"payload")?;
                 #[cfg(unix)]
                 {
@@ -1137,9 +1161,32 @@ async fn local_provider_associations_require_exact_identity_and_original_digests
                     panic!("explicit verified files were not accepted")
                 };
                 assert_eq!(content.content().len(), 2);
-                for value in content.content().values() {
-                    assert_eq!(bytes(value), b"payload");
+                let expected = BTreeMap::from([
+                    (
+                        "provider:curseforge:123:456:shared.jar",
+                        (b"payload".as_slice(), "321c3cf486ed509164edec1e1981fec8"),
+                    ),
+                    (
+                        "provider:curseforge:124:457:shared.jar",
+                        (b"PAYLOAD".as_slice(), "ca8fef80e43c8db749b7c9406d535b1a"),
+                    ),
+                ]);
+                for (key, value) in content.content() {
+                    let (payload, digest) = expected[&key.selector().as_str()];
+                    assert_eq!(bytes(value), payload);
+                    let empack_core::digest::IntegrityEvidence::MatchedExpected {
+                        expected, ..
+                    } = value.evidence()
+                    else {
+                        panic!("local association lost original provider assertions")
+                    };
+                    assert_eq!(
+                        *expected,
+                        empack_core::digest::DigestSet::parse([("md5", digest)]).unwrap()
+                    );
                 }
+                assert_eq!(std::fs::read(&path)?, b"payload");
+                assert_eq!(std::fs::read(&second)?, b"PAYLOAD");
                 Ok::<_, anyhow::Error>(())
             }
             .await;

@@ -6,24 +6,37 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "java-fixture"
+path = "src/bin/java-fixture.rs"
+test = false
+bench = false
+
 [dependencies]
 anyhow.workspace = true
 assert_cmd.workspace = true
+clap.workspace = true
+expectrl.workspace = true
+flate2.workspace = true
 empack-core.workspace = true
 empack-lib = { workspace = true, features = ["test-utils"] }
 reqwest.workspace = true
 serde_json.workspace = true
+sevenz-rust2.workspace = true
+sha2.workspace = true
 serde-saphyr.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
-expectrl.workspace = true
+ed25519-dalek.workspace = true
 mockito.workspace = true
 predicates.workspace = true
 
-[target.'cfg(windows)'.dev-dependencies]
+[target.'cfg(windows)'.dependencies]
 # expectrl 0.9 pins ConPTY 0.5, which mishandles redirected Nextest handles
 conpty = "0.7.0"
+windows-sys.workspace = true

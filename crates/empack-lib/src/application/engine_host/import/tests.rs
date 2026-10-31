@@ -331,6 +331,19 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
 #[tokio::test]
 async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree() {
     let root = tempfile::tempdir().unwrap();
+    for (name, bytes) in [
+        ("empack.yml", "broken: ["),
+        ("empack.lock", "old lock bytes"),
+        ("pack/config/old", "old"),
+        ("notes.txt", "user notes"),
+        ("templates/client/instance.cfg.template", "author template"),
+        ("dist/previous.zip", "previous artifact"),
+        ("worlds/playtest/level.dat", "player world"),
+    ] {
+        let path = root.path().join("project").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
     let bytes = archive(&[("overrides/config/example.toml", b"new")], false);
     let input = source(root.path(), &bytes);
     let before = super::super::tests::snapshot(root.path());
@@ -350,10 +363,6 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     .await
     .unwrap();
     assert_eq!(super::super::tests::snapshot(root.path()), before);
-    fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
-    fs::write(root.path().join("project/pack/config/old"), b"old").unwrap();
-    fs::write(root.path().join("project/notes.txt"), b"user notes").unwrap();
-    let before = super::super::tests::snapshot(root.path());
     assert!(
         import(
             &session(root.path(), true, false),
@@ -386,6 +395,17 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
         fs::read(root.path().join("project/notes.txt")).unwrap(),
         b"user notes"
     );
+    for name in [
+        "templates/client/instance.cfg.template",
+        "dist/previous.zip",
+        "worlds/playtest/level.dat",
+    ] {
+        let relative = Path::new("project").join(name);
+        assert_eq!(
+            fs::read(root.path().join(&relative)).unwrap(),
+            before[&relative]
+        );
+    }
 }
 
 #[tokio::test]
@@ -393,6 +413,17 @@ async fn remote_archive_acquisition_enforces_bytes_and_source_assertions_before_
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("project/pack")).unwrap();
     fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
+    for name in [
+        "empack.yml",
+        "empack.lock",
+        "templates/custom",
+        "dist/previous.zip",
+        "worlds/playtest/level.dat",
+    ] {
+        let path = root.path().join("project").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"retained on acquisition failure").unwrap();
+    }
     let original = super::super::tests::snapshot(root.path());
     let mut server = mockito::Server::new_async().await;
     let bytes = archive(&[("overrides/config/a", b"downloaded")], false);
@@ -506,28 +537,16 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
     fs::create_dir_all(root.path().join("project/pack")).unwrap();
     fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
     let original = super::super::tests::snapshot(root.path());
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let worker = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut input = [0; 4096];
-        assert!(stream.read(&mut input).unwrap() > 0);
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n")
-            .unwrap();
-        // No final chunk: rejection must happen before EOF, and retire the connection.
-        stream.read(&mut input)
-    });
+    let fixture = crate::testing::http::StalledHttp::new(
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n",
+    );
     let result = tokio::time::timeout(
         Duration::from_secs(4),
         import_with_services(
             &session(root.path(), true, false),
             request(
                 ImportSource::Download {
-                    alternatives: NonEmpty::new(vec![format!("http://{address}/source")]).unwrap(),
+                    alternatives: NonEmpty::new(vec![fixture.url.clone()]).unwrap(),
                     expected: ExpectedContent {
                         digests: None,
                         size: None,
@@ -537,7 +556,7 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
                 true,
             ),
             |_| panic!("oversized archive must not reach decisions"),
-            ProviderCatalog::for_loopback_tests(&format!("http://{address}"), None),
+            ProviderCatalog::for_loopback_tests(&fixture.url, None),
             HttpAcquisition::for_loopback_tests(),
             ImportLimits {
                 archive: ArchiveLimits {
@@ -554,8 +573,94 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
         result.unwrap_err().downcast_ref(),
         Some(crate::engine::acquisition::TransferError::ByteLimit)
     ));
-    assert_eq!(worker.join().unwrap().unwrap(), 0);
+    fixture.assert_closed();
     assert_eq!(super::super::tests::snapshot(root.path()), original);
+}
+
+#[tokio::test]
+async fn remote_archive_stalls_and_cancellation_preserve_existing_project() {
+    use crate::application::{
+        process_runtime::{Cancellation, Interrupted},
+        session::LiveProcessProvider,
+    };
+    for prefix in [
+        &b"HTTP/1.1 200 OK\r\n"[..],
+        &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\npart\r\n"[..],
+    ] {
+        for cancelled in [false, true] {
+            for populated in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                if populated {
+                    for name in [
+                        "empack.yml",
+                        "empack.lock",
+                        "pack/keep",
+                        "templates/custom",
+                        "dist/previous.zip",
+                        "worlds/playtest/level.dat",
+                    ] {
+                        let path = root.path().join("project").join(name);
+                        fs::create_dir_all(path.parent().unwrap()).unwrap();
+                        fs::write(path, b"retain through stalled replacement").unwrap();
+                    }
+                }
+                let original = super::super::tests::snapshot(root.path());
+                let cancellation = Cancellation::default();
+                let mut host = session(root.path(), true, false);
+                host.config_provider.app_config.net_timeout = if cancelled { 30 } else { 1 };
+                host.process_provider =
+                    LiveProcessProvider::new().with_cancellation(cancellation.clone());
+                let mut fixture = crate::testing::http::StalledHttp::new(prefix);
+                let url = fixture.url.clone();
+                let prepare = import_with_services(
+                    &host,
+                    request(
+                        ImportSource::Download {
+                            alternatives: NonEmpty::new(vec![url.clone()]).unwrap(),
+                            expected: ExpectedContent {
+                                digests: None,
+                                size: None,
+                                accepted_observation: None,
+                            },
+                        },
+                        true,
+                    ),
+                    |_| panic!("partial archive must not reach conversion or publication"),
+                    ProviderCatalog::for_loopback_tests(&url, None),
+                    HttpAcquisition::for_loopback_tests(),
+                    ImportLimits::default(),
+                );
+                let observe = async {
+                    fixture.started().await;
+                    if cancelled {
+                        cancellation.cancel();
+                    }
+                };
+                let (result, ()) = tokio::time::timeout(Duration::from_secs(4), async {
+                    tokio::join!(prepare, observe)
+                })
+                .await
+                .expect("host did not retire its stalled acquisition");
+                let error = result.unwrap_err();
+                if cancelled {
+                    assert!(error.downcast_ref::<Interrupted>().is_some(), "{error:#}");
+                } else {
+                    assert!(
+                        matches!(
+                            error.downcast_ref(),
+                            Some(crate::engine::acquisition::TransferError::Deadline)
+                        ),
+                        "{error:#}"
+                    );
+                }
+                fixture.assert_closed();
+                assert_eq!(super::super::tests::snapshot(root.path()), original);
+                assert_eq!(root.path().join("project").exists(), populated);
+                assert!(!root.path().join("state").exists());
+                assert!(!root.path().join("cache").exists());
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -568,7 +673,23 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     let root = tempfile::tempdir().unwrap();
     let mut server = mockito::Server::new_async().await;
     let manifest = serde_json::to_vec(&json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"Imported","version":"1","files":[{"projectID":123,"fileID":456,"required":false}],"minecraft":{"version":"1.21.1","modLoaders":[]},"overrides":"overrides"})).unwrap();
-    let bytes = archive_with_manifest("manifest.json", &manifest, &[]);
+    // Provider-owned bytes remain restricted even when the archive also contains
+    // locally authored overrides. Resume must retain both after the input is gone.
+    let overrides = [
+        ("config/common.toml", b"enabled=true\n".as_slice()),
+        (
+            "kubejs/server_scripts/recipes.js",
+            b"// authored recipe\n".as_slice(),
+        ),
+    ];
+    let bytes = archive_with_manifest(
+        "manifest.json",
+        &manifest,
+        &[
+            ("overrides/config/common.toml", overrides[0].1),
+            ("overrides/kubejs/server_scripts/recipes.js", overrides[1].1),
+        ],
+    );
     source(root.path(), &bytes);
     let project = server
         .mock("GET", "/mods/123")
@@ -576,10 +697,10 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
             json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"fixture","name":"Fixture"}})
                 .to_string(),
         )
-        .expect(5)
+        .expect(7)
         .create_async()
         .await;
-    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(5).create_async().await;
+    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(7).create_async().await;
     let original = super::super::tests::snapshot(root.path());
     let preview = import_with_services(
         &session(root.path(), true, true),
@@ -626,7 +747,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         project: identity,
     };
     let key = ImportContentKey::Provider {
-        pin,
+        pin: pin.clone(),
         filename: "fixture.jar".into(),
     };
     let before_resume = super::super::tests::snapshot(root.path());
@@ -642,22 +763,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     assert!(preview.is_err());
     assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
     let mut wrong = request(ImportSource::Saved, false);
-    wrong.supplied.insert(
-        key.clone(),
-        crate::engine::content::verify_stream(
-            &mut b"changed".as_slice(),
-            &ExpectedContent {
-                digests: None,
-                size: None,
-                accepted_observation: None,
-            },
-            7,
-            SourceEvidencePolicy::Compatibility,
-            InitialObservation::Accepted,
-            &crate::application::process_runtime::Cancellation::default(),
-        )
-        .unwrap(),
-    );
+    wrong.supplied.insert(key.clone(), observed(b"changed"));
     let wrong = import_with_services(
         &session(root.path(), true, false),
         wrong,
@@ -670,66 +776,93 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     assert!(wrong.is_err());
     assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
     let mut selected = request(ImportSource::Saved, false);
-    selected.supplied.insert(
-        key.clone(),
-        crate::engine::content::verify_stream(
-            &mut b"payload".as_slice(),
-            &ExpectedContent {
-                digests: None,
-                size: None,
-                accepted_observation: None,
+    selected.supplied.insert(key.clone(), observed(b"payload"));
+    let decide = |content: &VerifiedImportContent| -> Result<ImportCandidateOptions> {
+        assert_eq!(content.content().len(), 3);
+        assert_eq!(content.plan().imported().overrides.len(), 2);
+        let mut options = ImportCandidateOptions {
+            java_major: 21,
+            metadata: PackMetadata {
+                id: "test-pack".into(),
+                name: "Imported".into(),
+                version: "1".into(),
+                authors: (None).into_iter().collect(),
+                description: None,
             },
-            7,
-            SourceEvidencePolicy::Compatibility,
-            InitialObservation::Accepted,
-            &crate::application::process_runtime::Cancellation::default(),
+            loader: None,
+            acceptable_versions: vec![],
+            layout: BTreeMap::new(),
+            distribution: DistributionIntent::from_recipes(
+                NonEmpty::new(vec![Recipe::MODRINTH])?,
+                DistributionArchive::Zip,
+            ),
+            files: BTreeMap::new(),
+            exclude_auxiliary_members: false,
+        };
+        let optional = Requirement::Optional(OptionalChoice {
+            key: ChoiceKey::parse("fixture")?,
+            default_enabled: false,
+            description: Some("Imported optional file".into()),
+        });
+        options.files.insert(
+            key.clone(),
+            ImportFileDecision {
+                key: DependencyKey::parse("fixture")?,
+                kind: ContentKind::Mod,
+                requirements: Requirements {
+                    client: optional.clone(),
+                    server: optional,
+                },
+                persistence: ImportPersistence::Provider,
+                provider_destination: Some(InstallDestination::parse("mods/fixture.jar")?),
+            },
+        );
+        for (index, _) in content.plan().imported().overrides.iter().enumerate() {
+            options.files.insert(
+                ImportContentKey::Override(index),
+                ImportFileDecision {
+                    key: DependencyKey::parse(&format!("override-{index}"))?,
+                    kind: ContentKind::Config,
+                    requirements: Requirements {
+                        client: Requirement::Required,
+                        server: Requirement::Required,
+                    },
+                    persistence: ImportPersistence::Local,
+                    provider_destination: None,
+                },
+            );
+        }
+        Ok(options)
+    };
+    // Supplying restricted bytes grants no permission to discard their provider
+    // identity. Neither a local-file nor URL conversion may publish the draft.
+    for persistence in [ImportPersistence::Local, ImportPersistence::Url] {
+        let mut invalid = request(ImportSource::Saved, false);
+        invalid.supplied.insert(key.clone(), observed(b"payload"));
+        let rejected = import_with_services(
+            &session(root.path(), true, false),
+            invalid,
+            |content| {
+                let mut options = decide(content)?;
+                options.files.get_mut(&key).unwrap().persistence = persistence;
+                Ok(options)
+            },
+            ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+            HttpAcquisition::for_loopback_tests(),
+            ImportLimits::default(),
         )
-        .unwrap(),
-    );
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{rejected:#}").contains("Provider imports must preserve canonical identity"),
+            "{rejected:#}"
+        );
+        assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+    }
     import_with_services(
         &session(root.path(), true, false),
         selected,
-        move |content| {
-            assert_eq!(content.content().len(), 1);
-            let mut options = ImportCandidateOptions {
-                java_major: 21,
-                metadata: PackMetadata {
-                    id: "test-pack".into(),
-                    name: "Imported".into(),
-                    version: "1".into(),
-                    authors: (None).into_iter().collect(),
-                    description: None,
-                },
-                loader: None,
-                acceptable_versions: vec![],
-                layout: BTreeMap::new(),
-                distribution: DistributionIntent::from_recipes(
-                    NonEmpty::new(vec![Recipe::MODRINTH])?,
-                    DistributionArchive::Zip,
-                ),
-                files: BTreeMap::new(),
-                exclude_auxiliary_members: false,
-            };
-            let optional = Requirement::Optional(OptionalChoice {
-                key: ChoiceKey::parse("fixture")?,
-                default_enabled: false,
-                description: Some("Imported optional file".into()),
-            });
-            options.files.insert(
-                key,
-                ImportFileDecision {
-                    key: DependencyKey::parse("fixture")?,
-                    kind: ContentKind::Mod,
-                    requirements: Requirements {
-                        client: optional.clone(),
-                        server: optional,
-                    },
-                    persistence: ImportPersistence::Provider,
-                    provider_destination: Some(InstallDestination::parse("mods/fixture.jar")?),
-                },
-            );
-            Ok(options)
-        },
+        decide,
         ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
         HttpAcquisition::for_loopback_tests(),
         ImportLimits::default(),
@@ -740,17 +873,141 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     let file = &resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()]
         .files
         .as_slice()[0];
-    assert!(matches!(
-        file.placements.as_slice()[0].requirements.client,
-        Requirement::Optional(_)
-    ));
+    let optional = Requirement::Optional(OptionalChoice {
+        key: ChoiceKey::parse("fixture").unwrap(),
+        default_enabled: false,
+        description: Some("Imported optional file".into()),
+    });
+    assert_eq!(
+        file.placements.as_slice()[0].requirements,
+        Requirements {
+            client: optional.clone(),
+            server: optional,
+        }
+    );
     assert_eq!(
         file.expected.digests.as_ref().unwrap().values()[0].algorithm(),
         empack_core::digest::DigestAlgorithm::Md5
     );
     assert_eq!(
+        file.expected.digests.as_ref().unwrap().values()[0].hex(),
+        "321c3cf486ed509164edec1e1981fec8"
+    );
+    assert_eq!(
         fs::read(root.path().join("project/pack/mods/fixture.jar")).unwrap(),
         b"payload"
+    );
+    let project_root = root.path().join("project");
+    assert_eq!(resolved.lock().dependencies.len(), 3);
+    assert_eq!(
+        resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()].identity,
+        empack_core::model::ResolvedIdentity::Provider(pin.project.clone())
+    );
+    assert_eq!(
+        resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()].selected,
+        Some(pin)
+    );
+    for (index, (destination, expected)) in overrides.iter().enumerate() {
+        let dependency = &resolved.lock().dependencies
+            [&DependencyKey::parse(&format!("override-{index}")).unwrap()];
+        assert!(matches!(
+            dependency.identity,
+            empack_core::model::ResolvedIdentity::Local(_)
+        ));
+        assert_eq!(dependency.files.as_slice().len(), 1);
+        assert_eq!(
+            dependency.files.as_slice()[0].placements.as_slice()[0]
+                .destination
+                .relative()
+                .as_str(),
+            *destination
+        );
+        assert_eq!(
+            fs::read(project_root.join("overrides/common").join(destination)).unwrap(),
+            *expected
+        );
+    }
+
+    // Acknowledging import optionality does not implicitly authorize losing its
+    // default/group on export. A failed build must preserve even prior artifacts.
+    fs::create_dir_all(project_root.join("dist")).unwrap();
+    fs::write(project_root.join("dist/previous.zip"), b"prior artifact").unwrap();
+    let before_build = super::super::tests::snapshot(&project_root);
+    let args = BuildArgs {
+        targets: vec!["curseforge".into()],
+        ad_hoc: true,
+        ..Default::default()
+    };
+    let rejected = super::super::build(
+        &session(root.path(), true, false),
+        &args,
+        super::super::BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        format!("{rejected:#}").contains("optional group/default metadata"),
+        "{rejected:#}"
+    );
+    assert_eq!(super::super::tests::snapshot(&project_root), before_build);
+    super::super::build(
+        &session(root.path(), true, false),
+        &args,
+        super::super::BuildDecisions {
+            mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
+            ..Default::default()
+        },
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut exported = zip::ZipArchive::new(
+        fs::File::open(project_root.join("dist/Imported-1-curseforge.zip")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(exported.len(), 7);
+    assert_eq!(
+        exported
+            .file_names()
+            .map(|name| name.unwrap().into_owned())
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(
+            [
+                "manifest.json",
+                "overrides/",
+                "overrides/config/",
+                "overrides/config/common.toml",
+                "overrides/kubejs/",
+                "overrides/kubejs/server_scripts/",
+                "overrides/kubejs/server_scripts/recipes.js",
+            ]
+            .map(str::to_owned)
+        ),
+        "complete inventory must retain restricted provider bytes as references"
+    );
+    let actual: Value = serde_json::from_slice(&member(&mut exported, "manifest.json")).unwrap();
+    assert_eq!(
+        actual,
+        json!({
+            "manifestType":"minecraftModpack", "manifestVersion":1,
+            "name":"Imported", "version":"1", "author":"",
+            "minecraft":{"version":"1.21.1", "modLoaders":[]},
+            "files":[{"projectID":123,"fileID":456,"required":false}],
+            "overrides":"overrides"
+        })
+    );
+    for (path, expected) in overrides {
+        assert_eq!(
+            member(&mut exported, &format!("overrides/{path}")),
+            expected
+        );
+    }
+    let mut after_build = super::super::tests::snapshot(&project_root);
+    after_build.remove(Path::new("dist/Imported-1-curseforge.zip"));
+    assert_eq!(
+        after_build, before_build,
+        "export must not rewrite authoring or supplied bytes"
     );
     assert!(
         records().is_empty(),

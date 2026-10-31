@@ -679,191 +679,6 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
 }
 
 #[tokio::test]
-async fn provider_file_plan_preserves_companions_destinations_and_optional_choices() {
-    let mut server = mockito::Server::new_async().await;
-    server.mock("GET", "/project/renderer")
-        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
-    server.mock("GET", "/project/Root0001")
-        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
-    let file = |name: &str, primary: bool, role: Option<&str>| {
-        json!({
-            "filename":name,"primary":primary,"size":7,"file_type":role,
-            "hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},
-            "url":format!("https://example.invalid/{name}")
-        })
-    };
-    server.mock("GET", "/version/RootVer1").with_body(json!({
-        "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
-        "files":[file("renderer.jar",true,None),file("assets.zip",false,Some("required-resource-pack")),file("extras.zip",false,Some("optional-resource-pack"))],
-        "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-    }).to_string()).create_async().await;
-    let root = tempfile::tempdir().unwrap();
-    fixture(root.path()).await;
-    let environment = json!({"client":"required","server":"unsupported"});
-    let placement = |path: &str, environment: serde_json::Value| {
-        json!([{
-            "destination":path,"layer":"common","environment":environment
-        }])
-    };
-    let mut plan = json!({"schema":1,"environment":environment,"files":{
-        "renderer.jar":placement("mods/renamed.jar",environment.clone()),
-        "assets.zip":placement("resourcepacks/required.zip",environment.clone()),
-        "extras.zip":placement("resourcepacks/extra.zip",json!({"client":{"optional":"extra-art","default-enabled":false,"description":"Extra artwork"},"server":"unsupported"}))
-    }});
-    let selected = || {
-        let mut options = options("renderer");
-        options.file_plan = Some("files.yml".into());
-        options
-    };
-    // Missing required companions fail the whole request before publication.
-    let companion = plan["files"]
-        .as_object_mut()
-        .unwrap()
-        .remove("assets.zip")
-        .unwrap();
-    fs::write(root.path().join("files.yml"), plan.to_string()).unwrap();
-    let before = super::super::tests::snapshot(root.path());
-    let error = add_with_catalog(
-        &session(root.path(), false),
-        selected(),
-        ProviderCatalog::for_loopback_tests(&server.url(), None),
-    )
-    .await
-    .unwrap_err();
-    assert!(format!("{error:#}").contains("required companion"));
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
-    plan["files"]["assets.zip"] = companion;
-    fs::write(root.path().join("files.yml"), plan.to_string()).unwrap();
-    let before = super::super::tests::snapshot(root.path());
-    add_with_catalog(
-        &session(root.path(), true),
-        selected(),
-        ProviderCatalog::for_loopback_tests(&server.url(), None),
-    )
-    .await
-    .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
-    add_with_catalog(
-        &session(root.path(), false),
-        selected(),
-        ProviderCatalog::for_loopback_tests(&server.url(), None),
-    )
-    .await
-    .unwrap();
-    let resolved = project(root.path());
-    let record = resolved.lock().dependencies.values().next().unwrap();
-    assert_eq!(record.files.as_slice().len(), 3);
-    let extra = record
-        .files
-        .as_slice()
-        .iter()
-        .find(|file| file.slot.as_str() == "extras.zip")
-        .unwrap();
-    let placement = &extra.placements.as_slice()[0];
-    assert_eq!(
-        placement.destination.relative().as_str(),
-        "resourcepacks/extra.zip"
-    );
-    assert_eq!(placement.requirements.server, Requirement::Unsupported);
-    let Requirement::Optional(choice) = &placement.requirements.client else {
-        panic!("lost optional requirement")
-    };
-    assert_eq!(choice.key.as_str(), "extra-art");
-    assert!(!choice.default_enabled);
-    for _ in 0..2 {
-        let before = super::super::tests::snapshot(&root.path().join("project"));
-        synchronize(&session(root.path(), false), false)
-            .await
-            .unwrap();
-        assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
-            before
-        );
-    }
-    // Authored per-file decisions use the same resolver during a fresh synchronization.
-    let mut intent = project(root.path()).intent().clone();
-    let key = intent.roots.keys().next().unwrap().clone();
-    let empack_core::model::PlacementIntent::ByFile(roles) =
-        &mut intent.roots.get_mut(&key).unwrap().placement
-    else {
-        panic!("lost file decisions")
-    };
-    let assets = roles
-        .remove(&empack_core::model::FileSlot::parse("assets.zip").unwrap())
-        .unwrap();
-    let write = |intent: &empack_core::model::ProjectIntent| {
-        crate::testing::write_authoring(&root.path().join("project/empack.yml"), intent).unwrap()
-    };
-    write(&intent);
-    let services = || dependencies::AdditionServices {
-        catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
-        transport: HttpAcquisition::for_loopback_tests(),
-        files: DirectFileLimits::default(),
-    };
-    let before = super::super::tests::snapshot(root.path());
-    let error = synchronization::synchronize_with_services(
-        &session(root.path(), false),
-        false,
-        services(),
-        crate::engine::runtime_catalog::RuntimeCatalog::for_loopback_tests(&server.url()),
-    )
-    .await
-    .unwrap_err();
-    assert!(format!("{error:#}").contains("required companion"));
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
-    let empack_core::model::PlacementIntent::ByFile(roles) =
-        &mut intent.roots.get_mut(&key).unwrap().placement
-    else {
-        unreachable!()
-    };
-    roles.insert(
-        empack_core::model::FileSlot::parse("assets.zip").unwrap(),
-        assets,
-    );
-    let extra = roles
-        .get_mut(&empack_core::model::FileSlot::parse("extras.zip").unwrap())
-        .unwrap();
-    let mut placement = extra.as_slice()[0].clone();
-    placement.destination =
-        empack_core::path::InstallDestination::parse("resourcepacks/extra-renamed.zip").unwrap();
-    *extra = NonEmpty::new(vec![placement.clone()]).unwrap();
-    write(&intent);
-    let before = super::super::tests::snapshot(root.path());
-    for dry in [true, false] {
-        synchronization::synchronize_with_services(
-            &session(root.path(), dry),
-            false,
-            services(),
-            crate::engine::runtime_catalog::RuntimeCatalog::for_loopback_tests(&server.url()),
-        )
-        .await
-        .unwrap();
-        if dry {
-            assert_eq!(super::super::tests::snapshot(root.path()), before);
-        }
-    }
-    let resolved = project(root.path());
-    assert_eq!(resolved.intent(), &intent);
-    let extra = resolved.lock().dependencies[&key]
-        .files
-        .as_slice()
-        .iter()
-        .find(|file| file.slot.as_str() == "extras.zip")
-        .unwrap();
-    assert_eq!(extra.placements.as_slice(), &[placement]);
-    let stable = super::super::tests::snapshot(&root.path().join("project"));
-    for _ in 0..2 {
-        synchronize(&session(root.path(), false), false)
-            .await
-            .unwrap();
-    }
-    assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
-        stable
-    );
-}
-
-#[tokio::test]
 async fn file_plans_reject_unbounded_unsafe_and_unrecognized_selections() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
@@ -1580,23 +1395,31 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     latest.assert_async().await;
 }
 
+fn adoption_jar(id: &str) -> Vec<u8> {
+    use std::io::Write;
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(
+            json!({"schemaVersion":1,"id":id,"version":"1"})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    archive.finish().unwrap().into_inner()
+}
+
 #[tokio::test]
 async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloading_payloads() {
-    use std::io::Write;
     for missing_lock in [false, true] {
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
         if missing_lock {
             fs::remove_file(root.path().join("project/empack.lock")).unwrap();
         }
-        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        archive
-            .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
-            .unwrap();
-        archive
-            .write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
-            .unwrap();
-        let bytes = archive.finish().unwrap().into_inner();
+        let bytes = adoption_jar("fixture");
         fs::write(root.path().join("fixture.jar"), &bytes).unwrap();
         fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
         fs::write(root.path().join("project/pack/mods/fixture.jar"), b"wrong").unwrap();
@@ -1672,16 +1495,8 @@ async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloadin
 #[tokio::test]
 async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete_copies() {
     use empack_core::digest::ExpectedDigest;
-    use std::io::Write;
     for identify in [false, true] {
-        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        archive
-            .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
-            .unwrap();
-        archive
-            .write_all(br#"{"schemaVersion":1,"id":"renderer","version":"1"}"#)
-            .unwrap();
-        let payload = archive.finish().unwrap().into_inner();
+        let payload = adoption_jar("renderer");
         let hash = ExpectedDigest::Sha512(Sha512::digest(&payload).into()).hex();
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
@@ -1778,6 +1593,152 @@ async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete
             committed
         );
         latest.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn new_provider_adoption_refuses_unknown_and_ambiguous_byte_identity_without_edits() {
+    use empack_core::digest::ExpectedDigest;
+    let payload = adoption_jar("renderer");
+    let sha512 = ExpectedDigest::Sha512(Sha512::digest(&payload).into()).hex();
+    let sha1 = ExpectedDigest::Sha1(sha1::Sha1::digest(&payload).into()).hex();
+    let fingerprint_bytes: Vec<_> = payload
+        .iter()
+        .copied()
+        .filter(|byte| !matches!(byte, 9 | 10 | 13 | 32))
+        .collect();
+    let fingerprint = murmur2::murmur2(&fingerprint_bytes, 1);
+    for mode in ["unknown", "identities", "file-roles"] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::write(root.path().join("renderer.jar"), &payload).unwrap();
+        fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
+        fs::write(root.path().join("project/pack/mods/renderer.jar"), &payload).unwrap();
+        fs::write(
+            root.path().join("project/prior-build.zip"),
+            b"Retain prior artifact",
+        )
+        .unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let lookup;
+        let mut projects = Vec::new();
+        let (platform, credential, diagnostic) = if mode == "identities" {
+            let matches: Vec<_> = [123, 456]
+                .into_iter()
+                .map(|id| {
+                    json!({"id":id,"file":{
+                        "id":id+1,"modId":id,"gameId":432,"fileFingerprint":fingerprint,
+                        "fileName":"renderer.jar","fileLength":payload.len(),
+                        "hashes":[{"algo":1,"value":sha1}],"downloadUrl":null,
+                        "gameVersions":["1.21.1","Fabric"],"dependencies":[]
+                    }})
+                })
+                .collect();
+            lookup = server
+                .mock("POST", "/fingerprints/432")
+                .with_body(json!({"data":{"isCacheBuilt":true,"exactMatches":matches}}).to_string())
+                .expect(2)
+                .create_async()
+                .await;
+            for id in [123, 456] {
+                projects.push(
+                    server
+                        .mock("GET", format!("/mods/{id}").as_str())
+                        .with_body(
+                            json!({"data":{"id":id,"gameId":432,"classId":6,
+                        "slug":format!("renderer-{id}"),"name":"Renderer"}})
+                            .to_string(),
+                        )
+                        .expect(2)
+                        .create_async()
+                        .await,
+                );
+            }
+            (
+                SearchPlatform::Curseforge,
+                Some("fixture-key".into()),
+                "Multiple provider identities match",
+            )
+        } else {
+            let request = server
+                .mock("GET", format!("/version_file/{sha512}").as_str())
+                .match_query(mockito::Matcher::Any)
+                .expect(2);
+            lookup = if mode == "unknown" {
+                request.with_status(404).create_async().await
+            } else {
+                let files: Vec<_> = ["renderer.jar","copy.jar"].into_iter().map(|name| json!({
+                    "filename":name,"primary":false,"size":payload.len(),"hashes":{"sha512":sha512},
+                    "url":format!("https://example.invalid/{name}")
+                })).collect();
+                projects.push(
+                    server
+                        .mock("GET", "/project/Root0001")
+                        .with_body(
+                            json!({"id":"Root0001","slug":"renderer","title":"Renderer",
+                        "project_type":"mod","loaders":["fabric"]})
+                            .to_string(),
+                        )
+                        .expect(2)
+                        .create_async()
+                        .await,
+                );
+                request
+                    .with_body(
+                        json!({"id":"RootVer1","project_id":"Root0001",
+                    "game_versions":["1.21.1"],"loaders":["fabric"],"files":files,
+                    "dependencies":[]})
+                        .to_string(),
+                    )
+                    .create_async()
+                    .await
+            };
+            (
+                SearchPlatform::Modrinth,
+                None,
+                if mode == "unknown" {
+                    "No provider identity verified"
+                } else {
+                    "Provider bytes match multiple file roles"
+                },
+            )
+        };
+        let before = super::super::tests::snapshot(root.path());
+        for dry in [true, false] {
+            let (host, messages) = session(root.path(), dry).record_status_messages();
+            let mut selected = options("renderer.jar");
+            selected.platform = Some(platform.clone());
+            selected.version_id = None;
+            let error = selected_with_catalog(
+                &host,
+                selected,
+                ProviderCatalog::for_loopback_tests(&server.url(), credential.clone()),
+                InputOperation::Adopt,
+            )
+            .await
+            .unwrap_err();
+            let diagnostic_text = format!("{error:#}");
+            assert!(
+                diagnostic_text.contains(diagnostic),
+                "{mode}: {diagnostic_text}"
+            );
+            assert_eq!(
+                super::super::tests::snapshot(root.path()),
+                before,
+                "{mode}, dry={dry}"
+            );
+            assert!(
+                !messages
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|message| message.contains("Adopted "))
+            );
+        }
+        lookup.assert_async().await;
+        for project in projects {
+            project.assert_async().await;
+        }
     }
 }
 
@@ -1904,3 +1865,5 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         );
     }
 }
+
+mod file_roles;

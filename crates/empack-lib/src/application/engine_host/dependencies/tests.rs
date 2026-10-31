@@ -24,6 +24,8 @@ use sha2::{Digest, Sha512};
 use std::collections::BTreeMap;
 use std::{fs, io::Read};
 
+mod inspection;
+
 fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
     MockCommandSession::new()
         .with_invocation(MockInvocationProvider::new().with_current_dir(root.to_path_buf()))

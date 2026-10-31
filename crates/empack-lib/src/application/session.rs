@@ -4,6 +4,7 @@ use crate::Result;
 use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::terminal::TerminalCapabilities;
+#[cfg(windows)]
 use anyhow::Context;
 use indicatif::MultiProgress;
 use std::{
@@ -11,6 +12,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+#[cfg(windows)]
+mod windows_input;
 
 pub trait InvocationProvider {
     fn current_dir(&self) -> Result<PathBuf>;
@@ -404,11 +408,15 @@ impl ConfigProvider for LiveConfigProvider {
 
 pub struct LiveInteractiveProvider {
     yes_mode: bool,
+    cancellation: super::process_runtime::Cancellation,
 }
 
 impl LiveInteractiveProvider {
-    pub fn new(yes_mode: bool, _workdir: Option<PathBuf>) -> Self {
-        Self { yes_mode }
+    pub fn new(yes_mode: bool, cancellation: super::process_runtime::Cancellation) -> Self {
+        Self {
+            yes_mode,
+            cancellation,
+        }
     }
 
     /// Check if we're in a TTY environment suitable for interactive prompts
@@ -417,8 +425,29 @@ impl LiveInteractiveProvider {
         std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
     }
 
-    fn handle_interrupt<T>(&self) -> Result<T> {
-        Err(super::process_runtime::Interrupted.into())
+    fn prompt<T>(&self, context: &str, read: impl FnOnce() -> dialoguer::Result<T>) -> Result<T> {
+        self.cancellation.check()?;
+        #[cfg(windows)]
+        let result = windows_input::read(&self.cancellation, read)
+            .context("Cannot establish cancellable console input")?;
+        #[cfg(not(windows))]
+        let result = read();
+        match result {
+            Ok(value) => {
+                self.cancellation.check()?;
+                Ok(value)
+            }
+            Err(error) => {
+                let interrupted = self.cancellation.is_cancelled()
+                    || matches!(&error, dialoguer::Error::IO(error) if error.kind() == std::io::ErrorKind::Interrupted);
+                let error = anyhow::Error::new(error).context(context.to_owned());
+                if interrupted {
+                    Err(error.context(super::process_runtime::Interrupted))
+                } else {
+                    Err(error)
+                }
+            }
+        }
     }
 }
 
@@ -428,6 +457,7 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 
     fn text_input(&self, prompt: &str, default: String) -> Result<String> {
+        self.cancellation.check()?;
         // Check yes_mode first (--yes flag), then TTY
         if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return default
@@ -436,22 +466,16 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Input;
 
-        match Input::new()
-            .with_prompt(prompt)
-            .default(default.clone())
-            .interact_text()
-        {
-            Ok(val) => Ok(val),
-            Err(dialoguer::Error::IO(ref io_err))
-                if io_err.kind() == std::io::ErrorKind::Interrupted =>
-            {
-                self.handle_interrupt()
-            }
-            Err(e) => Err(e).context("Failed to read text input"),
-        }
+        self.prompt("Failed to read text input", || {
+            Input::new()
+                .with_prompt(prompt)
+                .default(default)
+                .interact_text()
+        })
     }
 
     fn confirm(&self, prompt: &str, default: bool) -> Result<bool> {
+        self.cancellation.check()?;
         // Check yes_mode first (--yes flag), then TTY
         if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return default
@@ -460,22 +484,16 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Confirm;
 
-        match Confirm::new()
-            .with_prompt(prompt)
-            .default(default)
-            .interact()
-        {
-            Ok(val) => Ok(val),
-            Err(dialoguer::Error::IO(ref io_err))
-                if io_err.kind() == std::io::ErrorKind::Interrupted =>
-            {
-                self.handle_interrupt()
-            }
-            Err(e) => Err(e).context("Failed to read confirmation"),
-        }
+        self.prompt("Failed to read confirmation", || {
+            Confirm::new()
+                .with_prompt(prompt)
+                .default(default)
+                .interact()
+        })
     }
 
     fn select(&self, prompt: &str, options: &[&str]) -> Result<usize> {
+        self.cancellation.check()?;
         // Check yes_mode first (--yes flag), then TTY
         if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return first option (index 0)
@@ -484,18 +502,13 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Select;
 
-        match Select::new().with_prompt(prompt).items(options).interact() {
-            Ok(val) => Ok(val),
-            Err(dialoguer::Error::IO(ref io_err))
-                if io_err.kind() == std::io::ErrorKind::Interrupted =>
-            {
-                self.handle_interrupt()
-            }
-            Err(e) => Err(e).context("Failed to read selection"),
-        }
+        self.prompt("Failed to read selection", || {
+            Select::new().with_prompt(prompt).items(options).interact()
+        })
     }
 
     fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<Option<usize>> {
+        self.cancellation.check()?;
         // Check yes_mode first (--yes flag), then TTY
         if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return first option (index 0)
@@ -504,20 +517,13 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::FuzzySelect;
 
-        match FuzzySelect::new()
-            .with_prompt(prompt)
-            .items(options)
-            .max_length(6) // Show 6 items per page (enables pagination)
-            .interact_opt()
-        {
-            Ok(val) => Ok(val),
-            Err(dialoguer::Error::IO(ref io_err))
-                if io_err.kind() == std::io::ErrorKind::Interrupted =>
-            {
-                self.handle_interrupt()
-            }
-            Err(e) => Err(e).context("Failed to read fuzzy selection"),
-        }
+        self.prompt("Failed to read fuzzy selection", || {
+            FuzzySelect::new()
+                .with_prompt(prompt)
+                .items(options)
+                .max_length(6)
+                .interact_opt()
+        })
     }
 }
 
@@ -537,20 +543,19 @@ impl CommandSession {
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone())
             .with_capabilities(terminal_capabilities.clone());
+        let cancellation = super::process_runtime::Cancellation::default();
         Self {
             multi_progress,
             display_provider,
             terminal_capabilities,
             invocation_provider: LiveInvocationProvider,
-            process_provider: LiveProcessProvider::new(),
-            interactive_provider: LiveInteractiveProvider::new(
-                app_config.yes,
-                app_config.workdir.clone(),
-            ),
+            process_provider: LiveProcessProvider::new().with_cancellation(cancellation.clone()),
+            interactive_provider: LiveInteractiveProvider::new(app_config.yes, cancellation),
             config_provider: LiveConfigProvider::new(app_config),
         }
     }
     pub fn with_cancellation(mut self, cancellation: super::process_runtime::Cancellation) -> Self {
+        self.interactive_provider.cancellation = cancellation.clone();
         self.process_provider.cancellation = cancellation;
         self
     }
@@ -787,7 +792,7 @@ mod tests {
 
     #[test]
     fn live_interactive_provider_uses_defaults_in_non_interactive_mode() {
-        let provider = LiveInteractiveProvider::new(true, None);
+        let provider = LiveInteractiveProvider::new(true, Default::default());
 
         assert_eq!(
             provider
@@ -806,6 +811,50 @@ mod tests {
                 .expect("fuzzy select"),
             Some(0)
         );
+    }
+
+    #[test]
+    fn cancelled_session_prompts_do_not_return_default_authorization() {
+        let cancellation = super::super::process_runtime::Cancellation::default();
+        cancellation.cancel();
+        let session = CommandSession::new(AppConfig {
+            yes: true,
+            ..Default::default()
+        })
+        .with_cancellation(cancellation);
+        let provider = session.interactive();
+        for result in [
+            provider.text_input("text", "default".into()).map(|_| ()),
+            provider.confirm("confirm", true).map(|_| ()),
+            provider.select("select", &["one"]).map(|_| ()),
+            provider.fuzzy_select("fuzzy", &["one".into()]).map(|_| ()),
+        ] {
+            let error = result.unwrap_err();
+            assert!(error.is::<super::super::process_runtime::Interrupted>());
+        }
+    }
+
+    #[test]
+    fn prompt_interruption_retains_the_original_console_error() {
+        for cancelled in [false, true] {
+            let cancellation = super::super::process_runtime::Cancellation::default();
+            let provider = LiveInteractiveProvider::new(false, cancellation.clone());
+            let error = provider
+                .prompt::<()>("Failed to read confirmation", || {
+                    if cancelled {
+                        cancellation.cancel();
+                    }
+                    Err(std::io::Error::other("controlled console read failure").into())
+                })
+                .unwrap_err();
+            let text = format!("{error:#}");
+            assert!(text.contains("controlled console read failure"), "{text}");
+            assert!(text.contains("Failed to read confirmation"), "{text}");
+            assert_eq!(
+                error.is::<super::super::process_runtime::Interrupted>(),
+                cancelled
+            );
+        }
     }
 
     #[cfg(unix)]

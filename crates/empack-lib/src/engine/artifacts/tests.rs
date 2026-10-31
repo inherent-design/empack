@@ -4,6 +4,7 @@ use std::{
     fs,
     io::{Cursor, Write},
 };
+mod headers;
 fn path(name: &str) -> PortableRelPath {
     PortableRelPath::parse(name, PathSyntax::ArchiveMember).unwrap()
 }
@@ -86,6 +87,58 @@ fn all_supported_containers_require_every_expected_file_and_exact_binary_bytes()
         );
     }
 }
+
+#[test]
+fn every_encoder_rejects_omitted_stage_members_before_replacing_candidate_bytes() {
+    use crate::engine::{snapshot::SnapshotLimits, staging::MutableStage};
+    use std::io::{Read, Seek};
+    let cancel = Cancellation::default();
+    // The inventory is declared independently of the deliberately incomplete stage.
+    let expected = BTreeMap::from([
+        (path("first.bin"), content(b"first")),
+        (path("second.bin"), content(b"second")),
+    ]);
+    for omitted in ["first.bin", "second.bin"] {
+        let mut stage = MutableStage::empty().unwrap();
+        for (name, bytes) in [
+            ("first.bin", b"first".as_slice()),
+            ("second.bin", b"second"),
+        ] {
+            if name != omitted {
+                stage
+                    .write(&path(name), &mut &bytes[..], bytes.len() as u64, &cancel)
+                    .unwrap();
+            }
+        }
+        let mut stage = stage.freeze(SnapshotLimits::default(), &cancel).unwrap();
+        for format in [
+            DistributionArchive::Zip,
+            DistributionArchive::TarGz,
+            DistributionArchive::SevenZip,
+        ] {
+            let mut output = tempfile::tempfile().unwrap();
+            output.write_all(b"prior candidate").unwrap();
+            let error = write_archive(
+                &mut stage,
+                &mut output,
+                format,
+                &expected,
+                ArchiveLimits::default(),
+                &cancel,
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("omits expected files"),
+                "{error:#}"
+            );
+            output.rewind().unwrap();
+            let mut bytes = Vec::new();
+            output.read_to_end(&mut bytes).unwrap();
+            assert_eq!(bytes, b"prior candidate");
+        }
+    }
+}
+
 fn zip(entries: &[(&str, &[u8], u32)]) -> Cursor<Vec<u8>> {
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for (name, bytes, mode) in entries {

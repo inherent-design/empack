@@ -1,6 +1,6 @@
 # Publication and recovery
 
-Contract for v0.8.0-beta. Callable types and signatures are defined in the
+Native publication contract for the v0.8.4-beta development target. Callable types and signatures are defined in the
 [publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
 
 ## Journaled publication and recovery
@@ -10,6 +10,15 @@ Contract for v0.8.0-beta. Callable types and signatures are defined in the
 Keep the **authoritative operation journal in host-private application state**, bound to native project identity and publication operation ID, rather than trusting a file supplied inside a downloaded project. The exact OS state directory is selected by the platform adapter. Project-local continuation files may be discoverable hints, but loading one does not establish approval or authorize deletion.
 
 Candidate/preimage storage needed for recovery has explicit retention and is not ordinary evictable cache. Protect host-state permissions, bound parsing, and bind records to the actual root identity. A same-user malicious native program is outside the security boundary, but a malicious imported project should not be able to manufacture a previously approved operation.
+
+This development target uses publication journal schema 5, creation journal
+schema 2 and preparation-retention schema 2. Each requires persistent identity
+evidence. Older internal formats are unsupported; readers do not reinterpret,
+migrate or delete them. Preserve incompatible interrupted-operation data and use
+an executable that supports it to resolve that operation before selecting new
+state. A format error does not establish that a project is unchanged or that
+retained recovery copies are disposable. Current-format restart, finish and
+restore retain their normal guarantees across device reassignment.
 
 ### Publication plan
 
@@ -42,6 +51,29 @@ and `Engine::start`. Public receipts and recovery inspection expose evidence, no
 an alternate publication capability.
 
 If the base changed, return a conflict before live mutation. Never silently publish against a new base. A new preparation may reuse retained verified content, but must re-plan and re-authorize any changed effects.
+
+### New project roots
+
+New-root publication accepts a verified, complete create-only file plan containing
+both authoring and lock documents. It stages one owned sibling directory and uses
+a no-replace rename; an occupied or replaced destination cannot be adopted merely
+because its bytes match. Recovery verifies the retained candidate's paths, contents,
+attributes and membership without rerunning tools.
+
+New schema-2 creation journals retain persistent parent and candidate identities.
+The parent association is established before selecting the creation index, and the
+candidate association is durable before index intent. Original native labels remain
+physical storage addresses; read-only lookup verifies the persistent association
+and retains the original index, root-state directory and locks. It creates no state.
+Missing or inconsistent candidate associations and mixed identity formats refuse
+recovery rather than creating new authority from a journal.
+
+Schema-1 journals keep their original strict native checks. Inspection and recovery
+do not silently convert them. Persistent journal evidence is separate from a fresh
+recovery approval: prepared recovery captures the live parent and candidate/root
+identities, rechecks them before effects, and refuses a stale native observation.
+A completed creation remains readable after ordinary project edits; it does not
+require its original file inventory to remain the current project inventory.
 
 ### Durable protocol
 

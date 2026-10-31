@@ -4,12 +4,23 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Reviewed release target to build and test without publishing
+        type: string
+        required: true
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   BINARY_NAME: empack
+  RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
 jobs:
   build:
@@ -48,14 +59,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - id: version
         shell: bash
-        run: echo "clean=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: echo "clean=${RELEASE_VERSION#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Set version from tag
+      - name: Stamp reviewed workspace versions without changing dependencies
         shell: bash
-        run: sed -i.bak "s/^version = .*/version = \"${{ steps.version.outputs.clean }}\"/" Cargo.toml
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.clean }}
+        run: |
+          python3 scripts/prepare-release.py --version "$RELEASE_VERSION" --output .git/release-inputs.json
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          record = json.loads(Path(".git/release-inputs.json").read_text())
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              print("GIT_HASH=" + record["source_revision"], file=output)
+              print("BUILD_DATE=" + record["build_date"], file=output)
+          PYTHON
 
       - uses: ./.github/actions/rust-toolchain
         with:
@@ -65,21 +89,28 @@ jobs:
 
       - name: Install cross
         if: ${{ matrix.use_cross }}
-        uses: taiki-e/install-action@cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
 
-      - name: Build with cargo
-        if: ${{ !matrix.use_cross }}
+      - name: Build and audit ordinary product
+        shell: bash
         env:
-          GIT_HASH: ${{ github.sha }}
-          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: cargo build --release -p empack --target ${{ matrix.target }}
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILDER: ${{ matrix.use_cross && 'cross' || 'cargo' }}
+        run: |
+          compilation=".git/product-build/${{ github.run_id }}-${{ github.run_attempt }}"
+          python3 scripts/release-artifacts.py build --target "$BUILD_TARGET" --builder "$BUILDER" --output "$compilation"
+          echo "PRODUCT_COMPILATION=$compilation" >> "$GITHUB_ENV"
 
-      - name: Build with cross
-        if: ${{ matrix.use_cross }}
-        env:
-          GIT_HASH: ${{ github.sha }}
-          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-        run: cross build --release -p empack --target ${{ matrix.target }}
+      - name: Retain compilation diagnostics even when no archive exists
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: product-compilation-${{ matrix.target }}
+          path: .git/product-build/${{ github.run_id }}-${{ github.run_attempt }}/
+          include-hidden-files: true
+          if-no-files-found: warn
 
       - name: Package archive (Unix)
         if: ${{ matrix.archive_ext == 'tar.gz' }}
@@ -89,7 +120,7 @@ jobs:
           rm -rf package
           mkdir -p package
           cp "target/${{ matrix.target }}/release/${BINARY_NAME}${{ matrix.binary_ext }}" "package/${BINARY_NAME}${{ matrix.binary_ext }}"
-          tar -czf "$archive" -C package .
+          COPYFILE_DISABLE=1 tar -czf "$archive" -C package .
           echo "ARCHIVE_NAME=$archive" >> "$GITHUB_ENV"
           echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
 
@@ -106,15 +137,359 @@ jobs:
           "ARCHIVE_NAME=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ARCHIVE_PATH=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Bind built executable, archive and immutable inputs
+        shell: bash
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILDER: ${{ matrix.use_cross && 'cross' || 'cargo' }}
+        run: python3 scripts/release-artifacts.py record --inputs .git/release-inputs.json --archive "$ARCHIVE_PATH" --target "$BUILD_TARGET" --builder "$BUILDER" --compilation "$PRODUCT_COMPILATION" --output .git/release-build
+
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.ARCHIVE_NAME }}
-          path: ${{ env.ARCHIVE_PATH }}
+          name: release-build-${{ matrix.target }}
+          path: .git/release-build/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  test-archives:
+    name: Execute archive ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-26-intel
+          - target: aarch64-apple-darwin
+            os: macos-26
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-build-${{ matrix.target }}
+          path: .git/release-build
+      - name: Run fixed CLI journeys against the extracted final archive
+        shell: bash
+        env:
+          EXECUTION_TARGET: ${{ matrix.target }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          root = Path(".git/release-build")
+          build = json.loads((root / "build.json").read_text())
+          subprocess.run([sys.executable, "scripts/check-release-archive.py",
+              "--archive", str((root / build["archive"]["name"]).resolve()),
+              "--sha256", build["archive"]["sha256"], "--version", build["version"],
+              "--target", os.environ["EXECUTION_TARGET"]], check=True)
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-test-${{ matrix.target }}
+          path: target/verification-packages/
+          if-no-files-found: error
+
+  archive-gate:
+    name: Verify every final archive and stage the same bytes
+    needs: [build, test-archives]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      evidence_sha256: ${{ steps.admit.outputs.evidence_sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: .git/release-evidence
+      - name: Revalidate all five build and execution records
+        id: admit
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+        run: |
+          python3 scripts/release-artifacts.py gate --artifacts .git/release-evidence --version "${RELEASE_VERSION#v}" --revision "$RELEASE_REVISION" --output .git/publish
+          python3 - <<'PYTHON'
+          import hashlib, os
+          from pathlib import Path
+          digest = hashlib.sha256(Path(".git/publish/archive-evidence.json").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("evidence_sha256=" + digest, file=output)
+          PYTHON
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checked-native-archives
+          path: .git/publish/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  consumer:
+    name: Qualify supported consumer parser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prism-parser
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: consumer-prism
+          path: .git/prism.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  auxiliary:
+    name: Qualify telemetry on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - run: python scripts/verify.py python --output .git/candidate-python-native
+        if: runner.os != 'Linux'
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() && runner.os != 'Linux' }}
+        with:
+          name: candidate-python-native-${{ matrix.os }}
+          path: |
+            .git/candidate-python-native/*/receipt.json
+            .git/candidate-python-native/*/inventory.json
+            .git/candidate-python-native/*/events.json
+            .git/candidate-python-native/*/*.log
+          include-hidden-files: true
+          if-no-files-found: error
+      - run: python scripts/verify.py doctest --test-features minimal --output .git/candidate-doctest/minimal
+      - run: python scripts/verify.py doctest --test-features all --output .git/candidate-doctest/all
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: candidate-doctest-${{ matrix.os }}
+          path: .git/candidate-doctest/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Build a separate feature variant and retain its execution proof
+        shell: bash
+        run: python3 scripts/check-auxiliary-build.py --version "${RELEASE_VERSION#v}" --output .git/auxiliary
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: candidate-auxiliary-${{ matrix.os }}
+          path: |
+            .git/auxiliary/*/build.json
+            .git/auxiliary/*/compile.json
+            .git/auxiliary/*/product-build-messages.jsonl
+            .git/auxiliary/*/product-metadata.json
+            .git/auxiliary/*/product-build-audit.json
+            .git/auxiliary/*/build.stdout
+            .git/auxiliary/*/metadata.stdout
+            .git/auxiliary/*/empack*
+            .git/auxiliary/*/*.log
+            .git/auxiliary/*/suite/**/*.json
+            .git/auxiliary/*/suite/**/*.xml
+            .git/auxiliary/*/suite/**/*.log
+          include-hidden-files: true
+          if-no-files-found: error
+
+  candidate-execution:
+    name: Exercise native and live candidate on ${{ matrix.os }}
+    needs: [archive-gate, auxiliary]
+    if: ${{ always() && needs.archive-gate.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-26
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v7
+        if: runner.os == 'Linux'
+        with:
+          version: "0.13.5"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
+      - uses: actions/setup-java@v5
+        id: java8
+        with:
+          distribution: zulu
+          java-version: "8"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/download-artifact@v8
+        with:
+          name: checked-native-archives
+          path: .git/candidate-payload
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-auxiliary-${{ matrix.os }}
+          path: .git/candidate-auxiliary
+      - name: Run fixed selections without rebuilding either product
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+          EMPACK_KEY_CURSEFORGE: ${{ secrets.EMPACK_KEY_CURSEFORGE }}
+          EMPACK_TEST_JAVA8_HOME: ${{ steps.java8.outputs.path }}
+        run: |
+          auxiliary_records=(.git/candidate-auxiliary/*/build.json)
+          test "${#auxiliary_records[@]}" -eq 1
+          python3 scripts/check-candidate-execution.py --payload .git/candidate-payload --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --auxiliary "${auxiliary_records[0]}" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate-execution
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: candidate-execution-${{ matrix.target }}
+          path: .git/candidate-execution/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  candidate-gate:
+    name: Qualify complete candidate obligations
+    needs: [archive-gate, consumer, auxiliary, candidate-execution]
+    # A failed/blocked execution still supplies observations for the report.
+    if: ${{ always() && needs.archive-gate.result == 'success' && needs.consumer.result == 'success' && needs.auxiliary.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      qualification_sha256: ${{ steps.qualify.outputs.qualification_sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: checked-native-archives
+          path: .git/candidate-payload
+      - uses: actions/download-artifact@v8
+        with:
+          name: consumer-prism
+          path: .git/candidate-consumer
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - uses: ./.github/actions/rust-toolchain
+      - run: python3 scripts/verify.py python --output .git/candidate-python
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-python-native-*
+          path: .git/candidate-native-python
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-auxiliary-*
+          path: .git/candidate-auxiliary
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-doctest-*
+          path: .git/candidate-doctest
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-execution-*
+          path: .git/candidate-execution
+      - name: Require native and consumer evidence for the exact tested payload
+        id: qualify
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+        run: |
+          python_receipts=(.git/candidate-python/*/receipt.json .git/candidate-native-python/candidate-python-native-*/*/receipt.json)
+          test "${#python_receipts[@]}" -eq 3
+          execution_records=(.git/candidate-execution/candidate-execution-*/*/execution.json)
+          test "${#execution_records[@]}" -eq 3
+          auxiliary_records=(.git/candidate-auxiliary/candidate-auxiliary-*/*/build.json)
+          test "${#auxiliary_records[@]}" -eq 3
+          doctest_records=(.git/candidate-doctest/candidate-doctest-*/*/*/receipt.json)
+          test "${#doctest_records[@]}" -eq 6
+          doctest_args=()
+          for record in "${doctest_records[@]}"; do doctest_args+=(--doctest "$record"); done
+          auxiliary_args=()
+          for record in "${auxiliary_records[@]}"; do auxiliary_args+=(--auxiliary "$record"); done
+          python_args=()
+          for record in "${python_receipts[@]}"; do python_args+=(--tooling "$record"); done
+          execution_args=()
+          for record in "${execution_records[@]}"; do execution_args+=(--execution "$record"); done
+          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" "${doctest_args[@]}" "${python_args[@]}" "${execution_args[@]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python3 - <<'PYTHON'
+          import hashlib, os
+          from pathlib import Path
+          digest = hashlib.sha256(Path(".git/candidate.json").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("qualification_sha256=" + digest, file=output)
+          PYTHON
+      - name: Summarize qualification and missing evidence
+        if: always()
+        run: |
+          if [ -f .git/candidate.md ]; then
+            cat .git/candidate.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: candidate-qualification
+          path: |
+            .git/candidate.json
+            .git/candidate.md
+            .git/candidate-python/*/receipt.json
+            .git/candidate-python/*/inventory.json
+            .git/candidate-python/*/events.json
+            .git/candidate-python/*/*.log
+          include-hidden-files: true
           if-no-files-found: error
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [archive-gate, candidate-gate]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 60
 
@@ -146,8 +521,28 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
+          name: checked-native-archives
           path: dist
-          merge-multiple: true
+
+      - name: Recheck payload before publication
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+        run: python3 scripts/release-artifacts.py verify-payload --directory dist --version "${RELEASE_VERSION#v}" --revision "$RELEASE_REVISION" --evidence-sha256 "$EVIDENCE_SHA256"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-qualification
+          path: .git/qualification
+
+      - name: Recheck candidate qualification before publication
+        shell: bash
+        env:
+          RELEASE_REVISION: ${{ github.sha }}
+          ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+          QUALIFICATION_SHA256: ${{ needs.candidate-gate.outputs.qualification_sha256 }}
+        run: python3 scripts/qualify-release.py verify --record .git/qualification/candidate.json --sha256 "$QUALIFICATION_SHA256" --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}"
 
       - name: Generate release notes
         id: changelog

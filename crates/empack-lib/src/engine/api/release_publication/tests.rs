@@ -189,6 +189,33 @@ fn signing_key_selection_rejects_project_sources_and_wrong_kinds() {
 
 #[tokio::test]
 async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
+    use super::super::tests::inventory as snapshot;
+    use crate::engine::{
+        acquisition::{DownloadRequest, TransferError},
+        content::cache::ContentCache,
+        diagnostics::{Diagnostic, DiagnosticCode},
+        runtime::OperationRuntime,
+    };
+    use sha2::Digest;
+    use std::sync::Arc;
+
+    async fn publish(
+        engine: &Engine,
+        prepared: PreparedOperation,
+    ) -> Arc<OperationOutcome<ExecutionOutcome>> {
+        let grant = ExecutionGrant {
+            plan: prepared.view().plan(),
+            network: NetworkPermission::Allow,
+            run_installer: false,
+            run_runtime: false,
+            replacement: prepared.view().replacement(),
+        };
+        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
+        let result = operation.wait().await;
+        assert!(engine.release_completed(operation.id()));
+        result
+    }
+
     let root = tempfile::tempdir().unwrap();
     let input = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
@@ -197,7 +224,6 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     let mut shared = document.files[0].clone();
     shared.key = "shared-config".into();
     shared.destination = "config/another.toml".into();
-    use sha2::Digest;
     shared.assertions.push(SourceDigest {
         algorithm: "sha512".into(),
         value: sha2::Sha512::digest(b"settings")
@@ -208,7 +234,12 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     document.files.push(shared);
     let release = DecodedRelease::encode(document).unwrap();
     fs::write(input.path().join("release.json"), release.bytes()).unwrap();
-    let (mut engine, _) = super::super::tests::engine(state.path().join("state"));
+    fs::write(
+        root.path().join("publisher-notes"),
+        b"unrelated author work",
+    )
+    .unwrap();
+    let (mut engine, governor) = super::super::tests::engine(state.path().join("state"));
     let Preparation::Ready(prepared) = engine
         .prepare(root.path().to_owned(), request(input.path()))
         .await
@@ -220,27 +251,86 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     let mut server = mockito::Server::new_async().await;
     engine.transport = HttpAcquisition::for_loopback_tests()
         .with_test_origin("https://publisher.test", &server.url());
+
+    // A verified warm cache is useful acquisition evidence, never proof of hosting.
+    let cache = ContentCache::new(state.path().join("cache"), Default::default()).unwrap();
+    engine = engine.with_content_cache(cache.clone());
+    let warm = server
+        .mock("GET", "/cache-prime")
+        .with_body("settings")
+        .expect(1)
+        .create_async()
+        .await;
+    let no_read = server
+        .mock("GET", "/must-not-fetch")
+        .expect(0)
+        .create_async()
+        .await;
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let transport = engine.transport.clone();
+    let expected = release
+        .document()
+        .files
+        .iter()
+        .find(|file| file.key == "shared-config")
+        .unwrap()
+        .expected()
+        .unwrap();
+    let limits = engine.config.transfer;
+    let mut operation = runtime
+        .start(move |mut scope| async move {
+            let result: anyhow::Result<()> = async {
+                let request = |path: &str| -> anyhow::Result<DownloadRequest> {
+                    Ok(DownloadRequest {
+                        alternatives: NonEmpty::new(vec![format!(
+                            "https://publisher.test/{path}"
+                        )])?,
+                        expected: expected.clone(),
+                        limits,
+                        evidence: SourceEvidencePolicy::Compatibility,
+                        initial: InitialObservation::RequireEvidence,
+                    })
+                };
+                drop(
+                    transport
+                        .clone()
+                        .with_execution_cache(cache.clone())
+                        .acquire(&mut scope, request("cache-prime")?)
+                        .await?,
+                );
+                let content = transport
+                    .with_cache_lookup(cache)
+                    .acquire(&mut scope, request("must-not-fetch")?)
+                    .await?;
+                assert_eq!(content.lease().len(), 8);
+                Ok(())
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let result = operation.wait().await;
+    match &*result {
+        OperationOutcome::Completed(Ok(())) => (),
+        OperationOutcome::Completed(Err(error)) => panic!("cache setup: {error:#}"),
+        _ => panic!("cache setup did not retire successfully"),
+    }
+    assert!(runtime.release_completed(operation.id()));
+    drop((result, operation));
+    runtime.shutdown().await;
+    warm.assert_async().await;
+    no_read.assert_async().await;
+
+    let envelope_path = format!("/releases/{}/release.json", release.id());
+    let asset_path = format!("/releases/{}/assets/config", release.id());
+    let staged_asset = root
+        .path()
+        .join(format!("dist/releases/{}/assets/config", release.id()));
     let encoded = fs::read(
         root.path()
             .join(format!("dist/releases/{}/release.json", release.id())),
     )
     .unwrap();
-    let envelope = server
-        .mock(
-            "GET",
-            format!("/releases/{}/release.json", release.id()).as_str(),
-        )
-        .with_body(encoded)
-        .expect(2)
-        .create_async()
-        .await;
-    let asset_path = format!("/releases/{}/assets/config", release.id());
-    let good = server
-        .mock("GET", asset_path.as_str())
-        .with_body("settings")
-        .expect(1)
-        .create_async()
-        .await;
     let now: i64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -256,6 +346,8 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
         keys: vec![SigningKey::from_bytes(&[27; 32])],
         previous_keys: vec![],
     };
+    let original_inputs = snapshot(input.path());
+    let initial = snapshot(root.path());
     let Preparation::Ready(prepared) = engine
         .prepare(root.path().to_owned(), channel(1, now + 3600))
         .await
@@ -271,90 +363,217 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
         replacement: prepared.view().replacement(),
     };
     assert!(prepared.authorize(rejected).is_err());
-    for (sequence, success) in [(1, true), (2, false)] {
-        let bad = if !success {
-            Some(
-                server
-                    .mock("GET", asset_path.as_str())
-                    .with_body("wrongcfg")
-                    .expect(1)
-                    .create_async()
-                    .await,
-            )
-        } else {
-            None
-        };
+    assert_eq!(snapshot(root.path()), initial);
+    assert!(!root.path().join("dist/channels").exists());
+
+    let envelope = server
+        .mock("GET", envelope_path.as_str())
+        .with_body(encoded.clone())
+        .expect(1)
+        .create_async()
+        .await;
+    let asset = server
+        .mock("GET", asset_path.as_str())
+        .with_body("settings")
+        .expect(1)
+        .create_async()
+        .await;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), channel(1, now + 3600))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let result = publish(&engine, prepared).await;
+    match &*result {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(
+            ExecutionReceipt::ReleasePublication(receipt),
+        )) => {
+            assert_eq!(receipt.release, release.id());
+            assert_eq!(receipt.channel.as_deref(), Some("stable"));
+            assert_eq!(receipt.publication.changed_files, 1);
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("channel publication did not complete"),
+    }
+    drop(result);
+    envelope.assert_async().await;
+    asset.assert_async().await;
+    envelope.remove_async().await;
+    asset.remove_async().await;
+    let pointer_path = root.path().join("dist/channels/stable.json");
+    let pointer = fs::read(&pointer_path).unwrap();
+    let trust = trust::PublisherTrust::enroll(
+        "published".into(),
+        "https://publisher.test",
+        vec![SigningKey::from_bytes(&[27; 32]).verifying_key()],
+    )
+    .unwrap();
+    let authenticated = trust
+        .channel(
+            &pointer,
+            "stable",
+            now,
+            &semver::Version::parse("0.8.0-beta").unwrap(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(authenticated.document().sequence, 1);
+    assert_eq!(authenticated.document().release.id, release.id());
+    assert_eq!(
+        authenticated.document().release.maximum_bytes,
+        encoded.len() as u64
+    );
+    let before = snapshot(root.path());
+    let host = snapshot(state.path());
+
+    for (case, envelope_status, body, asset_status, asset_body) in [
+        (
+            "wrong-envelope",
+            200,
+            b"wrong envelope".to_vec(),
+            200,
+            "settings",
+        ),
+        ("missing-envelope", 404, vec![], 200, "settings"),
+        ("encoded-envelope", 200, encoded.clone(), 200, "settings"),
+        ("wrong-asset", 200, encoded.clone(), 200, "wrongcfg"),
+        ("missing-asset", 200, encoded.clone(), 404, ""),
+        ("oversized-asset", 200, encoded.clone(), 200, "settings!"),
+    ] {
+        let needs_asset = matches!(case, "wrong-asset" | "missing-asset" | "oversized-asset");
+        let mut envelope = server
+            .mock("GET", envelope_path.as_str())
+            .with_status(envelope_status)
+            .with_body(body)
+            .expect(1);
+        if case == "encoded-envelope" {
+            envelope = envelope.with_header("content-encoding", "gzip");
+        }
+        let envelope = envelope.create_async().await;
+        let asset = server
+            .mock("GET", asset_path.as_str())
+            .with_status(asset_status)
+            .with_body(asset_body)
+            .expect(usize::from(needs_asset))
+            .create_async()
+            .await;
         let Preparation::Ready(prepared) = engine
-            .prepare(root.path().to_owned(), channel(sequence, now + 3600))
+            .prepare(root.path().to_owned(), channel(2, now + 3600))
             .await
             .unwrap()
         else {
             panic!()
         };
-        let grant = ExecutionGrant {
-            plan: prepared.view().plan(),
-            network: NetworkPermission::Allow,
-            run_installer: false,
-            run_runtime: false,
-            replacement: prepared.view().replacement(),
+        let result = publish(&engine, prepared).await;
+        let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) =
+            &*result
+        else {
+            panic!("{case} unexpectedly published or lost its failure")
         };
-        let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
-        let result = operation.wait().await;
-        assert_eq!(
-            matches!(
-                &*result,
-                OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+        match case {
+            "wrong-envelope" => assert!(
+                error
+                    .to_string()
+                    .contains("Hosted release envelope differs")
             ),
-            success
-        );
-        if let Some(mock) = bad {
-            mock.assert_async().await;
+            "missing-envelope" | "missing-asset" => assert!(
+                matches!(
+                    error.downcast_ref::<TransferError>(),
+                    Some(TransferError::NotFound)
+                ),
+                "{case}: {error:#}"
+            ),
+            "encoded-envelope" => assert!(
+                matches!(
+                    error.downcast_ref::<TransferError>(),
+                    Some(TransferError::InvalidLocator)
+                ),
+                "{error:#}"
+            ),
+            "wrong-asset" => assert_eq!(
+                error.downcast_ref::<Diagnostic>().unwrap().code,
+                DiagnosticCode::DigestMismatch
+            ),
+            "oversized-asset" => assert!(
+                matches!(
+                    error.downcast_ref::<TransferError>(),
+                    Some(TransferError::ByteLimit)
+                ),
+                "{error:#}"
+            ),
+            _ => unreachable!(),
         }
         drop(result);
-        engine.release_completed(operation.id());
-        let pointer = fs::read(root.path().join("dist/channels/stable.json")).unwrap();
-        let trust = trust::PublisherTrust::enroll(
-            "published".into(),
-            "https://publisher.test",
-            vec![SigningKey::from_bytes(&[27; 32]).verifying_key()],
-        )
-        .unwrap();
-        assert_eq!(
-            trust
-                .channel(
-                    &pointer,
-                    "stable",
-                    now,
-                    &semver::Version::parse("0.8.0-beta").unwrap(),
-                    None
-                )
-                .unwrap()
-                .document()
-                .sequence,
-            1
-        );
+        envelope.assert_async().await;
+        asset.assert_async().await;
+        envelope.remove_async().await;
+        asset.remove_async().await;
+        assert_eq!(snapshot(root.path()), before, "{case}");
+        assert_eq!(snapshot(state.path()), host, "{case}");
+        assert_eq!(snapshot(input.path()), original_inputs);
+        assert_eq!(fs::read(&pointer_path).unwrap(), pointer);
     }
-    assert!(
-        engine
-            .prepare(root.path().to_owned(), channel(1, now + 7200))
-            .await
-            .is_err()
+
+    // Successful remote checks cannot authorize publishing a stale local candidate.
+    let envelope = server
+        .mock("GET", envelope_path.as_str())
+        .with_body(encoded)
+        .expect(1)
+        .create_async()
+        .await;
+    let asset = server
+        .mock("GET", asset_path.as_str())
+        .with_body("settings")
+        .expect(1)
+        .create_async()
+        .await;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), channel(2, now + 3600))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    fs::write(&staged_asset, b"lateedit").unwrap();
+    let edited = snapshot(root.path());
+    let result = publish(&engine, prepared).await;
+    let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) = &*result
+    else {
+        panic!("late source change was not refused")
+    };
+    assert_eq!(
+        error.downcast_ref::<Diagnostic>().unwrap().code,
+        DiagnosticCode::StaleSnapshot
     );
-    assert!(
-        engine
-            .prepare(root.path().to_owned(), channel(0, now + 3600))
-            .await
-            .is_err()
-    );
-    assert!(
-        engine
-            .prepare(root.path().to_owned(), channel(2, now - 1))
-            .await
-            .is_err()
-    );
+    drop(result);
+    assert_eq!(snapshot(root.path()), edited);
+    assert_eq!(snapshot(state.path()), host);
+    assert_eq!(snapshot(input.path()), original_inputs);
+    assert_eq!(fs::read(&pointer_path).unwrap(), pointer);
     envelope.assert_async().await;
-    good.assert_async().await;
+    asset.assert_async().await;
+    fs::write(&staged_asset, b"settings").unwrap();
+
+    for (sequence, expiry, diagnostic) in [
+        (1, now + 7200, "Channel sequence must advance"),
+        (0, now + 3600, "Invalid channel sequence or expiry"),
+        (2, now - 1, "Channel has expired"),
+    ] {
+        let error = engine
+            .prepare(root.path().to_owned(), channel(sequence, expiry))
+            .await
+            .err()
+            .expect("invalid channel metadata was accepted");
+        assert!(format!("{error:#}").contains(diagnostic));
+        assert_eq!(snapshot(root.path()), before);
+        assert_eq!(snapshot(state.path()), host);
+    }
     engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
 
 #[test]

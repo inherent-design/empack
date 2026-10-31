@@ -57,9 +57,11 @@ async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
     assert_eq!(documents(root.path()), before);
     assert!(!root.path().join("dist").exists());
     assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let record_path = records(&state).pop().unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(&fs::read(&record_path).unwrap()).unwrap();
+    assert_eq!(wire["schema"], 5);
     owner.shutdown().await;
     drop(owner);
-    let record_path = records(&state).pop().unwrap();
     let record_before = fs::read(&record_path).unwrap();
     let (owner, governor) = engine(state.clone());
     let resumed = owner
@@ -106,6 +108,45 @@ async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
     owner.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn obsolete_build_schemas_are_refused_without_rewriting_saved_work() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let state = host.path().join("state");
+    let (owner, governor) = engine(state.clone());
+    suspend_first(&owner, root.path()).await;
+    let path = records(&state).pop().unwrap();
+    let current = fs::read(&path).unwrap();
+    let before = documents(root.path());
+    for schema in [0, 4, 6] {
+        let mut wire: serde_json::Value = serde_json::from_slice(&current).unwrap();
+        wire["schema"] = schema.into();
+        let bytes = serde_json::to_vec(&wire).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let error = owner
+            .resume_saved_build(root.path().to_path_buf())
+            .await
+            .err()
+            .expect("an obsolete format cannot resume");
+        assert!(format!("{error:#}").contains("Unsupported pending build schema"));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(documents(root.path()), before);
+        assert!(!root.path().join("dist").exists());
+    }
+    fs::write(&path, &current).unwrap();
+    assert!(matches!(
+        owner
+            .resume_saved_build(root.path().to_path_buf())
+            .await
+            .unwrap(),
+        SavedBuildResume::Prepared(_)
+    ));
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
 #[tokio::test]
 async fn stale_and_missing_saved_build_inspection_is_read_only() {
     for changed in ["intent", "bindings", "lock", "source"] {

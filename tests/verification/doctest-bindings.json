@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "status": "rustdoc identities classified; compile-only examples and constructor refusals do not establish runtime execution",
+  "tests": [
+    {
+      "id": "doctest::crates/empack-core/src/path.rs - path::PortableRelPath (line 20)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ],
+      "mode": "compile_fail"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 23)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-008"
+      ],
+      "mode": "run"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 66)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-008"
+      ],
+      "mode": "run"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 98)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-008"
+      ],
+      "mode": "run"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::pairs (line 41)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-008"
+      ],
+      "mode": "run"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::table (line 26)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-008"
+      ],
+      "mode": "run"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/engine/api.rs - engine::api::Engine (line 770)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ],
+      "mode": "compile"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 12)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ],
+      "mode": "compile_fail"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 15)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ],
+      "mode": "run"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 6)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ],
+      "mode": "compile_fail"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 9)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087",
+        "UX-086"
+      ],
+      "mode": "compile_fail"
+    },
+    {
+      "id": "doctest::crates/empack-lib/src/lib.rs - (line 18)",
+      "ignored": false,
+      "boundary": "U",
+      "requirements": [
+        "UX-087"
+      ],
+      "mode": "compile"
+    }
+  ]
+}

@@ -79,7 +79,17 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     };
     drop(preview);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
-    apply(&engine, root.path(), enroll(&key)).await;
+    let enrolled = apply(&engine, root.path(), enroll(&key)).await;
+    let public: String = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(enrolled.pack, "fixture");
+    assert_eq!(enrolled.channel, "stable");
+    assert_eq!(enrolled.url, "https://publisher.test/stable.json");
+    assert_eq!(enrolled.keys, [public]);
     assert!(
         engine
             .prepare(root.path().to_owned(), enroll(&next))
@@ -90,6 +100,30 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     engine.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     let (engine, governor) = super::super::tests::engine(host.path().join("state"));
+    let persisted = fs::read(root.path().join(".empack/subscription.json")).unwrap();
+    let Preparation::Ready(reopened) = engine
+        .prepare(
+            root.path().to_owned(),
+            SubscriptionRequest::ReplaceKeys {
+                keys: vec![key.verifying_key()],
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let OperationPreview::Subscription(view) = reopened.view() else {
+        panic!()
+    };
+    assert_eq!(view.record.pack, "fixture");
+    assert_eq!(view.record.channel, "stable");
+    assert_eq!(view.record.url, "https://publisher.test/stable.json");
+    drop(reopened);
+    assert_eq!(
+        fs::read(root.path().join(".empack/subscription.json")).unwrap(),
+        persisted
+    );
     assert!(
         engine
             .prepare(root.path().to_owned(), observe(&key, 6, &"a".repeat(64)))

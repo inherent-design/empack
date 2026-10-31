@@ -26,6 +26,11 @@ runs:
             print("channel=" + toolchain["channel"], file=output)
             print("components=" + ",".join(dict.fromkeys(components)), file=output)
         PYTHON
+    - name: Configure the native Windows compiler environment
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      with:
+        arch: x64
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ steps.pin.outputs.channel }}

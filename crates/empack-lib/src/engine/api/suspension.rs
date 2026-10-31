@@ -283,7 +283,7 @@ impl Engine {
         let PreparedKind::Build(build) = &**prepared.data else {
             unreachable!()
         };
-        if build.workspace.observations().fingerprint() != value.fingerprint {
+        if build.workspace.observations().fingerprint()? != value.fingerprint {
             return Ok(SavedBuildResume::Stale);
         }
         let expected: BTreeMap<_, _> = build
@@ -372,8 +372,8 @@ async fn suspend(
         ..Default::default()
     })?;
     let mut record = record::Record {
-        schema: 4,
-        fingerprint: build.workspace.observations().fingerprint(),
+        schema: 5,
+        fingerprint: build.workspace.observations().fingerprint()?,
         documents: store::documents(build.workspace.observations())?,
         recipe: record::SavedRecipe::from(&build.request),
         files: vec![],

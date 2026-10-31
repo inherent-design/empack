@@ -103,6 +103,8 @@ async fn local_reads_enforce_source_evidence_limits_and_regular_file_selection()
         "strong",
         "directory",
         "relative",
+        "missing-file",
+        "missing-parent",
     ] {
         let mut input = request(source.clone());
         match mode {
@@ -120,13 +122,30 @@ async fn local_reads_enforce_source_evidence_limits_and_regular_file_selection()
             "strong" => input.evidence = SourceEvidencePolicy::StrongSourceRequired,
             "directory" => input.source = root.path().join("folder"),
             "relative" => input.source = "file".into(),
+            "missing-file" => input.source = root.path().join("missing.bin"),
+            "missing-parent" => input.source = root.path().join("absent/missing.bin"),
             _ => unreachable!(),
         }
         if mode == "directory" {
             fs::create_dir(&input.source).unwrap();
         }
+        let selected_path = input.source.clone();
         let (outcome, governor) = run(input).await;
         assert!(!failed(&outcome).is_empty(), "{mode}");
+        if mode.starts_with("missing-") {
+            let OperationOutcome::Completed(Err(error)) = &*outcome else {
+                panic!("expected missing local source");
+            };
+            assert!(format!("{error:#}").contains(&format!(
+                "Cannot capture local source '{}'",
+                selected_path.display()
+            )));
+            assert!(error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            }));
+        }
         assert_eq!(governor.status().reserved.scratch_bytes, 0);
         assert_eq!(governor.status().reserved.open_files, 0);
     }

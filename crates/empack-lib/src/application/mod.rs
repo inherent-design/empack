@@ -16,3 +16,4 @@ pub use config::AppConfig;
 pub use exit::{EmpackExitCode, classify_error};
 
 pub mod process_runtime;
+mod recovery_guidance;

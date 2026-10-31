@@ -168,3 +168,126 @@ fn adoption_preserves_existing_root_roles_and_adds_only_new_roots() {
     );
     assert!(adopted.project().intent().roots.contains_key(&key("new")));
 }
+
+fn with_incompatibility(
+    project: &ResolvedProject,
+    from: &str,
+    target: &str,
+    selection: Option<&str>,
+) -> ResolvedProject {
+    let mut lock = project.lock().clone();
+    lock.dependencies
+        .get_mut(&key(from))
+        .unwrap()
+        .incompatibilities
+        .push(ProviderIncompatibility {
+            project: Some(ProviderProjectId::Modrinth(
+                ModrinthProjectId::parse(target).unwrap(),
+            )),
+            selection: selection.map(|version| {
+                PinSelector::ModrinthVersion(ModrinthVersionId::parse(version).unwrap())
+            }),
+        });
+    ResolvedProject::validate(
+        project.intent().clone(),
+        lock,
+        project.lock().intent_revision,
+    )
+    .unwrap()
+}
+
+#[test]
+fn update_checks_new_negative_evidence_against_unselected_retained_inventory() {
+    // B is installed but neither an authored root nor a newly requested dependency.
+    let current = fixture(
+        &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],
+        &["a"],
+        &[],
+        true,
+    );
+    let selected = fixture(&[("a", "ProjectA", "Version2")], &["a"], &[], true);
+    for (version, conflicts) in [
+        (None, true),
+        (Some("VersionB"), true),
+        (Some("Version3"), false),
+    ] {
+        let proposed = with_incompatibility(&selected, "a", "ProjectB", version);
+        let result = update(&current, &proposed);
+        if conflicts {
+            let error = result.err().unwrap();
+            assert!(
+                format!("{error:#}").contains("a declares incompatibility with b"),
+                "{error:#}"
+            );
+        } else {
+            let updated = result.unwrap();
+            assert_eq!(updated.project().intent(), current.intent());
+            assert_eq!(updated.project().lock().dependencies.len(), 2);
+            assert_eq!(
+                updated.project().lock().dependencies[&key("b")],
+                current.lock().dependencies[&key("b")]
+            );
+            assert_eq!(
+                updated.project().lock().dependencies[&key("a")].incompatibilities,
+                proposed.lock().dependencies[&key("a")].incompatibilities
+            );
+        }
+    }
+}
+
+#[test]
+fn update_retains_old_negative_evidence_until_its_selection_changes() {
+    let base = fixture(
+        &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],
+        &["a", "b"],
+        &[],
+        true,
+    );
+    // Old B permits current A, but explicitly excludes the proposed new A.
+    let current = with_incompatibility(&base, "b", "ProjectA", Some("Version2"));
+    let a = fixture(&[("a", "ProjectA", "Version2")], &["a"], &[], true);
+    let error = update(&current, &a).err().unwrap();
+    assert!(
+        format!("{error:#}").contains("b declares incompatibility with a"),
+        "{error:#}"
+    );
+
+    let refreshed_b = fixture(&[("b", "ProjectB", "VersionB")], &["b"], &[], true);
+    let refreshed = update(&current, &refreshed_b).unwrap();
+    assert_eq!(
+        refreshed.project().lock().dependencies[&key("b")].incompatibilities,
+        current.lock().dependencies[&key("b")].incompatibilities
+    );
+    // Requesting B again without its old assertion cannot launder a conflicting A.
+    for (b_version, accepted) in [("VersionB", false), ("Version3", true)] {
+        let proposed = fixture(
+            &[("a", "ProjectA", "Version2"), ("b", "ProjectB", b_version)],
+            &["a", "b"],
+            &[],
+            true,
+        );
+        let result = update(&current, &proposed);
+        if !accepted {
+            let error = result.err().unwrap();
+            assert!(
+                format!("{error:#}").contains("b declares incompatibility with a"),
+                "{error:#}"
+            );
+            continue;
+        }
+        let updated = result.unwrap();
+        assert_eq!(updated.project().intent(), current.intent());
+        assert_eq!(updated.project().lock().dependencies.len(), 2);
+        for name in ["a", "b"] {
+            assert_eq!(
+                updated.project().lock().dependencies[&key(name)].selected,
+                proposed.lock().dependencies[&key(name)].selected
+            );
+        }
+        assert!(
+            updated.project().lock().dependencies[&key("b")]
+                .incompatibilities
+                .is_empty()
+        );
+    }
+}

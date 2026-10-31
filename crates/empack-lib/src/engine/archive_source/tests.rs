@@ -82,6 +82,108 @@ fn reads_verified_members_with_portable_attributes_and_reuses_the_archive() {
         .is_err()
     );
 }
+
+#[test]
+fn captured_archives_keep_member_integrity_and_native_read_set_preconditions() {
+    use crate::engine::{
+        project::ProjectReader, publication::RecoveryReader, snapshot::SnapshotLimits,
+    };
+    use std::fs;
+
+    let document = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/initialization/empack.yml"
+    ))
+    .replace("PACK_ID", "archive-fixture")
+    .replace("PACK_NAME", "Archive Fixture")
+    .replace("PACK_VERSION", "alpha");
+    let original = archive(&[("asset.bin", b"payload")]);
+    let changed = archive(&[("asset.bin", b"changed")]);
+    assert_eq!(original.len(), changed.len());
+    let cancel = Cancellation::default();
+    for mutation in ["unchanged", "bytes", "replacement", "removed"] {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project Ω");
+        fs::create_dir(&project).unwrap();
+        fs::write(project.join("empack.yml"), &document).unwrap();
+        fs::write(project.join("input.zip"), &original).unwrap();
+        fs::write(project.join("prior-artifact.zip"), b"prior output").unwrap();
+        fs::write(project.join("player.dat"), b"player bytes").unwrap();
+        let state = temp.path().join("uncreated-state");
+        let workspace = ProjectReader::new(RecoveryReader::new(state.clone()))
+            .capture(
+                &project,
+                &[path("input.zip")],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        workspace
+            .root()
+            .revalidate(workspace.observations(), &cancel)
+            .unwrap();
+
+        match mutation {
+            "bytes" => fs::write(project.join("input.zip"), &changed).unwrap(),
+            "replacement" => {
+                // Keep the original object alive so identity reuse cannot mask replacement.
+                fs::rename(project.join("input.zip"), project.join("displaced.zip")).unwrap();
+                fs::write(project.join("input.zip"), &original).unwrap();
+            }
+            "removed" => fs::remove_file(project.join("input.zip")).unwrap(),
+            _ => (),
+        }
+        let source = ZipContentSource::open_captured(
+            &workspace,
+            &path("input.zip"),
+            ArchiveLimits::default(),
+            &cancel,
+        );
+        if matches!(mutation, "replacement" | "removed") {
+            assert!(
+                source.is_err(),
+                "{mutation}: unavailable captured object was reopened"
+            );
+        } else {
+            let mut source = source.unwrap();
+            let acquired = source.acquire(
+                &path("asset.bin"),
+                &expected(),
+                SourceEvidencePolicy::Compatibility,
+                InitialObservation::RequireEvidence,
+                &cancel,
+            );
+            assert_eq!(acquired.is_ok(), mutation == "unchanged", "{mutation}");
+            if let Ok((member, permissions)) = acquired {
+                let mut observed = Vec::new();
+                member.lease().open().read_to_end(&mut observed).unwrap();
+                assert_eq!(observed, b"payload");
+                assert!(permissions.executable && !permissions.readonly);
+            }
+        }
+        assert_eq!(
+            workspace
+                .root()
+                .revalidate(workspace.observations(), &cancel)
+                .is_ok(),
+            mutation == "unchanged",
+            "{mutation}: archive inspection cannot refresh the captured read set"
+        );
+        assert_eq!(
+            fs::read(project.join("empack.yml")).unwrap(),
+            document.as_bytes()
+        );
+        assert_eq!(
+            fs::read(project.join("prior-artifact.zip")).unwrap(),
+            b"prior output"
+        );
+        assert_eq!(
+            fs::read(project.join("player.dat")).unwrap(),
+            b"player bytes"
+        );
+        assert!(!state.exists());
+    }
+}
 #[test]
 fn metadata_and_raw_duplicate_checks_cover_unselected_members_before_extraction() {
     let original = archive(&[("asset.bin", b"payload"), ("other.bin", b"payload")]);

@@ -1,0 +1,28 @@
+# Independent expected initialization semantics. Tests supply only author decisions
+# and the newly allocated identity; no production codec constructs this oracle.
+schema: 5
+pack:
+  id: PACK_ID
+  name: PACK_NAME
+  version: PACK_VERSION
+runtime:
+  java: 21
+  loader: vanilla
+  minecraft: '1.21.1'
+dependencies: {}
+build:
+  default: [modrinth, prism, server]
+  profiles:
+    modrinth: modrinth
+    prism:
+      delivery: references
+      environment: client
+      format: zip
+      target: prism
+      updates: snapshot
+    server:
+      delivery: references
+      environment: server
+      format: zip
+      target: server
+      updates: snapshot

@@ -4,7 +4,7 @@ use crate::{
         Commands,
         cli::Cli,
         commands::execute_command_with_session,
-        session_mocks::{MockCommandSession, MockConfigProvider},
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInteractiveProvider},
     },
     engine::{
         publication::{
@@ -101,10 +101,18 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
         };
         let before_project = snapshot(project.path());
         let before_host = snapshot(host.path());
-        for mode in ["inspect", "preview", "decline", "wrong-operation"] {
+        for mode in [
+            "inspect",
+            "preview",
+            "decline",
+            "headless",
+            "wrong-operation",
+        ] {
             let mut config = config.clone();
             config.dry_run = mode == "preview";
-            let session = MockCommandSession::new().with_config(MockConfigProvider::new(config));
+            let session = MockCommandSession::new()
+                .with_config(MockConfigProvider::new(config))
+                .with_interactive(MockInteractiveProvider::new().with_yes_mode(mode == "headless"));
             let result = execute_command_with_session(
                 Commands::Recover {
                     action: if mode == "inspect" {
@@ -123,9 +131,28 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
             .await;
             assert_eq!(
                 result.is_err(),
-                mode == "wrong-operation",
+                matches!(mode, "headless" | "wrong-operation"),
                 "{mode}: {result:?}"
             );
+            if mode == "headless" {
+                let error = result.unwrap_err();
+                assert_eq!(
+                    crate::application::classify_error(&error),
+                    crate::application::EmpackExitCode::Usage
+                );
+                let rendered = format!("{error:#}");
+                assert!(rendered.contains("requires --yes"), "{rendered}");
+                assert!(rendered.contains("Recovery inspection ("), "{rendered}");
+                assert!(
+                    rendered.contains(project.path().to_str().unwrap()),
+                    "{rendered}"
+                );
+                assert!(
+                    rendered.contains(host.path().to_str().unwrap()),
+                    "{rendered}"
+                );
+                assert!(session.interactive_provider.get_confirm_calls().is_empty());
+            }
             assert_eq!(snapshot(project.path()), before_project);
             assert_eq!(snapshot(host.path()), before_host);
         }
@@ -271,6 +298,113 @@ fn cli_budget_admits_installer_with_retained_build_inputs() {
 }
 
 #[test]
+fn retained_recovery_coordinates_preserve_the_original_terminal_result() {
+    use crate::engine::publication::RecoveryLocation;
+    let root = tempfile::tempdir().unwrap();
+    let location = RecoveryLocation {
+        project: root.path().join("actual project"),
+        state: root.path().join("actual state"),
+    };
+    let outcome = std::sync::Arc::new(OperationOutcome::Completed(
+        ExecutionOutcome::RecoveryRequired {
+            operation: "op-fixture".into(),
+            cause: location.attach(super::super::process_runtime::Interrupted.into()),
+        },
+    ));
+    let error = retained_failure(outcome.clone(), "Build requires recovery".into());
+    drop(outcome);
+    let error = super::super::recovery_guidance::annotate(error);
+    let text = format!("{error:#}");
+    assert!(text.contains("Recovery inspection ("), "{text}");
+    assert!(text.contains(location.project.to_str().unwrap()), "{text}");
+    assert!(text.contains(location.state.to_str().unwrap()), "{text}");
+    assert!(text.contains("Operation interrupted"), "{text}");
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Interrupted
+    );
+}
+
+#[test]
+fn retained_uncertain_runtime_preserves_recovery_and_typed_cause_after_registry_release() {
+    use crate::engine::{
+        diagnostics::{Diagnostic, DiagnosticCode, RecoveryClassification},
+        publication::RecoveryLocation,
+    };
+    for interrupted in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let location = RecoveryLocation {
+            project: root.path().join("runtime instance"),
+            state: root.path().join("runtime state"),
+        };
+        let cause: anyhow::Error = if interrupted {
+            super::super::process_runtime::Interrupted.into()
+        } else {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "fixture termination denied",
+            )
+            .into()
+        };
+        let outcome =
+            std::sync::Arc::new(OperationOutcome::Completed(
+                ExecutionOutcome::ExecutionUncertain(location.attach(cause.context(
+                    "Runtime retirement is unconfirmed; inspect recovery before retrying",
+                ))),
+            ));
+        let error = retained_failure(
+            outcome.clone(),
+            "Instance launch outcome is uncertain; inspect recovery before retrying".into(),
+        );
+        drop(outcome);
+        let diagnostic = error.downcast_ref::<Diagnostic>().unwrap();
+        assert_eq!(diagnostic.code, DiagnosticCode::ExecutionUncertain);
+        assert_eq!(diagnostic.recovery, RecoveryClassification::InspectRecovery);
+        if interrupted {
+            assert!(
+                error
+                    .chain()
+                    .any(|cause| cause.is::<super::super::process_runtime::Interrupted>())
+            );
+        } else {
+            assert_eq!(
+                error
+                    .chain()
+                    .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+                    .unwrap()
+                    .kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+        }
+        assert_eq!(
+            crate::application::classify_error(&error),
+            if interrupted {
+                crate::application::EmpackExitCode::Interrupted
+            } else {
+                crate::application::EmpackExitCode::General
+            }
+        );
+        let text = format!("{:#}", super::super::recovery_guidance::annotate(error));
+        assert!(
+            text.contains("Instance launch outcome is uncertain"),
+            "{text}"
+        );
+        assert!(text.contains("Runtime retirement is unconfirmed"), "{text}");
+        assert!(text.contains("Recovery inspection ("), "{text}");
+        assert!(text.contains(location.project.to_str().unwrap()), "{text}");
+        assert!(text.contains(location.state.to_str().unwrap()), "{text}");
+        assert!(
+            text.contains(if interrupted {
+                "Operation interrupted"
+            } else {
+                "fixture termination denied"
+            }),
+            "{text}"
+        );
+    }
+}
+
+#[test]
 fn launch_failure_summary_preserves_runtime_phase_and_cause() {
     for phase in [
         "Runtime did not start",
@@ -294,4 +428,134 @@ fn launch_failure_summary_preserves_runtime_phase_and_cause() {
         failure_summary("Addition", false),
         "Addition was not applied"
     );
+}
+
+#[tokio::test]
+async fn scoped_service_cancellation_preserves_completed_effects_and_final_result() {
+    use crate::application::{
+        process_runtime::{Cancellation, Interrupted},
+        session::LiveProcessProvider,
+    };
+    for outcome in ["partial", "complete", "unrelated", "invalidated"] {
+        let root = tempfile::tempdir().unwrap();
+        let selected = root.path().join("selected");
+        let neighbor = root.path().join("neighbor");
+        fs::write(&selected, b"discard this").unwrap();
+        fs::write(&neighbor, b"keep this").unwrap();
+        let cancellation = Cancellation::default();
+        let mut session = MockCommandSession::new();
+        session.process_provider =
+            LiveProcessProvider::new().with_cancellation(cancellation.clone());
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            open_files: 2,
+            ..Default::default()
+        });
+        let removed = selected.clone();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            scoped(&session, governor.clone(), move |mut scope| async move {
+                let work = scope.spawn_blocking(
+                    ResourceRequest {
+                        jobs: 1,
+                        open_files: 1,
+                        ..Default::default()
+                    },
+                    ResourceRequest::default(),
+                    move |_| fs::remove_file(removed),
+                )?;
+                scope.accept(work.wait().await?)?.transpose()?;
+                // The host is interrupted only after a native effect was established.
+                // Wait for propagation instead of guessing when its polling tick runs.
+                cancellation.cancel();
+                scope.cancellation().cancelled().await;
+                match outcome {
+                    "partial" => Err(anyhow::Error::new(Interrupted)
+                        .context("Cleanup interrupted; completed scope: selected (12 bytes)")),
+                    "complete" => Ok("completed selected cleanup"),
+                    "invalidated" => Err(anyhow::Error::new(RuntimeError::StaleResult)
+                        .context("Service input was invalidated during cancellation")),
+                    "unrelated" => Err(anyhow::Error::new(std::io::Error::from(
+                        std::io::ErrorKind::PermissionDenied,
+                    ))
+                    .context("Later cleanup scope failed; selected already removed")),
+                    _ => unreachable!(),
+                }
+            }),
+        )
+        .await
+        .expect("host must retire its service promptly");
+        assert!(!selected.exists());
+        assert_eq!(fs::read(neighbor).unwrap(), b"keep this");
+        match outcome {
+            "partial" => {
+                let error = result.unwrap_err();
+                assert!(error.is::<Interrupted>());
+                assert_eq!(
+                    format!("{error:#}"),
+                    "Cleanup interrupted; completed scope: selected (12 bytes): Operation interrupted"
+                );
+            }
+            "complete" => assert_eq!(result.unwrap(), "completed selected cleanup"),
+            "invalidated" => {
+                let error = result.unwrap_err();
+                assert!(error.is::<Interrupted>());
+                assert!(matches!(
+                    error.downcast_ref::<RuntimeError>(),
+                    Some(RuntimeError::StaleResult)
+                ));
+                assert!(
+                    format!("{error:#}")
+                        .contains("Service input was invalidated during cancellation")
+                );
+            }
+            "unrelated" => {
+                let error = result.unwrap_err();
+                assert!(!error.is::<Interrupted>());
+                assert_eq!(
+                    error.downcast_ref::<std::io::Error>().unwrap().kind(),
+                    std::io::ErrorKind::PermissionDenied
+                );
+                assert!(
+                    format!("{error:#}")
+                        .contains("Later cleanup scope failed; selected already removed")
+                );
+                assert_eq!(
+                    crate::application::exit::classify_error(&error),
+                    crate::application::exit::EmpackExitCode::General
+                );
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+
+#[tokio::test]
+async fn scoped_service_precancellation_never_starts_work() {
+    use crate::application::{process_runtime::Cancellation, session::LiveProcessProvider};
+    let cancellation = Cancellation::default();
+    cancellation.cancel();
+    let mut session = MockCommandSession::new();
+    session.process_provider = LiveProcessProvider::new().with_cancellation(cancellation);
+    let root = tempfile::tempdir().unwrap();
+    let selected = root.path().join("selected");
+    fs::write(&selected, b"keep this").unwrap();
+    let target = selected.clone();
+    let error = scoped(
+        &session,
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            open_files: 2,
+            ..Default::default()
+        }),
+        move |_| async move {
+            fs::remove_file(target)?;
+            Ok(())
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.is::<crate::application::process_runtime::Interrupted>());
+    assert_eq!(fs::read(selected).unwrap(), b"keep this");
 }

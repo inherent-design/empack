@@ -81,9 +81,9 @@ impl MigrationOptions {
         source: &DecodedIntent,
         prior: Option<&DecodedLock>,
     ) -> Result<DecodedIntent> {
-        prior
-            .context("Migration needs a current lock; synchronize the author project first")?
-            .bind(source)?;
+        let prior = prior
+            .context("Migration needs a current lock; synchronize the author project first")?;
+        prior.bind(source)?;
         let mut intent = source.intent().clone();
         let java_major = intent.runtime.java_major;
         intent.runtime = self.runtime.clone();
@@ -101,7 +101,9 @@ impl MigrationOptions {
                 "Migration can replace only provider-owned roots"
             );
             ensure!(
-                root.source != SourceIntent::Provider(id.clone()),
+                root.source
+                    .canonical_project(prior.lock().dependencies.get(key))
+                    != Some(id),
                 "Replacement selects the existing project; omit it to retain its policy"
             );
             root.source = SourceIntent::Provider(id.clone());

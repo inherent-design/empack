@@ -66,10 +66,8 @@ impl Publisher {
         root: &ProjectReadRoot,
     ) -> Result<Option<PendingRuntime>> {
         root.check_binding()?;
-        let state = match self.host.open_dir_nofollow(root_key(root)?) {
-            Ok(state) => state,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error.into()),
+        let Some(state) = self.find_project_state(root)? else {
+            return Ok(None);
         };
         marker(&state).map(|bytes| {
             bytes.map(|bytes| PendingRuntime {

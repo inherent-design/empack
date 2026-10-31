@@ -71,6 +71,36 @@ struct CreationJournal {
     expected: BTreeMap<String, Fingerprint>,
     limits: SnapshotLimits,
     committed: bool,
+    persistent: CreationIdentity,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreationIdentity {
+    parent: [u8; 32],
+    root: [u8; 32],
+}
+impl CreationJournal {
+    fn validate_identity_format(&self) -> Result<()> {
+        ensure!(
+            self.schema == 2,
+            "Unsupported or mixed creation identity schema"
+        );
+        binding_key(&self.parent)?;
+        binding_key(&self.binding)?;
+        Ok(())
+    }
+    fn parent_matches(&self, identity: ObjectIdentity) -> Result<bool> {
+        self.validate_identity_format()?;
+        Ok(Some(self.persistent.parent) == identity.persistent)
+    }
+    fn root_matches(&self, identity: ObjectIdentity) -> Result<bool> {
+        self.validate_identity_format()?;
+        Ok(Some(self.persistent.root) == identity.persistent)
+    }
+    fn check_state(&self, state: &Dir) -> Result<()> {
+        self.validate_identity_format()?;
+        root_state::check_association(state, &self.binding, &self.persistent.root)
+    }
 }
 impl Publisher {
     pub fn publish_new(
@@ -78,7 +108,9 @@ impl Publisher {
         prepared: PreparedRootCreation,
         cancel: &Cancellation,
     ) -> Result<PublicationReceipt> {
+        let selected = prepared.target.selected().to_owned();
         self.publish_new_with_hook(prepared, cancel, &mut |_| Ok(()))
+            .map_err(|error| self.locate_recovery(&selected, error))
     }
     fn publish_new_with_hook(
         &self,
@@ -160,7 +192,7 @@ impl Publisher {
         sync_directory(directory)?;
         sync_directory(&target.parent.directory)?;
         let mut journal = CreationJournal {
-            schema: 1,
+            schema: 2,
             parent: target.parent.binding.into(),
             child: target.child().as_str().into(),
             operation,
@@ -169,6 +201,16 @@ impl Publisher {
             expected,
             limits,
             committed: false,
+            persistent: CreationIdentity {
+                parent: target
+                    .parent
+                    .binding
+                    .persistent
+                    .context("Filesystem lacks persistent parent identity")?,
+                root: binding
+                    .persistent
+                    .context("Filesystem lacks persistent candidate identity")?,
+            },
         };
         verify_created_root(&target.parent, &journal.candidate, &journal, cancel)?;
         hook(PublicationPoint::RecoveryDataDurable)?;
@@ -177,6 +219,8 @@ impl Publisher {
         // A failed journal sync can still have published its intent file. Track that boundary
         // explicitly; failures before it discard private scratch instead of claiming recovery.
         let root_state = bound_state(self, &journal.binding, true)?.unwrap();
+        self.associate_owned_directory(&root_state, directory)?;
+        journal.check_state(&root_state)?;
         let _root_lock = lock(&root_state)?;
         let mut indexed = false;
         if let Err(error) = write_creation_tracked(&state, &journal, &mut indexed) {
@@ -200,10 +244,15 @@ impl Publisher {
         hook(PublicationPoint::IntentDurable).with_context(|| RecoveryRequired {
             operation: journal.operation.clone(),
         })?;
-        finish_creation(&target.parent, &root_state, &mut journal, hook).with_context(|| {
-            RecoveryRequired {
-                operation: journal.operation.clone(),
-            }
+        finish_creation(
+            &target.parent,
+            &root_state,
+            &mut journal,
+            Some(binding),
+            hook,
+        )
+        .with_context(|| RecoveryRequired {
+            operation: journal.operation.clone(),
         })
     }
 
@@ -221,16 +270,17 @@ impl Publisher {
         // An already visible root may have moved after publication but before journal commit.
         // Its native identity, not the old parent/name index, owns the authoritative record.
         if let Ok(root) = ProjectReadRoot::open_child(&parent, &child)
-            && let Some(root_state) = bound_state(self, &root.binding.into(), false)?
+            && let Some(root_state) = self.find_project_state(&root)?
         {
             let _root_lock = lock(&root_state)?;
             if let Some(mut journal) = load_creation(&root_state)? {
                 validate_creation_structure(&journal)?;
+                journal.check_state(&root_state)?;
                 if let Some(expected) = expected {
                     expected.check(&parent, &child, &journal)?;
                 }
                 ensure!(
-                    journal.binding == Binding::from(root.binding),
+                    journal.root_matches(root.binding)?,
                     "Creation root identity changed"
                 );
                 if !journal.committed {
@@ -251,7 +301,7 @@ impl Publisher {
         if let Some(expected) = expected {
             expected.check(&parent, &child, &initial)?;
         }
-        let root_state = bound_state(self, &initial.binding, true)?.unwrap();
+        let root_state = creation_root_state(self, &initial)?;
         let _root_lock = lock(&root_state)?;
         let mut journal = match load_creation(&root_state)? {
             Some(record) => {
@@ -266,10 +316,15 @@ impl Publisher {
         if let Some(expected) = expected {
             expected.check(&parent, &child, &journal)?;
         }
-        finish_creation(&parent, &root_state, &mut journal, &mut |_| Ok(())).with_context(|| {
-            RecoveryRequired {
-                operation: journal.operation.clone(),
-            }
+        finish_creation(
+            &parent,
+            &root_state,
+            &mut journal,
+            expected.map(PreparedCreationRecovery::object),
+            &mut |_| Ok(()),
+        )
+        .with_context(|| RecoveryRequired {
+            operation: journal.operation.clone(),
         })
     }
 }
@@ -302,11 +357,17 @@ impl RecoveryReader {
         }
         if let Some(journal) = load_creation(&state)? {
             validate_creation(parent, child, &journal)?;
-            ensure!(
-                authoritative_creation(&publisher, &journal)?
-                    .is_some_and(|(_, record)| record.committed),
-                "Project requires creation recovery before ordinary reads"
-            );
+            if !authoritative_creation(&publisher, &journal)?
+                .is_some_and(|(_, record)| record.committed)
+            {
+                return Err(RecoveryLocation {
+                    project: parent.selected().join(child),
+                    state: self.host_state.clone(),
+                }
+                .attach(anyhow::anyhow!(
+                    "Project requires creation recovery before ordinary reads"
+                )));
+            }
         }
         Ok(ProjectReadGuard { _lock: file })
     }
@@ -324,9 +385,7 @@ fn authoritative_creation(
     publisher: &Publisher,
     initial: &CreationJournal,
 ) -> Result<Option<(Dir, CreationJournal)>> {
-    let Some(state) = bound_state(publisher, &initial.binding, false)? else {
-        return Ok(None);
-    };
+    let state = creation_root_state(publisher, initial)?;
     let Some(record) = load_creation(&state)? else {
         return Ok(None);
     };
@@ -338,12 +397,22 @@ pub(super) fn requires_root_recovery(state: &Dir, root: &ProjectReadRoot) -> Res
         return Ok(false);
     };
     validate_creation_structure(&journal)?;
+    journal.check_state(state)?;
     ensure!(
-        journal.binding == Binding::from(root.binding),
+        journal.root_matches(root.binding)?,
         "Creation journal belongs to another root"
     );
     Ok(!journal.committed)
 }
+fn creation_root_state(publisher: &Publisher, journal: &CreationJournal) -> Result<Dir> {
+    // Candidate identity is retained before index intent. Missing state is
+    // corruption, never permission to reconstruct recovery authority.
+    let state = bound_state(publisher, &journal.binding, false)?
+        .context("Missing retained candidate association")?;
+    journal.check_state(&state)?;
+    Ok(state)
+}
+
 fn bound_state(publisher: &Publisher, binding: &Binding, create: bool) -> Result<Option<Dir>> {
     state_by_key(publisher, &binding_key(binding)?, create)
 }
@@ -364,10 +433,10 @@ fn creation_selection(selected: &Path) -> Result<(ProjectReadRoot, String)> {
         child.into(),
     ))
 }
-fn creation_key(parent: &ProjectReadRoot, child: &str) -> Result<String> {
+fn creation_key(publisher: &Publisher, parent: &ProjectReadRoot, child: &str) -> Result<String> {
     Ok(format!(
         "create-{}-{}",
-        root_key(parent)?,
+        publisher.bound_root_key(parent)?,
         empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(child.as_bytes()).into()).hex()
     ))
 }
@@ -377,7 +446,10 @@ fn creation_state(
     child: &str,
     create: bool,
 ) -> Result<Option<Dir>> {
-    state_by_key(publisher, &creation_key(parent, child)?, create)
+    if create {
+        publisher.retain_root_association(parent)?;
+    }
+    state_by_key(publisher, &creation_key(publisher, parent, child)?, create)
 }
 fn state_by_key(publisher: &Publisher, key: &str, create: bool) -> Result<Option<Dir>> {
     if create {
@@ -455,15 +527,13 @@ fn validate_creation(
     journal: &CreationJournal,
 ) -> Result<()> {
     ensure!(
-        journal.schema == 1
-            && journal.parent == Binding::from(parent.binding)
-            && journal.child == child,
+        journal.parent_matches(parent.binding)? && journal.child == child,
         "Creation journal target mismatch"
     );
     validate_creation_structure(journal)
 }
 fn validate_creation_structure(journal: &CreationJournal) -> Result<()> {
-    ensure!(journal.schema == 1, "Unknown creation journal schema");
+    journal.validate_identity_format()?;
     PortableRelPath::parse(&journal.child, PathSyntax::ArtifactName)?;
     PortableRelPath::parse(&journal.operation, PathSyntax::ArtifactName)?;
     ensure!(
@@ -527,7 +597,7 @@ fn verify_created_root(
     parent.check_binding()?;
     let root = ProjectReadRoot::open_child(parent, child)?;
     ensure!(
-        Binding::from(root.binding) == journal.binding,
+        journal.root_matches(root.binding)?,
         "Created root identity changed"
     );
     let tops: BTreeSet<_> = journal
@@ -577,6 +647,7 @@ fn finish_creation(
     parent: &ProjectReadRoot,
     state: &Dir,
     journal: &mut CreationJournal,
+    observed: Option<ObjectIdentity>,
     hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
 ) -> Result<PublicationReceipt> {
     validate_creation(parent, &journal.child, journal)?;
@@ -588,8 +659,9 @@ fn finish_creation(
     };
     if let Some(target) = target {
         native::reject_reparse(&target.try_clone()?.into_std_file())?;
+        let identity = native::directory_identity(&target)?;
         ensure!(
-            Binding::from(native::directory_identity(&target)?) == journal.binding,
+            journal.root_matches(identity)? && observed.is_none_or(|expected| expected == identity),
             "Creation destination is occupied by another object"
         );
     } else {
@@ -603,7 +675,7 @@ fn finish_creation(
         let candidate = parent.directory.open_dir_nofollow(&journal.candidate)?;
         let identity = native::directory_identity(&candidate)?;
         ensure!(
-            Binding::from(identity) == journal.binding,
+            journal.root_matches(identity)? && observed.is_none_or(|expected| expected == identity),
             "Creation candidate changed before publication"
         );
         drop(candidate);

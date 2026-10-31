@@ -18,6 +18,15 @@ pub(super) struct Record {
     pub recipe: SavedRecipe,
     pub files: Vec<SavedFile>,
 }
+impl Record {
+    pub(super) fn validate_schema(&self) -> Result<()> {
+        ensure!(
+            self.schema == 5,
+            "Unsupported pending build schema; prepare the build again with this empack version"
+        );
+        Ok(())
+    }
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SavedFile {

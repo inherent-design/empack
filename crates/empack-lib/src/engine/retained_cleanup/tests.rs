@@ -162,7 +162,14 @@ async fn retained_cleanup_refuses_active_save_new_records_and_changed_objects() 
                         fs::write(&blob, b"changed payload")?;
                     }
                     let before = snapshot(&state);
-                    assert!(execute(&mut scope, plan).await.is_err());
+                    let error = execute(&mut scope, plan).await.unwrap_err();
+                    let expected = match scenario {
+                        "saving" => "Continuation storage is busy",
+                        "new-record" => "A saved operation now retains pending-sync",
+                        "changed-blob" => "Cache object changed after cleanup preparation",
+                        _ => unreachable!(),
+                    };
+                    assert!(format!("{error:#}").contains(expected), "{error:#}");
                     assert_eq!(snapshot(&state), before);
                     drop(saving);
                     if scenario == "new-record" {
@@ -187,4 +194,81 @@ async fn retained_cleanup_refuses_active_save_new_records_and_changed_objects() 
         runtime.shutdown().await;
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
+}
+
+#[tokio::test]
+async fn retained_cleanup_reports_completed_scopes_and_reopens_surviving_content() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let (runtime, governor) = runtime();
+    let mut handle = runtime.start(move |mut scope| async move {
+        let result = async {
+            let content = verify_stream(&mut b"payload".as_slice(), &ExpectedContent {
+                digests: None, size: None, accepted_observation: None,
+            }, 7, SourceEvidencePolicy::Compatibility, InitialObservation::Accepted,
+                &Cancellation::default())?;
+            let blob = "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5.blob";
+            for (_, category) in CATEGORIES {
+                let store = FileContentStore::open(&state.join(category), ContentStoreLimits::default())?;
+                store.publish_verified(&mut scope, content.clone()).await?;
+                assert_eq!(fs::read(state.join(category).join(blob))?, b"payload");
+                fs::write(state.join(category).join("user-download.jar"), b"keep download")?;
+            }
+            fs::create_dir_all(state.join("operations/recovery"))?;
+            fs::write(state.join("operations/recovery/preimage"), b"keep recovery")?;
+            drop(begin_save(&mut scope, state.clone()).await?);
+            let plan = prepare(&mut scope, state.clone()).await?.unwrap();
+            assert_eq!(plan.selected()?, vec![
+                ("pending-content", 1, 7), ("pending-import-content", 1, 7),
+                ("pending-sync-content", 1, 7), ("pending-instance-content", 1, 7),
+            ]);
+            fs::write(state.join("pending-sync-content").join(blob), b"changed size")?;
+            let mut expected = snapshot(&state);
+            let error = execute(&mut scope, plan).await.unwrap_err();
+            assert_eq!(format!("{error:#}"),
+                "Retained cleanup failed; earlier completed scopes: [(\"pending-content\", 7), (\"pending-import-content\", 7)]: Cache object changed after cleanup preparation");
+            for category in ["pending-content", "pending-import-content"] {
+                expected.remove(&PathBuf::from(category).join(blob)).unwrap();
+            }
+            assert_eq!(snapshot(&state), expected);
+            // A new capture can reclaim the remaining owned backing, including corrupt
+            // disposable bytes, without deleting neighboring downloads or recovery data.
+            let plan = prepare(&mut scope, state.clone()).await?.unwrap();
+            assert_eq!(execute(&mut scope, plan).await?, vec![
+                ("pending-sync-content", 12), ("pending-instance-content", 7),
+            ]);
+            for category in ["pending-sync-content", "pending-instance-content"] {
+                expected.remove(&PathBuf::from(category).join(blob)).unwrap();
+            }
+            assert_eq!(snapshot(&state), expected);
+            assert!(prepare(&mut scope, state.clone()).await?.unwrap().is_empty());
+            for (_, category) in CATEGORIES {
+                let store = FileContentStore::open(&state.join(category), ContentStoreLimits::default())?;
+                store.publish_verified(&mut scope, content.clone()).await?;
+                let retained = store.lookup().retain(&mut scope,
+                    crate::engine::content::store::CachedFileRequest {
+                        id: content.lease().id(), expected: ExpectedContent {
+                            digests: None, size: Some(7), accepted_observation: Some(content.lease().id()),
+                        }, maximum: 7, evidence: SourceEvidencePolicy::Compatibility,
+                        initial: InitialObservation::Accepted,
+                    }).await?.unwrap();
+                let mut bytes = Vec::new();
+                retained.lease().open().read_to_end(&mut bytes)?;
+                assert_eq!(bytes, b"payload");
+                expected.insert(PathBuf::from(category).join(blob), b"payload".to_vec());
+            }
+            assert_eq!(snapshot(&state), expected);
+            Ok(())
+        }.await;
+        Ok(result)
+    }).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(result) = &*outcome else {
+        panic!("cleanup worker failed")
+    };
+    assert!(result.is_ok(), "{result:?}");
+    runtime.release_completed(handle.id());
+    drop((outcome, handle));
+    runtime.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }

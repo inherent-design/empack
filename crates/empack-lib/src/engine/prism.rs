@@ -152,6 +152,87 @@ pub(super) fn transition(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_transitions_switch_known_loaders_and_preserve_user_metadata() {
+        use super::super::release::{ReleaseLoader, ReleaseRuntime};
+        let mut old = ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java_major: 21,
+        };
+        let mut bytes = br#"{ "formatVersion":1,"custom":{"keep":true},"components":[{"uid":"net.minecraft","version":"1.21.1","important":true,"cachedName":"Game label"},{"uid":"user.component","version":"7","extra":[1,false]}] }"#.to_vec();
+        let base: Value = serde_json::from_slice(&bytes).unwrap();
+        for (selected, expected) in [
+            (
+                ReleaseLoader::Fabric {
+                    version: "0.16.0".into(),
+                },
+                Some(("net.fabricmc.fabric-loader", "0.16.0")),
+            ),
+            (
+                ReleaseLoader::Quilt {
+                    version: "0.27.1".into(),
+                },
+                Some(("org.quiltmc.quilt-loader", "0.27.1")),
+            ),
+            (
+                ReleaseLoader::Forge {
+                    version: "52.1.0".into(),
+                },
+                Some(("net.minecraftforge", "52.1.0")),
+            ),
+            (
+                ReleaseLoader::NeoForge {
+                    version: "21.1.42".into(),
+                },
+                Some(("net.neoforged", "21.1.42")),
+            ),
+            (ReleaseLoader::Vanilla, None),
+        ] {
+            let new = ReleaseRuntime {
+                loader: selected,
+                ..old.clone()
+            };
+            let changed = transition(Some(&bytes), &old, &new).unwrap();
+            let mut wanted = base.clone();
+            if let Some((uid, version)) = expected {
+                wanted["components"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"uid":uid,"version":version}));
+            }
+            assert_eq!(serde_json::from_slice::<Value>(&changed).unwrap(), wanted);
+            assert_eq!(transition(Some(&changed), &new, &new).unwrap(), changed);
+            old = new;
+            bytes = changed;
+        }
+        // Java policy changes do not rewrite unrelated component/profile bytes.
+        let changed_java = ReleaseRuntime {
+            java_major: 25,
+            ..old.clone()
+        };
+        assert_eq!(
+            transition(Some(&bytes), &old, &changed_java).unwrap(),
+            bytes
+        );
+        for invalid in [
+            String::from_utf8(bytes.clone())
+                .unwrap()
+                .replace("\"version\": \"1.21.1\"", "\"version\": \"1.21.2\""),
+            String::from_utf8(bytes.clone())
+                .unwrap()
+                .replace("\"important\": true", "\"important\": false"),
+        ] {
+            assert_ne!(
+                invalid.as_bytes(),
+                bytes,
+                "negative fixture must change authority"
+            );
+            assert!(transition(Some(invalid.as_bytes()), &old, &changed_java).is_err());
+        }
+    }
+
     #[test]
     fn component_authority_rejects_duplicate_fields_and_preserves_unchanged_bytes() {
         let requirements = super::super::release::ReleaseRuntime {

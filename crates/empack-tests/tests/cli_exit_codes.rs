@@ -1,0 +1,1194 @@
+//! Executable exit contracts exercise native documents, publication and cancellation.
+use empack_lib::EmpackExitCode;
+use empack_tests::harness::process::TestProject;
+use std::{
+    fs,
+    io::Write,
+    process::{Command, Output, Stdio},
+    time::{Duration, Instant},
+};
+
+fn command(project: &TestProject) -> Command {
+    let mut command = project.cmd();
+    command
+        .env_remove("EMPACK_DRY_RUN")
+        .env_remove("EMPACK_YES")
+        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
+        .env("EMPACK_PACKWIZ_BIN", project.dir().join("must-not-run"));
+    command
+}
+fn output(project: &TestProject, arguments: &[&str]) -> Output {
+    command(project).args(arguments).output().unwrap()
+}
+fn check(output: &Output, code: EmpackExitCode, message: &str) {
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(code.as_i32()), "{diagnostic}");
+    assert!(diagnostic.contains(message), "{diagnostic}");
+}
+fn fixture() -> TestProject {
+    TestProject::workflow_fixture("exit-contract", "fabric", "1.21.1")
+}
+fn add_local(project: &TestProject) {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
+        .unwrap();
+    fs::write(
+        project.dir().join("fixture.jar"),
+        zip.finish().unwrap().into_inner(),
+    )
+    .unwrap();
+    let result = output(project, &["add", "--yes", "fixture.jar"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+/// Report stdout remains a single JSON value even when diagnostic logging is enabled.
+#[test]
+fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
+    let project = TestProject::new();
+    fs::write(
+        project.dir().join("empack.yml"),
+        include_str!("../../../tests/fixtures/authoring/empack.yml"),
+    )
+    .unwrap();
+    assert!(output(&project, &["--yes", "sync"]).status.success());
+    let author = fs::read(project.dir().join("empack.yml")).unwrap();
+    let lock = fs::read(project.dir().join("empack.lock")).unwrap();
+    let routes: &[&[&str]] = &[
+        &["status", "--json"],
+        &["manifest", "check", "--json"],
+        &["manifest", "diff", "--json"],
+        &["pending", "list", "--json"],
+        &["outdated", "--json"],
+        &["build", "--explain", "--json"],
+        &[
+            "migrate",
+            "--plan",
+            "--json",
+            "--minecraft",
+            "1.21.1",
+            "--loader",
+            "vanilla",
+        ],
+    ];
+    for color in ["never", "always", "auto"] {
+        for format in ["text", "json", "yaml"] {
+            for stream in ["stderr", "stdout"] {
+                for route in routes {
+                    let result = command(&project)
+                        .args([
+                            "--color",
+                            color,
+                            "--log-level",
+                            "2",
+                            "--log-format",
+                            format,
+                            "--log-output",
+                            stream,
+                        ])
+                        .args(*route)
+                        .output()
+                        .unwrap();
+                    let context = format!(
+                        "{route:?} color={color} format={format} stream={stream}: {result:?}"
+                    );
+                    assert!(result.status.success(), "{context}");
+                    let value: serde_json::Value = serde_json::from_slice(&result.stdout)
+                        .unwrap_or_else(|error| panic!("{error}: {context}"));
+                    assert!(value.is_object(), "{context}");
+                    assert!(!result.stdout.contains(&0x1b), "{context}");
+                    assert!(
+                        String::from_utf8_lossy(&result.stderr)
+                            .contains("Logger initialized successfully"),
+                        "logging must remain observable: {context}"
+                    );
+                    assert_eq!(fs::read(project.dir().join("empack.yml")).unwrap(), author);
+                    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
+                    assert!(!project.dir().join("dist").exists());
+                }
+            }
+        }
+    }
+    // Human output still honors an explicit log destination.
+    for stream in ["stderr", "stdout"] {
+        let result = command(&project)
+            .args([
+                "--color",
+                "never",
+                "--log-level",
+                "2",
+                "--log-output",
+                stream,
+                "status",
+            ])
+            .output()
+            .unwrap();
+        assert!(result.status.success());
+        let stdout = String::from_utf8(result.stdout).unwrap();
+        let stderr = String::from_utf8(result.stderr).unwrap();
+        assert_eq!(
+            stdout.contains("Logger initialized successfully"),
+            stream == "stdout"
+        );
+        assert_eq!(
+            stderr.contains("Logger initialized successfully"),
+            stream == "stderr"
+        );
+        assert!(stdout.contains("Metadata inspection only"));
+    }
+    // A refused JSON request has diagnostics, not a spurious successful payload.
+    for route in [
+        vec!["manifest", "explain", "unknown-key", "--json"],
+        vec!["pending", "show", "unknown-key", "--json"],
+    ] {
+        let result = command(&project)
+            .args([
+                "--color",
+                "never",
+                "--log-level",
+                "2",
+                "--log-output",
+                "stdout",
+            ])
+            .args(&route)
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(result.stdout.is_empty(), "{result:?}");
+        let diagnostic = String::from_utf8(result.stderr).unwrap();
+        assert!(diagnostic.contains("Error:"), "{diagnostic}");
+        assert!(
+            diagnostic.contains("Logger initialized successfully"),
+            "{diagnostic}"
+        );
+        assert_eq!(fs::read(project.dir().join("empack.yml")).unwrap(), author);
+        assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
+    }
+}
+
+#[test]
+fn cli_parse_error_exits_two() {
+    check(
+        &output(&TestProject::new(), &["--definitely-invalid-flag"]),
+        EmpackExitCode::Usage,
+        "--definitely-invalid-flag",
+    );
+}
+#[test]
+fn cli_uninitialized_build_exits_two() {
+    check(
+        &output(&TestProject::new(), &["build", "modrinth"]),
+        EmpackExitCode::Usage,
+        "empack.yml",
+    );
+}
+#[test]
+fn cli_direct_zip_without_type_exits_two() {
+    check(
+        &output(&fixture(), &["add", "https://example.invalid/pack.zip"]),
+        EmpackExitCode::Usage,
+        "--type",
+    );
+}
+#[test]
+fn cli_unattended_build_requires_explicit_approval() {
+    let project = fixture();
+    let before = fs::read(project.dir().join("empack.lock")).unwrap();
+    check(
+        &output(&project, &["build", "modrinth"]),
+        EmpackExitCode::Usage,
+        "--yes",
+    );
+    assert!(!project.dir().join("dist").exists());
+    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
+}
+#[test]
+fn cli_malformed_intent_and_lock_exit_two() {
+    for name in ["empack.yml", "empack.lock"] {
+        let project = fixture();
+        let path = project.dir().join(name);
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"unexpected-field: true\n")
+            .unwrap();
+        let before = fs::read(&path).unwrap();
+        check(
+            &output(&project, &["build", "--yes", "modrinth"]),
+            EmpackExitCode::Usage,
+            "Invalid",
+        );
+        assert_eq!(fs::read(path).unwrap(), before);
+        assert!(!project.dir().join("dist").exists());
+    }
+}
+#[test]
+fn cli_missing_authored_source_cannot_build_from_an_installed_copy() {
+    let project = fixture();
+    add_local(&project);
+    assert!(project.dir().join("pack/mods/fixture.jar").is_file());
+    fs::remove_file(project.dir().join("fixture.jar")).unwrap();
+    let result = output(&project, &["build", "--yes", "modrinth"]);
+    assert!(
+        !result.status.success(),
+        "Missing authored content must not build from its installed copy"
+    );
+    assert!(
+        !project
+            .dir()
+            .join("dist/exit-contract-1.0.0.mrpack")
+            .exists()
+    );
+}
+#[test]
+fn cli_tracked_local_parent_dir_validation_exits_two() {
+    let project = fixture();
+    add_local(&project);
+    let sentinel = tempfile::NamedTempFile::new_in(project.dir().parent().unwrap()).unwrap();
+    fs::write(sentinel.path(), b"outside bytes").unwrap();
+    let path = project.dir().join("empack.yml");
+    let mut intent: serde_json::Value =
+        serde_saphyr::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    intent["dependencies"]["fixture"]["path"] = serde_json::json!(format!(
+        "../{}",
+        sentinel.path().file_name().unwrap().to_str().unwrap()
+    ));
+    fs::write(&path, serde_saphyr::to_string(&intent).unwrap()).unwrap();
+    check(
+        &output(&project, &["build", "--yes", "modrinth"]),
+        EmpackExitCode::Usage,
+        "component",
+    );
+    assert_eq!(fs::read(sentinel.path()).unwrap(), b"outside bytes");
+}
+#[test]
+fn cli_occupied_artifact_directory_fails_without_deletion() {
+    let project = fixture();
+    let artifact = project.dir().join("dist/exit-contract-1.0.0.mrpack");
+    fs::create_dir_all(&artifact).unwrap();
+    fs::write(artifact.join("sentinel"), b"retain").unwrap();
+    let result = output(&project, &["build", "--yes", "modrinth"]);
+    assert!(!result.status.success());
+    assert_eq!(fs::read(artifact.join("sentinel")).unwrap(), b"retain");
+}
+fn proxy(command: &mut Command, address: &str) {
+    for name in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
+        command.env(name, address);
+    }
+    command.env("NO_PROXY", "").env("no_proxy", "");
+}
+#[test]
+fn cli_network_failure_exits_three() {
+    let project = fixture();
+    let mut cmd = command(&project);
+    proxy(&mut cmd, "http://127.0.0.1:9");
+    let result = cmd
+        .env("EMPACK_NET_TIMEOUT", "1")
+        .args(["add", "--yes", "--platform", "modrinth", "sodium"])
+        .output()
+        .unwrap();
+    check(&result, EmpackExitCode::Network, "Error:");
+}
+#[cfg(unix)]
+#[test]
+fn cli_interrupt_exits_130() {
+    struct Child(std::process::Child);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let project = fixture();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut cmd = command(&project);
+    proxy(
+        &mut cmd,
+        &format!("http://{}", listener.local_addr().unwrap()),
+    );
+    let stderr = tempfile::NamedTempFile::new().unwrap();
+    let mut child = Child(
+        cmd.args(["add", "--yes", "--platform", "modrinth", "sodium"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr.reopen().unwrap()))
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let connection = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "Native HTTP request did not start"
+                );
+                assert!(
+                    child.0.try_wait().unwrap().is_none(),
+                    "CLI exited before acquisition"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
+    assert!(
+        Command::new("kill")
+            .args(["-INT", &child.0.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Cancellation did not retire the native request"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let diagnostic = fs::read_to_string(stderr.path()).unwrap();
+    assert_eq!(
+        status.code(),
+        Some(EmpackExitCode::Interrupted.as_i32()),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("Error: Operation interrupted"),
+        "Cancellation must reach executable error rendering: {diagnostic}"
+    );
+    drop(connection);
+    assert!(!project.dir().join("pack/mods").exists());
+}
+
+fn runtime_release(root: &std::path::Path) -> (std::path::PathBuf, String, Vec<u8>) {
+    use empack_tests::harness::process::{assert_dist_artifact_suffix, offline_command};
+    use sha2::{Digest, Sha256};
+    let author = root.join("author");
+    fs::create_dir_all(author.join("pack")).unwrap();
+    fs::write(author.join("pack/managed.txt"), b"publisher content").unwrap();
+    fs::write(
+        author.join("empack.yml"),
+        r#"schema: 5
+pack:
+  id: verification.runtime
+  name: Runtime Fixture
+  version: '1.0.0'
+runtime:
+  minecraft: '1.21.1'
+  loader: vanilla
+  java: 21
+dependencies: {}
+build:
+  default: [native]
+  profiles:
+    native:
+      target: empack
+      delivery: bundled
+      environment: client
+      updates: snapshot
+      format: zip
+"#,
+    )
+    .unwrap();
+    offline_command(&author)
+        .args(["--yes", "sync"])
+        .assert()
+        .success();
+    offline_command(&author)
+        .args(["--yes", "build"])
+        .assert()
+        .success();
+    let archive = assert_dist_artifact_suffix(&author, "-empack-bundled-client.empack");
+    let export = root.join("release");
+    fs::create_dir(&export).unwrap();
+    zip::ZipArchive::new(fs::File::open(archive).unwrap())
+        .unwrap()
+        .extract(&export)
+        .unwrap();
+    let payload = fs::read(export.join("release.json")).unwrap();
+    let id: String = Sha256::digest(&payload)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+
+    (export, id, payload)
+}
+
+#[test]
+fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_trust() {
+    use empack_tests::harness::{
+        process::{empack_cmd, offline_command},
+        publication::Driver,
+        workspace::snapshot,
+    };
+    use predicates::str::contains;
+    use std::{io::Read, net::TcpListener, path::PathBuf};
+
+    fn set_proxy(command: &mut Command, address: &str) {
+        for key in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
+            command.env(key, address);
+        }
+        command.env("NO_PROXY", "").env("no_proxy", "");
+    }
+
+    fn refused_before_network(mut command: Command, diagnostic: &str) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        set_proxy(
+            &mut command,
+            &format!("http://{}", listener.local_addr().unwrap()),
+        );
+        assert_cmd::Command::from_std(command)
+            .timeout(Duration::from_secs(30))
+            .assert()
+            .failure()
+            .stderr(contains(diagnostic));
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    // Observe a real CONNECT through the normal proxy setting, then refuse its
+    // tunnel. No TLS bypass, alternate publisher root or product test endpoint.
+    fn unavailable(mut command: Command) -> Output {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        set_proxy(&mut command, &address);
+        std::thread::scope(|scope| {
+            let server = scope.spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(20);
+                let mut connection = loop {
+                    match listener.accept() {
+                        Ok((connection, _)) => break connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "publisher fetch did not reach proxy");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("proxy accept: {error}"),
+                    }
+                };
+                // Winsock accepts inherit the listener's nonblocking mode.
+                connection.set_nonblocking(false).unwrap();
+                connection.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut part = [0; 512];
+                    let size = connection.read(&mut part).unwrap();
+                    assert!(size > 0 && request.len() + size <= 8192);
+                    request.extend_from_slice(&part[..size]);
+                }
+                connection.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                String::from_utf8(request).unwrap()
+            });
+            let output = assert_cmd::Command::from_std(command)
+                .timeout(Duration::from_secs(30))
+                .output()
+                .unwrap();
+            let request = server
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            assert!(
+                request.starts_with("CONNECT publisher.invalid:443 HTTP/1.1\r\n"),
+                "{request}"
+            );
+            output
+        })
+    }
+
+    const CHILD: &str = "engine::api::launch::tests::runtime_fixture";
+    let driver = Driver::native_fixture(CHILD);
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+    let instance = root.path().join("offline instance Ω");
+    fs::create_dir(&instance).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "install"])
+        .arg(export.join("release.json"))
+        .args(["--sha256", &id])
+        .assert()
+        .success();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[47; 32]);
+    let key = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    offline_command(&instance)
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.runtime",
+            "--channel",
+            "stable",
+            "https://publisher.invalid/channel.json",
+            "--key",
+        ])
+        .arg(key)
+        .assert()
+        .success();
+    let game = instance.join("game");
+    fs::write(game.join("player-note.txt"), b"player content").unwrap();
+    fs::write(game.join("launch-fixture"), b"record actual invocation").unwrap();
+    fs::write(game.join("launch-exit"), b"return immediately").unwrap();
+    let launch = |allow: bool| {
+        let mut command = empack_cmd(&instance);
+        command.args(["--yes", "instance", "launch", "--check-updates"]);
+        if allow {
+            command.arg("--allow-offline");
+        }
+        command
+            .arg("--")
+            .arg(driver.program())
+            .args(["--exact", CHILD, "--nocapture", "--test-threads=1"])
+            .stdin(Stdio::null());
+        command
+    };
+    let before = snapshot(&instance);
+    let refused = unavailable(launch(false));
+    assert_eq!(
+        refused.status.code(),
+        Some(EmpackExitCode::Network.as_i32()),
+        "{refused:?}"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("explicitly select --allow-offline"));
+    assert_eq!(snapshot(&instance), before);
+    assert!(!game.join("launch-started").exists());
+    let installation = fs::read(instance.join(".empack/instance.json")).unwrap();
+    let subscription = fs::read(instance.join(".empack/subscription.json")).unwrap();
+    let completed = unavailable(launch(true));
+    assert!(completed.status.success(), "{completed:?}");
+    assert!(
+        String::from_utf8_lossy(&completed.stdout).contains(&format!(
+            "checking completed release {id} for offline launch"
+        )),
+        "{completed:?}"
+    );
+    let observed: serde_json::Value =
+        serde_json::from_slice(&fs::read(game.join("launch-observed.json")).unwrap()).unwrap();
+    assert_eq!(
+        PathBuf::from(observed["cwd"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        game.canonicalize().unwrap()
+    );
+    assert_eq!(
+        fs::read(instance.join(".empack/instance.json")).unwrap(),
+        installation
+    );
+    assert_eq!(
+        fs::read(instance.join(".empack/subscription.json")).unwrap(),
+        subscription
+    );
+    offline_command(&instance)
+        .args(["instance", "inspect"])
+        .assert()
+        .success()
+        .stdout(contains(format!("release {id};")));
+    for file in ["launch-started", "launch-observed.json"] {
+        fs::remove_file(game.join(file)).unwrap();
+    }
+    fs::write(game.join("managed.txt"), b"damaged managed content").unwrap();
+    let damaged = snapshot(&instance);
+    let refused = unavailable(launch(true));
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("ModifiedManagedFile"),
+        "{refused:?}"
+    );
+    assert_eq!(snapshot(&instance), damaged);
+    assert!(!game.join("launch-started").exists());
+    fs::write(game.join("managed.txt"), b"publisher content").unwrap();
+    let retained = instance.join(format!(".empack/releases/{id}.json"));
+    let exact = fs::read(&retained).unwrap();
+    let mut altered = exact.clone();
+    altered.push(b'\n');
+    fs::write(&retained, altered).unwrap();
+    let corrupt = snapshot(&instance);
+    refused_before_network(launch(true), "Retained release descriptor changed");
+    assert_eq!(snapshot(&instance), corrupt);
+    assert!(!game.join("launch-started").exists());
+    fs::write(&retained, exact).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "trust", "--revoke-all"])
+        .assert()
+        .success();
+    let revoked = snapshot(&instance);
+    refused_before_network(launch(true), "Trust requires one to sixteen enrolled keys");
+    assert_eq!(snapshot(&instance), revoked);
+    assert!(!game.join("launch-started").exists());
+    assert_eq!(
+        fs::read(game.join("player-note.txt")).unwrap(),
+        b"player content"
+    );
+    assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    driver.verify();
+}
+
+#[cfg(windows)]
+#[test]
+fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
+    use empack_tests::harness::{
+        process::{offline_command, offline_empack_cmd},
+        publication::Driver,
+        terminal,
+        workspace::snapshot,
+    };
+    use expectrl::{ControlCode, Expect, Regex};
+    use std::{
+        collections::BTreeMap,
+        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        path::Path,
+    };
+    use windows_sys::Win32::{
+        Foundation::{FILETIME, WAIT_OBJECT_0},
+        System::Threading::{
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+            PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+        },
+    };
+
+    struct RuntimeProcess(OwnedHandle);
+    impl Drop for RuntimeProcess {
+        fn drop(&mut self) {
+            // This handle was retained while the compiler-bound fixture was
+            // live. Cleanup cannot target a subsequently reused process ID.
+            unsafe {
+                if WaitForSingleObject(self.0.as_raw_handle(), 0) != WAIT_OBJECT_0 {
+                    let _ = TerminateProcess(self.0.as_raw_handle(), 130);
+                    let _ = WaitForSingleObject(self.0.as_raw_handle(), 5_000);
+                }
+            }
+        }
+    }
+
+    const CHILD: &str = "application::process_runtime::windows_tests::console_runtime_child";
+    let driver = Driver::native_fixture(CHILD);
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+    let instance = root.path().join("console Ω instance");
+    fs::create_dir(&instance).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "install"])
+        .arg(export.join("release.json"))
+        .args(["--sha256", &id])
+        .assert()
+        .success();
+    let game = instance.join("game");
+    assert_eq!(
+        fs::read(game.join("managed.txt")).unwrap(),
+        b"publisher content"
+    );
+    fs::write(game.join("console-runtime-mode"), b"wait").unwrap();
+    fs::write(game.join("player-note.txt"), b"keep player bytes").unwrap();
+    let before = snapshot(&game);
+    let mut command = offline_empack_cmd(&instance);
+    command
+        .args(["--yes", "instance", "launch", "--"])
+        .arg(driver.program())
+        .args([
+            "--ignored",
+            "--exact",
+            CHILD,
+            "--nocapture",
+            "--test-threads=1",
+        ]);
+    let mut console = expectrl::session::log(terminal::spawn(command), std::io::stderr()).unwrap();
+    console.set_expect_timeout(Some(Duration::from_secs(20)));
+
+    // Readiness follows atomic identity publication. Reading the console first
+    // also retains startup diagnostics and avoids blocking its output producer.
+    console.expect("WINDOWS_RUNTIME_READY").unwrap();
+    let pid_file = game.join("console-runtime-pid");
+    let identity_bytes = fs::read(&pid_file).unwrap();
+    let identity: BTreeMap<String, u32> = serde_json::from_slice(&identity_bytes).unwrap();
+    assert_eq!(
+        identity.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["created_high", "created_low", "pid"]
+    );
+    assert!(identity["pid"] > 1);
+    // Retain the process object and verify its creation time before granting
+    // the cleanup guard authority. A reused PID cannot select a different child.
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            identity["pid"],
+        )
+    };
+    assert!(!handle.is_null(), "{}", std::io::Error::last_os_error());
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+    let mut created = FILETIME::default();
+    let mut exited = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    assert_ne!(
+        unsafe {
+            GetProcessTimes(
+                handle.as_raw_handle(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        },
+        0
+    );
+    assert_eq!(
+        (created.dwLowDateTime, created.dwHighDateTime),
+        (identity["created_low"], identity["created_high"])
+    );
+    let runtime = RuntimeProcess(handle);
+    console.send(ControlCode::EndOfText).unwrap();
+    console.expect(Regex("(?i)operation interrupted")).unwrap();
+    assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
+    assert_eq!(
+        unsafe { WaitForSingleObject(runtime.0.as_raw_handle(), 0) },
+        WAIT_OBJECT_0,
+        "CLI completion must establish runtime retirement"
+    );
+    // ConPTY merges the output streams: this proves diagnostic delivery and exit
+    // classification, not separate stdout/stderr routing or Java behavior.
+    offline_command(&instance)
+        .args([
+            "--yes", "instance", "launch", "--", "cmd.exe", "/D", "/C", "exit", "/b", "0",
+        ])
+        .assert()
+        .success();
+    let mut after = snapshot(&game);
+    assert_eq!(
+        after.files.remove(Path::new("console-runtime-pid")),
+        Some(identity_bytes)
+    );
+    assert!(
+        after
+            .entries
+            .remove(Path::new("console-runtime-pid"))
+            .is_some()
+    );
+    assert_eq!(after, before);
+    assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    driver.verify();
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
+    use empack_tests::harness::process::{empack_cmd, offline_command};
+    use predicates::str::contains;
+
+    struct Runtime {
+        host: std::process::Child,
+        pid: Option<String>,
+    }
+    impl Drop for Runtime {
+        fn drop(&mut self) {
+            if let Some(pid) = &self.pid {
+                let _ = Command::new("/bin/kill")
+                    .args(["-KILL", pid])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            let _ = self.host.kill();
+            let _ = self.host.wait();
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+
+    for interfere_with_cleanup in [false, true] {
+        let instance = root
+            .path()
+            .join(format!("instance-{interfere_with_cleanup}"));
+        fs::create_dir(&instance).unwrap();
+        offline_command(&instance)
+            .args(["--yes", "instance", "install"])
+            .arg(export.join("release.json"))
+            .args(["--sha256", &id])
+            .assert()
+            .success();
+        let stderr = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+        let mut runtime = Runtime {
+            host: empack_cmd(&instance)
+                .args([
+                    "--yes",
+                    "instance",
+                    "launch",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    // One child, blocked on inherited input; no Java/network/fault switch.
+                    "printf '%s\\n' \"$$\" > runtime-pid; read -r line",
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(stderr.reopen().unwrap()))
+                .spawn()
+                .unwrap(),
+            pid: None,
+        };
+        let pid_file = instance.join("game/runtime-pid");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Ok(pid) = fs::read_to_string(&pid_file)
+                && pid.trim().parse::<u32>().is_ok_and(|pid| pid > 1)
+            {
+                runtime.pid = Some(pid.trim().to_owned());
+                break;
+            }
+            assert!(Instant::now() < deadline, "Runtime did not start");
+            assert!(
+                runtime.host.try_wait().unwrap().is_none(),
+                "{}",
+                fs::read_to_string(stderr.path()).unwrap()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let markers = fs::read_dir(instance.join(".host-state"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path().join("runtime.json"))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        assert_eq!(markers.len(), 1, "One owned runtime must have one marker");
+        let marker = &markers[0];
+        if interfere_with_cleanup {
+            // Controlled external edit to real ownership evidence, not a product hook.
+            fs::write(marker, b"externally changed runtime evidence").unwrap();
+        }
+        assert!(
+            Command::new("/bin/kill")
+                .args(["-INT", &runtime.host.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let status = loop {
+            if let Some(status) = runtime.host.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Host cancellation did not retire"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let pid = runtime.pid.as_ref().unwrap();
+        let remaining = Command::new("/bin/kill")
+            .args(["-0", "--", &format!("-{pid}")])
+            .env("LC_ALL", "C")
+            .output()
+            .unwrap();
+        assert!(!remaining.status.success(), "Owned runtime group survived");
+        assert!(
+            String::from_utf8_lossy(&remaining.stderr).contains("No such process"),
+            "{remaining:?}"
+        );
+        runtime.pid = None;
+        assert_eq!(status.code(), Some(130));
+        let diagnostic = fs::read_to_string(stderr.path()).unwrap();
+        assert!(diagnostic.contains("Operation interrupted"), "{diagnostic}");
+        if interfere_with_cleanup {
+            assert!(
+                diagnostic.contains("Runtime evidence changed before retirement"),
+                "{diagnostic}"
+            );
+            assert!(
+                diagnostic.contains("recovery evidence could not be cleared"),
+                "{diagnostic}"
+            );
+            assert!(
+                diagnostic.contains("instance recover-runtime --acknowledge-stopped"),
+                "{diagnostic}"
+            );
+            assert_eq!(
+                fs::read(marker).unwrap(),
+                b"externally changed runtime evidence"
+            );
+            offline_command(&instance)
+                .args([
+                    "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 0",
+                ])
+                .assert()
+                .failure()
+                .stderr(contains("retirement is unconfirmed"));
+            offline_command(&instance)
+                .args(["--yes", "instance", "recover-runtime"])
+                .assert()
+                .failure()
+                .stderr(contains("--acknowledge-stopped"));
+            assert!(marker.is_file());
+            offline_command(&instance)
+                .args([
+                    "--yes",
+                    "instance",
+                    "recover-runtime",
+                    "--acknowledge-stopped",
+                ])
+                .assert()
+                .success();
+        } else {
+            assert!(!diagnostic.contains("recovery is required"), "{diagnostic}");
+        }
+        assert!(!marker.exists());
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 0",
+            ])
+            .assert()
+            .success();
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 7",
+            ])
+            .assert()
+            .code(1)
+            .stderr(contains("Instance runtime exited with exit status: 7"));
+        assert!(!marker.exists());
+        assert_eq!(
+            fs::read(instance.join("game/managed.txt")).unwrap(),
+            b"publisher content"
+        );
+        assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    }
+}
+
+#[test]
+fn cli_unknown_native_build_target_exits_two() {
+    check(
+        &output(&fixture(), &["build", "not-a-target", "--yes"]),
+        EmpackExitCode::Usage,
+        "invalid value 'not-a-target'",
+    );
+}
+
+/// The final product must pass console ownership back through its invoking shell.
+#[cfg(unix)]
+#[test]
+fn cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure() {
+    use empack_tests::harness::{
+        process::{empack_cmd, offline_command},
+        publication::Driver,
+        terminal::{spawn, wait_for_exit},
+    };
+    use expectrl::{ControlCode, Eof, Expect, Regex};
+
+    struct RuntimeGroup(Option<u32>);
+    impl Drop for RuntimeGroup {
+        fn drop(&mut self) {
+            if let Some(pid) = self.0 {
+                let _ = Command::new("/bin/kill")
+                    .args(["-KILL", "--", &format!("-{pid}")])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+    }
+
+    const CHILD: &str = "application::process_runtime::terminal_tests::terminal_child_fixture";
+    let driver = Driver::native_fixture(CHILD);
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+    for (mode, status) in [
+        ("input", 0),
+        ("interrupt", 0),
+        ("failure", 1),
+        ("cancel", 130),
+    ] {
+        let instance = root.path().join(format!("console Ω {mode}"));
+        fs::create_dir(&instance).unwrap();
+        offline_command(&instance)
+            .args(["--yes", "instance", "install"])
+            .arg(export.join("release.json"))
+            .args(["--sha256", &id])
+            .assert()
+            .success();
+        fs::write(instance.join("game/player-note.txt"), b"keep player bytes").unwrap();
+
+        // A test-owned shell invokes the selected unmodified product. It compares
+        // the terminal before/after and reads again, so EOF alone cannot pass.
+        let wrapper = r#"before=$(/bin/stty -g) || exit 91
+"$@"
+result=$?
+after=$(/bin/stty -g) || exit 92
+test "$before" = "$after" || exit 93
+printf 'TERMINAL_RESTORED\nFOLLOWUP_READY\n'
+read -r reply || exit 94
+test "$reply" = usable || exit 95
+printf 'FOLLOWUP_INPUT=%s\n' "$reply"
+exit "$result"
+"#;
+        let product = empack_cmd(&instance);
+        let mut command = Command::new("/bin/sh");
+        command
+            .env_clear()
+            .current_dir(&instance)
+            .args(["-c", wrapper, "console-wrapper"])
+            .arg(product.get_program())
+            .args([
+                "--yes",
+                "instance",
+                "launch",
+                "--",
+                "/usr/bin/env",
+                "EMPACK_PTY_ROLE=child",
+            ])
+            .arg(driver.program())
+            .args(["--exact", CHILD, "--nocapture", "--test-threads=1"]);
+        for (name, value) in product.get_envs() {
+            if let Some(value) = value {
+                command.env(name, value);
+            }
+        }
+        let mut terminal = expectrl::session::log(spawn(command), std::io::stderr()).unwrap();
+        terminal.set_expect_timeout(Some(Duration::from_secs(20)));
+        terminal.expect("CONSOLE_READY").unwrap();
+        let host: u32 = fs::read_to_string(instance.join("game/runtime-host"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let runtime: u32 = fs::read_to_string(instance.join("game/runtime-pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(host > 1 && runtime > 1 && host != runtime);
+        // Failed terminal assertions must not strand the separately owned group.
+        let mut runtime_group = RuntimeGroup(Some(runtime));
+        // Real console input first establishes that the runtime can read its TTY.
+        terminal.send_line("list").unwrap();
+        terminal.expect("CONSOLE_INPUT=list").unwrap();
+        match mode {
+            "input" => terminal.send_line("stop").unwrap(),
+            "failure" => terminal.send_line("fail").unwrap(),
+            "interrupt" => {
+                terminal.send(ControlCode::EndOfText).unwrap();
+                terminal.expect("INTERRUPTED_GRACEFULLY").unwrap();
+            }
+            "cancel" => {
+                assert!(
+                    Command::new("/bin/kill")
+                        .args(["-INT", &host.to_string()])
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+                terminal.expect(Regex("Operation interrupted")).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        if mode == "failure" {
+            terminal
+                .expect("Instance runtime exited with exit status: 7")
+                .unwrap();
+        }
+        terminal.expect("TERMINAL_RESTORED").unwrap();
+        terminal.expect("FOLLOWUP_READY").unwrap();
+        terminal.send_line("usable").unwrap();
+        terminal.expect("FOLLOWUP_INPUT=usable").unwrap();
+        terminal.expect(Eof).unwrap();
+        wait_for_exit(terminal.get_process(), status);
+        let remaining = Command::new("/bin/kill")
+            .args(["-0", "--", &format!("-{runtime}")])
+            .env("LC_ALL", "C")
+            .output()
+            .unwrap();
+        assert!(!remaining.status.success(), "Owned runtime group survived");
+        assert!(String::from_utf8_lossy(&remaining.stderr).contains("No such process"));
+        runtime_group.0 = None;
+        driver.verify();
+
+        assert_eq!(
+            fs::read(instance.join("game/player-note.txt")).unwrap(),
+            b"keep player bytes"
+        );
+        assert_eq!(
+            fs::read(instance.join("game/managed.txt")).unwrap(),
+            b"publisher content"
+        );
+        assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+        // A new public operation must not find a false live-runtime requirement.
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "/bin/sh", "-c", "exit 0",
+            ])
+            .assert()
+            .success();
+    }
+}
+
+#[test]
+fn cli_native_download_transport_failure_exits_three() {
+    let project = fixture();
+    let before = fs::read(project.dir().join("empack.lock")).unwrap();
+    let result = command(&project)
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("HTTP_PROXY", "http://127.0.0.1:9")
+        .env("ALL_PROXY", "http://127.0.0.1:9")
+        .env("NO_PROXY", "")
+        .env("EMPACK_NET_TIMEOUT", "1")
+        .args([
+            "add",
+            "--yes",
+            "--type",
+            "resourcepack",
+            "https://example.invalid/assets.zip",
+        ])
+        .output()
+        .unwrap();
+    check(&result, EmpackExitCode::Network, "Download");
+    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
+    assert!(
+        empack_lib::testing::read_authoring(&project.dir().join("empack.yml"))
+            .unwrap()
+            .intent()
+            .roots
+            .is_empty()
+    );
+}
+
+#[test]
+fn cli_invalid_consumer_delivery_exits_two_without_publication() {
+    let project = fixture();
+    let manifest = fs::read(project.dir().join("empack.yml")).unwrap();
+    let lock = fs::read(project.dir().join("empack.lock")).unwrap();
+    check(
+        &output(
+            &project,
+            &["build", "modrinth", "--delivery", "bundled", "--yes"],
+        ),
+        EmpackExitCode::Usage,
+        "dependency delivery",
+    );
+    assert_eq!(
+        fs::read(project.dir().join("empack.yml")).unwrap(),
+        manifest
+    );
+    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), lock);
+    assert!(!project.dir().join("dist").exists());
+}

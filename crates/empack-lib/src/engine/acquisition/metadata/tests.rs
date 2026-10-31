@@ -104,9 +104,15 @@ async fn metadata_rejects_large_encoded_and_unsuccessful_responses() {
 
 #[tokio::test]
 async fn chunked_metadata_enforces_running_limit_and_total_deadline() {
-    for body in [
-        &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\n123456789\r\n"[..],
-        &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"[..],
+    for (body, expected) in [
+        (
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\n123456789\r\n"[..],
+            TransferError::ByteLimit,
+        ),
+        (
+            &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"[..],
+            TransferError::Deadline,
+        ),
     ] {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -120,11 +126,8 @@ async fn chunked_metadata_enforces_running_limit_and_total_deadline() {
             stream.write_all(body).unwrap();
             assert_eq!(stream.read(&mut request).unwrap(), 0);
         });
-        assert!(
-            fetch(&format!("http://{address}"), "/file", 8)
-                .await
-                .is_err()
-        );
+        let result = fetch(&format!("http://{address}"), "/file", 8).await;
         thread.join().unwrap();
+        assert_eq!(result.unwrap_err().to_string(), expected.to_string());
     }
 }

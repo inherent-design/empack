@@ -45,7 +45,7 @@ async fn execute(
     .await
 }
 #[tokio::test]
-async fn runtime_migration_plan_preview_and_application_share_candidate_without_early_edits() {
+async fn host_runtime_migration_plan_and_apply_share_candidate() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let mut server = mockito::Server::new_async().await;
@@ -611,3 +611,5 @@ async fn migration_refuses_unknown_retained_library_evidence() {
 async fn migration_reports_compatible_library_dropped_from_new_closure_as_retained() {
     library_migration(false, LibraryCase::DroppedCompatible).await;
 }
+
+mod journey;

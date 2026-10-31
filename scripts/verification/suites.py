@@ -1,0 +1,108 @@
+"""Fixed selections shared by local tasks and CI; not an extensible workflow DSL."""
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Suite:
+    binaries: tuple[str, ...] = ()
+    excluded_binaries: tuple[str, ...] = ()
+    ignored: bool = False
+    telemetry: bool = False
+    unix_only: bool = False
+    macos_only: bool = False
+    java: bool = False
+    timeout: int = 1800
+    cases: tuple[str, ...] = ()
+    required_env: tuple[str, ...] = ()
+
+    def inapplicable_reason(self, target):
+        if self.unix_only and target == "x86_64-pc-windows-msvc":
+            return "This desktop-opener fixture is Unix-only"
+        if self.macos_only and not target.endswith("-apple-darwin"):
+            return "This APFS remount fixture requires macOS"
+        return None
+
+    @property
+    def filter(self):
+        binaries = " | ".join(f"binary(={name})" for name in self.binaries) or "all()"
+        if self.excluded_binaries:
+            excluded = " | ".join(f"binary(={name})" for name in self.excluded_binaries)
+            binaries = f"({binaries}) & !({excluded})"
+        if self.cases:
+            return f"({binaries}) & (" + " | ".join(f"test(={name})" for name in self.cases) + ")"
+        return binaries
+
+
+CLI = (
+    "cli_arguments", "cli_automation", "cli_build", "cli_dependencies", "cli_entry", "cli_exit_codes",
+    "cli_init", "cli_interactive", "cli_manifest", "cli_pending_build", "cli_publisher", "cli_recovery", "cli_server", "cli_status", "journey_authoring",
+    "journey_content_kinds", "journey_selection",
+    "journey_import", "journey_local_exports", "journey_pending", "journey_pending_import", "journey_pending_instance",
+    "journey_publisher", "journey_verified_import", "cli_offline",
+)
+SUITES = {
+    "deterministic": Suite(),
+    # CLI execution is already retained by the archive and auxiliary producers.
+    "candidate-native": Suite(excluded_binaries=CLI),
+    "cli": Suite(CLI),
+    "native-remount": Suite(("journey_publisher", "journey_pending_import", "journey_pending_instance", "journey_pending", "journey_recovery", "empack_tests"),
+                            ignored=True, macos_only=True, timeout=600, cases=(
+                                "journey_signed_channels_survive_native_remount",
+                                "journey_pending_import_survives_native_remount_and_reopens_created_root",
+                                "journey_pending_instance_survives_native_remount_with_retained_inputs",
+                                "journey_pending_build_survives_native_remount_with_public_keys",
+                                "journey_pending_sync_survives_native_remount_with_retained_inputs",
+                                "journey_creation_recovery_survives_crash_and_native_remount",
+                                "journey_publication_finish_and_restore_survive_crash_and_native_remount",
+                                "harness::native_volume::tests::native_image_cleanup_rechecks_ownership_after_busy_and_bounds_retirement")),
+    "import-corpus": Suite(("journey_import",)),
+    "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
+    "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
+    "live-catalog": Suite(("live_cli_init", "live_runtime_catalog_contract"), ignored=True),
+    "publisher-cli": Suite(("cli_publisher",), ignored=True, timeout=600,
+                           cases=("live_cli_hosted_channel_verifies_inputs_before_local_publication",)),
+    "live-provider": Suite(("live_provider_cli", "live_provider_contract"), ignored=True,
+                           required_env=("EMPACK_KEY_CURSEFORGE",)),
+    "live-provider-cli": Suite(("live_provider_cli",), ignored=True, cases=(
+        "live_cli_equivalent_provider_selectors_converge",
+        "live_cli_pty_search_requires_choice_and_approval",
+        "live_cli_selected_update_preserves_exact_pin_and_authoring",
+        "live_cli_direct_url_retains_observed_content",
+        "live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs")),
+    "live-modrinth": Suite(("live_provider_contract",), ignored=True, cases=(
+        "modrinth_mod_identity_and_exact_bytes", "modrinth_resource_pack_identity_and_exact_bytes",
+        "modrinth_compatible_selection_and_bytes", "modrinth_mixed_project_selects_datapack_bytes",
+        "modrinth_required_closure_and_all_selected_bytes")),
+    "live-curseforge": Suite(("live_provider_contract", "live_provider_cli"), ignored=True, cases=(
+        "curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes",
+        "live_cli_curseforge_selectors_converge"),
+        required_env=("EMPACK_KEY_CURSEFORGE",)),
+    "server-cli": Suite(("live_server_cli",), ignored=True, java=True),
+    "live-runtime": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=3600,
+                          required_env=("EMPACK_TEST_JAVA8_HOME",)),
+    "runtime-current": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=1800,
+                             cases=("runtime_managed_server_vanilla", "runtime_managed_server_neoforge",
+                                    "runtime_server_fabric_classpath")),
+    "live-assistance": Suite(("live_manual_assistance",), ignored=True, unix_only=True),
+    "import-survey": Suite(("live_import_survey",), ignored=True, timeout=3600),
+}
+
+
+TEST_FEATURES = {"minimal": ("--no-default-features",), "all": ("--all-features",)}
+
+
+def nextest_command(action, suite, config, test_features):
+    """One reviewed discovery/execution selection, including its feature graph."""
+    if action not in {"list", "run"} or test_features not in TEST_FEATURES:
+        raise ValueError("Unknown test action or feature graph")
+    command = ["cargo", "nextest", action, "--config-file", str(config),
+               "--user-config-file", "none", "--profile", "verification",
+               "--locked", "--workspace", *TEST_FEATURES[test_features],
+               "-E", suite.filter, "--ignore-default-filter", "--run-ignored",
+               "ignored-only" if suite.ignored else "default"]
+    if action == "list":
+        return command + ["--message-format", "json"]
+    command += ["--no-tests", "fail", "--retries", "0", "--no-fail-fast"]
+    if suite.ignored:
+        command += ["--test-threads", "1" if suite.macos_only else "2"]
+    return command

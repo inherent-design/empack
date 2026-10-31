@@ -19,7 +19,7 @@ mise run check
 mise run clippy
 mise run test
 mise run smoke
-mise run e2e:strict
+mise run test:live
 ```
 
 Use a development branch and submit a PR to `main`. Commit coherent, reviewable
@@ -49,7 +49,9 @@ code. Use structured, redacted diagnostics and remove temporary debugging output
 Keep normative requirements in `docs/design/` and operational instructions in the
 user guides linked from `docs/README.md`.
 Update contracts with behavior changes; keep run-specific evidence in CI and PRs.
-Keep implementation tasks in `TODO.md`; do not add historical delivery ledgers.
+Keep implementation status in the active PR; do not add historical delivery ledgers.
+The [verification registry](tests/verification/README.md) owns acceptance requirements
+and discovery bindings, independently of run results.
 Design contracts describe the target and must not claim unimplemented commands are
 available in a released executable.
 

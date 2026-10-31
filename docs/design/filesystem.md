@@ -27,6 +27,53 @@ A cache cleanup has cache-root authority, not project-root authority. The engine
 Native roots use directory capabilities with platform-specific identity, no-follow
 and reparse checks. `cap-std` alone does not establish confinement. [R9](https://docs.rs/cap-std/latest/cap_std/fs/struct.Dir.html)
 
+Live observations and persistent identity serve different purposes. A retained
+handle still checks the current device, object and creation metadata. Persistent
+comparison must not treat a Unix device number as a volume identifier across
+reboot or remount. The v0.8.4 adapter additionally observes a volume UUID and object
+identity through the retained handle: macOS uses `fgetattrlist`; Linux uses
+`FS_IOC_GETFSUUID` (or the read-only ext4 UUID query when the generic query is
+unavailable) and the filesystem's export handle; Windows retains the volume
+serial and file ID from `FILE_ID_INFO`. Linux export handles distinguish filesystem
+object namespaces, including subvolumes. All three include creation identity and
+use separate platform domains. No pathname is accepted as substitute evidence.
+
+Saved-build and pending-instance fingerprints, schema-5 publication journals and
+schema-2 retention/creation records use persistent observations. Journals bind
+both the root and each file's pre-publication identity. Older internal formats
+are unsupported and are neither migrated nor rewritten by inspection. Replacing
+an unchanged pre-publication file with identical bytes still changes its object
+identity and cannot authorize recovery over that replacement. Recovery approval
+separately captures live observations and the exact journal revision.
+
+Unavailable UUID/export-handle support or creation metadata refuses retention that
+needs this evidence; it does not fall back to the current device number. The Linux
+generic UUID ioctl requires kernel support introduced in 6.9 and support from the
+selected filesystem. On older ext4 kernels, `EXT4_IOC_GETFSUUID` queries the same
+volume UUID through the retained file or directory. The adapter checks the filesystem
+type before issuing that request; it does not infer a UUID from a device number or
+mount path. Permission failures do not authorize a fallback. The native fixture
+records kernel and filesystem type, and compares the UUID readers on ext4. Missing
+native-host evidence is not a supported-platform claim.
+
+Native publication state can retain an immutable `root-identity.json` association
+with its persistent root identity and original native key. Writers establish it
+under the existing publication lock. Read-only discovery never creates associations
+or coordination files. A bounded search checks matching object/creation candidates
+and verifies their persistent evidence; it keeps the original directory, journal,
+runtime marker and lock files in place. Foreign, moved, corrupt or duplicate claims among matching candidates
+refuse access. A potentially matching legacy directory without persistent evidence
+cannot silently disappear after its device assignment changes.
+
+Local instance and subscription records compare their saved opaque key against
+the proven association, retaining its original value across device reassignment.
+Publication checks the selected key again so a changed association cannot inherit
+a previously prepared instance or subscription mutation. Current-format pending
+operations and creation recovery use corresponding associations and persistent
+proofs. An association does not manufacture missing historical identity or
+translate obsolete fingerprints. Incompatible state is preserved and refused;
+legacy discovery, adoption and migration are outside this release requirement.
+
 Required behavior:
 
 - Open/read/create/remove relative to retained roots and validate expected file kinds without a weaker lexical fallback on I/O failure.

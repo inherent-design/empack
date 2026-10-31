@@ -1099,7 +1099,13 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
         let workspace = ProjectReader::new(RecoveryReader::new(root.path().join("state")))
             .capture(&target, &[], SnapshotLimits::default(), &Default::default())
             .unwrap();
-        let context = SyncInputContext::capture(target, &workspace, &Default::default()).unwrap();
+        let context = SyncInputContext::capture(
+            &root.path().join("state"),
+            target,
+            &workspace,
+            &Default::default(),
+        )
+        .unwrap();
         let mut intent = resolved.intent().clone();
         intent.runtime.minecraft = GameVersion::parse("1.21.2").unwrap();
         let revision = DocumentCodec
@@ -1451,4 +1457,121 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     assert!(sync(root.path(), &server.url(), false).await.is_err());
     assert_eq!(snapshot(&root.path().join("project")), before);
     changed.assert_async().await;
+}
+
+#[tokio::test]
+async fn direct_url_policies_retain_locked_bytes_across_changed_responses() {
+    const ORIGIN: &str = "https://author-files.example.invalid";
+    const PAYLOAD: &[u8] = b"enabled=true\n";
+    const CHANGED: &[u8] = b"enabled=evil\n";
+    async fn apply(root: &Path, base: &str, dry: bool) -> Result<()> {
+        let mut selected = services(base);
+        selected.transport = selected.transport.with_test_origin(ORIGIN, base);
+        synchronize_with_services(
+            &session(root, dry),
+            true,
+            selected,
+            RuntimeCatalog::for_loopback_tests(base),
+        )
+        .await
+    }
+    for expanded in [false, true] {
+        for observed in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            fixture(root.path()).await;
+            let project_root = root.path().join("project");
+            let author_path = project_root.join("empack.yml");
+            let mut author: serde_json::Value =
+                serde_saphyr::from_str(&fs::read_to_string(&author_path).unwrap()).unwrap();
+            let mut declaration = if expanded {
+                json!({"source":{"kind":"url","downloads":[format!("{ORIGIN}/settings.toml")]}})
+            } else {
+                json!({"url":format!("{ORIGIN}/settings.toml")})
+            };
+            declaration["type"] = json!("config");
+            declaration["placement"] = json!([{
+                "destination":"config/settings.toml", "layer":"common",
+                "environment":{"client":"required","server":"required"}
+            }]);
+            if observed {
+                declaration["accept-observed"] = json!(true);
+            } else {
+                declaration["sha256"] =
+                    json!("f6a2565056ed10ba270da94e671fa5d7ced8ade044fc8b31a851840f7bce654f");
+            }
+            author["dependencies"] = json!({"settings":declaration});
+            let author = serde_json::to_vec_pretty(&author).unwrap();
+            fs::write(&author_path, &author).unwrap();
+            fs::create_dir(project_root.join("dist")).unwrap();
+            fs::write(project_root.join("dist/prior.zip"), b"prior artifact").unwrap();
+            let mut server = mockito::Server::new_async().await;
+            let original = server
+                .mock("GET", "/settings.toml")
+                .with_body(PAYLOAD)
+                .expect_at_least(1)
+                .create_async()
+                .await;
+            let before = snapshot(root.path());
+            apply(root.path(), &server.url(), true).await.unwrap();
+            assert_eq!(
+                snapshot(root.path()),
+                before,
+                "preview must not publish or cache work"
+            );
+            apply(root.path(), &server.url(), false).await.unwrap();
+            original.assert_async().await;
+            let installed = project_root.join("pack/config/settings.toml");
+            assert_eq!(fs::read(&installed).unwrap(), PAYLOAD);
+            assert_eq!(fs::read(&author_path).unwrap(), author);
+            let resolved = project(root.path());
+            let file = &resolved.lock().dependencies[&DependencyKey::parse("settings").unwrap()]
+                .files
+                .as_slice()[0];
+            assert_eq!(
+                file.acquisition,
+                AcquisitionSpec::Url(
+                    NonEmpty::new(vec![format!("{ORIGIN}/settings.toml")]).unwrap()
+                )
+            );
+            if observed {
+                assert!(file.expected.digests.is_none());
+                assert!(file.provenance.declared_digests.is_none());
+                assert_eq!(
+                    file.expected.accepted_observation,
+                    Some(empack_core::digest::ContentId::from_sha256(
+                        Sha256::digest(PAYLOAD).into()
+                    ))
+                );
+            } else {
+                let digest =
+                    DigestSet::new(vec![ExpectedDigest::Sha256(Sha256::digest(PAYLOAD).into())])
+                        .unwrap();
+                assert_eq!(file.expected.digests.as_ref(), Some(&digest));
+                assert_eq!(file.provenance.declared_digests.as_ref(), Some(&digest));
+            }
+            let accepted = snapshot(&project_root);
+            for _ in 0..2 {
+                apply(root.path(), &server.url(), false).await.unwrap();
+                assert_eq!(snapshot(&project_root), accepted);
+            }
+            original.remove_async().await;
+            let changed = server
+                .mock("GET", "/settings.toml")
+                .with_body(CHANGED)
+                .expect_at_least(1)
+                .create_async()
+                .await;
+            // Force reacquisition, so existing installed bytes cannot hide a changed response.
+            fs::remove_file(&installed).unwrap();
+            if root.path().join("cache").exists() {
+                fs::remove_dir_all(root.path().join("cache")).unwrap();
+            }
+            let before = snapshot(&project_root);
+            let error = apply(root.path(), &server.url(), false).await.unwrap_err();
+            changed.assert_async().await;
+            assert_eq!(snapshot(&project_root), before, "{error:#}");
+            assert!(!installed.exists(), "changed bytes must not be installed");
+            assert_eq!(project(root.path()).lock(), resolved.lock());
+        }
+    }
 }

@@ -25,10 +25,13 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const JOURNAL_SCHEMA: u32 = 4;
+const JOURNAL_SCHEMA: u32 = 5;
+mod journal_identity;
+use journal_identity::JournalBinding;
 mod creation;
 mod recovery;
 mod retention;
+mod root_state;
 pub use creation::{PreparedCreationRecovery, PreparedRootCreation};
 pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryKind, RecoveryStatus};
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
@@ -37,6 +40,25 @@ static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 /// Private host state is separate from project data and evictable download caches.
 pub(crate) struct Publisher {
     host: Dir,
+    // Diagnostic coordinates only; all publication continues through `host`.
+    location: std::path::PathBuf,
+}
+
+/// Read-only coordinates for recovery presentation, never publication authority.
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("Recovery context retained")]
+pub(crate) struct RecoveryLocation {
+    pub(crate) project: std::path::PathBuf,
+    pub(crate) state: std::path::PathBuf,
+}
+impl RecoveryLocation {
+    pub(crate) fn attach(&self, error: anyhow::Error) -> anyhow::Error {
+        if error.is::<Self>() {
+            error
+        } else {
+            error.context(self.clone())
+        }
+    }
 }
 /// Read-only journal access for snapshot preparation. It cannot create or recover state.
 #[derive(Clone)]
@@ -60,17 +82,20 @@ impl RecoveryReader {
     pub fn new(host_state: std::path::PathBuf) -> Self {
         Self { host_state }
     }
+    pub(super) fn bound_root_key(&self, root: &ProjectReadRoot) -> Result<String> {
+        root.check_binding()?;
+        match Publisher::open_existing(&self.host_state)? {
+            Some(publisher) => publisher.bound_root_key(root),
+            None => root_key(root),
+        }
+    }
     pub(super) fn enter(&self, root: &ProjectReadRoot) -> Result<ProjectReadGuard> {
         let Some(publisher) = Publisher::open_existing(&self.host_state)? else {
             return Ok(ProjectReadGuard { _lock: None });
         };
         root.check_binding()?;
-        let state = match publisher.host.open_dir_nofollow(root_key(root)?) {
-            Ok(value) => value,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(ProjectReadGuard { _lock: None });
-            }
-            Err(error) => return Err(error.into()),
+        let Some(state) = publisher.find_project_state(root)? else {
+            return Ok(ProjectReadGuard { _lock: None });
         };
         let file = match native::open_file(&state, "operation.lock") {
             Ok(value) => Some(value),
@@ -88,10 +113,15 @@ impl RecoveryReader {
                 .context("Project publication is busy")?;
         }
         // Inspect after acquiring coordination; corrupt and hot journals both prevent ordinary reads.
-        ensure!(
-            !publisher.recovery_required(root)?,
-            "Project requires publication recovery before ordinary reads"
-        );
+        if publisher.recovery_required(root)? {
+            return Err(RecoveryLocation {
+                project: root.selected().into(),
+                state: self.host_state.clone(),
+            }
+            .attach(anyhow::anyhow!(
+                "Project requires publication recovery before ordinary reads"
+            )));
+        }
         Ok(ProjectReadGuard { _lock: file })
     }
 }
@@ -174,7 +204,7 @@ impl From<&FileContent> for Fingerprint {
 struct Change {
     target: String,
     before: Option<Fingerprint>,
-    before_object: Option<Binding>,
+    before_object: Option<JournalBinding>,
     after: Option<Fingerprint>,
     sibling: Option<String>,
     unix_mode: Option<u32>,
@@ -184,7 +214,7 @@ struct Change {
 #[serde(deny_unknown_fields)]
 struct Journal {
     schema: u32,
-    root: Binding,
+    root: JournalBinding,
     operation: String,
     changes: Vec<Change>,
     groups: Vec<JournalCapture>,
@@ -234,7 +264,20 @@ impl Publisher {
     fn open_impl(host_state: &Path, create: bool) -> Result<Self> {
         Ok(Self {
             host: open_private_directory(host_state, create)?,
+            location: std::path::absolute(host_state).unwrap_or_else(|_| host_state.into()),
         })
+    }
+
+    fn locate_recovery(&self, project: &Path, error: anyhow::Error) -> anyhow::Error {
+        if error.is::<RecoveryRequired>() {
+            RecoveryLocation {
+                project: project.into(),
+                state: self.location.clone(),
+            }
+            .attach(error)
+        } else {
+            error
+        }
     }
 
     /// Open already-created private state without creating directories during preview.
@@ -255,11 +298,8 @@ impl Publisher {
     /// Report unfinished publication before allowing ordinary project reads or planning.
     pub fn recovery_required(&self, root: &ProjectReadRoot) -> Result<bool> {
         root.check_binding()?;
-        let key = root_key(root)?;
-        let directory = match self.host.open_dir_nofollow(key) {
-            Ok(directory) => directory,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(error.into()),
+        let Some(directory) = self.find_project_state(root)? else {
+            return Ok(false);
         };
         native::reject_reparse(&directory.try_clone()?.into_std_file())?;
         let journal = load_journal(&directory)?;
@@ -277,6 +317,18 @@ impl Publisher {
         cancel: &Cancellation,
     ) -> Result<PublicationReceipt> {
         self.publish_with_hook(root, verified, cancel, &mut |_| Ok(()))
+            .map_err(|error| self.locate_recovery(root.selected(), error))
+    }
+
+    #[cfg(test)]
+    pub(super) fn publish_test_change(
+        &self,
+        root: &ProjectReadRoot,
+        verified: VerifiedFileChange,
+        cancel: &Cancellation,
+        hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
+    ) -> Result<PublicationReceipt> {
+        self.publish_with_hook(root, verified, cancel, hook)
     }
 
     fn publish_with_hook(
@@ -287,6 +339,14 @@ impl Publisher {
         hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
     ) -> Result<PublicationReceipt> {
         let (plan, mut stage, base) = verified.into_parts();
+        // Admit durable evidence before creating coordination or retention state.
+        let root_binding = JournalBinding::capture(root.binding)?;
+        for change in plan.changes() {
+            let path = ProjectLayout::path(change.target())?;
+            if let Some(Observation::File(file)) = base.entries().get(&path) {
+                JournalBinding::capture(file.object)?;
+            }
+        }
         let state = self.project_state(root)?;
         let _lock = lock(&state)?;
         ensure!(
@@ -364,7 +424,9 @@ impl Publisher {
                     .as_ref()
                     .map(|_| format!(".empack-publish-{operation}-{index}")),
                 before: old.map(|value| Fingerprint::from(&content(value))),
-                before_object: old.map(|value| value.object.into()),
+                before_object: old
+                    .map(|value| JournalBinding::capture(value.object))
+                    .transpose()?,
                 after,
                 #[cfg(unix)]
                 unix_mode: old.map(|value| value.mode & 0o777),
@@ -406,7 +468,7 @@ impl Publisher {
         }
         let mut journal = Journal {
             schema: JOURNAL_SCHEMA,
-            root: root.binding.into(),
+            root: root_binding,
             operation,
             changes,
             groups: base
@@ -573,7 +635,10 @@ impl Publisher {
                 inverse.push(Change {
                     target: change.target.clone(),
                     before: fingerprint,
-                    before_object: actual.as_ref().map(|file| file.object.into()),
+                    before_object: actual
+                        .as_ref()
+                        .map(|file| JournalBinding::capture(file.object))
+                        .transpose()?,
                     after: change.before.clone(),
                     sibling: change
                         .before
@@ -634,8 +699,10 @@ impl Publisher {
             if !fingerprints_match(fingerprint.as_ref(), change.after.as_ref()) {
                 ensure!(
                     fingerprints_match(fingerprint.as_ref(), change.before.as_ref())
-                        && current.as_ref().map(|file| Binding::from(file.object))
-                            == change.before_object,
+                        && journal_identity::matches_optional(
+                            change.before_object.as_ref(),
+                            current.as_ref().map(|file| file.object),
+                        ),
                     publication_conflict(
                         &change.target,
                         change.before.as_ref(),
@@ -702,6 +769,10 @@ impl Publisher {
 
     fn project_state(&self, root: &ProjectReadRoot) -> Result<Dir> {
         root.check_binding()?;
+        if let Some(directory) = self.find_project_state(root)? {
+            self.associate_project_state(&directory, root)?;
+            return Ok(directory);
+        }
         let key = root_key(root)?;
         match self.host.create_dir(&key) {
             Ok(()) => sync_directory(&self.host)?,
@@ -710,6 +781,7 @@ impl Publisher {
         }
         let directory = self.host.open_dir_nofollow(&key)?;
         private_directory(&directory)?;
+        self.associate_project_state(&directory, root)?;
         Ok(directory)
     }
 }
@@ -948,7 +1020,7 @@ fn load_journal(directory: &Dir) -> Result<Option<Journal>> {
 }
 fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
     ensure!(
-        journal.schema == JOURNAL_SCHEMA && journal.root == Binding::from(root.binding),
+        journal.root.matches(root.binding),
         "Journal root or schema mismatch"
     );
     PortableRelPath::parse(&journal.operation, PathSyntax::ArtifactName)?;
@@ -1083,7 +1155,10 @@ fn check_pending(root: &ProjectReadRoot, path: &PortableRelPath, change: &Change
                 .map(|value| Fingerprint::from(&content(value)))
                 .as_ref(),
             change.before.as_ref()
-        ) && current.as_ref().map(|value| Binding::from(value.object)) == change.before_object,
+        ) && journal_identity::matches_optional(
+            change.before_object.as_ref(),
+            current.as_ref().map(|value| value.object),
+        ),
         publication_conflict(
             &change.target,
             change.before.as_ref(),

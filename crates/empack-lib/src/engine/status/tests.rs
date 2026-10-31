@@ -132,30 +132,43 @@ fn status_reports_pending_presence_without_validating_or_rewriting_it() {
             1
         }
     }
-    let parent = tempfile::tempdir().unwrap();
-    let root = parent.path().join("project");
-    fs::create_dir(&root).unwrap();
-    let state = parent.path().join("state");
-    let cancel = Cancellation::default();
-    let (_, binding) = store::bind(&root, &cancel).unwrap();
-    store::save(
-        &state,
-        Kind::Import,
-        &root,
-        &Record { binding },
-        None,
-        &cancel,
-    )
-    .unwrap();
-    let before = tree(parent.path());
-    let value = report(&root, &state);
-    assert!(
-        value
-            .findings
-            .iter()
-            .any(|f| f.code == "pending-input" && f.next == ["init", "--continue"])
-    );
-    assert_eq!(before, tree(parent.path()));
+    for (kind, next, completed_instance) in [
+        (Kind::Import, ["init", "--continue"], false),
+        (Kind::Instance, ["instance", "continue"], true),
+    ] {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("project");
+        fs::create_dir(&root).unwrap();
+        if completed_instance {
+            installed(&root, InstanceLayout::Game, InstanceSide::Client);
+        }
+        let state = parent.path().join("state");
+        let cancel = Cancellation::default();
+        let (_, binding) = store::bind_for(&state, kind, &root, &cancel).unwrap();
+        // Deliberately minimal host record: status observes presence without
+        // claiming that resume has validated the workflow-specific payload.
+        store::save(&state, kind, &root, &Record { binding }, None, &cancel).unwrap();
+        let before = tree(parent.path());
+        let value = report(&root, &state);
+        assert!(
+            value
+                .findings
+                .iter()
+                .any(|f| f.code == "pending-input" && f.next == next)
+        );
+        assert!(!value.content_verified);
+        if completed_instance {
+            let instance = value
+                .contexts
+                .iter()
+                .find(|c| c.context == WorkspaceContext::Instance)
+                .unwrap();
+            assert_eq!(instance.state, RecordState::Valid);
+            assert_eq!(instance.version.as_deref(), Some("2.3.0"));
+            assert_eq!(instance.game_directory.as_deref(), Some("game"));
+        }
+        assert_eq!(before, tree(parent.path()));
+    }
 }
 #[cfg(unix)]
 #[test]
@@ -218,6 +231,14 @@ fn status_keeps_runtime_retirement_evidence_and_never_releases_the_lease() {
     lease.begin().unwrap();
     let before = tree(parent.path());
     let value = report(&project, &state);
+    assert!(!value.content_verified);
+    let instance = value
+        .contexts
+        .iter()
+        .find(|c| c.context == WorkspaceContext::Instance)
+        .unwrap();
+    assert_eq!(instance.state, RecordState::Valid);
+    assert_eq!(instance.version.as_deref(), Some("2.3.0"));
     assert!(
         value
             .findings

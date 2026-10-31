@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""Select change-based checks and reject missing job or suite evidence at the final gate."""
+import argparse
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+
+from verification.evidence import sha256, write_json
+from verification.suites import SUITES
+from verification.consumer import inspect_prism_evidence
+from verification.authoring_schema import inspect_schema_evidence
+from verification.python_tests import inspect_python_evidence
+from verification.doctests import inspect_doctest_evidence
+from verification.requirements import case_results
+from verification.receipts import check_suite_receipt
+from verification.reporting import render_gate
+
+TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc")
+NATIVE_TEST_FEATURES = {"default": "minimal", "telemetry": "all"}
+NATIVE_SUITES = {"default": ["deterministic", "native-remount"],
+                 "telemetry": ["deterministic", "telemetry", "native-remount"]}
+JOBS = ("tooling", "lint", "test", "cross-build", "coverage", "live", "consumer", "survey")
+ROOT = Path(__file__).resolve().parents[1]
+CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
+REQUIREMENTS = ROOT / "tests/verification/requirements.json"
+
+
+def selection(paths, *, trusted, full=False):
+    """Deleted paths count too; unknown non-document changes take the native path."""
+    paths = sorted(set(paths))
+    code = [p for p in paths if not (p.endswith(".md") or (p.startswith("docs/schemas/") and p.endswith(".json")))]
+    native = full or bool(code)
+    shared = full or any(p in {"Cargo.toml", "Cargo.lock", "rust-toolchain.toml"}
+                        or p.startswith(("crates/empack-core/", ".github/", "scripts/verification/"))
+                        or p in {"scripts/verify.py", "scripts/ci-verification.py"} for p in code)
+    provider = shared or any(p.startswith((
+        "tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json",
+        "crates/empack-lib/src/engine/providers", "crates/empack-lib/src/engine/acquisition",
+        "crates/empack-lib/src/engine/import", "crates/empack-lib/src/networking",
+        "crates/empack-lib/src/application/engine_host/dependencies",
+        "crates/empack-lib/src/application/engine_host/cli",
+        "crates/empack-lib/src/application/session.rs",
+        "crates/empack-tests/tests/live_provider", "crates/empack-tests/tests/provider_catalog",
+        "crates/empack-lib/tests/live_provider_contract.rs",
+    )) for p in code)
+    runtime = shared or any(p.startswith((
+        "crates/empack-lib/src/engine/runtime", "crates/empack-lib/src/engine/build/server",
+        "crates/empack-lib/src/application/process_runtime", "crates/empack-lib/src/application/java",
+        "crates/empack-lib/src/application/engine_host/instance",
+        "crates/empack-lib/src/engine/api/launch", "crates/empack-lib/src/engine/instance",
+        "crates/empack-tests/tests/live_cli_init", "crates/empack-tests/tests/live_server",
+        "crates/empack-tests/tests/cli_server", "crates/empack-tests/src/bin/java-fixture.rs",
+        "crates/empack-tests/tests/runtime_", "crates/empack-lib/templates/server/",
+        "crates/empack-lib/tests/live_runtime_catalog_contract.rs",
+        "crates/empack-lib/tests/live_server_distribution_startup.rs",
+    )) for p in code)
+    consumer = shared or any(p.startswith((
+        "crates/empack-lib/src/engine/build/client", "crates/empack-lib/src/engine/prism.rs", "crates/empack-lib/templates/client/",
+        "scripts/consumer/", "scripts/check-prism-config.py", "scripts/tests/test_consumer_evidence.py",
+    )) for p in code)
+    live = []
+    if provider:
+        live += ["live-provider-cli", "live-modrinth"]
+    if full or any(p.startswith(("crates/empack-lib/src/engine/providers/curseforge",
+                                "crates/empack-lib/src/engine/providers/selector.rs",
+                                "crates/empack-lib/tests/live_provider_contract.rs",
+                                "crates/empack-tests/tests/live_provider_cli.rs")) for p in code):
+        live.append("live-curseforge")
+    if runtime:
+        live += ["live-catalog", "server-cli", "runtime-current"]
+    if shared or any(p == ".gitattributes" or p.startswith((
+        "crates/empack-lib/src/engine/release", "crates/empack-lib/src/engine/api/release_publication",
+        "crates/empack-lib/src/application/engine_host/release",
+        "crates/empack-tests/tests/cli_publisher", "crates/empack-tests/tests/support/publisher",
+        "tests/fixtures/hosted-publication/",
+    )) for p in code):
+        live.append("publisher-cli")
+    if shared or any(p.startswith((
+        "crates/empack-lib/src/engine/import", "crates/empack-lib/src/engine/build/",
+        "crates/empack-lib/src/engine/prism.rs",
+        "crates/empack-lib/src/application/engine_host/cli/import",
+        "crates/empack-tests/tests/live_pinned_import", "tests/fixtures/import-corpus/",
+    )) for p in code):
+        live.append("pinned-import")
+    required = ["tooling"]
+    if native:
+        required += ["lint", "test", "cross-build", "coverage"]
+    if live:
+        required.append("live")
+    if consumer:
+        required.append("consumer")
+    if full:
+        required.append("survey")
+    return {"schema": 1, "qualification": False, "changed_paths": paths,
+            "trusted": trusted, "native": native, "live_suites": live,
+            "consumer": consumer, "survey": full, "required_jobs": required,
+            "native_targets": list(TARGETS) if native else [],
+            "blocked_jobs": [job for job in required if job in {"live", "consumer", "survey"} and not trusted]}
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args], text=True).strip()
+
+
+def make_plan(event, event_name, repository):
+    if event_name == "pull_request":
+        pr = event["pull_request"]
+        base, head = pr["base"]["sha"], pr["head"]["sha"]
+        for revision in (base, head):
+            if not re.fullmatch("[0-9a-f]{40}", revision):
+                raise ValueError("Expected immutable PR revisions")
+        paths = subprocess.check_output([
+            "git", "diff", "--name-only", "--no-renames", "-z", f"{base}...{head}", "--"
+        ]).decode("utf-8").split("\0")
+        trusted = pr["head"]["repo"]["full_name"] == repository
+        plan = selection(filter(None, paths), trusted=trusted)
+        plan.update(base_revision=base, head_revision=head)
+    elif event_name == "push":
+        if (event.get("ref") not in {"refs/heads/main", "refs/heads/dev"}
+                or event.get("deleted")
+                or event.get("repository", {}).get("full_name") != repository):
+            raise ValueError("Only trusted main/dev pushes select branch verification")
+        base, head = event["before"], event["after"]
+        if not all(re.fullmatch("[0-9a-f]{40}", revision) for revision in (base, head)) or head == "0" * 40:
+            raise ValueError("Expected immutable push revisions")
+        if git("rev-parse", "HEAD") != head:
+            raise ValueError("Checked-out tree differs from pushed revision")
+        if base == "0" * 40:
+            # A new dev branch has no earlier tree; every tracked path is changed.
+            command = ["git", "ls-tree", "-r", "--name-only", "-z", head]
+        else:
+            # Two endpoints, not a merge base: verify the actual main/dev change,
+            # including removals and force-push changes. Missing objects fail closed.
+            command = ["git", "diff", "--name-only", "--no-renames", "-z", base, head, "--"]
+        paths = subprocess.check_output(command).decode("utf-8").split("\0")
+        plan = selection(filter(None, paths), trusted=True)
+        plan.update(base_revision=base, head_revision=head)
+    elif event_name == "workflow_dispatch":
+        # Dispatch executes a repository ref selected by a maintainer, never a PR checkout.
+        plan = selection([], trusted=True, full=True)
+    else:
+        raise ValueError(f"Unsupported CI planning event: {event_name}")
+    plan.update(source_revision=git("rev-parse", "HEAD"), source_tree=git("rev-parse", "HEAD^{tree}"))
+    return plan
+
+
+def check_gate(plan, needs, artifacts):
+    if plan["schema"] != 1 or not re.fullmatch("[0-9a-f]{40}", plan["source_revision"]):
+        raise ValueError("Malformed CI plan")
+    expected = selection(plan["changed_paths"], trusted=plan["trusted"], full=plan["survey"])
+    if any(plan.get(key) != value for key, value in expected.items()):
+        raise ValueError("CI plan no longer matches its changed paths and trust boundary")
+    if plan["blocked_jobs"]:
+        raise ValueError("Trusted execution required for: " + ", ".join(plan["blocked_jobs"]))
+    for job in ["plan", *plan["required_jobs"]]:
+        if job not in {"plan", *JOBS} or needs.get(job, {}).get("result") != "success":
+            raise ValueError(f"Required job {job} is missing, failed, cancelled or skipped")
+    python_paths = list((artifacts / "verification-python").glob("*/receipt.json"))
+    if len(python_paths) != 1:
+        raise ValueError("Tooling requires exactly one Python execution receipt")
+    tooling = [inspect_python_evidence(python_paths[0], plan["source_revision"])]
+    if (tooling[0]["status"] != "PASS" or tooling[0]["platform"] != "linux"
+            or tooling[0]["compiler_host"] != TARGETS[0]):
+        raise ValueError("Required Python tooling execution did not pass")
+    schema_paths = list((artifacts / "verification-schema").glob("*/receipt.json"))
+    if len(schema_paths) != 1:
+        raise ValueError("Tooling requires exactly one schema conformance receipt")
+    schemas = [inspect_schema_evidence(schema_paths[0], plan["source_revision"])]
+    if schemas[0]["status"] != "PASS" or schemas[0]["target"] != TARGETS[0]:
+        raise ValueError("Required schema conformance failed or used another host")
+    evidence, doctests = [], []
+    for target in plan["native_targets"]:
+        if target != TARGETS[0]:
+            paths = list((artifacts / f"verification-python-{target}").glob("*/receipt.json"))
+            if len(paths) != 1:
+                raise ValueError("Native gate requires exactly one Python attempt per missing tooling host")
+            record = inspect_python_evidence(paths[0], plan["source_revision"])
+            if record["status"] != "PASS" or record["compiler_host"] != target:
+                raise ValueError("Native Python execution failed or used another host")
+            tooling.append(record)
+        for features, suites in NATIVE_SUITES.items():
+            evidence.append(check_suite_receipt(artifacts / f"verification-{target}" / features,
+                            suites, target, plan["source_revision"], features,
+                            test_features=NATIVE_TEST_FEATURES[features]))
+        for graph in ("minimal", "all"):
+            paths = list((artifacts / f"verification-{target}" / f"doctest-{graph}").glob("*/receipt.json"))
+            if len(paths) != 1:
+                raise ValueError("Native gate requires exactly one rustdoc attempt per host and feature graph")
+            record = inspect_doctest_evidence(paths[0], plan["source_revision"])
+            if record["target"] != target or record["test_features"] != graph or record["status"] != "PASS":
+                raise ValueError("Required rustdoc execution failed or used another host/feature graph")
+            doctests.append(record)
+    if plan["live_suites"]:
+        evidence.append(check_suite_receipt(artifacts / "verification-live", plan["live_suites"],
+                        TARGETS[0], plan["source_revision"], profile="release"))
+    if plan["survey"]:
+        evidence.append(check_suite_receipt(artifacts / "verification-survey", ["import-survey"],
+                        TARGETS[0], plan["source_revision"]))
+    consumers = []
+    if plan["consumer"]:
+        consumers.append(inspect_prism_evidence(artifacts / "consumer-prism" / "prism.json", plan["source_revision"]))
+        if consumers[0]["status"] != "PASS":
+            raise ValueError("Required consumer parser observations failed")
+    acceptance = case_results(json.loads(REQUIREMENTS.read_text()), json.loads(CLASSIFICATION.read_text()),
+                              evidence, plan["source_revision"], consumer_evidence=consumers, tooling_evidence=tooling, doctest_evidence=doctests, schema_evidence=schemas)
+    acceptance["requirements_sha256"] = sha256(REQUIREMENTS)
+    acceptance["classification_sha256"] = sha256(CLASSIFICATION)
+    return {"schema": 1, "status": "PASS", "qualification": False,
+            "source_revision": plan["source_revision"], "source_tree": plan["source_tree"],
+            "required_jobs": plan["required_jobs"], "acceptance": acceptance, "consumer_evidence": consumers, "tooling_evidence": tooling,
+            "doctest_evidence": doctests,
+            "schema_evidence": schemas,
+            "suite_evidence": [{key: value for key, value in record.items() if key != "tests"}
+                               for record in evidence]}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    planner = commands.add_parser("plan")
+    planner.add_argument("--output", type=Path, required=True)
+    gate = commands.add_parser("gate")
+    gate.add_argument("--artifacts", type=Path, required=True)
+    gate.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.command == "plan":
+        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+        plan = make_plan(event, os.environ["GITHUB_EVENT_NAME"], os.environ["GITHUB_REPOSITORY"])
+        write_json(args.output, plan)
+        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+            for name, value in {"native": plan["native"], "trusted": plan["trusted"],
+                                "live": bool(plan["live_suites"]), "consumer": plan["consumer"],
+                                "survey": plan["survey"], "live_suites": plan["live_suites"]}.items():
+                print(name + "=" + json.dumps(value), file=output)
+        print(json.dumps(plan, indent=2))
+    else:
+        identity = {"schema": 1, "qualification": False,
+                    "source_revision": git("rev-parse", "HEAD"),
+                    "source_tree": git("rev-parse", "HEAD^{tree}"),
+                    "created_at": datetime.now(timezone.utc).isoformat()}
+        try:
+            plan = json.loads((args.artifacts / "verification-plan" / "plan.json").read_text())
+            if (identity["source_revision"] != plan["source_revision"]
+                    or identity["source_tree"] != plan["source_tree"]):
+                raise ValueError("Gate checkout differs from the planned source")
+            result = check_gate(plan, json.loads(os.environ["CI_NEEDS_JSON"]), args.artifacts)
+        except (ValueError, OSError, KeyError) as error:
+            result = {**identity, "status": "FAIL", "reason": str(error)}
+            write_json(args.output, result)
+            args.output.with_suffix(".md").write_text(render_gate(result), encoding="utf-8")
+            raise
+        result.update(created_at=identity["created_at"])
+        write_json(args.output, result)
+        args.output.with_suffix(".md").write_text(render_gate(result), encoding="utf-8")
+        print(f"CI evidence gate: {result['status']}; JSON and Markdown: {args.output.with_suffix('')}")
+
+
+if __name__ == "__main__":
+    main()

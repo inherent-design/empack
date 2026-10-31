@@ -43,113 +43,118 @@ run_windows = "cargo run -p empack --release --"
 
 [tasks.test]
 alias = "t"
-depends = ["build:bin"]
-description = "Run script, unit and integration tests (excludes E2E)"
+description = "Run deterministic workspace, Python and doctest contracts"
 run = """
-python3 -m unittest discover -s scripts/tests
-cargo nextest run -p empack-core -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
-cargo test --workspace --doc
+python3 scripts/verify.py python
+python3 scripts/check-test-map.py --discover-tooling target/verification-inventory
+python3 scripts/verify.py deterministic --test-features minimal --product-features default
+python3 scripts/verify.py deterministic telemetry --test-features all --product-features telemetry
+python3 scripts/verify.py doctest --test-features minimal
+python3 scripts/verify.py doctest --test-features all
 """
 run_windows = [
-    'python -m unittest discover -s scripts/tests',
-    'cargo nextest run -p empack-core -p empack-lib --features test-utils -p empack-tests -E "not test(~e2e_)"',
-    'cargo test --workspace --doc',
+    'python scripts/verify.py python',
+    'python scripts/check-test-map.py --discover-tooling target/verification-inventory',
+    'python scripts/verify.py deterministic --test-features minimal --product-features default',
+    'python scripts/verify.py deterministic telemetry --test-features all --product-features telemetry',
+    'python scripts/verify.py doctest --test-features minimal',
+    'python scripts/verify.py doctest --test-features all',
 ]
 
-[tasks.e2e]
-alias = "e"
-depends = ["build:bin"]
-description = "Run E2E tests"
-run = "cargo nextest run -p empack-tests -E 'test(~e2e_)'"
-run_windows = 'cargo nextest run -p empack-tests -E "test(~e2e_)"'
+[tasks."test:map"]
+description = "Check CLI, Python and rustdoc discovery against reviewed bindings"
+run = "python3 scripts/check-test-map.py --discover-tooling target/verification-inventory"
+run_windows = "python scripts/check-test-map.py --discover-tooling target/verification-inventory"
 
-[tasks."e2e:filter"]
-alias = "fe"
+[tasks."test:cli"]
+description = "Run offline executable contracts"
+run = "python3 scripts/verify.py cli"
+run_windows = "python scripts/verify.py cli"
+
+[tasks."test:filter"]
 depends = ["build:bin"]
-description = "Run filtered E2E tests"
-usage = 'arg "filter" help="nextest filter expression"'
-run = """
-cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
-"""
+description = "Run a local exploratory test filter (not a qualification suite)"
+usage = 'arg "filter" help="nextest test-name substring"'
+run = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
 run_windows = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
 
-[tasks."e2e:strict"]
-description = "Build telemetry CLI and require all live E2E prerequisites"
-env = { EMPACK_E2E_STRICT = "1", EMPACK_RUN_LIVE_TESTS = "1" }
-run = """
-cargo build -p empack --features telemetry
-cargo nextest run -p empack-tests --features empack-lib/telemetry -E 'test(~e2e_)'
-"""
-run_windows = [
-    'cargo build -p empack --features telemetry',
-    'cargo nextest run -p empack-tests --features empack-lib/telemetry -E "test(~e2e_)"',
-]
+[tasks."test:live"]
+description = "Run explicit live CLI selections and rolling imports"
+run = "python3 scripts/verify.py cli telemetry live-catalog live-provider publisher-cli server-cli live-assistance import-survey --product-features telemetry --product-profile release"
+run_windows = "python scripts/verify.py cli telemetry live-catalog live-provider publisher-cli server-cli live-assistance import-survey --product-features telemetry --product-profile release"
 
-[tasks."smoke:import:pr"]
+[tasks."test:telemetry"]
+description = "Run executable telemetry contracts against a telemetry product"
+run = "python3 scripts/verify.py telemetry"
+run_windows = "python scripts/verify.py telemetry"
+
+[tasks."test:compatibility"]
+description = "Run the dated official-service/runtime selection with retained evidence"
+run = "python3 scripts/check-live-compatibility.py"
+run_windows = "python scripts/check-live-compatibility.py"
+
+[tasks."test:import:corpus"]
+description = "Check pinned import archives and independent expected inventories"
+run = "python3 scripts/check-import-corpus.py"
+run_windows = "python scripts/check-import-corpus.py"
+
+[tasks."survey:imports:pr"]
 depends = ["build:bin"]
-description = "Run the platform-selected PR import smoke profile"
-run = "python3 scripts/import-smoke-test.py --profile pr"
-run_windows = "python scripts/import-smoke-test.py --profile pr"
+description = "Survey the latest platform-selected upstream pack"
+run = "python3 scripts/survey-imports.py --profile pr"
+run_windows = "python scripts/survey-imports.py --profile pr"
 
 [tasks.smoke]
 depends = ["build:bin"]
 description = "Run deterministic CLI smoke contracts without live providers"
-run = "cargo nextest run -p empack-tests --test smoke"
-run_windows = "cargo nextest run -p empack-tests --test smoke"
+run = "cargo nextest run -p empack-tests --test cli_offline"
+run_windows = "cargo nextest run -p empack-tests --test cli_offline"
 
 [tasks."smoke:runtime"]
 depends = ["build:bin"]
 description = "Verify CLI build budgets, official runtime bytes and Java server launchers"
 run = [
     "cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E 'test(cli_neoforge_build_all_targets_with_default_resource_budget)'",
-    "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2",
+    "cargo nextest run -p empack-lib --features test-utils --test live_server_distribution_startup --run-ignored ignored-only --test-threads 2",
 ]
 run_windows = [
     'cargo nextest run -p empack-lib --features test-utils --lib --run-ignored ignored-only -E "test(cli_neoforge_build_all_targets_with_default_resource_budget)"',
-    'cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only --test-threads 2',
+    'cargo nextest run -p empack-lib --features test-utils --test live_server_distribution_startup --run-ignored ignored-only --test-threads 2',
 ]
 
 [tasks."smoke:catalog"]
 description = "Verify official game and loader discovery catalogs"
-run = "cargo nextest run -p empack-lib --test runtime_catalog_smoke --run-ignored ignored-only"
-run_windows = "cargo nextest run -p empack-lib --test runtime_catalog_smoke --run-ignored ignored-only"
+run = "cargo nextest run -p empack-lib --test live_runtime_catalog_contract --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test live_runtime_catalog_contract --run-ignored ignored-only"
 
 [tasks."smoke:providers"]
 description = "Verify official provider identities and exact downloaded bytes"
-run = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
-run_windows = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
+run = "cargo nextest run -p empack-lib --test live_provider_contract --run-ignored ignored-only --test-threads 2"
+run_windows = "cargo nextest run -p empack-lib --test live_provider_contract --run-ignored ignored-only --test-threads 2"
 
 [tasks."smoke:import:adapters"]
 description = "Inspect explicit archives with normalized engine adapters"
-run = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
-run_windows = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
+run = "cargo nextest run -p empack-lib --test external_archive_contract --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test external_archive_contract --run-ignored ignored-only"
 
 [tasks."smoke:import:content"]
 description = "Verify and publish explicit imports in temporary projects"
-run = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
-run_windows = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
+run = "cargo nextest run -p empack-lib --test live_import_content_contract --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test live_import_content_contract --run-ignored ignored-only"
 
-[tasks."smoke:import:curated"]
+[tasks."survey:imports:curated"]
 depends = ["build:bin"]
-description = "Run the full curated import smoke suite"
-run = "python3 scripts/import-smoke-test.py --profile curated"
-run_windows = "python scripts/import-smoke-test.py --profile curated"
+description = "Survey the latest curated upstream packs"
+run = "python3 scripts/survey-imports.py --profile curated"
+run_windows = "python scripts/survey-imports.py --profile curated"
 
 # Coverage
 
 [tasks.coverage]
 alias = "cov"
-description = "Run coverage (unit + E2E with instrumented binary + telemetry)"
-run = """
-cargo llvm-cov clean --workspace
-cargo llvm-cov --no-report run -p empack --features telemetry -- version
-cargo llvm-cov --no-clean --failure-mode all nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info
-"""
-run_windows = [
-    'cargo llvm-cov clean --workspace',
-    'cargo llvm-cov --no-report run -p empack --features telemetry -- version',
-    'cargo llvm-cov --no-clean --failure-mode all nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info',
-]
+description = "Run deterministic instrumented tests and offline CLI contracts"
+run = "python3 scripts/run-coverage.py"
+run_windows = "python scripts/run-coverage.py"
 
 # Lint
 

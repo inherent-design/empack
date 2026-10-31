@@ -1,0 +1,10 @@
+{
+  "minecraft": "1.21.1",
+  "server_url": "https://piston-data.mojang.com/v1/objects/59353fb40c36d304f2035d51e7d6e6baa98dc05c/server.jar",
+  "server_bytes": 51627615,
+  "server_sha1": "59353fb40c36d304f2035d51e7d6e6baa98dc05c",
+  "server_sha256": "e3bc55693e93cda0188f2e60aea28113fc647c5e85a15fa3d1b347349231b4bb",
+  "java_major": 21,
+  "manifest_url": "https://piston-meta.mojang.com/v1/packages/1757c8b1fbfc6b638504e1f6cceb05893f7389d5/1.21.1.json",
+  "manifest_sha1": "1757c8b1fbfc6b638504e1f6cceb05893f7389d5"
+}

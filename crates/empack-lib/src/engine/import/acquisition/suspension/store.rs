@@ -1,9 +1,9 @@
 //! Import schema over the shared native continuation store.
 use super::*;
 use crate::engine::continuation_store::{self as native, BoundRecord, Kind};
+pub(super) use native::Binding;
 #[cfg(test)]
 use native::MAX_RECORD;
-pub(super) use native::{Binding, bind};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[derive(Serialize, Deserialize)]

@@ -22,6 +22,18 @@ interpreted as operations. Invalid or unsupported records remain inspectable and
 explicitly discardable. Stale target/document bindings are reported and cannot be
 resumed through the shared command.
 
+New saves retain a persistent filesystem association for the target's parent and,
+when present, the target itself before committing the record. Build saves retain
+the project association. Lookup uses the associated original storage key, so a
+changed device assignment does not select a new pending filename. These immutable
+associations retain the existing coordination directories; inspection does not
+create them or rewrite records. Document changes and replaced roots still prevent
+resume. The current internal formats are build schema 5, instance schema 2,
+import schema 1 and synchronization schema 2. Obsolete or unknown formats cannot
+resume; inspection does not translate or rewrite their bytes. Explicit discard
+remains conditional on the selected record being unchanged. Prepare new work with
+the current executable rather than adopting an older record by path or inode.
+
 `pending list --json` and `pending show ID --json` emit the same schema-1 report:
 
 - `schema`, selected `root`, and `operations`.

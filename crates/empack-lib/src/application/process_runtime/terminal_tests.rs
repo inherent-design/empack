@@ -349,9 +349,10 @@ fn terminal_child_fixture() {
     assert_eq!(settings.c_cc[libc::VSUSP], libc::_POSIX_VDISABLE);
     settings.c_lflag &= !libc::ECHO;
     assert_eq!(unsafe { libc::tcsetattr(0, libc::TCSANOW, &settings) }, 0);
-    println!("CONSOLE_READY");
+    std::fs::write("runtime-host", unsafe { libc::getppid() }.to_string()).unwrap();
     std::fs::write("runtime-pid.tmp", std::process::id().to_string()).unwrap();
     std::fs::rename("runtime-pid.tmp", "runtime-pid").unwrap();
+    println!("CONSOLE_READY");
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {
         if INTERRUPTED.load(Ordering::SeqCst) {

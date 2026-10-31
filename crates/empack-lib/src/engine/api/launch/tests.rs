@@ -37,6 +37,22 @@ fn runtime_fixture() {
         drop(descendant);
         return;
     }
+    let observed = serde_json::json!({
+        "cwd": current,
+        "program": std::env::current_exe().unwrap(),
+        "arguments": std::env::args().skip(1).collect::<Vec<_>>(),
+        "pid": std::process::id(),
+    });
+    fs::write(
+        current.join("launch-observed.tmp"),
+        serde_json::to_vec(&observed).unwrap(),
+    )
+    .unwrap();
+    fs::rename(
+        current.join("launch-observed.tmp"),
+        current.join("launch-observed.json"),
+    )
+    .unwrap();
     fs::write(current.join("launch-started"), b"running").unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
     while !current.join("launch-exit").exists() {
@@ -547,16 +563,27 @@ async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
         &*operation.wait().await,
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
     ));
+    let selected_program = std::env::current_exe().unwrap();
     let selected = || LaunchInstanceRequest {
         server: true,
         expected_release: Some(release.id().into()),
-        program: std::env::current_exe().unwrap(),
+        program: selected_program.clone(),
         arguments: vec!["nogui".into(), "literal argument".into()],
     };
     let prepared = prepare(&engine, root.path(), selected()).await;
     let PreparedKind::Launch(launch) = &**prepared.data else {
         panic!()
     };
+    assert_eq!(launch.command.get_program(), selected_program.as_os_str());
+    assert_eq!(
+        launch
+            .command
+            .get_current_dir()
+            .unwrap()
+            .canonicalize()
+            .unwrap(),
+        root.path().join("game").canonicalize().unwrap()
+    );
     assert_eq!(
         launch.command.get_args().collect::<Vec<_>>(),
         ["-jar", "server-exact.jar", "nogui", "literal argument"]

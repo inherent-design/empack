@@ -266,21 +266,23 @@ fn details(
 ) -> Result<()> {
     let record: serde_json::Value =
         serde_json::from_slice(bytes).context("Invalid pending record")?;
-    let schema = match op.kind {
-        PendingKind::Build => 4,
-        PendingKind::Sync => 2,
-        _ => 1,
-    };
-    ensure!(
-        record["schema"].as_u64() == Some(schema),
-        "Unsupported saved record schema; use the original workflow continuation or explicitly discard this ID"
-    );
     let kind = match op.kind {
         PendingKind::Instance => Kind::Instance,
         PendingKind::Import => Kind::Import,
         _ => Kind::Synchronization,
     };
-    let binding = store::bind_for(kind, &op.root, cancel)?.1;
+    let supported = if op.kind == PendingKind::Build {
+        record["schema"].as_u64() == Some(5)
+    } else {
+        record["schema"]
+            .as_u64()
+            .is_some_and(|schema| kind.supports_schema(schema))
+    };
+    ensure!(
+        supported,
+        "Unsupported saved record schema; prepare new work with this empack version or explicitly discard this ID"
+    );
+    let binding = store::bind_for(state, kind, &op.root, cancel)?.1;
     let current = if op.kind == PendingKind::Build {
         serde_json::from_value::<Vec<Option<[u8; 32]>>>(record["documents"].clone())?
             == binding.documents

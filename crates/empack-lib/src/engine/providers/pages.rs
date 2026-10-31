@@ -92,7 +92,7 @@ mod tests {
             page(&mr).unwrap().as_str(),
             "https://modrinth.com/mod/sodium/version/abcdefgh"
         );
-        let cf = super::super::curseforge::selection(
+        let mut cf = super::super::curseforge::selection(
             super::super::curseforge::project(&bytes(&cf_project()), false).unwrap(),
             &pin(ProviderKind::CurseForge),
             &bytes(&cf_file()),
@@ -102,12 +102,61 @@ mod tests {
             page(&cf).unwrap().as_str(),
             "https://www.curseforge.com/minecraft/mc-mods/sodium/files/456"
         );
+        for (kind, segment) in [
+            (ContentKind::Mod, "mod"),
+            (ContentKind::ResourcePack, "resourcepack"),
+            (ContentKind::ShaderPack, "shader"),
+            (ContentKind::DataPack, "datapack"),
+        ] {
+            mr.project.kinds = NonEmpty::new(vec![kind]).unwrap();
+            assert_eq!(
+                page(&mr).unwrap().as_str(),
+                format!("https://modrinth.com/{segment}/sodium/version/abcdefgh")
+            );
+        }
+        mr.project.kinds = NonEmpty::new(vec![ContentKind::World]).unwrap();
+        assert!(matches!(
+            page(&mr).unwrap_err().downcast_ref::<CatalogError>(),
+            Some(CatalogError::UnsupportedKind)
+        ));
+        mr.project.kinds = NonEmpty::new(vec![ContentKind::Mod]).unwrap();
+        for (kind, segment) in [
+            (ContentKind::Mod, "mc-mods"),
+            (ContentKind::ResourcePack, "texture-packs"),
+            (ContentKind::ShaderPack, "shaders"),
+            (ContentKind::DataPack, "data-packs"),
+            (ContentKind::World, "worlds"),
+        ] {
+            cf.project.kinds = NonEmpty::new(vec![kind]).unwrap();
+            assert_eq!(
+                page(&cf).unwrap().as_str(),
+                format!("https://www.curseforge.com/minecraft/{segment}/sodium/files/456")
+            );
+        }
+        let valid = mr.pin.clone();
+        mr.pin.project = cf.project.id.clone();
+        assert!(matches!(
+            page(&mr).unwrap_err().downcast_ref::<CatalogError>(),
+            Some(CatalogError::Identity)
+        ));
+        mr.pin = valid.clone();
+        mr.pin.selection = cf.pin.selection.clone();
+        assert!(matches!(
+            page(&mr).unwrap_err().downcast_ref::<CatalogError>(),
+            Some(CatalogError::Identity)
+        ));
+        mr.pin = valid;
         for slug in [
             "../other",
             "x%20y",
             "x&start",
             "x?token=secret",
             "x\nother",
+            "x\\other",
+            "x#fragment",
+            "x=argument",
+            "x\"quoted",
+            "x space",
             ".",
             "",
         ] {

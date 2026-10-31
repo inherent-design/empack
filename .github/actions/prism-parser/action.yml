@@ -1,0 +1,15 @@
+name: Supported Prism parser observations
+description: Run the pinned headless parser with supported Qt on Ubuntu; no GUI acceptance
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7
+      with:
+        repository: PrismLauncher/PrismLauncher
+        ref: 7d2d3c1ec6fcf8255ebacd02d9f792688575dfb4
+        path: .git/prism-source
+        persist-credentials: false
+    - shell: bash
+      run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+    - shell: bash
+      run: python3 scripts/check-prism-config.py --prism-source .git/prism-source --qmake qmake6 > .git/prism.json

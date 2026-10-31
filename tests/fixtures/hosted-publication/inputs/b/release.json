@@ -1,0 +1,43 @@
+{
+  "require_subscription": false,
+  "schema": 1,
+  "pack": "verification.hosted",
+  "version": "2",
+  "minimum_engine": ">=0.8.0-beta",
+  "runtime": {
+    "minecraft": "1.21.1",
+    "loader": {
+      "kind": "vanilla"
+    },
+    "java_major": 21
+  },
+  "choices": [],
+  "files": [
+    {
+      "key": "config",
+      "destination": "config/hosted.toml",
+      "layer": "common",
+      "policy": "seed",
+      "client": {
+        "kind": "required"
+      },
+      "server": {
+        "kind": "required"
+      },
+      "sha256": "e14887f97103ebfe2b00f98c1af6d73719fa6b327524b2bfd57a33d708556b50",
+      "bytes": 45,
+      "readonly": false,
+      "executable": false,
+      "assertions": [
+        {
+          "algorithm": "sha512",
+          "value": "829295ce9d9e6adf4b2d78bef1ff43c864494468d0bf914ac97e23d330243b364a33e6640140f9f31a43fb7303e010f6433fc7f56a992990e9b6a04c4d766033"
+        }
+      ],
+      "source": {
+        "kind": "asset",
+        "path": "assets/config.toml"
+      }
+    }
+  ]
+}
