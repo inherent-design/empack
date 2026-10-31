@@ -118,14 +118,23 @@ fn cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_f
         .failure()
         .stderr(contains("game/mods/fixture.jar"))
         .stderr(contains("ModifiedManagedFile"));
-    command()
+    let help = command()
         .args(["instance", "repair", "--help"])
         .assert()
         .success()
-        .stdout(contains("release-relative path"))
-        .stdout(contains("--preserve"))
-        .stdout(contains("--replace"))
-        .stdout(contains("--merge"));
+        .get_output()
+        .stdout
+        .clone();
+    let help = String::from_utf8(help).unwrap();
+    let help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+    for guidance in [
+        "release-relative path",
+        "--preserve",
+        "--replace",
+        "--merge",
+    ] {
+        assert!(help.contains(guidance), "{help}");
+    }
     assert_eq!(snapshot(&instance), before_diagnostic);
     assert_eq!(snapshot(&root.path().join("host")), host_before_diagnostic);
     for (option, value, expected) in [
