@@ -1371,6 +1371,26 @@
             "The exact extracted default product preserves separate machine JSON/log streams, ANSI-free JSON, typed usage status and explicit-approval refusal on all five targets",
             "Ordinary development/telemetry observations cannot replace archive-bound execution of these packaged cases"
           ]
+        },
+        {
+          "id": "UX-008.windows-console-finalization",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_console_interrupt_retires_windows_runtime_and_preserves_instance"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real ConPTY runs public export/install/instance-launch with the selected product and a compiler-bound private runtime that remains alive through Ctrl-C",
+            "Host cancellation reaches the executable diagnostic and exit status 130, while a retained creation-time-checked native process handle establishes child retirement",
+            "A follow-up public launch succeeds without stale runtime ownership; managed/player bytes, portable attributes and export descriptor remain unchanged apart from the fixture identity marker",
+            "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
+          ]
         }
       ],
       "owner_now": [
@@ -11069,6 +11089,26 @@
             "Player bytes, managed publisher content and the release descriptor remain unchanged"
           ],
           "remaining_group_evidence": "Generated server entry-point/Java integration, Windows console/job behavior and actual-consumer acceptance remain separate obligations"
+        },
+        {
+          "id": "UX-074.windows-console-cancellation",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_console_interrupt_retires_windows_runtime_and_preserves_instance"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real ConPTY runs public export/install/instance-launch with the selected product and a compiler-bound private runtime that remains alive through Ctrl-C",
+            "Host cancellation reaches the executable diagnostic and exit status 130, while a retained creation-time-checked native process handle establishes child retirement",
+            "A follow-up public launch succeeds without stale runtime ownership; managed/player bytes, portable attributes and export descriptor remain unchanged apart from the fixture identity marker",
+            "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
+          ]
         }
       ],
       "owner_now": [
@@ -11096,7 +11136,8 @@
         "U",
         "H",
         "N",
-        "X"
+        "X",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -11308,6 +11349,26 @@
             "Closing the owned job releases grandchild-held pipes; retiring one job preserves another owned job"
           ],
           "remaining_group_evidence": "These cases use controlled fixture programs and test-only result injection. Actual Java/consumer acceptance remains UX-084; interactive terminal and packaged presentation are separately required by UX-074/UX-008. Definitions do not establish execution on any host."
+        },
+        {
+          "id": "UX-075.windows-executable-retirement",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_console_interrupt_retires_windows_runtime_and_preserves_instance"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real ConPTY runs public export/install/instance-launch with the selected product and a compiler-bound private runtime that remains alive through Ctrl-C",
+            "Host cancellation reaches the executable diagnostic and exit status 130, while a retained creation-time-checked native process handle establishes child retirement",
+            "A follow-up public launch succeeds without stale runtime ownership; managed/player bytes, portable attributes and export descriptor remain unchanged apart from the fixture identity marker",
+            "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
+          ]
         }
       ],
       "owner_now": [

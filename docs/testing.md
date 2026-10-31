@@ -907,6 +907,18 @@ the final diagnostic/status, retirement of the owned group, preserved player byt
 and a subsequent public launch. It uses the compiler-bound native test runtime with an explicit signal handler,
 not Java or generated server entry points; those and Windows console behavior
 require separate evidence.
+
+The Windows ConPTY case connects public export/install/launch to the executable's
+Ctrl-C diagnostic, status 130 and confirmed child retirement. Its compiler-bound
+private runtime registers a [console control handler](https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler)
+before announcing readiness and stays alive through Ctrl-C, so cancellation cannot
+race a completed child. The fixture owner verifies kernel creation time before
+retaining cleanup authority through a process handle. A follow-up launch must
+succeed, and game/player bytes and attributes remain unchanged. ConPTY merges
+stdout/stderr, so this does not prove separate stream routing, actual Java behavior
+or Unix terminal restoration. The ignored private runtime's ordinary invocation
+is not acceptance evidence; the product has no corresponding test control.
+
 Managed Prism tests separately verify the root icon's seed policy and rejection of
 an explicit managed policy before publication, while keeping other PNGs managed.
 Engine launch fault injection separately establishes that failed terminal cleanup

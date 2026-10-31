@@ -512,6 +512,70 @@ impl ProcessTree {
 mod windows_tests {
     use super::*;
 
+    #[test]
+    #[ignore = "private console runtime, selected only by its executable fixture"]
+    fn console_runtime_child() {
+        use std::io::Write;
+        use windows_sys::Win32::{
+            Foundation::FILETIME,
+            System::{
+                Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler},
+                Threading::{GetCurrentProcess, GetProcessTimes},
+            },
+        };
+
+        let Ok(mode) = std::fs::read("console-runtime-mode") else {
+            return;
+        };
+        assert_eq!(mode, b"wait");
+        unsafe extern "system" fn retain_runtime(signal: u32) -> i32 {
+            // The host must cancel and retire this child. Letting both exit on
+            // Ctrl-C would race a clean interruption against completed success.
+            if signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT {
+                1
+            } else {
+                0
+            }
+        }
+        assert_ne!(unsafe { SetConsoleCtrlHandler(None, 0) }, 0);
+        assert_ne!(unsafe { SetConsoleCtrlHandler(Some(retain_runtime), 1) }, 0);
+        // Commit the PID before announcing readiness, so the owner can retain a
+        // native process handle without observing a partially written identifier.
+        let mut created = FILETIME::default();
+        let mut exited = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        assert_ne!(
+            unsafe {
+                GetProcessTimes(
+                    GetCurrentProcess(),
+                    &mut created,
+                    &mut exited,
+                    &mut kernel,
+                    &mut user,
+                )
+            },
+            0
+        );
+        assert_ne!((created.dwLowDateTime, created.dwHighDateTime), (0, 0));
+        let identity = serde_json::json!({
+            "pid": std::process::id(),
+            "created_low": created.dwLowDateTime,
+            "created_high": created.dwHighDateTime,
+        });
+        std::fs::write(
+            "console-runtime-pid.tmp",
+            serde_json::to_vec(&identity).unwrap(),
+        )
+        .unwrap();
+        std::fs::rename("console-runtime-pid.tmp", "console-runtime-pid").unwrap();
+        println!("WINDOWS_RUNTIME_READY");
+        std::io::stdout().flush().unwrap();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
     #[tokio::test]
     async fn missing_program_has_no_retirement_obligation_in_either_capture_mode() {
         let root = tempfile::tempdir().unwrap();

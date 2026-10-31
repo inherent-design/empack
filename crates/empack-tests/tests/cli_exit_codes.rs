@@ -646,6 +646,157 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
     driver.verify();
 }
 
+#[cfg(windows)]
+#[test]
+fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
+    use empack_tests::harness::{
+        process::{offline_command, offline_empack_cmd},
+        publication::Driver,
+        terminal,
+        workspace::snapshot,
+    };
+    use expectrl::{ControlCode, Expect, Regex};
+    use std::{
+        collections::BTreeMap,
+        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        path::Path,
+    };
+    use windows_sys::Win32::{
+        Foundation::{FILETIME, WAIT_OBJECT_0},
+        System::Threading::{
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+            PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+        },
+    };
+
+    struct RuntimeProcess(OwnedHandle);
+    impl Drop for RuntimeProcess {
+        fn drop(&mut self) {
+            // This handle was retained while the compiler-bound fixture was
+            // live. Cleanup cannot target a subsequently reused process ID.
+            unsafe {
+                if WaitForSingleObject(self.0.as_raw_handle(), 0) != WAIT_OBJECT_0 {
+                    let _ = TerminateProcess(self.0.as_raw_handle(), 130);
+                    let _ = WaitForSingleObject(self.0.as_raw_handle(), 5_000);
+                }
+            }
+        }
+    }
+
+    const CHILD: &str = "application::process_runtime::windows_tests::console_runtime_child";
+    let driver = Driver::native_fixture(CHILD);
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, payload) = runtime_release(root.path());
+    let instance = root.path().join("console Ω instance");
+    fs::create_dir(&instance).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "install"])
+        .arg(export.join("release.json"))
+        .args(["--sha256", &id])
+        .assert()
+        .success();
+    let game = instance.join("game");
+    assert_eq!(
+        fs::read(game.join("managed.txt")).unwrap(),
+        b"publisher content"
+    );
+    fs::write(game.join("console-runtime-mode"), b"wait").unwrap();
+    fs::write(game.join("player-note.txt"), b"keep player bytes").unwrap();
+    let before = snapshot(&game);
+    let mut command = offline_empack_cmd(&instance);
+    command
+        .args(["--yes", "instance", "launch", "--"])
+        .arg(driver.program())
+        .args([
+            "--ignored",
+            "--exact",
+            CHILD,
+            "--nocapture",
+            "--test-threads=1",
+        ]);
+    let mut console = expectrl::session::log(terminal::spawn(command), std::io::stderr()).unwrap();
+    console.set_expect_timeout(Some(Duration::from_secs(20)));
+
+    let pid_file = game.join("console-runtime-pid");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let identity_bytes = loop {
+        if let Ok(bytes) = fs::read(&pid_file) {
+            break bytes;
+        }
+        assert!(Instant::now() < deadline, "console runtime did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let identity: BTreeMap<String, u32> = serde_json::from_slice(&identity_bytes).unwrap();
+    assert_eq!(
+        identity.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["created_high", "created_low", "pid"]
+    );
+    assert!(identity["pid"] > 1);
+    // Retain the process object and verify its creation time before granting
+    // the cleanup guard authority. A reused PID cannot select a different child.
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            identity["pid"],
+        )
+    };
+    assert!(!handle.is_null(), "{}", std::io::Error::last_os_error());
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+    let mut created = FILETIME::default();
+    let mut exited = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    assert_ne!(
+        unsafe {
+            GetProcessTimes(
+                handle.as_raw_handle(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        },
+        0
+    );
+    assert_eq!(
+        (created.dwLowDateTime, created.dwHighDateTime),
+        (identity["created_low"], identity["created_high"])
+    );
+    let runtime = RuntimeProcess(handle);
+    console.expect("WINDOWS_RUNTIME_READY").unwrap();
+    console.send(ControlCode::EndOfText).unwrap();
+    console.expect(Regex("(?i)operation interrupted")).unwrap();
+    assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
+    assert_eq!(
+        unsafe { WaitForSingleObject(runtime.0.as_raw_handle(), 0) },
+        WAIT_OBJECT_0,
+        "CLI completion must establish runtime retirement"
+    );
+    // ConPTY merges the output streams: this proves diagnostic delivery and exit
+    // classification, not separate stdout/stderr routing or Java behavior.
+    offline_command(&instance)
+        .args([
+            "--yes", "instance", "launch", "--", "cmd.exe", "/D", "/C", "exit", "/b", "0",
+        ])
+        .assert()
+        .success();
+    let mut after = snapshot(&game);
+    assert_eq!(
+        after.files.remove(Path::new("console-runtime-pid")),
+        Some(identity_bytes)
+    );
+    assert!(
+        after
+            .entries
+            .remove(Path::new("console-runtime-pid"))
+            .is_some()
+    );
+    assert_eq!(after, before);
+    assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+    driver.verify();
+}
+
 #[cfg(unix)]
 #[test]
 fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
