@@ -1571,7 +1571,9 @@ stale runtime ownership. Player data, `eula=false`, completed installation recor
 and input/tool bytes remain unchanged. The fixture records its digest and is absent
 from the ordinary product package's dependency graph.
 
-On Unix, a separate public launch uses a non-UTF-8 executable name and argument.
+On Unix, a separate public launch checks non-UTF-8 arguments. Linux also uses a
+non-UTF-8 executable name; the macOS fixture uses a Unicode name because its volume
+rejects the invalid filename bytes with `EILSEQ` before invocation.
 The observer records native bytes independently of its readable JSON strings, which
 are null when UTF-8 cannot represent the value. Empty arguments, Unicode, newlines
 and shell syntax must arrive literally in the installed game directory. A bare

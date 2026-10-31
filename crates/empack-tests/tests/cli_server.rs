@@ -260,14 +260,21 @@ impl Server {
 
 #[test]
 #[cfg(unix)]
-fn cli_runtime_preserves_non_utf8_program_and_literal_arguments() {
+fn cli_runtime_preserves_native_program_and_non_utf8_arguments() {
     use std::{
         ffi::OsString,
         os::unix::ffi::{OsStrExt, OsStringExt},
     };
 
     let server = Server::new();
-    let name = OsString::from_vec(b"selected runtime \xff".to_vec());
+    let invalid_name = OsString::from_vec(b"selected runtime \xff".to_vec());
+    // The macOS fixture volume rejects invalid filename bytes with EILSEQ.
+    // Native argv still admits those bytes; Linux also exercises the raw path.
+    let name = if cfg!(target_os = "linux") {
+        invalid_name.clone()
+    } else {
+        OsString::from("selected runtime Ω")
+    };
     let program = server.program.parent().unwrap().join(&name);
     fs::copy(&server.program, &program).unwrap();
     fs::set_permissions(
@@ -284,7 +291,7 @@ fn cli_runtime_preserves_non_utf8_program_and_literal_arguments() {
     // path is the supported route. Refusal must not run either fixture mode.
     offline_command(server.instance.dir())
         .args(["--yes", "instance", "launch", "--"])
-        .arg(&name)
+        .arg(&invalid_name)
         .env("PATH", server.program.parent().unwrap())
         .assert()
         .failure()
@@ -322,13 +329,14 @@ fn cli_runtime_preserves_non_utf8_program_and_literal_arguments() {
         &fs::read(server.fixtures.path().join("observations/runtime.json")).unwrap(),
     )
     .unwrap();
-    assert!(observed["program"].is_null());
+    let canonical_program = program.canonicalize().unwrap();
+    assert_eq!(observed["program"], json!(canonical_program.to_str()));
     assert!(observed["arguments"].is_null());
     assert_eq!(
         observed["native"],
         json!({
             "encoding": "unix-bytes",
-            "program": program.canonicalize().unwrap().as_os_str().as_bytes(),
+            "program": canonical_program.as_os_str().as_bytes(),
             "cwd": server.instance.dir().join("game").canonicalize().unwrap().as_os_str().as_bytes(),
             "arguments": arguments.iter().map(|value| value.as_bytes()).collect::<Vec<_>>(),
         })
