@@ -5,7 +5,7 @@ use empack_tests::harness::{
     process::{TestProject, assert_dist_artifact_suffix, offline_command},
     workspace::snapshot as observe_workspace,
 };
-use predicates::str::contains;
+use predicates::{prelude::PredicateBooleanExt, str::contains};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -49,12 +49,15 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::write(path, bytes).unwrap();
 }
 fn command(root: &Path, host: &Path) -> assert_cmd::Command {
+    command_with_cache(root, host, &host.join("cache"))
+}
+fn command_with_cache(root: &Path, host: &Path, cache: &Path) -> assert_cmd::Command {
     let mut command = offline_command(root);
     command
         .arg("--state-dir")
         .arg(host.join("state"))
         .arg("--cache-dir")
-        .arg(host.join("cache"));
+        .arg(cache);
     command
 }
 fn fixture() -> (TestProject, tempfile::TempDir) {
@@ -310,6 +313,175 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
         }
     }
     assert_eq!(snapshot(project.dir()), author);
+}
+
+#[test]
+fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_content() {
+    let (project, author_host) = fixture();
+    command(project.dir(), author_host.path())
+        .args(["--yes", "build"])
+        .assert()
+        .success();
+    let archive = assert_dist_artifact_suffix(project.dir(), "-empack-references.empack");
+    let members = distribution_inventory(&archive, "zip");
+    let identity = inventory(&members);
+    let author = observe_workspace(project.dir());
+    for (layout, side) in [("game", "client"), ("game", "server"), ("prism", "client")] {
+        let export = tempfile::tempdir().unwrap();
+        for (name, member) in &members {
+            put(export.path(), name, member.small.as_ref().unwrap());
+        }
+        let host = tempfile::tempdir().unwrap();
+        let player = tempfile::tempdir().unwrap();
+        let instance = player.path().join("repair instance Ω");
+        put(&instance, "notes.txt", b"unrelated player notes");
+        command(&instance, host.path())
+            .args(["--yes", "instance", "install"])
+            .arg(export.path().join("release.json"))
+            .args(["--sha256", &identity, "--layout", layout, "--side", side])
+            .assert()
+            .success();
+        let game = if layout == "prism" {
+            ".minecraft"
+        } else {
+            "game"
+        };
+        put(
+            &instance,
+            &format!("{game}/config/settings.txt"),
+            b"player configuration",
+        );
+        put(
+            &instance,
+            &format!("{game}/saves/played/level.dat"),
+            b"player world",
+        );
+        put(
+            &instance,
+            &format!("{game}/saves/played/added.dat"),
+            b"player-added world data",
+        );
+        put(
+            &instance,
+            &format!("{game}/unowned.txt"),
+            b"unowned game file",
+        );
+        let managed = instance.join(game).join("managed.txt");
+        let expected = BTreeMap::from([
+            (
+                ".empack-layout".into(),
+                format!("empack-{layout}-layout-v1\n").into_bytes(),
+            ),
+            (
+                "managed.txt".into(),
+                if side == "client" {
+                    CONTENT[1].2
+                } else {
+                    CONTENT[2].2
+                }
+                .to_vec(),
+            ),
+            (
+                "config/settings.txt".into(),
+                b"player configuration".to_vec(),
+            ),
+            ("saves/played/level.dat".into(), b"player world".to_vec()),
+            (
+                "saves/played/added.dat".into(),
+                b"player-added world data".to_vec(),
+            ),
+            ("unowned.txt".into(), b"unowned game file".to_vec()),
+        ]);
+        assert_eq!(snapshot(&instance.join(game)), expected);
+        // The installed release and cache must suffice across a fresh executable;
+        // neither the original descriptor nor its assets remain available.
+        let export_path = export.path().to_owned();
+        drop(export);
+        assert!(!export_path.exists());
+        fs::remove_file(&managed).unwrap();
+        let missing = observe_workspace(&instance);
+        let retained = observe_workspace(host.path());
+        command(&instance, host.path())
+            .args(["--dry-run", "instance", "repair"])
+            .assert()
+            .success()
+            .stdout(contains("0 downloads"));
+        assert_eq!(observe_workspace(&instance), missing);
+        assert_eq!(observe_workspace(host.path()), retained);
+        command(&instance, host.path())
+            .args(["--yes", "instance", "repair"])
+            .assert()
+            .success()
+            .stdout(contains(format!("Applied release {identity}")));
+        assert_eq!(snapshot(&instance.join(game)), expected);
+
+        // A verified cache hit does not authorize discarding local managed edits.
+        fs::write(&managed, b"local managed edit").unwrap();
+        let edited = observe_workspace(&instance);
+        command(&instance, host.path())
+            .args(["--yes", "instance", "repair"])
+            .assert()
+            .failure()
+            .stderr(contains("ModifiedManagedFile"));
+        assert_eq!(observe_workspace(&instance), edited);
+        command(&instance, host.path())
+            .args(["--yes", "instance", "repair", "--replace", "managed.txt"])
+            .assert()
+            .success();
+        assert_eq!(snapshot(&instance.join(game)), expected);
+
+        fs::remove_file(&managed).unwrap();
+        let missing = observe_workspace(&instance);
+        let absent_cache = host.path().join("absent cache");
+        assert!(!absent_cache.exists());
+        command_with_cache(&instance, host.path(), &absent_cache)
+            .args(["--yes", "instance", "repair"])
+            .assert()
+            .failure()
+            .stderr(contains(
+                "Instance was not applied; exact manual inputs remain pending",
+            ))
+            .stdout(contains("Applied release").not());
+        assert_eq!(observe_workspace(&instance), missing);
+        let pending_host = observe_workspace(host.path());
+        let output = command_with_cache(&instance, host.path(), &absent_cache)
+            .args(["pending", "list", "--json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let pending: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let operations = pending["operations"].as_array().unwrap();
+        assert_eq!(operations.len(), 1);
+        let inputs = operations[0]["inputs"].as_array().unwrap();
+        assert_eq!(inputs.len(), 1);
+        let bytes = if side == "client" {
+            CONTENT[1].2
+        } else {
+            CONTENT[2].2
+        };
+        assert_eq!(inputs[0]["needed"], true);
+        assert_eq!(inputs[0]["bytes"], bytes.len());
+        assert_eq!(inputs[0]["filename"], "managed.txt");
+        assert!(
+            inputs[0]["digests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|pair| pair[1] == hash(bytes))
+        );
+        command(&instance, host.path())
+            .args(["instance", "inspect"])
+            .assert()
+            .success()
+            .stdout(contains(&identity));
+        assert_eq!(observe_workspace(&instance), missing);
+        assert_eq!(observe_workspace(host.path()), pending_host);
+        assert_eq!(
+            fs::read(instance.join("notes.txt")).unwrap(),
+            b"unrelated player notes"
+        );
+    }
+    assert_eq!(observe_workspace(project.dir()), author);
 }
 
 #[test]

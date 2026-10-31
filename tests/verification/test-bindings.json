@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-tests::cli_build::native_exports::cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_content", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::journey_signed_updates_retain_side_and_layout_and_refuse_context_changes", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "X", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "I", "api": "REL", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

@@ -9364,7 +9364,8 @@
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "X",
+        "P"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -9388,9 +9389,103 @@
           ],
           "assertions": [
             "Repair with explicit local release assets restores a deleted managed file from active B without an upstream refresh",
-            "Repair preserves modified seed configuration, world contents and player-added world members"
+            "Repair preserves modified seed configuration, world contents and player-added world members",
+            "Changed managed bytes refuse repair without an explicit decision; approved preserve/merge results remain local evidence, and explicit replacement restores publisher bytes and retires the override"
+          ]
+        },
+        {
+          "id": "UX-067.reconciliation-decisions",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::instance::tests::install_update_repair_and_retire_follow_the_installed_baseline",
+            "empack-core::instance::tests::user_changes_block_replacement_and_retirement_but_accept_exact_desired_state",
+            "empack-core::instance::tests::seeds_preserve_edits_and_cannot_become_managed_without_a_decision"
           ],
-          "remaining_group_evidence": "Corrupt managed bytes, accepted deviations, cache miss and failed repair variants remain separate cases"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Repair recreates absent managed bytes from the active completed baseline; unchanged bytes need no replacement",
+            "Modified managed bytes conflict instead of silently replacing local work, while seed-owned edits are preserved"
+          ]
+        },
+        {
+          "id": "UX-067.verified-cache-and-retained-identity",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::repair_reuses_verified_cache_after_restart_without_network_or_original_assets",
+            "empack-lib::engine::api::instance::tests::maintenance_rejects_unretained_releases_and_changed_repair_intent"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A fresh engine repairs from the verified cache without a network acquisition requirement or another request to the original payload endpoint",
+            "Explicit missing associations and corrupt offered assets refuse even with cached bytes; corrupt cached content leaves the original acquisition requirement unresolved",
+            "Maintenance refuses an unretained release, changed repair payload or changed choice intent instead of treating it as the installed release"
+          ]
+        },
+        {
+          "id": "UX-067.public-cache-hit-and-missing-content",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Game client/server and Prism client installations repair the literal selected inventory after the original descriptor and assets are removed",
+            "Preview preserves the whole instance and host state; repair restores deleted managed bytes while retaining player settings, world members and unrelated content",
+            "Cached bytes do not authorize replacement of modified managed content; refusal preserves the instance and explicit replacement restores exact publisher bytes",
+            "A fresh unavailable cache makes repair fail with an explicit not-applied/pending result, with unchanged installed bytes and attributes rather than a success receipt",
+            "Read-only public pending inspection identifies the exact missing filename, digest and length and preserves instance and host state"
+          ]
+        },
+        {
+          "id": "UX-067.packaged-repair",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_content",
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each declared final archive executes cached/missing-content repair and the signed active-release/deviation repair workflow outside the checkout",
+            "Source-native and component observations do not substitute for archive identity and execution evidence"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
         }
       ],
       "owner_now": [
@@ -9403,7 +9498,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-068",

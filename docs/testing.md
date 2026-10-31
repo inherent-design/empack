@@ -647,6 +647,18 @@ fresh observation and application, preserving observation even when fetching the
 release fails. Package cases require these public workflows on the extracted
 archives; host fixtures alone do not qualify a distribution.
 
+Repair cases separate reconciliation, verified-cache reuse and the public command.
+The executable fixture installs a checked native export into game client/server
+and Prism client layouts, then removes the original descriptor and assets. A fresh
+repair must restore deleted managed bytes from cache while preserving player
+configuration, world members and unrelated files. Modified managed bytes still
+require an explicit replacement decision. With an unavailable cache, repair must
+report pending exact input without changing the installed instance or issuing an
+applied-release receipt; read-only pending inspection checks the missing digest,
+length and filename. Host cases separately cover corrupt cache entries, invalid
+explicit inputs and refusal of a changed maintenance release. Final archive cases
+repeat the public workflows; these bindings do not supply execution evidence.
+
 Hosted channel publication has separate evidence. Its controlled-host engine test
 first establishes a verified warm cache, then requires fresh envelope and asset
 requests before replacing the pointer. It checks typed remote failures, invalid

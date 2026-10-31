@@ -32,6 +32,13 @@ being searched for in Nextest's executable-test inventory.
 Native Python subprocess checks of the registry are supplemental `N` evidence for
 UX-088; they do not replace its required product-executable (`X`) checks.
 
+Repair binds existing pure reconciliation and host cache/maintenance tests alongside
+public commands. The executable case separates a verified cache hit after export
+removal from a missing-cache obligation, and preserves player data on both refusal
+and successful repair. Signed-release cases retain the active identity and accepted
+local deviations. Required archive execution remains a separate `P` case; complete
+bindings are not passing host or package observations.
+
 Publisher key setup has separate executable, terminal and native cases. The
 terminal case checks closed/piped input, preview and refusal before accepting the
 same path with explicit approval. Destination cases preserve publisher work and
