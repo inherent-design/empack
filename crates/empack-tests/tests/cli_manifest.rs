@@ -4,19 +4,12 @@ mod files;
 
 use empack_tests::harness::process::{TestProject, offline_command};
 use serde_json::Value;
-use std::{collections::BTreeSet, fs, path::Path, process::Output};
+use std::{fs, path::Path, process::Output};
 
 const HEADER: &str = "# Author note: retain this text exactly.\nschema: 5\npack:\n  id: literal.pack\n  name: Literal Pack\n  version: Autumn Update\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: 21\n";
 
 fn inspect(root: &Path, args: &[&str]) -> Output {
-    let before = files::snapshot(root);
-    let entries = || -> BTreeSet<_> {
-        fs::read_dir(root)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect()
-    };
-    let before_entries = entries();
+    let before = empack_tests::harness::workspace::snapshot(root);
     let output = offline_command(root)
         .env("EMPACK_STATE_DIR", root.join("unused-manifest-state"))
         .env("EMPACK_CACHE_DIR", root.join("unused-manifest-cache"))
@@ -24,8 +17,7 @@ fn inspect(root: &Path, args: &[&str]) -> Output {
         .args(args)
         .output()
         .unwrap();
-    assert_eq!(files::snapshot(root), before);
-    assert_eq!(entries(), before_entries);
+    assert_eq!(empack_tests::harness::workspace::snapshot(root), before);
     assert!(!root.join("unused-manifest-state").exists());
     assert!(!root.join("unused-manifest-cache").exists());
     assert!(!output.stdout.contains(&0x1b), "{output:?}");
