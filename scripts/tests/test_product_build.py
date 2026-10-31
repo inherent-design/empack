@@ -64,6 +64,34 @@ def native_compiler():
 
 
 class CompilerOutputEvidence(unittest.TestCase):
+    def test_dependency_clock_features_require_complete_metadata_and_cannot_enter_product(self):
+        from compiled_product_fixture import compilation
+        from verification.product_build import metadata_command
+        self.assertIn("--all-features", metadata_command("x86_64-unknown-linux-gnu"))
+        self.assertNotIn("--no-deps", metadata_command("x86_64-unknown-linux-gnu"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compilation(root, "x86_64-unknown-linux-gnu", "c" * 64, "a" * 40, {})
+            events = [json.loads(line) for line in (root / "product-build-messages.jsonl").read_text().splitlines()]
+            metadata = json.loads((root / "product-metadata.json").read_text())
+            binary = next(row for row in events if row.get("executable"))
+            dependency = copy.deepcopy(events[0])
+            dependency.update(package_id="opaque dependency identity", features=["rt", "time", "test-util"],
+                              target={"name": "tokio", "kind": ["lib"]})
+            events.insert(-1, dependency)
+            metadata["packages"].append({"id": dependency["package_id"], "name": "tokio"})
+            def inspect():
+                return inspect_build("\n".join(map(json.dumps, events)), metadata,
+                                     "default", binary["executable"], "c" * 64)
+            with self.assertRaisesRegex(ValueError, "Test-only"):
+                inspect()
+            dependency["features"] = ["rt", "time"]
+            audit = inspect()
+            self.assertEqual(next(row for row in audit["units"] if row["package"] == "tokio")["features"], ["rt", "time"])
+            metadata["packages"].pop()
+            with self.assertRaisesRegex(ValueError, "absent from Cargo metadata"):
+                inspect()
+
     def test_observed_cross_prelude_is_replayed_from_retained_stdout(self):
         from compiled_product_fixture import compilation
         from verification.product_build import inspect_compilation
@@ -196,8 +224,8 @@ class ProductBuild(unittest.TestCase):
                 artifact = build(root, name, features)
                 audit = inspect_retained_build(root / name, artifact)
                 self.assertEqual(audit["executable_sha256"], sha256(artifact["path"]))
-                self.assertNotIn("empack-tests", {u["workspace_package"] for u in audit["units"]})
-                library = next(u for u in audit["units"] if u["workspace_package"] == "empack-lib")
+                self.assertNotIn("empack-tests", {u["package"] for u in audit["units"]})
+                library = next(u for u in audit["units"] if u["package"] == "empack-lib")
                 self.assertEqual("telemetry" in library["features"], features == "telemetry")
                 if name == "cached":
                     messages = [json.loads(line) for line in (root / name / "product-build-messages.jsonl").read_text().splitlines()]

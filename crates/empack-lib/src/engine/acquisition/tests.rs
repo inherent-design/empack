@@ -65,6 +65,83 @@ fn failure(outcome: &OperationOutcome<Result<AcquiredContent>>) -> &anyhow::Erro
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn transfer_budget_preserves_original_deadline_and_bytes_under_controlled_time() {
+    let limits = TransferLimits {
+        file_bytes: 64,
+        transfer_bytes: 10,
+        deadline: Duration::from_secs(60),
+        redirects: 2,
+    };
+    let mut budget = TransferBudget::new(limits).unwrap();
+    budget.charge_verified(4).unwrap();
+    tokio::time::advance(Duration::from_secs(20)).await;
+    let remaining = budget.remaining_limits(limits).unwrap();
+    assert_eq!(remaining.transfer_bytes, 6);
+    assert_eq!(remaining.deadline, Duration::from_secs(40));
+    assert_eq!(remaining.file_bytes, 64);
+    assert_eq!(remaining.redirects, 2);
+
+    let narrow = budget
+        .remaining_limits(TransferLimits {
+            file_bytes: 31,
+            transfer_bytes: 2,
+            deadline: Duration::from_secs(5),
+            redirects: 1,
+        })
+        .unwrap();
+    assert_eq!(narrow.transfer_bytes, 2);
+    assert_eq!(narrow.deadline, Duration::from_secs(5));
+    assert_eq!(narrow.file_bytes, 31);
+    assert_eq!(narrow.redirects, 1);
+    // A narrower request cannot mutate the shared allowance for later work.
+    assert_eq!(budget.remaining_limits(limits).unwrap().transfer_bytes, 6);
+    assert_eq!(
+        budget.remaining_limits(limits).unwrap().deadline,
+        Duration::from_secs(40)
+    );
+    assert!(matches!(
+        budget.charge_verified(7).unwrap_err().downcast_ref(),
+        Some(TransferError::ByteLimit)
+    ));
+    assert_eq!(budget.remaining_limits(limits).unwrap().transfer_bytes, 6);
+    budget.charge_verified(6).unwrap();
+    assert_eq!(budget.remaining_limits(limits).unwrap().transfer_bytes, 0);
+    assert!(matches!(
+        budget.charge_verified(1).unwrap_err().downcast_ref(),
+        Some(TransferError::ByteLimit)
+    ));
+    assert_eq!(budget.received, 10);
+
+    tokio::time::advance(Duration::from_secs(40)).await;
+    assert!(matches!(
+        budget
+            .remaining_limits(limits)
+            .err()
+            .unwrap()
+            .downcast_ref(),
+        Some(TransferError::Deadline)
+    ));
+    // Even a zero-byte/cache-only step must respect the original total deadline.
+    assert!(matches!(
+        budget.charge_verified(0).unwrap_err().downcast_ref(),
+        Some(TransferError::Deadline)
+    ));
+    assert_eq!(budget.received, 10);
+
+    let mut maximum = TransferBudget::new(TransferLimits {
+        transfer_bytes: u64::MAX,
+        ..limits
+    })
+    .unwrap();
+    maximum.charge_verified(u64::MAX).unwrap();
+    assert_eq!(
+        maximum.charge_verified(1).unwrap_err().to_string(),
+        "Acquisition byte accounting overflow"
+    );
+    assert_eq!(maximum.received, u64::MAX);
+}
+
 #[tokio::test]
 async fn verified_bytes_keep_reservations_until_the_last_reader_retires() {
     let mut server = mockito::Server::new_async().await;

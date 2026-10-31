@@ -12163,7 +12163,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including separate Unix and Windows captured-output/backpressure variants. Still qualify the remaining resource dimensions, public multi-operation budget/cancellation journeys and fake-clock deadline variants; reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Still qualify remaining resource dimensions and public multi-operation budget/cancellation journeys; actual I/O deadline and retirement checks remain separate. Reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -12174,6 +12174,28 @@
       "scope": "stable",
       "variant_axes": "",
       "cases": [
+        {
+          "id": "UX-080.controlled-total-transfer-budget",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::acquisition::tests::transfer_budget_preserves_original_deadline_and_bytes_under_controlled_time"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Advancing the controlled clock carries consumed bytes and elapsed time into later limits rather than creating a new allowance",
+            "Narrower per-request limits preserve the shared allowance; failed charges do not mutate it, exact capacity succeeds and arithmetic overflow cannot increase authority",
+            "At the original total deadline both remaining-limit calculation and even a zero-byte verified charge fail with the typed deadline error"
+          ],
+          "remaining_group_evidence": "Pure budget and controlled-time semantics only; actual network/process deadlines, resource ownership and public multi-operation journeys retain their separate evidence requirements"
+        },
         {
           "id": "UX-080.atomic-admission",
           "boundary": "H",
@@ -13270,6 +13292,26 @@
             "The three-host workflow forwards retained execution records to qualification even when a live execution job fails or is blocked"
           ],
           "remaining_group_evidence": "Synthetic dispatch and admission fixtures prove tooling behavior only; actual candidate native/live execution, final archives and consumers remain independently required."
+        },
+        {
+          "id": "UX-086.development-clock-feature-boundary",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_product_build.CompilerOutputEvidence.test_dependency_clock_features_require_complete_metadata_and_cannot_enter_product"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "The ordinary product audit resolves all emitted dependency identities from complete Cargo metadata, rejecting unknown units rather than leaving anonymous dependencies unaudited",
+            "Synthetic Tokio artifacts with test-util enabled fail the ordinary build audit, while ordinary Tokio runtime features remain permitted"
+          ],
+          "remaining_group_evidence": "Synthetic compiler-message admission only; actual normal and development compilation graphs, final binaries and archives require their own retained evidence"
         }
       ],
       "owner_now": [

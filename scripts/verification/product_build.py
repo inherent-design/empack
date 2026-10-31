@@ -40,7 +40,9 @@ def build_command(target, builder="cargo", features="default"):
 
 
 def metadata_command(target, builder="cargo"):
-    return [builder, "metadata", "--locked", "--no-deps", "--format-version", "1",
+    # This is a name catalog, including optional packages. Enabled product
+    # features come only from compiler-artifact records, never resolve.nodes.
+    return [builder, "metadata", "--locked", "--all-features", "--format-version", "1",
             *(["--target", target] if builder == "cross" else [])]
 
 
@@ -154,6 +156,8 @@ def inspect_build(messages, metadata, features, executable, digest):
     if features not in {"default", "telemetry"}:
         raise ValueError("Unsupported ordinary product features")
     packages = {p["id"]: p["name"] for p in metadata["packages"]}
+    if len(packages) != len(metadata["packages"]):
+        raise ValueError("Duplicate Cargo package identity")
     required = {"empack", "empack-core", "empack-lib"}
     if not required <= set(packages.values()):
         raise ValueError("Product metadata lacks required workspace packages")
@@ -170,14 +174,17 @@ def inspect_build(messages, metadata, features, executable, digest):
                 raise ValueError("Cargo did not finish successfully")
             finished = True
         elif reason == "compiler-artifact":
-            name = packages.get(event["package_id"])
+            if event["package_id"] not in packages:
+                raise ValueError("Compiled unit is absent from Cargo metadata")
+            name = packages[event["package_id"]]
             enabled, kind = event["features"], event["target"]["kind"]
             if (not isinstance(enabled, list) or any(not isinstance(f, str) for f in enabled)
                     or len(set(enabled)) != len(enabled)):
                 raise ValueError("Invalid compiler feature list")
             if event["profile"].get("test") is not False or set(kind) & {"test", "bench", "example"}:
                 raise ValueError("Test/example unit in ordinary product build")
-            if name == "empack-tests" or (name == "empack-lib" and "test-utils" in enabled):
+            if (name == "empack-tests" or name == "empack-lib" and "test-utils" in enabled
+                    or name == "tokio" and "test-util" in enabled):
                 raise ValueError("Test-only package or feature in ordinary product build")
             if name == "empack":
                 expected = [] if features == "default" else ["telemetry"]
@@ -191,12 +198,12 @@ def inspect_build(messages, metadata, features, executable, digest):
                     binaries.append(event["executable"])
             if name == "empack-lib" and ("telemetry" in enabled) != (features == "telemetry"):
                 raise ValueError("Compiled library telemetry differs from requested product")
-            units.append({"package_id": event["package_id"], "workspace_package": name,
+            units.append({"package_id": event["package_id"], "package": name,
                           "target": event["target"]["name"], "kind": kind,
                           "features": sorted(enabled), "profile": event["profile"]})
         elif reason not in {"compiler-message", "build-script-executed"}:
             raise ValueError(f"Unexpected Cargo build message: {reason}")
-    if not finished or len(binaries) != 1 or not required <= {u["workspace_package"] for u in units}:
+    if not finished or len(binaries) != 1 or not required <= {u["package"] for u in units}:
         raise ValueError("Incomplete Cargo product build evidence")
     return {"schema": 1, "features": features, "executable_sha256": digest, "units": units,
             "messages_sha256": hashlib.sha256(messages.encode("utf-8")).hexdigest(),

@@ -968,6 +968,12 @@ remaining reservations. The bounded registry still requires explicit result
 release before admitting another operation. Readiness, retirement and release use
 channels and observed phases rather than elapsed sleeps as evidence.
 
+A controlled-clock unit case checks the shared transfer budget without network or
+filesystem activity. Elapsed time and consumed bytes carry into later requests;
+narrower limits and failed charges cannot reset that allowance. Exact expiry also
+rejects zero-byte work. Tokio clock controls are a library development dependency;
+they are not a product configuration or a substitute for actual I/O retirement.
+
 Captured Unix processes have a separate tiny-limit check: each stream may use its
 full allowance, while overflow with an already-full progress queue must report the
 limit failure after the owned group is gone. Existing tests retain closed-pipe
@@ -1357,6 +1363,11 @@ Admission replays the narrow, pinned Rustup-banner handling for Cross and compar
 the result with the recorded compiler JSON; unknown launcher output is refused.
 Registry package IDs retain their crate/version fragment while URL credentials
 and query values remain redacted. Native and cross builds use the same verifier.
+Complete Cargo metadata names every emitted dependency unit; an unknown unit is
+refused rather than retained anonymously. The audit rejects Tokio's development
+clock feature in ordinary products as well as the test-support package/features.
+The internal audit uses `package` for dependency names, including non-workspace
+crates. Historical records remain bound to their original source and verifier.
 Cross 0.2.5 runs metadata inside the selected
 build container, so package identities and output paths use the same namespace as
 its compiler records; admission never guesses host/container path substitutions.

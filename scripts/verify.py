@@ -17,7 +17,7 @@ from verification.compiler import compiler_environment
 from verification.evidence import aggregate_outcomes, read_results, selected_tests, sha256, write_json
 from verification.process import run
 from verification.progress import phase
-from verification.product_build import retain_build
+from verification.product_build import metadata_command, retain_build
 from verification.suites import SUITES, TEST_FEATURES, nextest_command
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,7 +115,7 @@ def product(args, attempt, environment, host):
         command += ["--message-format=json"]
         compiler = compiler_environment(environment)
         messages = checked(command, attempt, "product-build", compiler, timeout=1800, cwd=ROOT)
-        metadata = checked(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"],
+        metadata = checked(metadata_command(host),
                            attempt, "product-metadata", compiler, cwd=ROOT)
         path = target_dir / ("release" if profile == "release" else "debug") / ("empack.exe" if os.name == "nt" else "empack")
         path = path.resolve()

@@ -2,6 +2,7 @@
   "schema": 1,
   "status": "unittest identities classified; fixture/helper checks are not consumer or final-package execution",
   "tests": [
+    {"id": "python::test_product_build.CompilerOutputEvidence.test_dependency_clock_features_require_complete_metadata_and_cannot_enter_product", "boundary": "U", "requirements": ["UX-080", "UX-086"]},
     {"id": "python::test_operator_acceptance.OperatorAcceptance.test_candidate_gate_requires_actual_task_records_beyond_passing_native_cases", "boundary": "H", "requirements": ["UX-084", "UX-088"]},
     {"id": "python::test_candidate_qualification.CandidateCommand.test_operator_records_bind_to_archives_without_qualifying_missing_tasks", "boundary": "X", "requirements": ["UX-084", "UX-088"]},
     {"id": "python::test_operator_acceptance.OperatorAcceptance.test_retained_observations_keep_operator_scope_and_exact_candidate_identity", "boundary": "H", "requirements": ["UX-084", "UX-088"]},
