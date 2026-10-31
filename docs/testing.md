@@ -1585,6 +1585,18 @@ members. Rejection preserves author files, attributes and prior archives. A sepa
 standalone bundled control retains author-owned settings without managed hooks.
 This executable boundary supplements the full engine/parser corpus; it does not
 run Prism, exercise server templates or qualify a final archive.
+
+The same managed-integration group separately binds server batch preparation and
+generated-script execution. Changed custom entrypoints are refused for reference
+snapshots and subscribed recipes; byte-identical copies receive the required output
+attributes in ZIP, TAR.GZ and 7z without changing source permissions. Standalone
+bundled scripts retain their separate customization policy. The executable fixture
+runs unmodified generated scripts through the selected product and fixture Java,
+checking preparation ordering, refusal and status handling. It does not establish a
+complete server export or JVM startup. Native results without the supported Prism
+parser cannot complete this group; actual consumer import/startup remains the
+separate, mandatory UX-084 gate.
+
 The probe compiles upstream `INIFile.cpp` and `Json.cpp`
 without vendoring or changing their parsing code:
 

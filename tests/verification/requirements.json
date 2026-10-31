@@ -8159,7 +8159,7 @@
         "RUN"
       ],
       "required_assertions": "Reference snapshot and subscribed recipes retain mandatory hooks; accepted custom syntax matches actual supported consumer parser; standalone flexibility preserved.",
-      "required_work": "Shared malicious/comment/whitespace fixture corpus through real builders and pinned Prism+supported Qt; script attributes.",
+      "required_work": "The shared Prism grammar, supported consumer parser, managed-server replacement/attribute checks and unmodified generated entrypoint execution are bound separately. Execute all required host/product variants; actual consumer import/startup remains mandatory under UX-084 and is not established by these fixtures.",
       "evidence_tiers": [
         "H",
         "X",
@@ -8227,7 +8227,52 @@
             "Missing/legacy format selection, hash quote/continuation, Unicode key whitespace, bare CR and noncanonical authority keys refuse without changing author bytes, attributes or prior artifacts",
             "Standalone bundled output accepts an author-owned configuration without managed hooks; this checks archive policy rather than launcher execution"
           ],
-          "remaining_group_evidence": "Full shared grammar and supported Qt interpretation have separate H/C cases. Public managed server entry points and actual launcher startup remain separate obligations; this group stays partial."
+          "remaining_group_evidence": "Full shared grammar and supported Qt interpretation have separate H/C cases; server preparation and executable entrypoints have their own cases. Actual launcher import/startup remains required under UX-084."
+        },
+        {
+          "id": "UX-053.managed-server-customization",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::managed_server_templates_require_generated_entry_points",
+            "empack-lib::engine::build::server::tests::managed_entry_points_normalize_output_attributes_across_formats",
+            "empack-lib::engine::build::server::tests::subscribed_server_scripts_require_enrollment_and_check_before_runtime",
+            "empack-lib::engine::build::server::tests::captured_user_scripts_are_preserved_and_reported"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reference snapshots and both subscribed server recipes refuse missing or same-size changed entrypoint bytes through batch preparation without replacing author documents, templates or prior artifacts",
+            "Byte-identical custom entrypoints retain recipe-owned writable/executable output attributes in ZIP, TAR.GZ and 7z while captured script source bytes/permissions remain unchanged and the unrelated shell file stays non-executable",
+            "Subscribed scripts retain enrollment/check-before-runtime commands; standalone bundled output preserves the separately supported custom script"
+          ]
+        },
+        {
+          "id": "UX-053.generated-server-public-execution",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_server::cli_generated_server_scripts_preserve_java_selection_and_classified_status"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unmodified production-generated console/GUI entrypoints execute the selected product through Bash or cmd.exe with literal Unicode arguments and explicit or PATH Java selection",
+            "Preparation refuses installed-content drift before Java probing/runtime; probe/version and nonzero runtime failures preserve player/bootstrap/script bytes and permit a subsequent launch",
+            "Standalone direct-runtime scripts retain their different exit-status policy and do not issue a managed probe; compiler-bound component setup and fixture Java do not establish a full server export, actual JVM or GUI startup"
+          ]
         }
       ],
       "owner_now": [
@@ -8238,7 +8283,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-054",
