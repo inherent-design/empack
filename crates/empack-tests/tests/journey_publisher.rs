@@ -1557,11 +1557,38 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .assert()
         .success();
     installed(&instance, &b, b"2.0.0");
+    let before_rollback = snapshot(&instance);
+    let unknown_release = "0".repeat(64);
+    assert_ne!(unknown_release, a);
+    assert_ne!(unknown_release, b);
+    offline_command(&instance)
+        .args(["--yes", "instance", "rollback", &unknown_release])
+        .assert()
+        .failure()
+        .stderr(contains("Release is not retained by this instance"));
+    assert_eq!(snapshot(&instance), before_rollback);
+    offline_command(&instance)
+        .args(["--yes", "instance", "rollback", &a])
+        .args(["--choice", "unknown=enabled"])
+        .assert()
+        .failure()
+        .stderr(contains("Unknown requested choice"));
+    assert_eq!(snapshot(&instance), before_rollback);
+    write(&instance, "game/managed.txt", b"local edit before rollback");
+    let conflicted = snapshot(&instance);
+    offline_command(&instance)
+        .args(["--yes", "instance", "rollback", &a, "--assets"])
+        .arg(envelope_a.parent().unwrap())
+        .assert()
+        .failure()
+        .stderr(contains("ModifiedManagedFile"));
+    assert_eq!(snapshot(&instance), conflicted);
     offline_command(&instance)
         .args(["--yes", "instance", "rollback"])
         .arg(&a)
         .arg("--assets")
         .arg(envelope_a.parent().unwrap())
+        .args(["--replace", "managed.txt"])
         .assert()
         .success();
     installed(&instance, &a, b"1.0.0");

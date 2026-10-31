@@ -650,6 +650,13 @@ fresh observation and application, preserving observation even when fetching the
 release fails. Package cases require these public workflows on the extracted
 archives; host fixtures alone do not qualify a distribution.
 
+Rollback checks reuse the signed publisher/player and three-release choice journeys.
+Unknown release IDs, unknown choices and unapproved managed-file edits must refuse
+without changing the installed snapshot. Explicit replacement restores the selected
+publisher bytes while preserving world data and replay floors. Host cases cover
+persisted layouts and played-world groups; rollback publication-interruption
+coverage remains outstanding.
+
 Repair cases separate reconciliation, verified-cache reuse and the public command.
 The executable fixture installs a checked native export into game client/server
 and Prism client layouts, then removes the original descriptor and assets. A fresh

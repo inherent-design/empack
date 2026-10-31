@@ -9515,7 +9515,8 @@
       "evidence_tiers": [
         "U",
         "H",
-        "X"
+        "X",
+        "P"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -9526,7 +9527,8 @@
           "id": "UX-068.rollback-retains-player-data-and-floor",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust",
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases"
           ],
           "required_platforms": [
             "linux",
@@ -9540,9 +9542,84 @@
           "assertions": [
             "Rollback to retained A restores its exact managed bytes after installing B",
             "Player configuration, modified world data and player-added files survive rollback",
-            "Replayed older signed channel remains rejected after rollback"
+            "Replayed older signed channel remains rejected after rollback",
+            "An unknown retained-release ID and an unknown choice refuse with specific diagnostics and preserve the complete instance snapshot",
+            "Unapproved local managed edits block rollback; an explicit replacement restores selected publisher bytes while player configuration/worlds and replay floor remain",
+            "Signed three-release rollback restores the retained nondefault optional selection and exact restricted input instead of selecting a current publisher default"
           ],
-          "remaining_group_evidence": "Unknown releases, rollback conflicts, choice decisions and publication interruption remain separate cases"
+          "remaining_group_evidence": "Operation-specific rollback publication-interruption coverage remains unbound; host/source observations do not establish final-archive qualification"
+        },
+        {
+          "id": "UX-068.incoming-baseline-and-seed-decisions",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::instance::tests::install_update_repair_and_retire_follow_the_installed_baseline",
+            "empack-core::instance::tests::seeds_preserve_edits_and_cannot_become_managed_without_a_decision"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reconciliation selects exact incoming managed bytes against the observed completed baseline without authorizing unknown local content",
+            "Existing edited seed bytes are preserved and cannot silently become managed ownership"
+          ]
+        },
+        {
+          "id": "UX-068.retained-release-layout-and-protected-worlds",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::install_update_repair_and_rollback_preserve_seeds_and_unowned_data",
+            "empack-lib::engine::api::instance::tests::maintenance_rejects_unretained_releases_and_changed_repair_intent",
+            "empack-lib::engine::api::instance::tests::prism_layout_persists_through_update_repair_and_rollback",
+            "empack-lib::engine::api::instance::tests::initialized_world_groups_survive_update_repair_removal_and_rollback"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Rollback selects retained completed release bytes and preserves its persisted layout and unrelated player data",
+            "A played world remains protected as a group: removed regions are not refilled, newly offered template members are not injected and played level data is not rolled back",
+            "Unretained maintenance release identities refuse instead of becoming an implicit installation"
+          ]
+        },
+        {
+          "id": "UX-068.packaged-signed-rollback",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust",
+            "empack-tests::journey_publisher::journey_signed_choices_and_restricted_input_compose_across_three_releases"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each declared final archive executes the signed release/floor/local-conflict and optional/restricted-input rollback journeys outside the checkout",
+            "Ordinary suite or engine observations cannot replace exact archive identity and execution evidence"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
         }
       ],
       "owner_now": [
