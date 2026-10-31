@@ -131,6 +131,15 @@ update. The host check/update case separately verifies observation and applicati
 approval, including a retained sequence floor after acquisition fails. Five-target
 package execution remains required for these defined update cases.
 
+World/icon ownership binds the public signed update-context journey separately
+from native-producer and export component checks. An authenticated managed root
+icon cannot be accepted by a Prism installation through a conflict override.
+Seed-owned launcher bytes and attributes survive a corrected update, repair and
+rollback, while unrelated images still require ordinary managed-file decisions.
+Custom-world cases cover occupied roots, late creation, missing members and local
+overrides. These bindings remain partial until actual consumer acceptance is
+defined and recorded; fixture-runtime success is not a launcher observation.
+
 `mise run test:map` runs the same discovery and classification check as the PR
 tooling job and `mise run test`. It lists Python tests, compiles the CLI inventory,
 and asks rustdoc for both the complete and ignored workspace doctest listings.

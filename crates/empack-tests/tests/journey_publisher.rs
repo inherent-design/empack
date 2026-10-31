@@ -2061,12 +2061,15 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
     let key_file = keys.join("fixture.key");
     fs::write(&key_file, format!("{}\n", hex(&[92; 32]))).unwrap();
     let mut releases = Vec::new();
-    for version in ["A", "B"] {
+    for version in ["A", "B", "incompatible-icon"] {
         let export = root.path().join(format!("context export {version}"));
         fs::create_dir(&export).unwrap();
         let files: Vec<_> = [
             ("core", "mods/core.jar", "managed", version.as_bytes()),
             ("config", "config/player.txt", "seed", b"publisher defaults".as_slice()),
+            ("icon", "icon.png", if version == "incompatible-icon" { "managed" } else { "seed" }, b"publisher icon".as_slice()),
+            ("other", "other.png", "managed", b"other publisher image".as_slice()),
+            ("nested", "images/icon.png", "managed", b"nested publisher image".as_slice()),
         ].into_iter().map(|(name, destination, policy, bytes)| {
             write(&export, &format!("assets/{name}"), bytes);
             json!({"key":name,"destination":destination,"layer":"common","policy":policy,
@@ -2154,7 +2157,40 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             &format!("{game}/saves/played/level.dat"),
             b"player world",
         );
-        channel(&offered, &key, &releases[1].0, &releases[1].1, 2, expires);
+        write(&instance, &format!("{game}/icon.png"), b"launcher image");
+        let icon = instance.join(game).join("icon.png");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&icon, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let icon_before = snapshot(&instance.join(game)).entries[Path::new("icon.png")];
+        if layout == "prism" {
+            // Observe an authentic but consumer-incompatible release. Neither
+            // approval nor an explicit replacement grants launcher ownership.
+            channel(&offered, &key, &releases[2].0, &releases[2].1, 2, expires);
+            command()
+                .args(["--yes", "instance", "check-updates"])
+                .arg(&offered)
+                .assert()
+                .success();
+            let before = snapshot(&instance);
+            let host_before = snapshot(host.path());
+            for decisions in [vec![], vec!["--replace", "icon.png"]] {
+                command()
+                    .args(["--yes", "instance", "update"])
+                    .arg(&releases[2].1)
+                    .args(decisions)
+                    .assert()
+                    .failure()
+                    .stderr(contains("Prism rewrites game-root icon.png"))
+                    .stderr(contains("icon.png: seed"))
+                    .stderr(contains("SeedOwnership").not());
+                assert_eq!(snapshot(&instance), before);
+                assert_eq!(snapshot(host.path()), host_before);
+            }
+        }
+        channel(&offered, &key, &releases[1].0, &releases[1].1, 3, expires);
         let before_observation = snapshot(&instance.join(game));
         command()
             .args(["--yes", "instance", "check-updates"])
@@ -2198,6 +2234,15 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
                     }
                 ),
                 (PathBuf::from("mods/core.jar"), b"B".to_vec()),
+                (PathBuf::from("icon.png"), b"launcher image".to_vec()),
+                (
+                    PathBuf::from("other.png"),
+                    b"other publisher image".to_vec()
+                ),
+                (
+                    PathBuf::from("images/icon.png"),
+                    b"nested publisher image".to_vec()
+                ),
                 (
                     PathBuf::from("config/player.txt"),
                     b"player settings".to_vec()
@@ -2242,6 +2287,45 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
         assert_eq!(context["exact"], releases[1].0);
         assert_eq!(context["state"], "valid");
         assert_eq!(status["content_verified"], false);
+        for name in ["other.png", "images/icon.png"] {
+            write(&instance, &format!("{game}/{name}"), b"local managed image");
+            let before = snapshot(&instance);
+            command()
+                .args(["--yes", "instance", "repair"])
+                .assert()
+                .failure()
+                .stderr(contains("ModifiedManagedFile"));
+            assert_eq!(snapshot(&instance), before);
+            command()
+                .args(["--yes", "instance", "repair", "--replace", name])
+                .assert()
+                .success();
+        }
+        let after_repair = snapshot(&instance.join(game));
+        assert_eq!(
+            after_repair.files[Path::new("other.png")],
+            b"other publisher image"
+        );
+        assert_eq!(
+            after_repair.files[Path::new("images/icon.png")],
+            b"nested publisher image"
+        );
+        assert_eq!(after_repair.entries[Path::new("icon.png")], icon_before);
+        command()
+            .args(["--yes", "instance", "rollback", &releases[0].0, "--assets"])
+            .arg(releases[0].1.parent().unwrap())
+            .assert()
+            .success();
+        let after_rollback = snapshot(&instance.join(game));
+        assert_eq!(after_rollback.files[Path::new("mods/core.jar")], b"A");
+        for (name, bytes) in &after_repair.files {
+            if name != Path::new("mods/core.jar") {
+                assert_eq!(&after_rollback.files[name], bytes);
+                assert_eq!(after_rollback.entries[name], after_repair.entries[name]);
+            }
+        }
+        assert_eq!(after_rollback.files.len(), after_repair.files.len());
+        assert_eq!(after_rollback.entries[Path::new("icon.png")], icon_before);
     }
     assert_eq!(snapshot(&publisher), publisher_before);
     assert_eq!(snapshot(&keys), keys_before);

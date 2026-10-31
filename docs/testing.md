@@ -269,6 +269,15 @@ require included assets for both policies; controlled producer tests separately
 verify URL references, bundled assets and original source assertions. Final-package
 cases repeat the public journey against each extracted native executable.
 
+The signed update-context fixture also checks launcher-owned root icons. An
+authenticated managed-icon release must refuse a persisted Prism installation,
+including an explicit replacement request, without changing the instance or host
+store. A corrected seed release preserves launcher-written bytes and attributes
+through update, repair and rollback. Other root images and nested icons retain
+ordinary managed-file conflicts. Separate engine cases cover the native producer,
+corrected ownership, custom world roots and late world creation. These fixtures do
+not run Prism or establish gameplay compatibility.
+
 The choice-change journey uses a separate recipient cache. Read-only option
 inspection preserves instance and host storage. An uncached optional asset becomes
 pending without changing the saved choice; the public pending key accepts exact

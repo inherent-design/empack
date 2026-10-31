@@ -9870,7 +9870,120 @@
             "After A initializes a world, B adding another publisher world member does not fill that member during update or repair",
             "Existing world bytes and player-added files survive update, repair and rollback"
           ],
-          "remaining_group_evidence": "Prism icons, custom world folders and managed/seed ownership transitions remain separate cases"
+          "remaining_group_evidence": "Custom world folders, Prism release policy and ownership transitions have separate component/executable cases below; actual launcher behavior remains a consumer acceptance obligation."
+        },
+        {
+          "id": "UX-070.signed-icon-policy-and-unrelated-images",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_updates_retain_side_and_layout_and_refuse_context_changes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An authenticated incoming release with managed game-root icon.png is refused for an installed Prism context even with explicit replacement; instance and selected host-store bytes and attributes remain unchanged",
+            "A later signed seed-icon release preserves launcher-written bytes and attributes during update, repair and rollback in the persisted layout",
+            "Unrelated root PNG and nested icon.png remain managed: local changes require an explicit decision, replacement restores the exact publisher bytes without changing the seed-owned root icon",
+            "Literal complete game inventories and verified immutable signed envelopes distinguish source policy from installed player-owned data"
+          ],
+          "remaining_group_evidence": "Controlled offline signed envelopes are not hosted publication or actual Prism launch evidence. The native producer has its own component case."
+        },
+        {
+          "id": "UX-070.custom-world-protection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::instance::tests::initialized_world_groups_survive_update_repair_removal_and_rollback",
+            "empack-lib::engine::api::instance::tests::preexisting_custom_world_is_preserved_without_inspecting_its_members",
+            "empack-lib::engine::api::instance::tests::late_world_creation_invalidates_initialization_without_adding_members",
+            "empack-lib::engine::api::instance::tests::protected_world_retires_only_its_prior_local_overrides"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An initialized custom world retains edited and deliberately missing members through update, repair, removal and rollback; newly published world members are not gap-filled",
+            "A preexisting world is protected without reading its members, and a world created after preparation invalidates publication without adding publisher members",
+            "Protecting a world retires only overrides inside that world and preserves unrelated accepted configuration overrides"
+          ],
+          "remaining_group_evidence": "Engine fixtures do not launch Minecraft, validate world gameplay, or replace the public command journey."
+        },
+        {
+          "id": "UX-070.native-producer-to-prism",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::subscription::tests::prism_channel_updates_require_seed_icons_from_native_producer",
+            "empack-lib::engine::api::instance::tests::legacy_managed_prism_icon_migrates_to_seed_without_conflict"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The consumer-neutral native producer defaults a root image to managed; authenticated Prism consumption rejects that policy before offering file conflicts",
+            "Explicit native seed policy permits an update and fixture-runtime launch while retaining launcher-written icon bytes and unchanged authenticated descriptor meaning",
+            "A current-format managed-icon record accepts a corrected seed release without a conflict override; repair keeps launcher-written bytes"
+          ],
+          "remaining_group_evidence": "The constructed older ownership fixture is not a legacy-state reader or schema migration path. Fixture-runtime execution is not Prism/Java acceptance."
+        },
+        {
+          "id": "UX-070.managed-export-icon-scope",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::client::tests::managed_prism_icon_policy_is_launcher_owned_and_narrow",
+            "empack-lib::engine::build::client::tests::managed_prism_rejects_explicit_managed_icon_before_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Reference and subscribed Prism recipes default only game-root icon.png to seed, retain explicit seed, and keep other images managed",
+            "Explicit managed root-icon policy refuses a managed build before replacing output; standalone bundled customization remains accepted and author bytes remain unchanged"
+          ],
+          "remaining_group_evidence": "Exported descriptor inspection is not proof of actual launcher rewriting or import."
+        },
+        {
+          "id": "UX-070.seed-ownership-reconciliation",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::instance::tests::seeds_preserve_edits_and_cannot_become_managed_without_a_decision"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Seed reconciliation preserves local edits and requires an explicit decision before reclaiming seed-owned content as managed"
+          ],
+          "remaining_group_evidence": "The pure generic ownership rule does not replace the stricter Prism consumer compatibility check or real filesystem execution."
         }
       ],
       "owner_now": [
