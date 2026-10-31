@@ -61,6 +61,16 @@ class VerificationProgress(unittest.TestCase):
                     with progress.phase(Path(directory), "execution"):
                         raise error
                 self.assertIs(raised.exception, error)
+            closed = io.StringIO()
+            closed.close()
+            with redirect_stdout(closed):
+                with progress.phase(Path(directory), "execution"):
+                    pass
+            with redirect_stdout(closed), self.assertRaises(RuntimeError) as raised:
+                with progress.phase(Path(directory), "execution"):
+                    raise error
+            self.assertIs(raised.exception, error)
+            self.assertEqual(json.loads((Path(directory) / "execution.progress.json").read_text())["state"], "raised")
 
     def test_checked_command_keeps_output_deadline_and_nonzero_classification(self):
         with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()) as console:

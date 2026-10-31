@@ -27,7 +27,7 @@ def phase(directory, name):
             if not available:
                 print(f"[verify] {name}: progress file unavailable", flush=True)
             print(f"[verify] {name}: {record['state']}", flush=True)
-        except OSError:
+        except (OSError, ValueError):
             pass
 
     emit()
