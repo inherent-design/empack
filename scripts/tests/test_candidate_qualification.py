@@ -190,7 +190,15 @@ class CandidateCommand(unittest.TestCase):
         self.assertEqual(len(result["doctest_evidence"]), 6)
         row = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-087")
         self.assertEqual(row["status"], "NOT_RUN", "synthetic passing examples cannot complete fresh-user acceptance")
-        self.assertTrue(all(case["status"] == "PASS" for case in row["cases"]))
+        examples = [case for case in row["cases"] if case["boundary"] == "U"]
+        self.assertEqual(len(examples), 2)
+        self.assertTrue(all(case["status"] == "PASS" for case in examples))
+        literal = next(case for case in row["cases"] if case["id"] == "UX-087.literal-authoring-examples")
+        self.assertEqual(len(row["cases"]), 3)
+        self.assertEqual(literal["status"], "NOT_RUN", "doctests cannot replace missing executable variants")
+        self.assertEqual(len(literal["variants"]), 6)
+        for variant in literal["variants"]:
+            self.assertEqual(variant["status"], "PASS" if variant["features"] == "default" else "NOT_RUN")
         failed = json.loads(receipts[0].read_text())
         failed.update(status="FAIL", exit_code=101)
         write_json(receipts[0], failed)
