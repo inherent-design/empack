@@ -22,6 +22,8 @@ use std::{
 };
 
 mod conflicts;
+#[cfg(test)]
+mod publication_tests;
 pub mod subscription;
 mod worlds;
 pub use conflicts::{ConflictChoice, ConflictResolution, FileIdentity, LocalOverride};

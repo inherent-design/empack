@@ -654,8 +654,14 @@ Rollback checks reuse the signed publisher/player and three-release choice journ
 Unknown release IDs, unknown choices and unapproved managed-file edits must refuse
 without changing the installed snapshot. Explicit replacement restores the selected
 publisher bytes while preserving world data and replay floors. Host cases cover
-persisted layouts and played-world groups; rollback publication-interruption
-coverage remains outstanding.
+persisted layouts and played-world groups. The native publication fixture stages
+a real rollback and exits a child before intent, at content and record replacement,
+after record progress, after verification and after commit. Fresh handles finish
+or restore the operation against literal inventories and independently specified
+record metadata. Hot journals must block ordinary inspection with the correct
+recovery location; player attributes and subscription bytes remain unchanged.
+The hook exists only in the library test build. Its empty worker entry supplies
+discovery, while the parent crash/recovery test supplies the native evidence.
 
 Repair cases separate reconciliation, verified-cache reuse and the public command.
 The executable fixture installs a checked native export into game client/server

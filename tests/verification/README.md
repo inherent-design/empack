@@ -45,6 +45,12 @@ Current-format schema checks, real remount execution and final-archive workflows
 have distinct bindings; neither a schema test nor a fixture definition establishes
 the other boundaries.
 
+Rollback combines public refusal/selection journeys with native child-process
+interruption of the real verified change. The parent test checks finish/restore,
+record/content coupling, read barriers, player data and unchanged trust state.
+The test-only worker's ordinary no-op invocation is not recovery acceptance.
+Required host/feature execution and final archives remain separate evidence.
+
 Publisher key setup has separate executable, terminal and native cases. The
 terminal case checks closed/piped input, preview and refusal before accepting the
 same path with explicit approval. Destination cases preserve publisher work and

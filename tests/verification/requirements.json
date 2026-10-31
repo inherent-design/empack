@@ -9516,7 +9516,8 @@
         "U",
         "H",
         "X",
-        "P"
+        "P",
+        "N"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -9546,8 +9547,7 @@
             "An unknown retained-release ID and an unknown choice refuse with specific diagnostics and preserve the complete instance snapshot",
             "Unapproved local managed edits block rollback; an explicit replacement restores selected publisher bytes while player configuration/worlds and replay floor remain",
             "Signed three-release rollback restores the retained nondefault optional selection and exact restricted input instead of selecting a current publisher default"
-          ],
-          "remaining_group_evidence": "Operation-specific rollback publication-interruption coverage remains unbound; host/source observations do not establish final-archive qualification"
+          ]
         },
         {
           "id": "UX-068.incoming-baseline-and-seed-decisions",
@@ -9620,6 +9620,30 @@
             "aarch64-apple-darwin",
             "x86_64-pc-windows-msvc"
           ]
+        },
+        {
+          "id": "UX-068.native-rollback-crash-recovery",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::instance::publication_tests::rollback_publication_crashes_recover_content_metadata_and_preserve_player_state"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real instance rollback plan and verified stage terminate a child process before intent, after content/record replacement, after record progress, after verification and after commit acknowledgement is lost",
+            "Fresh native handles finish or restore the rollback and reach exact literal content and complete independently specified record metadata; recovery is idempotent",
+            "A hot rollback blocks ordinary inspection with the correct typed recovery location instead of exposing a mixed installation",
+            "Player configuration, world members, root notes and their portable attributes survive all transitions; subscription bytes, keys, observed envelope and sequence floor remain unchanged",
+            "Pre-intent abandoned work leaves the completed B installation readable and a fresh rollback can finish; committed work remains completed after lost acknowledgement",
+            "Only the parent native test supplies acceptance; the empty worker entry during discovery is not crash/recovery evidence"
+          ]
         }
       ],
       "owner_now": [
@@ -9632,7 +9656,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-069",

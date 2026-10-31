@@ -320,6 +320,17 @@ impl Publisher {
             .map_err(|error| self.locate_recovery(root.selected(), error))
     }
 
+    #[cfg(test)]
+    pub(super) fn publish_test_change(
+        &self,
+        root: &ProjectReadRoot,
+        verified: VerifiedFileChange,
+        cancel: &Cancellation,
+        hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
+    ) -> Result<PublicationReceipt> {
+        self.publish_with_hook(root, verified, cancel, hook)
+    }
+
     fn publish_with_hook(
         &self,
         root: &ProjectReadRoot,
