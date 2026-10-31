@@ -408,12 +408,12 @@ class RequiredGate(unittest.TestCase):
             native_complete = {
                 "UX-002", "UX-005", "UX-007", "UX-011", "UX-022", "UX-023",
                 "UX-024", "UX-027", "UX-028", "UX-029", "UX-036", "UX-038",
-                "UX-040", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063",
+                "UX-040", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-066",
             }
             for requirement in acceptance:
                 # This synthetic full native matrix now supplies every bound
                 # configuration, status, explanation, replacement, content-kind,
-                # side-choice, pending, build and signing-key setup cases.
+                # side-choice/definition changes, pending, build and signing-key setup cases.
                 # Entry identity needs package proof; partial groups cannot pass merely because their current tests do.
                 self.assertEqual(requirement["status"],
                                  "PASS" if requirement["id"] in native_complete else "NOT_RUN",
@@ -458,6 +458,8 @@ class RequiredGate(unittest.TestCase):
             self.assertEqual(rotation["status"], "NOT_RUN")
             inspection = next(r for r in partial["requirements"] if r["id"] == "UX-063")
             self.assertEqual(inspection["status"], "NOT_RUN")
+            choices = next(r for r in partial["requirements"] if r["id"] == "UX-066")
+            self.assertEqual(choices["status"], "NOT_RUN")
             windows = next(c for c in key_setup["cases"]
                            if c["id"] == "UX-054.windows-private-directory-refusal")
             self.assertEqual({(v["features"], v["status"]) for v in windows["variants"]},
