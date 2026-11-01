@@ -297,6 +297,201 @@ fn cli_budget_admits_installer_with_retained_build_inputs() {
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
 
+#[tokio::test]
+async fn capacity_failure_retains_host_diagnostics_and_other_owners_until_retry() {
+    use crate::application::session_mocks::MockInvocationProvider;
+    use crate::engine::{
+        api::{BuildOutput, BuildRequest},
+        content::SourceEvidencePolicy,
+        diagnostics::{Diagnostic, DiagnosticCode, RecoveryClassification},
+        documents::DocumentCodec,
+        mrpack::OptionalConversion,
+        resources::{AdmissionError, ResourceKind},
+        templates::TemplateOptions,
+    };
+    use empack_core::{
+        distribution::Recipe,
+        inventory::OptionalPolicy,
+        model::{
+            DistributionArchive, NonEmpty, ResolutionLock, ResolvedProject, RuntimeResolution,
+        },
+        path::{PathSyntax, PortableRelPath},
+    };
+
+    let project = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let author = b"schema: 5\npack: {id: budget.fixture, name: Budget fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: 21}\ndependencies: {}\n";
+    let codec = DocumentCodec;
+    let intent = codec.decode_intent(author, "empack.yml").unwrap();
+    let lock = ResolutionLock {
+        acceptable_versions: intent.intent().runtime.acceptable_versions.clone(),
+        intent_revision: intent.semantic_revision(),
+        resolver: "budget-fixture".into(),
+        dependencies: BTreeMap::new(),
+        required_edges: BTreeMap::new(),
+        coverage: BTreeMap::new(),
+        runtime: RuntimeResolution {
+            minecraft: intent.intent().runtime.minecraft.clone(),
+            loader: intent.intent().runtime.loader,
+            loader_version: None,
+        },
+    };
+    let revision = intent.semantic_revision();
+    let resolved = ResolvedProject::validate(intent.intent().clone(), lock, revision).unwrap();
+    let lock = codec.encode_lock(&resolved).unwrap();
+    fs::write(project.path().join("empack.yml"), author).unwrap();
+    fs::write(project.path().join("empack.lock"), &lock).unwrap();
+    fs::create_dir_all(project.path().join("pack/config")).unwrap();
+    fs::write(
+        project.path().join("pack/config/value.txt"),
+        b"author config",
+    )
+    .unwrap();
+    fs::create_dir_all(project.path().join("dist")).unwrap();
+    fs::write(project.path().join("dist/result.mrpack"), b"prior artifact").unwrap();
+    fs::write(project.path().join("dist/keep.zip"), b"unrelated artifact").unwrap();
+    fs::create_dir(project.path().join("empty author directory")).unwrap();
+    fs::write(host.path().join("neighbor.txt"), b"unrelated host data").unwrap();
+    let before = snapshot(project.path());
+    let host_before = snapshot(host.path());
+    let config = AppConfig {
+        state_dir: Some(host.path().join("state")),
+        cache_dir: Some(host.path().join("cache")),
+        ..Default::default()
+    };
+    let session = MockCommandSession::new()
+        .with_config(MockConfigProvider::new(config.clone()))
+        .with_invocation(MockInvocationProvider::new().with_current_dir(project.path().to_owned()));
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 4,
+        memory_bytes: 256 << 20,
+        scratch_bytes: 1 << 30,
+        open_files: 1024,
+    });
+    let engine = engine_with_governor(&config, project.path(), governor.clone()).unwrap();
+    let request = BuildRequest {
+        clean: false,
+        outputs: NonEmpty::new(vec![BuildOutput {
+            archive: DistributionArchive::Zip,
+            target: Recipe::MODRINTH,
+            artifact: PortableRelPath::parse("result.mrpack", PathSyntax::ArtifactName).unwrap(),
+        }])
+        .unwrap(),
+        optional: OptionalPolicy::Preserve,
+        mrpack_optional: OptionalConversion::RejectMetadataLoss,
+        templates: TemplateOptions::default(),
+        evidence: SourceEvidencePolicy::Compatibility,
+    };
+    let Preparation::Ready(prepared) = engine
+        .prepare(project.path().to_path_buf(), request.clone())
+        .await
+        .unwrap()
+    else {
+        panic!("local build unexpectedly needs input");
+    };
+    let other = governor
+        .try_admit(ResourceRequest {
+            memory_bytes: 192 << 20,
+            ..Default::default()
+        })
+        .unwrap();
+    let error = execute_approved(&session, &engine, prepared, "Build", |_| {
+        panic!("capacity refusal cannot produce a completed receipt")
+    })
+    .await
+    .unwrap_err();
+    let diagnostic = error.downcast_ref::<Diagnostic>().unwrap();
+    assert_eq!(diagnostic.code, DiagnosticCode::ResourceAdmission);
+    assert_eq!(diagnostic.recovery, RecoveryClassification::NotPublished);
+    assert_eq!(diagnostic.object.as_deref(), Some("estimated memory"));
+    assert_eq!(diagnostic.expected.as_deref(), Some("0 bytes"));
+    assert_eq!(
+        diagnostic.observed.as_deref(),
+        Some("64.0 MiB (67108864 bytes)")
+    );
+    assert!(error.chain().any(|cause| matches!(
+        cause.downcast_ref::<RuntimeError>(),
+        Some(RuntimeError::Admission(AdmissionError::Busy {
+            resource: ResourceKind::MemoryBytes,
+            requested: 67_108_864,
+            available: 0,
+        }))
+    )));
+    let rendered = format!("{error:#}");
+    assert!(rendered.contains("Build was not applied"), "{rendered}");
+    assert!(
+        rendered.contains("requested 64.0 MiB (67108864 bytes); currently available 0 bytes"),
+        "{rendered}"
+    );
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::General
+    );
+    assert_eq!(snapshot(project.path()), before);
+    assert_eq!(snapshot(host.path()), host_before);
+    assert!(!host.path().join("state").exists());
+    assert!(!host.path().join("cache").exists());
+    assert!(project.path().join("empty author directory").is_dir());
+    assert_eq!(
+        governor.status().reserved,
+        ResourceRequest {
+            memory_bytes: 192 << 20,
+            ..Default::default()
+        },
+        "a failed operation must not release another owner's reservation"
+    );
+    drop(other);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    // Keep the previous error alive: its diagnostic ownership must not keep the
+    // registry result or failed preparation charged against the next operation.
+    let Preparation::Ready(prepared) = engine
+        .prepare(project.path().to_path_buf(), request)
+        .await
+        .unwrap()
+    else {
+        panic!("released capacity did not permit a fresh build");
+    };
+    execute_approved(&session, &engine, prepared, "Build", |receipt| {
+        let ExecutionReceipt::Build(receipt) = receipt else {
+            panic!("unexpected execution receipt");
+        };
+        assert_eq!(receipt.artifacts.len(), 1);
+        Ok("Budgeted build completed".into())
+    })
+    .await
+    .unwrap();
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(project.path().join("dist/result.mrpack")).unwrap())
+            .unwrap();
+    let mut names: Vec<_> = archive
+        .file_names()
+        .map(|name| name.unwrap().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["modrinth.index.json", "overrides/config/value.txt"]);
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut archive.by_name("overrides/config/value.txt").unwrap(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert_eq!(bytes, b"author config");
+    assert_eq!(fs::read(project.path().join("empack.yml")).unwrap(), author);
+    assert_eq!(fs::read(project.path().join("empack.lock")).unwrap(), lock);
+    assert_eq!(
+        fs::read(project.path().join("dist/keep.zip")).unwrap(),
+        b"unrelated artifact"
+    );
+    assert_eq!(
+        fs::read(host.path().join("neighbor.txt")).unwrap(),
+        b"unrelated host data"
+    );
+    assert!(project.path().join("empty author directory").is_dir());
+    assert!(format!("{error:#}").contains("currently available 0 bytes"));
+    engine.shutdown().await;
+}
+
 #[test]
 fn retained_recovery_coordinates_preserve_the_original_terminal_result() {
     use crate::engine::publication::RecoveryLocation;

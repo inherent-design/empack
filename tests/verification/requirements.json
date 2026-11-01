@@ -13934,6 +13934,28 @@
             "A capture larger than an empty ledger returns typed TooLarge with the configured limit and estimate warning; refusals and pre-execution cancellation preserve the complete captured project/host file inventories"
           ],
           "remaining_group_evidence": "In-process Engine composition with pre-execution cancellation only; running-worker retirement, CLI presentation, multi-operation backpressure and final-artifact execution remain separate requirements"
+        },
+        {
+          "id": "UX-080.host-capacity-failure-and-retry",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::capacity_failure_retains_host_diagnostics_and_other_owners_until_retry"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The existing CLI host executes a prepared local build against a shared capacity ledger; another owner's reservation causes a typed Busy result with requested/available memory, NotPublished classification and the complete host failure diagnostic",
+            "Refusal preserves author documents, lock, configuration, prior and unrelated artifacts, an empty author directory and host sentinel; releasing the failed outcome does not release another owner's reservation or create state/cache directories",
+            "After releasing the competing reservation, a fresh build succeeds through the same host while the previous diagnostic remains alive; its exact ZIP member inventory and author-config bytes are checked, unrelated files are preserved and no operation reservation remains"
+          ],
+          "remaining_group_evidence": "In-process CLI host and public Engine composition only; this is not a final executable/subprocess or running-worker cancellation/backpressure check. Those original obligations retain separate evidence requirements."
         }
       ],
       "owner_now": [
