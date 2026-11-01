@@ -54,12 +54,6 @@ fn is_busy(error: &anyhow::Error) -> bool {
 fn run(program: &str, args: &[&std::ffi::OsStr], input: Option<Vec<u8>>) -> Result<Vec<u8>> {
     let mut command = Command::new(program);
     command.args(args).timeout(Duration::from_secs(90));
-    if program == "/usr/bin/hdiutil" {
-        // SPARSE/UDSP supports the documented in-kernel backend. Keep this
-        // fixture's creation/formatting attachments off diskimages-helper too;
-        // the setting belongs only to this owned-image command, not the host.
-        command.env("com_apple_hdid_kernel", "1");
-    }
     if let Some(bytes) = input {
         command.write_stdin(bytes);
     }
@@ -156,7 +150,6 @@ impl ApfsFixture {
             "/usr/bin/hdiutil",
             &[
                 "attach".as_ref(),
-                "-kernel".as_ref(),
                 "-nobrowse".as_ref(),
                 "-noautoopen".as_ref(),
                 "-mountpoint".as_ref(),
