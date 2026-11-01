@@ -2800,7 +2800,7 @@
         "BUILD"
       ],
       "required_assertions": "Every expected required file and exclusion verified against immutable selected fixture; no-op convergence and fresh content established.",
-      "required_work": "Pinned Fabric and Quilt/Modrinth scenarios share the exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation journey. Keep the fixed corpus separate from rolling surveys and review upstream identity, hashes, expected inventories and license provenance. Other real-pack loader/provider/optional/world/restricted/layer obligations remain incomplete.",
+      "required_work": "Pinned Fabric, Quilt and NeoForge/Modrinth scenarios share the exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation journey. Keep fixed inputs separate from rolling surveys and review upstream identity, hashes, inventories and licensing provenance. Real legacy Forge, CurseForge, optional content, worlds, restricted files and custom-layer precedence remain incomplete; new declared host/product executions are still required.",
       "evidence_tiers": [
         "X",
         "L"
@@ -2832,7 +2832,7 @@
             "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override",
             "After reference materialization, the second sync preserves full author bytes, directory structure and portable attributes; a failed sync preserves the edited source tree, and explicit adoption changes only authorized lock/content observations while retaining unrelated author work"
           ],
-          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. The separate Quilt fixture adds real client-only declarations. Real legacy Forge, NeoForge, CurseForge, optional content, world templates, restricted files and custom-layer precedence remain unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
+          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt and NeoForge fixtures add real client-only declarations and an opaque local JAR. Real legacy Forge, CurseForge, optional content, world templates, restricted files and custom-layer precedence remain unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
         },
         {
           "id": "UX-017.pinned-quilt-client-sides",
@@ -2856,6 +2856,29 @@
             "An imported nested properties edit requires explicit adoption; failed sync preserves prior authors/lock/artifacts, subsequent export uses the edit without a version bump and unrelated author bytes/attributes/empty directories remain unchanged"
           ],
           "remaining_group_evidence": "Actual new fixture execution is required on declared hosts/product graphs. This checks retained side authority and the client artifact, not actual server execution, launcher startup or gameplay; remaining real-pack corpus dimensions stay mandatory."
+        },
+        {
+          "id": "UX-017.pinned-neoforge-local-jar",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_pinned_import::live_pinned_neoforge_import_preserves_local_jar_and_complete_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pinned Modrinth project Aa5L6RtV/version uQPo6CNj, 22,583-byte archive, is checked against independent size/SHA-256/SHA-512 and complete index/override inventories before public import",
+            "Thirteen required client references retain their exact hashes, sizes, download order and side requirements alongside fourteen common overrides, including the 20,148-byte opaque local ThreadTweak JAR",
+            "Two syncs converge on complete author content and attributes; Modrinth export and bundled Prism client inventory preserve all expected bytes with Minecraft 1.21.1 / net.neoforged 21.1.194 components",
+            "An imported properties edit requires explicit adoption without a pack-version bump; failed sync and later exports preserve unrelated authors, portable attributes, empty directories and prior artifacts"
+          ],
+          "remaining_group_evidence": "New declared host/product execution is required. This verifies imported metadata, opaque local content and client artifacts; it does not execute the retained JAR, server or game, nor substitute for the remaining corpus and actual-consumer obligations."
         }
       ],
       "owner_now": [

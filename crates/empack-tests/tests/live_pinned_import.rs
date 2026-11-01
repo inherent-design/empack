@@ -102,6 +102,29 @@ fn live_pinned_quilt_import_retains_client_sides_and_complete_inventory() {
     );
 }
 
+#[test]
+#[ignore = "pinned Universalized Optimized NeoForge archive and 13 exact CDN files; live network required"]
+fn live_pinned_neoforge_import_preserves_local_jar_and_complete_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/universalized-optimized-1.21.1-neoforge.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        fixture["overrides"]["overrides/mods/threadtweak-1.21.1-NeoForge-1.0.0.jar"]["size"],
+        20148
+    );
+    verify_pinned_pack(
+        fixture,
+        (13, 14),
+        [("net.neoforged", "21.1.194"), ("net.minecraft", "1.21.1")],
+        "config/ferritecore.mixin.properties",
+        |bytes| {
+            assert_eq!(bytes, b"useSmallThreadingDetector = true\n");
+            b"useSmallThreadingDetector = false\n".to_vec()
+        },
+    );
+}
+
 fn verify_pinned_pack(
     fixture: Value,
     (files, overrides): (usize, usize),
@@ -166,8 +189,8 @@ fn verify_pinned_pack(
             assert_eq!(observe(), before, "repeated sync changed author content");
         }
     }
-    // Both pinned inputs declare every client file required, while Quilt also
-    // declares client-only files. Inspect retained side authority as well as the
+    // All pinned inputs declare every client file required; the Quilt/NeoForge
+    // inputs also declare client-only files. Inspect retained side authority and the
     // re-exported index; a client bundle alone cannot establish server policy.
     let resolved = read_project(&imported);
     for declared in fixture["index"]["files"].as_array().unwrap() {
