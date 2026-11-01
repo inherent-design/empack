@@ -808,6 +808,8 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
         super::super::update::update_with_services(
             &session(root.path(), false),
             vec![key.as_str().into()],
+            None,
+            BatchPolicy::AllRequested,
             services("http://127.0.0.1:9"),
         )
         .await
@@ -845,7 +847,9 @@ async fn selected_local_updates_retain_authored_sources_distinct_from_destinatio
                 super::super::update::update_with_services(
                     &session(root.path(), false),
                     vec![key.as_str().into()],
-                    services("http://127.0.0.1:9")
+                    None,
+                    BatchPolicy::AllRequested,
+                    services("http://127.0.0.1:9"),
                 )
                 .await
                 .is_err()
@@ -1358,6 +1362,8 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     super::super::update::update_with_services(
         &session(root.path(), false),
         vec!["menu".into()],
+        None,
+        BatchPolicy::AllRequested,
         services(&server.url()),
     )
     .await

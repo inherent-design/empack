@@ -175,6 +175,8 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     update::update_with_services(
         &session(root.path(), false),
         vec!["adventure".into()],
+        None,
+        BatchPolicy::AllRequested,
         services(),
     )
     .await

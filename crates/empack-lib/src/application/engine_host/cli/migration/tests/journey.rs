@@ -186,6 +186,8 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
         let result = super::super::super::update::update_with_services(
             &host,
             vec!["root".into(), "pinned".into()],
+            None,
+            BatchPolicy::AllRequested,
             services(&server),
         )
         .await;

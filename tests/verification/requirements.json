@@ -4099,7 +4099,7 @@
         "DEP"
       ],
       "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
-      "required_work": "The controlled host fixture proves an actual changed selection with a retained exact pin and explicit file roles. The live ordinary CLI keeps the pinned-only assessment, then adds an older independent automatic Lithium root, verifies it could advance in a read-only preview, and requires it to remain untouched while Sodium alone is updated. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. Actual execution of each declared host/product/live variant is still required.",
+      "required_work": "Controlled host fixtures prove actual changed/retained selections, exact pins, operation/root/project release-policy precedence and explicit file roles. The live ordinary CLI keeps the pinned-only assessment, then adds an older independent automatic Lithium root, verifies it could advance in a read-only preview, and requires it to remain untouched while Sodium alone is updated. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. Distinguishing public binary flag evidence and actual execution of each declared host/product/live variant remain required.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4133,9 +4133,10 @@
             "Primary-role destination survives changed provider filenames; materialized bytes match independently supplied content",
             "Displayed per-root preview and completed receipt report one changed and one retained selection; runtime, required edges, all unselected records and raw authoring/bindings remain unchanged",
             "A multi-file provider root retains its explicit primary/companion roles and side projections through update and adoption",
-            "An authored any-release root preference overrides the stable-only project preference during update; explicit and primary-role placements survive a changed provider filename and two synchronizations"
+            "An authored any-release root preference overrides the stable-only project preference during update; explicit and primary-role placements survive a changed provider filename and two synchronizations",
+            "The same host preparation path used by public update compares absent, any, stable-only and prefer-stable operation policies against an authored any root and stable-only project: overrides select distinct alpha/stable versions without rewriting authoring, runtime, edges or placements; preview and receipt counts agree and repeated sync retains the selected version"
           ],
-          "remaining_group_evidence": "The controlled host journeys establish authored root-policy precedence and changed selections; the ordinary public --release-policy override still needs distinguishing candidate evidence, and every declared execution variant remains required"
+          "remaining_group_evidence": "The shared host path establishes operation-policy precedence with distinguishing candidates; ordinary binary flag translation still needs its own distinguishing candidate evidence, and every declared execution variant remains required"
         },
         {
           "id": "UX-026.provider-release-policy-ordering",

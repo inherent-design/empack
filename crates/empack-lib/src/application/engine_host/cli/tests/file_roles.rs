@@ -473,6 +473,8 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     update::update_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
+        None,
+        BatchPolicy::AllRequested,
         services(),
     )
     .await
@@ -486,6 +488,8 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     update::update_with_services(
         &session(root.path(), false),
         vec![key.as_str().into()],
+        None,
+        BatchPolicy::AllRequested,
         services(),
     )
     .await

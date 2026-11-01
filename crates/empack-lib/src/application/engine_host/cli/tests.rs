@@ -186,6 +186,8 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         update::update_with_services(
             &session(root.path(), false),
             keys,
+            None,
+            BatchPolicy::AllRequested,
             dependencies::AdditionServices {
                 transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
                 catalog,
@@ -1784,7 +1786,14 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         )
         .create_async()
         .await;
-    for by_role in [false, true] {
+    for (by_role, releases, selected) in [false, true].into_iter().flat_map(|by_role| {
+        [
+            (by_role, None, "RootVer2"),
+            (by_role, Some(ReleasePolicy::Any), "RootVer2"),
+            (by_role, Some(ReleasePolicy::StableOnly), "RootVer1"),
+            (by_role, Some(ReleasePolicy::PreferStable), "RootVer1"),
+        ]
+    }) {
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
         add_with_catalog(
@@ -1827,19 +1836,58 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
             DocumentCodec.encode_lock(&current).unwrap(),
         )
         .unwrap();
-        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
-        update::update_with_services(
-            &session(root.path(), false),
-            vec![key.as_str().into()],
-            dependencies::AdditionServices {
-                transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
-                catalog,
-                files: DirectFileLimits::default(),
-            },
-        )
-        .await
-        .unwrap();
+        let project_dir = root.path().join("project");
+        let author = fs::read(project_dir.join("empack.yml")).unwrap();
+        let before_update = crate::test_support::file_bytes(&project_dir);
+        for dry in [true, false] {
+            let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+            let (host, messages) = session(root.path(), dry).record_status_messages();
+            update::update_with_services(
+                &host,
+                vec![key.as_str().into()],
+                releases,
+                BatchPolicy::AllRequested,
+                dependencies::AdditionServices {
+                    transport: catalog.configure_acquisition(HttpAcquisition::new().unwrap()),
+                    catalog,
+                    files: DirectFileLimits::default(),
+                },
+            )
+            .await
+            .unwrap();
+            let messages = messages.lock().unwrap();
+            let changed = usize::from(selected == "RootVer2");
+            let preview = format!(
+                "Check {0} as {0}: selection {1}",
+                key.as_str(),
+                if changed == 1 { "changed" } else { "retained" }
+            );
+            assert!(messages.contains(&preview), "{messages:?}");
+            let receipt = format!(
+                "Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent",
+                1 - changed
+            );
+            assert_eq!(
+                messages
+                    .iter()
+                    .filter(|message| **message == receipt)
+                    .count(),
+                usize::from(!dry),
+                "{messages:?}"
+            );
+            if dry {
+                assert_eq!(crate::test_support::file_bytes(&project_dir), before_update);
+            }
+        }
         let updated = project(root.path());
+        assert_eq!(updated.intent(), current.intent());
+        assert_eq!(fs::read(project_dir.join("empack.yml")).unwrap(), author);
+        assert_eq!(updated.lock().runtime, current.lock().runtime);
+        assert_eq!(updated.lock().required_edges, current.lock().required_edges);
+        assert_eq!(
+            updated.lock().dependencies.len(),
+            current.lock().dependencies.len()
+        );
         assert_eq!(
             updated.intent().roots[&key].releases,
             Some(ReleasePolicy::Any)
@@ -1848,7 +1896,7 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         assert_eq!(
             dependency.selected.as_ref().unwrap().selection,
             empack_core::identity::PinSelector::ModrinthVersion(
-                empack_core::identity::ModrinthVersionId::parse("RootVer2").unwrap()
+                empack_core::identity::ModrinthVersionId::parse(selected).unwrap()
             )
         );
         assert_eq!(dependency.files.as_slice()[0].slot.as_str(), "primary");
