@@ -1,87 +1,53 @@
 # Semantic values and documents
 
-The model separates author requests, exact selections, portable releases and the
-state of one installation.
+The model separates author requests, exact selections, portable releases and the state of one installation.
 
 ## Identity
 
-| Value | Meaning | Not interchangeable with |
-| --- | --- | --- |
-| `PackId` | Stable identity established when authoring begins | Display name, URL or version label |
-| `DependencyKey` | Author-facing logical dependency label | Provider slug or metadata filename |
-| `ProviderProjectId` | Provider-qualified canonical project | Search selector or exact file |
-| `ResolvedPin` | Exact provider version/file selection | Follow-compatible policy |
-| `FileSlot` | Stable role within a resolved dependency | Filename |
-| `ReleaseId` | Digest of exact portable release payload bytes | Human-readable release version |
-| `ChoiceKey` | Stable optional decision identity | Position in a list |
-| `InstallDestination` | Portable root-relative file placement | Host path or deletion grant |
-| `ContentId` | Observed SHA-256 byte address | Authenticity of downloaded content |
-| `InstanceId` | Native installation binding | Pack identity or author root |
+| Value                | Meaning                                           | Not interchangeable with           |
+| -------------------- | ------------------------------------------------- | ---------------------------------- |
+| `PackId`             | Stable identity established when authoring begins | Display name, URL or version label |
+| `DependencyKey`      | Author-facing logical dependency label            | Provider slug or metadata filename |
+| `ProviderProjectId`  | Provider-qualified canonical project              | Search selector or exact file      |
+| `ResolvedPin`        | Exact provider version/file selection             | Follow-compatible policy           |
+| `FileSlot`           | Stable role within a resolved dependency          | Filename                           |
+| `ReleaseId`          | Digest of exact portable release payload bytes    | Human-readable release version     |
+| `ChoiceKey`          | Stable optional decision identity                 | Position in a list                 |
+| `InstallDestination` | Portable root-relative file placement             | Host path or deletion grant        |
+| `ContentId`          | Observed SHA-256 byte address                     | Authenticity of downloaded content |
+| `InstanceId`         | Native installation binding                       | Pack identity or author root       |
 
-Do not normalize provider case, Unicode spelling or filenames into a different
-identity. A separate portable collision key rejects conflicting paths. Canonical
-selectors are resolved before persistence; a slug never becomes an ID by assignment.
+Do not normalize provider case, Unicode spelling or filenames into a different identity. A separate portable collision key rejects conflicting paths. Canonical selectors are resolved before persistence; a slug never becomes an ID by assignment.
 
 ## Document roles
 
-| Document | Owner | Contents |
-| --- | --- | --- |
-| `empack.yml` | Author | Pack/runtime intent, dependencies, source inclusion, named output profiles |
-| `empack.bindings.yml` | Author/integration tools | Non-default placements, stable file-role assignments and source-member mappings |
-| `empack.lock` | Resolver | Exact runtime and files, original assertions, placements, required closure evidence |
-| Release manifest | Release builder | Portable exact inventory, runtime, choices, acquisition and installation policies |
-| Channel envelope | Publisher | Pack/channel identity, sequence, expiry and authenticated release reference |
-| Instance record | Instance engine | Last completed release, owned files, side, choices, authority and source binding |
-| Recovery journal | Publisher | Approved operation, native root, before/after evidence and durable progress |
+| Document              | Owner                    | Contents                                                                            |
+| --------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| `empack.yml`          | Author                   | Pack/runtime intent, dependencies, source inclusion, named output profiles          |
+| `empack.bindings.yml` | Author/integration tools | Non-default placements, stable file-role assignments and source-member mappings     |
+| `empack.lock`         | Resolver                 | Exact runtime and files, original assertions, placements, required closure evidence |
+| Release manifest      | Release builder          | Portable exact inventory, runtime, choices, acquisition and installation policies   |
+| Channel envelope      | Publisher                | Pack/channel identity, sequence, expiry and authenticated release reference         |
+| Instance record       | Instance engine          | Last completed release, owned files, side, choices, authority and source binding    |
+| Recovery journal      | Publisher                | Approved operation, native root, before/after evidence and durable progress         |
 
-Author intent uses schema 5, optional bindings use schema 1, and exact resolution uses schema 2. Release, channel and
-instance schemas have their own explicit versions. Unknown intent fields and invalid explicit
-variants fail; they cannot silently become search input. Original author bytes are
-preserved when no semantic edit is required. Canonical semantic identity and raw
-file revision serve different purposes. Both author documents contribute to normalized
-intent, and both raw revisions (including absence) are captured before approval.
-Earlier author schemas are rejected; there is no automatic or general-purpose migration path.
+Author intent uses schema 5, optional bindings use schema 1, and exact resolution uses schema 2. Release, channel and instance schemas have their own explicit versions. Unknown intent fields and invalid explicit variants fail; they cannot silently become search input. Original author bytes are preserved when no semantic edit is required. Canonical semantic identity and raw file revision serve different purposes. Both author documents contribute to normalized intent, and both raw revisions (including absence) are captured before approval. Earlier author schemas are rejected; there is no automatic or general-purpose migration path.
 
 ## Author intent and resolution
 
-Dependency sources include provider selection, verified URL files, local files and
-interpreted archive members. Mods, resource packs, shaders, datapacks and worlds
-retain their content kind. Exact pins and automatic compatible selection are explicit.
-Sync retains valid exact selections; update deliberately resolves eligible changes.
-Unknown dependency coverage is not an empty required-dependency set.
+Dependency sources include provider selection, verified URL files, local files and interpreted archive members. Mods, resource packs, shaders, datapacks and worlds retain their content kind. Exact pins and automatic compatible selection are explicit. Sync retains valid exact selections; update deliberately resolves eligible changes. Unknown dependency coverage is not an empty required-dependency set.
 
-A qualified source string records a `ProviderSelector`, not an asserted canonical ID.
-The lock stores its exact request in `source-selector` beside the resolved provider identity.
-Sync, update, adoption and assessment reuse that identity while the request is unchanged,
-including when a provider renames or reassigns a slug. A changed request needs fresh lookup.
-An explicit tagged `provider` source with `identity` remains the strict canonical-ID form.
-Parsing either form performs no network requests.
+A qualified source string records a `ProviderSelector`, not an asserted canonical ID. The lock stores its exact request in `source-selector` beside the resolved provider identity. Sync, update, adoption and assessment reuse that identity while the request is unchanged, including when a provider renames or reassigns a slug. A changed request needs fresh lookup. An explicit tagged `provider` source with `identity` remains the strict canonical-ID form. Parsing either form performs no network requests.
 
-A resolved dependency can contain multiple named file roles and placements. Source
-path and destination are independent. Provider-owned world archives retain the
-provider/exact archive identity and verified interpreted member ownership. A local
-source change is observed drift, not automatic authorization to overwrite a project.
+A resolved dependency can contain multiple named file roles and placements. Source path and destination are independent. Provider-owned world archives retain the provider/exact archive identity and verified interpreted member ownership. A local source change is observed drift, not automatic authorization to overwrite a project.
 
-Source inclusion uses `sources.exclude` in `empack.yml`: ordered, layer-relative
-ignore patterns applied independently to `pack/` and each `overrides/` layer.
-Patterns are single lines; parent exclusions apply before leaf traversal. Explicit
-locked source files and placements remain required observations even when a rule
-excludes the same path from incidental content. Rules are captured with the author
-document and never inherited from host-global ignore files. Native source capture
-has no package-manager control filenames; exclusions are authored policy.
+Source inclusion uses `sources.exclude` in `empack.yml`: ordered, layer-relative ignore patterns applied independently to `pack/` and each `overrides/` layer. Patterns are single lines; parent exclusions apply before leaf traversal. Explicit locked source files and placements remain required observations even when a rule excludes the same path from incidental content. Rules are captured with the author document and never inherited from host-global ignore files. Native source capture has no package-manager control filenames; exclusions are authored policy.
 
-`pack.id` is the stable publisher-selected identity. `runtime.java` declares the
-minimum recipient Java major. Neither belongs to a particular output consumer.
-`build.profiles` contains complete consumer recipes; `build.default` selects the
-ordered defaults. A project may omit builds until it needs a distribution.
-Installation policy overrides remain in integration bindings. Configuration and
-world content default to seeds. World content cannot become managed replacement
-content, including worlds placed under a custom directory.
+`pack.id` is the stable publisher-selected identity. `runtime.java` declares the minimum recipient Java major. Neither belongs to a particular output consumer. `build.profiles` contains complete consumer recipes; `build.default` selects the ordered defaults. A project may omit builds until it needs a distribution. Installation policy overrides remain in integration bindings. Configuration and world content default to seeds. World content cannot become managed replacement content, including worlds placed under a custom directory.
 
 ## Compact dependencies and integration bindings
 
-A provider dependency with the ordinary mod, both-sides and automatic compatible
-policy can be one line:
+A provider dependency with the ordinary mod, both-sides and automatic compatible policy can be one line:
 
 ```yaml
 dependencies:
@@ -91,16 +57,9 @@ dependencies:
     side: client
 ```
 
-Compact sources contain an exact provider selector. Resolution establishes canonical
-identity; a retained selector binding prevents silent reassignment on sync or update.
-Strict canonical IDs remain available through the explicit provider source form.
-A source edit requests a new binding. Search remains an explicit separate source.
-`pin` inherits its provider from the source. Local paths and direct URL assertions
-have source-specific rules, not provider version constraints. See the
-[authoring contract](authoring.md) for expansion and validation.
+Compact sources contain an exact provider selector. Resolution establishes canonical identity; a retained selector binding prevents silent reassignment on sync or update. Strict canonical IDs remain available through the explicit provider source form. A source edit requests a new binding. Search remains an explicit separate source. `pin` inherits its provider from the source. Local paths and direct URL assertions have source-specific rules, not provider version constraints. See the [authoring contract](authoring.md) for expansion and validation.
 
-Non-default placements and local multi-file source mappings live in an optional,
-version-controlled `empack.bindings.yml`:
+Non-default placements and local multi-file source mappings live in an optional, version-controlled `empack.bindings.yml`:
 
 ```yaml
 schema: 1
@@ -114,43 +73,17 @@ bindings:
             environment: {client: required, server: unsupported}
 ```
 
-Bindings refer to dependency keys and exact logical roles. For provider files,
-`primary` selects the declared primary file, or the first file when the provider
-omits that declaration. Multiple primaries are ambiguous. `role:<name>` selects
-one provider-declared companion role. `filename:<name>` explicitly selects an
-exact, version-sensitive filename; bare filename keys retain that meaning.
-Primary and declared-role selectors remain in intent and the lock's logical slot
-across filename changes. The acquisition record separately retains the exact
-provider filename for that selection, including export placement verification. Sync, update, adoption and migration share this interpretation. Archive-root mappings
-use `placement.archive-root`; local multi-file sources use `source-members`.
-No filename heuristic chooses a replacement role after an update. Missing or
-ambiguous roles must be resolved before a candidate is valid. Conflicting inline
-and separate placements, dangling keys, unsafe paths and unknown fields fail.
-Ordinary inferred placements remain derived lock data.
+Bindings refer to dependency keys and exact logical roles. For provider files, `primary` selects the declared primary file, or the first file when the provider omits that declaration. Multiple primaries are ambiguous. `role:<name>` selects one provider-declared companion role. `filename:<name>` explicitly selects an exact, version-sensitive filename; bare filename keys retain that meaning. Primary and declared-role selectors remain in intent and the lock's logical slot across filename changes. The acquisition record separately retains the exact provider filename for that selection, including export placement verification. Sync, update, adoption and migration share this interpretation. Archive-root mappings use `placement.archive-root`; local multi-file sources use `source-members`. No filename heuristic chooses a replacement role after an update. Missing or ambiguous roles must be resolved before a candidate is valid. Conflicting inline and separate placements, dangling keys, unsafe paths and unknown fields fail. Ordinary inferred placements remain derived lock data.
 
-`DocumentCodec::decode_authoring` composes both inputs into the existing
-`ProjectIntent`. `encode_authoring` splits the same meaning into compact author
-and optional binding bytes. Resolver and planner APIs use the composed model.
-Formatting-only edits preserve semantic identity; changed binding meaning
-invalidates the prior lock. Raw edits or a newly created/deleted binding file
-invalidate prepared publication and retained continuation context.
+`DocumentCodec::decode_authoring` composes both inputs into the existing `ProjectIntent`. `encode_authoring` splits the same meaning into compact author and optional binding bytes. Resolver and planner APIs use the composed model. Formatting-only edits preserve semantic identity; changed binding meaning invalidates the prior lock. Raw edits or a newly created/deleted binding file invalidate prepared publication and retained continuation context.
 
-Mutating commands publish authoring, bindings and lock changes together through
-the existing recovery journal. Removing the last bound dependency retains an
-existing empty bindings document rather than treating it as disposable storage.
-No-op operations preserve both original documents, including comments.
+Mutating commands publish authoring, bindings and lock changes together through the existing recovery journal. Removing the last bound dependency retains an existing empty bindings document rather than treating it as disposable storage. No-op operations preserve both original documents, including comments.
 
 ## Environments and optionality
 
-Requirements retain client/server participation independently from optional choice.
-Common, client and server layers have explicit precedence. Conditional replacement
-and fallback relationships survive native releases. A consumer unable to represent
-them requires selected choices or an explicit conversion; it cannot silently flatten
-files or turn optional content into required content.
+Requirements retain client/server participation independently from optional choice. Common, client and server layers have explicit precedence. Conditional replacement and fallback relationships survive native releases. A consumer unable to represent them requires selected choices or an explicit conversion; it cannot silently flatten files or turn optional content into required content.
 
-Choices have stable keys, allowed alternatives and defaults. Installed selections
-are instance data. New constraints trigger a decision rather than resetting all
-choices. Content disabled by a choice may retire only its unchanged owned files.
+Choices have stable keys, allowed alternatives and defaults. Installed selections are instance data. New constraints trigger a decision rather than resetting all choices. Content disabled by a choice may retire only its unchanged owned files.
 
 ## Installed files
 
@@ -171,15 +104,8 @@ pub struct ReleaseFile {
 }
 ```
 
-`Managed` files participate in three-way reconciliation. `Seed` supplies initial
-bytes only; existing bytes belong to the user. The completed record selects a retained release inventory and choices as the
-installation baseline; explicit local deviations retain their own accepted content
-identities. Preserving a seed never claims its current bytes match publisher assertions. Worlds are seeded only by explicit initial installation and subsequently
-excluded from ordinary update ownership. Runtime-generated files are user data.
+`Managed` files participate in three-way reconciliation. `Seed` supplies initial bytes only; existing bytes belong to the user. The completed record selects a retained release inventory and choices as the installation baseline; explicit local deviations retain their own accepted content identities. Preserving a seed never claims its current bytes match publisher assertions. Worlds are seeded only by explicit initial installation and subsequently excluded from ordinary update ownership. Runtime-generated files are user data.
 
 ## Integrity and provenance
 
-Retain provider/source assertions alongside computed content IDs. MD5 compatibility
-is weaker evidence; computing SHA-256 after downloading does not authenticate the
-source. Signed release identity establishes publisher approval of exact descriptors,
-not a new claim about the upstream author's signature or redistribution license.
+Retain provider/source assertions alongside computed content IDs. MD5 compatibility is weaker evidence; computing SHA-256 after downloading does not authenticate the source. Signed release identity establishes publisher approval of exact descriptors, not a new claim about the upstream author's signature or redistribution license.

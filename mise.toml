@@ -1,4 +1,5 @@
 [tools]
+dprint = "0.51.1"
 git-cliff = "latest"
 # cargo-nextest and cargo-llvm-cov installed via taiki-e/install-action in CI
 # or cargo install locally; mise's cargo backend conflicts with dtolnay/rust-toolchain
@@ -200,3 +201,15 @@ alias = "c"
 description = "Remove build artifacts"
 run = "cargo clean"
 run_windows = "cargo clean"
+
+[tasks."format:markdown"]
+description = "Format Markdown without fixed-width prose wrapping"
+run = """
+dprint fmt
+"""
+
+[tasks."format:markdown:check"]
+description = "Check Markdown formatting"
+run = """
+dprint check
+"""

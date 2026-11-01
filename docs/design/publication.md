@@ -1,7 +1,6 @@
 # Publication and recovery
 
-Native publication contract for the v0.8.4-beta development target. Callable types and signatures are defined in the
-[publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
+Native publication contract for the v0.8.4-beta development target. Callable types and signatures are defined in the [publication](../../crates/empack-lib/src/engine/publication.rs), [verification](../../crates/empack-lib/src/engine/verification.rs) and [recovery API](../../crates/empack-lib/src/engine/api/recovery.rs). This page specifies their behavior and ownership.
 
 ## Journaled publication and recovery
 
@@ -11,14 +10,7 @@ Keep the **authoritative operation journal in host-private application state**, 
 
 Candidate/preimage storage needed for recovery has explicit retention and is not ordinary evictable cache. Protect host-state permissions, bound parsing, and bind records to the actual root identity. A same-user malicious native program is outside the security boundary, but a malicious imported project should not be able to manufacture a previously approved operation.
 
-This development target uses publication journal schema 5, creation journal
-schema 2 and preparation-retention schema 2. Each requires persistent identity
-evidence. Older internal formats are unsupported; readers do not reinterpret,
-migrate or delete them. Preserve incompatible interrupted-operation data and use
-an executable that supports it to resolve that operation before selecting new
-state. A format error does not establish that a project is unchanged or that
-retained recovery copies are disposable. Current-format restart, finish and
-restore retain their normal guarantees across device reassignment.
+This development target uses publication journal schema 5, creation journal schema 2 and preparation-retention schema 2. Each requires persistent identity evidence. Older internal formats are unsupported; readers do not reinterpret, migrate or delete them. Preserve incompatible interrupted-operation data and use an executable that supports it to resolve that operation before selecting new state. A format error does not establish that a project is unchanged or that retained recovery copies are disposable. Current-format restart, finish and restore retain their normal guarantees across device reassignment.
 
 ### Publication plan
 
@@ -28,52 +20,23 @@ A receipt-producing document update is subject to the same protocol. Success cou
 
 ### Retained recovery data
 
-Under the project publication lock, a new publication validates the preceding
-journal and reclaims its committed operation's explicitly named copies before
-superseding that journal. Uncommitted journals block ordinary publication. The
-latest committed receipt and its recovery copies remain available until the next
-publication; successful repetitions do not accumulate historical copies.
+Under the project publication lock, a new publication validates the preceding journal and reclaims its committed operation's explicitly named copies before superseding that journal. Uncommitted journals block ordinary publication. The latest committed receipt and its recovery copies remain available until the next publication; successful repetitions do not accumulate historical copies.
 
-Before writing preimages or candidates, publication persists a separate bounded,
-root-bound preparation descriptor naming its owned operation and files. A retry
-can reclaim copies abandoned before journal intent. If the current journal names
-the same operation, it takes precedence and its recovery data remains protected.
-Unknown neighboring directories are ignored. Unexpected files inside an owned
-operation prevent retirement and descriptor replacement; cleanup never recursively
-deletes them or infers ownership from an `op-` prefix alone.
+Before writing preimages or candidates, publication persists a separate bounded, root-bound preparation descriptor naming its owned operation and files. A retry can reclaim copies abandoned before journal intent. If the current journal names the same operation, it takes precedence and its recovery data remains protected. Unknown neighboring directories are ignored. Unexpected files inside an owned operation prevent retirement and descriptor replacement; cleanup never recursively deletes them or infers ownership from an `op-` prefix alone.
 
 ### Publisher interface
 
-The engine reacquires the project lock, checks the root binding, hot-journal state, full relevant read set, and granted footprint, then admits publication of the verified candidate. A persisted marker or caller
-boolean cannot substitute for `VerifiedFileChange`. Native publication and staging
-are internal to the library; external callers use `Engine::prepare`, authorization,
-and `Engine::start`. Public receipts and recovery inspection expose evidence, not
-an alternate publication capability.
+The engine reacquires the project lock, checks the root binding, hot-journal state, full relevant read set, and granted footprint, then admits publication of the verified candidate. A persisted marker or caller boolean cannot substitute for `VerifiedFileChange`. Native publication and staging are internal to the library; external callers use `Engine::prepare`, authorization, and `Engine::start`. Public receipts and recovery inspection expose evidence, not an alternate publication capability.
 
 If the base changed, return a conflict before live mutation. Never silently publish against a new base. A new preparation may reuse retained verified content, but must re-plan and re-authorize any changed effects.
 
 ### New project roots
 
-New-root publication accepts a verified, complete create-only file plan containing
-both authoring and lock documents. It stages one owned sibling directory and uses
-a no-replace rename; an occupied or replaced destination cannot be adopted merely
-because its bytes match. Recovery verifies the retained candidate's paths, contents,
-attributes and membership without rerunning tools.
+New-root publication accepts a verified, complete create-only file plan containing both authoring and lock documents. It stages one owned sibling directory and uses a no-replace rename; an occupied or replaced destination cannot be adopted merely because its bytes match. Recovery verifies the retained candidate's paths, contents, attributes and membership without rerunning tools.
 
-New schema-2 creation journals retain persistent parent and candidate identities.
-The parent association is established before selecting the creation index, and the
-candidate association is durable before index intent. Original native labels remain
-physical storage addresses; read-only lookup verifies the persistent association
-and retains the original index, root-state directory and locks. It creates no state.
-Missing or inconsistent candidate associations and mixed identity formats refuse
-recovery rather than creating new authority from a journal.
+New schema-2 creation journals retain persistent parent and candidate identities. The parent association is established before selecting the creation index, and the candidate association is durable before index intent. Original native labels remain physical storage addresses; read-only lookup verifies the persistent association and retains the original index, root-state directory and locks. It creates no state. Missing or inconsistent candidate associations and mixed identity formats refuse recovery rather than creating new authority from a journal.
 
-Schema-1 journals keep their original strict native checks. Inspection and recovery
-do not silently convert them. Persistent journal evidence is separate from a fresh
-recovery approval: prepared recovery captures the live parent and candidate/root
-identities, rechecks them before effects, and refuses a stale native observation.
-A completed creation remains readable after ordinary project edits; it does not
-require its original file inventory to remain the current project inventory.
+Schema-1 journals keep their original strict native checks. Inspection and recovery do not silently convert them. Persistent journal evidence is separate from a fresh recovery approval: prepared recovery captures the live parent and candidate/root identities, rechecks them before effects, and refuses a stale native observation. A completed creation remains readable after ordinary project edits; it does not require its original file inventory to remain the current project inventory.
 
 ### Durable protocol
 
@@ -120,19 +83,10 @@ Previous successful artifacts remain until replacement is verified and ready for
 
 ### Read budgets
 
-Source and artifact read sets retain separate limits. Verification checks the
-resulting files against every applicable capture group's budget before publication.
-The journal records those groups so recovery applies the same limits to prior and
-replacement bytes. A larger artifact allowance cannot widen source-file limits.
+Source and artifact read sets retain separate limits. Verification checks the resulting files against every applicable capture group's budget before publication. The journal records those groups so recovery applies the same limits to prior and replacement bytes. A larger artifact allowance cannot widen source-file limits.
 
 ## Instance activation and rollback
 
-The instance record participates in the verified publication footprint. A release
-is not activated until its selected inventory and instance state agree. Launch
-checks pending recovery before trusting a completed instance record. Preserve
-root identity and expected-old checks for client and server installations.
+The instance record participates in the verified publication footprint. A release is not activated until its selected inventory and instance state agree. Launch checks pending recovery before trusting a completed instance record. Preserve root identity and expected-old checks for client and server installations.
 
-Committed publication copies are short-lived recovery storage. Retained release
-records and content needed for operator rollback have separate ownership and leases;
-reclaiming a journal must not evict them. Rollback is a new verified operation with
-current-file conflicts, not blind restoration of every historical byte.
+Committed publication copies are short-lived recovery storage. Retained release records and content needed for operator rollback have separate ownership and leases; reclaiming a journal must not evict them. Rollback is a new verified operation with current-file conflicts, not blind restoration of every historical byte.
