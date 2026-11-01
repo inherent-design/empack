@@ -191,6 +191,7 @@ mod tests {
         // cancellation sends no input or signal that could unblock an old read.
         for (input, default, expected) in [
             (Some(&b"Y"[..]), false, Some(true)),
+            (Some(&b"Ykept"[..]), false, Some(true)),
             (Some(&b"n"[..]), true, Some(false)),
             (Some(&b"\n"[..]), false, Some(false)),
             (Some(&b"\r"[..]), true, Some(true)),
@@ -213,6 +214,14 @@ mod tests {
             );
             let mut master = unsafe { File::from_raw_fd(master) };
             let slave = unsafe { File::from_raw_fd(slave) };
+            for fd in [master.as_raw_fd(), slave.as_raw_fd()] {
+                let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+                assert!(flags >= 0);
+                assert_eq!(
+                    unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) },
+                    0
+                );
+            }
             let before = settings(slave.as_raw_fd());
             let terminal =
                 Term::read_write_pair(slave.try_clone().unwrap(), slave.try_clone().unwrap());
@@ -291,6 +300,51 @@ mod tests {
                 }
                 None => assert!(result.unwrap_err().is::<Interrupted>()),
             }
+            // Darwin sets the transient PENDIN bit when ICANON is restored.
+            // A readiness query processes that kernel state without consuming
+            // pending user bytes. Keep exact flag comparisons after that query.
+            let mut available = 0;
+            assert_eq!(
+                unsafe { libc::ioctl(slave.as_raw_fd(), libc::FIONREAD, &mut available) },
+                0
+            );
+            // Readiness while switching modes differs between tty drivers. The
+            // complete canonical bytes below must survive on either platform.
+            let mut expected = match input {
+                Some(b"Ykept") => b"kept".to_vec(),
+                Some(b"\x1b[y") => b"[y".to_vec(),
+                _ => Vec::new(),
+            };
+            expected.push(b'\n');
+            master.write_all(b"\n").unwrap();
+            let mut descriptors = unsafe { std::mem::zeroed() };
+            unsafe {
+                libc::FD_ZERO(&mut descriptors);
+                libc::FD_SET(slave.as_raw_fd(), &mut descriptors);
+            }
+            let mut timeout = libc::timeval {
+                tv_sec: 5,
+                tv_usec: 0,
+            };
+            assert_eq!(
+                unsafe {
+                    libc::select(
+                        slave.as_raw_fd() + 1,
+                        &mut descriptors,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        &mut timeout,
+                    )
+                },
+                1,
+                "restored terminal did not admit a canonical line"
+            );
+            let mut observed = vec![0; expected.len()];
+            (&slave).read_exact(&mut observed).unwrap();
+            assert_eq!(
+                observed, expected,
+                "mode restoration discarded queued input"
+            );
             let after = settings(slave.as_raw_fd());
             assert_eq!(after.c_iflag, before.c_iflag);
             assert_eq!(after.c_oflag, before.c_oflag);
