@@ -186,6 +186,46 @@ pub fn verify() {
         "Java changed captured inputs"
     );
     assert_eq!(author(), before);
+    for (name, invalid, diagnostic) in [
+        (
+            "bad.template",
+            b"{{MISSING}}".as_slice(),
+            "Template rendering failed",
+        ),
+        ("bad.template", &[0xff, 0], "Explicit template is not UTF-8"),
+        (
+            "generated.properties",
+            b"duplicate destination",
+            "Two templates produce the same destination",
+        ),
+    ] {
+        let path = project.dir().join("templates/server").join(name);
+        fs::write(&path, invalid).unwrap();
+        let author_before = author();
+        let artifacts_before = snapshot(&project.dir().join("dist"));
+        for delivery in ["references", "bundled"] {
+            for format in ["zip", "tar.gz", "7z"] {
+                command()
+                    .args([
+                        "--yes",
+                        "build",
+                        "--ad-hoc",
+                        "server",
+                        "--delivery",
+                        delivery,
+                        "--format",
+                        format,
+                    ])
+                    .assert()
+                    .failure()
+                    .stderr(predicates::str::contains(diagnostic));
+                assert_eq!(author(), author_before);
+                assert_eq!(snapshot(&project.dir().join("dist")), artifacts_before);
+            }
+        }
+        fs::remove_file(path).unwrap();
+    }
+    assert_eq!(author(), before);
 }
 
 fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {

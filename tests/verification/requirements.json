@@ -8136,8 +8136,7 @@
             "Independent member bytes, lengths, digests and portable modes agree across formats; builds leave author inputs and previous output bytes unchanged",
             "On Unix the actual archived shell bytes execute directly with their encoded mode and emit the original description; source script mode remains unchanged",
             "Missing values, explicit invalid UTF-8 and duplicate template destinations reject every archive format before replacing prior artifacts"
-          ],
-          "remaining_group_evidence": "Public server-template refusal and explicit mode/limit combinations remain unbound. Positive server output and actual JDK scalar interpretation are declared separately; Qt readback does not establish Java behavior or actual launcher import."
+          ]
         },
         {
           "id": "UX-048.qt-scalar-readback",
@@ -8175,7 +8174,8 @@
           "assertions": [
             "Public server builds preserve independent complete inventories, copy/binary templates and exact properties scalar bytes across reference and bundled delivery in ZIP, TAR.GZ and 7z",
             "The real JDK parses the actual archived scalar with Properties.load(InputStream) and Properties.load(Reader), recovering original Unicode code points, literal backslash-u, whitespace, controls and empty values without extra keys",
-            "A changed scalar control produces different consumer observations; author sources/attributes, previous artifacts and captured Java inputs remain unchanged; this does not establish game startup or GUI acceptance"
+            "A changed scalar control produces different consumer observations; author sources/attributes, previous artifacts and captured Java inputs remain unchanged; this does not establish game startup or GUI acceptance",
+            "Missing values, explicit non-UTF-8 templates and duplicate output paths refuse every server delivery/format before changing author bytes/attributes or any previous archive"
           ]
         }
       ],
@@ -8185,7 +8185,7 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-049",
