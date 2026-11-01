@@ -1,7 +1,7 @@
 //! Immutable upstream input; no latest-version lookup or automatic fixture refresh.
 use empack_tests::harness::{
     archive::zip_members,
-    process::{TestProject, assert_dist_artifact_suffix, empack_cmd},
+    process::{TestProject, assert_dist_artifact_suffix, empack_cmd, read_project},
     workspace::snapshot_excluding,
 };
 use serde_json::Value;
@@ -54,6 +54,61 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
         "../../../tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json"
     ))
     .unwrap();
+    verify_pinned_pack(
+        fixture,
+        (50, 63),
+        [
+            ("net.fabricmc.fabric-loader", "0.19.3"),
+            ("net.minecraft", "1.21.1"),
+        ],
+        "config/modmenu.json",
+        |bytes| {
+            let mut settings: Value = serde_json::from_slice(bytes).unwrap();
+            assert_eq!(settings["sorting"], "ascending");
+            settings["sorting"] = "descending".into();
+            serde_json::to_vec(&settings).unwrap()
+        },
+    );
+}
+
+#[test]
+#[ignore = "pinned Adrenaline Quilt archive and 17 exact CDN files; live network required"]
+fn live_pinned_quilt_import_retains_client_sides_and_complete_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/adrenaline-1.22.0-quilt.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        fixture["index"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|file| file["env"]["server"] == "unsupported")
+            .count(),
+        9
+    );
+    verify_pinned_pack(
+        fixture,
+        (17, 10),
+        [
+            ("org.quiltmc.quilt-loader", "0.26.0"),
+            ("net.minecraft", "1.20.1"),
+        ],
+        "config/yosbr/config/ferritecore.mixin.properties",
+        |bytes| {
+            assert_eq!(bytes, b"useSmallThreadingDetector = true");
+            b"useSmallThreadingDetector = false".to_vec()
+        },
+    );
+}
+
+fn verify_pinned_pack(
+    fixture: Value,
+    (files, overrides): (usize, usize),
+    expected_components: [(&str, &str); 2],
+    edited_override: &str,
+    edit: impl FnOnce(&[u8]) -> Vec<u8>,
+) {
     let project = TestProject::new();
     let source = &fixture["source"];
     let size = source["size"].as_u64().unwrap();
@@ -80,8 +135,8 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
         fixture["index"]
     );
     assert_eq!(override_inventory(&input), fixture["overrides"]);
-    assert_eq!(input.len(), 63);
-    assert_eq!(fixture["index"]["files"].as_array().unwrap().len(), 50);
+    assert_eq!(input.len(), overrides);
+    assert_eq!(fixture["index"]["files"].as_array().unwrap().len(), files);
 
     // A new isolated project/cache must acquire the pinned content. There are no
     // optional or auxiliary members in this input, so no lossy consent flags.
@@ -110,6 +165,33 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
         if let Some(before) = before {
             assert_eq!(observe(), before, "repeated sync changed author content");
         }
+    }
+    // Both pinned inputs declare every client file required, while Quilt also
+    // declares client-only files. Inspect retained side authority as well as the
+    // re-exported index; a client bundle alone cannot establish server policy.
+    let resolved = read_project(&imported);
+    for declared in fixture["index"]["files"].as_array().unwrap() {
+        let path = declared["path"].as_str().unwrap();
+        let placements: Vec<_> = resolved
+            .lock()
+            .dependencies
+            .values()
+            .flat_map(|dependency| dependency.files.as_slice())
+            .flat_map(|file| file.placements.as_slice())
+            .filter(|placement| placement.destination.relative().as_str() == path)
+            .collect();
+        assert_eq!(placements.len(), 1, "{path}");
+        assert_eq!(
+            placements[0].requirements.client,
+            empack_core::requirements::Requirement::Required,
+            "{path}"
+        );
+        let server = match declared["env"]["server"].as_str().unwrap() {
+            "required" => empack_core::requirements::Requirement::Required,
+            "unsupported" => empack_core::requirements::Requirement::Unsupported,
+            _ => panic!("this pinned scenario does not resolve optional files"),
+        };
+        assert_eq!(placements[0].requirements.server, server, "{path}");
     }
     run(&imported, &["build", "modrinth"]);
     let exported = assert_dist_artifact_suffix(&imported, ".mrpack");
@@ -173,21 +255,14 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
         .iter()
         .map(|v| (v["uid"].as_str().unwrap(), v["version"].as_str().unwrap()))
         .collect();
-    assert_eq!(
-        components,
-        BTreeMap::from([
-            ("net.fabricmc.fabric-loader", "0.19.3"),
-            ("net.minecraft", "1.21.1")
-        ])
-    );
+    assert_eq!(components, BTreeMap::from(expected_components));
     assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), author);
     assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), lock);
-    // The version stays 6.5.0: content freshness must not depend on a version bump.
-    let config = imported.join("overrides/common/config/modmenu.json");
-    let mut settings: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
-    assert_eq!(settings["sorting"], "ascending");
-    settings["sorting"] = "descending".into();
-    let edited = serde_json::to_vec(&settings).unwrap();
+    // Keep the authored version: content freshness must not require a version bump.
+    let config = imported.join("overrides/common").join(edited_override);
+    let original = fs::read(&config).unwrap();
+    let edited = edit(&original);
+    assert_ne!(edited, original);
     fs::write(&config, &edited).unwrap();
     let prior_bundled = fs::read(&bundled).unwrap();
     let prior_export = fs::read(&exported).unwrap();
@@ -208,7 +283,10 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
     assert_eq!(fs::read(&bundled).unwrap(), prior_bundled);
     // This imported source is also its managed destination. Adoption is
     // the explicit acceptance step; sync must not silently bless external edits.
-    run(&imported, &["adopt", "CommonOverride:config/modmenu.json"]);
+    run(
+        &imported,
+        &["adopt", &format!("CommonOverride:{edited_override}")],
+    );
     run(&imported, &["sync"]);
     assert_eq!(fs::read(&exported).unwrap(), prior_export);
     run(&imported, &["build", "modrinth"]);
@@ -217,7 +295,7 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
         canonical_index(&refreshed.remove("modrinth.index.json").unwrap()),
         fixture["index"]
     );
-    output.insert("overrides/config/modmenu.json".into(), edited.clone());
+    output.insert(format!("overrides/{edited_override}"), edited.clone());
     assert_eq!(refreshed, output);
     assert_eq!(fs::read(&config).unwrap(), edited);
     assert_eq!(fs::read(&bundled).unwrap(), prior_bundled);
