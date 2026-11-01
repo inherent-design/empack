@@ -543,7 +543,7 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
     let project = TestProject::new();
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
-    let before = snapshot(project.dir()).files;
+    let before = snapshot(project.dir());
     assert_eq!(
         report(&project, &state, &["pending", "list", "--json"])["operations"],
         json!([])
@@ -564,7 +564,7 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
-            assert_eq!(snapshot(project.dir()).files, before);
+            assert_eq!(snapshot(project.dir()), before);
             assert!(!state.exists());
             assert!(!state.with_extension("cache").exists());
         }

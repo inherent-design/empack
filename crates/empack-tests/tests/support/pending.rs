@@ -83,10 +83,10 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
         ),
     ] {
         fs::write(record, bytes).unwrap();
-        let preserved = snapshot(state).files;
-        let author = snapshot(invocation).files;
+        let preserved = snapshot(state);
+        let author = snapshot(invocation);
         let cache = state.with_extension("cache");
-        let cached = cache.exists().then(|| snapshot(&cache).files);
+        let cached = cache.exists().then(|| snapshot(&cache));
         let broken = single(invocation, root, state, kind);
         assert_ne!(broken["id"], original["id"]);
         assert_eq!(broken["state"], "unavailable");
@@ -108,9 +108,9 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
                 "{text}"
             );
             assert!(text.contains("Metadata only"), "{text}");
-            assert_eq!(snapshot(state).files, preserved);
-            assert_eq!(snapshot(invocation).files, author);
-            assert_eq!(cache.exists().then(|| snapshot(&cache).files), cached);
+            assert_eq!(snapshot(state), preserved);
+            assert_eq!(snapshot(invocation), author);
+            assert_eq!(cache.exists().then(|| snapshot(&cache)), cached);
         }
         command(invocation, root, state)
             .args(["pending", "show", original["id"].as_str().unwrap()])
@@ -121,14 +121,14 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
             .args(["pending", "resume", id])
             .assert()
             .failure();
-        assert_eq!(snapshot(state).files, preserved);
-        assert_eq!(snapshot(invocation).files, author);
+        assert_eq!(snapshot(state), preserved);
+        assert_eq!(snapshot(invocation), author);
         command(invocation, root, state)
             .args(["--dry-run", "pending", "discard", id])
             .assert()
             .success();
-        assert_eq!(snapshot(state).files, preserved);
-        assert_eq!(snapshot(invocation).files, author);
+        assert_eq!(snapshot(state), preserved);
+        assert_eq!(snapshot(invocation), author);
         // Recover fixture bytes only to exercise the next fault independently.
         fs::write(record, &original_bytes).unwrap();
     }

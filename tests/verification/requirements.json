@@ -4930,7 +4930,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Text and JSON report no saved work without an author project; missing, empty and non-hexadecimal IDs refuse show/resume/discard without creating state/cache or changing invocation bytes"
+            "Text and JSON report no saved work without an author project; missing, empty and non-hexadecimal IDs refuse show/resume/discard without creating state/cache or changing invocation bytes, directories or native attributes"
           ]
         },
         {
@@ -4953,7 +4953,7 @@
           ],
           "assertions": [
             "Malformed JSON and unsupported schemas in actual saved build/import/sync/instance records remain visible as unavailable with explicit diagnostics, no fabricated inputs and incomplete requirement discovery",
-            "Text/JSON inspection preserves invocation, destination, state and cache; old identities cannot select replacement bytes; corrupted work cannot resume and requires explicit discard"
+            "Text/JSON inspection preserves invocation, destination, state and cache bytes, directories and native attributes; old identities cannot select replacement bytes; corrupted work cannot resume and requires explicit discard"
           ]
         },
         {
@@ -5015,6 +5015,28 @@
             "Absent targets remain distinguishable from replaced existing targets; replacement rejects resume without changing the retained record",
             "Opaque inspection and typed loading select the same unchanged pending record and operation identity"
           ]
+        },
+        {
+          "id": "UX-034.native-remount-public-inspection",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_survives_native_remount_with_public_keys",
+            "empack-tests::journey_pending::journey_pending_sync_survives_native_remount_with_retained_inputs",
+            "empack-tests::journey_pending_import::journey_pending_import_survives_native_remount_and_reopens_created_root",
+            "empack-tests::journey_pending_instance::journey_pending_instance_survives_native_remount_with_retained_inputs"
+          ],
+          "required_platforms": [
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual isolated APFS detach/attach preserves public list/show operation identity and exact pending requirements for build, synchronization, import and instance work",
+            "Fresh executable continuation after remount revalidates retained inputs and produces the independent expected archive, author project or installation; unchanged author and neighboring bytes remain protected",
+            "These native macOS fixture executions are required in addition to controlled device-namespace tests; they do not assert a physical reboot or another operating system remount"
+          ]
         }
       ],
       "owner_now": [
@@ -5025,7 +5047,7 @@
         "shared pending semantics + native/browser retention and UI",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-035",
