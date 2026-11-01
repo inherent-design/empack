@@ -348,6 +348,22 @@ fn verify_pinned_pack(
     let resolved = read_project(&imported);
     for declared in fixture["index"]["files"].as_array().unwrap() {
         let path = declared["path"].as_str().unwrap();
+        // Source integrity is independent of consumer projection: the server-only
+        // file must also exist with the declared bytes, despite client exclusion.
+        let size = declared["fileSize"].as_u64().unwrap();
+        assert!(size <= member_limit);
+        let mut payload = Vec::new();
+        fs::File::open(imported.join("pack").join(path))
+            .unwrap()
+            .take(size + 1)
+            .read_to_end(&mut payload)
+            .unwrap();
+        assert_eq!(payload.len() as u64, size, "{path}");
+        assert_eq!(
+            hex(Sha512::digest(&payload)),
+            declared["hashes"]["sha512"],
+            "{path}"
+        );
         let placements: Vec<_> = resolved
             .lock()
             .dependencies

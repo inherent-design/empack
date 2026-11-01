@@ -2965,7 +2965,7 @@
           ],
           "assertions": [
             "Pinned GitHub release asset size/SHA256/SHA512 and all274override size/hash entries are checked independently before ordinary public import",
-            "The literal index retains all163references and their exact client/server participation; the mrpack round-trip preserves245common,24client and5server overrides without flattening them",
+            "Every materialized reference under pack/ has the independently declared size and SHA512, including the server-only file before client projection; the literal index retains all163references and exact side participation, while mrpack round-trip preserves245common,24client and5server overrides",
             "The complete bundled client contains162required references and269common/client override files with exact content, plus only the2launcher metadata members; the server-only reference and server-only layer files are excluded",
             "Repeated sync preserves authoring, lock, directory membership and attributes; an edited common TOML requires explicit adoption, rebuild changes only that override, and original archive/prior bundled bytes remain unchanged"
           ],
