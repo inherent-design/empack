@@ -1,7 +1,6 @@
 //! Execute the emitted helper with the selected product; GitHub is a recorded protocol fixture.
 #[cfg(unix)]
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 use empack_tests::harness::{
     archive::zip_members,
     process::{TestProject, empack_bin, empack_cmd, offline_command},
@@ -278,7 +277,7 @@ fn cli_generated_release_refuses_stale_tags_and_failed_builds_before_publication
             )
             .unwrap();
         }
-        let before = files::snapshot(&fixture.root);
+        let before = snapshot(&fixture.root);
         let output = fixture.run(
             "release",
             "",
@@ -303,7 +302,7 @@ fn cli_generated_release_refuses_stale_tags_and_failed_builds_before_publication
         );
         assert!(fixture.calls().is_empty(), "{failure}");
         assert!(!fixture.runner.join("empack-artifacts").exists());
-        assert_eq!(files::snapshot(&fixture.root), before, "{failure}");
+        assert_eq!(snapshot(&fixture.root), before, "{failure}");
     }
 }
 

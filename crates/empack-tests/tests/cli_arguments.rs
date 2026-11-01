@@ -1,7 +1,7 @@
-#[path = "support/files.rs"]
-mod files;
-
-use empack_tests::harness::process::{TestProject, offline_command};
+use empack_tests::harness::{
+    process::{TestProject, offline_command},
+    workspace::snapshot,
+};
 use predicates::prelude::*;
 
 macro_rules! cli_bad_flag_value {
@@ -119,7 +119,10 @@ fn cli_configuration_precedence_selects_workspace_and_invocation_relative_storag
                 )).unwrap();
             }
         }
-        let before = files::snapshot(root);
+        let before = snapshot(root);
+        let before_layers: Vec<_> = (0..4)
+            .map(|index| snapshot(&root.join(format!("pack Ω layer {index}"))))
+            .collect();
         let init = [
             "init",
             "--yes",
@@ -137,7 +140,7 @@ fn cli_configuration_precedence_selects_workspace_and_invocation_relative_storag
             .arg("--dry-run")
             .assert()
             .success();
-        assert_eq!(files::snapshot(root), before, "preview at layer {layer}");
+        assert_eq!(snapshot(root), before, "preview at layer {layer}");
         for index in 0..4 {
             assert!(!root.join(format!("state Ω layer {index}")).exists());
             assert!(!root.join(format!("cache Ω layer {index}")).exists());
@@ -154,16 +157,12 @@ fn cli_configuration_precedence_selects_workspace_and_invocation_relative_storag
             author["pack"]["name"].as_str(),
             Some("Arguments Ω with spaces")
         );
-        let initialized = files::snapshot(root);
+        let initialized = snapshot(root);
         configuration_command(root, layer)
             .args(["--yes", "--dry-run", "add", input])
             .assert()
             .success();
-        assert_eq!(
-            files::snapshot(root),
-            initialized,
-            "add preview at layer {layer}"
-        );
+        assert_eq!(snapshot(root), initialized, "add preview at layer {layer}");
         configuration_command(root, layer)
             .args(["--yes", "add", input])
             .assert()
@@ -178,22 +177,12 @@ fn cli_configuration_precedence_selects_workspace_and_invocation_relative_storag
             root.join(format!("cache Ω layer {layer}/content-v1"))
                 .is_dir()
         );
-        for index in 0..4 {
+        for (index, original) in before_layers.iter().enumerate() {
             let prefix = std::path::PathBuf::from(format!("pack Ω layer {index}"));
             if index != layer {
-                let retained: std::collections::BTreeMap<_, _> = before
-                    .iter()
-                    .filter(|(path, _)| path.starts_with(&prefix))
-                    .map(|(path, bytes)| {
-                        (
-                            path.strip_prefix(&prefix).unwrap().to_path_buf(),
-                            bytes.clone(),
-                        )
-                    })
-                    .collect();
                 assert_eq!(
-                    files::snapshot(&root.join(&prefix)),
-                    retained,
+                    snapshot(&root.join(&prefix)),
+                    *original,
                     "unselected layer {index}"
                 );
                 assert!(!root.join(format!("state Ω layer {index}")).exists());
@@ -209,7 +198,7 @@ fn cli_configuration_precedence_selects_workspace_and_invocation_relative_storag
         assert!(!root.join("empack.yml").exists());
         assert!(!selected.join(format!("state Ω layer {layer}")).exists());
         assert!(!selected.join(format!("cache Ω layer {layer}")).exists());
-        for (path, bytes) in &before {
+        for (path, bytes) in &before.files {
             assert_eq!(fs::read(root.join(path)).unwrap(), *bytes, "{path:?}");
         }
     }
@@ -220,7 +209,7 @@ fn cli_invalid_storage_roots_refuse_before_project_creation() {
     for flag in ["--state-dir", "--cache-dir"] {
         let project = TestProject::new();
         std::fs::write(project.dir().join("notes.txt"), b"author notes").unwrap();
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir());
         offline_command(project.dir())
             .args([
                 flag,
@@ -238,7 +227,7 @@ fn cli_invalid_storage_roots_refuse_before_project_creation() {
             .stderr(
                 predicate::str::contains("a value is required").and(predicate::str::contains(flag)),
             );
-        assert_eq!(files::snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()), before);
         for absent in ["new pack", ".host-state", ".empack-cache"] {
             assert!(!project.dir().join(absent).exists());
         }
@@ -282,7 +271,7 @@ fn cli_dry_run_precedence_reaches_publication() {
         std::fs::write(&artifact, "artifact").unwrap();
         let manifest = std::fs::read(project.dir().join("empack.yml")).unwrap();
         let lock = std::fs::read(project.dir().join("empack.lock")).unwrap();
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir());
         let mut cmd = offline_command(project.dir());
         if let Some(value) = environment {
             cmd.env("EMPACK_DRY_RUN", value.to_string());
@@ -293,7 +282,7 @@ fn cli_dry_run_precedence_reaches_publication() {
         }
         cmd.assert().success();
         if preserved {
-            assert_eq!(files::snapshot(project.dir()), before);
+            assert_eq!(snapshot(project.dir()), before);
         }
         assert_eq!(
             std::fs::read(project.dir().join("empack.yml")).unwrap(),

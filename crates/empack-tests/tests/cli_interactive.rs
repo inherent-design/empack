@@ -1,13 +1,14 @@
 //! Native prompt and desktop assistance contracts. No fake packwiz or installer output.
-use empack_tests::harness::process::{TestProject, empack_cmd};
+use empack_tests::harness::{
+    process::{TestProject, empack_cmd},
+    workspace::snapshot,
+};
 use expectrl::{Expect, Regex};
 #[path = "support/approval.rs"]
 mod approval;
 #[cfg(unix)]
 #[path = "support/desktop_assistance.rs"]
 mod desktop_assistance;
-#[path = "support/files.rs"]
-mod files;
 #[path = "support/initialization.rs"]
 mod initialization;
 #[cfg(unix)]
@@ -51,7 +52,7 @@ fn cli_pty_init_accepts_author_decisions() {
 #[test]
 fn cli_pty_init_decline_preserves_absent_destination() {
     let project = TestProject::new();
-    let before = files::snapshot(project.dir());
+    let before = snapshot(project.dir());
     let mut cmd = empack_cmd(project.dir());
     cmd.args([
         "init",
@@ -79,7 +80,7 @@ fn cli_pty_init_decline_preserves_absent_destination() {
     #[cfg(windows)]
     assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 0);
     assert!(!project.dir().join("declined").exists());
-    assert_eq!(files::snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()), before);
 }
 
 #[test]
@@ -248,15 +249,15 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
 #[test]
 fn cli_pty_download_assistance_preview_and_decline_are_read_only() {
     let (project, host) = browser_fixture();
-    let before = files::snapshot(project.dir());
-    let downloads = files::snapshot(&host.path().join("downloads"));
+    let before = snapshot(project.dir());
+    let downloads = snapshot(&host.path().join("downloads"));
     let mut cmd = browser_command(&project, host.path());
     cmd.args(["--dry-run", "build", "modrinth", "--open-downloads"]);
     assert_cmd::Command::from_std(cmd).assert().success();
     assert!(!host.path().join("state").exists());
     assert!(!host.path().join("opened").exists());
-    assert_eq!(files::snapshot(project.dir()), before);
-    assert_eq!(files::snapshot(&host.path().join("downloads")), downloads);
+    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(&host.path().join("downloads")), downloads);
     let mut cmd = browser_command(&project, host.path());
     cmd.args(["build", "modrinth", "--open-downloads"]);
     let mut terminal = terminal::spawn(cmd);
@@ -269,6 +270,6 @@ fn cli_pty_download_assistance_preview_and_decline_are_read_only() {
     terminal.expect(expectrl::Eof).unwrap();
     assert!(!host.path().join("state").exists());
     assert!(!host.path().join("opened").exists());
-    assert_eq!(files::snapshot(project.dir()), before);
-    assert_eq!(files::snapshot(&host.path().join("downloads")), downloads);
+    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(&host.path().join("downloads")), downloads);
 }

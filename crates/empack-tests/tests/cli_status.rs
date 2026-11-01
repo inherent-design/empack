@@ -1,22 +1,15 @@
 //! Status reports bounded metadata; it neither repairs nor qualifies a workspace.
-#[path = "support/files.rs"]
-mod files;
-
-use empack_tests::harness::process::{TestProject, offline_command};
+use empack_tests::harness::{
+    process::{TestProject, offline_command},
+    workspace::snapshot,
+};
 use serde_json::Value;
 use std::{fs, path::Path};
 
 const AUTHOR: &str = include_str!("../../../tests/fixtures/authoring/empack.yml");
 
 fn inspect(root: &Path, context: Option<&str>) -> (Value, String) {
-    let before = files::snapshot(root);
-    let entries = || -> std::collections::BTreeSet<_> {
-        fs::read_dir(root)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect()
-    };
-    let before_entries = entries();
+    let before = snapshot(root);
     let mut outputs = Vec::new();
     for json in [true, false] {
         let mut command = offline_command(root);
@@ -34,8 +27,7 @@ fn inspect(root: &Path, context: Option<&str>) -> (Value, String) {
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
         outputs.push(String::from_utf8(output.stdout).unwrap());
-        assert_eq!(files::snapshot(root), before);
-        assert_eq!(entries(), before_entries);
+        assert_eq!(snapshot(root), before);
         assert!(!root.join("unused-status-state").exists());
         assert!(!root.join("unused-status-cache").exists());
     }
