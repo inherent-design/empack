@@ -1201,11 +1201,63 @@ exit "$result"
 #[test]
 fn cli_native_download_transport_failure_exits_three() {
     let project = fixture();
-    let before = fs::read(project.dir().join("empack.lock")).unwrap();
-    let result = command(&project)
-        .env("HTTPS_PROXY", "http://127.0.0.1:9")
-        .env("HTTP_PROXY", "http://127.0.0.1:9")
-        .env("ALL_PROXY", "http://127.0.0.1:9")
+    use empack_tests::harness::workspace::snapshot_excluding;
+    for (name, bytes) in [
+        ("pack/config/options.txt", b"author options".as_slice()),
+        ("dist/prior.mrpack", b"prior artifact".as_slice()),
+        ("saves/player/level.dat", b"player world".as_slice()),
+    ] {
+        let path = project.dir().join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    let observe = || {
+        snapshot_excluding(
+            project.dir(),
+            &[".host-state", ".empack-cache", ".harness-home"],
+        )
+    };
+    let before = observe();
+    // Resolve the selected product before the observer deadline starts.
+    let mut selected = command(&project);
+    let proxy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let address = format!("http://{}", proxy.local_addr().unwrap());
+    let refused = std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match proxy.accept() {
+                Ok((mut stream, _)) => {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut request = String::new();
+                    BufReader::new(stream.try_clone().unwrap())
+                        .take(4096)
+                        .read_line(&mut request)
+                        .unwrap();
+                    stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    return request;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "product did not reach the refusing proxy"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("proxy accept failed: {error}"),
+            }
+        }
+    });
+    selected
+        .env("HTTPS_PROXY", &address)
+        .env("HTTP_PROXY", &address)
+        .env("ALL_PROXY", &address)
         .env("NO_PROXY", "")
         .env("EMPACK_NET_TIMEOUT", "1")
         .args([
@@ -1214,11 +1266,19 @@ fn cli_native_download_transport_failure_exits_three() {
             "--type",
             "resourcepack",
             "https://example.invalid/assets.zip",
-        ])
+        ]);
+    let result = assert_cmd::Command::from_std(selected)
+        .timeout(Duration::from_secs(20))
         .output()
         .unwrap();
+    let request = refused.join().unwrap();
+    assert!(
+        request.starts_with("CONNECT example.invalid:443 HTTP/1."),
+        "{request}"
+    );
+    assert!(request.ends_with("\r\n"), "{request}");
     check(&result, EmpackExitCode::Network, "Download");
-    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
+    assert_eq!(observe(), before);
     assert!(
         empack_lib::testing::read_authoring(&project.dir().join("empack.yml"))
             .unwrap()

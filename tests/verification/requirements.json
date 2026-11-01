@@ -2133,8 +2133,7 @@
             "Stalled headers and bodies meet the transfer deadline without waiting for EOF; cancellation and caller abandonment retire the socket and release resource reservations",
             "A surviving reader retains verified bytes and their resource reservation until it retires; worker outcomes and socket closure are checked separately",
             "Cancellation-invalidated worker results map to interruption at the engine outcome boundary; a stale result without cancellation remains a failure"
-          ],
-          "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
+          ]
         },
         {
           "id": "UX-014.credential-and-redirect-scope",
@@ -2157,8 +2156,7 @@
             "Only the exact configured HTTPS origin receives sensitive provider credentials; ports, schemes, host suffixes and unrelated providers cannot acquire them",
             "Controlled wire requests preserve credentials through same-origin redirects and recompute them for cross-origin redirects and alternate URLs; both authenticated and anonymous starting origins are exercised",
             "Redirect budgets and locator validation remain enforced and diagnostic context does not disclose secret URLs; the private origin mapping does not prove live TLS or provider availability"
-          ],
-          "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
+          ]
         },
         {
           "id": "UX-014.import-failure-preserves-project",
@@ -2181,8 +2179,71 @@
             "Wrong source assertions and oversized streams refuse replacement before authoring decisions or publication",
             "Header and partial-body stalls terminate on deadline or observed host cancellation, retaining author documents, templates, prior artifacts and world bytes",
             "After a failed transfer no partial project or new durable state is published and the response socket is closed; successful controlled acquisition remains a separate positive control"
+          ]
+        },
+        {
+          "id": "UX-014.native-private-stage-retirement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::staging::tests::failed_write_keeps_previous_candidate_and_cleans_partial_file",
+            "empack-lib::engine::staging::tests::abandoned_writers_and_seekable_candidates_release_private_storage"
           ],
-          "remaining_group_evidence": "Controlled transport and native host fixtures do not establish the genuine executable HTTPS sentinel or live upstream route; broader native fault evidence remains separate"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The native staging backing used by verified content retains the prior candidate after an oversized write and freezes no partial replacement",
+            "Abandoned mutable stages and seekable private candidates remove their owned temporary storage on retirement; Unix mode or Windows private-directory checks establish the native privacy attributes",
+            "These filesystem lifecycle observations supplement the controlled transport deadline/cancellation tests; they do not establish live HTTP availability"
+          ]
+        },
+        {
+          "id": "UX-014.executable-transport-failure",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_native_download_transport_failure_exits_three"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The selected ordinary executable reports network status 3 and a download diagnostic through a refusing proxy",
+            "Author documents, configuration, prior artifacts and player-world sentinels retain their exact bytes, directories and native attributes; no dependency is added",
+            "The author footprint explicitly excludes host bookkeeping, cache and harness-home paths; staged backing and response retirement have their own native and host cases"
+          ]
+        },
+        {
+          "id": "UX-014.live-executable-https-acquisition",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_direct_url_retains_observed_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real HTTPS dependency download through the ordinary executable matches the pinned corpus SHA-512 and length, and repeated synchronization preserves the resulting author inventory and prior artifact",
+            "The selected dependency remains a direct URL with an accepted byte observation, not a manufactured provider pin or upgraded declared source assertion",
+            "A read-only preview does not publish content; this live route remains required independently of controlled HTTP fixtures"
+          ]
         }
       ],
       "owner_now": [
@@ -2193,7 +2254,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared initialization/import semantics + native publication"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-015",
