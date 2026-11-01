@@ -2800,7 +2800,7 @@
         "BUILD"
       ],
       "required_assertions": "Every expected required file and exclusion verified against immutable selected fixture; no-op convergence and fresh content established.",
-      "required_work": "Pinned Fabric, Quilt and NeoForge/Modrinth scenarios share the exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation journey. Keep fixed inputs separate from rolling surveys and review upstream identity, hashes, inventories and licensing provenance. Real legacy Forge, CurseForge, optional content, worlds, restricted files and custom-layer precedence remain incomplete; new declared host/product executions are still required.",
+      "required_work": "Pinned Fabric, Quilt, NeoForge and legacy Forge/Modrinth scenarios share exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation checks. Raw source indexes remain literal; export comparison spells out only absent env objects as required on both sides. Keep fixed inputs separate from surveys and review identity, hashes, inventories and licensing. Real CurseForge, optional content, worlds, restricted files and custom-layer precedence remain incomplete; all declared host/product executions remain required.",
       "evidence_tiers": [
         "X",
         "L"
@@ -2832,7 +2832,7 @@
             "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override",
             "After reference materialization, the second sync preserves full author bytes, directory structure and portable attributes; a failed sync preserves the edited source tree, and explicit adoption changes only authorized lock/content observations while retaining unrelated author work"
           ],
-          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt and NeoForge fixtures add real client-only declarations and an opaque local JAR. Real legacy Forge, CurseForge, optional content, world templates, restricted files and custom-layer precedence remain unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
+          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt, NeoForge and legacy Forge fixtures add real client-only/default-side declarations and opaque local JARs. Real CurseForge, optional content, world templates, restricted files and custom-layer precedence remain unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
         },
         {
           "id": "UX-017.pinned-quilt-client-sides",
@@ -2879,6 +2879,29 @@
             "An imported properties edit requires explicit adoption without a pack-version bump; failed sync and later exports preserve unrelated authors, portable attributes, empty directories and prior artifacts"
           ],
           "remaining_group_evidence": "New declared host/product execution is required. This verifies imported metadata, opaque local content and client artifacts; it does not execute the retained JAR, server or game, nor substitute for the remaining corpus and actual-consumer obligations."
+        },
+        {
+          "id": "UX-017.pinned-legacy-forge-default-sides",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_pinned_import::live_pinned_legacy_forge_import_preserves_default_sides_and_complete_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pinned Rapid Optimization project 1q7QX7Ne/version 8fbfT75J, 313,522-byte archive, is verified against independent SHA-256/SHA-512, literal full index and 31 override hashes/sizes before public import",
+            "Five references omit env entirely; retained author/lock side authority remains required for both client and server, while export may spell out those defaults without changing explicit fields, hashes, download order or other metadata",
+            "Complete Modrinth and bundled Prism client inventories retain all five acquired files, 31 overrides including two local JARs, exact Minecraft 1.7.10 / net.minecraftforge 10.13.4.1614 components and original source archive",
+            "A GTNHLib properties edit requires explicit adoption without a version bump; two-sync convergence, refused sync and rebuilt outputs preserve unrelated authors, portable attributes, empty directories and prior artifacts"
+          ],
+          "remaining_group_evidence": "Actual new fixture execution is required on declared host/product variants. No Java 8, launcher, server or game is executed by this import/export scenario; actual consumers and remaining corpus dimensions remain separate obligations."
         }
       ],
       "owner_now": [
@@ -15362,6 +15385,28 @@
             "Missing records remain missing; denied access, incomplete or changed assets, wrong source/candidate identities, unsafe paths and existing output trees cannot produce an admitted subset or overwrite author evidence",
             "The collector issues GET requests only; the release workflow passes collected records to the existing gate, retains attempt-specific reports, and uses the successful gate artifact for publication retries. These tests do not establish hosted GitHub execution or perform actual consumer tasks"
           ]
+        },
+        {
+          "id": "UX-088.fixture-index-default-comparison",
+          "boundary": "U",
+          "test_ids": [
+            "empack-tests::live_pinned_import::fixture_index_defaults_preserve_explicit_sides_and_other_metadata"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The independent fixture comparison fills only an absent env object with literal required/required values",
+            "Explicit optional/unsupported, partial and null values stay distinguishable; file identity, hashes, ordered downloads and extension metadata are preserved",
+            "A changed digest remains unequal after default interpretation; this helper cannot excuse missing or altered content"
+          ],
+          "remaining_group_evidence": "Pure fixture-oracle control only; raw archive/index identity is independently checked and actual importer, exporter, native hosts and consumers still require execution."
         }
       ],
       "owner_now": [

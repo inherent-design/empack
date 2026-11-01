@@ -65,6 +65,7 @@ class ChangeSelection(unittest.TestCase):
             ("tests/fixtures/import-corpus/fabulously-optimized-6.5.0.json", ["live-provider-cli", "live-modrinth", "pinned-import"], False),
             ("tests/fixtures/import-corpus/adrenaline-1.22.0-quilt.json", ["pinned-import"], False),
             ("tests/fixtures/import-corpus/universalized-optimized-1.21.1-neoforge.json", ["pinned-import"], False),
+            ("tests/fixtures/import-corpus/rapid-optimization-7.10an-2.1.1.json", ["pinned-import"], False),
             ("crates/empack-tests/tests/live_pinned_import.rs", ["pinned-import"], False),
             (".gitattributes", ["publisher-cli"], False),
             ("crates/empack-lib/src/engine/api/release_publication/channel.rs", ["publisher-cli"], False),

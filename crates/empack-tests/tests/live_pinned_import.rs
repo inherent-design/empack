@@ -34,6 +34,41 @@ fn canonical_index(bytes: &[u8]) -> Value {
     index
 }
 
+// Compare the documented meaning of an absent optional env object. Keep the
+// raw source-index comparison separate; no explicit value or other field is lost.
+fn effective_index(mut index: Value) -> Value {
+    for file in index["files"].as_array_mut().unwrap() {
+        if file.get("env").is_none() {
+            file["env"] = serde_json::json!({"client": "required", "server": "required"});
+        }
+    }
+    index
+}
+
+#[test]
+fn fixture_index_defaults_preserve_explicit_sides_and_other_metadata() {
+    let index = serde_json::json!({
+        "files": [{"path": "mods/a.jar", "fileSize": 7,
+            "hashes": {"sha512": "original"}, "downloads": ["first", "second"]}],
+        "extension": "keep"
+    });
+    let mut expected = index.clone();
+    expected["files"][0]["env"] = serde_json::json!({"client": "required", "server": "required"});
+    assert_eq!(effective_index(index.clone()), expected);
+    for explicit in [
+        serde_json::json!({"client": "optional", "server": "unsupported"}),
+        serde_json::json!({"client": "required"}),
+        Value::Null,
+    ] {
+        let mut declared = index.clone();
+        declared["files"][0]["env"] = explicit;
+        assert_eq!(effective_index(declared.clone()), declared);
+    }
+    let mut changed = expected.clone();
+    changed["files"][0]["hashes"]["sha512"] = "changed".into();
+    assert_ne!(effective_index(changed), effective_index(index));
+}
+
 fn override_inventory(members: &BTreeMap<String, Vec<u8>>) -> Value {
     let entries: serde_json::Map<_, _> = members
         .iter()
@@ -125,6 +160,41 @@ fn live_pinned_neoforge_import_preserves_local_jar_and_complete_inventory() {
     );
 }
 
+#[test]
+#[ignore = "pinned Rapid Optimization Forge 1.7.10 archive and 5 exact CDN files; live network required"]
+fn live_pinned_legacy_forge_import_preserves_default_sides_and_complete_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/rapid-optimization-7.10an-2.1.1.json"
+    ))
+    .unwrap();
+    assert!(
+        fixture["index"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|file| file.get("env").is_none())
+    );
+    verify_pinned_pack(
+        fixture,
+        (5, 31),
+        [
+            ("net.minecraftforge", "10.13.4.1614"),
+            ("net.minecraft", "1.7.10"),
+        ],
+        "config/gtnhlibEarly.properties",
+        |bytes| {
+            let text = std::str::from_utf8(bytes).unwrap();
+            assert_eq!(text.matches("enableFontRendererMixin=true").count(), 1);
+            text.replacen(
+                "enableFontRendererMixin=true",
+                "enableFontRendererMixin=false",
+                1,
+            )
+            .into_bytes()
+        },
+    );
+}
+
 fn verify_pinned_pack(
     fixture: Value,
     (files, overrides): (usize, usize),
@@ -209,7 +279,11 @@ fn verify_pinned_pack(
             empack_core::requirements::Requirement::Required,
             "{path}"
         );
-        let server = match declared["env"]["server"].as_str().unwrap() {
+        let server = match declared
+            .get("env")
+            .map(|env| env["server"].as_str().unwrap())
+            .unwrap_or("required")
+        {
             "required" => empack_core::requirements::Requirement::Required,
             "unsupported" => empack_core::requirements::Requirement::Unsupported,
             _ => panic!("this pinned scenario does not resolve optional files"),
@@ -220,8 +294,10 @@ fn verify_pinned_pack(
     let exported = assert_dist_artifact_suffix(&imported, ".mrpack");
     let mut output = zip_members(&exported);
     assert_eq!(
-        canonical_index(&output.remove("modrinth.index.json").unwrap()),
-        fixture["index"]
+        effective_index(canonical_index(
+            &output.remove("modrinth.index.json").unwrap()
+        )),
+        effective_index(fixture["index"].clone())
     );
     assert_eq!(override_inventory(&output), fixture["overrides"]);
     assert_eq!(output, input);
@@ -315,8 +391,10 @@ fn verify_pinned_pack(
     run(&imported, &["build", "modrinth"]);
     let mut refreshed = zip_members(&exported);
     assert_eq!(
-        canonical_index(&refreshed.remove("modrinth.index.json").unwrap()),
-        fixture["index"]
+        effective_index(canonical_index(
+            &refreshed.remove("modrinth.index.json").unwrap()
+        )),
+        effective_index(fixture["index"].clone())
     );
     output.insert(format!("overrides/{edited_override}"), edited.clone());
     assert_eq!(refreshed, output);
