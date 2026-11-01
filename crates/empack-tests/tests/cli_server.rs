@@ -486,6 +486,36 @@ fn cli_generated_server_scripts_preserve_java_selection_and_classified_status() 
         "install_pack.bat",
     ];
     let generated = names.map(scripts);
+    // The generated command selects exact descriptor bytes, even when an
+    // installation already exists. Neither entrypoint may proceed to Java
+    // after a well-formed but differently hashed descriptor is substituted.
+    let descriptor = server.instance.dir().join(".empack-consumer/release.json");
+    let original_descriptor = fs::read(&descriptor).unwrap();
+    let mut changed_descriptor = original_descriptor.clone();
+    changed_descriptor.push(b'\n');
+    fs::write(&descriptor, changed_descriptor).unwrap();
+    let changed_instance = snapshot(server.instance.dir());
+    for gui in [false, true] {
+        server.configure("", "java.specification.version = 21\n", 0, 0);
+        let tools = snapshot(server.program.parent().unwrap());
+        server
+            .script(gui, true)
+            .assert()
+            .failure()
+            .stderr(contains("Selected release payload identity mismatch"));
+        assert!(
+            !server
+                .fixtures
+                .path()
+                .join("observations/probe.json")
+                .exists()
+        );
+        server.not_started();
+        assert_eq!(snapshot(server.instance.dir()), changed_instance);
+        assert_eq!(snapshot(server.program.parent().unwrap()), tools);
+        server.preserved();
+    }
+    fs::write(descriptor, original_descriptor).unwrap();
     for gui in [false, true] {
         for home in [false, true] {
             server.configure("", "java.specification.version = 21\n", 0, 0);

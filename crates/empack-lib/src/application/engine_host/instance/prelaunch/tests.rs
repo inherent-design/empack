@@ -120,6 +120,97 @@ fn channel(release: &DecodedRelease, key: &SigningKey, maximum: u64) -> Vec<u8> 
 }
 
 #[tokio::test]
+async fn preparation_handler_requires_enrollment_and_keeps_active_release() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("project");
+    fs::create_dir(&project).unwrap();
+    let initial = release("A");
+    let next = release("B");
+    fs::write(root.path().join("initial.json"), initial.bytes()).unwrap();
+    fs::write(root.path().join("next.json"), next.bytes()).unwrap();
+    let prepare = |require_subscription, digest: String| InstanceCommand::Prepare {
+        require_subscription,
+        conflicts: Default::default(),
+        release: "initial.json".into(),
+        sha256: digest,
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    };
+    let dispatch = |command| {
+        // Each invocation uses a fresh host session, as a restarted command does.
+        let session = session(root.path(), true, false);
+        async move { super::super::dispatch(&session, command).await }
+    };
+    let error = dispatch(prepare(true, initial.id().into()))
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("requires explicit publisher enrollment"));
+    assert!(!project.join(".empack/instance.json").exists());
+    assert!(!project.join("game").exists());
+
+    dispatch(prepare(false, initial.id().into())).await.unwrap();
+    let installed = || {
+        let record: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.join(".empack/instance.json")).unwrap())
+                .unwrap();
+        record["release"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(installed(), initial.id());
+    // Explicit installation selects B. Reusing A's preparation command must
+    // retain the active selection, rather than treating it as a fresh install.
+    dispatch(InstanceCommand::Install {
+        conflicts: Default::default(),
+        release: "next.json".into(),
+        sha256: next.id().into(),
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    })
+    .await
+    .unwrap();
+    assert_eq!(installed(), next.id());
+    let before = crate::application::engine_host::tests::snapshot(&project);
+    for _ in 0..2 {
+        dispatch(prepare(false, initial.id().into())).await.unwrap();
+        assert_eq!(installed(), next.id());
+        assert_eq!(
+            crate::application::engine_host::tests::snapshot(&project),
+            before
+        );
+    }
+    for (required, digest, diagnostic) in [
+        (
+            true,
+            initial.id().to_owned(),
+            "requires explicit publisher enrollment",
+        ),
+        (
+            false,
+            "0".repeat(64),
+            "Selected release payload identity mismatch",
+        ),
+    ] {
+        let error = dispatch(prepare(required, digest)).await.unwrap_err();
+        assert!(format!("{error:#}").contains(diagnostic));
+        assert_eq!(
+            crate::application::engine_host::tests::snapshot(&project),
+            before
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join("initial.json")).unwrap(),
+        initial.bytes()
+    );
+    assert_eq!(
+        fs::read(root.path().join("next.json")).unwrap(),
+        next.bytes()
+    );
+}
+
+#[tokio::test]
 async fn runtime_transition_retains_observation_but_requires_supported_launch_integration() {
     use crate::application::session_mocks::MockResponse;
     use sha2::Digest;

@@ -9862,6 +9862,27 @@
       "variant_axes": "",
       "cases": [
         {
+          "id": "UX-062.handler-preparation-authority",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::preparation_handler_requires_enrollment_and_keeps_active_release"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh controlled host sessions require enrollment when instance prepare requests it, including against an already installed active release, without requiring the input descriptor itself to demand subscription",
+            "Permitted preparation bootstraps A; after explicit snapshot installation of B, repeated preparation using A retains the active B selection and project bytes",
+            "A wrong exact digest refuses without changing installed state or either descriptor; this empty-inventory handler fixture does not establish asset repair, signed updates or launcher execution"
+          ]
+        },
+        {
           "id": "UX-062.bootstrap-retains-active-release",
           "boundary": "X",
           "test_ids": [
@@ -9882,7 +9903,80 @@
             "Preparation repairs a missing B file from retained content instead of restoring A; a wrong selected digest or changed bootstrap bytes refuse without altering instance bytes or attributes",
             "The original bootstrap export remains unchanged"
           ],
-          "remaining_group_evidence": "This offline public journey does not launch Java or Prism, establish generated-wrapper refusal, or qualify final packages; actual consumer and package evidence remain required."
+          "remaining_group_evidence": "This offline public journey does not invoke generated scripts, Java or Prism, or qualify final packages. Separate cases require those boundaries; a direct instance-prepare invocation is not actual launcher acceptance."
+        },
+        {
+          "id": "UX-062.generated-preparation-refuses-invalid-input",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_server::cli_generated_server_scripts_preserve_java_selection_and_classified_status",
+            "empack-tests::cli_build::profiles::cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_change"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Unmodified generated managed server console and GUI entrypoints reject changed bootstrap descriptor bytes before the local fixture receives either a Java probe or runtime invocation",
+            "Rejected server preparation preserves the complete instance snapshot, source export and selected tools; restoring the selected descriptor permits the existing console/GUI successes",
+            "A generated reference Prism archive binds the descriptor digest, rejects changed descriptor bytes and same-length corrupted included content, and then prepares exact content while retaining player data",
+            "The Prism case invokes the command represented by the generated setting directly; it does not execute Prism or Java. The server executable fixture is not a JVM"
+          ]
+        },
+        {
+          "id": "UX-062.packaged-bootstrap-and-entrypoints",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust",
+            "empack-tests::cli_server::cli_generated_server_scripts_preserve_java_selection_and_classified_status",
+            "empack-tests::cli_build::profiles::cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_change"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "All five exact extracted default executables retain a signed active release B when offered bootstrap A, repair B, require enrollment and refuse changed descriptor bytes",
+            "Generated server entrypoints prevent fixture probe/runtime execution on descriptor failure; the reference Prism command prepares its exact independently inspected content without rebuilding the product",
+            "The package case uses component-generated scripts and fixture runtime bytes; it does not substitute for actual consumer import or Java execution"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
+        },
+        {
+          "id": "UX-062.actual-prism-preparation-and-update",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::reference-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Supported Prism imports the exact reference candidate, runs its required preparation, refuses invalid descriptors before Java, and applies a signed update and relaunches",
+            "Consumer observations identify the selected inventory and product variant; command fixtures or parser-only evidence cannot establish this task"
+          ],
+          "remaining_group_evidence": "Actual consumer execution and attributable operator evidence remain required; defining this task does not supply it."
         }
       ],
       "owner_now": [
@@ -9895,7 +9989,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-063",
