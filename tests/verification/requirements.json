@@ -5402,7 +5402,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Malformed JSON and unsupported schemas in actual saved build/import/sync/instance records remain visible as unavailable with explicit diagnostics, no fabricated inputs and incomplete requirement discovery",
+            "Malformed JSON, schema-only unknown headers and otherwise intact obsolete/unknown build/import/sync/instance records remain visible as unavailable with explicit diagnostics, no fabricated inputs and incomplete requirement discovery",
             "Text/JSON inspection preserves invocation, destination, state and cache bytes, directories and native attributes; old identities cannot select replacement bytes; corrupted work cannot resume and requires explicit discard"
           ]
         },
@@ -5510,7 +5510,7 @@
         "LIFE"
       ],
       "required_assertions": "Wrong bytes/same filename rejected; correct bytes/new filename accepted; ambiguous role rejected; receipt retains original evidence.",
-      "required_work": "Use public printed keys; never discover private state schema to perform UX step. T27: current-format persistent root/state lookup must preserve pending discovery and resume across native remount; incompatible older formats must be refused without mutation; fingerprint components alone do not establish this.",
+      "required_work": "Use public printed keys for every association; never discover private state to perform the UX step. All four families bind verified renamed input, ambiguity/refusal, fresh approval and packaged execution. Current-format lookup/resume survives actual native remount; inspection reports otherwise intact obsolete/unknown records as unavailable, resume refuses them without rewriting, and supported test-owned bytes restore the same public view. Source bindings remain distinct from actual required host/product/package observations.",
       "evidence_tiers": [
         "H",
         "X",
@@ -5655,7 +5655,11 @@
             "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes",
             "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
             "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector",
-            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys",
+            "empack-tests::journey_pending::journey_pending_build_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_import::journey_pending_import_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending::journey_pending_sync_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_instance::journey_pending_instance_corruption_is_visible_and_explicitly_discardable"
           ],
           "required_platforms": [
             "linux",
@@ -5675,7 +5679,8 @@
           "assertions": [
             "Repeat the public manual-input association journeys",
             "Execute the extracted final binary on each native target; archive admission binds its digest and version without discovery fallback",
-            "Wrong bytes or declined approval preserve author work, saved obligations and prior artifacts; only verified approved input permits completion"
+            "Wrong bytes or declined approval preserve author work, saved obligations and prior artifacts; only verified approved input permits completion",
+            "The extracted product also rejects intact obsolete/unknown saved formats for all four families without rewriting rejected records or neighboring work"
           ]
         },
         {
@@ -5881,6 +5886,30 @@
             "Actual APFS remount preserves saved synchronization identity and partially retained input after the source download and ordinary cache are removed",
             "Both existing continuation commands complete the exact two-file inventory, preserve author intent and converge; retained cleanup protects pending inputs and reclaims only after completion"
           ]
+        },
+        {
+          "id": "UX-035.unsupported-association-records",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_import::journey_pending_import_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending::journey_pending_sync_corruption_is_visible_and_explicitly_discardable",
+            "empack-tests::journey_pending_instance::journey_pending_instance_corruption_is_visible_and_explicitly_discardable"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Public inspection marks otherwise intact records with every earlier schema value and a future schema as unavailable for build/import/sync/instance; resume refuses them while preserving exact rejected bytes, author/player state, cache and neighboring data",
+            "Malformed and schema-only unknown-header controls remain; restoring test-owned supported bytes restores the original public ID and obligations without authorization, while discard remains explicit"
+          ],
+          "remaining_group_evidence": "Schema fault injection belongs to the fixture; every observation and refusal uses ordinary public commands. This does not establish migration support, physical reboot or any unexecuted host/product/package variant."
         }
       ],
       "owner_now": [

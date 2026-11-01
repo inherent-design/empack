@@ -59,11 +59,11 @@ pub fn single(invocation: &Path, root: &Path, state: &Path, kind: &str) -> Value
 pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) {
     use std::fs;
     let original = single(invocation, root, state, kind);
-    let directory = match kind {
-        "build" => "pending-builds",
-        "import" => "pending-imports",
-        "sync" => "pending-sync",
-        "instance" => "pending-instances",
+    let (directory, schema) = match kind {
+        "build" => ("pending-builds", 5_u32),
+        "import" => ("pending-imports", 1),
+        "sync" => ("pending-sync", 2),
+        "instance" => ("pending-instances", 2),
         _ => panic!("unsupported fixture family"),
     };
     let records: Vec<_> = fs::read_dir(state.join(directory))
@@ -75,13 +75,24 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
     let record = &records[0];
     let original_bytes = fs::read(record).unwrap();
     fs::write(state.join("unrelated-download.bin"), b"keep user bytes").unwrap();
-    for (bytes, diagnostic) in [
-        (b"{malformed".as_slice(), "Invalid pending record"),
+    let wire: Value = serde_json::from_slice(&original_bytes).unwrap();
+    assert_eq!(wire["schema"], schema);
+    let mut faults = vec![
+        (b"{malformed".to_vec(), "Invalid pending record"),
         (
-            br#"{"schema":4294967295}"#.as_slice(),
+            br#"{"schema":4294967295}"#.to_vec(),
             "Unsupported saved record schema",
         ),
-    ] {
+    ];
+    for schema in (0..schema).chain(std::iter::once(u32::MAX)) {
+        let mut rejected = wire.clone();
+        rejected["schema"] = schema.into();
+        faults.push((
+            serde_json::to_vec(&rejected).unwrap(),
+            "Unsupported saved record schema",
+        ));
+    }
+    for (bytes, diagnostic) in faults {
         fs::write(record, bytes).unwrap();
         let preserved = snapshot(state);
         let author = snapshot(invocation);
@@ -123,14 +134,22 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
             .failure();
         assert_eq!(snapshot(state), preserved);
         assert_eq!(snapshot(invocation), author);
+        assert_eq!(cache.exists().then(|| snapshot(&cache)), cached);
         command(invocation, root, state)
             .args(["--dry-run", "pending", "discard", id])
             .assert()
             .success();
         assert_eq!(snapshot(state), preserved);
         assert_eq!(snapshot(invocation), author);
-        // Recover fixture bytes only to exercise the next fault independently.
+        assert_eq!(cache.exists().then(|| snapshot(&cache)), cached);
+        // Restore only the test-owned fault, then confirm the intact record's
+        // public identity and obligations without resuming or authorizing it.
         fs::write(record, &original_bytes).unwrap();
+        let restored = snapshot(state);
+        assert_eq!(single(invocation, root, state, kind), original);
+        assert_eq!(snapshot(state), restored);
+        assert_eq!(snapshot(invocation), author);
+        assert_eq!(cache.exists().then(|| snapshot(&cache)), cached);
     }
     fs::write(record, b"{malformed").unwrap();
     let broken = single(invocation, root, state, kind);
