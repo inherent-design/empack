@@ -456,6 +456,95 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     assert_eq!(report["joint"]["declarations_complete"], true);
     assert_eq!(report["joint"]["candidate_compatibility"], "not-assessed");
     assert_eq!(author_snapshot(project.dir()), assessment_before);
+    // Keep the pinned-only assessment above. Add an independently versioned,
+    // deliberately older automatic root so updating every root cannot masquerade
+    // as a successful selected update when all selections were already current.
+    run(
+        &project,
+        &[
+            "--yes",
+            "add",
+            "--platform",
+            "modrinth",
+            "--version-id",
+            "5szYtenV",
+            "lithium",
+        ],
+    );
+    let sentinel_pinned = read_project(project.dir());
+    assert_eq!(sentinel_pinned.intent().roots.len(), 2);
+    let sentinel_key = sentinel_pinned
+        .intent()
+        .roots
+        .keys()
+        .find(|candidate| *candidate != key)
+        .unwrap()
+        .clone();
+    let sentinel_project = ProviderProjectId::Modrinth(
+        empack_core::identity::ModrinthProjectId::parse("gvQqBUqZ").unwrap(),
+    );
+    assert_eq!(
+        sentinel_pinned.lock().dependencies[&sentinel_key].identity,
+        ResolvedIdentity::Provider(sentinel_project.clone())
+    );
+    assert_eq!(
+        sentinel_pinned.lock().dependencies[&sentinel_key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        sentinel_project.parse_pin("5szYtenV").unwrap()
+    );
+    run(&project, &["--yes", "unpin", sentinel_key.as_str()]);
+    let pinned = read_project(project.dir());
+    assert_eq!(
+        pinned.lock().dependencies,
+        sentinel_pinned.lock().dependencies
+    );
+    let mut expected = sentinel_pinned.intent().clone();
+    expected.roots.get_mut(&sentinel_key).unwrap().selection = DependencySelection::Automatic;
+    assert_eq!(pinned.intent(), &expected);
+    assert_eq!(
+        pinned.intent().roots[key].selection,
+        DependencySelection::ProviderPin(selected.selection.clone())
+    );
+    assert_eq!(
+        pinned.intent().roots[&sentinel_key].selection,
+        DependencySelection::Automatic
+    );
+    assert!(
+        pinned
+            .lock()
+            .required_edges
+            .values()
+            .all(|edges| !edges.contains(&sentinel_key)),
+        "the unselected fixture root must be independent of the selected closure"
+    );
+    let before_sentinel_preview = snapshot(project.dir());
+    let preview = run(
+        &project,
+        &[
+            "--yes",
+            "--dry-run",
+            "update",
+            sentinel_key.as_str(),
+            "--release-policy",
+            "any",
+        ],
+    );
+    let rendered = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&preview.stdout),
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert!(
+        rendered.contains(&format!(
+            "Check {0} as {0}: selection changed",
+            sentinel_key.as_str()
+        )),
+        "an explicit sentinel preview must be able to advance: {rendered}"
+    );
+    assert_eq!(snapshot(project.dir()), before_sentinel_preview);
     let before_preview = snapshot(project.dir()).files;
     let before = author_snapshot(project.dir());
     run(
@@ -489,6 +578,8 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     );
     let updated = read_project(project.dir());
     assert_eq!(updated.intent(), pinned.intent());
+    assert_eq!(updated.lock().dependencies, pinned.lock().dependencies);
+    assert_eq!(updated.lock().required_edges, pinned.lock().required_edges);
     assert_eq!(
         updated.lock().dependencies[key],
         pinned.lock().dependencies[key]
@@ -510,6 +601,9 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     // current; the frozen host journey separately proves an actual version change.
     run(&project, &["--yes", "unpin", key.as_str()]);
     let automatic = read_project(project.dir());
+    let mut expected = updated.intent().clone();
+    expected.roots.get_mut(key).unwrap().selection = DependencySelection::Automatic;
+    assert_eq!(automatic.intent(), &expected);
     assert_eq!(
         automatic.intent().roots[key].selection,
         DependencySelection::Automatic
@@ -554,6 +648,15 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         author
     );
     assert_eq!(resolved.lock().runtime, automatic.lock().runtime);
+    assert_eq!(
+        resolved.lock().dependencies[&sentinel_key],
+        automatic.lock().dependencies[&sentinel_key],
+        "updating the selected root changed the unselected automatic root"
+    );
+    assert_eq!(
+        resolved.lock().required_edges.get(&sentinel_key),
+        automatic.lock().required_edges.get(&sentinel_key)
+    );
     run(&project, &["--yes", "sync", "--materialize"]);
     let materialized = read_project(project.dir());
     assert_eq!(
@@ -562,7 +665,12 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     );
     use empack_core::digest::ExpectedDigest;
     use sha2::{Digest, Sha512};
-    for file in materialized.lock().dependencies[key].files.as_slice() {
+    for file in materialized
+        .lock()
+        .dependencies
+        .values()
+        .flat_map(|dependency| dependency.files.as_slice())
+    {
         let expected = file
             .expected
             .digests

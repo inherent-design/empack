@@ -4099,7 +4099,7 @@
         "DEP"
       ],
       "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
-      "required_work": "Deterministic candidate fixture plus spawned binary live sentinel; compare resulting inventory and report.",
+      "required_work": "The controlled host fixture proves an actual changed selection with a retained exact pin and explicit file roles. The live ordinary CLI keeps the pinned-only assessment, then adds an older independent automatic Lithium root, verifies it could advance in a read-only preview, and requires it to remain untouched while Sodium alone is updated. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. Actual execution of each declared host/product/live variant is still required.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4154,7 +4154,8 @@
             "Ordinary CLI pin and update against Modrinth retain the selected exact version under release-policy any",
             "Actual output reports zero changed and one retained selection; preview, application and repeated sync preserve author files",
             "Unpinning retains the current exact inventory; automatic update preserves author intent and runtime, and actual changed/retained output agrees with the selected pin",
-            "Materialized selected payloads match declared SHA-512 and size independently; two subsequent CLI syncs converge"
+            "An unselected automatic root remains at an explicitly older version even though its separate dry-run update proposes a change; selected pinned/automatic updates preserve its complete dependency record and required edges",
+            "Materialized files across the complete locked candidate match declared SHA-512 and size independently; two subsequent CLI syncs converge"
           ],
           "remaining_group_evidence": "Live success does not imply a newer version was available; deterministic host coverage establishes the changed-selection path"
         },
