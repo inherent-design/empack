@@ -1,7 +1,7 @@
 //! Native prompt and desktop assistance contracts. No fake packwiz or installer output.
 use empack_tests::harness::{
     process::{TestProject, empack_cmd},
-    workspace::snapshot,
+    workspace::{snapshot, snapshot_excluding},
 };
 use expectrl::{Expect, Regex};
 #[path = "support/approval.rs"]
@@ -198,21 +198,24 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
     let project = fixture("pending-approval");
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
+    let command = || {
+        let mut command = offline_command(project.dir());
+        command
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--cache-dir")
+            .arg(state.with_extension("cache"))
+            .arg("--yes");
+        command
+    };
     fs::create_dir_all(project.dir().join("dist")).unwrap();
     fs::write(
         project.dir().join("dist/prior.mrpack"),
         b"keep prior artifact",
     )
     .unwrap();
-    offline_command(project.dir())
-        .arg("--state-dir")
-        .arg(&state)
-        .args(["--yes", "build", "modrinth"])
-        .assert()
-        .failure();
-    let output = offline_command(project.dir())
-        .arg("--state-dir")
-        .arg(&state)
+    command().args(["build", "modrinth"]).assert().failure();
+    let output = command()
         .args(["pending", "list", "--json"])
         .assert()
         .success()
@@ -242,6 +245,41 @@ fn cli_pty_pending_resume_requires_fresh_approval() {
         ],
         "(?i)apply this build plan",
     );
+    assert_eq!(fs::read(&input).unwrap(), b"payload");
+    let outside = snapshot_excluding(project.dir(), &["dist"]);
+    command()
+        .args(
+            operation["next"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap()),
+        )
+        .args(["--file", &association])
+        .assert()
+        .success();
+    let output = command()
+        .args(["pending", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["operations"], serde_json::json!([]));
+    let artifact = project.dir().join("dist/pending-approval-1.0.0.mrpack");
+    empack_tests::fixtures::restricted::assert_mrpack(&artifact, "pending-approval");
+    assert_eq!(
+        snapshot(&project.dir().join("dist")).files,
+        std::collections::BTreeMap::from([
+            ("prior.mrpack".into(), b"keep prior artifact".to_vec()),
+            (
+                "pending-approval-1.0.0.mrpack".into(),
+                fs::read(&artifact).unwrap()
+            ),
+        ])
+    );
+    assert_eq!(snapshot_excluding(project.dir(), &["dist"]), outside);
     assert_eq!(fs::read(&input).unwrap(), b"payload");
 }
 

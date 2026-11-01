@@ -373,7 +373,7 @@
         "LIFE"
       ],
       "required_assertions": "No first-result search authorization; EOF/decline do not mutate; headless invocation provides next action; no hanging prompt.",
-      "required_work": "Table-drive decisions across init/add/conflict/pending/recovery, not only init.",
+      "required_work": "Bound decision matrices cover initialization, local addition/build, forced replacement, instance conflict decisions, all four pending kinds, recovery and immutable release staging. Headless search requires a deliberate selector before transport; live search separates choice from publication approval. Existing native widget cases cover cancellation/default authority, malformed input and terminal retirement. All four pending refusal/interruption tests now proceed to explicit approval of the same saved work and independent content/preservation checks. Every declared host/product/live observation remains required; complete decomposition is not qualification.",
       "evidence_tiers": [
         "H",
         "X",
@@ -467,7 +467,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Saved build and synchronization approvals do not carry forward to resume: closed/piped stdin cannot grant a fresh request, yes plus dry-run remains read-only, and actual terminal decline or Ctrl-C at the approval prompt preserves retained evidence and supplied bytes, directories and native attributes; interruption exits 130"
+            "Saved build and synchronization approvals do not carry forward to resume: closed/piped stdin cannot grant a fresh request, yes plus dry-run remains read-only, and actual terminal decline or Ctrl-C at the approval prompt preserves retained evidence and supplied bytes, directories and native attributes; interruption exits 130",
+            "After the refusal/interruption matrix, explicit approval of the same record's public next command completes the independently expected mrpack or two-file synchronized inventory, clears pending work and preserves prior artifacts, supplied files and full outside-destination snapshots"
           ]
         },
         {
@@ -774,7 +775,7 @@
         "empack-cli",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-004",

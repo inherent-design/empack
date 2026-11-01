@@ -9,7 +9,7 @@ use std::{fs, path::Path};
 
 #[path = "support/approval.rs"]
 mod approval;
-use empack_tests::harness::workspace::snapshot;
+use empack_tests::harness::workspace::{snapshot, snapshot_excluding};
 
 #[path = "support/pending.rs"]
 mod public_pending;
@@ -609,6 +609,30 @@ fn journey_pending_sync_resume_requires_fresh_approval() {
         "(?i)apply this remote content acquisition plan",
     );
     assert_eq!(pending(&project, &state, "sync"), operation);
+    let outside = snapshot_excluding(project.dir(), &["pack"]);
+    command(&project, &state)
+        .args(
+            operation["next"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap()),
+        )
+        .args(["--file", &associations[0], "--file", &associations[1]])
+        .assert()
+        .success();
+    assert_eq!(
+        report(&project, &state, &["pending", "list", "--json"])["operations"],
+        json!([])
+    );
+    assert_eq!(
+        snapshot(&project.dir().join("pack")).files,
+        std::collections::BTreeMap::from([
+            ("mods/one.jar".into(), b"first".to_vec()),
+            ("mods/two.jar".into(), b"second".to_vec()),
+        ])
+    );
+    assert_eq!(snapshot_excluding(project.dir(), &["pack"]), outside);
 }
 
 #[test]
