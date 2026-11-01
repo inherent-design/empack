@@ -188,7 +188,7 @@ async fn artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion()
         tests::put(outside.path(), "sentinel", b"outside");
         let link = if nested {
             fixture(root.path());
-            root.path().join("dist/linked")
+            root.path().join("dist").join("linked")
         } else {
             root.path().join("dist")
         };
