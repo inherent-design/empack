@@ -6125,7 +6125,7 @@
         "CLI"
       ],
       "required_assertions": "Exact permitted provider page; no opener on preview/decline; bounds/timeout; verified scans do not use uniqueness as identity.",
-      "required_work": "Controlled opener and renamed files; real provider page lookup separately; Windows supported behavior explicit.",
+      "required_work": "Controlled opener and verified renamed-file scans are bound, along with a pre-discovery cumulative page-limit case. Windows desktop-opener behavior, interactive integration and remaining failure handoffs retain their separate evidence requirements. Controlled launchers and fixture bytes do not establish actual browser interaction or a live restricted-download policy.",
       "evidence_tiers": [
         "U",
         "N",
@@ -6157,8 +6157,7 @@
           "assertions": [
             "Exact Modrinth and CurseForge selection pages preserve supported content-kind routing",
             "Mismatched project or selection identities, unsupported kinds and unsafe slug syntax cannot produce an opener destination"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.verified-scans",
@@ -6180,8 +6179,7 @@
           "assertions": [
             "Names and unique file counts do not establish content identity; size and all declared digests must agree",
             "Weak evidence and prior observations retain their distinct policy, while incomplete bounded scans return no partial associations"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.scan-worker-lifecycle",
@@ -6200,8 +6198,7 @@
           ],
           "assertions": [
             "Admitted scan workers retire while their bounded retained output remains charged until released"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.host-association",
@@ -6221,8 +6218,7 @@
           "assertions": [
             "Preview and decline preserve the entire fixture; incorrect, unknown or duplicate associations cannot apply content",
             "Fresh approved continuation consumes the selected verified content through shared preparation"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.launcher-lifecycle",
@@ -6241,8 +6237,7 @@
           "assertions": [
             "The real fixture launcher receives the exact argument, reports nonzero completion and bounds its wait",
             "Cancellation after observed process startup reports interruption and retires the launcher; it does not claim ownership of a real browser"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.public-wait",
@@ -6265,8 +6260,7 @@
             "Invalid wait bounds and preview leave authoring and saved state untouched",
             "A sole wrong same-length file times out; renamed verified bytes subsequently produce the complete expected archive while preserving downloads and prior author/artifact bytes",
             "A changed saved recipe refuses automatic continuation"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.interactive-decline",
@@ -6284,8 +6278,7 @@
           ],
           "assertions": [
             "Preview and an actual terminal decline finish without invoking the desktop opener, saving pending state or changing author/download bytes"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.official-page",
@@ -6304,8 +6297,7 @@
           "assertions": [
             "An official Modrinth metadata lookup selects the exact resourcepack/version page passed to a controlled opener",
             "Only verified renamed fixture bytes enter the complete expected archive; unrelated downloads and author files survive and the completed pending record is removed"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.scan-special-files",
@@ -6323,8 +6315,7 @@
           ],
           "assertions": [
             "Native scan skips symbolic links and special files without following or blocking, deduplicates hard links and preserves outside bytes"
-          ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          ]
         },
         {
           "id": "UX-037.public-interruption",
@@ -6342,8 +6333,29 @@
           ],
           "assertions": [
             "Host interruption ends a public download wait without deleting its saved operation or changing author and prior-artifact bytes"
+          ]
+        },
+        {
+          "id": "UX-037.page-count-admission",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::browser::admission_tests::page_limit_counts_prior_openings_before_discovery_or_launch"
           ],
-          "remaining_group_evidence": "Windows desktop-opener and interactive behavior, the per-invocation page-count limit and remaining failure handoffs require explicit evidence. A controlled opener and fixture bytes do not establish actual browser interaction or a live restricted-download policy."
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Seventeen selected pages and one additional page after sixteen prior openings refuse with the exact existing per-invocation limit diagnostic",
+            "Exactly sixteen total selections reach the pre-cancelled process boundary instead of being misclassified as over-limit; an empty selection remains a no-op after sixteen prior openings",
+            "Refusal and pre-cancellation preserve the opened-selection set, author bytes and empty author directory without provider I/O or desktop launch"
+          ],
+          "remaining_group_evidence": "Controlled host admission only; the token intentionally prevents network and launcher execution. Actual supported desktop/interactive and live provider behavior remain separate obligations."
         }
       ],
       "owner_now": [

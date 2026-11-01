@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::application::engine_host::build::browser::admission_tests::page_limit_counts_prior_openings_before_discovery_or_launch", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "PEND", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::api::tests::prepared_operations_share_capacity_and_cancellation_preserves_other_owners", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "LIFE", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::session::unix_prompts::tests::every_widget_pty_rejects_closed_or_invalid_input_without_default_authority", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "CLI", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::session::unix_prompts::tests::text_pty_preserves_defaults_unicode_editing_and_word_navigation", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "CLI", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},

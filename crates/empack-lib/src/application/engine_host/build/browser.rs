@@ -147,6 +147,75 @@ async fn launch_command(
     result
 }
 
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use crate::application::{
+        process_runtime::{Cancellation, Interrupted},
+        session::LiveProcessProvider,
+        session_mocks::{MockCommandSession, MockInvocationProvider},
+    };
+    use empack_core::{
+        identity::{ModrinthProjectId, ModrinthVersionId, PinSelector, ProviderProjectId},
+        model::ResolvedPin,
+    };
+
+    #[tokio::test]
+    async fn page_limit_counts_prior_openings_before_discovery_or_launch() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("author.txt"), b"retained author work").unwrap();
+        std::fs::create_dir(root.path().join("empty author directory")).unwrap();
+        let before = crate::application::engine_host::tests::snapshot(root.path());
+        let cancellation = Cancellation::default();
+        cancellation.cancel();
+        let mut session = MockCommandSession::new().with_invocation(
+            MockInvocationProvider::new().with_current_dir(root.path().to_owned()),
+        );
+        session.process_provider = LiveProcessProvider::new().with_cancellation(cancellation);
+        let pins = |start: usize, count: usize| -> BTreeSet<ResolvedPin> {
+            (start..start + count)
+                .map(|index| ResolvedPin {
+                    project: ProviderProjectId::Modrinth(
+                        ModrinthProjectId::parse(&format!("{index:08}")).unwrap(),
+                    ),
+                    selection: PinSelector::ModrinthVersion(
+                        ModrinthVersionId::parse("abcdefgh").unwrap(),
+                    ),
+                })
+                .collect()
+        };
+        for (prior, requested, expected) in [
+            (0, 17, "limit"),
+            (16, 1, "limit"),
+            (0, 16, "cancelled"),
+            (15, 1, "cancelled"),
+            (16, 0, "empty"),
+        ] {
+            let mut opened = pins(0, prior);
+            let old_opened = opened.clone();
+            // Pre-cancellation makes admitted nonempty requests stop before
+            // provider I/O or desktop launch. Over-limit requests must instead
+            // retain their specific diagnostic, including prior page openings.
+            let result = open_pins(&session, pins(prior, requested), &mut opened, None).await;
+            match expected {
+                "limit" => assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "Browser assistance is limited to 16 exact selections per invocation; associate files explicitly for larger batches"
+                ),
+                "cancelled" => assert!(result.unwrap_err().is::<Interrupted>()),
+                "empty" => result.unwrap(),
+                _ => unreachable!(),
+            }
+            assert_eq!(opened, old_opened);
+            assert_eq!(
+                crate::application::engine_host::tests::snapshot(root.path()),
+                before
+            );
+            assert!(root.path().join("empty author directory").is_dir());
+        }
+    }
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
