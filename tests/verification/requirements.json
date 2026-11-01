@@ -12063,7 +12063,7 @@
         "BUILD"
       ],
       "required_assertions": "Local Java selection/probe, minimum policy and args truthful; reference prepare ordering; GUI/console nogui differences; EULA not accepted automatically.",
-      "required_work": "Local parser/native/executable/script cases and existing official loader probes are bound. Actual interactive Java and supported GUI consumer qualification remain separate, including all declared host/product variants; fixture execution is not JVM or gameplay acceptance.",
+      "required_work": "Parser, native, executable and generated-script cases, official loader probes, and separate actual managed/bundled console and supported GUI procedures are bound. Actual consumer execution remains required on every declared host/product variant; fixture execution is not JVM, GUI or gameplay acceptance.",
       "evidence_tiers": [
         "U",
         "H",
@@ -12313,6 +12313,48 @@
           ]
         },
         {
+          "id": "UX-073.actual-managed-gui",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::server::managed-gui"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The extracted managed candidate runs through its unmodified generated GUI script in a recorded desktop session with a GUI-capable Java installation and supported server runtime",
+            "Preparation precedes Java; the independent inventory matches; the actual server window opens without nogui and accepts a command and normal shutdown",
+            "Runtime retirement, exit outcome and a usable invoking terminal are observed; console records and fake runtimes cannot establish this GUI task"
+          ]
+        },
+        {
+          "id": "UX-073.actual-bundled-gui",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::server::bundled-gui"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The extracted standalone bundled candidate runs through its unmodified generated GUI script without recipient empack, using a recorded desktop session, GUI-capable Java and supported server runtime",
+            "The independent inventory matches; the actual server window opens without nogui and accepts a command and normal shutdown",
+            "The direct Java status, runtime retirement and a usable invoking terminal are recorded separately from managed and console tasks"
+          ]
+        },
+        {
           "id": "UX-073.managed-status-policy",
           "boundary": "H",
           "test_ids": [
@@ -12330,8 +12372,7 @@
           "assertions": [
             "Observed native child status 0 remains success; status 7 becomes empack General while preserving the exact original runtime-status diagnostic",
             "This host classification check does not establish a Java probe, generated-script execution or actual consumer interaction"
-          ],
-          "remaining_group_evidence": "The existing actual server-console procedures do not establish supported GUI interaction. A concrete GUI procedure and its actual acceptance evidence remain required before this group can be complete; no console record is relabelled as GUI evidence."
+          ]
         }
       ],
       "owner_now": [
@@ -12342,7 +12383,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-074",

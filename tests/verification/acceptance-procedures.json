@@ -45,6 +45,20 @@
       "steps": ["run-generated-start-script-without-recipient-empack", "compare-independent-inventory", "send-console-input", "normal-server-shutdown", "verify-java-status-and-terminal-restoration"]
     },
     {
+      "id": "acceptance::server::managed-gui",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["record-desktop-session-and-supported-gui-runtime", "run-generated-gui-start-script", "verify-preparation-before-java", "compare-independent-inventory", "verify-server-window-and-no-nogui-argument", "send-command-through-server-gui", "stop-server-through-gui", "verify-retirement-and-terminal-restoration"]
+    },
+    {
+      "id": "acceptance::server::bundled-gui",
+      "boundary": "C",
+      "platforms": ["linux", "macos", "windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["record-desktop-session-and-supported-gui-runtime", "run-generated-gui-start-script-without-recipient-empack", "compare-independent-inventory", "verify-server-window-and-no-nogui-argument", "send-command-through-server-gui", "stop-server-through-gui", "verify-java-status-and-terminal-restoration"]
+    },
+    {
       "id": "acceptance::human::licensed-startup",
       "boundary": "M",
       "platforms": ["linux", "macos", "windows"],

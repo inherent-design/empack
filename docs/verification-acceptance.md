@@ -2,9 +2,17 @@
 
 The candidate gate accepts operator-recorded tasks separately from native suites and the headless Prism parser probe. Reading a record does not run the task or independently establish that its description is true. The maintainer reviews the operator's observations and retained files before selecting the record for a gate.
 
-The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
+The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles and GUIs, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
 
 Consumer records are required on Linux, macOS and Windows for default and telemetry products. The initial selected host for human tasks is macOS. This does not turn a human task on one host into evidence for another. Actual-consumer and human results remain unperformed until their records exist; helper tests cannot supply them. The current consumer group remains partially decomposed rather than claiming that these initial checklists settle every consumer/profile combination.
+
+## Server GUI tasks
+
+The separate `acceptance::server::managed-gui` and `acceptance::server::bundled-gui` procedures qualify the existing GUI entry points. Run them in an isolated desktop session with a selected Minecraft runtime that supports its server window and a GUI-capable Java installation. Record the actual desktop environment, server/runtime versions and generated distribution. A missing desktop or unsupported runtime remains blocked; console observations and fake tools cannot establish GUI behavior.
+
+Use the extracted candidate's unmodified `start_gui.sh` or `start_gui.bat` as described in [Server distributions](servers.md). For managed delivery, retain preparation-before-Java evidence and use the admitted empack executable. For standalone bundled delivery, keep recipient empack unavailable. Compare the installed inventory independently, confirm the actual server window opens and `nogui` is absent, issue a command through that window, then stop the server through its GUI. Record process retirement, the resulting status and whether the invoking terminal remains usable. Use a disposable world; observe the existing EULA procedure without having empack accept it automatically.
+
+Retain the relevant terminal log and GUI observations, such as a redacted screenshot and the server's response to the command. The GUI records are separate from the console records, which still exercise terminal input, interruption and shutdown. Both procedures require their declared Linux/macOS/Windows and default/telemetry variants. Writing these checklists or admitting synthetic records does not perform them.
 
 ## Record identity
 

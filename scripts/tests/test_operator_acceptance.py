@@ -105,6 +105,17 @@ class OperatorAcceptance(unittest.TestCase):
             mutate(record)
             with self.subTest(mutation=mutate), self.assertRaises(ValueError):
                 self.inspect(record)
+        for delivery in ("managed", "bundled"):
+            gui = f"acceptance::server::{delivery}-gui"
+            console = f"acceptance::server::{delivery}-console"
+            with self.subTest(delivery=delivery):
+                _, record = fixture(self.path.parent, gui)
+                self.assertEqual(self.inspect(record)["status"], "PASS", "synthetic admission only")
+                console_steps = procedures()[console]["steps"]
+                record["observations"] = [dict(step=step, status="PASS", observed="Synthetic console observation",
+                                                evidence=["observation.txt"]) for step in console_steps]
+                with self.assertRaisesRegex(ValueError, "procedure steps"):
+                    self.inspect(record)
 
     def test_supporting_file_identity_and_path_confinement_are_rechecked(self):
         for name in ("../elsewhere", "/absolute", "sub/../file", "sub//file", "./file", "a\\b", "C:file", self.path.name):
@@ -173,20 +184,36 @@ class OperatorAcceptance(unittest.TestCase):
     def test_candidate_gate_requires_actual_task_records_beyond_passing_native_cases(self):
         from test_candidate_qualification import CandidatePolicy
         from verification.qualification import evaluate_requirements
-        fixture = CandidatePolicy()
-        fixture.setUp()
-        row = next(row for row in fixture.document["requirements"] if row["id"] == "UX-084")
+        policy = CandidatePolicy()
+        policy.setUp()
+        row = next(row for row in policy.document["requirements"] if row["id"] == "UX-084")
         row.update(evidence_tiers=["C"], cases=[dict(id="UX-084.operator", boundary="C",
                    test_ids=[IDENTITY], required_platforms=["linux"], required_product_features=["default"])])
         def evaluate(records):
-            return evaluate_requirements(fixture.document, fixture.classification, fixture.evidence,
-                REVISION, VERSION, fixture.package_proofs, acceptance_evidence=records)
+            return evaluate_requirements(policy.document, policy.classification, policy.evidence,
+                REVISION, VERSION, policy.package_proofs, acceptance_evidence=records)
         self.assertEqual(evaluate([])["status"], "BLOCKED")
         passed = self.inspect()
         self.assertTrue(evaluate([passed])["qualification"], "synthetic gate mechanics, not actual tasks")
         failed = copy.deepcopy(self.record)
         failed["observations"][0]["status"] = failed["status"] = "FAIL"
         self.assertEqual(evaluate([self.inspect(failed), passed])["status"], "FAIL")
+        for delivery in ("managed", "bundled"):
+            console, gui = [f"acceptance::server::{delivery}-{mode}" for mode in ("console", "gui")]
+            row["cases"] = [dict(id=f"UX-084.{mode}", boundary="C", test_ids=[identity],
+                                 required_platforms=["linux"], required_product_features=["default"])
+                            for mode, identity in (("console", console), ("gui", gui))]
+            _, console_record = fixture(self.path.parent, console)
+            console_result = self.inspect(console_record)
+            self.assertEqual(evaluate([console_result])["status"], "BLOCKED",
+                             "console observations cannot establish a GUI task")
+            _, gui_record = fixture(self.path.parent, gui)
+            gui_result = self.inspect(gui_record)
+            self.assertEqual(evaluate([gui_result])["status"], "BLOCKED",
+                             "GUI observations cannot establish the separate console task")
+            self.assertTrue(evaluate([console_result, gui_result])["qualification"], "synthetic join only")
+            gui_record["observations"][0]["status"] = gui_record["status"] = "BLOCKED"
+            self.assertFalse(evaluate([console_result, self.inspect(gui_record)])["qualification"])
 
 
 if __name__ == "__main__":
