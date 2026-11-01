@@ -95,7 +95,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
         })])
         .unwrap()
     };
-    let before = super::super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     dependencies::add_with_services(
         &session(root.path(), true),
         input(),
@@ -106,7 +106,7 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
     )
     .await
     .unwrap();
-    assert_eq!(super::super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     dependencies::add_with_services(
         &session(root.path(), false),
         input(),
@@ -142,12 +142,12 @@ async fn provider_world_keeps_archive_ownership_across_preview_sync_update_build
         assert!(file.expected.digests.is_none());
     }
     for _ in 0..2 {
-        let before = super::super::super::tests::snapshot(&root.path().join("project"));
+        let before = crate::test_support::file_bytes(&root.path().join("project"));
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
         assert_eq!(
-            super::super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }
@@ -316,7 +316,7 @@ async fn supplied_restricted_world_is_identified_then_interpreted_without_remote
         }])
         .unwrap()
     };
-    let before = super::super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     dependencies::add_with_services(
         &session(root.path(), true),
         input(),
@@ -327,7 +327,7 @@ async fn supplied_restricted_world_is_identified_then_interpreted_without_remote
     )
     .await
     .unwrap();
-    assert_eq!(super::super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     dependencies::add_with_services(
         &session(root.path(), false),
         input(),
@@ -395,7 +395,7 @@ async fn supplied_restricted_world_is_identified_then_interpreted_without_remote
     selected.file_id = Some("456".into());
     selected.file_plan = Some("world-plan.json".into());
     selected.force = true;
-    let before = super::super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     add_with_catalog(
         &session(root.path(), true),
         selected,
@@ -403,7 +403,7 @@ async fn supplied_restricted_world_is_identified_then_interpreted_without_remote
     )
     .await
     .unwrap();
-    assert_eq!(super::super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     identify.assert_async().await;
 }
 
@@ -466,7 +466,7 @@ async fn fresh_provider_world_sync_retains_interpreted_bytes_and_previews_withou
         },
     );
     crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
-    let before = super::super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     for materialize in [false, true] {
         synchronization::synchronize_with_services(
             &session(root.path(), true),
@@ -478,7 +478,7 @@ async fn fresh_provider_world_sync_retains_interpreted_bytes_and_previews_withou
         )
         .await
         .unwrap();
-        assert_eq!(super::super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
     }
     synchronization::synchronize_with_services(
         &session(root.path(), false),

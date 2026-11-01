@@ -5,6 +5,7 @@ use crate::application::{
     session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
 };
 use crate::engine::documents::DocumentCodec;
+use crate::test_support::file_bytes as snapshot;
 use std::{collections::BTreeMap, fs, io::Read};
 
 fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
@@ -38,9 +39,6 @@ async fn fixture(root: &Path) {
     fs::create_dir_all(root.join("project/pack/config")).unwrap();
     fs::write(root.join("project/pack/config/example.txt"), b"first").unwrap();
     fs::write(root.join("project/notes.txt"), b"outside managed changes").unwrap();
-}
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    super::super::tests::snapshot(root)
 }
 fn args() -> BuildArgs {
     BuildArgs {

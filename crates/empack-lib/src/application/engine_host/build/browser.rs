@@ -165,7 +165,7 @@ mod admission_tests {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("author.txt"), b"retained author work").unwrap();
         std::fs::create_dir(root.path().join("empty author directory")).unwrap();
-        let before = crate::application::engine_host::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         let cancellation = Cancellation::default();
         cancellation.cancel();
         let mut session = MockCommandSession::new().with_invocation(
@@ -207,10 +207,7 @@ mod admission_tests {
                 _ => unreachable!(),
             }
             assert_eq!(opened, old_opened);
-            assert_eq!(
-                crate::application::engine_host::tests::snapshot(root.path()),
-                before
-            );
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
             assert!(root.path().join("empty author directory").is_dir());
         }
     }

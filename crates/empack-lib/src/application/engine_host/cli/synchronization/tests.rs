@@ -1,6 +1,6 @@
 use super::super::tests::{fixture, project, session};
 use super::*;
-use crate::application::engine_host::tests::snapshot;
+use crate::test_support::file_bytes as snapshot;
 use empack_core::{
     digest::{DigestSet, ExpectedDigest},
     identity::*,

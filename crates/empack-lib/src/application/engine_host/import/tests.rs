@@ -346,7 +346,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     }
     let bytes = archive(&[("overrides/config/example.toml", b"new")], false);
     let input = source(root.path(), &bytes);
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     import(
         &session(root.path(), true, true),
         request(input, true),
@@ -354,7 +354,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     import(
         &session(root.path(), false, false),
         request(local("source.mrpack"), true),
@@ -362,7 +362,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     assert!(
         import(
             &session(root.path(), true, false),
@@ -372,7 +372,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
         .await
         .is_err()
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     assert!(
         import(
             &session(root.path(), true, false),
@@ -382,7 +382,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
         .await
         .is_err()
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     import(
         &session(root.path(), true, false),
         request(local("source.mrpack"), true),
@@ -424,7 +424,7 @@ async fn remote_archive_acquisition_enforces_bytes_and_source_assertions_before_
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, b"retained on acquisition failure").unwrap();
     }
-    let original = super::super::tests::snapshot(root.path());
+    let original = crate::test_support::file_bytes(root.path());
     let mut server = mockito::Server::new_async().await;
     let bytes = archive(&[("overrides/config/a", b"downloaded")], false);
     let download = server
@@ -479,7 +479,7 @@ async fn remote_archive_acquisition_enforces_bytes_and_source_assertions_before_
             );
         } else {
             assert!(result.is_err(), "{mode} must reject the source archive");
-            assert_eq!(super::super::tests::snapshot(root.path()), original);
+            assert_eq!(crate::test_support::file_bytes(root.path()), original);
         }
     }
     download.assert_async().await;
@@ -536,7 +536,7 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("project/pack")).unwrap();
     fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
-    let original = super::super::tests::snapshot(root.path());
+    let original = crate::test_support::file_bytes(root.path());
     let fixture = crate::testing::http::StalledHttp::new(
         b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n",
     );
@@ -574,7 +574,7 @@ async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body(
         Some(crate::engine::acquisition::TransferError::ByteLimit)
     ));
     fixture.assert_closed();
-    assert_eq!(super::super::tests::snapshot(root.path()), original);
+    assert_eq!(crate::test_support::file_bytes(root.path()), original);
 }
 
 #[tokio::test]
@@ -604,7 +604,7 @@ async fn remote_archive_stalls_and_cancellation_preserve_existing_project() {
                         fs::write(path, b"retain through stalled replacement").unwrap();
                     }
                 }
-                let original = super::super::tests::snapshot(root.path());
+                let original = crate::test_support::file_bytes(root.path());
                 let cancellation = Cancellation::default();
                 let mut host = session(root.path(), true, false);
                 host.config_provider.app_config.net_timeout = if cancelled { 30 } else { 1 };
@@ -654,7 +654,7 @@ async fn remote_archive_stalls_and_cancellation_preserve_existing_project() {
                     );
                 }
                 fixture.assert_closed();
-                assert_eq!(super::super::tests::snapshot(root.path()), original);
+                assert_eq!(crate::test_support::file_bytes(root.path()), original);
                 assert_eq!(root.path().join("project").exists(), populated);
                 assert!(!root.path().join("state").exists());
                 assert!(!root.path().join("cache").exists());
@@ -701,7 +701,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         .create_async()
         .await;
     let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(7).create_async().await;
-    let original = super::super::tests::snapshot(root.path());
+    let original = crate::test_support::file_bytes(root.path());
     let preview = import_with_services(
         &session(root.path(), true, true),
         request(local("source.mrpack"), false),
@@ -712,7 +712,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     )
     .await;
     assert!(preview.is_err());
-    assert_eq!(super::super::tests::snapshot(root.path()), original);
+    assert_eq!(crate::test_support::file_bytes(root.path()), original);
     let result = import_with_services(
         &session(root.path(), true, false),
         request(local("source.mrpack"), false),
@@ -735,11 +735,11 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     };
     assert_eq!(records().len(), 1);
     let saved_path = records().pop().unwrap();
-    let pending_tree = super::super::tests::snapshot(root.path());
+    let pending_tree = crate::test_support::file_bytes(root.path());
     super::super::clean(&session(root.path(), true, true), &["import".into()])
         .await
         .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), pending_tree);
+    assert_eq!(crate::test_support::file_bytes(root.path()), pending_tree);
     fs::remove_file(root.path().join("source.mrpack")).unwrap();
     let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap());
     let pin = ResolvedPin {
@@ -750,7 +750,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         pin: pin.clone(),
         filename: "fixture.jar".into(),
     };
-    let before_resume = super::super::tests::snapshot(root.path());
+    let before_resume = crate::test_support::file_bytes(root.path());
     let preview = import_with_services(
         &session(root.path(), true, true),
         request(ImportSource::Saved, false),
@@ -761,7 +761,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     )
     .await;
     assert!(preview.is_err());
-    assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
     let mut wrong = request(ImportSource::Saved, false);
     wrong.supplied.insert(key.clone(), observed(b"changed"));
     let wrong = import_with_services(
@@ -778,7 +778,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         !root.path().join("project").exists(),
         "wrong supplied bytes created an import destination"
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
     let mut selected = request(ImportSource::Saved, false);
     selected.supplied.insert(key.clone(), observed(b"payload"));
     let decide = |content: &VerifiedImportContent| -> Result<ImportCandidateOptions> {
@@ -865,7 +865,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
             !root.path().join("project").exists(),
             "unsupported provider conversion created an import destination"
         );
-        assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before_resume);
     }
     import_with_services(
         &session(root.path(), true, false),
@@ -940,7 +940,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     // default/group on export. A failed build must preserve even prior artifacts.
     fs::create_dir_all(project_root.join("dist")).unwrap();
     fs::write(project_root.join("dist/previous.zip"), b"prior artifact").unwrap();
-    let before_build = super::super::tests::snapshot(&project_root);
+    let before_build = crate::test_support::file_bytes(&project_root);
     let args = BuildArgs {
         targets: vec!["curseforge".into()],
         ad_hoc: true,
@@ -958,7 +958,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         format!("{rejected:#}").contains("optional group/default metadata"),
         "{rejected:#}"
     );
-    assert_eq!(super::super::tests::snapshot(&project_root), before_build);
+    assert_eq!(crate::test_support::file_bytes(&project_root), before_build);
     super::super::build(
         &session(root.path(), true, false),
         &args,
@@ -1011,7 +1011,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
             expected
         );
     }
-    let mut after_build = super::super::tests::snapshot(&project_root);
+    let mut after_build = crate::test_support::file_bytes(&project_root);
     after_build.remove(Path::new("dist/Imported-1-curseforge.zip"));
     assert_eq!(
         after_build, before_build,
@@ -1023,17 +1023,17 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     );
     // Invalid saved data is never parsed as cleanup authority.
     fs::write(&saved_path, b"invalid record").unwrap();
-    let before_cleanup = super::super::tests::snapshot(root.path());
+    let before_cleanup = crate::test_support::file_bytes(root.path());
     super::super::clean(&session(root.path(), true, true), &["import".into()])
         .await
         .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before_cleanup);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before_cleanup);
     super::super::clean(&session(root.path(), true, false), &["import".into()])
         .await
         .unwrap();
     let mut expected = before_cleanup;
     expected.remove(&saved_path.strip_prefix(root.path()).unwrap().to_path_buf());
-    assert_eq!(super::super::tests::snapshot(root.path()), expected);
+    assert_eq!(crate::test_support::file_bytes(root.path()), expected);
     project.assert_async().await;
     metadata_file.assert_async().await;
 }
@@ -1045,7 +1045,7 @@ async fn local_archive_can_use_declared_strong_source_evidence() {
     let bytes = archive(&[], false);
     source(root.path(), &bytes);
     let known_digest = ExpectedDigest::Sha512(sha2::Sha512::digest(&bytes).into());
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     for mode in ["missing", "weak", "wrong-digest", "wrong-size", "valid"] {
         let digests = match mode {
             "missing" => None,
@@ -1077,7 +1077,7 @@ async fn local_archive_can_use_declared_strong_source_evidence() {
             );
         } else {
             assert!(result.is_err(), "{mode} evidence must not authorize import");
-            assert_eq!(super::super::tests::snapshot(root.path()), before);
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
         }
     }
 }
@@ -1090,7 +1090,7 @@ async fn provider_modpack_pages_reach_verified_import_and_reject_changed_archive
             let root = tempfile::tempdir().unwrap();
             fs::create_dir_all(root.path().join("project/pack")).unwrap();
             fs::write(root.path().join("project/pack/old"), b"keep on failure").unwrap();
-            let original = super::super::tests::snapshot(root.path());
+            let original = crate::test_support::file_bytes(root.path());
             let mut server = mockito::Server::new_async().await;
             let bytes = archive(&[("overrides/config/new", b"imported")], false);
             let url = format!("{}/archive", server.url());
@@ -1144,7 +1144,7 @@ async fn provider_modpack_pages_reach_verified_import_and_reject_changed_archive
                     result.is_err(),
                     "Changed provider archive must not be accepted"
                 );
-                assert_eq!(super::super::tests::snapshot(root.path()), original);
+                assert_eq!(crate::test_support::file_bytes(root.path()), original);
             } else {
                 result.unwrap();
                 assert_eq!(
@@ -1185,7 +1185,7 @@ async fn restricted_provider_archive_accepts_only_matching_explicit_manual_bytes
             manual[0] ^= 1;
         }
         fs::write(root.path().join("manual.zip"), manual).unwrap();
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         let source = ImportSource::Provider {
             selector: ModpackSelector::parse(ProviderKind::CurseForge, "1001")
                 .unwrap()
@@ -1213,11 +1213,11 @@ async fn restricted_provider_archive_accepts_only_matching_explicit_manual_bytes
             }
             "preview" => {
                 result.unwrap();
-                assert_eq!(super::super::tests::snapshot(root.path()), before);
+                assert_eq!(crate::test_support::file_bytes(root.path()), before);
             }
             _ => {
                 assert!(result.is_err());
-                assert_eq!(super::super::tests::snapshot(root.path()), before);
+                assert_eq!(crate::test_support::file_bytes(root.path()), before);
             }
         }
     }

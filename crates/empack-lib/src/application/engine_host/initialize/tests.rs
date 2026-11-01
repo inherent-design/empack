@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::session_mocks::{
         MockCommandSession, MockConfigProvider, MockInteractiveProvider, MockInvocationProvider,
@@ -36,9 +37,6 @@ fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
             dry_run,
             ..Default::default()
         }))
-}
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    super::super::tests::snapshot(root)
 }
 fn read(root: &Path) -> empack_core::model::ResolvedProject {
     let intent = crate::testing::read_authoring(&root.join("empack.yml")).unwrap();

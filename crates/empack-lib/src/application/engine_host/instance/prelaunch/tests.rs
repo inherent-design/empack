@@ -172,14 +172,11 @@ async fn preparation_handler_requires_enrollment_and_keeps_active_release() {
     .await
     .unwrap();
     assert_eq!(installed(), next.id());
-    let before = crate::application::engine_host::tests::snapshot(&project);
+    let before = crate::test_support::file_bytes(&project);
     for _ in 0..2 {
         dispatch(prepare(false, initial.id().into())).await.unwrap();
         assert_eq!(installed(), next.id());
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(&project),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(&project), before);
     }
     for (required, digest, diagnostic) in [
         (
@@ -195,10 +192,7 @@ async fn preparation_handler_requires_enrollment_and_keeps_active_release() {
     ] {
         let error = dispatch(prepare(required, digest)).await.unwrap_err();
         assert!(format!("{error:#}").contains(diagnostic));
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(&project),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(&project), before);
     }
     assert_eq!(
         fs::read(root.path().join("initial.json")).unwrap(),
@@ -345,7 +339,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
                 .expect(0)
                 .create_async()
                 .await;
-            let mut before = crate::application::engine_host::tests::snapshot(&project);
+            let mut before = crate::test_support::file_bytes(&project);
             let prior = before
                 .remove(Path::new(".empack/subscription.json"))
                 .unwrap();
@@ -370,7 +364,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
                     .is_none()
                 );
                 assert_eq!(prompts.lock().unwrap().len(), 2);
-                let mut declined = crate::application::engine_host::tests::snapshot(&project);
+                let mut declined = crate::test_support::file_bytes(&project);
                 let saved = declined
                     .remove(Path::new(".empack/subscription.json"))
                     .unwrap();
@@ -394,7 +388,7 @@ async fn runtime_transition_retains_observation_but_requires_supported_launch_in
             let result =
                 update_with_transport(&host, allow_offline, server_mode, transport(&remote.url()))
                     .await;
-            let mut after = crate::application::engine_host::tests::snapshot(&project);
+            let mut after = crate::test_support::file_bytes(&project);
             let saved = after
                 .remove(Path::new(".empack/subscription.json"))
                 .unwrap();
@@ -454,7 +448,7 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
     let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let origin = format!("http://{}", socket.local_addr().unwrap());
     drop(socket);
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     assert!(
         update_with_transport(
             &session(root.path(), true, false),
@@ -478,7 +472,7 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
     );
     assert_eq!(
         before,
-        crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+        crate::test_support::file_bytes(&root.path().join("project"))
     );
     super::super::dispatch(
         &session(root.path(), true, false),
@@ -512,7 +506,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         .with_body(channel(&release, &key, envelope.len() as u64))
         .create_async()
         .await;
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     for (yes, dry) in [(true, true), (false, false)] {
         assert!(
             update_with_transport(
@@ -527,7 +521,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         );
         assert_eq!(
             before,
-            crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+            crate::test_support::file_bytes(&root.path().join("project"))
         );
     }
     // No release route: a failure after accepting the channel can never take offline fallback.
@@ -541,8 +535,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         .await
         .is_err()
     );
-    let before_release_failure =
-        crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before_release_failure = crate::test_support::file_bytes(&root.path().join("project"));
     for (bytes, diagnostic) in [
         (
             b"invalid release envelope".to_vec(),
@@ -577,7 +570,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         .expect_err("a failed selected release cannot become offline permission");
         assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
         assert_eq!(
-            crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before_release_failure
         );
         let saved = fs::read(root.path().join("project/.empack/subscription.json")).unwrap();
@@ -670,7 +663,7 @@ async fn channel_http_failures_do_not_become_offline_permission() {
             .expect(if expected == "RedirectLimit" { 6 } else { 1 })
             .create_async()
             .await;
-        let before = crate::application::engine_host::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         let error = update_with_transport(
             &session(root.path(), true, false),
             true,
@@ -683,10 +676,7 @@ async fn channel_http_failures_do_not_become_offline_permission() {
             .downcast_ref::<crate::engine::acquisition::TransferError>()
             .unwrap_or_else(|| panic!("lost {expected} classification: {error:#}"));
         assert_eq!(format!("{category:?}"), expected);
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(root.path()),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         response.assert_async().await;
     }
 }
@@ -711,7 +701,7 @@ async fn invalid_authenticated_channels_never_select_offline_launch_or_change_fl
     )
     .await
     .unwrap();
-    let baseline = crate::application::engine_host::tests::snapshot(root.path());
+    let baseline = crate::test_support::file_bytes(root.path());
     let mut fresh = observed.clone();
     fresh.sequence = 3;
     let mut expired = fresh.clone();
@@ -760,10 +750,7 @@ async fn invalid_authenticated_channels_never_select_offline_launch_or_change_fl
         .await
         .expect_err("failed authentication cannot select the completed release");
         assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(root.path()),
-            baseline
-        );
+        assert_eq!(crate::test_support::file_bytes(root.path()), baseline);
         pointer.assert_async().await;
         pointer.remove_async().await;
     }
@@ -792,7 +779,7 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         choices: vec![],
         files: vec![],
     };
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     for (yes, dry) in [(true, true), (false, false)] {
         super::super::install_with_transport(
             &session(root.path(), yes, dry),
@@ -803,7 +790,7 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         .unwrap();
         assert_eq!(
             before,
-            crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+            crate::test_support::file_bytes(&root.path().join("project"))
         );
     }
     // A missing release fails after the approved observation, preserving its floor.

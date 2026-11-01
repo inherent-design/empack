@@ -495,14 +495,11 @@ mod tests {
         use crate::application::BuildArgs;
         let root = tempfile::tempdir().unwrap();
         archive(root.path(), false);
-        let before = crate::application::engine_host::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         initialize(&session(root.path(), true), &args())
             .await
             .unwrap();
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(root.path()),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         initialize(&session(root.path(), false), &args())
             .await
             .unwrap();
@@ -566,7 +563,7 @@ mod tests {
     async fn import_cli_requires_explicit_exclusion_and_never_changes_declared_runtime() {
         let root = tempfile::tempdir().unwrap();
         archive(root.path(), true);
-        let before = crate::application::engine_host::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         assert!(
             initialize(&session(root.path(), false), &args())
                 .await
@@ -574,10 +571,7 @@ mod tests {
                 .to_string()
                 .contains("auxiliary")
         );
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(root.path()),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         let mut selected = args();
         selected.exclude_auxiliary = true;
         selected.mc_version = Some("1.20".into());
@@ -588,10 +582,7 @@ mod tests {
                 .to_string()
                 .contains("differs")
         );
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(root.path()),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         selected.mc_version = None;
         initialize(&session(root.path(), false), &selected)
             .await
@@ -772,11 +763,12 @@ mod tests {
     }
     #[tokio::test]
     async fn provider_world_import_interprets_verified_members_before_publication() {
-        use crate::application::engine_host::{BuildDecisions, build, tests::snapshot};
+        use crate::application::engine_host::{BuildDecisions, build};
         use crate::engine::{
             acquisition::HttpAcquisition, build::BuildAcquisitions, import::ImportLimits,
             providers::ProviderCatalog,
         };
+        use crate::test_support::file_bytes as snapshot;
         use empack_core::model::{AcquisitionSpec, PlacementIntent};
         use serde_json::json;
         use sha2::Digest;

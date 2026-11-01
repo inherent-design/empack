@@ -1,5 +1,6 @@
 //! Native dispatch tests assert durable outcomes, preview and selected filesystem authority.
 use super::*;
+use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::{
         BuildArgs, InitArgs,
@@ -12,7 +13,7 @@ use crate::{
 use std::{
     fs,
     io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
@@ -69,9 +70,6 @@ fn jar(root: &Path) -> Vec<u8> {
     let bytes = zip.finish().unwrap().into_inner();
     fs::write(root.join("fixture.jar"), &bytes).unwrap();
     bytes
-}
-fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
-    crate::application::engine_host::tests::snapshot(root)
 }
 fn resolved(root: &Path) -> empack_core::model::ResolvedProject {
     let intent = crate::testing::read_authoring(&root.join("project/empack.yml")).unwrap();

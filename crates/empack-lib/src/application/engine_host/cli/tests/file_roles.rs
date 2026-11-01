@@ -167,7 +167,7 @@ async fn check_outputs(root: &Path, payloads: &BTreeMap<&str, Vec<u8>>) {
     }
     // Unknown or missing decisions cannot replace the last verified artifact batch.
     for choices in [BTreeMap::new(), BTreeMap::from([("typo".into(), true)])] {
-        let before = crate::application::engine_host::tests::snapshot(&project);
+        let before = crate::test_support::file_bytes(&project);
         let error = build(
             &session(root, false),
             &crate::application::BuildArgs::default(),
@@ -180,10 +180,7 @@ async fn check_outputs(root: &Path, payloads: &BTreeMap<&str, Vec<u8>>) {
             format!("{error:#}").to_lowercase().contains("optional"),
             "{error:#}"
         );
-        assert_eq!(
-            crate::application::engine_host::tests::snapshot(&project),
-            before
-        );
+        assert_eq!(crate::test_support::file_bytes(&project), before);
     }
 }
 
@@ -291,7 +288,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
         .remove("assets.zip")
         .unwrap();
     fs::write(root.path().join("files.yml"), plan.to_string()).unwrap();
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let error = add_with_catalog(
         &session(root.path(), false),
         selected(),
@@ -300,13 +297,10 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     .await
     .unwrap_err();
     assert!(format!("{error:#}").contains("required companion"));
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     plan["files"]["assets.zip"] = companion;
     fs::write(root.path().join("files.yml"), plan.to_string()).unwrap();
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     add_with_catalog(
         &session(root.path(), true),
         selected(),
@@ -314,10 +308,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     )
     .await
     .unwrap();
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     add_with_catalog(
         &session(root.path(), false),
         selected(),
@@ -346,12 +337,12 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     assert_eq!(choice.key.as_str(), "extra-art");
     assert!(!choice.default_enabled);
     for _ in 0..2 {
-        let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+        let before = crate::test_support::file_bytes(&root.path().join("project"));
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
         assert_eq!(
-            crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }
@@ -377,7 +368,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
             .with_test_origin("https://example.invalid", &base),
         files: DirectFileLimits::default(),
     };
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let error = synchronization::synchronize_with_services(
         &session(root.path(), false),
         false,
@@ -387,10 +378,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     .await
     .unwrap_err();
     assert!(format!("{error:#}").contains("required companion"));
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     let empack_core::model::PlacementIntent::ByFile(roles) =
         &mut intent.roots.get_mut(&key).unwrap().placement
     else {
@@ -408,7 +396,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
         empack_core::path::InstallDestination::parse("resourcepacks/extra-renamed.zip").unwrap();
     *extra = NonEmpty::new(vec![placement.clone()]).unwrap();
     write(&intent);
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     for dry in [true, false] {
         synchronization::synchronize_with_services(
             &session(root.path(), dry),
@@ -419,10 +407,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
         .await
         .unwrap();
         if dry {
-            assert_eq!(
-                crate::application::engine_host::tests::snapshot(root.path()),
-                before
-            );
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
         }
     }
     let resolved = project(root.path());
@@ -434,14 +419,14 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
         .find(|file| file.slot.as_str() == "extras.zip")
         .unwrap();
     assert_eq!(extra.placements.as_slice(), &[placement]);
-    let stable = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let stable = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
     assert_eq!(
-        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         stable
     );
     let mut value: serde_json::Value = serde_saphyr::from_str(
@@ -484,7 +469,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
         .with_body(json!([second.clone(), first]).to_string())
         .create_async()
         .await;
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     update::update_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
@@ -493,7 +478,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     .await
     .unwrap();
     assert_eq!(
-        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
     let authored = fs::read(root.path().join("project/empack.yml")).unwrap();
@@ -569,7 +554,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
             .create_async()
             .await;
     }
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     update::adopt_with_services(
         &session(root.path(), false),
         vec![key.as_str().into()],
@@ -578,7 +563,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
     .await
     .unwrap();
     assert_eq!(
-        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
     for _ in 0..2 {
@@ -591,7 +576,7 @@ async fn host_provider_roles_survive_update_adoption_and_side_projection() {
         .await
         .unwrap();
         assert_eq!(
-            crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }

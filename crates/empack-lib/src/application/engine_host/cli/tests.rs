@@ -99,7 +99,7 @@ fn pin_and_source_validation_never_reinterprets_invalid_input() {
 async fn headless_search_and_conflicting_provider_url_preserve_entire_project() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let mut selected = options("renderer");
     selected.platform = None;
     selected.version_id = None;
@@ -116,7 +116,7 @@ async fn headless_search_and_conflicting_provider_url_preserve_entire_project() 
             .to_string()
             .contains("conflicts")
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
 }
 #[tokio::test]
 async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_changes() {
@@ -138,7 +138,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
     for input in ["renderer", "Root0001", "https://modrinth.com/mod/renderer"] {
         let root = tempfile::tempdir().unwrap();
         fixture(root.path()).await;
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         add_with_catalog(
             &session(root.path(), true),
             options(input),
@@ -146,7 +146,7 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         )
         .await
         .unwrap();
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         add_with_catalog(
             &session(root.path(), false),
             options(input),
@@ -199,14 +199,14 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
             intent_before
         );
         assert_eq!(project(root.path()).lock(), prior.as_ref().unwrap());
-        let before = super::super::tests::snapshot(&root.path().join("project"));
+        let before = crate::test_support::file_bytes(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(&session(root.path(), false), false)
                 .await
                 .unwrap();
         }
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }
@@ -231,9 +231,9 @@ async fn direct_cli_files_publish_together_and_failed_member_keeps_previous_tree
     selected.platform = None;
     selected.version_id = None;
     selected.inputs.push("broken.jar".into());
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     assert!(add(&session(root.path(), false), selected).await.is_err());
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     let mut selected = options("fixture.jar");
     selected.platform = None;
     selected.version_id = None;
@@ -276,7 +276,7 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
     let resolution = server.mock("GET", "/project/Right001")
         .with_body(json!({"id":"Right001","slug":"chosen","title":"Chosen","project_type":"mod","loaders":["fabric"]}).to_string())
         .expect(1).create_async().await;
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
     let selector = search(
         &selected_session,
@@ -298,7 +298,7 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
     assert_eq!(resolved.id.to_string(), "Right001");
     request.assert_async().await;
     resolution.assert_async().await;
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
 }
 
 #[tokio::test]
@@ -356,7 +356,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             download_as_local: false,
             continue_independent: false,
         };
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         let result = add_with_catalog(
             &session(root.path(), true),
             selected(),
@@ -364,7 +364,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
         )
         .await;
         assert_eq!(result.is_ok(), outcome == "exact", "{outcome}: {result:?}");
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         let result = add_with_catalog(
             &session(root.path(), false),
             selected(),
@@ -373,7 +373,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
         .await;
         if outcome != "exact" {
             assert!(result.is_err());
-            assert_eq!(super::super::tests::snapshot(root.path()), before);
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
             continue;
         }
         result.unwrap();
@@ -390,14 +390,14 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             resolved.intent().roots.values().next().unwrap().selection,
             empack_core::model::DependencySelection::ProviderPin(_)
         ));
-        let before = super::super::tests::snapshot(&root.path().join("project"));
+        let before = crate::test_support::file_bytes(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(&session(root.path(), false), false)
                 .await
                 .unwrap();
         }
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }
@@ -474,7 +474,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
         transport: HttpAcquisition::for_loopback_tests(),
         files: DirectFileLimits::default(),
     };
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     assert!(
         update::adopt_with_services(
             &session(root.path(), false),
@@ -484,7 +484,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
         .await
         .is_err()
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     fs::write(&installed, b"updated").unwrap();
     // A selected installation cannot override an authored exact pin.
     let intent_path = root.path().join("project/empack.yml");
@@ -493,7 +493,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
     let lock_bytes = fs::read(&lock_path).unwrap();
     crate::testing::write_authoring(&intent_path, recorded.intent()).unwrap();
     fs::write(&lock_path, DocumentCodec.encode_lock(&recorded).unwrap()).unwrap();
-    let pinned = super::super::tests::snapshot(root.path());
+    let pinned = crate::test_support::file_bytes(root.path());
     assert!(
         update::adopt_with_services(
             &session(root.path(), false),
@@ -503,12 +503,12 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
         .await
         .is_err()
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), pinned);
+    assert_eq!(crate::test_support::file_bytes(root.path()), pinned);
     crate::testing::write_authoring(&intent_path, &intent).unwrap();
     fs::write(&intent_path, intent_bytes).unwrap();
     fs::write(&lock_path, lock_bytes).unwrap();
     fs::write(&metadata, b"invalid foreign metadata [").unwrap();
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     update::adopt_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
@@ -516,7 +516,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     update::adopt_with_services(
         &session(root.path(), false),
         vec![key.as_str().into()],
@@ -539,19 +539,19 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
             .selection,
         PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap())
     );
-    let before = super::super::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
     // The same observed selection establishes a missing first lock; no latest query is allowed.
     fs::remove_file(root.path().join("project/empack.lock")).unwrap();
-    let missing = super::super::tests::snapshot(root.path());
+    let missing = crate::test_support::file_bytes(root.path());
     update::adopt_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
@@ -559,7 +559,7 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), missing);
+    assert_eq!(crate::test_support::file_bytes(root.path()), missing);
     update::adopt_with_services(
         &session(root.path(), false),
         vec![key.as_str().into()],
@@ -572,14 +572,14 @@ async fn provider_adoption_identifies_bytes_without_reading_foreign_metadata() {
         project(root.path()).lock().dependencies[&key].selected,
         adopted.lock().dependencies[&key].selected
     );
-    let restored = super::super::tests::snapshot(&root.path().join("project"));
+    let restored = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         restored
     );
     latest.assert_async().await;
@@ -627,7 +627,7 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         download_as_local: false,
         continue_independent: false,
     };
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     add_with_catalog(
         &session(root.path(), true),
         selected(),
@@ -635,7 +635,7 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     add_with_catalog(
         &session(root.path(), false),
         selected(),
@@ -651,14 +651,14 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         fs::read(root.path().join("project/pack/resourcepacks/assets.zip")).unwrap(),
         bytes
     );
-    let before = super::super::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
     let mut wrong = selected();
@@ -673,7 +673,7 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         .is_err()
     );
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
 }
@@ -689,13 +689,13 @@ async fn file_plans_reject_unbounded_unsafe_and_unrecognized_selections() {
         vec![b'x'; (1 << 20) + 1],
     ] {
         fs::write(&path, bytes).unwrap();
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         assert!(
             file_plan::read(&session(root.path(), false), path.clone())
                 .await
                 .is_err()
         );
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
     }
     #[cfg(unix)]
     {
@@ -768,17 +768,17 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         vec![("level.dat", b"".as_slice())],
     ] {
         write_archive(&bad);
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         assert!(add(&session(root.path(), false), selected()).await.is_err());
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
     }
     write_archive(&[
         ("Wrapped/level.dat", b"world"),
         ("Wrapped/region/r.0.0.mca", b"region"),
     ]);
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     add(&session(root.path(), true), selected()).await.unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     add(&session(root.path(), false), selected()).await.unwrap();
     let resolved = project(root.path());
     assert_eq!(resolved.intent().roots.len(), 1);
@@ -800,12 +800,12 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         2
     );
     for _ in 0..2 {
-        let before = super::super::tests::snapshot(&root.path().join("project"));
+        let before = crate::test_support::file_bytes(&root.path().join("project"));
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }
@@ -833,13 +833,13 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         .unwrap();
     assert_eq!(bytes, b"region");
     fs::write(world.join("region/r.0.0.mca"), b"changed-region").unwrap();
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     assert!(
         synchronize(&session(root.path(), false), false)
             .await
             .is_err()
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     adopt(&session(root.path(), false), vec!["adventure".into()])
         .await
         .unwrap();
@@ -849,13 +849,13 @@ async fn world_archive_members_remain_one_identity_across_commands() {
     // Losing the lock does not authorize claiming existing files as new installations.
     let saved_lock = fs::read(root.path().join("project/empack.lock")).unwrap();
     fs::remove_file(root.path().join("project/empack.lock")).unwrap();
-    let missing_lock = super::super::tests::snapshot(root.path());
+    let missing_lock = crate::test_support::file_bytes(root.path());
     assert!(
         synchronize(&session(root.path(), false), false)
             .await
             .is_err()
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), missing_lock);
+    assert_eq!(crate::test_support::file_bytes(root.path()), missing_lock);
     fs::write(root.path().join("project/empack.lock"), saved_lock).unwrap();
     let rebuilt = project(root.path());
     let mut invalid = rebuilt.lock().clone();
@@ -905,13 +905,13 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         .await
         .unwrap();
     assert!(project(root.path()).intent().roots.is_empty());
-    let retained = super::super::tests::snapshot(&root.path().join("project"));
+    let retained = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
-    assert!(super::super::tests::snapshot(&root.path().join("project")) == retained);
+    assert!(crate::test_support::file_bytes(&root.path().join("project")) == retained);
     fs::write(world.join("untracked.txt"), b"keep me").unwrap();
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {
@@ -947,7 +947,7 @@ async fn provider_world_requires_destination_before_publication() {
     selected.platform = Some(SearchPlatform::Curseforge);
     selected.version_id = None;
     selected.file_id = Some("456".into());
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let error = add_with_catalog(
         &session(root.path(), false),
         selected,
@@ -956,7 +956,7 @@ async fn provider_world_requires_destination_before_publication() {
     .await
     .unwrap_err();
     assert!(format!("{error:#}").contains("worlds require an explicit destination"));
-    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
 }
 
 #[tokio::test]
@@ -1009,7 +1009,7 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
     .await
     .unwrap();
     assert_eq!(project(root.path()).lock().dependencies.len(), 2);
-    let before = super::super::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     update(&session(root.path(), false), vec!["first".into()])
         .await
         .unwrap();
@@ -1017,7 +1017,7 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
         .await
         .unwrap();
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
     assert!(
@@ -1116,7 +1116,7 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     .unwrap();
     let before = project(root.path());
     fs::write(&payload, b"changed locally").unwrap();
-    let changed = super::super::tests::snapshot(root.path());
+    let changed = crate::test_support::file_bytes(root.path());
     update::adopt_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
@@ -1124,7 +1124,7 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), changed);
+    assert_eq!(crate::test_support::file_bytes(root.path()), changed);
     update::adopt_with_services(
         &session(root.path(), false),
         vec![key.as_str().into()],
@@ -1153,14 +1153,14 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
         before.lock().dependencies[&key].files.as_slice()[0].expected
     );
     assert_eq!(fs::read(&payload).unwrap(), b"changed locally");
-    let adopted = super::super::tests::snapshot(&root.path().join("project"));
+    let adopted = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         adopted
     );
     // Explicit source pins still bind adoption; accepting local drift cannot silently relax them.
@@ -1194,7 +1194,7 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     )
     .unwrap();
     fs::write(&payload, b"conflicts with authored pin").unwrap();
-    let before_failure = super::super::tests::snapshot(root.path());
+    let before_failure = crate::test_support::file_bytes(root.path());
     assert!(
         update::adopt_with_services(
             &session(root.path(), false),
@@ -1204,7 +1204,7 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
         .await
         .is_err()
     );
-    assert!(super::super::tests::snapshot(root.path()) == before_failure);
+    assert!(crate::test_support::file_bytes(root.path()) == before_failure);
     #[cfg(unix)]
     {
         let outside = root.path().join("outside");
@@ -1309,7 +1309,7 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
         transport: HttpAcquisition::for_loopback_tests(),
         files: DirectFileLimits::default(),
     };
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     update::adopt_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
@@ -1317,11 +1317,11 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     )
     .await
     .unwrap();
-    assert!(super::super::tests::snapshot(root.path()) == before);
+    assert!(crate::test_support::file_bytes(root.path()) == before);
     for (first, second) in [("unrelated", "unrelated"), ("changed", "original")] {
         fs::write(dir.join("selected.jar"), first).unwrap();
         fs::write(dir.join("copied.jar"), second).unwrap();
-        let bad = super::super::tests::snapshot(root.path());
+        let bad = crate::test_support::file_bytes(root.path());
         assert!(
             update::adopt_with_services(
                 &session(root.path(), false),
@@ -1331,7 +1331,7 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
             .await
             .is_err()
         );
-        assert!(super::super::tests::snapshot(root.path()) == bad);
+        assert!(crate::test_support::file_bytes(root.path()) == bad);
     }
     fs::write(dir.join("selected.jar"), b"changed").unwrap();
     fs::write(dir.join("copied.jar"), b"changed").unwrap();
@@ -1352,16 +1352,16 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
             .selection,
         PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap())
     );
-    let after = super::super::tests::snapshot(&root.path().join("project"));
+    let after = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
-    assert!(super::super::tests::snapshot(&root.path().join("project")) == after);
+    assert!(crate::test_support::file_bytes(&root.path().join("project")) == after);
     // The same observed selection establishes a missing first lock; no latest query is allowed.
     fs::remove_file(root.path().join("project/empack.lock")).unwrap();
-    let missing = super::super::tests::snapshot(root.path());
+    let missing = crate::test_support::file_bytes(root.path());
     update::adopt_with_services(
         &session(root.path(), true),
         vec![key.as_str().into()],
@@ -1369,7 +1369,7 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     )
     .await
     .unwrap();
-    assert_eq!(super::super::tests::snapshot(root.path()), missing);
+    assert_eq!(crate::test_support::file_bytes(root.path()), missing);
     update::adopt_with_services(
         &session(root.path(), false),
         vec![key.as_str().into()],
@@ -1382,14 +1382,14 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
         project(root.path()).lock().dependencies[&key].selected,
         adopted.lock().dependencies[&key].selected
     );
-    let restored = super::super::tests::snapshot(&root.path().join("project"));
+    let restored = crate::test_support::file_bytes(&root.path().join("project"));
     for _ in 0..2 {
         synchronize(&session(root.path(), false), false)
             .await
             .unwrap();
     }
     assert_eq!(
-        super::super::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         restored
     );
     latest.assert_async().await;
@@ -1440,13 +1440,13 @@ async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloadin
             )
             .await
         };
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         assert!(adopt(false).await.is_err());
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         fs::write(root.path().join("project/pack/mods/fixture.jar"), &bytes).unwrap();
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         adopt(true).await.unwrap();
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         adopt(false).await.unwrap();
         let current = project(root.path());
         assert_eq!(current.intent().roots.len(), 2);
@@ -1461,14 +1461,14 @@ async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloadin
                 bytes
             );
         }
-        let adopted = super::super::tests::snapshot(&root.path().join("project"));
+        let adopted = crate::test_support::file_bytes(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(&session(root.path(), false), false)
                 .await
                 .unwrap();
         }
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             adopted
         );
         let mut latest = options("renderer");
@@ -1486,7 +1486,7 @@ async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloadin
             .contains("exact --version-id")
         );
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             adopted
         );
     }
@@ -1563,17 +1563,17 @@ async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete
                 .await
             }
         };
-        let incomplete = super::super::tests::snapshot(root.path());
+        let incomplete = crate::test_support::file_bytes(root.path());
         assert!(adopt(false).await.is_err());
-        assert_eq!(super::super::tests::snapshot(root.path()), incomplete);
+        assert_eq!(crate::test_support::file_bytes(root.path()), incomplete);
         fs::write(
             root.path().join("project/overrides/client/mods/copy.jar"),
             &payload,
         )
         .unwrap();
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         adopt(true).await.unwrap();
-        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
         adopt(false).await.unwrap();
         let resolved = project(root.path());
         let selected = resolved.lock().dependencies.values().next().unwrap();
@@ -1582,14 +1582,14 @@ async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete
             PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer1").unwrap())
         );
         assert_eq!(selected.files.as_slice()[0].placements.as_slice().len(), 2);
-        let committed = super::super::tests::snapshot(&root.path().join("project"));
+        let committed = crate::test_support::file_bytes(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(&session(root.path(), false), false)
                 .await
                 .unwrap();
         }
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             committed
         );
         latest.assert_async().await;
@@ -1703,7 +1703,7 @@ async fn new_provider_adoption_refuses_unknown_and_ambiguous_byte_identity_witho
                 },
             )
         };
-        let before = super::super::tests::snapshot(root.path());
+        let before = crate::test_support::file_bytes(root.path());
         for dry in [true, false] {
             let (host, messages) = session(root.path(), dry).record_status_messages();
             let mut selected = options("renderer.jar");
@@ -1723,7 +1723,7 @@ async fn new_provider_adoption_refuses_unknown_and_ambiguous_byte_identity_witho
                 "{mode}: {diagnostic_text}"
             );
             assert_eq!(
-                super::super::tests::snapshot(root.path()),
+                crate::test_support::file_bytes(root.path()),
                 before,
                 "{mode}, dry={dry}"
             );
@@ -1853,14 +1853,14 @@ async fn primary_placement_update_survives_filename_change_and_converges_with_sy
         );
         assert_eq!(dependency.files.as_slice()[0].slot.as_str(), "primary");
         assert_eq!(dependency.files.as_slice()[0].placements, places);
-        let before = super::super::tests::snapshot(&root.path().join("project"));
+        let before = crate::test_support::file_bytes(&root.path().join("project"));
         for _ in 0..2 {
             synchronize(&session(root.path(), false), false)
                 .await
                 .unwrap();
         }
         assert_eq!(
-            super::super::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
     }

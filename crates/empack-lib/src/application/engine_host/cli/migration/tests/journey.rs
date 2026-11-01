@@ -1,6 +1,6 @@
 //! Controlled host journey with literal authoring and independently expected bytes.
 use super::*;
-use crate::application::engine_host::tests::snapshot;
+use crate::test_support::file_bytes as snapshot;
 use sha2::{Digest, Sha256, Sha512};
 use std::{
     collections::BTreeMap,

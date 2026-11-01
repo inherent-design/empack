@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::{
         Commands,
@@ -17,26 +18,6 @@ use crate::{
 use clap::Parser;
 use std::{collections::BTreeMap, fs};
 
-pub(in crate::application) fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_dir() {
-                visit(root, &entry.path(), files);
-            } else {
-                files.insert(
-                    entry.path().strip_prefix(root).unwrap().to_path_buf(),
-                    fs::read(entry.path()).unwrap(),
-                );
-            }
-        }
-    }
-    let mut files = BTreeMap::new();
-    if root.exists() {
-        visit(root, root, &mut files);
-    }
-    files
-}
 #[test]
 fn recovery_parsing_and_state_selection_have_one_invocation_root() {
     let cli = Cli::try_parse_from([

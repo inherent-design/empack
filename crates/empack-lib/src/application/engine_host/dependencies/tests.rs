@@ -1,5 +1,6 @@
 use super::*;
 use crate::engine::{api::DependencyContent, mrpack::LockedFileKey};
+use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::{
         BuildArgs, InitArgs,
@@ -65,9 +66,6 @@ fn read(root: &Path) -> ResolvedProject {
             "test",
         )
         .unwrap()
-}
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    super::super::tests::snapshot(root)
 }
 fn input(selector: &str, key: Option<&str>) -> ProviderAddInput {
     ProviderAddInput {
