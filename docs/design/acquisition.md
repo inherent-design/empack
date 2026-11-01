@@ -47,7 +47,7 @@ Cache insertion is best-effort and resource-admitted. Failure of disposable cach
 
 Manual association names an exact obligation. Verify bytes against original assertions, not a filename, extension, recent modification or unique-looking candidate. Discovery caches observations within a bounded pass and handles unreadable unrelated candidates without failing explicitly selected valid files. Explicit selection errors remain fatal.
 
-Browser assistance opens verified provider pages only after approval; `--yes` alone does not open a browser. Bounded waiting is attached to the saved recipe and cumulative scan allowance. Timeout leaves continuation intact. Resume revalidates release, assertions, choices, supplied files and destination observations before publication.
+Browser assistance opens verified provider pages only after approval; `--yes` alone does not open a browser. Bounded waiting is attached to the saved recipe and cumulative scan allowance. Timeout leaves continuation intact. After timeout or cancellation, empack attempts to stop the launcher and waits for its exit. If retirement cannot be confirmed, the error reports that uncertainty alongside the original cause. Completed launcher outcomes remain visible after host cancellation. Browser windows remain user-owned. Resume revalidates release, assertions, choices, supplied files and destination observations before publication.
 
 ## Opaque archive inspection
 

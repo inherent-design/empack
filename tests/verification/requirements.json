@@ -6589,6 +6589,49 @@
             "Cancellation reports interruption and the retained Windows process handle is signalled after completion, establishing retirement of that launcher without relying on PID reuse or claiming ownership of a GUI"
           ],
           "remaining_group_evidence": "Actual Windows execution in each product/test graph is required. This exercises launcher supervision, not cmd /c start with a registered desktop browser, a live provider, human acceptance or final packaged-candidate execution."
+        },
+        {
+          "id": "UX-037.launcher-cleanup-diagnostics",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::browser::admission_tests::known_launcher_retirement_preserves_the_original_failure",
+            "empack-lib::application::engine_host::build::browser::admission_tests::unknown_launcher_retirement_preserves_cleanup_and_cancellation_diagnostics"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Confirmed launcher retirement preserves the original cancellation/deadline failure without manufacturing uncertainty from a kill error",
+            "Unconfirmed retirement preserves both kill/wait failure diagnostics and the original typed cancellation or deadline cause, warning that the launcher may still be running without adding runtime ownership recovery"
+          ],
+          "remaining_group_evidence": "Pure failure-composition policy only; real Unix/Windows launcher lifetime, actual desktop handoff, public continuation, all declared executions and consumer/package observations remain separate requirements."
+        },
+        {
+          "id": "UX-037.launcher-terminal-outcome",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::browser::admission_tests::launcher_terminal_outcome_survives_host_cancellation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "After observed worker startup, actual host cancellation reaches its owned WorkScope; the terminal launcher failure retains its cancellation type and unconfirmed-retirement details instead of becoming only a stale worker result",
+            "A completed handoff returned after cancellation remains successful, while the owned worker and its resource reservations still retire before the host returns"
+          ],
+          "remaining_group_evidence": "Controlled terminal facts through the actual production host/WorkScope completion path, not a browser or an injected operating-system failure. Generic content/publication acceptance remains unchanged; real Unix/Windows launcher tests, every required variant and consumer/package tasks remain separate."
         }
       ],
       "owner_now": [
