@@ -6696,6 +6696,27 @@
             "x86_64-pc-windows-msvc"
           ],
           "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        },
+        {
+          "id": "UX-041.actual-reference-consumer",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::reference-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The supported Prism consumer imports the exact reference candidate, matches its independently expected inventory and invokes the required preparation and launch integration",
+            "Changed descriptor identity refuses before Java; startup, launcher-written seed-icon preservation and signed update/relaunch are recorded against the admitted candidate",
+            "Actual consumer task records and supporting observations are required; component preparation, package execution and headless parser observations cannot supply this task"
+          ]
         }
       ],
       "owner_now": [
@@ -6708,7 +6729,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-042",
@@ -6800,6 +6821,27 @@
             "x86_64-pc-windows-msvc"
           ],
           "remaining_group_evidence": "Actual supported Prism import/startup and its generated preparation/wrapper process chain remain separate consumer obligations; a headless CLI or archive check cannot satisfy them."
+        },
+        {
+          "id": "UX-042.actual-bundled-consumer",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::bundled-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The supported Prism consumer imports the exact bundled candidate and matches the independently expected selected client content and required configuration",
+            "The standalone instance starts without recipient empack; this records actual consumer behavior rather than inferring it from an archive member set",
+            "The actual task and supporting observations remain required independently of component, ordinary CLI and final-archive checks"
+          ]
         }
       ],
       "owner_now": [
@@ -6808,7 +6850,7 @@
       "owner_09": [
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-043",
@@ -10730,6 +10772,26 @@
             "Seed reconciliation preserves local edits and requires an explicit decision before reclaiming seed-owned content as managed"
           ],
           "remaining_group_evidence": "The pure generic ownership rule does not replace the stricter Prism consumer compatibility check or real filesystem execution."
+        },
+        {
+          "id": "UX-070.actual-launcher-icon-preservation",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::reference-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual Prism-managed candidate preserves the launcher-written seed-owned game-root icon through preparation, startup and a signed update/relaunch",
+            "This consumer task supplements the independent world-group, authenticated-policy and unrelated-image reconciliation cases; it does not replace their scope or establish gameplay compatibility"
+          ]
         }
       ],
       "owner_now": [
@@ -10740,7 +10802,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-071",
