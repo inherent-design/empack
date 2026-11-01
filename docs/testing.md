@@ -85,6 +85,8 @@ The executable harness lives in `empack-tests::harness::process`, outside the pr
 
 Children receive a positive environment allowlist and fixture-local home, cache, state and temporary paths. Tests explicitly add any needed fixture tools or product settings. Harness controls and ambient credentials are not forwarded. A failed mutating command is not replayed after matching a timeout diagnostic. Nextest CI retries are disabled so the original failure remains visible. Live runtime probes retain bounded, best-effort launcher output on timeout, with at most 64 KiB per stream. These tails help diagnose the failure; they do not turn a timeout into a pass or replace complete successful output assertions. Managed runtime probes execute the generated installer first (300-second bound), require completed ownership and selected content, then execute the generated start script (90-second bound). Startup still invokes preparation again, exercising convergence before reaching Minecraft. Installation failure cannot be counted as startup evidence. These help/EULA probes are separate from interactive console and gameplay acceptance.
 
+Cleanup read-access fixtures independently establish Unix permission denial or a Windows sharing violation on a selected artifact or cache object. After restoring only the fixture's access, they compare complete project and host snapshots, including file bytes, attributes and empty directories, and require the same approved cleanup to succeed.
+
 Compare the editor schemas with a separately built ordinary default CLI:
 
 ```sh

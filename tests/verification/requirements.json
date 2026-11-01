@@ -12720,7 +12720,7 @@
           "id": "UX-079.permission-preflight",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::cli_build::cli_clean_permission_failure_preserves_all_selected_scopes"
+            "empack-tests::cli_build::cli_clean_read_denial_preserves_all_selected_scopes"
           ],
           "required_platforms": [
             "linux",
@@ -12779,6 +12779,25 @@
             "Read-only recovery inspection converges afterward and ordinary cleanup succeeds even when private driver controls target an unrelated sentinel; those bytes remain unchanged"
           ],
           "remaining_group_evidence": "This combines native crash setup with ordinary executable recovery; it does not claim an OS interrupt delivered during the ordinary cleanup command, nor complete every platform, permission or final-package variant."
+        },
+        {
+          "id": "UX-079.windows-read-sharing-preflight",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::cli_clean_read_denial_preserves_all_selected_scopes"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An independently verified Windows sharing violation on either a selected artifact or cache blob refuses combined cleanup before deleting the other scope or creating durable state",
+            "After releasing only the fixture-owned handle, complete project/host snapshots preserve file bytes, read-only attributes and empty directories",
+            "The same approved cleanup succeeds after access is restored and preserves author bytes and unknown downloads; sharing denial does not stand in for an ACL-permission claim"
+          ]
         }
       ],
       "owner_now": [
