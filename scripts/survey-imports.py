@@ -29,8 +29,8 @@ repository-owned immutable input and expected-output checks.
 Prerequisites:
     - Python 3.10+
     - Network access to Modrinth and CurseForge APIs
-    - empack binary (auto-detected from target/release or target/debug)
-    - CurseForge API key is hardcoded (same as empack's default)
+    - empack binary (auto-detected from target/debug, then target/release, then PATH)
+    - EMPACK_KEY_CURSEFORGE environment variable for CurseForge API requests
 
 Usage:
     # Default curated rolling survey across 7 hardcoded packs
