@@ -6689,7 +6689,7 @@
         "PEND"
       ],
       "required_assertions": "Copyable public next step completes selected workflow; no undocumented file edits; partial successes not called complete.",
-      "required_work": "Task script intentionally uses only stdout/stderr and help; independent reviewer checks discoverability.",
+      "required_work": "Bind the existing printed-shell recovery journey and the four PendingKind workflows (build, import, sync, instance) to public diagnostics, reported selectors/next arguments, verified supplied inputs and exact completed inventories. Keep terminal approval/refusal and the separate fresh-user pending-recovery procedure mandatory. Complete case decomposition does not establish execution or human discoverability.",
       "evidence_tiers": [
         "X",
         "I",
@@ -6740,7 +6740,32 @@
             "Public inspection supplies the selected operation; closed/piped answers, preview and actual terminal decline cannot apply it",
             "An actual terminal Ctrl-C at the recovery approval prompt reports interruption and exits 130 without losing pending evidence; a later explicit approval completes the exact candidate"
           ],
-          "remaining_group_evidence": "Human discoverability using only public output/help, other pending workflows, required platform variants and final candidate execution remain unqualified."
+          "remaining_group_evidence": "The four other pending workflow kinds are bound separately below. Human discoverability, every declared host/product variant and final-candidate execution still require their own actual observations."
+        },
+        {
+          "id": "UX-039.public-pending-next-steps",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes",
+            "empack-tests::journey_pending_import::journey_pending_import_replays_retained_archive_using_public_selector",
+            "empack-tests::journey_pending::journey_pending_sync_retains_partial_inputs_across_restart_and_cleanup",
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "All four current PendingKind workflows consume operation/input selectors and next-command arguments from public diagnostics or pending reports, rather than inspecting private records or manually editing durable state to resume",
+            "Wrong or incomplete supplied bytes remain failures with pending work retained and no completed publication; partial sync/instance inputs survive loss of the original source and ordinary cache cleanup",
+            "The reported next command plus verified explicit file associations completes the selected workflow and clears its pending row; independent expectations check build/import-export archive members and synchronized/installed file inventories",
+            "These controlled executable journeys establish public recovery wiring, not a live provider restriction or fresh-user discoverability; the separate human procedure and all original variants remain mandatory"
+          ]
         },
         {
           "id": "UX-039.fresh-user-recovery",
@@ -6769,7 +6794,7 @@
         "empack-cli",
         "shared pending semantics + native/browser retention and UI"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-040",
