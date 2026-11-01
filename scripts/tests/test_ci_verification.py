@@ -449,14 +449,14 @@ class RequiredGate(unittest.TestCase):
                         for case in row["cases"]}
             native_complete = {
                 "UX-002", "UX-005", "UX-006", "UX-007", "UX-011", "UX-015", "UX-016", "UX-022", "UX-023",
-                "UX-024", "UX-027", "UX-028", "UX-029", "UX-036", "UX-038",
-                "UX-040", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-075",
+                "UX-024", "UX-027", "UX-028", "UX-029", "UX-034", "UX-036", "UX-038",
+                "UX-040", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-075", "UX-076",
             }
             for requirement in acceptance:
-                # This synthetic full native matrix now supplies every bound
-                # configuration, status, explanation, replacement, content-kind,
-                # side-choice/definition changes, pending, build and signing-key setup cases.
-                # Entry identity needs package proof; partial groups cannot pass merely because their current tests do.
+                # This synthetic matrix supplies the complete native definitions
+                # listed above, including pending remount and runtime recovery.
+                # Package/live/consumer obligations and partial decomposition
+                # cannot pass merely because the selected native tests do.
                 self.assertEqual(requirement["status"],
                                  "PASS" if requirement["id"] in native_complete else "NOT_RUN",
                                  requirement["id"])
