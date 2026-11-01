@@ -1,6 +1,9 @@
 """Synthetic transport tests; no GitHub mutation or consumer acceptance is performed."""
 import copy
+from contextlib import redirect_stdout
 import hashlib
+import importlib.util
+import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -193,6 +196,26 @@ class AcceptanceAssets(unittest.TestCase):
             self.assertEqual(github.pages("repos/owner/repo/releases"), [])
             github.download("repos/owner/repo/releases/assets/1", self.root / "download")
         self.assertEqual(calls.call_count, 2)
+
+    def test_command_arguments_wire_both_operations_without_product_execution(self):
+        spec = importlib.util.spec_from_file_location("acceptance_command",
+            Path(__file__).parents[1] / "acceptance-assets.py")
+        command = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(command)
+        common = ["--revision", REVISION, "--version", VERSION, "--archive-evidence-sha256", PAYLOAD]
+        before = self.path.read_bytes()
+        with redirect_stdout(io.StringIO()) as output:
+            with patch("sys.argv", ["acceptance-assets.py", "stage", *common,
+                                   "--record", str(self.path), "--output", str(self.root / "cli-stage")]):
+                self.assertEqual(command.main(), 0)
+            with patch("verification.acceptance_assets.GitHub", return_value=Remote([self.path])), \
+                 patch("sys.argv", ["acceptance-assets.py", "collect", *common,
+                                    "--repository", "owner/repo", "--output", str(self.root / "cli-collect")]):
+                self.assertEqual(command.main(), 0)
+        self.assertIn("no acceptance claimed", output.getvalue())
+        manifest = json.loads((self.root / "cli-collect/intake.json").read_text())
+        self.assertEqual((self.root / "cli-collect" / manifest["records"][0]).read_bytes(), before)
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_release_gate_forwards_collected_records_and_preserves_gate_attempts(self):
         workflow = (Path(__file__).parents[2] / ".github/workflows/release.yml").read_text()
