@@ -7576,6 +7576,33 @@
             "Literal binary/copy-mode bytes and captured executable/read-only attributes retain their meaning without editing source templates",
             "Native revalidation confirms renderer inputs remain unchanged; no distribution or private host state is created"
           ]
+        },
+        {
+          "id": "UX-047.packaged-layered-authoring",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_authoring::journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the_dependency"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "The exact extracted default product from each of the five target archives executes the literal authoring/build/update/adoption/removal journey outside the checkout, without rebuilding or selecting a workspace fallback",
+            "Prism and mrpack outputs match independent complete member sets and exact configuration, recipe, resource and dependency bytes; common and side-layer placement stay distinct and source bytes, directories and portable attributes remain protected",
+            "Ordinary development/native execution of this same journey does not establish its package context; archive/build/executable admission and the underlying execution receipt are required"
+          ]
         }
       ],
       "owner_now": [
@@ -7588,7 +7615,7 @@
         "empack-engine codecs/inspection + CLI renderer",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-048",
