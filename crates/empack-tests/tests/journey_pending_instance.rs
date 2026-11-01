@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, fs, path::PathBuf};
 
 #[path = "support/approval.rs"]
 mod approval;
-use empack_tests::harness::workspace::snapshot;
+use empack_tests::harness::workspace::{snapshot, snapshot_excluding};
 #[path = "support/pending.rs"]
 mod public_pending;
 #[path = "support/retained.rs"]
@@ -112,6 +112,24 @@ impl Fixture {
             .stderr(contains("exact manual inputs remain pending"));
         assert_eq!(snapshot(self.project.dir()).files, before);
     }
+}
+
+fn assert_installed_content(fixture: &Fixture) {
+    assert_eq!(
+        snapshot(&fixture.target.join("game")).files,
+        BTreeMap::from([
+            (
+                PathBuf::from(".empack-layout"),
+                b"empack-game-layout-v1\n".to_vec()
+            ),
+            (PathBuf::from("mods/first.jar"), ONE.to_vec()),
+            (PathBuf::from("mods/second.jar"), TWO.to_vec()),
+        ])
+    );
+    assert_eq!(
+        fs::read(fixture.target.join("player-notes.txt")).unwrap(),
+        b"keep player notes"
+    );
 }
 
 #[test]
@@ -257,21 +275,7 @@ fn instance_roundtrip(
         .success()
         .stdout(contains(hash(&fixture.payload)));
     assert_eq!(fixture.list()["operations"], json!([]));
-    assert_eq!(
-        snapshot(&fixture.target.join("game")).files,
-        BTreeMap::from([
-            (
-                PathBuf::from(".empack-layout"),
-                b"empack-game-layout-v1\n".to_vec()
-            ),
-            (PathBuf::from("mods/first.jar"), ONE.to_vec()),
-            (PathBuf::from("mods/second.jar"), TWO.to_vec()),
-        ])
-    );
-    assert_eq!(
-        fs::read(fixture.target.join("player-notes.txt")).unwrap(),
-        b"keep player notes"
-    );
+    assert_installed_content(&fixture);
     assert_eq!(fs::read(&supplied).unwrap(), TWO);
     fs::write(&fixture.release, &fixture.payload).unwrap();
     let completed = snapshot(fixture.project.dir()).files;
@@ -422,6 +426,37 @@ fn journey_pending_instance_resume_requires_fresh_approval() {
     assert_eq!(
         fs::read(fixture.host.path().join("first renamed.bin")).unwrap(),
         ONE
+    );
+    let selected = fixture
+        .target
+        .strip_prefix(fixture.project.dir())
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let outside = snapshot_excluding(fixture.project.dir(), &[selected]);
+    fixture
+        .command()
+        .args(
+            operation["next"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap()),
+        )
+        .args(["--file", &association])
+        .assert()
+        .success()
+        .stdout(contains(hash(&fixture.payload)));
+    assert_eq!(fixture.list()["operations"], json!([]));
+    assert_installed_content(&fixture);
+    assert_eq!(fs::read(&input).unwrap(), TWO);
+    assert_eq!(
+        fs::read(fixture.host.path().join("first renamed.bin")).unwrap(),
+        ONE
+    );
+    assert_eq!(
+        snapshot_excluding(fixture.project.dir(), &[selected]),
+        outside
     );
 }
 

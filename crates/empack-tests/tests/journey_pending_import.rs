@@ -12,7 +12,7 @@ use std::{fs, path::PathBuf};
 
 #[path = "support/approval.rs"]
 mod approval;
-use empack_tests::harness::workspace::snapshot;
+use empack_tests::harness::workspace::{snapshot, snapshot_excluding};
 #[path = "support/pending.rs"]
 mod public_pending;
 #[path = "support/retained.rs"]
@@ -336,6 +336,36 @@ fn journey_pending_import_resume_requires_fresh_approval() {
         "(?i)apply this import plan",
     );
     assert_eq!(fixture.pending(), operation);
+    let selected = fixture
+        .target
+        .strip_prefix(fixture.project.dir())
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let outside = snapshot_excluding(fixture.project.dir(), &[selected]);
+    fixture
+        .command()
+        .args(
+            operation["next"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap()),
+        )
+        .args(["--file", &association, "--import-local-files"])
+        .assert()
+        .success();
+    assert_eq!(fixture.list()["operations"], json!([]));
+    fixture
+        .command()
+        .args(["build", "modrinth"])
+        .assert()
+        .success();
+    assert_imported_archive(&fixture);
+    assert_eq!(
+        snapshot_excluding(fixture.project.dir(), &[selected]),
+        outside
+    );
 }
 
 #[test]

@@ -487,8 +487,30 @@
             "telemetry"
           ],
           "assertions": [
-            "Retained import and instance journeys obtain selectors from public output and refuse unapproved closed/piped stdin requests without changing selected workspace, store or supplied inputs",
-            "The same saved inputs survive preview, terminal refusal and Ctrl-C at the approval prompt (status 130), and then complete the exact expected project or installation after deliberate approval"
+            "Retained import and instance journeys obtain operation/input selectors from public output, verify explicit supplied bytes and preserve source content across failed or partial continuation",
+            "Only verified completion clears the pending row; literal exported/archive and installed game inventories distinguish retained input from a completed operation"
+          ]
+        },
+        {
+          "id": "UX-003.retained-import-and-instance-approval",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_pending_import::journey_pending_import_resume_requires_fresh_approval",
+            "empack-tests::journey_pending_instance::journey_pending_instance_resume_requires_fresh_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fresh import and instance continuation approval cannot be granted by closed or piped stdin; explicit preview, real terminal refusal and prompt interruption preserve workspace, retained storage, supplied files, directories and portable attributes; interruption exits 130",
+            "The same pending record and supplied inputs remain available after every refusal, then its reported next command succeeds after explicit approval without requiring the original archive or release file",
+            "Import re-export and installed game content match literal independent inventories; pending work clears, player notes and supplied bytes survive, and complete snapshots outside the selected destination remain unchanged"
           ]
         },
         {
