@@ -9885,11 +9885,11 @@
           ],
           "assertions": [
             "Generated exact native snapshots install the independently checked side/optional inventory into game client/server and Prism client placements",
-            "A wrong descriptor hash or corrupt included asset refuses without changing target bytes; repeat preparation retains choices, seed content and unrelated files",
+            "A wrong descriptor hash or corrupt included asset refuses without changing target bytes, portable native attributes or directory membership; repeat preparation retains choices, seed edits, unrelated files and empty author/player directories",
             "Prism placement preserves unrelated component metadata and launcher settings byte-for-byte while retaining the exact selected runtime",
             "Invalid author text in the instance is not interpreted as authoring intent during snapshot installation"
           ],
-          "remaining_group_evidence": "Manual-acquisition continuations, actual launcher import/startup and final-package execution require separate evidence; this fixture does not establish those boundaries."
+          "remaining_group_evidence": "The separate supplied-input and package cases retain those boundaries; actual launcher/JVM acceptance belongs to the consumer requirements and is not inferred from this controlled installation."
         },
         {
           "id": "UX-061.explicit-first-ownership",
@@ -9912,7 +9912,100 @@
             "Prism rejects server selection and a competing minecraft directory before changing the instance",
             "Explicitly replacing the named destination establishes an idempotent installation while preserving invalid author text and unrelated root/game files"
           ],
-          "remaining_group_evidence": "This controlled offline executable fixture does not establish real launcher or game acceptance, live acquisition or final-package qualification."
+          "remaining_group_evidence": "Exact package execution is separately required. Explicit replacement of a named conflict is not adoption of unrelated content or legacy internal state."
+        },
+        {
+          "id": "UX-061.exact-descriptor-selection",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::release::tests::exact_payload_identity_is_distinct_from_semantic_equality",
+            "empack-lib::engine::release::tests::strict_decoding_rejects_duplicates_unknown_fields_and_future_schemas"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Semantically equivalent JSON with different bytes cannot satisfy the selected payload digest; exact bytes pass only with a compatible engine version",
+            "Duplicate/unknown fields, future schemas and oversized release documents are rejected by strict decoding before native effects"
+          ]
+        },
+        {
+          "id": "UX-061.handler-snapshot-publication",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::commands::tests::native_snapshot_dispatch_previews_installs_updates_and_rejects_tampering"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A controlled public command session previews a Prism snapshot without changing observed root bytes, then installs its selected A content and explicitly replaces it with B",
+            "Inspection and repair preview remain read-only; actual repair and explicit conflict decisions preserve their selected meaning",
+            "Corrupt incoming asset bytes refuse without changing the installed project or manufacturing author documents; controlled bytes are not a runnable mod"
+          ]
+        },
+        {
+          "id": "UX-061.required-supplied-inputs",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Initial installation retains verified supplied content but does not publish an incomplete selection; public pending inspection identifies the remaining required input",
+            "Wrong bytes, unknown slots and duplicate associations refuse without changing observed instance/state bytes; retained exact inputs survive source loss, cache cleanup and command restart",
+            "Correct renamed input completes the selected installation through public resume keys and preserves the existing player sentinel"
+          ]
+        },
+        {
+          "id": "UX-061.packaged-exact-first-installation",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_build::native_exports::cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports",
+            "empack-tests::cli_build::native_exports::cli_snapshot_install_requires_explicit_ownership_in_both_layouts",
+            "empack-tests::journey_pending_instance::journey_pending_instance_retains_verified_inputs_and_uses_public_resume_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each of the five exact extracted default executables installs the independently expected native side/choice inventory into game client/server and Prism client layouts",
+            "Wrong selected digests or corrupt included content preserve the complete observed target footprint; repeated preparation preserves seed edits, choices and empty author/player directories",
+            "Existing matching or differing files, unowned layout markers and incompatible Prism environments require the documented refusal or exact explicit replacement; required supplied content follows the verified public continuation",
+            "Component-produced descriptors and fixture bytes do not establish actual launcher or JVM acceptance; those remain separate consumer requirements"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ]
         }
       ],
       "owner_now": [
@@ -9925,7 +10018,7 @@
         "portable evidence/codecs; content/transport host ports",
         "native effects and recovery in empack-native; expected inventories remain shared"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-062",

@@ -1,9 +1,8 @@
 //! Native snapshot exports and public installation, with literal content oracles.
-use empack_tests::harness::workspace::snapshot;
 use empack_tests::harness::{
     archive::{Member, distribution_inventory},
     process::{TestProject, assert_dist_artifact_suffix, offline_command},
-    workspace::snapshot as observe_workspace,
+    workspace::snapshot,
 };
 use predicates::{prelude::PredicateBooleanExt, str::contains};
 use serde_json::{Value, json};
@@ -211,6 +210,10 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         &format!("{game}/unowned.txt"),
                         b"player sentinel",
                     );
+                    let empty_author = instance.join("empty author directory");
+                    let empty_player = instance.join(game).join("saves/empty player directory");
+                    fs::create_dir_all(&empty_author).unwrap();
+                    fs::create_dir_all(&empty_player).unwrap();
                     // Instance installation does not reinterpret an author draft.
                     put(&instance, "empack.yml", b"invalid author draft: [\n");
                     let profile = br#"{ "formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.21.1","important":true},{"uid":"fixture.extra","version":"1","note":"keep"}],"note":"retain formatting" }"#;
@@ -228,16 +231,12 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         }
                         cmd
                     };
-                    let before = snapshot(&instance).files;
+                    let before = snapshot(&instance);
                     install(&"0".repeat(64))
                         .assert()
                         .failure()
                         .stderr(contains("Selected release payload identity mismatch"));
-                    assert_eq!(
-                        snapshot(&instance).files,
-                        before,
-                        "wrong digest changed instance"
-                    );
+                    assert_eq!(snapshot(&instance), before, "wrong digest changed instance");
                     // Included selected bytes must be checked even if an earlier
                     // installation populated the shared disposable cache.
                     let asset = export.path().join(format!("assets/{}", hash(CONTENT[3].2)));
@@ -247,12 +246,14 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         .failure()
                         .stderr(contains("Content differs from the accepted observation"));
                     assert_eq!(
-                        snapshot(&instance).files,
+                        snapshot(&instance),
                         before,
                         "corrupt asset changed instance"
                     );
                     fs::write(&asset, CONTENT[3].2).unwrap();
                     install(&identity).assert().success();
+                    assert!(empty_author.is_dir());
+                    assert!(empty_player.is_dir());
                     let mut expected = BTreeMap::from([
                         (
                             ".empack-layout".into(),
@@ -297,7 +298,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         &format!("{game}/config/settings.txt"),
                         b"player configuration",
                     );
-                    let installed = snapshot(&instance).files;
+                    let installed = snapshot(&instance);
                     for _ in 0..2 {
                         command(&instance, host.path())
                             .args(["--yes", "instance", "prepare"])
@@ -306,7 +307,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                             .assert()
                             .success();
                         assert_eq!(
-                            snapshot(&instance).files,
+                            snapshot(&instance),
                             installed,
                             "repeat preparation changed saved choices or seed bytes"
                         );
@@ -329,7 +330,7 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
     let archive = assert_dist_artifact_suffix(project.dir(), "-empack-references.empack");
     let members = distribution_inventory(&archive, "zip");
     let identity = inventory(&members);
-    let author = observe_workspace(project.dir());
+    let author = snapshot(project.dir());
     for (layout, side) in [("game", "client"), ("game", "server"), ("prism", "client")] {
         let export = tempfile::tempdir().unwrap();
         for (name, member) in &members {
@@ -403,15 +404,15 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
         drop(export);
         assert!(!export_path.exists());
         fs::remove_file(&managed).unwrap();
-        let missing = observe_workspace(&instance);
-        let retained = observe_workspace(host.path());
+        let missing = snapshot(&instance);
+        let retained = snapshot(host.path());
         command(&instance, host.path())
             .args(["--dry-run", "instance", "repair"])
             .assert()
             .success()
             .stdout(contains("0 downloads"));
-        assert_eq!(observe_workspace(&instance), missing);
-        assert_eq!(observe_workspace(host.path()), retained);
+        assert_eq!(snapshot(&instance), missing);
+        assert_eq!(snapshot(host.path()), retained);
         command(&instance, host.path())
             .args(["--yes", "instance", "repair"])
             .assert()
@@ -421,13 +422,13 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
 
         // A verified cache hit does not authorize discarding local managed edits.
         fs::write(&managed, b"local managed edit").unwrap();
-        let edited = observe_workspace(&instance);
+        let edited = snapshot(&instance);
         command(&instance, host.path())
             .args(["--yes", "instance", "repair"])
             .assert()
             .failure()
             .stderr(contains("ModifiedManagedFile"));
-        assert_eq!(observe_workspace(&instance), edited);
+        assert_eq!(snapshot(&instance), edited);
         command(&instance, host.path())
             .args(["--yes", "instance", "repair", "--replace", "managed.txt"])
             .assert()
@@ -435,7 +436,7 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
         assert_eq!(snapshot(&instance.join(game)).files, expected);
 
         fs::remove_file(&managed).unwrap();
-        let missing = observe_workspace(&instance);
+        let missing = snapshot(&instance);
         let absent_cache = host.path().join("absent cache");
         assert!(!absent_cache.exists());
         command_with_cache(&instance, host.path(), &absent_cache)
@@ -446,8 +447,8 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
                 "Instance was not applied; exact manual inputs remain pending",
             ))
             .stdout(contains("Applied release").not());
-        assert_eq!(observe_workspace(&instance), missing);
-        let pending_host = observe_workspace(host.path());
+        assert_eq!(snapshot(&instance), missing);
+        let pending_host = snapshot(host.path());
         let output = command_with_cache(&instance, host.path(), &absent_cache)
             .args(["pending", "list", "--json"])
             .output()
@@ -478,14 +479,14 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .assert()
             .success()
             .stdout(contains(&identity));
-        assert_eq!(observe_workspace(&instance), missing);
-        assert_eq!(observe_workspace(host.path()), pending_host);
+        assert_eq!(snapshot(&instance), missing);
+        assert_eq!(snapshot(host.path()), pending_host);
         assert_eq!(
             fs::read(instance.join("notes.txt")).unwrap(),
             b"unrelated player notes"
         );
     }
-    assert_eq!(observe_workspace(project.dir()), author);
+    assert_eq!(snapshot(project.dir()), author);
 }
 
 #[test]
@@ -503,7 +504,7 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
         put(export.path(), name, member.small.as_ref().unwrap());
     }
     let authored = snapshot(project.dir()).files;
-    let exported = observe_workspace(export.path());
+    let exported = snapshot(export.path());
     for layout in ["game", "prism"] {
         let root = tempfile::tempdir().unwrap();
         let instance = root.path().join("unowned instance Ω");
@@ -530,40 +531,40 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
         // Identical bytes do not establish ownership, nor does blanket --yes.
         for bytes in [CONTENT[1].2, b"different local bytes".as_slice()] {
             fs::write(&managed, bytes).unwrap();
-            let before = observe_workspace(&instance);
+            let before = snapshot(&instance);
             install("client")
                 .assert()
                 .failure()
                 .stderr(contains("UnownedDestination"));
-            assert_eq!(observe_workspace(&instance), before);
+            assert_eq!(snapshot(&instance), before);
         }
         fs::remove_file(&managed).unwrap();
         let marker = instance.join(game).join(".empack-layout");
         fs::write(&marker, format!("empack-{layout}-layout-v1\n")).unwrap();
-        let before = observe_workspace(&instance);
+        let before = snapshot(&instance);
         install("client").assert().failure().stderr(contains(
             "Layout marker is not owned by this completed instance",
         ));
-        assert_eq!(observe_workspace(&instance), before);
+        assert_eq!(snapshot(&instance), before);
         fs::remove_file(marker).unwrap();
         if layout == "prism" {
-            let before = observe_workspace(&instance);
+            let before = snapshot(&instance);
             install("server")
                 .assert()
                 .failure()
                 .stderr(contains("Prism layout requires the client environment"));
-            assert_eq!(observe_workspace(&instance), before);
+            assert_eq!(snapshot(&instance), before);
             put(
                 &instance,
                 "minecraft/notes.txt",
                 b"other launcher game root",
             );
-            let before = observe_workspace(&instance);
+            let before = snapshot(&instance);
             install("client")
                 .assert()
                 .failure()
                 .stderr(contains("Prism layout requires minecraft/ to be absent"));
-            assert_eq!(observe_workspace(&instance), before);
+            assert_eq!(snapshot(&instance), before);
             fs::remove_file(instance.join("minecraft/notes.txt")).unwrap();
             fs::remove_dir(instance.join("minecraft")).unwrap();
         }
@@ -585,10 +586,10 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
             fs::read(instance.join(game).join("unowned.txt")).unwrap(),
             b"player sentinel"
         );
-        let installed = observe_workspace(&instance);
+        let installed = snapshot(&instance);
         install("client").assert().success();
-        assert_eq!(observe_workspace(&instance), installed);
-        assert_eq!(observe_workspace(export.path()), exported);
+        assert_eq!(snapshot(&instance), installed);
+        assert_eq!(snapshot(export.path()), exported);
         assert_eq!(snapshot(project.dir()).files, authored);
     }
 }
@@ -641,9 +642,9 @@ fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed
             fs::read(instance.join("game/config/extra.txt")).unwrap(),
             CONTENT[4].2
         );
-        let before = observe_workspace(&instance);
-        let stored = observe_workspace(host.path());
-        let exported = observe_workspace(export.path());
+        let before = snapshot(&instance);
+        let stored = snapshot(host.path());
+        let exported = snapshot(export.path());
         let inspected = command(&instance, host.path())
             .args(["instance", "inspect"])
             .output()
@@ -687,9 +688,9 @@ fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed
         assert_eq!(selected["state"], "valid");
         assert_eq!(selected["version"], version);
         assert_eq!(selected["exact"], identity);
-        assert_eq!(observe_workspace(&instance), before);
-        assert_eq!(observe_workspace(host.path()), stored);
-        assert_eq!(observe_workspace(export.path()), exported);
+        assert_eq!(snapshot(&instance), before);
+        assert_eq!(snapshot(host.path()), stored);
+        assert_eq!(snapshot(export.path()), exported);
 
         let record = instance.join(".empack/instance.json");
         let original = fs::read(&record).unwrap();
@@ -708,7 +709,7 @@ fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed
                 serde_json::to_vec(&invalid).unwrap()
             };
             fs::write(&record, &bytes).unwrap();
-            let invalid_before = observe_workspace(&instance);
+            let invalid_before = snapshot(&instance);
             let refused = command(&instance, host.path())
                 .args(["instance", "inspect"])
                 .output()
@@ -723,26 +724,26 @@ fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed
             let report: Value = serde_json::from_slice(&status.get_output().stdout).unwrap();
             assert_eq!(report["content_verified"], false);
             assert_eq!(report["contexts"][0]["state"], "invalid", "{problem}");
-            assert_eq!(observe_workspace(&instance), invalid_before, "{problem}");
-            assert_eq!(observe_workspace(host.path()), stored, "{problem}");
+            assert_eq!(snapshot(&instance), invalid_before, "{problem}");
+            assert_eq!(snapshot(host.path()), stored, "{problem}");
             fs::write(&record, &original).unwrap();
         }
-        assert_eq!(observe_workspace(&instance), before);
+        assert_eq!(snapshot(&instance), before);
         let retained = instance.join(format!(".empack/releases/{identity}.json"));
         let descriptor = fs::read(&retained).unwrap();
         let mut changed: Value = serde_json::from_slice(&descriptor).unwrap();
         changed["version"] = json!("tampered");
         fs::write(&retained, serde_json::to_vec(&changed).unwrap()).unwrap();
-        let corrupt = observe_workspace(&instance);
+        let corrupt = snapshot(&instance);
         command(&instance, host.path())
             .args(["instance", "inspect"])
             .assert()
             .failure()
             .stderr(contains("Retained release descriptor changed"));
-        assert_eq!(observe_workspace(&instance), corrupt);
-        assert_eq!(observe_workspace(host.path()), stored);
+        assert_eq!(snapshot(&instance), corrupt);
+        assert_eq!(snapshot(host.path()), stored);
         fs::write(&retained, descriptor).unwrap();
-        assert_eq!(observe_workspace(&instance), before);
+        assert_eq!(snapshot(&instance), before);
         assert_eq!(
             fs::read(instance.join("player-notes.txt")).unwrap(),
             b"retain player work"
@@ -784,7 +785,7 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
         put(export.path(), name, member.small.as_ref().unwrap());
     }
     let authored = snapshot(project.dir()).files;
-    let exported = observe_workspace(export.path());
+    let exported = snapshot(export.path());
     let player = tempfile::tempdir().unwrap();
     let instance = player.path().join("instance Ω");
     // A separate host cache cannot supply the optional bytes from the author's build.
@@ -805,15 +806,15 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
     let extra = instance.join("game/config/extra.txt");
     assert!(!extra.exists());
     let inspect = |selected: &str| {
-        let before = observe_workspace(&instance);
-        let stored = observe_workspace(host.path());
+        let before = snapshot(&instance);
+        let stored = snapshot(host.path());
         command(&instance, host.path())
             .args(["instance", "options"])
             .assert()
             .success()
             .stdout(contains(format!("extras={selected}")));
-        assert_eq!(observe_workspace(&instance), before);
-        assert_eq!(observe_workspace(host.path()), stored);
+        assert_eq!(snapshot(&instance), before);
+        assert_eq!(snapshot(host.path()), stored);
     };
     let choose = |selected: &str| {
         let mut cmd = command(&instance, host.path());
@@ -827,17 +828,17 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
         cmd
     };
     inspect("disabled");
-    let before = observe_workspace(&instance);
+    let before = snapshot(&instance);
     choose("not-an-alternative").assert().failure();
-    assert_eq!(observe_workspace(&instance), before);
+    assert_eq!(snapshot(&instance), before);
     choose("enabled").arg("--dry-run").assert().success();
-    assert_eq!(observe_workspace(&instance), before);
+    assert_eq!(snapshot(&instance), before);
     inspect("disabled");
     choose("enabled")
         .assert()
         .failure()
         .stderr(contains("exact manual inputs remain pending"));
-    assert_eq!(observe_workspace(&instance), before);
+    assert_eq!(snapshot(&instance), before);
     inspect("disabled");
     let listed = command(&instance, host.path())
         .args(["pending", "list", "--json"])
@@ -883,7 +884,7 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
         .assert()
         .failure()
         .stderr(contains("Content differs from the accepted observation"));
-    assert_eq!(observe_workspace(&instance), before);
+    assert_eq!(snapshot(&instance), before);
     fs::write(&supplied, CONTENT[4].2).unwrap();
     resume().assert().success();
     assert_eq!(fs::read(&extra).unwrap(), CONTENT[4].2);
@@ -900,12 +901,12 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
         .assert()
         .success();
     fs::write(&extra, b"player modified optional content").unwrap();
-    let before = observe_workspace(&instance);
+    let before = snapshot(&instance);
     choose("disabled")
         .assert()
         .failure()
         .stderr(contains("ModifiedManagedFile"));
-    assert_eq!(observe_workspace(&instance), before);
+    assert_eq!(snapshot(&instance), before);
     inspect("enabled");
     choose("disabled")
         .args(["--preserve", "config/extra.txt"])
@@ -928,7 +929,7 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
         fs::read(instance.join("game/unowned.txt")).unwrap(),
         b"player note"
     );
-    assert_eq!(observe_workspace(export.path()), exported);
+    assert_eq!(snapshot(export.path()), exported);
     assert_eq!(snapshot(project.dir()).files, authored);
 }
 
