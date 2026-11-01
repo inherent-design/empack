@@ -72,6 +72,8 @@ The empack consumer uses the shared build request and acquisition pipeline. Refe
 
 Write `modrinth.index.json`, exact SHA-1/SHA-512 assertions, sizes, HTTPS alternatives, runtime dependencies and common/client/server overrides. Keep side participation and optionality separate. Conditional fallback and grouped choices require an explicit representable selection when the format cannot preserve them.
 
+Mrpack format 1 has no seed/create-only ownership field. Embedded defaults such as `options.txt` become ordinary override files, so an external launcher update can replace player edits when it reapplies them. `env.optional` controls participation, not preservation. Empack installation policies remain effective in native release descriptors consumed by empack; exporting a mrpack does not carry those policies to another updater.
+
 Generic format validity and Modrinth hosting eligibility are separate results. Each mrpack build receipt includes a download-domain report. The CLI identifies blocked destinations and hosts while retaining the valid generic archive. The check uses exact domains: `cdn.modrinth.com`, `github.com`, `raw.githubusercontent.com` and `gitlab.com`. It does not establish redistribution rights, marketplace approval, upload, or a launcher association. URL paths and credentials are omitted from this report. Hosting validation uses the documented download-domain rules, not an assumption that all valid HTTPS URLs are accepted. Standalone archive import does not subscribe the instance to an arbitrary update URL.
 
 References: [format](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack) and [sharing](https://support.modrinth.com/en/articles/8797522-sharing-modpacks).

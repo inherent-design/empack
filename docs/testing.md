@@ -2,7 +2,7 @@
 
 The [acceptance contracts](design/verification.md) define the current release target. Tests verify the checked-out implementation; a contract or test count is not evidence that an unwired capability works. Record run-specific results in CI and PRs.
 
-The v0.8.4 overhaul tracks the complete requirement denominator and compiled discovery in the [verification registry](../tests/verification/README.md). Its unbound requirements remain incomplete; structural validation is not a pass rate.
+The [verification registry](../tests/verification/README.md) owns case requirements and discovery bindings; retained run and candidate reports own execution results. Structural validation establishes no pass rate.
 
 ## Local checks
 

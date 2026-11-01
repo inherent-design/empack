@@ -8,6 +8,12 @@ New projects use referenced Modrinth, Prism and server snapshots. Modrinth archi
 
 Reference delivery can still include authored files and prepared runtime assets. Review those assets before distribution. Choose `--delivery bundled` deliberately when you want included dependency bytes. Existing profiles are preserved; schema-5 `client: prism` and `server: server` presets still mean bundled snapshots. To change an existing project, write `target: prism` or `target: server` with explicit `delivery: references`, run `sync`, and inspect `build --explain`.
 
+## Player options reset after a launcher update
+
+Check which updater applied the change. A mrpack's `options.txt` is an override file, even when the author project marks it `seed`. The format cannot convey that ownership policy to the launcher. See [Modrinth output](design/builds.md#modrinth) for the format boundary.
+
+Empack preparation and updates preserve an existing regular file when the incoming native release marks it `seed`; a missing file receives the released default. Use that empack-managed workflow when relying on seed ownership. A launcher applying mrpack overrides follows its own update rules. Back up player settings before changing update workflows; omitting a previously tracked override from a later archive is not a preservation guarantee.
+
 ## Partial assessments and retained selections
 
 `outdated` separates the current, policy-permitted, compatible and upstream selections. A newer beta can be compatible while `prefer-stable` retains a release. An exact pin remains exact. A successful partial report does not mean every root was assessed; `outdated --strict --json` gives automation a failing exit status for incomplete evidence while preserving the report.
