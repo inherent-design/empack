@@ -6315,7 +6315,7 @@
         "CLI"
       ],
       "required_assertions": "Exact permitted provider page; no opener on preview/decline; bounds/timeout; verified scans do not use uniqueness as identity.",
-      "required_work": "Controlled opener and verified renamed-file scans are bound, along with a pre-discovery cumulative page-limit case. Windows desktop-opener behavior, interactive integration and remaining failure handoffs retain their separate evidence requirements. Controlled launchers and fixture bytes do not establish actual browser interaction or a live restricted-download policy.",
+      "required_work": "Controlled Unix/Windows launcher supervision and verified renamed-file scans are bound, along with a pre-discovery cumulative page-limit case. The Windows fixture uses cmd argument forwarding and a real test-owned child/process handle; it does not invoke the registered browser. Actual Windows desktop-opener handoff, interactive integration and remaining failure handoffs retain their separate evidence requirements. Controlled launchers and fixture bytes do not establish actual browser interaction or a live restricted-download policy.",
       "evidence_tiers": [
         "U",
         "N",
@@ -6546,6 +6546,26 @@
             "Refusal and pre-cancellation preserve the opened-selection set, author bytes and empty author directory without provider I/O or desktop launch"
           ],
           "remaining_group_evidence": "Controlled host admission only; the token intentionally prevents network and launcher execution. Actual supported desktop/interactive and live provider behavior remain separate obligations."
+        },
+        {
+          "id": "UX-037.windows-launcher-lifecycle",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::browser::windows_tests::desktop_launcher_bounds_wait_and_preserves_literal_arguments"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A native cmd fixture receives the exact provider page through paths containing spaces and Unicode; script bytes are unchanged and a nonzero child exit preserves the launcher failure diagnostic",
+            "A spawned launcher exceeds its short completion deadline with the exact timeout diagnostic; a separate child is cancelled only after atomic PID publication and retaining a live native process handle",
+            "Cancellation reports interruption and the retained Windows process handle is signalled after completion, establishing retirement of that launcher without relying on PID reuse or claiming ownership of a GUI"
+          ],
+          "remaining_group_evidence": "Actual Windows execution in each product/test graph is required. This exercises launcher supervision, not cmd /c start with a registered desktop browser, a live provider, human acceptance or final packaged-candidate execution."
         }
       ],
       "owner_now": [
