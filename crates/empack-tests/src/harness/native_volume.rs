@@ -6,7 +6,7 @@ use std::{
     fs,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const DETACH_ATTEMPTS: usize = 5;
@@ -204,6 +204,7 @@ impl ApfsFixture {
         image: usize,
         mut on_busy: impl FnMut() -> Result<()>,
     ) -> Result<()> {
+        let started = Instant::now();
         for attempt in 1..=DETACH_ATTEMPTS {
             // Every request is authorized by a fresh backing-to-device mapping.
             // A device returned by a failed attempt is never reused as authority.
@@ -247,11 +248,15 @@ impl ApfsFixture {
                     }
                     if !is_busy(&error) || attempt == DETACH_ATTEMPTS {
                         return Err(error).with_context(|| {
-                            format!("Owned image detach failed after {attempt} attempts")
+                            format!(
+                                "Owned image detach failed after {attempt} attempts in {:?}",
+                                started.elapsed()
+                            )
                         });
                     }
                     eprintln!(
-                        "Owned APFS backing busy on detach attempt {attempt}; rechecking ownership before retry"
+                        "Owned APFS backing busy on detach attempt {attempt} after {:?}; rechecking ownership before retry",
+                        started.elapsed()
                     );
                     on_busy()?;
                     std::thread::sleep(Duration::from_millis(100 << (attempt - 1)));
@@ -308,10 +313,21 @@ impl ApfsFixture {
                     .take(8192)
                     .collect::<String>()
             );
-            // Select one freshly observed backing file, never the host filesystem
-            // containing the now-unmounted directory. This grants no detach authority.
+            // The filesystem can already be unmounted while image detachment
+            // remains busy. Query this backing and its freshly observed device
+            // nodes to distinguish image-helper and raw-device holders, without
+            // selecting the host filesystem containing the mount directory.
             command.arg("--").arg(&self.images[image]);
-            "backing"
+            if let Some(entities) = owned["system-entities"].as_array() {
+                for device in entities
+                    .iter()
+                    .filter_map(|entity| entity["dev-entry"].as_str())
+                    .filter(|device| device.starts_with("/dev/disk"))
+                {
+                    command.arg(device);
+                }
+            }
+            "backing/device"
         };
         let output = command.timeout(Duration::from_secs(5)).output();
         match output {
