@@ -687,109 +687,165 @@ fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
     let driver = Driver::native_fixture(CHILD);
     let root = tempfile::tempdir().unwrap();
     let (export, id, payload) = runtime_release(root.path());
-    let instance = root.path().join("console Ω instance");
-    fs::create_dir(&instance).unwrap();
-    offline_command(&instance)
-        .args(["--yes", "instance", "install"])
-        .arg(export.join("release.json"))
-        .args(["--sha256", &id])
-        .assert()
-        .success();
-    let game = instance.join("game");
-    assert_eq!(
-        fs::read(game.join("managed.txt")).unwrap(),
-        b"publisher content"
-    );
-    fs::write(game.join("console-runtime-mode"), b"wait").unwrap();
-    fs::write(game.join("player-note.txt"), b"keep player bytes").unwrap();
-    let before = snapshot(&game);
-    let mut command = offline_empack_cmd(&instance);
-    command
-        .args(["--yes", "instance", "launch", "--"])
-        .arg(driver.program())
-        .args([
-            "--ignored",
-            "--exact",
-            CHILD,
-            "--nocapture",
-            "--test-threads=1",
-        ]);
-    let mut console = expectrl::session::log(terminal::spawn(command), std::io::stderr()).unwrap();
-    console.set_expect_timeout(Some(Duration::from_secs(20)));
+    for interfere_with_cleanup in [false, true] {
+        let instance = root
+            .path()
+            .join(format!("console Ω instance-{interfere_with_cleanup}"));
+        fs::create_dir(&instance).unwrap();
+        offline_command(&instance)
+            .args(["--yes", "instance", "install"])
+            .arg(export.join("release.json"))
+            .args(["--sha256", &id])
+            .assert()
+            .success();
+        let game = instance.join("game");
+        assert_eq!(
+            fs::read(game.join("managed.txt")).unwrap(),
+            b"publisher content"
+        );
+        fs::write(game.join("console-runtime-mode"), b"wait").unwrap();
+        fs::write(game.join("player-note.txt"), b"keep player bytes").unwrap();
+        let before = snapshot(&game);
+        let mut command = offline_empack_cmd(&instance);
+        command
+            .args(["--yes", "instance", "launch", "--"])
+            .arg(driver.program())
+            .args([
+                "--ignored",
+                "--exact",
+                CHILD,
+                "--nocapture",
+                "--test-threads=1",
+            ]);
+        let mut console =
+            expectrl::session::log(terminal::spawn(command), std::io::stderr()).unwrap();
+        console.set_expect_timeout(Some(Duration::from_secs(20)));
 
-    // Readiness follows atomic identity publication. Reading the console first
-    // also retains startup diagnostics and avoids blocking its output producer.
-    console.expect("WINDOWS_RUNTIME_READY").unwrap();
-    let pid_file = game.join("console-runtime-pid");
-    let identity_bytes = fs::read(&pid_file).unwrap();
-    let identity: BTreeMap<String, u32> = serde_json::from_slice(&identity_bytes).unwrap();
-    assert_eq!(
-        identity.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["created_high", "created_low", "pid"]
-    );
-    assert!(identity["pid"] > 1);
-    // Retain the process object and verify its creation time before granting
-    // the cleanup guard authority. A reused PID cannot select a different child.
-    let handle = unsafe {
-        OpenProcess(
-            PROCESS_SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
-            0,
-            identity["pid"],
-        )
-    };
-    assert!(!handle.is_null(), "{}", std::io::Error::last_os_error());
-    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
-    let mut created = FILETIME::default();
-    let mut exited = FILETIME::default();
-    let mut kernel = FILETIME::default();
-    let mut user = FILETIME::default();
-    assert_ne!(
-        unsafe {
-            GetProcessTimes(
-                handle.as_raw_handle(),
-                &mut created,
-                &mut exited,
-                &mut kernel,
-                &mut user,
+        // Readiness follows atomic identity publication. Reading the console first
+        // also retains startup diagnostics and avoids blocking its output producer.
+        console.expect("WINDOWS_RUNTIME_READY").unwrap();
+        let pid_file = game.join("console-runtime-pid");
+        let identity_bytes = fs::read(&pid_file).unwrap();
+        let identity: BTreeMap<String, u32> = serde_json::from_slice(&identity_bytes).unwrap();
+        assert_eq!(
+            identity.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["created_high", "created_low", "pid"]
+        );
+        assert!(identity["pid"] > 1);
+        // Retain the process object and verify its creation time before granting
+        // the cleanup guard authority. A reused PID cannot select a different child.
+        let handle = unsafe {
+            OpenProcess(
+                PROCESS_SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+                0,
+                identity["pid"],
             )
-        },
-        0
-    );
-    assert_eq!(
-        (created.dwLowDateTime, created.dwHighDateTime),
-        (identity["created_low"], identity["created_high"])
-    );
-    let runtime = RuntimeProcess(handle);
-    console.send(ControlCode::EndOfText).unwrap();
-    console.expect(Regex("(?i)operation interrupted")).unwrap();
-    assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
-    assert_eq!(
-        unsafe { WaitForSingleObject(runtime.0.as_raw_handle(), 0) },
-        WAIT_OBJECT_0,
-        "CLI completion must establish runtime retirement"
-    );
-    // ConPTY merges the output streams: this proves diagnostic delivery and exit
-    // classification, not separate stdout/stderr routing or Java behavior.
-    offline_command(&instance)
-        .args([
-            "--yes", "instance", "launch", "--", "cmd.exe", "/D", "/C", "exit", "/b", "0",
-        ])
-        .assert()
-        .success();
-    let mut after = snapshot(&game);
-    assert_eq!(
-        after.files.remove(Path::new("console-runtime-pid")),
-        Some(identity_bytes)
-    );
-    assert!(
-        after
-            .entries
-            .remove(Path::new("console-runtime-pid"))
-            .is_some()
-    );
-    assert_eq!(after, before);
-    assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
-    driver.verify();
+        };
+        assert!(!handle.is_null(), "{}", std::io::Error::last_os_error());
+        let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+        let mut created = FILETIME::default();
+        let mut exited = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        assert_ne!(
+            unsafe {
+                GetProcessTimes(
+                    handle.as_raw_handle(),
+                    &mut created,
+                    &mut exited,
+                    &mut kernel,
+                    &mut user,
+                )
+            },
+            0
+        );
+        assert_eq!(
+            (created.dwLowDateTime, created.dwHighDateTime),
+            (identity["created_low"], identity["created_high"])
+        );
+        let runtime = RuntimeProcess(handle);
+        let markers = fs::read_dir(instance.join(".host-state"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path().join("runtime.json"))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            markers.len(),
+            1,
+            "The running instance must have one ownership marker"
+        );
+        let marker = &markers[0];
+        if interfere_with_cleanup {
+            fs::write(marker, b"externally changed runtime evidence").unwrap();
+        }
+        console.send(ControlCode::EndOfText).unwrap();
+        if interfere_with_cleanup {
+            console
+                .expect("recovery evidence could not be cleared")
+                .unwrap();
+        }
+        console.expect(Regex("(?i)operation interrupted")).unwrap();
+        assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
+        assert_eq!(
+            unsafe { WaitForSingleObject(runtime.0.as_raw_handle(), 0) },
+            WAIT_OBJECT_0,
+            "CLI completion must establish runtime retirement"
+        );
+        // ConPTY merges the output streams: this proves diagnostic delivery and exit
+        // classification, not separate stdout/stderr routing or Java behavior.
+        if interfere_with_cleanup {
+            use predicates::str::contains;
+            assert_eq!(
+                fs::read(marker).unwrap(),
+                b"externally changed runtime evidence"
+            );
+            let before_recovery = snapshot(&instance);
+            offline_command(&instance)
+                .args([
+                    "--yes", "instance", "launch", "--", "cmd.exe", "/D", "/C", "exit", "/b", "0",
+                ])
+                .assert()
+                .failure()
+                .stderr(contains("retirement is unconfirmed"));
+            assert_eq!(snapshot(&instance), before_recovery);
+            offline_command(&instance)
+                .args(["--yes", "instance", "recover-runtime"])
+                .assert()
+                .failure()
+                .stderr(contains("--acknowledge-stopped"));
+            assert_eq!(snapshot(&instance), before_recovery);
+            offline_command(&instance)
+                .args([
+                    "--yes",
+                    "instance",
+                    "recover-runtime",
+                    "--acknowledge-stopped",
+                ])
+                .assert()
+                .success();
+        }
+        assert!(!marker.exists());
+        offline_command(&instance)
+            .args([
+                "--yes", "instance", "launch", "--", "cmd.exe", "/D", "/C", "exit", "/b", "0",
+            ])
+            .assert()
+            .success();
+        let mut after = snapshot(&game);
+        assert_eq!(
+            after.files.remove(Path::new("console-runtime-pid")),
+            Some(identity_bytes)
+        );
+        assert!(
+            after
+                .entries
+                .remove(Path::new("console-runtime-pid"))
+                .is_some()
+        );
+        assert_eq!(after, before);
+        assert_eq!(fs::read(export.join("release.json")).unwrap(), payload);
+        driver.verify();
+    }
 }
 
 #[cfg(unix)]

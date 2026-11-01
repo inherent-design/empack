@@ -1389,6 +1389,7 @@
             "A real ConPTY runs public export/install/instance-launch with the selected product and a compiler-bound private runtime that remains alive through Ctrl-C",
             "Host cancellation reaches the executable diagnostic and exit status 130, while a retained creation-time-checked native process handle establishes child retirement",
             "A follow-up public launch succeeds without stale runtime ownership; managed/player bytes, portable attributes and export descriptor remain unchanged apart from the fixture identity marker",
+            "Changed runtime ownership evidence survives confirmed cancellation and is reported; refused launch or unacknowledged recovery preserves the instance, and explicit acknowledgement permits a later launch",
             "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
           ]
         }
@@ -11188,6 +11189,7 @@
             "A real ConPTY runs public export/install/instance-launch with the selected product and a compiler-bound private runtime that remains alive through Ctrl-C",
             "Host cancellation reaches the executable diagnostic and exit status 130, while a retained creation-time-checked native process handle establishes child retirement",
             "A follow-up public launch succeeds without stale runtime ownership; managed/player bytes, portable attributes and export descriptor remain unchanged apart from the fixture identity marker",
+            "Changed runtime ownership evidence survives confirmed cancellation and is reported; refused launch or unacknowledged recovery preserves the instance, and explicit acknowledgement permits a later launch",
             "The private runtime has no product control or dependency; its ignored ordinary invocation is not acceptance evidence. ConPTY merges stdout/stderr, and the fixture does not establish Java, GUI or Unix terminal restoration behavior"
           ]
         }
@@ -11476,7 +11478,8 @@
       "evidence_tiers": [
         "H",
         "N",
-        "X"
+        "X",
+        "I"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -11503,6 +11506,68 @@
             "The source release and installed publisher bytes remain unchanged"
           ],
           "remaining_group_evidence": "Actual terminal disappearance at the executable, uncertain retirement, Windows executable cancellation, and actual Java/consumer qualification remain separate obligations"
+        },
+        {
+          "id": "UX-076.retained-recovery-guidance",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::retained_uncertain_runtime_preserves_recovery_and_typed_cause_after_registry_release"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A constructed uncertain runtime result retains its typed interruption or permission failure, project/state recovery coordinates and actionable diagnostic after the operation registry reference is released",
+            "This host-presentation fixture does not establish actual retirement; native ownership and executable recovery are separate cases"
+          ]
+        },
+        {
+          "id": "UX-076.native-exact-acknowledgement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::abrupt_runtime_owner_exit_blocks_publication_until_exact_acknowledgment",
+            "empack-lib::engine::api::launch::tests::runtime_lease_blocks_updates_and_duplicate_launch_until_owned_retirement",
+            "empack-lib::engine::api::launch::tests::failed_spawn_does_not_leave_runtime_recovery_evidence"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Abrupt owner exit leaves evidence that blocks publication; dropping a lease does not prove retirement, acknowledgement while a live lease is held refuses, and stale captured evidence cannot clear a later runtime marker",
+            "Exact acknowledgement removes only the selected marker and permits publication while preserving neighboring state",
+            "Engine launch blocks duplicate launch, publication and acknowledgement during ownership; confirmed cancellation or failed spawn leaves no false recovery requirement, and a later launch succeeds"
+          ]
+        },
+        {
+          "id": "UX-076.windows-executable-explicit-recovery",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_console_interrupt_retires_windows_runtime_and_preserves_instance"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Console cancellation confirms retirement through the retained native process handle; an externally changed ownership marker is preserved and its cleanup diagnostic reaches the actual executable output",
+            "A subsequent launch and recovery without --acknowledge-stopped both refuse without changing instance bytes, directories or native attributes; explicit acknowledgement permits a successful later launch",
+            "The normal cancellation variant removes its marker without requiring acknowledgement; installed publisher bytes, player files and release descriptor remain unchanged in both variants"
+          ]
         }
       ],
       "owner_now": [
@@ -11513,7 +11578,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-077",
