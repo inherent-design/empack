@@ -217,11 +217,14 @@ impl ApfsFixture {
                 // cannot invalidate a fresh observation of this exact backing.
                 return Ok(());
             };
-            match run(
-                "/usr/bin/hdiutil",
-                &["detach".as_ref(), "-verbose".as_ref(), device.as_ref()],
-                None,
-            ) {
+            let mut arguments = vec!["detach".as_ref(), "-verbose".as_ref()];
+            if attempt == DETACH_ATTEMPTS {
+                // lsof cannot explain a kernel/Disk Arbitration refusal after
+                // unmount. Retain the native trace on the last owned request.
+                arguments.push("-debug".as_ref());
+            }
+            arguments.push(device.as_ref());
+            match run("/usr/bin/hdiutil", &arguments, None) {
                 Ok(_) => {
                     ensure!(
                         !self
