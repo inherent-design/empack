@@ -1,4 +1,5 @@
 //! Public server builds with an independently pinned runtime inventory.
+use empack_tests::harness::workspace::snapshot;
 use empack_tests::harness::{
     archive::{Member, distribution_inventory},
     process::{TestProject, assert_dist_artifact_suffix},
@@ -11,8 +12,6 @@ use std::{
     time::Duration,
 };
 
-#[path = "files.rs"]
-mod files;
 const AUTHOR: &str = "schema: 5\npack: {id: server.fixture, name: Server fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: 21}\ndependencies: {}\n";
 const CONTENT: [(&str, &[u8], &str); 3] = [
     ("config/feature.txt", b"server configuration\n", "seed"),
@@ -68,7 +67,7 @@ pub fn verify() {
             values.insert(name.into(), fs::read(project.dir().join(name)).unwrap());
         }
         for name in ["pack", "overrides", "templates"] {
-            for (path, bytes) in files::snapshot(&project.dir().join(name)) {
+            for (path, bytes) in snapshot(&project.dir().join(name)).files {
                 values.insert(std::path::PathBuf::from(name).join(path), bytes);
             }
         }

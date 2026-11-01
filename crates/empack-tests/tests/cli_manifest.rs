@@ -1,6 +1,5 @@
 //! Author-visible YAML conformance, without acquiring or rewriting project data.
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 
 use empack_tests::harness::process::{TestProject, offline_command};
 use serde_json::Value;
@@ -9,7 +8,7 @@ use std::{fs, path::Path, process::Output};
 const HEADER: &str = "# Author note: retain this text exactly.\nschema: 5\npack:\n  id: literal.pack\n  name: Literal Pack\n  version: Autumn Update\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: 21\n";
 
 fn inspect(root: &Path, args: &[&str]) -> Output {
-    let before = empack_tests::harness::workspace::snapshot(root);
+    let before = snapshot(root);
     let output = offline_command(root)
         .env("EMPACK_STATE_DIR", root.join("unused-manifest-state"))
         .env("EMPACK_CACHE_DIR", root.join("unused-manifest-cache"))
@@ -17,7 +16,7 @@ fn inspect(root: &Path, args: &[&str]) -> Output {
         .args(args)
         .output()
         .unwrap();
-    assert_eq!(empack_tests::harness::workspace::snapshot(root), before);
+    assert_eq!(snapshot(root), before);
     assert!(!root.join("unused-manifest-state").exists());
     assert!(!root.join("unused-manifest-cache").exists());
     assert!(!output.stdout.contains(&0x1b), "{output:?}");
@@ -417,14 +416,14 @@ fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs()
                 .contains("Unknown dependency key")
         );
         if change == "missing-source" {
-            let before = files::snapshot(root);
+            let before = snapshot(root);
             let failed = sync().failure();
             assert!(
                 String::from_utf8_lossy(&failed.get_output().stderr).contains("missing.jar"),
                 "{failed:?}"
             );
             assert_eq!(
-                files::snapshot(root),
+                snapshot(root),
                 before,
                 "failed resolution changed project bytes"
             );
@@ -469,10 +468,10 @@ fn cli_manifest_explanation_matches_local_synchronization_and_preserves_inputs()
         let diff: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(diff["lock_status"], "current", "{change}: {diff}");
         assert_eq!(diff["dependencies"][0]["selection_satisfied"], true);
-        let stable = files::snapshot(root);
+        let stable = snapshot(root);
         sync().success();
         assert_eq!(
-            files::snapshot(root),
+            snapshot(root),
             stable,
             "{change}: repeated sync changed bytes"
         );
@@ -539,11 +538,11 @@ fn cli_sync_distinguishes_lock_states_and_preserves_populated_author_work() {
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
                 fs::write(path, bytes).unwrap();
             }
-            let pristine = files::snapshot(root);
+            let pristine = snapshot(root);
             // First resolve from literal documents with no lock and no occupied
             // tracked destination; all other populated author work already exists.
             command(true).assert().success();
-            assert_eq!(files::snapshot(root), pristine);
+            assert_eq!(snapshot(root), pristine);
             command(false).assert().success();
             let resolved = read_project(root);
             let key = DependencyKey::parse("example").unwrap();
@@ -569,11 +568,11 @@ fn cli_sync_distinguishes_lock_states_and_preserves_populated_author_work() {
                 "mods/custom.jar"
             );
             let lock = fs::read(root.join("empack.lock")).unwrap();
-            let mut expected_files = pristine.clone();
+            let mut expected_files = pristine.files.clone();
             expected_files.insert("empack.lock".into(), lock.clone());
             expected_files.insert(INSTALLED.into(), jar.clone());
             assert_eq!(
-                files::snapshot(root),
+                snapshot(root).files,
                 expected_files,
                 "{state}: initial resolution"
             );
@@ -615,7 +614,7 @@ fn cli_sync_distinguishes_lock_states_and_preserves_populated_author_work() {
                 "current" => {}
                 _ => unreachable!(),
             }
-            let before = files::snapshot(root);
+            let before = snapshot(root);
             let refusal = match state {
                 "missing-occupied-identical" | "missing-occupied-different" => {
                     Some("untracked content")
@@ -638,11 +637,7 @@ fn cli_sync_distinguishes_lock_states_and_preserves_populated_author_work() {
                     assert!(output.status.success(), "{state}: {diagnostic}");
                 }
                 if preview || refusal.is_some() {
-                    assert_eq!(
-                        files::snapshot(root),
-                        before,
-                        "{state}: unexpected publication"
-                    );
+                    assert_eq!(snapshot(root), before, "{state}: unexpected publication");
                 }
             }
             if refusal.is_some() {
@@ -672,18 +667,14 @@ fn cli_sync_distinguishes_lock_states_and_preserves_populated_author_work() {
                     fs::read(root.join("empack.lock")).unwrap(),
                 );
             }
+            let restored = snapshot(root);
             assert_eq!(
-                files::snapshot(root),
-                expected_files,
+                restored.files, expected_files,
                 "{state}: exact restored project"
             );
             for _ in 0..2 {
                 command(false).assert().success();
-                assert_eq!(
-                    files::snapshot(root),
-                    expected_files,
-                    "{state}: repeated sync"
-                );
+                assert_eq!(snapshot(root), restored, "{state}: repeated sync");
             }
         }
     }

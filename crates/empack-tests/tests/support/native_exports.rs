@@ -1,5 +1,5 @@
 //! Native snapshot exports and public installation, with literal content oracles.
-use crate::files::snapshot;
+use empack_tests::harness::workspace::snapshot;
 use empack_tests::harness::{
     archive::{Member, distribution_inventory},
     process::{TestProject, assert_dist_artifact_suffix, offline_command},
@@ -159,7 +159,7 @@ fn inventory(members: &BTreeMap<String, Member>) -> String {
 #[test]
 fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports() {
     let (project, host) = fixture();
-    let mut author = snapshot(project.dir());
+    let mut author = snapshot(project.dir()).files;
     let mut previous = None;
     for delivery in ["references", "bundled"] {
         for format in ["zip", "tar.gz", "7z"] {
@@ -184,12 +184,12 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                 archive.strip_prefix(project.dir()).unwrap().into(),
                 fs::read(&archive).unwrap(),
             );
-            assert_eq!(snapshot(project.dir()), author);
+            assert_eq!(snapshot(project.dir()).files, author);
             let export = tempfile::tempdir().unwrap();
             for (name, member) in &members {
                 put(export.path(), name, member.small.as_ref().unwrap());
             }
-            let exported = snapshot(export.path());
+            let exported = snapshot(export.path()).files;
             let descriptor = export.path().join("release.json");
             let mut installations = vec![("game", "client"), ("game", "server")];
             // Archive format and side inventory are already covered above. One
@@ -228,12 +228,16 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         }
                         cmd
                     };
-                    let before = snapshot(&instance);
+                    let before = snapshot(&instance).files;
                     install(&"0".repeat(64))
                         .assert()
                         .failure()
                         .stderr(contains("Selected release payload identity mismatch"));
-                    assert_eq!(snapshot(&instance), before, "wrong digest changed instance");
+                    assert_eq!(
+                        snapshot(&instance).files,
+                        before,
+                        "wrong digest changed instance"
+                    );
                     // Included selected bytes must be checked even if an earlier
                     // installation populated the shared disposable cache.
                     let asset = export.path().join(format!("assets/{}", hash(CONTENT[3].2)));
@@ -243,7 +247,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         .failure()
                         .stderr(contains("Content differs from the accepted observation"));
                     assert_eq!(
-                        snapshot(&instance),
+                        snapshot(&instance).files,
                         before,
                         "corrupt asset changed instance"
                     );
@@ -269,7 +273,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                     if extra {
                         expected.insert("config/extra.txt".into(), CONTENT[4].2.to_vec());
                     }
-                    assert_eq!(snapshot(&instance.join(game)), expected);
+                    assert_eq!(snapshot(&instance.join(game)).files, expected);
                     assert_eq!(
                         fs::read(instance.join("empack.yml")).unwrap(),
                         b"invalid author draft: [\n"
@@ -293,7 +297,7 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                         &format!("{game}/config/settings.txt"),
                         b"player configuration",
                     );
-                    let installed = snapshot(&instance);
+                    let installed = snapshot(&instance).files;
                     for _ in 0..2 {
                         command(&instance, host.path())
                             .args(["--yes", "instance", "prepare"])
@@ -302,17 +306,17 @@ fn cli_native_snapshots_preserve_inventory_choices_and_install_verified_exports(
                             .assert()
                             .success();
                         assert_eq!(
-                            snapshot(&instance),
+                            snapshot(&instance).files,
                             installed,
                             "repeat preparation changed saved choices or seed bytes"
                         );
                     }
-                    assert_eq!(snapshot(export.path()), exported);
+                    assert_eq!(snapshot(export.path()).files, exported);
                 }
             }
         }
     }
-    assert_eq!(snapshot(project.dir()), author);
+    assert_eq!(snapshot(project.dir()).files, author);
 }
 
 #[test]
@@ -392,7 +396,7 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             ),
             ("unowned.txt".into(), b"unowned game file".to_vec()),
         ]);
-        assert_eq!(snapshot(&instance.join(game)), expected);
+        assert_eq!(snapshot(&instance.join(game)).files, expected);
         // The installed release and cache must suffice across a fresh executable;
         // neither the original descriptor nor its assets remain available.
         let export_path = export.path().to_owned();
@@ -413,7 +417,7 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .assert()
             .success()
             .stdout(contains(format!("Applied release {identity}")));
-        assert_eq!(snapshot(&instance.join(game)), expected);
+        assert_eq!(snapshot(&instance.join(game)).files, expected);
 
         // A verified cache hit does not authorize discarding local managed edits.
         fs::write(&managed, b"local managed edit").unwrap();
@@ -428,7 +432,7 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .args(["--yes", "instance", "repair", "--replace", "managed.txt"])
             .assert()
             .success();
-        assert_eq!(snapshot(&instance.join(game)), expected);
+        assert_eq!(snapshot(&instance.join(game)).files, expected);
 
         fs::remove_file(&managed).unwrap();
         let missing = observe_workspace(&instance);
@@ -498,7 +502,7 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
     for (name, member) in &members {
         put(export.path(), name, member.small.as_ref().unwrap());
     }
-    let authored = snapshot(project.dir());
+    let authored = snapshot(project.dir()).files;
     let exported = observe_workspace(export.path());
     for layout in ["game", "prism"] {
         let root = tempfile::tempdir().unwrap();
@@ -585,7 +589,7 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
         install("client").assert().success();
         assert_eq!(observe_workspace(&instance), installed);
         assert_eq!(observe_workspace(export.path()), exported);
-        assert_eq!(snapshot(project.dir()), authored);
+        assert_eq!(snapshot(project.dir()).files, authored);
     }
 }
 
@@ -779,7 +783,7 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
     for (name, member) in &members {
         put(export.path(), name, member.small.as_ref().unwrap());
     }
-    let authored = snapshot(project.dir());
+    let authored = snapshot(project.dir()).files;
     let exported = observe_workspace(export.path());
     let player = tempfile::tempdir().unwrap();
     let instance = player.path().join("instance Ω");
@@ -925,7 +929,7 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
         b"player note"
     );
     assert_eq!(observe_workspace(export.path()), exported);
-    assert_eq!(snapshot(project.dir()), authored);
+    assert_eq!(snapshot(project.dir()).files, authored);
 }
 
 #[test]
@@ -942,7 +946,7 @@ fn cli_native_export_requires_declared_local_bytes_even_for_reference_delivery()
         inventory(&distribution_inventory(&archive, "zip"));
         let local = project.dir().join("vendor/extra.txt");
         fs::remove_file(&local).unwrap();
-        let before = snapshot(project.dir());
+        let before = snapshot(project.dir()).files;
         // A cold host cannot recover missing local input from an earlier cache.
         let cold = tempfile::tempdir().unwrap();
         command(project.dir(), cold.path())
@@ -950,9 +954,9 @@ fn cli_native_export_requires_declared_local_bytes_even_for_reference_delivery()
             .assert()
             .failure()
             .stderr(contains("vendor/extra.txt"));
-        assert_eq!(snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()).files, before);
         fs::write(local, CONTENT[4].2).unwrap();
-        let mut expected = snapshot(project.dir());
+        let mut expected = snapshot(project.dir()).files;
         command(project.dir(), cold.path())
             .args(["--yes", "build", "--delivery", delivery])
             .assert()
@@ -962,7 +966,7 @@ fn cli_native_export_requires_declared_local_bytes_even_for_reference_delivery()
             archive.strip_prefix(project.dir()).unwrap().into(),
             fs::read(&archive).unwrap(),
         );
-        assert_eq!(snapshot(project.dir()), expected);
+        assert_eq!(snapshot(project.dir()).files, expected);
     }
 }
 
@@ -982,14 +986,14 @@ fn cli_native_export_requires_pack_identity_and_java_without_replacing_prior_out
             "empack.yml",
             AUTHOR.replace(from, to).as_bytes(),
         );
-        let before = snapshot(project.dir());
-        let host_before = snapshot(host.path());
+        let before = snapshot(project.dir()).files;
+        let host_before = snapshot(host.path()).files;
         command(project.dir(), host.path())
             .args(["--yes", "build"])
             .assert()
             .failure()
             .stderr(contains(diagnostic));
-        assert_eq!(snapshot(project.dir()), before);
-        assert_eq!(snapshot(host.path()), host_before);
+        assert_eq!(snapshot(project.dir()).files, before);
+        assert_eq!(snapshot(host.path()).files, host_before);
     }
 }

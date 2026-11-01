@@ -9,9 +9,7 @@ use std::{fs, path::Path};
 
 #[path = "support/approval.rs"]
 mod approval;
-#[path = "support/files.rs"]
-mod files;
-use files::snapshot;
+use empack_tests::harness::workspace::snapshot;
 
 #[path = "support/pending.rs"]
 mod public_pending;
@@ -45,19 +43,19 @@ fn build_roundtrip(
     after_suspend: impl FnOnce(&TestProject, &Path, &Value),
 ) {
     let state = host.path().join("state");
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     command(&project, &state)
         .args(["--dry-run", "build", "modrinth"])
         .assert()
         .success();
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
     assert!(!state.exists());
     command(&project, &state)
         .args(["build", "modrinth"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
 
     let operation = pending(&project, &state, "build");
     after_suspend(&project, &state, &operation);
@@ -85,7 +83,7 @@ fn build_roundtrip(
     // Same length as the selected payload: digest verification, not length or name.
     fs::write(&supplied, b"INVALID").unwrap();
     let association = format!("{key}={}", supplied.display());
-    let retained = snapshot(&state);
+    let retained = snapshot(&state).files;
     for args in [
         vec!["pending", "resume", id, "--file", &association],
         vec!["pending", "resume", id, "--file", "unknown=missing"],
@@ -100,8 +98,8 @@ fn build_roundtrip(
         ],
     ] {
         command(&project, &state).args(args).assert().failure();
-        assert_eq!(snapshot(project.dir()), before);
-        assert_eq!(snapshot(&state), retained);
+        assert_eq!(snapshot(project.dir()).files, before);
+        assert_eq!(snapshot(&state).files, retained);
         assert_eq!(pending(&project, &state, "build"), operation);
     }
 
@@ -146,6 +144,7 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
         let id = operation["id"].as_str().unwrap();
         // Locate only the fixture's native observation, never a command selector.
         let records: Vec<_> = snapshot(&state)
+            .files
             .into_keys()
             .filter(|path| {
                 path.starts_with("pending-builds") && path.extension().is_some_and(|e| e == "json")
@@ -158,7 +157,7 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
             .assert()
             .failure();
         let neighbor_pending = pending(&neighbor, &state, "build");
-        let neighbor_files = snapshot(neighbor.dir());
+        let neighbor_files = snapshot(neighbor.dir()).files;
         let supplied = host.path().join("renamed.bin");
         fs::write(&supplied, b"payload").unwrap();
         let association = format!(
@@ -169,8 +168,8 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
         let author_path = project.dir().join("empack.yml");
         let author = fs::read_to_string(&author_path).unwrap();
         fs::write(&author_path, format!("# Edited after suspension\n{author}")).unwrap();
-        let before = snapshot(project.dir());
-        let retained = snapshot(&state);
+        let before = snapshot(project.dir()).files;
+        let retained = snapshot(&state).files;
         let stale = pending(&project, &state, "build");
         assert_eq!(stale["id"], id);
         assert_eq!(stale["state"], "stale");
@@ -195,13 +194,13 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
                 "(?i)apply this discard pending build plan"
             },
         );
-        assert_eq!(snapshot(&state), retained);
-        assert_eq!(snapshot(project.dir()), before);
+        assert_eq!(snapshot(&state).files, retained);
+        assert_eq!(snapshot(project.dir()).files, before);
         command(&project, &state).args(&discard).assert().success();
         let mut expected = retained;
         expected.remove(&records[0]).unwrap();
         assert_eq!(
-            snapshot(&state),
+            snapshot(&state).files,
             expected,
             "discard only the selected native record"
         );
@@ -210,8 +209,8 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
             json!([])
         );
         assert_eq!(pending(&neighbor, &state, "build"), neighbor_pending);
-        assert_eq!(snapshot(neighbor.dir()), neighbor_files);
-        assert_eq!(snapshot(project.dir()), before);
+        assert_eq!(snapshot(neighbor.dir()).files, neighbor_files);
+        assert_eq!(snapshot(project.dir()).files, before);
         assert_eq!(fs::read(&supplied).unwrap(), b"payload");
         command(&project, &state)
             .args(["clean", "continuation"])
@@ -222,7 +221,7 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
             .assert()
             .success();
         assert_eq!(
-            snapshot(&state),
+            snapshot(&state).files,
             expected,
             "neighbor still retains this category"
         );
@@ -231,7 +230,7 @@ fn journey_pending_stale_build_requires_explicit_discard_and_preserves_user_data
             .assert()
             .failure()
             .stderr(predicates::str::contains("No pending operation"));
-        assert_eq!(snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()).files, before);
     }
 }
 
@@ -272,13 +271,13 @@ fn sync_roundtrip(
     after_partial: impl FnOnce(&TestProject, &Path, &Value),
 ) {
     let state = host.path().join("state");
-    let original = snapshot(project.dir());
+    let original = snapshot(project.dir()).files;
     command(&project, &state)
         .args(["sync", "--materialize"])
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(snapshot(project.dir()).files, original);
     let operation = pending(&project, &state, "sync");
     assert_eq!(operation["requirements_complete"], true);
     assert_eq!(operation["inputs"].as_array().unwrap().len(), 2);
@@ -315,7 +314,7 @@ fn sync_roundtrip(
         first_path.display()
     );
     fs::write(&first_path, b"wrong").unwrap();
-    let retained = snapshot(&state);
+    let retained = snapshot(&state).files;
     command(&project, &state)
         .args(["--dry-run", "pending", "resume", id])
         .assert()
@@ -324,8 +323,8 @@ fn sync_roundtrip(
         .args(["pending", "resume", id, "--file", &association])
         .assert()
         .failure();
-    assert_eq!(snapshot(&state), retained);
-    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(snapshot(&state).files, retained);
+    assert_eq!(snapshot(project.dir()).files, original);
 
     fs::write(&first_path, b"first").unwrap();
     command(&project, &state)
@@ -333,7 +332,7 @@ fn sync_roundtrip(
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(snapshot(project.dir()).files, original);
     let partial = pending(&project, &state, "sync");
     assert_eq!(
         sync_input(&partial, "123")["verification"],
@@ -352,21 +351,22 @@ fn sync_roundtrip(
         .success();
     assert!(
         snapshot(&state.with_extension("cache"))
+            .files
             .values()
             .all(|bytes| bytes != b"first")
     );
-    let protected = snapshot(&state);
+    let protected = snapshot(&state).files;
     command(&project, &state)
         .args(["clean", "retained"])
         .assert()
         .success();
     assert_eq!(
-        snapshot(&state),
+        snapshot(&state).files,
         protected,
         "saved inputs remain protected from cleanup"
     );
     assert_eq!(pending(&project, &state, "sync"), partial);
-    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(snapshot(project.dir()).files, original);
 
     after_partial(&project, &state, &partial);
 
@@ -397,18 +397,18 @@ fn sync_roundtrip(
     );
     // Exact independent materialized inventory, not a planner-produced expectation.
     assert_eq!(
-        snapshot(&project.dir().join("pack")),
+        snapshot(&project.dir().join("pack")).files,
         std::collections::BTreeMap::from([
             ("mods/one.jar".into(), b"first".to_vec()),
             ("mods/two.jar".into(), b"second".to_vec()),
         ])
     );
-    let completed = snapshot(project.dir());
+    let completed = snapshot(project.dir()).files;
     for _ in 0..2 {
         command(&project, &state).arg("sync").assert().success();
-        assert_eq!(snapshot(project.dir()), completed);
+        assert_eq!(snapshot(project.dir()).files, completed);
     }
-    let retained = snapshot(&state);
+    let retained = snapshot(&state).files;
     approval::preserve_without_approval(
         project.dir(),
         project.dir(),
@@ -416,12 +416,12 @@ fn sync_roundtrip(
         &["clean", "retained"],
         "(?i)apply this cleanup plan",
     );
-    assert_eq!(snapshot(&state), retained);
+    assert_eq!(snapshot(&state).files, retained);
     command(&project, &state)
         .args(["clean", "retained"])
         .assert()
         .success();
-    let cleaned = snapshot(&state);
+    let cleaned = snapshot(&state).files;
     assert_ne!(
         cleaned, retained,
         "completed continuation bytes can now be reclaimed"
@@ -430,8 +430,8 @@ fn sync_roundtrip(
         .args(["clean", "retained"])
         .assert()
         .success();
-    assert_eq!(snapshot(&state), cleaned, "cleanup converges");
-    assert_eq!(snapshot(project.dir()), completed);
+    assert_eq!(snapshot(&state).files, cleaned, "cleanup converges");
+    assert_eq!(snapshot(project.dir()).files, completed);
     assert_eq!(fs::read(&second_path).unwrap(), b"second");
     assert!(!first_path.exists());
     assert_eq!(
@@ -461,8 +461,8 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
             b"retained author content",
         )
         .unwrap();
-        let original = snapshot(project.dir());
-        let retained = snapshot(&state);
+        let original = snapshot(project.dir()).files;
+        let retained = snapshot(&state).files;
         let stale = pending(&project, &state, "sync");
         assert_eq!(stale["id"], id);
         assert_eq!(stale["state"], "stale");
@@ -487,8 +487,8 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
             .args(["pending", "discard", id, "--dry-run"])
             .assert()
             .success();
-        assert_eq!(snapshot(&state), retained);
-        assert_eq!(snapshot(project.dir()), original);
+        assert_eq!(snapshot(&state).files, retained);
+        assert_eq!(snapshot(project.dir()).files, original);
         if public_discard {
             command(&project, &state)
                 .args(["pending", "discard", id])
@@ -508,7 +508,7 @@ fn journey_pending_sync_stale_capture_is_discarded_without_replaying_private_sta
             .args(["clean", "sync"])
             .assert()
             .success();
-        assert_eq!(snapshot(project.dir()), original);
+        assert_eq!(snapshot(project.dir()).files, original);
     }
 }
 
@@ -543,7 +543,7 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
     let project = TestProject::new();
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     assert_eq!(
         report(&project, &state, &["pending", "list", "--json"])["operations"],
         json!([])
@@ -564,7 +564,7 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
-            assert_eq!(snapshot(project.dir()), before);
+            assert_eq!(snapshot(project.dir()).files, before);
             assert!(!state.exists());
             assert!(!state.with_extension("cache").exists());
         }
@@ -634,11 +634,11 @@ fn retained_payload_recovery(kind: &str) {
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
     let neighbor_operation = pending(&neighbor, &state, "build");
-    let neighbor_files = snapshot(neighbor.dir());
-    let neighbor_state = snapshot(&state);
+    let neighbor_files = snapshot(neighbor.dir()).files;
+    let neighbor_state = snapshot(&state).files;
     fs::create_dir(project.dir().join("dist")).unwrap();
     fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
-    let original = snapshot(project.dir());
+    let original = snapshot(project.dir()).files;
     let args = match kind {
         "sync" => ["sync", "--materialize"],
         "build" => ["build", "modrinth"],
@@ -675,7 +675,7 @@ fn retained_payload_recovery(kind: &str) {
         .assert()
         .success();
     let cache = state.with_extension("cache");
-    assert!(!cache.exists() || snapshot(&cache).values().all(|b| b != b"first"));
+    assert!(!cache.exists() || snapshot(&cache).files.values().all(|b| b != b"first"));
     let partial = pending(&project, &state, kind);
     let backing = retained::backing(&state, b"first");
     let association = format!(
@@ -684,7 +684,7 @@ fn retained_payload_recovery(kind: &str) {
         second_path.display()
     );
     fs::write(&backing, b"WRONG").unwrap();
-    let corrupted = snapshot(&state);
+    let corrupted = snapshot(&state).files;
     command(&project, &state)
         .args([
             "pending",
@@ -696,11 +696,11 @@ fn retained_payload_recovery(kind: &str) {
         .assert()
         .failure()
         .stderr(predicates::str::contains("digest mismatch"));
-    assert_eq!(snapshot(&state), corrupted);
-    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(snapshot(&state).files, corrupted);
+    assert_eq!(snapshot(project.dir()).files, original);
     assert_eq!(pending(&project, &state, kind), partial);
     assert_eq!(pending(&neighbor, &state, "build"), neighbor_operation);
-    assert_eq!(snapshot(neighbor.dir()), neighbor_files);
+    assert_eq!(snapshot(neighbor.dir()).files, neighbor_files);
     for (path, bytes) in &neighbor_state {
         assert_eq!(&fs::read(state.join(path)).unwrap(), bytes);
     }
@@ -719,7 +719,7 @@ fn retained_payload_recovery(kind: &str) {
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(snapshot(project.dir()), original);
+    assert_eq!(snapshot(project.dir()).files, original);
     let missing = pending(&project, &state, kind);
     assert_eq!(
         sync_input(&missing, "123")["verification"],
@@ -755,7 +755,7 @@ fn retained_payload_recovery(kind: &str) {
     );
     if kind == "sync" {
         assert_eq!(
-            snapshot(&project.dir().join("pack")),
+            snapshot(&project.dir().join("pack")).files,
             std::collections::BTreeMap::from([
                 ("mods/one.jar".into(), b"first".to_vec()),
                 ("mods/two.jar".into(), b"second".to_vec()),
@@ -790,7 +790,7 @@ fn retained_payload_recovery(kind: &str) {
     assert_eq!(fs::read(&first_path).unwrap(), b"first");
     assert!(!second_path.exists());
     assert_eq!(pending(&neighbor, &state, "build"), neighbor_operation);
-    assert_eq!(snapshot(neighbor.dir()), neighbor_files);
+    assert_eq!(snapshot(neighbor.dir()).files, neighbor_files);
     for (path, bytes) in neighbor_state {
         assert_eq!(fs::read(state.join(path)).unwrap(), bytes);
     }
@@ -804,14 +804,17 @@ fn remount_pending(
     kind: &str,
     operation: &Value,
 ) {
-    let project_before = snapshot(project.dir());
-    let retained = snapshot(state);
+    let project_before = snapshot(project.dir()).files;
+    let retained = snapshot(state).files;
     let cache_path = state.with_extension("cache");
-    let cache = cache_path.exists().then(|| snapshot(&cache_path));
+    let cache = cache_path.exists().then(|| snapshot(&cache_path).files);
     volume.remount().unwrap();
-    assert_eq!(snapshot(project.dir()), project_before);
-    assert_eq!(snapshot(state), retained);
-    assert_eq!(cache_path.exists().then(|| snapshot(&cache_path)), cache);
+    assert_eq!(snapshot(project.dir()).files, project_before);
+    assert_eq!(snapshot(state).files, retained);
+    assert_eq!(
+        cache_path.exists().then(|| snapshot(&cache_path).files),
+        cache
+    );
     assert_eq!(&pending(project, state, kind), operation);
 }
 

@@ -1,6 +1,5 @@
 use empack_tests::harness::process::{TestProject, offline_command};
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 
 #[test]
 fn cli_add_uninitialized_leaves_project_absent() {
@@ -24,7 +23,7 @@ fn cli_headless_search_requires_explicit_selection() {
         b"keep this choice",
     )
     .unwrap();
-    let before = files::snapshot(project.dir());
+    let before = snapshot(project.dir());
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
     proxy.set_nonblocking(true).unwrap();
     let address = format!("http://{}", proxy.local_addr().unwrap());
@@ -67,7 +66,7 @@ fn cli_headless_search_requires_explicit_selection() {
             diagnostic.contains("project URL or --platform with a slug/ID"),
             "{diagnostic}"
         );
-        assert_eq!(files::snapshot(project.dir()), before, "{args:?}");
+        assert_eq!(snapshot(project.dir()), before, "{args:?}");
         match proxy.accept() {
             Err(error) if error.kind() == ErrorKind::WouldBlock => {}
             other => panic!("headless search attempted transport: {args:?}: {other:?}"),

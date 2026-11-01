@@ -11,8 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 
 fn operation(output: &str) -> String {
     let operation = output
@@ -88,21 +87,21 @@ fn journey_creation_recovery_survives_crash_and_native_remount() {
         let operation = operation(&output);
         operations.push((parent, selected, operation));
     }
-    let before = files::snapshot(volume.root());
-    let host_before = files::snapshot(invocation);
+    let before = snapshot(volume.root()).files;
+    let host_before = snapshot(invocation).files;
     volume.remount().unwrap();
-    assert_eq!(files::snapshot(volume.root()), before);
-    assert_eq!(files::snapshot(invocation), host_before);
+    assert_eq!(snapshot(volume.root()).files, before);
+    assert_eq!(snapshot(invocation).files, host_before);
     for (_, selected, operation) in &operations {
         assert!(inspect(invocation, selected, &state).contains(operation));
     }
     assert_eq!(
-        files::snapshot(volume.root()),
+        snapshot(volume.root()).files,
         before,
         "read-only inspection changed project bytes"
     );
     assert_eq!(
-        files::snapshot(invocation),
+        snapshot(invocation).files,
         host_before,
         "read-only inspection changed host bytes"
     );
@@ -112,7 +111,7 @@ fn journey_creation_recovery_survives_crash_and_native_remount() {
             .assert()
             .success();
         assert_eq!(
-            files::snapshot(&selected),
+            snapshot(&selected).files,
             std::collections::BTreeMap::from([
                 (PathBuf::from("empack.yml"), b"intent".to_vec()),
                 (PathBuf::from("empack.lock"), b"lock".to_vec()),
@@ -178,14 +177,14 @@ fn journey_publication_finish_and_restore_survive_crash_and_native_remount() {
             operations.push((selected, operation, action));
         }
     }
-    let before = files::snapshot(volume.root());
-    let host_before = files::snapshot(invocation);
+    let before = snapshot(volume.root()).files;
+    let host_before = snapshot(invocation).files;
     volume.remount().unwrap();
     for (selected, operation, _) in &operations {
         assert!(inspect(invocation, selected, &state).contains(operation));
     }
-    assert_eq!(files::snapshot(volume.root()), before);
-    assert_eq!(files::snapshot(invocation), host_before);
+    assert_eq!(snapshot(volume.root()).files, before);
+    assert_eq!(snapshot(invocation).files, host_before);
     for (selected, operation, action) in operations {
         command(invocation, &selected, &state)
             .args(["--yes", "recover", action, "--operation", &operation])
@@ -202,13 +201,13 @@ fn journey_publication_finish_and_restore_survive_crash_and_native_remount() {
                 b"new content".to_vec(),
             );
         }
-        assert_eq!(files::snapshot(&selected), expected);
+        assert_eq!(snapshot(&selected).files, expected);
         for _ in 0..2 {
             assert!(
                 inspect(invocation, &selected, &state)
                     .contains("No interrupted engine operation to recover")
             );
-            assert_eq!(files::snapshot(&selected), expected);
+            assert_eq!(snapshot(&selected).files, expected);
         }
     }
     volume.finish().unwrap();

@@ -12,13 +12,11 @@ use std::{fs, path::PathBuf};
 
 #[path = "support/approval.rs"]
 mod approval;
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 #[path = "support/pending.rs"]
 mod public_pending;
 #[path = "support/retained.rs"]
 mod retained;
-use files::snapshot;
 
 struct ImportFixture {
     project: TestProject,
@@ -96,7 +94,7 @@ impl ImportFixture {
         selectors.into_iter().next().unwrap()
     }
     fn suspend_inputs(&self) -> Vec<String> {
-        let before = snapshot(self.project.dir());
+        let before = snapshot(self.project.dir()).files;
         let mut command =
             public_pending::command(self.project.dir(), self.project.dir(), &self.state);
         let output = command
@@ -110,7 +108,7 @@ impl ImportFixture {
             ))
             .get_output()
             .clone();
-        assert_eq!(snapshot(self.project.dir()), before);
+        assert_eq!(snapshot(self.project.dir()).files, before);
         assert!(!self.target.exists());
         import_selectors(&output)
     }
@@ -158,8 +156,8 @@ fn import_roundtrip(
     let supplied = fixture.project.dir().join("renamed download.bin");
     fs::write(&supplied, b"INVALID").unwrap();
     let association = format!("{selector}={}", supplied.display());
-    let original = snapshot(fixture.project.dir());
-    let retained = snapshot(&fixture.state);
+    let original = snapshot(fixture.project.dir()).files;
+    let retained = snapshot(&fixture.state).files;
     for associations in [
         vec![association.as_str()],
         vec!["declared:999=missing"],
@@ -171,8 +169,8 @@ fn import_roundtrip(
             command.args(["--file", value]);
         }
         command.assert().failure();
-        assert_eq!(snapshot(fixture.project.dir()), original);
-        assert_eq!(snapshot(&fixture.state), retained);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
+        assert_eq!(snapshot(&fixture.state).files, retained);
         assert_eq!(fixture.pending(), operation);
     }
     fs::write(&supplied, b"payload").unwrap();
@@ -218,6 +216,7 @@ fn journey_pending_import_rejects_changed_destination_and_discards_without_overw
         let operation = fixture.pending();
         let id = operation["id"].as_str().unwrap();
         let records: Vec<_> = snapshot(&fixture.state)
+            .files
             .into_keys()
             .filter(|path| {
                 path.starts_with("pending-imports") && path.extension().is_some_and(|e| e == "json")
@@ -230,11 +229,11 @@ fn journey_pending_import_rejects_changed_destination_and_discards_without_overw
         neighbor.state = fixture.state.clone();
         neighbor.suspend();
         let neighbor_pending = neighbor.pending();
-        let neighbor_files = snapshot(neighbor.project.dir());
+        let neighbor_files = snapshot(neighbor.project.dir()).files;
         fs::create_dir(&fixture.target).unwrap();
         fs::write(fixture.target.join("user.txt"), b"created after capture").unwrap();
-        let original = snapshot(fixture.project.dir());
-        let retained = snapshot(&fixture.state);
+        let original = snapshot(fixture.project.dir()).files;
+        let retained = snapshot(&fixture.state).files;
         let stale = fixture.pending();
         assert_eq!(stale["state"], "stale");
         assert_eq!(stale["id"], id);
@@ -260,16 +259,16 @@ fn journey_pending_import_rejects_changed_destination_and_discards_without_overw
                 "(?i)apply this discard pending import plan"
             },
         );
-        assert_eq!(snapshot(fixture.project.dir()), original);
-        assert_eq!(snapshot(&fixture.state), retained);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
+        assert_eq!(snapshot(&fixture.state).files, retained);
         fixture.command().args(&discard).assert().success();
         let mut expected = retained;
         expected.remove(&records[0]).unwrap();
-        assert_eq!(snapshot(&fixture.state), expected);
+        assert_eq!(snapshot(&fixture.state).files, expected);
         assert_eq!(fixture.list()["operations"], json!([]));
         assert_eq!(neighbor.pending(), neighbor_pending);
-        assert_eq!(snapshot(neighbor.project.dir()), neighbor_files);
-        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(snapshot(neighbor.project.dir()).files, neighbor_files);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
         assert_eq!(fs::read(&backing).unwrap(), archive);
         fixture
             .command()
@@ -282,7 +281,7 @@ fn journey_pending_import_rejects_changed_destination_and_discards_without_overw
             .assert()
             .success();
         assert_eq!(
-            snapshot(&fixture.state),
+            snapshot(&fixture.state).files,
             expected,
             "neighbor still retains the archive category"
         );
@@ -292,7 +291,7 @@ fn journey_pending_import_rejects_changed_destination_and_discards_without_overw
             .assert()
             .failure()
             .stderr(predicates::str::contains("No pending operation"));
-        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
     }
 }
 
@@ -350,7 +349,7 @@ fn journey_pending_import_rejects_corrupt_and_missing_retained_archive() {
         .args(["clean", "cache"])
         .assert()
         .success();
-    let original = snapshot(fixture.project.dir());
+    let original = snapshot(fixture.project.dir()).files;
     let operation = fixture.pending();
     let backing = retained::backing(&fixture.state, &archive);
     let supplied = fixture.host.path().join("renamed download.bin");
@@ -364,7 +363,7 @@ fn journey_pending_import_rejects_corrupt_and_missing_retained_archive() {
             changed[0] ^= 1;
             fs::write(&backing, changed).unwrap();
         }
-        let retained = snapshot(&fixture.state);
+        let retained = snapshot(&fixture.state).files;
         fixture
             .command()
             .args([
@@ -382,8 +381,8 @@ fn journey_pending_import_rejects_corrupt_and_missing_retained_archive() {
             } else {
                 "Content differs from the accepted observation"
             }));
-        assert_eq!(snapshot(&fixture.state), retained);
-        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(snapshot(&fixture.state).files, retained);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
         assert!(!fixture.target.exists());
         assert_eq!(fixture.pending(), operation);
     }
@@ -503,20 +502,20 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
             .args(["clean", "cache"])
             .assert()
             .success();
-        let original = snapshot(fixture.project.dir());
+        let original = snapshot(fixture.project.dir()).files;
         assert!(!fixture.target.exists());
         let partial = fixture.pending();
         let backing = retained::backing(&fixture.state, b"first");
         let association = format!("{}={}", selectors[1], second.display());
         fs::write(&backing, b"WRONG").unwrap();
-        let corrupted = snapshot(&fixture.state);
+        let corrupted = snapshot(&fixture.state).files;
         fixture
             .resume(&partial, legacy, &association)
             .assert()
             .failure()
             .stderr(predicates::str::contains("sha512 digest mismatch"));
-        assert_eq!(snapshot(&fixture.state), corrupted);
-        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(snapshot(&fixture.state).files, corrupted);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
         assert_eq!(fixture.pending(), partial);
         assert!(!fixture.target.exists());
 
@@ -528,7 +527,7 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
             .get_output()
             .clone();
         assert_eq!(import_selectors(&output), [selectors[0].clone()]);
-        assert_eq!(snapshot(fixture.project.dir()), original);
+        assert_eq!(snapshot(fixture.project.dir()).files, original);
         assert!(!fixture.target.exists());
         let missing = fixture.pending();
         assert_ne!(missing["id"], partial["id"]);
@@ -595,10 +594,10 @@ fn journey_pending_import_reverifies_retained_manual_payloads_across_both_resume
         assert_eq!(fs::read(&first).unwrap(), b"first");
         assert!(!fixture.archive.exists());
         assert!(!second.exists());
-        let completed = snapshot(&fixture.target);
+        let completed = snapshot(&fixture.target).files;
         for _ in 0..2 {
             fixture.command().arg("sync").assert().success();
-            assert_eq!(snapshot(&fixture.target), completed);
+            assert_eq!(snapshot(&fixture.target).files, completed);
         }
     }
 }
@@ -612,11 +611,11 @@ fn journey_pending_import_survives_native_remount_and_reopens_created_root() {
     import_roundtrip(
         fixture,
         |fixture, operation| {
-            let project = snapshot(fixture.project.dir());
-            let host = snapshot(fixture.host.path());
+            let project = snapshot(fixture.project.dir()).files;
+            let host = snapshot(fixture.host.path()).files;
             volume.remount().unwrap();
-            assert_eq!(snapshot(fixture.project.dir()), project);
-            assert_eq!(snapshot(fixture.host.path()), host);
+            assert_eq!(snapshot(fixture.project.dir()).files, project);
+            assert_eq!(snapshot(fixture.host.path()).files, host);
             assert_eq!(
                 &fixture.pending(),
                 operation,
@@ -624,8 +623,8 @@ fn journey_pending_import_survives_native_remount_and_reopens_created_root() {
             );
         },
         |fixture| {
-            let project = snapshot(fixture.project.dir());
-            let host = snapshot(fixture.host.path());
+            let project = snapshot(fixture.project.dir()).files;
+            let host = snapshot(fixture.host.path()).files;
             volume.remount().unwrap();
             let status = public_pending::report(
                 fixture.project.dir(),
@@ -641,8 +640,8 @@ fn journey_pending_import_survives_native_remount_and_reopens_created_root() {
                 .find(|row| row["context"] == "author")
                 .unwrap();
             assert_eq!(author["state"], "valid");
-            assert_eq!(snapshot(fixture.project.dir()), project);
-            assert_eq!(snapshot(fixture.host.path()), host);
+            assert_eq!(snapshot(fixture.project.dir()).files, project);
+            assert_eq!(snapshot(fixture.host.path()).files, host);
         },
     );
     volume.finish().unwrap();

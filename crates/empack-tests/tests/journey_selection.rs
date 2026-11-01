@@ -11,8 +11,7 @@ use empack_tests::harness::process::{TestProject, offline_command, read_project}
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::Path};
 
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 
 const AUTHOR: &str = r#"# Keep this author's selection notes.
 schema: 5
@@ -187,31 +186,31 @@ fn journey_cli_pin_unpin_retains_selection_and_refuses_grouped_invalid_edits() {
     let command = || isolated_command(root, host.path());
     let original = fixture(root);
     let key = DependencyKey::parse("renderer-alias").unwrap();
-    let original_files = files::snapshot(root);
+    let original_files = snapshot(root).files;
     for action in ["pin", "unpin"] {
         for (invalid, diagnostic) in [
             ("missing", "explicit dependency"),
             ("renderer-alias", "Repeated pin key"),
             ("local", "resolved provider source"),
         ] {
-            let before = files::snapshot(root);
+            let before = snapshot(root).files;
             command()
                 .args(["--yes", action, "renderer-alias", invalid])
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
             assert_eq!(
-                files::snapshot(root),
+                snapshot(root).files,
                 before,
                 "{action} {invalid} published partial changes"
             );
         }
-        let before = files::snapshot(root);
+        let before = snapshot(root).files;
         command()
             .args(["--dry-run", action, "renderer-alias"])
             .assert()
             .success();
-        assert_eq!(files::snapshot(root), before);
+        assert_eq!(snapshot(root).files, before);
         command()
             .args(["--yes", action, "renderer-alias"])
             .assert()
@@ -256,12 +255,12 @@ fn journey_cli_pin_unpin_retains_selection_and_refuses_grouped_invalid_edits() {
             "empack.lock".into(),
             fs::read(root.join("empack.lock")).unwrap(),
         );
-        assert_eq!(files::snapshot(root), expected_files);
-        let after = files::snapshot(root);
+        assert_eq!(snapshot(root).files, expected_files);
+        let after = snapshot(root).files;
         for _ in 0..2 {
             command().args(["--yes", "sync"]).assert().success();
             assert_eq!(
-                files::snapshot(root),
+                snapshot(root).files,
                 after,
                 "sync changed an exact retained selection"
             );
@@ -309,7 +308,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
         ] {
             write(root, name, bytes);
         }
-        let before = files::snapshot(root);
+        let before = snapshot(root).files;
         for (arguments, diagnostic) in [
             (
                 vec!["remove", "renderer-alias", "missing"],
@@ -335,7 +334,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
-            assert_eq!(files::snapshot(root), before);
+            assert_eq!(snapshot(root).files, before);
         }
         // A canonical provider selector resolves the aliased author root.
         let query = "modrinth:Project1";
@@ -352,7 +351,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
                 } else {
                     "Retained dependency evidence is incomplete"
                 }));
-            assert_eq!(files::snapshot(root), before);
+            assert_eq!(snapshot(root).files, before);
         }
         if known_dependent {
             command()
@@ -362,14 +361,14 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
                 .stderr(predicates::str::contains(
                     "Retained dependencies require selected content",
                 ));
-            assert_eq!(files::snapshot(root), before);
+            assert_eq!(snapshot(root).files, before);
         }
         command()
             .args(["--dry-run", "remove", query, "--forget"])
             .assert()
             .success()
             .stdout(predicates::str::contains("Select renderer-alias:"));
-        assert_eq!(files::snapshot(root), before);
+        assert_eq!(snapshot(root).files, before);
         command()
             .args(["--yes", "remove", query, "--forget"])
             .assert()
@@ -394,7 +393,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             expected.insert(name.into(), fs::read(root.join(name)).unwrap());
         }
         assert_eq!(
-            files::snapshot(root),
+            snapshot(root).files,
             expected,
             "forget changed a non-document file"
         );
@@ -403,10 +402,10 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             .assert()
             .failure()
             .stderr(predicates::str::contains("not an explicit root"));
-        assert_eq!(files::snapshot(root), expected);
+        assert_eq!(snapshot(root).files, expected);
         for _ in 0..2 {
             command().args(["--yes", "sync"]).assert().success();
-            assert_eq!(files::snapshot(root), expected);
+            assert_eq!(snapshot(root).files, expected);
         }
         let args = if known_dependent {
             // Removing the dependent is a separate explicit choice, never traversal.
@@ -417,7 +416,7 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
         let mut preview = args.clone();
         preview.push("--dry-run");
         command().args(preview).assert().success();
-        assert_eq!(files::snapshot(root), expected);
+        assert_eq!(snapshot(root).files, expected);
         command()
             .args(args)
             .assert()
@@ -448,14 +447,14 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             expected.insert(name.into(), fs::read(root.join(name)).unwrap());
         }
         assert_eq!(
-            files::snapshot(root),
+            snapshot(root).files,
             expected,
             "remove changed unselected author files"
         );
         assert!(root.join("pack/resourcepacks/unowned").is_dir());
         for _ in 0..2 {
             command().args(["--yes", "sync"]).assert().success();
-            assert_eq!(files::snapshot(root), expected);
+            assert_eq!(snapshot(root).files, expected);
         }
     }
 }
@@ -530,7 +529,7 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                 .assert()
                 .success();
         }
-        let before = files::snapshot(root);
+        let before = snapshot(root).files;
         for strict in [false, true] {
             for json_output in [true, false] {
                 let mut cmd = command();
@@ -619,7 +618,7 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                     }
                 }
                 assert_eq!(
-                    files::snapshot(root),
+                    snapshot(root).files,
                     before,
                     "assessment edited author files"
                 );
@@ -675,7 +674,7 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
         (vec!["--json"], "--plan"),
     ] {
         for mode in ["--dry-run", "--yes"] {
-            let before = files::snapshot(root);
+            let before = snapshot(root).files;
             command()
                 .args(args)
                 .args(&extra)
@@ -683,7 +682,7 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
-            assert_eq!(files::snapshot(root), before, "{extra:?}/{mode}");
+            assert_eq!(snapshot(root).files, before, "{extra:?}/{mode}");
         }
     }
     for invalid in ["missing", "stale"] {
@@ -697,7 +696,7 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
             )
             .unwrap();
         }
-        let before = files::snapshot(root);
+        let before = snapshot(root).files;
         for mode in ["--plan", "--dry-run", "--yes"] {
             let result = command().args(args).arg(mode).output().unwrap();
             assert!(!result.status.success());
@@ -710,7 +709,7 @@ fn journey_cli_migration_refuses_invalid_replacements_and_stale_evidence_without
                 }),
                 "{message}"
             );
-            assert_eq!(files::snapshot(root), before, "{invalid}/{mode}");
+            assert_eq!(snapshot(root).files, before, "{invalid}/{mode}");
         }
     }
 }

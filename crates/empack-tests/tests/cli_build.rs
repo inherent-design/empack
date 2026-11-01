@@ -1,8 +1,7 @@
 use empack_tests::harness::archive::{zip_member, zip_members};
 use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, offline_command};
 
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 #[path = "support/native_exports.rs"]
 mod native_exports;
 #[path = "support/build_profiles.rs"]
@@ -168,7 +167,7 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
             .args(["--yes", "build", "modrinth"])
             .assert()
             .success();
-        let state_before_neighbor = files::snapshot(&state);
+        let state_before_neighbor = snapshot(&state).files;
         let neighbor = TestProject::workflow_fixture("neighbor", "fabric", "1.21.1");
         offline_command(neighbor.dir())
             .arg("--state-dir")
@@ -178,8 +177,9 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
             .args(["--yes", "build", "modrinth"])
             .assert()
             .success();
-        let neighbor_files = files::snapshot(neighbor.dir());
-        let neighbor_state: Vec<_> = files::snapshot(&state)
+        let neighbor_files = snapshot(neighbor.dir()).files;
+        let neighbor_state: Vec<_> = snapshot(&state)
+            .files
             .into_iter()
             .filter(|(path, bytes)| state_before_neighbor.get(path) != Some(bytes))
             .collect();
@@ -200,10 +200,10 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
         fs::write(store.join(blob), b"abc").unwrap();
         fs::write(store.join("author-download.jar"), b"keep download").unwrap();
         fs::write(cache.join("neighbor.png"), b"keep neighboring cache file").unwrap();
-        let before_project = files::snapshot(project.dir());
-        let before_host = files::snapshot(host.path());
-        let before_state = files::snapshot(&state);
-        let mut expected_cache = files::snapshot(&cache);
+        let before_project = snapshot(project.dir()).files;
+        let before_host = snapshot(host.path()).files;
+        let before_state = snapshot(&state).files;
+        let mut expected_cache = snapshot(&cache).files;
         let selection = || {
             let mut args = vec!["clean"];
             args.extend(target);
@@ -226,12 +226,12 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
             "{console}"
         );
         assert_eq!(
-            files::snapshot(project.dir()),
+            snapshot(project.dir()).files,
             before_project,
             "preview {target:?}"
         );
         assert_eq!(
-            files::snapshot(host.path()),
+            snapshot(host.path()).files,
             before_host,
             "preview {target:?}"
         );
@@ -244,12 +244,12 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
                 "Noninteractive execution requires --yes",
             ));
         assert_eq!(
-            files::snapshot(project.dir()),
+            snapshot(project.dir()).files,
             before_project,
             "unapproved {target:?}"
         );
         assert_eq!(
-            files::snapshot(host.path()),
+            snapshot(host.path()).files,
             before_host,
             "unapproved {target:?}"
         );
@@ -261,12 +261,12 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
             .failure()
             .stderr(predicates::str::contains("Unknown cleanup target"));
         assert_eq!(
-            files::snapshot(project.dir()),
+            snapshot(project.dir()).files,
             before_project,
             "invalid target {target:?}"
         );
         assert_eq!(
-            files::snapshot(host.path()),
+            snapshot(host.path()).files,
             before_host,
             "invalid target {target:?}"
         );
@@ -284,19 +284,15 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
                 .unwrap();
         }
         assert_eq!(
-            files::snapshot(project.dir()),
+            snapshot(project.dir()).files,
             expected_project,
             "applied {target:?}"
         );
-        assert_eq!(
-            files::snapshot(&cache),
-            expected_cache,
-            "applied {target:?}"
-        );
+        assert_eq!(snapshot(&cache).files, expected_cache, "applied {target:?}");
         // A new publication replaces this project's completed journal. Another
         // project's evidence and unrelated state must stay byte-for-byte intact.
         if target == Some("cache") {
-            assert_eq!(files::snapshot(&state), before_state);
+            assert_eq!(snapshot(&state).files, before_state);
         }
         for (path, bytes) in neighbor_state {
             assert_eq!(
@@ -309,16 +305,16 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
             fs::read(state.join("author-note")).unwrap(),
             b"keep host note"
         );
-        assert_eq!(files::snapshot(neighbor.dir()), neighbor_files);
-        let after_host = files::snapshot(host.path());
+        assert_eq!(snapshot(neighbor.dir()).files, neighbor_files);
+        let after_host = snapshot(host.path()).files;
         command().arg("--yes").args(selection()).assert().success();
         assert_eq!(
-            files::snapshot(project.dir()),
+            snapshot(project.dir()).files,
             expected_project,
             "repeated {target:?}"
         );
         assert_eq!(
-            files::snapshot(host.path()),
+            snapshot(host.path()).files,
             after_host,
             "repeated {target:?}"
         );
@@ -378,8 +374,8 @@ fn cli_clean_permission_failure_preserves_all_selected_scopes() {
             store.join("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.blob");
         fs::write(&blob, b"abc").unwrap();
         fs::write(store.join("user-download.jar"), b"keep download").unwrap();
-        let project_before = snapshot(project.dir());
-        let host_before = snapshot(host.path());
+        let project_before = snapshot(project.dir()).files;
+        let host_before = snapshot(host.path()).files;
         let denied = if denied_scope == "artifact" {
             &artifact
         } else {
@@ -412,8 +408,12 @@ fn cli_clean_permission_failure_preserves_all_selected_scopes() {
             "{denied_scope}: {diagnostic}"
         );
         assert_eq!(mode, 0, "the product must not grant access to its inputs");
-        assert_eq!(snapshot(project.dir()), project_before, "{denied_scope}");
-        assert_eq!(snapshot(host.path()), host_before, "{denied_scope}");
+        assert_eq!(
+            snapshot(project.dir()).files,
+            project_before,
+            "{denied_scope}"
+        );
+        assert_eq!(snapshot(host.path()).files, host_before, "{denied_scope}");
         assert!(!state.exists());
         offline_command(project.dir())
             .arg("--state-dir")

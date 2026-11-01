@@ -8,13 +8,11 @@ use std::{collections::BTreeMap, fs, path::PathBuf};
 
 #[path = "support/approval.rs"]
 mod approval;
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 #[path = "support/pending.rs"]
 mod public_pending;
 #[path = "support/retained.rs"]
 mod retained;
-use files::snapshot;
 
 const ONE: &[u8] = b"first";
 const TWO: &[u8] = b"second";
@@ -101,7 +99,7 @@ impl Fixture {
         )
     }
     fn suspend(&self, first: bool) {
-        let before = snapshot(self.project.dir());
+        let before = snapshot(self.project.dir()).files;
         let mut command = self.prepare();
         if first {
             let supplied = self.host.path().join("first renamed.bin");
@@ -112,7 +110,7 @@ impl Fixture {
             .assert()
             .failure()
             .stderr(contains("exact manual inputs remain pending"));
-        assert_eq!(snapshot(self.project.dir()), before);
+        assert_eq!(snapshot(self.project.dir()).files, before);
     }
 }
 
@@ -128,9 +126,9 @@ fn instance_roundtrip(
     legacy: bool,
     after_suspend: impl FnOnce(&Fixture, &Value),
 ) {
-    let before = snapshot(fixture.project.dir());
+    let before = snapshot(fixture.project.dir()).files;
     fixture.prepare().arg("--dry-run").assert().success();
-    assert_eq!(snapshot(fixture.project.dir()), before);
+    assert_eq!(snapshot(fixture.project.dir()).files, before);
     assert!(!fixture.state.exists());
     fixture.suspend(legacy);
     if !legacy {
@@ -157,7 +155,7 @@ fn instance_roundtrip(
             .assert()
             .failure()
             .stderr(contains("exact manual inputs remain pending"));
-        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
         assert_ne!(fixture.pending()["id"], initial["id"]);
     }
     let operation = fixture.pending();
@@ -189,7 +187,7 @@ fn instance_roundtrip(
     let supplied = fixture.host.path().join("second renamed.bin");
     fs::write(&supplied, b"WRONG!").unwrap();
     let association = format!("{key}={}", supplied.display());
-    let retained = snapshot(&fixture.state);
+    let retained = snapshot(&fixture.state).files;
     for (args, diagnostic) in [
         (
             vec!["pending", "resume", id, "--file", &association],
@@ -218,8 +216,8 @@ fn instance_roundtrip(
             .assert()
             .failure()
             .stderr(contains(diagnostic));
-        assert_eq!(snapshot(fixture.project.dir()), before);
-        assert_eq!(snapshot(&fixture.state), retained);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
+        assert_eq!(snapshot(&fixture.state).files, retained);
         assert_eq!(fixture.pending(), operation);
     }
     fs::remove_file(fixture.host.path().join("first renamed.bin")).unwrap();
@@ -231,14 +229,14 @@ fn instance_roundtrip(
         .assert()
         .success();
     let cache = fixture.state.with_extension("cache");
-    assert!(!cache.exists() || snapshot(&cache).values().all(|bytes| bytes != ONE));
-    let protected = snapshot(&fixture.state);
+    assert!(!cache.exists() || snapshot(&cache).files.values().all(|bytes| bytes != ONE));
+    let protected = snapshot(&fixture.state).files;
     fixture
         .command()
         .args(["clean", "retained"])
         .assert()
         .success();
-    assert_eq!(snapshot(&fixture.state), protected);
+    assert_eq!(snapshot(&fixture.state).files, protected);
     assert_eq!(fixture.pending(), operation);
     fs::write(&supplied, TWO).unwrap();
     let mut command = fixture.command();
@@ -260,7 +258,7 @@ fn instance_roundtrip(
         .stdout(contains(hash(&fixture.payload)));
     assert_eq!(fixture.list()["operations"], json!([]));
     assert_eq!(
-        snapshot(&fixture.target.join("game")),
+        snapshot(&fixture.target.join("game")).files,
         BTreeMap::from([
             (
                 PathBuf::from(".empack-layout"),
@@ -276,10 +274,10 @@ fn instance_roundtrip(
     );
     assert_eq!(fs::read(&supplied).unwrap(), TWO);
     fs::write(&fixture.release, &fixture.payload).unwrap();
-    let completed = snapshot(fixture.project.dir());
+    let completed = snapshot(fixture.project.dir()).files;
     for _ in 0..2 {
         fixture.prepare().assert().success();
-        assert_eq!(snapshot(fixture.project.dir()), completed);
+        assert_eq!(snapshot(fixture.project.dir()).files, completed);
     }
 }
 
@@ -295,8 +293,8 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         unrelated.state = fixture.state.clone();
         unrelated.suspend(true);
         let unrelated_operation = unrelated.pending();
-        let unrelated_project = snapshot(unrelated.project.dir());
-        let shared_state = snapshot(&fixture.state);
+        let unrelated_project = snapshot(unrelated.project.dir()).files;
+        let shared_state = snapshot(&fixture.state).files;
         fixture
             .command()
             .args([
@@ -307,9 +305,9 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
             .assert()
             .failure()
             .stderr(contains("No pending operation matches"));
-        assert_eq!(snapshot(&fixture.state), shared_state);
+        assert_eq!(snapshot(&fixture.state).files, shared_state);
         assert_eq!(unrelated.pending(), unrelated_operation);
-        assert_eq!(snapshot(unrelated.project.dir()), unrelated_project);
+        assert_eq!(snapshot(unrelated.project.dir()).files, unrelated_project);
         // Another ordinary installation changes the base; never edit a private record.
         let mut other: Value = serde_json::from_slice(&fixture.payload).unwrap();
         other["version"] = json!("2");
@@ -335,16 +333,16 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
         assert_eq!(stale["id"], original["id"]);
         assert_eq!(stale["state"], "stale");
         let id = stale["id"].as_str().unwrap();
-        let before = snapshot(fixture.project.dir());
-        let retained = snapshot(&fixture.state);
+        let before = snapshot(fixture.project.dir()).files;
+        let retained = snapshot(&fixture.state).files;
         fixture
             .command()
             .args(["pending", "resume", id])
             .assert()
             .failure()
             .stderr(contains("stale"));
-        assert_eq!(snapshot(&fixture.state), retained);
-        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_eq!(snapshot(&fixture.state).files, retained);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
         let args = if legacy {
             vec!["instance", "discard-pending"]
         } else {
@@ -356,24 +354,24 @@ fn journey_pending_instance_rejects_changed_installation_and_discards_only_selec
             .args(&args)
             .assert()
             .success();
-        assert_eq!(snapshot(&fixture.state), retained);
-        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_eq!(snapshot(&fixture.state).files, retained);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
         fixture.command().args(&args).assert().success();
         assert_eq!(fixture.list()["operations"], json!([]));
-        assert_eq!(snapshot(fixture.project.dir()), before);
-        let after = snapshot(&fixture.state);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
+        let after = snapshot(&fixture.state).files;
         assert_eq!(retained.len(), after.len() + 1);
         for (path, bytes) in after {
             assert_eq!(retained[&path], bytes);
         }
         assert_eq!(unrelated.pending(), unrelated_operation);
-        assert_eq!(snapshot(unrelated.project.dir()), unrelated_project);
+        assert_eq!(snapshot(unrelated.project.dir()).files, unrelated_project);
         fixture
             .command()
             .args(["pending", "resume", id])
             .assert()
             .failure();
-        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
     }
 }
 
@@ -438,7 +436,7 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
         .args(["clean", "cache"])
         .assert()
         .success();
-    let original = snapshot(fixture.project.dir());
+    let original = snapshot(fixture.project.dir()).files;
     let operation = fixture.pending();
     let backing = retained::backing(&fixture.state, ONE);
     let second = fixture.host.path().join("second renamed.bin");
@@ -451,7 +449,7 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
         .unwrap();
     let association = format!("{}={}", row["key"].as_str().unwrap(), second.display());
     fs::write(&backing, b"WRONG").unwrap();
-    let corrupted = snapshot(&fixture.state);
+    let corrupted = snapshot(&fixture.state).files;
     fixture
         .command()
         .args([
@@ -464,8 +462,8 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
         .assert()
         .failure()
         .stderr(contains("Content differs from the accepted observation"));
-    assert_eq!(snapshot(&fixture.state), corrupted);
-    assert_eq!(snapshot(fixture.project.dir()), original);
+    assert_eq!(snapshot(&fixture.state).files, corrupted);
+    assert_eq!(snapshot(fixture.project.dir()).files, original);
     assert_eq!(fixture.pending(), operation);
     fs::remove_file(&backing).unwrap();
     fixture
@@ -480,7 +478,7 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
         .assert()
         .failure()
         .stderr(contains("exact manual inputs remain pending"));
-    assert_eq!(snapshot(fixture.project.dir()), original);
+    assert_eq!(snapshot(fixture.project.dir()).files, original);
     let missing = fixture.pending();
     let rows = missing["inputs"].as_array().unwrap();
     let first_row = rows.iter().find(|r| r["filename"] == "first.jar").unwrap();
@@ -513,7 +511,7 @@ fn journey_pending_instance_reverifies_corrupt_and_missing_retained_bytes() {
         .stdout(contains(hash(&fixture.payload)));
     assert_eq!(fixture.list()["operations"], json!([]));
     assert_eq!(
-        snapshot(&fixture.target.join("game")),
+        snapshot(&fixture.target.join("game")).files,
         BTreeMap::from([
             (
                 PathBuf::from(".empack-layout"),
@@ -541,11 +539,11 @@ fn journey_pending_instance_survives_native_remount_with_retained_inputs() {
             Fixture::new_in(volume.root()),
             legacy,
             |fixture, operation| {
-                let project = snapshot(fixture.project.dir());
-                let host = snapshot(fixture.host.path());
+                let project = snapshot(fixture.project.dir()).files;
+                let host = snapshot(fixture.host.path()).files;
                 volume.remount().unwrap();
-                assert_eq!(snapshot(fixture.project.dir()), project);
-                assert_eq!(snapshot(fixture.host.path()), host);
+                assert_eq!(snapshot(fixture.project.dir()).files, project);
+                assert_eq!(snapshot(fixture.host.path()).files, host);
                 assert_eq!(
                     &fixture.pending(),
                     operation,

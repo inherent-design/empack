@@ -1,6 +1,5 @@
 //! Initialization contracts that require no external catalog.
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 #[path = "support/initialization.rs"]
 mod initialization;
 #[path = "support/replacement.rs"]
@@ -109,7 +108,7 @@ fn cli_init_exact_loader_families_preserve_pins_without_catalog_or_java() {
         // Declaring Java requirements and exact pins does not run Java or certify
         // upstream availability. The ordinary proxy must observe no acquisition.
         assert!(matches!(proxy.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir());
         args[7] = "7";
         let rejected = command().args(&args).output().unwrap();
         assert_eq!(rejected.status.code(), Some(2));
@@ -118,7 +117,7 @@ fn cli_init_exact_loader_families_preserve_pins_without_catalog_or_java() {
                 .contains("invalid value '7' for '--java <JAVA>'"),
             "{rejected:?}"
         );
-        assert_eq!(files::snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()), before);
         assert!(matches!(proxy.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
     }
 }
@@ -166,7 +165,6 @@ fn cli_init_emits_versioned_automation_and_templates() {
 
 #[test]
 fn cli_init_custom_content_routes_preserve_explicit_paths_and_refuse_traversal() {
-    use empack_tests::harness::workspace::snapshot;
     use std::fs;
 
     let project = TestProject::new();
@@ -322,11 +320,11 @@ fn cli_init_vanilla_binds_minecraft_without_loader() {
             identities.insert(id.clone()),
             "separate new projects need separate identities"
         );
-        let before = files::snapshot(&pack);
+        let before = snapshot(&pack);
         for _ in 0..2 {
             command(&pack).args(["sync", "--yes"]).assert().success();
             assert_eq!(
-                files::snapshot(&pack),
+                snapshot(&pack),
                 before,
                 "empty sync must preserve authored identity and scaffolding"
             );
@@ -343,7 +341,7 @@ fn cli_init_vanilla_binds_minecraft_without_loader() {
             "{diagnostic}"
         );
         assert_eq!(
-            files::snapshot(&pack),
+            snapshot(&pack),
             before,
             "refused second initialization must preserve every file"
         );

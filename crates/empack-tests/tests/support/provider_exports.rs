@@ -1,6 +1,5 @@
 //! Captured provider records exercise export interpretation without live catalogs.
 //! The seven-byte payload is a protocol fixture, not runnable provider content.
-use crate::files::snapshot;
 use empack_core::{
     digest::DigestSet,
     model::{
@@ -11,6 +10,7 @@ use empack_core::{
     requirements::{ChoiceKey, OptionalChoice, Requirement, Requirements},
 };
 use empack_lib::engine::documents::DocumentCodec;
+use empack_tests::harness::workspace::snapshot;
 use empack_tests::{
     fixtures::restricted,
     harness::{
@@ -210,7 +210,7 @@ impl Fixture {
 
     fn build(&self, consumer: &str, extra: &[&str], choice: Option<bool>) {
         let root = self.project.dir();
-        let mut before = snapshot(root);
+        let mut before = snapshot(root).files;
         self.command(consumer, extra).assert().success();
         let artifact = self.check(consumer, choice);
         before.insert(
@@ -218,7 +218,7 @@ impl Fixture {
             fs::read(&artifact).unwrap(),
         );
         assert_eq!(
-            snapshot(root),
+            snapshot(root).files,
             before,
             "build changed author inputs or prior outputs"
         );
@@ -226,7 +226,7 @@ impl Fixture {
 
     fn build_mixed(&self, enabled: bool) {
         let root = self.project.dir();
-        let mut before = snapshot(root);
+        let mut before = snapshot(root).files;
         self.command(
             "modrinth",
             &[
@@ -245,7 +245,7 @@ impl Fixture {
                 fs::read(&artifact).unwrap(),
             );
         }
-        assert_eq!(snapshot(root), before);
+        assert_eq!(snapshot(root).files, before);
     }
 }
 
@@ -257,25 +257,25 @@ fn cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects
     }
     fixture.capture_record(true, "manual.zip");
     for consumer in ["modrinth", "curseforge"] {
-        let before = snapshot(fixture.project.dir());
+        let before = snapshot(fixture.project.dir()).files;
         fixture
             .command(consumer, &[])
             .assert()
             .failure()
             .stderr(predicates::str::contains("metadata"));
-        assert_eq!(snapshot(fixture.project.dir()), before);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
         fixture.build(consumer, &["--allow-optional-metadata-loss"], None);
         if consumer == "curseforge" {
             fixture.build(consumer, &["--optional", "art=true"], Some(true));
             fixture.build(consumer, &["--optional-defaults"], Some(false));
             fixture.build(consumer, &["--optional", "art=false"], Some(false));
-            let before = snapshot(fixture.project.dir());
+            let before = snapshot(fixture.project.dir()).files;
             fixture
                 .command(consumer, &["--optional", "typo=true"])
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains("typo"));
-            assert_eq!(snapshot(fixture.project.dir()), before);
+            assert_eq!(snapshot(fixture.project.dir()).files, before);
         } else {
             for flags in [
                 vec!["--optional", "art=true", "--allow-optional-metadata-loss"],
@@ -283,8 +283,8 @@ fn cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects
                 vec!["--optional", "art=false"],
             ] {
                 for explain in [false, true] {
-                    let before = snapshot(fixture.project.dir());
-                    let host = snapshot(fixture.host.path());
+                    let before = snapshot(fixture.project.dir()).files;
+                    let host = snapshot(fixture.host.path()).files;
                     let mut command = fixture.command(consumer, &flags);
                     if explain {
                         command.args(["--explain", "--json"]);
@@ -293,16 +293,16 @@ fn cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects
                         .assert()
                         .failure()
                         .stderr(predicates::str::contains("preserve optional participation"));
-                    assert_eq!(snapshot(fixture.project.dir()), before);
-                    assert_eq!(snapshot(fixture.host.path()), host);
+                    assert_eq!(snapshot(fixture.project.dir()).files, before);
+                    assert_eq!(snapshot(fixture.host.path()).files, host);
                 }
             }
         }
     }
     fixture.build_mixed(true);
     fixture.build_mixed(false);
-    let before = snapshot(fixture.project.dir());
-    let host = snapshot(fixture.host.path());
+    let before = snapshot(fixture.project.dir()).files;
+    let host = snapshot(fixture.host.path()).files;
     let report = fixture
         .command(
             "modrinth",
@@ -329,10 +329,10 @@ fn cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects
             }
         );
     }
-    assert_eq!(snapshot(fixture.project.dir()), before);
-    assert_eq!(snapshot(fixture.host.path()), host);
+    assert_eq!(snapshot(fixture.project.dir()).files, before);
+    assert_eq!(snapshot(fixture.host.path()).files, host);
     fixture.capture_record(false, "original.zip");
-    let before = snapshot(fixture.project.dir());
+    let before = snapshot(fixture.project.dir()).files;
     fixture
         .command("curseforge", &[])
         .assert()
@@ -340,7 +340,7 @@ fn cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects
         .stderr(predicates::str::contains(
             "cannot preserve a renamed or relocated provider file",
         ));
-    assert_eq!(snapshot(fixture.project.dir()), before);
+    assert_eq!(snapshot(fixture.project.dir()).files, before);
     fixture
         .command("modrinth", &["curseforge"])
         .assert()
@@ -349,7 +349,7 @@ fn cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects
             "cannot preserve a renamed or relocated provider file",
         ));
     assert_eq!(
-        snapshot(fixture.project.dir()),
+        snapshot(fixture.project.dir()).files,
         before,
         "a late consumer refusal must preserve both outputs"
     );

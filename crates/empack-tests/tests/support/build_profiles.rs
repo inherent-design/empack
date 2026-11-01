@@ -1,6 +1,6 @@
 //! Literal author profiles and independent archive assertions, through the real CLI.
 //! No launcher UI or game execution is implied by checking generated integration.
-use crate::files::snapshot;
+use empack_tests::harness::workspace::snapshot;
 use empack_tests::harness::{
     archive::{distribution_inventory, tar_gz_members, zip_members},
     process::{TestProject, offline_command},
@@ -66,8 +66,8 @@ impl Fixture {
         command
     }
     fn explain(&self, args: &[&str]) -> Value {
-        let before = snapshot(self.project.dir());
-        let host_before = snapshot(self.host.path());
+        let before = snapshot(self.project.dir()).files;
+        let host_before = snapshot(self.host.path()).files;
         let output = self
             .command()
             .args(["build", "--explain", "--json"])
@@ -77,8 +77,8 @@ impl Fixture {
             .get_output()
             .stdout
             .clone();
-        assert_eq!(snapshot(self.project.dir()), before);
-        assert_eq!(snapshot(self.host.path()), host_before);
+        assert_eq!(snapshot(self.project.dir()).files, before);
+        assert_eq!(snapshot(self.host.path()).files, host_before);
         let report: Value = serde_json::from_slice(&output).unwrap();
         assert_eq!(report["schema"], 2);
         assert_eq!(report["pack_id"], "profiles.fixture");
@@ -95,7 +95,7 @@ impl Fixture {
         self.build_outputs(args, &[(output, managed, subscribed)]);
     }
     fn build_outputs(&self, args: &[&str], outputs: &[(&str, bool, bool)]) {
-        let mut expected = snapshot(self.project.dir());
+        let mut expected = snapshot(self.project.dir()).files;
         self.command()
             .args(["--yes", "build"])
             .args(args)
@@ -112,7 +112,7 @@ impl Fixture {
             expected.insert(output.into(), fs::read(path).unwrap());
         }
         // Publication owns only selected outputs, including repeated builds.
-        assert_eq!(snapshot(self.project.dir()), expected);
+        assert_eq!(snapshot(self.project.dir()).files, expected);
     }
 }
 
@@ -296,7 +296,7 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
             "#!/bin/sh\nprintf '%s' 'line\nkey='\"'\"'雪'\"'\"'\\suffix'\n".as_bytes(),
         ),
     ];
-    let mut author = snapshot(root);
+    let mut author = snapshot(root).files;
     #[cfg(unix)]
     let mut shell = None;
     for delivery in ["references", "bundled"] {
@@ -369,7 +369,7 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
             previous = Some(members);
             author.insert(output.into(), fs::read(&archive).unwrap());
             assert_eq!(
-                snapshot(root),
+                snapshot(root).files,
                 author,
                 "build changed author inputs or prior outputs"
             );
@@ -423,7 +423,7 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
     ] {
         let path = root.join("templates/client").join(name);
         fs::write(&path, invalid).unwrap();
-        let before = snapshot(root);
+        let before = snapshot(root).files;
         for format in ["zip", "tar.gz", "7z"] {
             fixture
                 .command()
@@ -441,14 +441,14 @@ fn cli_prism_template_archives_preserve_inventory_attributes_and_failed_rebuilds
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
             assert_eq!(
-                snapshot(root),
+                snapshot(root).files,
                 before,
                 "failed preparation changed author work or prior archives"
             );
         }
         fs::remove_file(path).unwrap();
     }
-    assert_eq!(snapshot(root), author);
+    assert_eq!(snapshot(root).files, author);
 }
 
 fn profile(
@@ -727,8 +727,8 @@ fn cli_profile_selection_refusals_preserve_existing_artifacts() {
     let fixture = Fixture::new(true);
     // Establish a previous usable output before checking rejected selections.
     fixture.build(&["--profile", "curated"], SUBSCRIBED, true, true);
-    let before = snapshot(fixture.project.dir());
-    let host_before = snapshot(fixture.host.path());
+    let before = snapshot(fixture.project.dir()).files;
+    let host_before = snapshot(fixture.host.path()).files;
     for (args, diagnostic) in [
         (
             vec!["prism"],
@@ -763,8 +763,8 @@ fn cli_profile_selection_refusals_preserve_existing_artifacts() {
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains(diagnostic));
-            assert_eq!(snapshot(fixture.project.dir()), before);
-            assert_eq!(snapshot(fixture.host.path()), host_before);
+            assert_eq!(snapshot(fixture.project.dir()).files, before);
+            assert_eq!(snapshot(fixture.host.path()).files, host_before);
         }
     }
     let zip = "dist/Profile fixture-1-prism-bundled-subscribed.zip";
@@ -804,8 +804,8 @@ fn cli_profile_selection_refusals_preserve_existing_artifacts() {
         author.replace("default: [curated, portable]", "default: []"),
     )
     .unwrap();
-    let before = snapshot(fixture.project.dir());
-    let host_before = snapshot(fixture.host.path());
+    let before = snapshot(fixture.project.dir()).files;
+    let host_before = snapshot(fixture.host.path()).files;
     for explain in [false, true] {
         let mut command = fixture.command();
         command.args(["--yes", "build"]);
@@ -816,8 +816,8 @@ fn cli_profile_selection_refusals_preserve_existing_artifacts() {
             .assert()
             .failure()
             .stderr(predicates::str::contains("No default build profiles"));
-        assert_eq!(snapshot(fixture.project.dir()), before);
-        assert_eq!(snapshot(fixture.host.path()), host_before);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
+        assert_eq!(snapshot(fixture.host.path()).files, host_before);
     }
 }
 
@@ -842,7 +842,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
     let exchange = "dist/Profile fixture-1.mrpack";
 
     let build = |configuration: &[u8], notice: &[u8], clean: bool| {
-        let mut before = snapshot(root);
+        let mut before = snapshot(root).files;
         let mut command = fixture.command();
         command.args(["--yes", "build"]);
         if clean {
@@ -880,7 +880,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
             before.insert(output.into(), fs::read(root.join(output)).unwrap());
         }
         assert_eq!(
-            snapshot(root),
+            snapshot(root).files,
             before,
             "build changed files outside its selected output/cleanup set"
         );
@@ -888,14 +888,14 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
     };
 
     let (initial_client, _) = build(CONTENT[0].1, b"Profile fixture / 1 / first\n", false);
-    let before = snapshot(root);
+    let before = snapshot(root).files;
     fixture
         .command()
         .args(["--dry-run", "build", "--clean"])
         .assert()
         .success();
     assert_eq!(
-        snapshot(root),
+        snapshot(root).files,
         before,
         "cleanup preview changed prior output"
     );
@@ -903,7 +903,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
     let changed = b"changed configuration, same pack version\n";
     fs::write(root.join("pack/config/settings.txt"), changed).unwrap();
     fs::write(&template, b"{{missing_required_value}}").unwrap();
-    let refused = snapshot(root);
+    let refused = snapshot(root).files;
     for clean in [false, true] {
         let mut command = fixture.command();
         command.args(["--yes", "build"]);
@@ -915,7 +915,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
             .failure()
             .stderr(predicates::str::contains("missing_required_value"));
         assert_eq!(
-            snapshot(root),
+            snapshot(root).files,
             refused,
             "a later recipe failure replaced an earlier output or cleaned prior files"
         );
@@ -963,8 +963,8 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
             )
             .unwrap();
         }
-        let before = snapshot(fixture.project.dir());
-        let host_before = snapshot(fixture.host.path());
+        let before = snapshot(fixture.project.dir()).files;
+        let host_before = snapshot(fixture.host.path()).files;
         let report = fixture.explain(&["--profile", "curated"]);
         assert_eq!(report["lock"], if missing { "missing" } else { "stale" });
         assert_eq!(report["declared_manual_inputs"], Value::Null);
@@ -990,8 +990,8 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
             } else {
                 "Lock resolves a different intent revision"
             }));
-        assert_eq!(snapshot(fixture.project.dir()), before);
-        assert_eq!(snapshot(fixture.host.path()), host_before);
+        assert_eq!(snapshot(fixture.project.dir()).files, before);
+        assert_eq!(snapshot(fixture.host.path()).files, host_before);
     }
 }
 
@@ -1006,7 +1006,7 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
         )
         .unwrap();
         let content = [("config/settings.txt", settings), CONTENT[1]];
-        let mut author = snapshot(fixture.project.dir());
+        let mut author = snapshot(fixture.project.dir()).files;
         fixture
             .command()
             .args(["--yes", "build", "--ad-hoc", "prism"])
@@ -1016,7 +1016,7 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
         let members = zip_members(&artifact);
         assert_inventory(&members, true, false, &content);
         author.insert(REFERENCE.into(), fs::read(&artifact).unwrap());
-        assert_eq!(snapshot(fixture.project.dir()), author);
+        assert_eq!(snapshot(fixture.project.dir()).files, author);
         let descriptor_name = ".minecraft/.empack-consumer/release.json";
         let descriptor = &members[descriptor_name];
         let digest = hash(descriptor);
@@ -1079,22 +1079,22 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
         let mut changed = descriptor.clone();
         changed.push(b'\n');
         fs::write(&selected, changed).unwrap();
-        let before = snapshot(instance.path());
+        let before = snapshot(instance.path()).files;
         prepare()
             .assert()
             .failure()
             .stderr(predicates::str::contains(
                 "Selected release payload identity mismatch",
             ));
-        assert_eq!(snapshot(instance.path()), before);
+        assert_eq!(snapshot(instance.path()).files, before);
         fs::write(&selected, descriptor).unwrap();
         // A valid descriptor cannot authorize corrupted included content, even
         // when the replacement has the declared length. This uses a cold store.
         let asset = game.join(".empack-consumer/assets").join(hash(settings));
         fs::write(&asset, vec![b'!'; settings.len()]).unwrap();
-        let before = snapshot(instance.path());
+        let before = snapshot(instance.path()).files;
         prepare().assert().failure();
-        assert_eq!(snapshot(instance.path()), before);
+        assert_eq!(snapshot(instance.path()).files, before);
         fs::write(&asset, settings).unwrap();
         prepare().assert().success();
         for (path, bytes) in &members {
@@ -1102,6 +1102,7 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
         }
         let visible = || {
             snapshot(&game)
+                .files
                 .into_iter()
                 .filter(|(p, _)| !p.starts_with(".empack-consumer"))
                 .collect::<BTreeMap<_, _>>()
@@ -1122,12 +1123,12 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
         // Preparing again respects the seed's player-owned content and does
         // not rebuild the release descriptor to disguise a local modification.
         fs::write(game.join("config/settings.txt"), b"player configuration").unwrap();
-        let installed = snapshot(instance.path());
+        let installed = snapshot(instance.path()).files;
         for _ in 0..2 {
             prepare().assert().success();
-            assert_eq!(snapshot(instance.path()), installed);
+            assert_eq!(snapshot(instance.path()).files, installed);
         }
         assert_eq!(fs::read(&selected).unwrap(), *descriptor);
-        assert_eq!(snapshot(fixture.project.dir()), author);
+        assert_eq!(snapshot(fixture.project.dir()).files, author);
     }
 }

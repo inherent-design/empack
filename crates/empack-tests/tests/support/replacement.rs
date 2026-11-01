@@ -1,5 +1,4 @@
 //! Replacement assertions through the real executable, with literal incoming data.
-use super::files;
 #[path = "approval.rs"]
 mod approval;
 
@@ -124,7 +123,7 @@ fn cli_forced_import_rejects_invalid_candidates_without_mutation() {
     for (label, incoming, diagnostic) in cases {
         let project = fixture();
         fs::write(project.dir().join("incoming.mrpack"), incoming).unwrap();
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir()).files;
         let modes = snapshot(project.dir()).entries;
         for preview in [false, true] {
             let mut command = offline_command(project.dir());
@@ -150,7 +149,7 @@ fn cli_forced_import_rejects_invalid_candidates_without_mutation() {
                 "{label}: {stderr}"
             );
             assert_eq!(
-                files::snapshot(project.dir()),
+                snapshot(project.dir()).files,
                 before,
                 "{label}, preview={preview}"
             );
@@ -171,7 +170,7 @@ fn cli_forced_initialization_rejects_invalid_options_without_mutation() {
         ["--loader-version", "unexpected-for-vanilla"],
     ] {
         let project = fixture();
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir()).files;
         let modes = snapshot(project.dir()).entries;
         for preview in [false, true] {
             let mut command = offline_command(project.dir());
@@ -197,7 +196,7 @@ fn cli_forced_initialization_rejects_invalid_options_without_mutation() {
                 "{output:?}"
             );
             assert_eq!(
-                files::snapshot(project.dir()),
+                snapshot(project.dir()).files,
                 before,
                 "{extra:?}, preview={preview}"
             );
@@ -241,7 +240,7 @@ fn cli_forced_replacement_preview_and_publication_keep_unowned_files() {
                 "existing",
             ]
         };
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir()).files;
         let modes = snapshot(project.dir()).entries;
         let preview = offline_command(project.dir())
             .args(&arguments)
@@ -253,7 +252,7 @@ fn cli_forced_replacement_preview_and_publication_keep_unowned_files() {
             String::from_utf8_lossy(&preview.stdout).contains("old.properties"),
             "{preview:?}"
         );
-        assert_eq!(files::snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()).files, before);
         assert_eq!(snapshot(project.dir()).entries, modes);
 
         offline_command(project.dir())
@@ -268,7 +267,7 @@ fn cli_forced_replacement_preview_and_publication_keep_unowned_files() {
             .iter()
             .filter(|(path, _)| outside_replacement(path))
             .collect();
-        let after = files::snapshot(project.dir());
+        let after = snapshot(project.dir()).files;
         assert_eq!(
             after
                 .iter()
@@ -316,7 +315,7 @@ fn cli_pty_forced_replacement_decline_preserves_existing_project() {
             ),
         )
         .unwrap();
-        let before = files::snapshot(project.dir());
+        let before = snapshot(project.dir()).files;
         let modes = snapshot(project.dir()).entries;
         let mut args = vec!["init", "--force"];
         if import {
@@ -343,7 +342,7 @@ fn cli_pty_forced_replacement_decline_preserves_existing_project() {
             &args,
             "(?i)apply this (initialization|import) plan",
         );
-        assert_eq!(files::snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()).files, before);
         assert_eq!(snapshot(project.dir()).entries, modes);
     }
 }

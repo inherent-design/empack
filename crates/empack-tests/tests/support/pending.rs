@@ -1,9 +1,8 @@
 //! Public pending commands with separate invocation, destination, and host storage.
 use empack_tests::harness::process::offline_command;
+use empack_tests::harness::workspace::snapshot;
 use serde_json::{Value, json};
 use std::path::Path;
-
-use crate::files;
 
 pub fn command(invocation: &Path, root: &Path, state: &Path) -> assert_cmd::Command {
     let mut command = offline_command(invocation);
@@ -23,7 +22,7 @@ pub fn report(invocation: &Path, root: &Path, state: &Path, args: &[&str]) -> Va
     let paths = [invocation, root, state, &cache];
     let before: Vec<_> = paths
         .iter()
-        .map(|path| path.exists().then(|| files::snapshot(path)))
+        .map(|path| path.exists().then(|| snapshot(path).files))
         .collect();
     let output = command(invocation, root, state)
         .args(args)
@@ -34,7 +33,7 @@ pub fn report(invocation: &Path, root: &Path, state: &Path, args: &[&str]) -> Va
         .clone();
     for (path, expected) in paths.into_iter().zip(before) {
         assert_eq!(
-            path.exists().then(|| files::snapshot(path)),
+            path.exists().then(|| snapshot(path).files),
             expected,
             "inspection changed {}",
             path.display()
@@ -84,10 +83,10 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
         ),
     ] {
         fs::write(record, bytes).unwrap();
-        let preserved = files::snapshot(state);
-        let author = files::snapshot(invocation);
+        let preserved = snapshot(state).files;
+        let author = snapshot(invocation).files;
         let cache = state.with_extension("cache");
-        let cached = cache.exists().then(|| files::snapshot(&cache));
+        let cached = cache.exists().then(|| snapshot(&cache).files);
         let broken = single(invocation, root, state, kind);
         assert_ne!(broken["id"], original["id"]);
         assert_eq!(broken["state"], "unavailable");
@@ -109,9 +108,9 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
                 "{text}"
             );
             assert!(text.contains("Metadata only"), "{text}");
-            assert_eq!(files::snapshot(state), preserved);
-            assert_eq!(files::snapshot(invocation), author);
-            assert_eq!(cache.exists().then(|| files::snapshot(&cache)), cached);
+            assert_eq!(snapshot(state).files, preserved);
+            assert_eq!(snapshot(invocation).files, author);
+            assert_eq!(cache.exists().then(|| snapshot(&cache).files), cached);
         }
         command(invocation, root, state)
             .args(["pending", "show", original["id"].as_str().unwrap()])
@@ -122,31 +121,31 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
             .args(["pending", "resume", id])
             .assert()
             .failure();
-        assert_eq!(files::snapshot(state), preserved);
-        assert_eq!(files::snapshot(invocation), author);
+        assert_eq!(snapshot(state).files, preserved);
+        assert_eq!(snapshot(invocation).files, author);
         command(invocation, root, state)
             .args(["--dry-run", "pending", "discard", id])
             .assert()
             .success();
-        assert_eq!(files::snapshot(state), preserved);
-        assert_eq!(files::snapshot(invocation), author);
+        assert_eq!(snapshot(state).files, preserved);
+        assert_eq!(snapshot(invocation).files, author);
         // Recover fixture bytes only to exercise the next fault independently.
         fs::write(record, &original_bytes).unwrap();
     }
     fs::write(record, b"{malformed").unwrap();
     let broken = single(invocation, root, state, kind);
     let id = broken["id"].as_str().unwrap();
-    let mut expected = files::snapshot(state);
+    let mut expected = snapshot(state).files;
     expected
         .remove(record.strip_prefix(state).unwrap())
         .unwrap();
-    let author = files::snapshot(invocation);
+    let author = snapshot(invocation).files;
     command(invocation, root, state)
         .args(["pending", "discard", id])
         .assert()
         .success();
-    assert_eq!(files::snapshot(state), expected);
-    assert_eq!(files::snapshot(invocation), author);
+    assert_eq!(snapshot(state).files, expected);
+    assert_eq!(snapshot(invocation).files, author);
     assert_eq!(
         report(invocation, root, state, &["pending", "list", "--json"])["operations"],
         json!([])

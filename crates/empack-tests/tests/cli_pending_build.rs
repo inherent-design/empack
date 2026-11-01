@@ -8,9 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[path = "support/files.rs"]
-mod files;
-use files::snapshot;
+use empack_tests::harness::workspace::snapshot;
 
 fn command(project: &TestProject, state: &Path) -> assert_cmd::Command {
     let mut command = assert_cmd::Command::from_std(project.cmd());
@@ -43,7 +41,7 @@ fn cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_c
     let state = host.path().join("state");
     fs::create_dir_all(project.dir().join("dist")).unwrap();
     fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     command(&project, &state)
         .args([
             "build", "--ad-hoc", "modrinth", "prism", "server", "--clean",
@@ -51,7 +49,7 @@ fn cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_c
         .assert()
         .failure()
         .stderr(predicates::str::contains("continuation was saved"));
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
     let record = saved(&state);
     let recorded = fs::read(&record).unwrap();
     command(&project, &state)
@@ -59,13 +57,13 @@ fn cli_restricted_all_targets_keep_prior_artifacts_and_require_explicit_recipe_c
         .assert()
         .success();
     assert_eq!(fs::read(&record).unwrap(), recorded);
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
     command(&project, &state)
         .args(["clean", "continuation"])
         .assert()
         .success();
     assert!(!record.exists());
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
 }
 
 #[test]
@@ -75,14 +73,14 @@ fn cli_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
     let state = host.path().join("state");
     let downloads = host.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     for args in [
         vec!["build", "modrinth", "--wait-downloads", "0"],
         vec!["build", "modrinth", "--wait-downloads", "3601"],
         vec!["build", "modrinth", "--wait-downloads", "5"],
     ] {
         command(&project, &state).args(args).assert().failure();
-        assert_eq!(snapshot(project.dir()), before);
+        assert_eq!(snapshot(project.dir()).files, before);
         assert!(!state.exists());
     }
     command(&project, &state)
@@ -98,7 +96,7 @@ fn cli_restricted_wait_preserves_preview_and_resumes_verified_downloads() {
         .timeout(std::time::Duration::from_secs(10))
         .assert()
         .success();
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
     assert!(!state.exists());
     // Resolve and qualify the product before starting the observer deadline.
     let mut waiting = command(&project, &state);
@@ -170,10 +168,10 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
     let downloads = host.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
     fs::write(downloads.join("manual.zip"), b"INVALID").unwrap();
-    let original_downloads = snapshot(&downloads);
+    let original_downloads = snapshot(&downloads).files;
     fs::create_dir(project.dir().join("dist")).unwrap();
     fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     command(&project, &state)
         .args([
             "build",
@@ -187,9 +185,9 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
         .assert()
         .failure()
         .stderr(predicates::str::contains("Download wait expired"));
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
     assert!(saved(&state).is_file());
-    assert_eq!(snapshot(&downloads), original_downloads);
+    assert_eq!(snapshot(&downloads).files, original_downloads);
     fs::write(downloads.join("renamed.bin"), b"payload").unwrap();
     command(&project, &state)
         .args([
@@ -208,7 +206,7 @@ fn cli_restricted_wait_timeout_retains_recipe_and_previous_artifacts() {
     );
     let mut expected_downloads = original_downloads;
     expected_downloads.insert("renamed.bin".into(), b"payload".to_vec());
-    assert_eq!(snapshot(&downloads), expected_downloads);
+    assert_eq!(snapshot(&downloads).files, expected_downloads);
     for (path, bytes) in before {
         assert_eq!(fs::read(project.dir().join(path)).unwrap(), bytes);
     }
@@ -221,7 +219,7 @@ fn cli_restricted_wait_refuses_a_replaced_recipe() {
     let state = host.path().join("state");
     let downloads = host.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     // Resolve and qualify the product before starting the observer deadline.
     let mut waiting = command(&project, &state);
     let watched_state = state.clone();
@@ -265,7 +263,7 @@ fn cli_restricted_wait_refuses_a_replaced_recipe() {
         .stderr(predicates::str::contains("replaced while waiting"));
     let (record, replacement) = replace.join().unwrap();
     assert_eq!(fs::read(record).unwrap(), replacement);
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
 }
 
 #[cfg(unix)]
@@ -278,7 +276,7 @@ fn cli_restricted_wait_interrupt_retains_recovery_state() {
     fs::create_dir(&downloads).unwrap();
     fs::create_dir(project.dir().join("dist")).unwrap();
     fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
-    let before = snapshot(project.dir());
+    let before = snapshot(project.dir()).files;
     let mut cmd = project.cmd();
     cmd.arg("--state-dir")
         .arg(&state)
@@ -337,5 +335,5 @@ fn cli_restricted_wait_interrupt_retains_recovery_state() {
     };
     assert_eq!(status.code(), Some(130));
     assert!(saved(&state).is_file());
-    assert_eq!(snapshot(project.dir()), before);
+    assert_eq!(snapshot(project.dir()).files, before);
 }

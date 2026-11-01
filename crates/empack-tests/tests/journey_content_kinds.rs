@@ -13,8 +13,7 @@ use std::{
 
 #[path = "support/content_kinds.rs"]
 mod content_kinds;
-#[path = "support/files.rs"]
-mod files;
+use empack_tests::harness::workspace::snapshot;
 
 const AUTHOR: &str = r#"# Literal routing and consumer profiles.
 schema: 5
@@ -121,20 +120,20 @@ fn journey_cli_content_kinds_preserve_sides_choices_and_world_groups() {
         let bytes = content_kinds::archive(case.members);
         write(root, &source, &bytes);
         if case.kind != "mod" {
-            let before = files::snapshot(root);
+            let before = snapshot(root);
             command()
                 .args(["--yes", "add", &source])
                 .assert()
                 .failure()
                 .stderr(predicates::str::contains("ambiguous; supply --type"));
-            assert_eq!(files::snapshot(root), before);
+            assert_eq!(snapshot(root), before);
         }
-        let before = files::snapshot(root);
+        let before = snapshot(root);
         command()
             .args(["--dry-run", "add", "--type", case.kind, &source])
             .assert()
             .success();
-        assert_eq!(files::snapshot(root), before);
+        assert_eq!(snapshot(root), before);
         command()
             .args(["--yes", "add", "--type", case.kind, &source])
             .assert()
@@ -158,24 +157,24 @@ fn journey_cli_content_kinds_preserve_sides_choices_and_world_groups() {
         ],
     ] {
         write(root, world_source, &content_kinds::archive(&bad));
-        let before = files::snapshot(root);
+        let before = snapshot(root);
         command()
             .args(["--yes", "add", "--type", "world", world_source])
             .assert()
             .failure();
-        assert_eq!(files::snapshot(root), before);
+        assert_eq!(snapshot(root), before);
     }
     let world = [
         ("Wrapped/level.dat", b"world".as_slice()),
         ("Wrapped/region/r.0.0.mca", b"region".as_slice()),
     ];
     write(root, world_source, &content_kinds::archive(&world));
-    let before = files::snapshot(root);
+    let before = snapshot(root);
     command()
         .args(["--dry-run", "add", "--type", "world", world_source])
         .assert()
         .success();
-    assert_eq!(files::snapshot(root), before);
+    assert_eq!(snapshot(root), before);
     command()
         .args(["--yes", "add", "--type", "world", world_source])
         .assert()
@@ -223,10 +222,10 @@ fn journey_cli_content_kinds_preserve_sides_choices_and_world_groups() {
     save_yaml(&root.join("empack.yml"), &author);
     save_yaml(&root.join("empack.bindings.yml"), &bindings);
     command().args(["--yes", "sync"]).assert().success();
-    let stable = files::snapshot(root);
+    let stable = snapshot(root);
     for _ in 0..2 {
         command().args(["--yes", "sync"]).assert().success();
-        assert_eq!(files::snapshot(root), stable);
+        assert_eq!(snapshot(root), stable);
     }
     let client: BTreeMap<_, _> = payloads
         .iter()
@@ -262,13 +261,13 @@ fn journey_cli_content_kinds_preserve_sides_choices_and_world_groups() {
         vec!["--yes", "build"],
         vec!["--yes", "build", "--optional", "typo=true"],
     ] {
-        let before = files::snapshot(root);
+        let before = snapshot(root);
         command()
             .args(&args)
             .assert()
             .failure()
             .stderr(predicates::str::contains("choice"));
-        assert_eq!(files::snapshot(root), before);
+        assert_eq!(snapshot(root), before);
     }
     // Unselected optional input is not needed; selected input must supply its exact bytes.
     fs::remove_file(root.join("vendor sources/resources.zip")).unwrap();
@@ -287,7 +286,7 @@ fn journey_cli_content_kinds_preserve_sides_choices_and_world_groups() {
     let mut selected = client;
     selected.remove("resourcepacks/resources.zip");
     prism_inventory(root, &selected);
-    let before = files::snapshot(root);
+    let before = snapshot(root);
     command()
         .args([
             "--yes",
@@ -300,5 +299,5 @@ fn journey_cli_content_kinds_preserve_sides_choices_and_world_groups() {
         .assert()
         .failure()
         .stderr(predicates::str::contains("resources.zip"));
-    assert_eq!(files::snapshot(root), before);
+    assert_eq!(snapshot(root), before);
 }
