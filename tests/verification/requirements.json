@@ -701,6 +701,46 @@
             "Control-D and malformed UTF-8 fail before returning a text default or option choice",
             "Failure restores captured terminal state without being relabelled as user approval or plain cancellation"
           ]
+        },
+        {
+          "id": "UX-003.instance-conflict-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::journey_publisher::cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_files"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The same closed/piped stdin, dry-run, actual terminal refusal, keyboard interruption and Unix host-signal matrix applies to explicit preserve/replace/merge conflict decisions",
+            "Deliberate approved repair publishes the independently expected selected bytes and preserves unrelated instance/world/input bytes and entry attributes"
+          ]
+        },
+        {
+          "id": "UX-003.publisher-staging-decisions",
+          "boundary": "I",
+          "test_ids": [
+            "empack-tests::cli_publisher::cli_pty_release_staging_requires_approval_and_preserves_preview_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Immutable release staging uses the shared refusal/interruption matrix while preserving signing inputs, publisher work, prior releases and selected host state",
+            "An explicitly approved identical selection produces the verified descriptor/signature/assets without creating a channel"
+          ]
         }
       ],
       "owner_now": [

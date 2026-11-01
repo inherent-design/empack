@@ -78,7 +78,10 @@ fn pty(prompt: Prompt, keys: &[u8], cancel: bool) -> (Result<Answer>, bool, Vec<
                 &mut slave,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                &mut size,
+                // Darwin declares a mutable pointer, Linux a const pointer.
+                // Pass the owned raw pointer without a needless mutable borrow
+                // at Linux's const FFI boundary.
+                std::ptr::from_mut(&mut size),
             )
         },
         0
