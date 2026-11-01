@@ -352,6 +352,7 @@ jobs:
         if: runner.os == 'Linux'
         with:
           version: "0.13.5"
+          enable-cache: false
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148
