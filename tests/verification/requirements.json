@@ -2691,6 +2691,27 @@
           ]
         },
         {
+          "id": "UX-018.executable-selector-refusal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_dependencies::cli_invalid_provider_selectors_refuse_before_transport_or_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual executable rejects credentialed, non-HTTPS, queried or non-project provider URLs and noncanonical CurseForge numeric selectors with usage status and a selector/identity diagnostic",
+            "Invalid selected inputs preserve the complete author and isolated host-storage snapshots, including empty directories, attributes and absent state/cache roots; the controlled refusing proxy observes no transport attempt",
+            "These syntax refusals do not establish provider existence or equivalent positive resolutions; controlled catalog and live provider cases remain separately required"
+          ]
+        },
+        {
           "id": "UX-018.modrinth-cli-selectors",
           "boundary": "L",
           "test_ids": [
@@ -2738,7 +2759,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-019",
