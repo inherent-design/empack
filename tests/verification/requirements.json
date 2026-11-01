@@ -7513,7 +7513,56 @@
             "A pinned local mrpack imports and reexports the independently expected complete index and files without changing source/archive/lock bytes",
             "Public missing-input selectors survive restart, reject incorrect associations and bytes, and complete a verified export from correctly supplied renamed input"
           ],
-          "remaining_group_evidence": "Actual supported consumer import, broader environment/provider/format qualification and final packaged-candidate execution remain required"
+          "remaining_group_evidence": "These controlled executable journeys do not perform actual consumer import or establish final-package identity; the separate P and C cases retain those obligations."
+        },
+        {
+          "id": "UX-044.packaged-reference-inventory",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::cli_build::provider_exports::cli_provider_reference_exports_preserve_manifests_choices_and_refusal_effects",
+            "empack-tests::journey_import::journey_local_mrpack_import_reexport",
+            "empack-tests::journey_pending::journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each of the five exact extracted default executables emits the independently expected complete Modrinth index and override inventory, retaining exact source hashes, lengths, runtime, download URL and side participation",
+            "The same package reexports the pinned local archive and resumes verified renamed content through public missing-input selectors; incorrect associations and unsupported conversions do not replace prior outputs",
+            "Provider records are component fixture inputs and the seven-byte payload is not runnable mod content; this is neither fresh provider access nor actual consumer startup"
+          ]
+        },
+        {
+          "id": "UX-044.actual-supported-import",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::consumer::modrinth-import"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual named supported consumer imports the selected mrpack and compares its selected files and runtime with an independent expected inventory",
+            "The operator starts that exact candidate and retains observations bound to the admitted source, distribution and product graph; an index comparison or ZIP parser alone cannot supply the task"
+          ]
         }
       ],
       "owner_now": [
@@ -7524,7 +7573,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-045",
