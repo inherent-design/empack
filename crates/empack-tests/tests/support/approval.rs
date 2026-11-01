@@ -2,8 +2,8 @@
 use empack_tests::harness::workspace::snapshot;
 use std::path::Path;
 
-/// Closed/piped stdin cannot grant approval; preview and terminal refusal preserve
-/// the entire workspace and host store, including saved continuation evidence.
+/// Closed/piped stdin cannot grant approval; preview, terminal refusal and prompt
+/// interruption preserve the workspace and host store, including saved evidence.
 pub fn preserve_without_approval(
     invocation: &Path,
     root: &Path,
@@ -58,5 +58,7 @@ pub fn preserve_without_approval(
         .stdout(predicates::str::contains("Dry run complete"));
     unchanged();
     empack_tests::harness::terminal::decline(command(), prompt);
+    unchanged();
+    empack_tests::harness::terminal::interrupt(command(), prompt);
     unchanged();
 }

@@ -545,6 +545,7 @@ fn cli_recovery_decline_and_prompt_interrupt_preserve_pending_work() {
         .next()
         .unwrap();
     let args = ["recover", "finish", "--operation", operation];
+    let before = fixture.observe();
     approval::preserve_without_approval(
         &fixture.invocation,
         &fixture.project,
@@ -552,17 +553,6 @@ fn cli_recovery_decline_and_prompt_interrupt_preserve_pending_work() {
         &args,
         "(?i)apply this recovery plan",
     );
-    let before = fixture.observe();
-    let mut command = offline_empack_cmd(&fixture.invocation);
-    command
-        .arg("--workdir")
-        .arg(&fixture.project)
-        .arg("--state-dir")
-        .arg(&fixture.state)
-        .arg("--cache-dir")
-        .arg(fixture.state.with_extension("cache"))
-        .args(args);
-    empack_tests::harness::terminal::interrupt(command, "(?i)apply this recovery plan");
     assert_eq!(fixture.observe(), before);
     assert!(fixture.inspect().contains(operation));
     fixture.command().arg("--yes").args(args).assert().success();

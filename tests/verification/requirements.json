@@ -426,7 +426,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Initialization, local addition and ready build refuse closed or piped affirmative/negative stdin without --yes; yes plus dry-run and an actual terminal decline preserve workspace and host bytes",
+            "Initialization, local addition and ready build refuse closed or piped affirmative/negative stdin without --yes; yes plus dry-run, an actual terminal decline and Ctrl-C at the approval prompt preserve workspace and host bytes, directories and native attributes; interruption exits 130",
             "Explicit affirmative requests publish independently checked author semantics, selected local bytes or a complete mrpack inventory; terminal author decisions produce the intended initialized project"
           ]
         },
@@ -446,7 +446,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Forced initialization and import into an existing author project cannot receive approval through closed/piped stdin; preview and actual terminal refusal preserve source/artifact/world sentinels and author attributes"
+            "Forced initialization and import into an existing author project cannot receive approval through closed/piped stdin; preview, actual terminal refusal and Ctrl-C at the approval prompt preserve source/artifact/world sentinels and author attributes; interruption exits 130"
           ]
         },
         {
@@ -466,7 +466,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Saved build and synchronization approvals do not carry forward to resume: closed/piped stdin cannot grant a fresh request, yes plus dry-run remains read-only, and actual terminal decline preserves retained evidence and supplied bytes"
+            "Saved build and synchronization approvals do not carry forward to resume: closed/piped stdin cannot grant a fresh request, yes plus dry-run remains read-only, and actual terminal decline or Ctrl-C at the approval prompt preserves retained evidence and supplied bytes, directories and native attributes; interruption exits 130"
           ]
         },
         {
@@ -487,7 +487,7 @@
           ],
           "assertions": [
             "Retained import and instance journeys obtain selectors from public output and refuse unapproved closed/piped stdin requests without changing selected workspace, store or supplied inputs",
-            "The same saved inputs survive preview and terminal refusal and then complete the exact expected project or installation after deliberate approval"
+            "The same saved inputs survive preview, terminal refusal and Ctrl-C at the approval prompt (status 130), and then complete the exact expected project or installation after deliberate approval"
           ]
         },
         {
