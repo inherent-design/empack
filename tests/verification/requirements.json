@@ -4848,7 +4848,7 @@
           ],
           "assertions": [
             "Fresh executable list/show agree on operation identity, provider selection, digest and length",
-            "Inspection preserves project and pending-state bytes; stale drafts remain distinguishable"
+            "Inspection preserves invocation, project, state and cache file bytes, empty directories, native attributes and absence; stale drafts remain distinguishable"
           ]
         },
         {
@@ -4869,7 +4869,7 @@
           ],
           "assertions": [
             "Fresh executable list/show agree on complete synchronization requirements, exact provider identities, digests and lengths",
-            "Inspection preserves author, state and cache bytes; retained bytes remain explicitly unverified until resume; changed author text reports stale"
+            "Inspection preserves invocation, author, state and cache file bytes, empty directories, native attributes and absence; retained bytes remain explicitly unverified until resume; changed author text reports stale"
           ]
         },
         {
@@ -4890,7 +4890,7 @@
           ],
           "assertions": [
             "Public list/show agree on saved import identity and honestly mark undiscovered input requirements incomplete",
-            "Inspection preserves invocation, destination, state and cache; a changed destination reports stale"
+            "Inspection preserves invocation, destination, state and cache file bytes, empty directories, native attributes and absence; a changed destination reports stale"
           ]
         },
         {
@@ -4910,7 +4910,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Public list/show agree on both exact manual file keys, selected content digests, lengths and retained-versus-needed status without modifying invocation, instance, state or cache",
+            "Public list/show agree on both exact manual file keys, selected content digests, lengths and retained-versus-needed status; invocation, instance, state and cache file bytes, empty directories, native attributes and absence remain unchanged",
             "A real intervening installation makes the saved operation visibly stale; inspection remains metadata rather than byte verification"
           ]
         },

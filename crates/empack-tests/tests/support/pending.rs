@@ -22,7 +22,7 @@ pub fn report(invocation: &Path, root: &Path, state: &Path, args: &[&str]) -> Va
     let paths = [invocation, root, state, &cache];
     let before: Vec<_> = paths
         .iter()
-        .map(|path| path.exists().then(|| snapshot(path).files))
+        .map(|path| path.exists().then(|| snapshot(path)))
         .collect();
     let output = command(invocation, root, state)
         .args(args)
@@ -33,7 +33,7 @@ pub fn report(invocation: &Path, root: &Path, state: &Path, args: &[&str]) -> Va
         .clone();
     for (path, expected) in paths.into_iter().zip(before) {
         assert_eq!(
-            path.exists().then(|| snapshot(path).files),
+            path.exists().then(|| snapshot(path)),
             expected,
             "inspection changed {}",
             path.display()
