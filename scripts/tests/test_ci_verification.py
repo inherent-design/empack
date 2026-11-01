@@ -606,6 +606,8 @@ class RequiredGate(unittest.TestCase):
         self.assertIn(sentinel, SUITES["live-curseforge"].cases)
         self.assertTrue(SUITES["live-provider-cli"].cases)
         self.assertIn("live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs", SUITES["live-provider-cli"].cases)
+        self.assertIn("live_cli_update_release_policy_overrides_authored_preference", SUITES["live-provider-cli"].cases)
+        self.assertFalse(SUITES["live-provider-cli"].required_env)
         self.assertNotIn(sentinel, SUITES["live-provider-cli"].cases)
         for name in ("live-provider", "live-curseforge", "live-runtime"):
             with self.subTest(name=name), self.assertRaisesRegex(Blocked, "prerequisites unavailable"):
