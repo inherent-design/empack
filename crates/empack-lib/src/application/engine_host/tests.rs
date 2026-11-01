@@ -445,12 +445,33 @@ async fn capacity_failure_retains_host_diagnostics_and_other_owners_until_retry(
     let mut archive =
         zip::ZipArchive::new(fs::File::open(project.path().join("dist/result.mrpack")).unwrap())
             .unwrap();
+    assert_eq!(archive.len(), 4);
     let mut names: Vec<_> = archive
         .file_names()
         .map(|name| name.unwrap().into_owned())
         .collect();
     names.sort();
-    assert_eq!(names, ["modrinth.index.json", "overrides/config/value.txt"]);
+    assert_eq!(
+        names,
+        [
+            "modrinth.index.json",
+            "overrides/",
+            "overrides/config/",
+            "overrides/config/value.txt"
+        ]
+    );
+    for (name, directory) in [
+        ("modrinth.index.json", false),
+        ("overrides/", true),
+        ("overrides/config/", true),
+        ("overrides/config/value.txt", false),
+    ] {
+        let entry = archive.by_name(name).unwrap();
+        assert_eq!(entry.is_dir(), directory, "{name}");
+        if directory {
+            assert_eq!(entry.size(), 0, "directory has payload: {name}");
+        }
+    }
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(
         &mut archive.by_name("overrides/config/value.txt").unwrap(),
