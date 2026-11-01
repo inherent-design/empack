@@ -765,6 +765,7 @@ dependencies = [
  "empack-core",
  "envy",
  "flate2",
+ "fuzzy-matcher",
  "getrandom 0.4.3",
  "handlebars",
  "ignore",

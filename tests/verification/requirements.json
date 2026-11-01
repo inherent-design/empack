@@ -587,6 +587,120 @@
             "A real PTY receives the displayed confirmation with noncanonical, signal-disabled input; affirmative, negative and default choices return the intended decision",
             "Ctrl-C input and token cancellation without input both retire the read and preserve the original terminal flags, control characters and speeds; an escape sequence cannot grant approval"
           ]
+        },
+        {
+          "id": "UX-003.unix-text-editing",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::session::unix_prompts::tests::text_pty_preserves_defaults_unicode_editing_and_word_navigation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Real PTY input preserves text defaults, UTF-8 edits, cursor/delete/word navigation and long input through a narrow viewport",
+            "Success restores the captured terminal flags, control characters, speeds and cursor visibility"
+          ]
+        },
+        {
+          "id": "UX-003.unix-selection-indices",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::session::unix_prompts::tests::selection_pty_requires_choice_and_preserves_original_indices_and_pages"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A selection requires deliberate navigation before Enter; initial Enter does not return a default choice",
+            "Navigation and paging return the original option index and restore terminal state"
+          ]
+        },
+        {
+          "id": "UX-003.unix-fuzzy-selection",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::session::unix_prompts::tests::fuzzy_pty_preserves_query_editing_duplicate_indices_and_optional_escape"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Fuzzy query editing and Unicode matching preserve original indices, including duplicate option labels",
+            "Enter with no matches does not authorize a selection; Escape dismisses the optional selection and restores terminal state"
+          ]
+        },
+        {
+          "id": "UX-003.unix-widget-cancellation",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::session::unix_prompts::tests::every_widget_pty_retires_token_and_keyboard_cancellation_including_partial_keys"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Text, selection and fuzzy readers retire keyboard Ctrl-C and token-only cancellation, including incomplete UTF-8 and escape sequences",
+            "Cancellation never returns a choice, restores complete terminal state and cursor visibility, and permits a canonical follow-up line"
+          ]
+        },
+        {
+          "id": "UX-003.unix-native-adapter-cancellation",
+          "boundary": "N",
+          "test_ids": [
+            "empack-tests::native_interactive_unix::native_unix_prompt_adapters_retire_input_and_host_interrupts_before_followup"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real PTY invokes LiveInteractiveProvider for confirmation, text, selection and fuzzy prompts; keyboard Ctrl-C and a host SIGINT both retain typed interruption",
+            "Each interrupted adapter permits a separately owned explicit follow-up rejection on the same thread and preserves fixture bytes"
+          ]
+        },
+        {
+          "id": "UX-003.unix-invalid-prompt-input",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::session::unix_prompts::tests::every_widget_pty_rejects_closed_or_invalid_input_without_default_authority"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Control-D and malformed UTF-8 fail before returning a text default or option choice",
+            "Failure restores captured terminal state without being relabelled as user approval or plain cancellation"
+          ]
         }
       ],
       "owner_now": [

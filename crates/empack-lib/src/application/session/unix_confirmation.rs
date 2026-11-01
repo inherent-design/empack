@@ -1,9 +1,10 @@
 //! Confirmation owns terminal mode before rendering and never waits indefinitely for input.
+use super::unix_input::{InputMode, read_byte};
 use crate::application::process_runtime::{Cancellation, Interrupted};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use console::Term;
 use dialoguer::theme::{SimpleTheme, Theme};
-use std::{io, os::fd::RawFd};
+use std::os::fd::RawFd;
 
 pub(super) fn read(prompt: &str, default: bool, cancellation: &Cancellation) -> Result<bool> {
     confirm_on(
@@ -65,109 +66,12 @@ fn confirm_on(
     result
 }
 
-fn read_byte(input: RawFd, cancellation: &Cancellation) -> Result<u8> {
-    ensure!(
-        input >= 0 && (input as usize) < libc::FD_SETSIZE,
-        "Confirmation descriptor cannot be represented by select"
-    );
-    loop {
-        cancellation.check()?;
-        let mut descriptors = unsafe { std::mem::zeroed() };
-        // macOS terminals require select rather than poll. Rebuild its mutable
-        // arguments after every wakeup, timeout or interrupted system call.
-        unsafe {
-            libc::FD_ZERO(&mut descriptors);
-            libc::FD_SET(input, &mut descriptors);
-        }
-        let mut timeout = libc::timeval {
-            tv_sec: 0,
-            tv_usec: 20_000,
-        };
-        let ready = unsafe {
-            libc::select(
-                input + 1,
-                &mut descriptors,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &mut timeout,
-            )
-        };
-        cancellation.check()?;
-        if ready < 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error).context("Cannot wait for confirmation input");
-        }
-        if ready == 0 {
-            continue;
-        }
-        let mut byte = 0_u8;
-        let count = unsafe { libc::read(input, std::ptr::from_mut(&mut byte).cast(), 1) };
-        if count == 1 {
-            return Ok(byte);
-        }
-        if count == 0 {
-            return Err(io::Error::from(io::ErrorKind::UnexpectedEof))
-                .context("Confirmation input closed");
-        }
-        let error = io::Error::last_os_error();
-        if error.kind() != io::ErrorKind::Interrupted {
-            return Err(error).context("Cannot read confirmation input");
-        }
-    }
-}
-
-struct InputMode {
-    input: RawFd,
-    original: libc::termios,
-    restored: bool,
-}
-impl InputMode {
-    fn capture(input: RawFd) -> Result<Self> {
-        let mut original = unsafe { std::mem::zeroed() };
-        if unsafe { libc::tcgetattr(input, &mut original) } != 0 {
-            return Err(io::Error::last_os_error()).context("Cannot capture confirmation terminal");
-        }
-        let mut raw = original;
-        unsafe { libc::cfmakeraw(&mut raw) };
-        // Keep normal newline output while reading individual keys, as console does.
-        raw.c_oflag = original.c_oflag;
-        if unsafe { libc::tcsetattr(input, libc::TCSANOW, &raw) } != 0 {
-            return Err(io::Error::last_os_error())
-                .context("Cannot configure confirmation terminal");
-        }
-        Ok(Self {
-            input,
-            original,
-            restored: false,
-        })
-    }
-
-    fn restore(&mut self) -> Result<()> {
-        if !self.restored {
-            if unsafe { libc::tcsetattr(self.input, libc::TCSANOW, &self.original) } != 0 {
-                return Err(io::Error::last_os_error())
-                    .context("Cannot restore confirmation terminal");
-            }
-            self.restored = true;
-        }
-        Ok(())
-    }
-}
-impl Drop for InputMode {
-    fn drop(&mut self) {
-        let _ = self.restore();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{
         fs::File,
-        io::{Read, Write},
+        io::{self, Read, Write},
         os::fd::{AsRawFd, FromRawFd},
         time::{Duration, Instant},
     };

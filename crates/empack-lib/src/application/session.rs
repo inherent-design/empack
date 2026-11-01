@@ -14,6 +14,10 @@ use std::{
 
 #[cfg(unix)]
 mod unix_confirmation;
+#[cfg(unix)]
+mod unix_input;
+#[cfg(unix)]
+mod unix_prompts;
 #[cfg(windows)]
 mod windows_input;
 
@@ -426,6 +430,7 @@ impl LiveInteractiveProvider {
         std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
     }
 
+    #[cfg(any(not(unix), test))]
     fn prompt<T>(&self, context: &str, read: impl FnOnce() -> dialoguer::Result<T>) -> Result<T> {
         self.cancellation.check()?;
         #[cfg(windows)]
@@ -465,10 +470,13 @@ impl InteractiveProvider for LiveInteractiveProvider {
             return Ok(default);
         }
 
-        use dialoguer::Input;
+        #[cfg(unix)]
+        return unix_prompts::text(prompt, default, &self.cancellation)
+            .context("Failed to read text input");
 
+        #[cfg(not(unix))]
         self.prompt("Failed to read text input", || {
-            Input::new()
+            dialoguer::Input::new()
                 .with_prompt(prompt)
                 .default(default)
                 .interact_text()
@@ -505,10 +513,16 @@ impl InteractiveProvider for LiveInteractiveProvider {
             return Ok(0);
         }
 
-        use dialoguer::Select;
+        #[cfg(unix)]
+        return unix_prompts::select(prompt, options, &self.cancellation)
+            .context("Failed to read selection");
 
+        #[cfg(not(unix))]
         self.prompt("Failed to read selection", || {
-            Select::new().with_prompt(prompt).items(options).interact()
+            dialoguer::Select::new()
+                .with_prompt(prompt)
+                .items(options)
+                .interact()
         })
     }
 
@@ -520,10 +534,13 @@ impl InteractiveProvider for LiveInteractiveProvider {
             return Ok(Some(0));
         }
 
-        use dialoguer::FuzzySelect;
+        #[cfg(unix)]
+        return unix_prompts::fuzzy(prompt, options, &self.cancellation)
+            .context("Failed to read fuzzy selection");
 
+        #[cfg(not(unix))]
         self.prompt("Failed to read fuzzy selection", || {
-            FuzzySelect::new()
+            dialoguer::FuzzySelect::new()
                 .with_prompt(prompt)
                 .items(options)
                 .max_length(6)
