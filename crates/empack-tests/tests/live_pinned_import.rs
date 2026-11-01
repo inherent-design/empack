@@ -1,6 +1,6 @@
 //! Immutable upstream input; no latest-version lookup or automatic fixture refresh.
 use empack_tests::harness::{
-    archive::zip_members,
+    archive::zip_members_with_limit,
     process::{TestProject, assert_dist_artifact_suffix, empack_cmd, read_project},
     workspace::snapshot_excluding,
 };
@@ -91,7 +91,7 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
     .unwrap();
     verify_pinned_pack(
         fixture,
-        (50, 63),
+        (50, 63, 256),
         (16 << 20, 64 << 20),
         [
             ("net.fabricmc.fabric-loader", "0.19.3"),
@@ -125,7 +125,7 @@ fn live_pinned_quilt_import_retains_client_sides_and_complete_inventory() {
     );
     verify_pinned_pack(
         fixture,
-        (17, 10),
+        (17, 10, 256),
         (16 << 20, 64 << 20),
         [
             ("org.quiltmc.quilt-loader", "0.26.0"),
@@ -152,7 +152,7 @@ fn live_pinned_neoforge_import_preserves_local_jar_and_complete_inventory() {
     );
     verify_pinned_pack(
         fixture,
-        (13, 14),
+        (13, 14, 256),
         (16 << 20, 64 << 20),
         [("net.neoforged", "21.1.194"), ("net.minecraft", "1.21.1")],
         "config/ferritecore.mixin.properties",
@@ -179,7 +179,7 @@ fn live_pinned_legacy_forge_import_preserves_default_sides_and_complete_inventor
     );
     verify_pinned_pack(
         fixture,
-        (5, 31),
+        (5, 31, 256),
         (16 << 20, 64 << 20),
         [
             ("net.minecraftforge", "10.13.4.1614"),
@@ -218,7 +218,7 @@ fn live_pinned_world_import_preserves_saved_world_and_complete_inventory() {
     assert_eq!(overrides[&format!("{world}level.dat")]["size"], 1642);
     verify_pinned_pack(
         fixture,
-        (44, 100),
+        (44, 100, 256),
         // This selected pack includes an 84,811,632-byte AmbientSounds JAR.
         // Keep its known workload separate from the four smaller fixtures.
         (96 << 20, 256 << 20),
@@ -233,9 +233,54 @@ fn live_pinned_world_import_preserves_saved_world_and_complete_inventory() {
     );
 }
 
+#[test]
+#[ignore = "pinned Create Sky layered archive and 163 exact remote files; live network required"]
+fn live_pinned_layered_import_preserves_common_client_server_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/create-sky-0.1.30-layered.json"
+    ))
+    .unwrap();
+    for (prefix, count) in [
+        ("overrides/", 245),
+        ("client-overrides/", 24),
+        ("server-overrides/", 5),
+    ] {
+        assert_eq!(
+            fixture["overrides"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .filter(|path| path.starts_with(prefix))
+                .count(),
+            count
+        );
+    }
+    assert_eq!(
+        fixture["index"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|file| file["env"]["client"] == "unsupported")
+            .count(),
+        1
+    );
+    verify_pinned_pack(
+        fixture,
+        (163, 274, 512),
+        (32 << 20, 320 << 20),
+        [("net.minecraft", "1.21.1"), ("net.neoforged", "21.1.264")],
+        "config/create_sky_compat-common.toml",
+        |bytes| {
+            let mut edited = bytes.to_vec();
+            edited.extend_from_slice(b"# Explicitly adopted verification edit\n");
+            edited
+        },
+    );
+}
+
 fn verify_pinned_pack(
     fixture: Value,
-    (files, overrides): (usize, usize),
+    (files, overrides, archive_entries): (usize, usize, usize),
     (member_limit, total_limit): (u64, u64),
     expected_components: [(&str, &str); 2],
     edited_override: &str,
@@ -261,7 +306,7 @@ fn verify_pinned_pack(
     assert_eq!(hex(Sha512::digest(&bytes)), source["sha512"]);
     let archive = project.dir().join("input.mrpack");
     fs::write(&archive, &bytes).unwrap();
-    let mut input = zip_members(&archive);
+    let mut input = zip_members_with_limit(&archive, archive_entries);
     assert_eq!(
         canonical_index(&input.remove("modrinth.index.json").unwrap()),
         fixture["index"]
@@ -298,9 +343,8 @@ fn verify_pinned_pack(
             assert_eq!(observe(), before, "repeated sync changed author content");
         }
     }
-    // All pinned inputs declare every client file required; the Quilt/NeoForge
-    // inputs also declare client-only files. Inspect retained side authority and the
-    // re-exported index; a client bundle alone cannot establish server policy.
+    // Check both sides against the independently pinned raw index, including
+    // server-only references. A client bundle alone cannot establish server policy.
     let resolved = read_project(&imported);
     for declared in fixture["index"]["files"].as_array().unwrap() {
         let path = declared["path"].as_str().unwrap();
@@ -313,25 +357,25 @@ fn verify_pinned_pack(
             .filter(|placement| placement.destination.relative().as_str() == path)
             .collect();
         assert_eq!(placements.len(), 1, "{path}");
-        assert_eq!(
-            placements[0].requirements.client,
-            empack_core::requirements::Requirement::Required,
-            "{path}"
-        );
-        let server = match declared
-            .get("env")
-            .map(|env| env["server"].as_str().unwrap())
-            .unwrap_or("required")
-        {
-            "required" => empack_core::requirements::Requirement::Required,
-            "unsupported" => empack_core::requirements::Requirement::Unsupported,
-            _ => panic!("this pinned scenario does not resolve optional files"),
-        };
-        assert_eq!(placements[0].requirements.server, server, "{path}");
+        for (side, actual) in [
+            ("client", &placements[0].requirements.client),
+            ("server", &placements[0].requirements.server),
+        ] {
+            let expected = match declared
+                .get("env")
+                .map(|env| env[side].as_str().unwrap())
+                .unwrap_or("required")
+            {
+                "required" => empack_core::requirements::Requirement::Required,
+                "unsupported" => empack_core::requirements::Requirement::Unsupported,
+                _ => panic!("this pinned scenario does not resolve optional files"),
+            };
+            assert_eq!(actual, &expected, "{path} {side}");
+        }
     }
     run(&imported, &["build", "modrinth"]);
     let exported = assert_dist_artifact_suffix(&imported, ".mrpack");
-    let mut output = zip_members(&exported);
+    let mut output = zip_members_with_limit(&exported, archive_entries);
     assert_eq!(
         effective_index(canonical_index(
             &output.remove("modrinth.index.json").unwrap()
@@ -346,7 +390,7 @@ fn verify_pinned_pack(
     run(&imported, &["build", "prism", "--delivery", "bundled"]);
     let bundled = assert_dist_artifact_suffix(&imported, "prism-bundled.zip");
     let mut zip = zip::ZipArchive::new(fs::File::open(&bundled).unwrap()).unwrap();
-    assert!(zip.len() < 256);
+    assert!(zip.len() < archive_entries);
     let mut actual = BTreeMap::new();
     let mut total = 0;
     for i in 0..zip.len() {
@@ -366,6 +410,13 @@ fn verify_pinned_pack(
     }
     for file in fixture["index"]["files"].as_array().unwrap() {
         let path = format!(".minecraft/{}", file["path"].as_str().unwrap());
+        if file
+            .get("env")
+            .is_some_and(|env| env["client"] == "unsupported")
+        {
+            assert!(!actual.contains_key(&path), "server-only reference: {path}");
+            continue;
+        }
         let bytes = actual
             .remove(&path)
             .unwrap_or_else(|| panic!("missing {path}"));
@@ -376,9 +427,23 @@ fn verify_pinned_pack(
             "{path}"
         );
     }
-    for (path, bytes) in input {
-        let destination = format!(".minecraft/{}", path.strip_prefix("overrides/").unwrap());
-        assert_eq!(actual.remove(&destination).unwrap(), bytes, "{destination}");
+    // Independent consumer projection: common files, then client files. Retain
+    // all three source layers in the mrpack round-trip above. No server layer
+    // may leak into the complete client inventory checked below.
+    let mut client_overrides = BTreeMap::new();
+    for prefix in ["overrides/", "client-overrides/"] {
+        for (path, bytes) in &input {
+            if let Some(relative) = path.strip_prefix(prefix) {
+                client_overrides.insert(format!(".minecraft/{relative}"), bytes);
+            }
+        }
+    }
+    for (destination, bytes) in client_overrides {
+        assert_eq!(
+            actual.remove(&destination).unwrap(),
+            *bytes,
+            "{destination}"
+        );
     }
     // Only the two launcher-generated metadata members may remain.
     assert_eq!(
@@ -428,7 +493,7 @@ fn verify_pinned_pack(
     run(&imported, &["sync"]);
     assert_eq!(fs::read(&exported).unwrap(), prior_export);
     run(&imported, &["build", "modrinth"]);
-    let mut refreshed = zip_members(&exported);
+    let mut refreshed = zip_members_with_limit(&exported, archive_entries);
     assert_eq!(
         effective_index(canonical_index(
             &refreshed.remove("modrinth.index.json").unwrap()

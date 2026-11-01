@@ -24,9 +24,14 @@ fn bounded_bytes(reader: impl Read, expected_size: u64) -> Vec<u8> {
 }
 
 pub fn zip_members(path: &Path) -> BTreeMap<String, Vec<u8>> {
+    zip_members_with_limit(path, 256)
+}
+
+/// Admit a reviewed fixture's entry count while retaining the decoded-byte bounds.
+pub fn zip_members_with_limit(path: &Path, maximum_entries: usize) -> BTreeMap<String, Vec<u8>> {
     let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
     assert!(
-        archive.len() <= 256,
+        archive.len() <= maximum_entries,
         "fixture archive exceeds admitted member count"
     );
     let mut members = BTreeMap::new();

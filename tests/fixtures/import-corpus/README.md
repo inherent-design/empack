@@ -10,7 +10,7 @@ Changes to archives or expected output require deliberate review of both the sou
 
 ## Pinned upstream packs
 
-The `pinned-import` live suite uses fixed upstream archives and independently reviewed inventories. All five scenarios share acquisition, import, convergence, complete export and edit/adopt checks. Each uses its pinned version; launcher execution remains a separate consumer check. Their expectations remain separate from moving survey results.
+The `pinned-import` live suite uses fixed upstream archives and independently reviewed inventories. All six scenarios share acquisition, import, convergence, complete export and edit/adopt checks. Each uses its pinned version; launcher execution remains a separate consumer check. Their expectations remain separate from moving survey results.
 
 ### Fabulously Optimized 6.5.0
 
@@ -67,3 +67,13 @@ The index selects Minecraft 1.21.1 and NeoForge 21.1.235. Its 44 references tota
 This fixture admits 96 MiB per bundled member and 256 MiB total decoded output, with the same 255-entry bound. Its largest declared reference is an 84,811,632-byte AmbientSounds JAR. The other four fixtures retain their original smaller bounds; acquisition and command deadlines are unchanged. Referenced mods are downloaded only by the selected live CI test, and neither they nor the saved world are committed. World bytes in a newly exported archive do not establish preservation of an already occupied player world, launcher startup or gameplay; those have separate acceptance checks.
 
 [The catalog](https://api.modrinth.com/v2/project/7y0dAVcr) identifies the pack as all rights reserved, and no independently pinned license grant is claimed. The fixture records identities, sizes and digests rather than republishing the pack or its assets. Its referenced components retain their own licenses. Updating it requires reviewing the selected archive, expectations, provenance and admitted workload again.
+
+### Create Sky 0.1.30 with common, client and server layers
+
+`create-sky-0.1.30-layered.json` pins [GitHub release v0.1.30](https://github.com/mannie-exe/create_sky/releases/tag/v0.1.30), release ID `430874749`, and its exact mrpack asset. Its 344,609 bytes have SHA-256 `265d0938e0728249adc56d7e7832867c57fd7f7df824d7a6fc46ff9cc955095b`, matching GitHub's asset digest. Python's ZIP reader independently checked CRCs, the literal index and every override's size and SHA-256. The local archive matched that published identity; no local author work was modified or executed.
+
+The index selects Minecraft 1.21.1 and NeoForge 21.1.264. Its 163 references total 296,823,630 bytes: 106 required on both sides, 56 client-only and one server-only. The 274 override files total 663,509 bytes across 245 common, 24 client and five server files. These include pack-owned configuration, journal/resources and opaque local assets. The fixture commits paths, metadata, sizes and digests; it does not redistribute the pack, configurations or JARs. No independent license grant was located through the repository license endpoint; referenced components retain their own licenses.
+
+The shared journey preserves all layers in the mrpack export. Its complete bundled client must contain 162 remote references, 269 common/client override files and the two launcher metadata files, excluding the server-only reference and five server overrides. Both sides' declared requirements are checked separately in the lock. An explicitly adopted comment edit to `config/create_sky_compat-common.toml` tests author changes without changing the version or prior bundle.
+
+This input admits 32 MiB per bundled member, 320 MiB total decoded content and fewer than 512 archive entries. The largest reference is 33,123,131 bytes; the expected client has 433 files and at most 42 parent-directory entries. Earlier fixtures keep their original entry/member/total bounds. The archive has no optional entries or overlapping layer destinations: actual collision precedence, restricted inputs and CurseForge remain separate corpus obligations. Import/export checks do not establish launcher startup, Minecraft registration or gameplay.
