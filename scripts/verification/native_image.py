@@ -152,15 +152,26 @@ def inspect(path, target, executable, image):
         paths = PureWindowsPath if windows else PurePosixPath
         tool, binary = record["tool"], record["executable"]
         name = {"elf": "readelf", "mach-o": "otool", "pe": "dumpbin.exe"}[image["format"]]
-        if (record["schema"] != 1 or record["kind"] != "native-image-observation" or record["qualification"] is not False
-                or record["target"] != target or record["image"] != image
-                or record["host"]["system"] != IMAGES[target][3] or not record["host"]["architecture"]
-                or not record["host"]["release"] or not datetime.fromisoformat(record["created_at"]).tzinfo
-                or not paths(tool["path"]).is_absolute() or paths(tool["path"]).name.lower() != name
-                or not paths(binary["path"]).is_absolute() or paths(binary["path"]).name != ("empack.exe" if windows else "empack")
-                or {key: binary[key] for key in ("sha256", "length")} != {key: executable[key] for key in ("sha256", "length")}
-                or not re.fullmatch(r"[a-f0-9]{64}", tool["sha256"])):
-            raise ValueError("Native image observation differs from the checked package")
+        checks = (
+            ("schema", record["schema"] == 1),
+            ("kind", record["kind"] == "native-image-observation"),
+            ("qualification", record["qualification"] is False),
+            ("target", record["target"] == target),
+            ("image", record["image"] == image),
+            ("host.system", record["host"]["system"] == IMAGES[target][3]),
+            ("host.architecture", bool(record["host"]["architecture"])),
+            ("host.release", bool(record["host"]["release"])),
+            ("created_at", bool(datetime.fromisoformat(record["created_at"]).tzinfo)),
+            ("tool.path", paths(tool["path"]).is_absolute() and paths(tool["path"]).name.lower() == name),
+            ("executable.path", paths(binary["path"]).is_absolute()
+             and paths(binary["path"]).name == ("empack.exe" if windows else "empack")),
+            ("executable.sha256", binary["sha256"] == executable["sha256"]),
+            ("executable.length", binary["length"] == executable["length"]),
+            ("tool.sha256", bool(re.fullmatch(r"[a-f0-9]{64}", tool["sha256"]))),
+        )
+        rejected = [field for field, matches in checks if not matches]
+        if rejected:
+            raise ValueError("Native image observation differs from the checked package: " + ", ".join(rejected))
         commands = dict(dependencies=report_arguments(target, tool["path"], binary["path"]))
         if not windows:
             commands["version"] = [tool["path"], "--version"]

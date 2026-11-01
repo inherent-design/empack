@@ -42,8 +42,11 @@ def checked(command, attempt, name, environment, timeout=120, cwd=ROOT):
 
 
 def isolated_environment(root, *, compiler=False):
+    # Python's Windows host discovery falls back to these processor variables
+    # when WMI is unavailable; they carry machine facts, not compiler flags.
     names = ("PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "COMSPEC",
-             "PATHEXT", "JAVA_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR")
+             "PATHEXT", "JAVA_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR",
+             "PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432")
     result = {key: os.environ[key] for key in names if key in os.environ}
     if compiler and os.name == "nt":
         # Rust's MSVC discovery needs installation roots (vswhere) or the

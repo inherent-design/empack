@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import platform
 import os
+import re
 import shutil
 import struct
 import sys
@@ -76,6 +77,19 @@ class NativeImageEvidence(unittest.TestCase):
                     else: changed[field]["sha256"] = "0" * 64
                     write_json(path, changed)
                     with self.subTest(field=field), self.assertRaises(ValueError):
+                        native_image.inspect(path, target, binary, expected)
+                for field, value in (
+                    ("host.architecture", ""), ("host.release", ""),
+                    ("tool.path", "another-inspector"), ("tool.sha256", "invalid-digest"),
+                    ("executable.path", "another-program"), ("executable.length", len(payload) + 1),
+                    ("created_at", "2026-11-01T00:00:00"),
+                ):
+                    changed = copy.deepcopy(record)
+                    keys = field.split(".")
+                    owner = changed[keys[0]] if len(keys) == 2 else changed
+                    owner[keys[-1]] = value
+                    write_json(path, changed)
+                    with self.subTest(field=field), self.assertRaisesRegex(ValueError, re.escape(field)):
                         native_image.inspect(path, target, binary, expected)
                 write_json(path, record)
                 report = directory / "dependencies.log"

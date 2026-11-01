@@ -182,9 +182,13 @@ class AttemptPolicy(unittest.TestCase):
                    "CARGO_REGISTRIES_CRATES_IO_TOKEN": "host-token", "RUSTFLAGS": "host-flags",
                    "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER": "host-linker",
                    "EMPACK_STATE_DIR": "host-state", "UNRELATED": "host-value"}
-        with patch.dict(os.environ, toolset | hostile, clear=True), patch("verify.os.name", "nt"):
+        processor = {"PROCESSOR_ARCHITECTURE": "AMD64", "PROCESSOR_ARCHITEW6432": "ARM64"}
+        with patch.dict(os.environ, toolset | hostile | processor, clear=True), patch("verify.os.name", "nt"):
             worker = isolated_environment(home, compiler=True)
             runtime = isolated_environment(home)
+        for key, value in processor.items():
+            self.assertEqual(worker.get(key), value)
+            self.assertEqual(runtime.get(key), value)
         worker_tools = {key.upper(): value for key, value in worker.items()}
         runtime_tools = {key.upper(): value for key, value in runtime.items()}
         for key, value in toolset.items():
