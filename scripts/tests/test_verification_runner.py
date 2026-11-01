@@ -213,26 +213,32 @@ class AttemptPolicy(unittest.TestCase):
     def test_standard_suite_supplies_bound_inventory_to_test_process(self):
         import hashlib
         import json
+        import tomllib
         from unittest.mock import patch
         from verify import run_suite
         from verification.suites import Suite
         inventory = SuiteEvidence().inventory()
         artifact = dict(path="/ordinary/product", sha256="0" * 64,
                         version="0.0.0-dev", features="default", target="aarch64-apple-darwin")
-        with tempfile.TemporaryDirectory() as directory:
-            record = {}
-            with patch("verify.checked", return_value=json.dumps(inventory)), \
-                    patch("verify.compare_rust_inventory"), \
-                    patch("verify.run", return_value=(1, "retained failure", False)) as worker:
-                run_suite("deterministic", Suite(), Path(directory), {}, artifact, record, "minimal")
-            environment = worker.call_args.kwargs["env"]
-            selected = Path(environment["EMPACK_TEST_INVENTORY"])
-            self.assertTrue(selected.is_absolute())
-            self.assertEqual(json.loads(selected.read_text()), inventory)
-            self.assertEqual(environment["EMPACK_TEST_INVENTORY_SHA256"],
-                             hashlib.sha256(selected.read_bytes()).hexdigest())
-            self.assertEqual(environment["EMPACK_E2E_BIN"], artifact["path"])
-            self.assertEqual(record["status"], "FAIL", "fixture metadata cannot turn failed execution into a pass")
+        for name in ("deterministic", "server-cli", "native-remount", "live-provider-cli"):
+            with self.subTest(suite=name), tempfile.TemporaryDirectory() as directory:
+                record = {}
+                with patch("verify.checked", return_value=json.dumps(inventory)), \
+                        patch("verify.compare_rust_inventory"), \
+                        patch("verify.run", return_value=(1, "retained failure", False)) as worker:
+                    run_suite(name, Suite(), Path(directory), {}, artifact, record, "minimal")
+                environment = worker.call_args.kwargs["env"]
+                selected = Path(environment["EMPACK_TEST_INVENTORY"])
+                self.assertTrue(selected.is_absolute())
+                self.assertEqual(json.loads(selected.read_text()), inventory)
+                self.assertEqual(environment["EMPACK_TEST_INVENTORY_SHA256"],
+                                 hashlib.sha256(selected.read_bytes()).hexdigest())
+                self.assertEqual(environment["EMPACK_E2E_BIN"], artifact["path"])
+                self.assertEqual(record["status"], "FAIL", "fixture metadata cannot turn failed execution into a pass")
+                config = tomllib.loads((Path(directory) / name / "nextest.toml").read_text())
+                self.assertEqual(config["profile"]["verification"]["junit"]["store-success-output"],
+                                 name in {"native-remount", "server-cli"})
+                self.assertFalse(config["profile"]["verification"]["junit"]["store-failure-output"])
 
     def test_python_worker_builds_offline_with_installed_tools_and_isolated_state(self):
         import subprocess

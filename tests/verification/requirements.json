@@ -15125,7 +15125,8 @@
           "boundary": "U",
           "test_ids": [
             "python::test_verification_runner.CommandEvidence.test_credentials_and_url_queries_are_redacted",
-            "python::test_verification_runner.CommandEvidence.test_registry_package_identity_survives_without_preserving_url_credentials"
+            "python::test_verification_runner.CommandEvidence.test_registry_package_identity_survives_without_preserving_url_credentials",
+            "python::test_verification_runner.AttemptPolicy.test_standard_suite_supplies_bound_inventory_to_test_process"
           ],
           "required_platforms": [
             "linux",
@@ -15137,7 +15138,8 @@
           ],
           "assertions": [
             "Log redaction preserves Cargo registry crate/version identities without retaining URL credentials or query values",
-            "Known secrets, overlapping values and ordinary URL fragments remain redacted without treating a masking placeholder as URL syntax"
+            "Known secrets, overlapping values and ordinary URL fragments remain redacted without treating a masking placeholder as URL syntax",
+            "The existing server-cli and native-remount profiles retain successful JUnit diagnostics, including the JDK probe environment line; ordinary and provider suites keep successful output disabled. Controlled failed execution remains FAIL regardless of retained metadata."
           ]
         },
         {

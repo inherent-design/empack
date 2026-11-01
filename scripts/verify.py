@@ -178,7 +178,7 @@ retries = 0
 fail-fast = false
 junit.path = {json.dumps(str(junit))}
 junit.report-skipped = "all"
-junit.store-success-output = {str(name == "native-remount").lower()}
+junit.store-success-output = {str(name in {"native-remount", "server-cli"}).lower()}
 junit.store-failure-output = false
 ''')
     discovery_command = nextest_command("list", suite, config, test_features)
