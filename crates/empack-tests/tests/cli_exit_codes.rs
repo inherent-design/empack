@@ -1248,6 +1248,9 @@ fn cli_native_download_transport_failure_exits_three() {
         loop {
             match proxy.accept() {
                 Ok((mut stream, _)) => {
+                    // Windows can inherit the listener's nonblocking mode.
+                    // The accept loop polls; this bounded request read must wait.
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(5)))
                         .unwrap();
