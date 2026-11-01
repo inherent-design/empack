@@ -50,8 +50,6 @@ fn acquisition_selection_matches_materialized_missing_content_and_optional_choic
     let host = tempfile::tempdir().unwrap();
     let cancel = Cancellation::default();
     write_project(root.path(), &project(true, true));
-    fs::create_dir_all(root.path().join("pack/mods")).unwrap();
-    fs::write(root.path().join("pack/mods/extra.pw.toml"), b"filename='extra.jar'\nside='client'\n[download]\nurl='https://example.com/extra.jar'\nhash-format='md5'\nhash='321c3cf486ed509164edec1e1981fec8'\n[option]\noptional=true\ndefault=false\n").unwrap();
     let workspace = capture(root.path(), host.path());
     for enabled in [false, true] {
         let optional = OptionalPolicy::Resolve {
@@ -112,8 +110,6 @@ fn native_references_acquire_addresses_and_retain_source_evidence() {
     let host = tempfile::tempdir().unwrap();
     let cancel = Cancellation::default();
     write_project(root.path(), &project(true, false));
-    fs::create_dir_all(root.path().join("pack/mods")).unwrap();
-    fs::write(root.path().join("pack/mods/extra.pw.toml"), b"filename='extra.jar'\nside='client'\n[download]\nurl='https://example.com/extra.jar'\nhash-format='md5'\nhash='321c3cf486ed509164edec1e1981fec8'\n").unwrap();
     let workspace = capture(root.path(), host.path());
     let plan = |target, evidence| {
         plan_target_build_acquisitions(
