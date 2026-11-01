@@ -329,17 +329,34 @@ fn cli_runtime_preserves_native_program_and_non_utf8_arguments() {
         &fs::read(server.fixtures.path().join("observations/runtime.json")).unwrap(),
     )
     .unwrap();
-    let canonical_program = program.canonicalize().unwrap();
-    assert_eq!(observed["program"], json!(canonical_program.to_str()));
-    assert!(observed["arguments"].is_null());
+    let native_path = |name: &str| {
+        std::path::PathBuf::from(OsString::from_vec(
+            serde_json::from_value::<Vec<u8>>(observed["native"][name].clone()).unwrap(),
+        ))
+    };
+    let observed_program = native_path("program");
+    // current_exe may retain /var or report /private/var on macOS. Verify the
+    // selected file independently while preserving the native filename bytes.
     assert_eq!(
-        observed["native"],
-        json!({
-            "encoding": "unix-bytes",
-            "program": canonical_program.as_os_str().as_bytes(),
-            "cwd": server.instance.dir().join("game").canonicalize().unwrap().as_os_str().as_bytes(),
-            "arguments": arguments.iter().map(|value| value.as_bytes()).collect::<Vec<_>>(),
-        })
+        observed_program.canonicalize().unwrap(),
+        program.canonicalize().unwrap()
+    );
+    assert_eq!(observed_program.file_name(), program.file_name());
+    assert_eq!(observed["program"], json!(observed_program.to_str()));
+    assert_eq!(
+        native_path("cwd").canonicalize().unwrap(),
+        server.instance.dir().join("game").canonicalize().unwrap()
+    );
+    assert!(observed["arguments"].is_null());
+    assert_eq!(observed["native"]["encoding"], "unix-bytes");
+    assert_eq!(
+        observed["native"]["arguments"],
+        json!(
+            arguments
+                .iter()
+                .map(|value| value.as_bytes())
+                .collect::<Vec<_>>()
+        )
     );
     assert!(
         !server

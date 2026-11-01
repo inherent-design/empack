@@ -10793,7 +10793,7 @@
           ],
           "assertions": [
             "The Linux fixture creates an executable with invalid UTF-8 filename bytes and the public CLI invokes that exact absolute native path without string normalization",
-            "The observer retains exact native executable and argument bytes, while tool and installation snapshots remain unchanged and a later launch succeeds"
+            "The observer retains exact native executable filename and argument bytes; filesystem aliases resolve to the selected executable and game directory, while tool and installation snapshots remain unchanged and a later launch succeeds"
           ],
           "remaining_group_evidence": "Same concrete execution as the Unix argv case, not an additional test count. This does not claim invalid filenames are supported by every Unix filesystem."
         },
