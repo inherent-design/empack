@@ -13354,7 +13354,7 @@
         "PEND"
       ],
       "required_assertions": "Known ownership only; custom sources/active leases/unknown neighboring files/pending recovery survive; preview no deletion.",
-      "required_work": "Each target + busy root + symlink/permission failure + interrupted cleanup/re-ingestion.",
+      "required_work": "Public scope selection, active runtime refusal, permission/read-sharing preflight, retained-category cleanup and crash recovery are bound. Linked artifact roots and members now have Unix symlink and Windows junction variants; the Windows fixture must establish a native reparse point. Remaining cancellation/retirement and complete host/product/package execution obligations are not supplied by these definitions.",
       "evidence_tiers": [
         "H",
         "N",
@@ -13447,6 +13447,25 @@
           "assertions": [
             "A linked artifact root or nested member cannot authorize deletion of external bytes",
             "Replacing a captured cache object with a symlink refuses deletion without following it; a new capture can evict corrupt regular cache bytes while retaining the outside sentinel"
+          ]
+        },
+        {
+          "id": "UX-079.windows-artifact-junction-confinement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::cleanup::tests::artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual Windows directory junction replaces either dist or a nested artifact directory; its native reparse attribute is established before public Engine cleanup preparation",
+            "Preparation refuses before deleting outside bytes, changing the junction target, altering the ordinary neighboring artifact or creating recovery state; all governor reservations are released",
+            "The fixture removes only its own junction after retirement; no Windows symbolic link is created, and junction-creation failure cannot be skipped as passing coverage"
           ]
         },
         {

@@ -178,7 +178,7 @@ async fn artifact_cleanup_rejects_late_edits_additions_and_wrong_engine() {
         engine.shutdown().await;
     }
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion() {
     for nested in [false, true] {
@@ -186,12 +186,41 @@ async fn artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion()
         let host = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         tests::put(outside.path(), "sentinel", b"outside");
-        if nested {
+        let link = if nested {
             fixture(root.path());
-            std::os::unix::fs::symlink(outside.path(), root.path().join("dist/linked")).unwrap();
+            root.path().join("dist/linked")
         } else {
-            std::os::unix::fs::symlink(outside.path(), root.path().join("dist")).unwrap();
+            root.path().join("dist")
+        };
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+            // Exercise native reparse confinement with a directory junction,
+            // independently of Windows symbolic-link creation.
+            let mut command = tokio::process::Command::new(
+                std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()),
+            );
+            command
+                .kill_on_drop(true)
+                .args(["/d", "/c", "mklink", "/J"])
+                .arg(&link)
+                .arg(outside.path());
+            let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+                .await
+                .expect("the owned junction-creation command must retire")
+                .unwrap();
+            assert!(output.status.success(), "junction creation: {output:?}");
+            assert_ne!(
+                fs::symlink_metadata(&link).unwrap().file_attributes()
+                    & FILE_ATTRIBUTE_REPARSE_POINT,
+                0,
+                "the fixture must actually create a native reparse point"
+            );
         }
+        let target = fs::read_link(&link).unwrap();
         let (engine, governor) = tests::engine(host.path().join("state"));
         assert!(
             engine
@@ -204,11 +233,17 @@ async fn artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion()
             b"outside"
         );
         if nested {
-            assert!(root.path().join("dist/archive.zip").exists());
+            assert_eq!(
+                fs::read(root.path().join("dist/archive.zip")).unwrap(),
+                b"binary\x00\xffartifact"
+            );
         }
         assert!(!host.path().join("state").exists());
         assert_eq!(governor.status().reserved, ResourceRequest::default());
+        assert_eq!(fs::read_link(&link).unwrap(), target);
         engine.shutdown().await;
+        #[cfg(windows)]
+        fs::remove_dir(&link).unwrap();
     }
 }
 #[tokio::test]
