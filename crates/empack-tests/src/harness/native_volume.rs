@@ -14,6 +14,7 @@ const DETACH_ATTEMPTS: usize = 5;
 #[derive(Debug)]
 struct CommandFailure {
     program: String,
+    arguments: Vec<std::ffi::OsString>,
     status: std::process::ExitStatus,
     stdout: String,
     stderr: String,
@@ -22,8 +23,8 @@ impl std::fmt::Display for CommandFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "{} failed ({}):\nstdout:\n{}\nstderr:\n{}",
-            self.program, self.status, self.stdout, self.stderr
+            "{} {:?} failed ({}):\nstdout:\n{}\nstderr:\n{}",
+            self.program, self.arguments, self.status, self.stdout, self.stderr
         )
     }
 }
@@ -56,10 +57,13 @@ fn run(program: &str, args: &[&std::ffi::OsStr], input: Option<Vec<u8>>) -> Resu
     if let Some(bytes) = input {
         command.write_stdin(bytes);
     }
-    let output = command.output()?;
+    let output = command
+        .output()
+        .with_context(|| format!("Cannot execute native fixture command {program} {args:?}"))?;
     if !output.status.success() {
         return Err(CommandFailure {
             program: program.into(),
+            arguments: args.iter().map(|arg| (*arg).to_owned()).collect(),
             status: output.status,
             stdout: diagnostic(&output.stdout),
             stderr: diagnostic(&output.stderr),
@@ -120,7 +124,6 @@ impl ApfsFixture {
                 "/usr/bin/hdiutil",
                 &[
                     "create".as_ref(),
-                    "-quiet".as_ref(),
                     "-size".as_ref(),
                     "128m".as_ref(),
                     "-fs".as_ref(),
@@ -147,7 +150,6 @@ impl ApfsFixture {
             "/usr/bin/hdiutil",
             &[
                 "attach".as_ref(),
-                "-quiet".as_ref(),
                 "-nobrowse".as_ref(),
                 "-noautoopen".as_ref(),
                 "-mountpoint".as_ref(),
@@ -445,6 +447,7 @@ mod tests {
         ] {
             let error = anyhow::Error::new(CommandFailure {
                 program: program.into(),
+                arguments: vec!["detach".into(), "/dev/disk-owned-fixture".into()],
                 status: std::process::ExitStatus::from_raw(code << 8),
                 stdout: "native progress".into(),
                 stderr: message.into(),
@@ -471,7 +474,7 @@ mod tests {
         assert_eq!(failure.stderr, "native failure");
         assert_eq!(
             format!("{error:#}"),
-            "/bin/sh failed (exit status: 16):\nstdout:\nnative progress\nstderr:\nnative failure"
+            "/bin/sh [\"-c\", \"printf 'native progress'; printf 'native failure' >&2; exit 16\"] failed (exit status: 16):\nstdout:\nnative progress\nstderr:\nnative failure"
         );
         assert!(!is_busy(&error), "an unrelated command grants no retry");
         let mut oversized = vec![b'x'; 32 * 1024];

@@ -65,27 +65,39 @@ class AcceptanceAssets(unittest.TestCase):
         return collect("owner/repo", self.root / name, REVISION, VERSION, PAYLOAD, remote)
 
     def test_staging_and_collection_preserve_exact_records_and_supporting_bytes(self):
-        raw = self.path.read_bytes()
-        staged = stage([self.path], self.root / "stage", REVISION, VERSION, PAYLOAD)
-        digest = hashlib.sha256(raw).hexdigest()
-        self.assertEqual(staged["release_tag"], "acceptance-v0.8.4-beta")
-        self.assertEqual(set(staged["assets"]), {
-            "acceptance-" + PAYLOAD + "-" + digest + ".json",
-            "observation-" + self.record["files"][0]["sha256"]})
-        remote = Remote([self.path])
-        for row in remote.assets:
-            row["url"] = "https://unselected.invalid/untrusted-metadata-url"
-        result = self.collect(remote)
-        restored = self.root / "collected" / result["records"][0]
-        self.assertEqual(restored.read_bytes(), raw)
-        self.assertEqual((restored.parent / "observation.txt").read_bytes(),
-                         b"Synthetic retained observation, not a consumer execution.\n")
-        admitted = inspect_acceptance_evidence(restored, REVISION, VERSION, PAYLOAD, {(TARGET, "default"): PRODUCT})
-        self.assertEqual(admitted["receipt_sha256"], digest)
-        self.assertEqual(result["status"], "COLLECTED")
-        self.assertNotIn("qualification", result)
-        self.assertEqual(remote.calls[:2], [("GET", "repos/owner/repo/releases"),
-                                            ("GET", "repos/owner/repo/releases/7/assets")])
+        # Operator evidence may originate on either host. Transport must preserve
+        # the supplied bytes, including line endings, rather than normalize them.
+        proof = self.path.parent / "observation.txt"
+        for label, ending in (("lf", b"\n"), ("crlf", b"\r\n")):
+            with self.subTest(line_endings=label):
+                observation = b"Synthetic retained observation, not a consumer execution." + ending
+                proof.write_bytes(observation)
+                self.record["files"][0].update(sha256=hashlib.sha256(observation).hexdigest(),
+                                              bytes=len(observation))
+                write_json(self.path, self.record)
+                raw = self.path.read_bytes()
+                staged = stage([self.path], self.root / ("stage-" + label), REVISION, VERSION, PAYLOAD)
+                digest = hashlib.sha256(raw).hexdigest()
+                self.assertEqual(staged["release_tag"], "acceptance-v0.8.4-beta")
+                self.assertEqual(set(staged["assets"]), {
+                    "acceptance-" + PAYLOAD + "-" + digest + ".json",
+                    "observation-" + self.record["files"][0]["sha256"]})
+                remote = Remote([self.path])
+                for row in remote.assets:
+                    row["url"] = "https://unselected.invalid/untrusted-metadata-url"
+                result = self.collect(remote, "collected-" + label)
+                restored = self.root / ("collected-" + label) / result["records"][0]
+                self.assertEqual(restored.read_bytes(), raw)
+                self.assertEqual((restored.parent / "observation.txt").read_bytes(), observation)
+                admitted = inspect_acceptance_evidence(restored, REVISION, VERSION, PAYLOAD,
+                                                      {(TARGET, "default"): PRODUCT})
+                self.assertEqual(admitted["receipt_sha256"], digest)
+                self.assertEqual(result["status"], "COLLECTED")
+                self.assertNotIn("qualification", result)
+                self.assertEqual(remote.calls[:2], [("GET", "repos/owner/repo/releases"),
+                                                    ("GET", "repos/owner/repo/releases/7/assets")])
+                self.assertEqual(self.path.read_bytes(), raw)
+                self.assertEqual(proof.read_bytes(), observation)
 
     def test_missing_evidence_is_distinct_from_failed_access(self):
         remote = Remote([])
