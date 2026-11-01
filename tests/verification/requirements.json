@@ -13380,7 +13380,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Still qualify remaining resource dimensions and public multi-operation budget/cancellation journeys; actual I/O deadline and retirement checks remain separate. Reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public multi-operation budget/cancellation journeys and their host-facing diagnostics remain unbound; actual I/O deadline and retirement checks remain separate. Reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -13431,7 +13431,9 @@
           ],
           "assertions": [
             "Simultaneous job and memory reservations are atomic; Busy, TooLarge and overflow cases leave existing charges unchanged",
-            "Diagnostics report requested/available reservations and distinguish the estimate from measured RAM usage"
+            "Diagnostics report requested/available reservations and distinguish the estimate from measured RAM usage",
+            "Busy and oversized requests identify the exact worker/memory/scratch/file dimension and literal requested/available/maximum amounts; refusal never partially charges other available dimensions",
+            "Dropping the mixed permit releases all four resource dimensions; maximum-u64 admission cannot wrap available capacity"
           ]
         },
         {
