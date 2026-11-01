@@ -791,67 +791,114 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
         prerelease["id"].as_str().unwrap(),
         empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&bytes).into()).hex()
     );
-    let project = TestProject::workflow_fixture("provider-release-policy", "fabric", "1.21.1");
-    run(
-        &project,
-        &[
-            "--yes",
-            "add",
-            "--platform",
-            "modrinth",
-            "--version-id",
-            "cl0HrTL6",
-            "nvidium",
-        ],
-    );
-    let initial = read_project(project.dir());
-    assert_eq!(initial.intent().roots.len(), 1);
-    let key = initial.intent().roots.keys().next().unwrap().clone();
     let root_project = ProviderProjectId::Modrinth(
         empack_core::identity::ModrinthProjectId::parse("SfMw2IZN").unwrap(),
     );
     let sodium_project = ProviderProjectId::Modrinth(
         empack_core::identity::ModrinthProjectId::parse("AANobbMI").unwrap(),
     );
-    assert_eq!(
-        initial.lock().dependencies[&key].identity,
-        ResolvedIdentity::Provider(root_project.clone())
-    );
-    run(&project, &["--yes", "unpin", key.as_str()]);
-    let unpinned = read_project(project.dir());
-    let mut authored = unpinned.intent().clone();
-    authored.dependency_policy = ReleasePolicy::StableOnly;
-    authored.roots.get_mut(&key).unwrap().releases = Some(ReleasePolicy::Any);
-    empack_lib::testing::write_authoring(&project.dir().join("empack.yml"), &authored).unwrap();
-    run(&project, &["--yes", "sync"]);
-    let baseline = read_project(project.dir());
-    assert_eq!(baseline.intent(), &authored);
-    assert_eq!(
-        baseline.lock().dependencies[&key]
-            .selected
-            .as_ref()
-            .unwrap()
-            .selection,
-        root_project.parse_pin("cl0HrTL6").unwrap()
-    );
-    assert_eq!(baseline.lock().dependencies.len(), 2);
-    let sodium_key = baseline
-        .lock()
-        .dependencies
-        .iter()
-        .find(|(_, dependency)| {
-            dependency.identity == ResolvedIdentity::Provider(sodium_project.clone())
-        })
-        .unwrap()
-        .0
-        .clone();
-    let author_bytes = std::fs::read(project.dir().join("empack.yml")).unwrap();
-    for (flag, expected) in [
-        (Some("stable-only"), stable),
-        (Some("any"), prerelease),
-        (Some("prefer-stable"), stable),
-        (None, prerelease),
+    // Each policy starts from a valid independent installed closure. Stable
+    // policies advance an older beta without changing its retained Sodium pin.
+    // Any/absent cases retain the newer beta: an ignored override would instead
+    // select stable, which needs a different library and must not be published.
+    for (flag, authored_policy, seed, expected) in [
+        (Some("stable-only"), ReleasePolicy::Any, "cl0HrTL6", stable),
+        (
+            Some("prefer-stable"),
+            ReleasePolicy::Any,
+            "cl0HrTL6",
+            stable,
+        ),
+        (
+            Some("any"),
+            ReleasePolicy::StableOnly,
+            prerelease["id"].as_str().unwrap(),
+            prerelease,
+        ),
+        (
+            None,
+            ReleasePolicy::Any,
+            prerelease["id"].as_str().unwrap(),
+            prerelease,
+        ),
     ] {
+        let project = TestProject::workflow_fixture(
+            &format!("provider-release-policy-{}", flag.unwrap_or("authored")),
+            "fabric",
+            "1.21.1",
+        );
+        run(
+            &project,
+            &[
+                "--yes",
+                "add",
+                "--platform",
+                "modrinth",
+                "--version-id",
+                seed,
+                "nvidium",
+            ],
+        );
+        let initial = read_project(project.dir());
+        assert_eq!(initial.intent().roots.len(), 1);
+        let key = initial.intent().roots.keys().next().unwrap().clone();
+        assert_eq!(
+            initial.lock().dependencies[&key].identity,
+            ResolvedIdentity::Provider(root_project.clone())
+        );
+        run(&project, &["--yes", "unpin", key.as_str()]);
+        let unpinned = read_project(project.dir());
+        let mut authored = unpinned.intent().clone();
+        authored.dependency_policy = ReleasePolicy::StableOnly;
+        authored.roots.get_mut(&key).unwrap().releases = Some(authored_policy);
+        empack_lib::testing::write_authoring(&project.dir().join("empack.yml"), &authored).unwrap();
+        run(&project, &["--yes", "sync"]);
+        let baseline = read_project(project.dir());
+        assert_eq!(baseline.intent(), &authored);
+        assert_eq!(
+            baseline.lock().dependencies[&key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection,
+            root_project.parse_pin(seed).unwrap()
+        );
+        assert_eq!(baseline.lock().dependencies.len(), 2);
+        let sodium_key = baseline
+            .lock()
+            .dependencies
+            .iter()
+            .find(|(_, dependency)| {
+                dependency.identity == ResolvedIdentity::Provider(sodium_project.clone())
+            })
+            .unwrap()
+            .0
+            .clone();
+        // These policy checks keep the retained library's exact pin. Changing an
+        // implicit library requires separate authorization, tested below.
+        let required = expected["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["dependency_type"] == "required")
+            .collect::<Vec<_>>();
+        assert_eq!(required.len(), 1);
+        assert_eq!(required[0]["project_id"], "AANobbMI");
+        let required_pin = sodium_project
+            .parse_pin(required[0]["version_id"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            baseline.lock().dependencies[&sodium_key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection,
+            required_pin,
+            "policy fixture must not implicitly change a retained library"
+        );
+        let author_bytes = std::fs::read(project.dir().join("empack.yml")).unwrap();
+        std::fs::write(project.dir().join("prior-build.zip"), b"prior artifact").unwrap();
+        std::fs::create_dir(project.dir().join("empty author directory")).unwrap();
         let before = read_project(project.dir());
         let version = expected["id"].as_str().unwrap();
         let pin = root_project.parse_pin(version).unwrap();
@@ -903,30 +950,60 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
                 .selection,
             pin
         );
-        // The selected mod requires an exact Sodium version. Policy changes may
-        // change that necessary closure, but must not promote it to an author root.
-        let required = expected["dependencies"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|row| row["dependency_type"] == "required")
-            .collect::<Vec<_>>();
-        assert_eq!(required.len(), 1);
-        assert_eq!(required[0]["project_id"], "AANobbMI");
         assert_eq!(
             updated.lock().dependencies[&sodium_key]
                 .selected
                 .as_ref()
                 .unwrap()
                 .selection,
-            sodium_project
-                .parse_pin(required[0]["version_id"].as_str().unwrap())
-                .unwrap()
+            required_pin
         );
+        assert_eq!(
+            updated.lock().dependencies[&sodium_key].selected,
+            baseline.lock().dependencies[&sodium_key].selected
+        );
+        assert_eq!(
+            std::fs::read(project.dir().join("prior-build.zip")).unwrap(),
+            b"prior artifact"
+        );
+        assert!(project.dir().join("empty author directory").is_dir());
         let converged = author_snapshot(project.dir());
         for _ in 0..2 {
             run(&project, &["--yes", "sync"]);
             assert_eq!(author_snapshot(project.dir()), converged);
+        }
+        if flag == Some("stable-only") {
+            // Reproduce the original live failure as a protected operation:
+            // newer Nvidium requires a different exact Sodium selection. Selecting
+            // only the author root cannot authorize that retained-library change.
+            assert_ne!(
+                stable["dependencies"], prerelease["dependencies"],
+                "retained-library negative needs different required pins"
+            );
+            for preview in [true, false] {
+                let mut args = vec!["--yes", "update", key.as_str(), "--release-policy", "any"];
+                if preview {
+                    args.insert(0, "--dry-run");
+                }
+                let before = snapshot(project.dir());
+                let output = execute(&project, &args, None);
+                assert!(
+                    !output.status.success(),
+                    "unselected library change was accepted"
+                );
+                let rendered = format!(
+                    "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(
+                    rendered.contains(
+                        "A required selection conflicts with retained content; update it explicitly"
+                    ),
+                    "{rendered}"
+                );
+                assert_eq!(snapshot(project.dir()), before);
+            }
         }
     }
 }

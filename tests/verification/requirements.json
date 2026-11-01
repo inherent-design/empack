@@ -4122,7 +4122,7 @@
         "DEP"
       ],
       "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
-      "required_work": "Controlled host fixtures prove changed/retained selections, exact pins, operation/root/project release-policy precedence and explicit file roles. Separate live ordinary CLI fixtures protect an older unselected automatic root and distinguish public policy flags using independent current catalog observations, including the necessary transitive closure. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. All newly bound assertions and every declared host/product/live variant require actual execution.",
+      "required_work": "Controlled host fixtures prove changed/retained selections, exact pins, operation/root/project release-policy precedence and explicit file roles. Separate live ordinary CLI fixtures protect an older unselected automatic root and distinguish public policy flags against independent current catalog observations and valid baselines with retained exact transitive pins and an explicit refusal when only the selected root would require changing an unselected library. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. All newly bound assertions and every declared host/product/live variant require actual execution.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4244,9 +4244,10 @@
             "telemetry"
           ],
           "assertions": [
-            "Independent compatible Modrinth metadata supplies a newer prerelease and older stable discriminator; public stable-only/prefer-stable flags override an authored any preference, while any and absent override select the permitted prerelease",
-            "Each dry-run preserves the whole fixture; application preserves raw authoring, automatic selection policy, runtime, edges and root membership while changing only the selected dependency and its exact required Sodium closure",
-            "Completed selected-root counts agree with the actual changed/retained pin; the transitive library is not promoted to an author root and two ordinary synchronizations converge"
+            "Independent compatible Modrinth metadata supplies a newer prerelease and older stable discriminator; public stable-only/prefer-stable flags override an authored any preference, explicit any overrides an authored stable-only preference, and absent operation policy respects the authored any root over the stable-only project",
+            "Each policy uses an independent valid installed closure: stable preferences advance an older beta, while any/absent retain a newer beta; an ignored override would select a different pin. Preview preserves the whole fixture; application preserves raw authoring, automatic selection policy, runtime, edges, root membership and the retained exact Sodium pin",
+            "Completed selected-root counts agree with the actual changed/retained pin; the transitive library is not promoted to an author root and two ordinary synchronizations converge",
+            "A stable installation updated toward the newer beta with only Nvidium selected rejects the unselected Sodium change, in both dry-run and application, with the retained-content diagnostic and unchanged complete project tree"
           ],
           "remaining_group_evidence": "This catalog distinguishes any from the two stable preferences; the alpha-only prefer-stable fallback is established by a separate component case, not this public fixture. Observed identities are current evidence rather than fixed latest-version goldens, and nondiscriminating upstream data fails the precondition. Metadata-only selection does not establish payload, consumer or final-package verification; every declared host/product run remains required."
         }
