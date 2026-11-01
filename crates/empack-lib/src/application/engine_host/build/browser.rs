@@ -154,8 +154,13 @@ async fn launch_command(
         .context("Could not start browser launcher; continuation was retained")?;
     let result = tokio::select! {
         status = child.wait() => {
-            ensure!(status?.success(), "Browser launcher failed; continuation was retained");
-            Ok(())
+            match status {
+                Ok(status) => {
+                    ensure!(status.success(), "Browser launcher failed; continuation was retained");
+                    Ok(())
+                }
+                Err(error) => Err(error).context("Could not wait for browser launcher; continuation was retained"),
+            }
         }
         _ = cancel.cancelled() => Err(crate::application::process_runtime::Interrupted.into()),
         _ = tokio::time::sleep(timeout) => Err(anyhow::anyhow!("Browser launcher did not confirm completion; continuation was retained")),
