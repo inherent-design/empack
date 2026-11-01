@@ -11,11 +11,8 @@ use empack_lib::{
     },
     engine::documents::DocumentCodec,
 };
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use empack_tests::harness::workspace::{Snapshot, snapshot};
+use std::{fs, path::PathBuf};
 #[path = "support/content_kinds.rs"]
 mod content_kinds;
 
@@ -63,26 +60,8 @@ impl Project {
         }))
         .await
     }
-    fn snapshot(&self) -> BTreeMap<PathBuf, Vec<u8>> {
-        fn walk(root: &Path, at: &Path, out: &mut BTreeMap<PathBuf, Vec<u8>>) {
-            if !at.exists() {
-                return;
-            }
-            for entry in fs::read_dir(at).unwrap() {
-                let entry = entry.unwrap();
-                if entry.file_type().unwrap().is_dir() {
-                    walk(root, &entry.path(), out);
-                } else {
-                    out.insert(
-                        entry.path().strip_prefix(root).unwrap().into(),
-                        fs::read(entry.path()).unwrap(),
-                    );
-                }
-            }
-        }
-        let mut out = BTreeMap::new();
-        walk(&self.path(), &self.path(), &mut out);
-        out
+    fn snapshot(&self) -> Option<Snapshot> {
+        self.path().exists().then(|| snapshot(&self.path()))
     }
     fn roots(&self) -> usize {
         empack_lib::testing::read_authoring(&self.path().join("empack.yml"))

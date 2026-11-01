@@ -233,7 +233,7 @@ pub(super) fn journey() {
         );
     }
     assert_eq!(
-        snapshot(&root.join("pack"), &[]),
+        snapshot(&root.join("pack")).files,
         client
             .iter()
             .map(|(path, bytes)| (std::path::PathBuf::from(path), bytes.clone()))

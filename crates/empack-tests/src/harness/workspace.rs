@@ -16,7 +16,27 @@ pub struct Snapshot {
 /// Access/modification times are excluded: reads and directory traversal can
 /// update timestamps without changing authored content or portable attributes.
 pub fn snapshot(root: &Path) -> Snapshot {
-    fn visit(root: &Path, at: &Path, result: &mut Snapshot) {
+    snapshot_excluding(root, &[])
+}
+
+/// Skip explicitly named host paths before opening them. Exclusions are relative
+/// paths compared by whole components; similarly named author files remain visible.
+pub fn snapshot_excluding(root: &Path, excluded: &[&str]) -> Snapshot {
+    for path in excluded {
+        let path = Path::new(path);
+        assert!(
+            !path.as_os_str().is_empty()
+                && path
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_))),
+            "snapshot exclusions must name relative entries"
+        );
+    }
+    fn visit(root: &Path, at: &Path, excluded: &[&str], result: &mut Snapshot) {
+        let relative = at.strip_prefix(root).unwrap();
+        if excluded.iter().any(|name| relative.starts_with(name)) {
+            return;
+        }
         let metadata = fs::symlink_metadata(at).unwrap();
         assert!(
             metadata.is_file() || metadata.is_dir(),
@@ -30,7 +50,7 @@ pub fn snapshot(root: &Path) -> Snapshot {
         };
         #[cfg(not(unix))]
         let mode = u32::from(metadata.permissions().readonly());
-        let relative = at.strip_prefix(root).unwrap().to_owned();
+        let relative = relative.to_owned();
         result
             .entries
             .insert(relative.clone(), (metadata.is_dir(), mode));
@@ -48,7 +68,7 @@ pub fn snapshot(root: &Path) -> Snapshot {
             result.files.insert(relative, bytes);
         } else {
             for entry in fs::read_dir(at).unwrap() {
-                visit(root, &entry.unwrap().path(), result);
+                visit(root, &entry.unwrap().path(), excluded, result);
             }
         }
     }
@@ -56,7 +76,7 @@ pub fn snapshot(root: &Path) -> Snapshot {
         files: BTreeMap::new(),
         entries: BTreeMap::new(),
     };
-    visit(root, root, &mut result);
+    visit(root, root, excluded, &mut result);
     result
 }
 
@@ -93,6 +113,49 @@ mod tests {
         assert_eq!(snapshot(root.path()), before);
     }
 
+    #[test]
+    fn snapshots_exclude_only_selected_relative_components() {
+        let root = tempfile::tempdir().unwrap();
+        for (name, bytes) in [
+            (".host-state/private.txt", b"host bytes".as_slice()),
+            (".host-state-copy/keep.txt", b"author bytes".as_slice()),
+            ("pack/content.txt", b"content".as_slice()),
+        ] {
+            let path = root.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        fs::create_dir(root.path().join("empty")).unwrap();
+        let observed = snapshot_excluding(root.path(), &[".host-state"]);
+        assert_eq!(
+            observed.files,
+            BTreeMap::from([
+                (
+                    PathBuf::from(".host-state-copy/keep.txt"),
+                    b"author bytes".to_vec()
+                ),
+                (PathBuf::from("pack/content.txt"), b"content".to_vec()),
+            ])
+        );
+        assert!(observed.entries.contains_key(Path::new("empty")));
+        assert!(!observed.entries.contains_key(Path::new(".host-state")));
+        fs::write(
+            root.path().join(".host-state/private.txt"),
+            b"new host bytes",
+        )
+        .unwrap();
+        fs::create_dir(root.path().join(".host-state/active")).unwrap();
+        assert_eq!(snapshot_excluding(root.path(), &[".host-state"]), observed);
+        fs::write(root.path().join("pack/content.txt"), b"changed").unwrap();
+        assert_ne!(snapshot_excluding(root.path(), &[".host-state"]), observed);
+        assert_eq!(snapshot_excluding(root.path(), &[]), snapshot(root.path()));
+        for invalid in ["", ".", "/", "../outside", "pack/../outside"] {
+            assert!(
+                std::panic::catch_unwind(|| snapshot_excluding(root.path(), &[invalid])).is_err()
+            );
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn snapshot_observes_locked_empty_files_but_refuses_unreadable_content() {
@@ -112,6 +175,11 @@ mod tests {
         file.sync_all().unwrap();
         assert_eq!(fs::read(&path).unwrap_err().raw_os_error(), Some(33));
         assert!(std::panic::catch_unwind(|| snapshot(root.path())).is_err());
+        assert!(
+            snapshot_excluding(root.path(), &["held.lock"])
+                .files
+                .is_empty()
+        );
         file.unlock().unwrap();
         assert_eq!(
             snapshot(root.path()).files[Path::new("held.lock")],

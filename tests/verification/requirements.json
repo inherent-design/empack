@@ -13740,7 +13740,8 @@
           ],
           "assertions": [
             "A real exclusive byte lock makes an independent Windows byte read fail with lock violation; the fixture observer still records the empty file from its observed zero length",
-            "Once the same locked file contains bytes, observation refuses rather than omitting or inventing its content; after unlock the exact data is observed"
+            "Once the same locked file contains bytes, observation refuses rather than omitting or inventing its content; after unlock the exact data is observed",
+            "An explicitly excluded nonempty locked host file is skipped before reading; an ordinary full observation still refuses the unreadable content"
           ],
           "remaining_group_evidence": "This is native Windows harness behavior, not a replacement for actual application ownership/publication tests"
         },
@@ -13964,6 +13965,28 @@
             "Changed supporting files fail the command; reporting identifies operator-recorded scope without claiming an actual consumer execution"
           ],
           "remaining_group_evidence": "Synthetic archive/header and operator fixtures exercise tooling wiring only; they do not execute empack or an actual consumer"
+        },
+        {
+          "id": "UX-088.native-workspace-footprints",
+          "boundary": "N",
+          "test_ids": [
+            "empack-tests::harness::workspace::tests::snapshot_detects_bytes_empty_directories_and_permission_changes",
+            "empack-tests::harness::workspace::tests::snapshots_exclude_only_selected_relative_components"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The shared fixture observer detects changed bytes, empty directories and portable permissions, including initially empty files",
+            "Explicit relative host paths are omitted by whole components without hiding similarly named author files; selected host changes do not alter the author observation while outside changes do",
+            "Empty, root and parent-traversing exclusion scopes refuse; these observer tests do not prove that any product command preserves the observed files"
+          ]
         }
       ],
       "owner_now": [

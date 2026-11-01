@@ -1,6 +1,9 @@
 use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
 use empack_tests::harness::process::{TestProject, read_project};
-use empack_tests::harness::terminal;
+use empack_tests::harness::{
+    terminal,
+    workspace::{snapshot, snapshot_excluding},
+};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -15,32 +18,9 @@ fn placement_path(placement: &empack_core::model::Placement) -> PathBuf {
     PathBuf::from(layer).join(placement.destination.relative().as_str())
 }
 
-fn snapshot(root: &Path, excluded: &[&str]) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(root: &Path, path: &Path, excluded: &[&str], files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in std::fs::read_dir(path).unwrap() {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            let relative = path.strip_prefix(root).unwrap();
-            if excluded.iter().any(|name| relative.starts_with(name)) {
-                continue;
-            }
-            if entry.file_type().unwrap().is_dir() {
-                visit(root, &entry.path(), excluded, files);
-            } else if entry.file_type().unwrap().is_file() {
-                files.insert(
-                    entry.path().strip_prefix(root).unwrap().into(),
-                    std::fs::read(entry.path()).unwrap(),
-                );
-            }
-        }
-    }
-    let mut files = BTreeMap::new();
-    visit(root, root, excluded, &mut files);
-    files
-}
 // Author checks omit host bookkeeping before reading; previews snapshot everything.
 fn author_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    snapshot(root, &[".host-state", ".empack-cache", ".harness-home"])
+    snapshot_excluding(root, &[".host-state", ".empack-cache", ".harness-home"]).files
 }
 fn execute(project: &TestProject, args: &[&str], credential: Option<&str>) -> std::process::Output {
     let mut command = project.cmd();
@@ -436,7 +416,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     assert_eq!(report["joint"]["declarations_complete"], true);
     assert_eq!(report["joint"]["candidate_compatibility"], "not-assessed");
     assert_eq!(author_snapshot(project.dir()), assessment_before);
-    let before_preview = snapshot(project.dir(), &[]);
+    let before_preview = snapshot(project.dir()).files;
     let before = author_snapshot(project.dir());
     run(
         &project,
@@ -450,7 +430,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         ],
     );
     assert_eq!(
-        snapshot(project.dir(), &[]),
+        snapshot(project.dir()).files,
         before_preview,
         "preview must not publish author changes"
     );
@@ -501,7 +481,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         updated.lock().required_edges
     );
     let author = std::fs::read(project.dir().join("empack.yml")).unwrap();
-    let before_preview = snapshot(project.dir(), &[]);
+    let before_preview = snapshot(project.dir()).files;
     run(
         &project,
         &[
@@ -513,7 +493,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
             "any",
         ],
     );
-    assert_eq!(snapshot(project.dir(), &[]), before_preview);
+    assert_eq!(snapshot(project.dir()).files, before_preview);
     let output = run(
         &project,
         &["--yes", "update", key.as_str(), "--release-policy", "any"],
@@ -652,12 +632,12 @@ fn adopt_existing_live_content(bytes: &[u8], url: &str) {
         };
         let source_attributes = attributes(&project.dir().join("observed.jar"));
         let installed_attributes = attributes(&installed);
-        let before = snapshot(project.dir(), &[]);
+        let before = snapshot(project.dir()).files;
         let mut preview = args.clone();
         preview.push("--dry-run");
         run(&project, &preview);
         assert_eq!(
-            snapshot(project.dir(), &[]),
+            snapshot(project.dir()).files,
             before,
             "{mode} preview changed files"
         );
@@ -765,9 +745,9 @@ fn live_cli_direct_url_retains_observed_content() {
     let url = selected["downloads"][0].as_str().unwrap();
     let project = TestProject::workflow_fixture("direct-url", "fabric", "1.21.1");
     fs::write(project.dir().join("prior-build.zip"), b"prior artifact").unwrap();
-    let before = snapshot(project.dir(), &[]);
+    let before = snapshot(project.dir()).files;
     run(&project, &["--dry-run", "add", url]);
-    assert_eq!(snapshot(project.dir(), &[]), before);
+    assert_eq!(snapshot(project.dir()).files, before);
     run(&project, &["--yes", "add", url]);
     let bytes = fs::read(project.dir().join("pack/mods/morechathistory-1.3.1.jar")).unwrap();
     assert_eq!(bytes.len() as u64, selected["fileSize"].as_u64().unwrap());
