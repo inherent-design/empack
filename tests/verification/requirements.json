@@ -5719,7 +5719,7 @@
             "telemetry"
           ],
           "assertions": [
-            "New schema-5 build records and existing schema-4 records resume through their respective fingerprint versions",
+            "Current schema-5 build records resume after engine restart using persistent fingerprints; obsolete formats are separately refused without rewriting saved work",
             "Inspection and preparation preserve saved record bytes; retained inputs are reverified and completed publication still requires fresh approval"
           ]
         },

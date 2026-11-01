@@ -120,8 +120,10 @@ def _acceptance_lines(record):
             lines += ["", "<details>", "<summary>Exact tests and evidence identities</summary>", ""]
             for variant in case["variants"]:
                 for test in variant["tests"]:
+                    if not isinstance(test.get("attempts"), list):
+                        raise ValueError("Acceptance reports require per-attempt observations")
                     lines += [f"- {cell(variant['platform'])} / {cell(variant['features'])}: {cell(test['id'])} — {cell(test['status'])}"]
-                    if test.get("attempts"):
+                    if test["attempts"]:
                         for attempt in test["attempts"]:
                             lines += [f"  - Attempt: {cell(attempt['status'])}; receipt: {cell(attempt['receipt_sha256'])}",
                                       f"    - Test graph: {cell(attempt['test_features'])}; " +
@@ -137,10 +139,6 @@ def _acceptance_lines(record):
                                 lines += [f"    - Suite: {cell(attempt['suite'])}"]
                             if attempt.get("created_at"):
                                 lines += [f"    - Recorded: {cell(attempt['created_at'])}"]
-                    elif test["receipts"]:
-                        # Render earlier admitted schema-1 reports too.
-                        lines += [f"  - Test graph: {cell(test['test_features'])}; executable: {cell(test['artifact_sha256'])}",
-                                  f"  - Receipts: {cell(', '.join(test['receipts']))}"]
                     else:
                         lines += ["  - No admitted execution for this test and variant."]
             lines += ["", "</details>", ""]

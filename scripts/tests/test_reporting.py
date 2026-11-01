@@ -18,11 +18,13 @@ from verification.evidence import write_json
 
 def fixture():
     test = {"id": "cli::observed", "status": "PASS", "receipts": ["1" * 64],
-            "artifact_sha256": "2" * 64, "test_features": "minimal"}
+            "artifact_sha256": "2" * 64, "test_features": "minimal",
+            "attempts": [{"status": "PASS", "receipt_sha256": "1" * 64,
+                          "artifact_sha256": "2" * 64, "test_features": "minimal"}]}
     case = {"id": "UX-001.observed", "boundary": "X", "status": "NOT_RUN", "variants": [
         {"platform": "linux", "features": "default", "status": "PASS", "tests": [test]},
         {"platform": "windows", "features": "default", "status": "NOT_RUN", "tests": [
-            {"id": "cli::observed", "status": "NOT_RUN", "receipts": []}]}]}
+            {"id": "cli::observed", "status": "NOT_RUN", "receipts": [], "attempts": []}]}]}
     row = {"id": "UX-001", "scope": "stable", "risk": "critical", "case_bindings_status": "partial",
            "status": "NOT_RUN", "cases": [case]}
     return {"schema": 1, "status": "PASS", "qualification": False, "source_revision": "a" * 40,
@@ -64,6 +66,8 @@ class VerificationReports(unittest.TestCase):
             lambda r: r.update(status="unknown"),
             lambda r: r["acceptance"].update(source_revision="c" * 40),
             lambda r: r["acceptance"]["requirements"][0].update(status="WAIVED"),
+            lambda r: r["acceptance"]["requirements"][0]["cases"][0]["variants"][0]["tests"][0].pop("attempts"),
+            lambda r: r["acceptance"]["requirements"][0]["cases"][0]["variants"][1]["tests"][0].pop("attempts"),
         ):
             record = copy.deepcopy(original)
             change(record)
