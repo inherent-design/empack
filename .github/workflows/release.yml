@@ -398,8 +398,13 @@ jobs:
     if: ${{ always() && needs.archive-gate.result == 'success' && needs.consumer.result == 'success' && needs.auxiliary.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # GitHub only lists draft releases for callers with repository push access.
+    # The collector uses GET only; publication remains in the tag-only release job.
+    permissions:
+      contents: write
     outputs:
       qualification_sha256: ${{ steps.qualify.outputs.qualification_sha256 }}
+      qualification_artifact: ${{ steps.qualify.outputs.qualification_artifact }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -439,6 +444,7 @@ jobs:
         env:
           RELEASE_REVISION: ${{ github.sha }}
           ARCHIVE_EVIDENCE_SHA256: ${{ needs.archive-gate.outputs.evidence_sha256 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           python_receipts=(.git/candidate-python/*/receipt.json .git/candidate-native-python/candidate-python-native-*/*/receipt.json)
           test "${#python_receipts[@]}" -eq 3
@@ -456,13 +462,25 @@ jobs:
           for record in "${python_receipts[@]}"; do python_args+=(--tooling "$record"); done
           execution_args=()
           for record in "${execution_records[@]}"; do execution_args+=(--execution "$record"); done
-          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" "${doctest_args[@]}" "${python_args[@]}" "${execution_args[@]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
+          python3 scripts/acceptance-assets.py collect --repository "$GITHUB_REPOSITORY" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --output .git/candidate-acceptance
+          mapfile -t acceptance_records < <(python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          root = Path(".git/candidate-acceptance")
+          for record in json.loads((root / "intake.json").read_text())["records"]:
+              print(root / record)
+          PYTHON
+          )
+          acceptance_args=()
+          for record in "${acceptance_records[@]}"; do acceptance_args+=(--acceptance "$record"); done
+          python3 scripts/qualify-release.py gate "${auxiliary_args[@]}" "${doctest_args[@]}" "${python_args[@]}" "${execution_args[@]}" "${acceptance_args[@]}" --payload .git/candidate-payload --consumer .git/candidate-consumer/prism.json --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" --output .git/candidate.json
           python3 - <<'PYTHON'
           import hashlib, os
           from pathlib import Path
           digest = hashlib.sha256(Path(".git/candidate.json").read_bytes()).hexdigest()
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               print("qualification_sha256=" + digest, file=output)
+              print("qualification_artifact=candidate-qualification-" + os.environ["GITHUB_RUN_ATTEMPT"], file=output)
           PYTHON
       - name: Summarize qualification and missing evidence
         if: always()
@@ -473,10 +491,11 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: candidate-qualification
+          name: candidate-qualification-${{ github.run_attempt }}
           path: |
             .git/candidate.json
             .git/candidate.md
+            .git/candidate-acceptance/
             .git/candidate-python/*/receipt.json
             .git/candidate-python/*/inventory.json
             .git/candidate-python/*/events.json
@@ -533,7 +552,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: candidate-qualification
+          name: ${{ needs.candidate-gate.outputs.qualification_artifact }}
           path: .git/qualification
 
       - name: Recheck candidate qualification before publication

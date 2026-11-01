@@ -14306,6 +14306,33 @@
             "Explicit relative host paths are omitted by whole components without hiding similarly named author files; selected host changes do not alter the author observation while outside changes do",
             "Empty, root and parent-traversing exclusion scopes refuse; these observer tests do not prove that any product command preserves the observed files"
           ]
+        },
+        {
+          "id": "UX-088.operator-evidence-handoff",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_acceptance_assets.AcceptanceAssets.test_staging_and_collection_preserve_exact_records_and_supporting_bytes",
+            "python::test_acceptance_assets.AcceptanceAssets.test_missing_evidence_is_distinct_from_failed_access",
+            "python::test_acceptance_assets.AcceptanceAssets.test_all_attempts_reach_the_gate_and_a_later_pass_does_not_erase_failure",
+            "python::test_acceptance_assets.AcceptanceAssets.test_candidate_and_supporting_identity_failures_cannot_leave_a_partial_success",
+            "python::test_acceptance_assets.AcceptanceAssets.test_supporting_paths_are_confined_and_do_not_impose_an_extra_record_filename",
+            "python::test_acceptance_assets.AcceptanceAssets.test_existing_output_and_author_records_are_not_replaced",
+            "python::test_acceptance_assets.AcceptanceAssets.test_github_client_uses_only_get_requests",
+            "python::test_acceptance_assets.AcceptanceAssets.test_release_gate_forwards_collected_records_and_preserves_gate_attempts"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Synthetic records and their supporting bytes survive staging and mocked GitHub collection unchanged, including multiple failed and passing attempts; the existing gate still rejects a retained failure",
+            "Missing records remain missing; denied access, incomplete or changed assets, wrong source/candidate identities, unsafe paths and existing output trees cannot produce an admitted subset or overwrite author evidence",
+            "The collector issues GET requests only; the release workflow passes collected records to the existing gate, retains attempt-specific reports, and uses the successful gate artifact for publication retries. These tests do not establish hosted GitHub execution or perform actual consumer tasks"
+          ]
         }
       ],
       "owner_now": [

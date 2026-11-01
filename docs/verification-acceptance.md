@@ -51,4 +51,40 @@ python3 scripts/qualify-release.py gate \
 
 Retain the other required suite, parser, tooling, rustdoc and candidate-execution arguments when invoking the complete gate. Repeat `--acceptance` for each record. This command admits existing observations; it does not launch a consumer. Missing or mismatched supporting files fail admission, and an incomplete candidate remains blocked even when one operator record passes.
 
-The JSON and Markdown output identify the operator-reported scope. The hosted release workflow does not yet collect these operator bundles automatically; that collection and the actual tasks remain release work. No consumer or human pass is provided by the repository's synthetic admission fixtures.
+The JSON and Markdown output identify the operator-reported scope. No consumer or human pass is provided by the repository's synthetic admission fixtures.
+
+## Hosted handoff and gate resumption
+
+Use the candidate archives and auxiliary telemetry products retained by one release workflow run. Download its `checked-native-archives` artifact and obtain `archive_evidence_sha256` from the SHA-256 of its `archive-evidence.json`. The source revision, version, executable identities and distribution observations in the records must describe those exact inputs. A new build or workflow run requires checking those identities again; a successful manual-dispatch rehearsal does not qualify a later tag's rebuilt payload.
+
+After performing and reviewing the selected procedures, stage their existing JSON records and supporting files:
+
+```sh
+python3 scripts/acceptance-assets.py stage \
+  --revision "$RELEASE_REVISION" --version "${RELEASE_VERSION#v}" \
+  --archive-evidence-sha256 "$ARCHIVE_EVIDENCE_SHA256" \
+  --record .git/acceptance/prism-reference/acceptance.json \
+  --output .git/acceptance-upload-1
+```
+
+Repeat `--record` for the other reviewed records and attempts. Staging preserves their bytes and checks supporting files and candidate coordinates; the gate still establishes the product, procedure and outcome bindings. The output directory must be new. Its `staging.json` lists the files to upload. Record asset names contain the archive-evidence digest and the record's own digest; supporting assets use their content digest. Different attempts have different names, and shared supporting bytes need only one asset.
+
+The container is a dedicated draft release named `acceptance-v<version>`, such as `acceptance-v0.8.4-beta`. Create it once, with maintainer authorization, or reuse the existing draft. It contains acceptance data and remains separate from the shipping release. For example, using Bash:
+
+```bash
+EVIDENCE_TAG="acceptance-${RELEASE_VERSION}"
+gh release create "$EVIDENCE_TAG" --draft --target "$RELEASE_REVISION" \
+  --title "Acceptance evidence for $RELEASE_VERSION" \
+  --notes "Reviewed operator records and supporting files for candidate qualification."
+shopt -s nullglob
+assets=(.git/acceptance-upload-1/acceptance-*.json .git/acceptance-upload-1/observation-*)
+gh release upload "$EVIDENCE_TAG" "${assets[@]}" --clobber
+```
+
+Use the intended repository's checkout or pass `--repo owner/repository` to the GitHub CLI commands. Reuploading staged content under the same digest name replaces identical bytes; preserve differently named earlier attempts. Do not remove a failed record to obtain a passing candidate.
+
+The qualification job reads this draft through `scripts/acceptance-assets.py collect`. It selects every record for the exact archive-evidence digest, checks content addresses and supporting bytes, reconstructs the original relative paths, and forwards each record through `--acceptance` to the existing gate. Collection does not execute a task or grant a product identity. Missing accessible records remain missing obligations; access errors, changed bytes or incomplete assets fail collection and prevent qualification. Retrieved files and `intake.json` are retained with the gate report.
+
+GitHub limits draft-release listings to callers with repository push access. The trusted qualification job therefore has `contents: write` permission, while the collector issues only GET requests. Publication stays in the separate tag-only job; manual workflow dispatch does not publish. See [GitHub's release API permissions](https://docs.github.com/en/rest/releases/releases#list-releases).
+
+When native, parser and candidate-execution phases have succeeded and the gate is blocked only by missing operator tasks, complete those tasks, upload the reviewed records and rerun the failed gate in the same workflow run. Its successful build artifacts are reused. Gate reports have attempt-specific artifact names, and publication consumes the artifact selected by the successful gate output, including when only publication is retried. Earlier blocked reports remain available. Actual failed observations still fail the candidate; collection and a gate retry cannot erase them. Hosted execution of this handoff remains a separate check from the repository's mocked GitHub and admission tests.

@@ -30,7 +30,7 @@ def procedures(root=ROOT):
     return result
 
 
-def _bounded(path, maximum):
+def bounded_file(path, maximum):
     path = Path(path)
     if path.is_symlink() or not path.is_file():
         raise ValueError("Acceptance evidence must be a regular file")
@@ -54,6 +54,55 @@ def _text(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def read_record(path):
+    """Read bounded record bytes, without granting candidate or task authority."""
+    data = bounded_file(path, MAX_RECORD)
+    record = json.loads(data, object_pairs_hook=_object)
+    if not isinstance(record, dict):
+        raise ValueError("Acceptance record must be an object")
+    return data, record
+
+
+def declared_files(record, record_name):
+    """Validate supporting names and limits before following local or remote data."""
+    files = {}
+    if not isinstance(record["files"], list) or len(record["files"]) > 8:
+        raise ValueError("Too many or malformed acceptance evidence files")
+    for entry in record["files"]:
+        name = entry["path"]
+        relative = PurePosixPath(name)
+        if (not name or not relative.parts or relative.is_absolute() or relative.as_posix() != name
+                or any(part in {".", ".."} for part in relative.parts)
+                or "\\" in name or ":" in name or name in files or name == record_name):
+            raise ValueError("Unsafe or repeated acceptance evidence path")
+        if (type(entry["bytes"]) is not int or not 0 < entry["bytes"] <= MAX_FILE
+                or not isinstance(entry["sha256"], str)
+                or not re.fullmatch(r"[a-f0-9]{64}", entry["sha256"])):
+            raise ValueError("Invalid acceptance supporting evidence identity")
+        files[name] = entry
+    return files
+
+
+def retained_files(path, record):
+    """Verify local supporting bytes; this does not establish consumer execution."""
+    path = Path(path)
+    files = {}
+    for name, entry in declared_files(record, path.name).items():
+        selected = path.parent
+        for part in PurePosixPath(name).parts:
+            selected = selected / part
+            if selected.is_symlink():
+                raise ValueError("Acceptance evidence cannot follow symbolic links")
+        if not selected.resolve().is_relative_to(path.parent.resolve()):
+            raise ValueError("Acceptance evidence leaves its record directory")
+        raw = bounded_file(selected, MAX_FILE)
+        digest = hashlib.sha256(raw).hexdigest()
+        if entry["bytes"] != len(raw) or entry["sha256"] != digest:
+            raise ValueError("Acceptance supporting evidence changed")
+        files[name] = {"sha256": digest, "bytes": len(raw)}
+    return files
+
+
 def inspect_acceptance_evidence(path, revision, version, archive_digest, products, root=ROOT):
     """Bind a human-supplied record to already admitted candidate product identities.
 
@@ -68,8 +117,7 @@ def inspect_acceptance_evidence(path, revision, version, archive_digest, product
 
 
 def _inspect(path, revision, version, archive_digest, products, root):
-    data = _bounded(path, MAX_RECORD)
-    record = json.loads(data, object_pairs_hook=_object)
+    data, record = read_record(path)
     definition = procedures(root).get(record["procedure"])
     if (type(record.get("schema")) is not int or record["schema"] != 1 or record.get("kind") != "operator-acceptance"
             or record["source_revision"] != revision or record["version"] != version
@@ -91,28 +139,7 @@ def _inspect(path, revision, version, archive_digest, products, root):
     if (not _text(operator["id"]) or operator["role"] not in definition["operator_roles"]
             or any(not _text(environment[key]) for key in ("os_version", "architecture", "tool", "tool_version", "runtime"))):
         raise ValueError("Acceptance evidence lacks operator or execution environment")
-    files = {}
-    if len(record["files"]) > 8:
-        raise ValueError("Too many acceptance evidence files")
-    for entry in record["files"]:
-        name = entry["path"]
-        relative = PurePosixPath(name)
-        if (not name or relative.is_absolute() or relative.as_posix() != name
-                or any(part in {".", ".."} for part in relative.parts)
-                or "\\" in name or ":" in name or name in files or name == path.name):
-            raise ValueError("Unsafe or repeated acceptance evidence path")
-        selected = path.parent
-        for part in relative.parts:
-            selected = selected / part
-            if selected.is_symlink():
-                raise ValueError("Acceptance evidence cannot follow symbolic links")
-        if not selected.resolve().is_relative_to(path.parent.resolve()):
-            raise ValueError("Acceptance evidence leaves its record directory")
-        raw = _bounded(selected, MAX_FILE)
-        digest = hashlib.sha256(raw).hexdigest()
-        if type(entry["bytes"]) is not int or entry["bytes"] != len(raw) or entry["sha256"] != digest:
-            raise ValueError("Acceptance supporting evidence changed")
-        files[name] = {"sha256": digest, "bytes": len(raw)}
+    files = retained_files(path, record)
     observations = record["observations"]
     if [row["step"] for row in observations] != definition["steps"]:
         raise ValueError("Acceptance record omits, reorders or invents procedure steps")
