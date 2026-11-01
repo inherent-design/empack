@@ -4,7 +4,7 @@ Empack owns authoring and native installed-instance management. Consumers receiv
 
 | Decision           | Contract                                                                                         |
 | ------------------ | ------------------------------------------------------------------------------------------------ |
-| Release            | `v0.8.0-beta`; development package versions remain tag-derived                                   |
+| Release version    | Tag-derived; the repository README identifies the documentation target                           |
 | Authoring          | Compact `empack.yml`, optional portable `empack.bindings.yml`, and generated exact `empack.lock` |
 | Identity           | Provider project, exact file, logical role, destination and ownership are distinct               |
 | Foreign backend    | No packwiz observation, metadata maintenance, import/export or JAR runtime                       |

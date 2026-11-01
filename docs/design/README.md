@@ -1,6 +1,6 @@
-# v0.8.0-beta design
+# Native design
 
-These documents define empack's authoring, distribution and installed-instance contracts for v0.8.0-beta. Start with [usage](../usage.md) for commands and workflows. Types in design examples name semantic boundaries; generated Rust API documentation defines callable signatures.
+These documents define empack's authoring, distribution and installed-instance contracts for the checked-out native implementation. Start with [usage](../usage.md) for commands and workflows. Types in design examples name semantic boundaries; generated Rust API documentation defines callable signatures.
 
 | Contract                        | Contents                                                     |
 | ------------------------------- | ------------------------------------------------------------ |

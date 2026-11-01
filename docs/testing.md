@@ -19,6 +19,17 @@ mise run smoke
 cargo nextest run -p empack-lib --lib --no-default-features
 ```
 
+The execution variants cover different implementation and distribution risks:
+
+| Variant                                                                              | Why it is separate                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux, macOS and Windows native suites                                               | Filesystem identity, locking, permissions, process ownership and console behavior use different platform implementations. APFS remount cases are macOS-only; Windows console/job cases cannot be established by Unix PTYs.                  |
+| Default product with minimal test features; telemetry product with all test features | Both product configurations need their own execution. The separate test graphs also expose dependencies or fixture authority hidden by workspace feature unification.                                                                       |
+| Five shipped archives                                                                | Linux x86_64/ARM64, macOS x86_64/ARM64 and Windows x86_64 each have their own executable image, build provenance and native loading behavior. Another architecture's successful execution or a cross-build cannot qualify an archive.       |
+| Live routes and actual consumers                                                     | Fixture servers, headless parsers and controlled runtimes isolate faults but do not establish upstream access, launcher interpretation during import/startup, or a real Java console. Each required route or task retains its own evidence. |
+
+The [registry](../tests/verification/requirements.json) declares the applicable variants for each case. These distinctions explain the repetitions; they do not reduce the required matrix.
+
 The separated executable suites have explicit boundaries:
 
 | Test binary                                     | Evidence                                                                                                               |
