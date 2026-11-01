@@ -12529,6 +12529,144 @@
             "Read-only recovery inspection converges afterward and ordinary cleanup succeeds even when private driver controls target an unrelated sentinel; those bytes remain unchanged"
           ],
           "remaining_group_evidence": "This combines native crash setup with ordinary executable recovery; it does not claim an OS interrupt delivered during the ordinary cleanup command, nor complete every platform, permission or final-package variant."
+        },
+        {
+          "id": "UX-078.durable-publication-and-restoration-crashes",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::actual_process_crashes_recover_at_every_durable_boundary",
+            "empack-lib::engine::publication::tests::interrupted_restoration_itself_recovers_and_reclamation_preserves_receipt"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A separate test-only worker exits at the selected durable data, intent, sibling-write/sync, target-change, directory-sync, progress, verification and committed publication points, including second-file transitions",
+            "Restart preserves pre-intent absence or completes the exact new intent/content; a later publication reclaims the abandoned pre-intent copies",
+            "A second worker crashes during restoration; restart restores the old files, reclaims only committed recovery data and retains an idempotent receipt"
+          ]
+        },
+        {
+          "id": "UX-078.creation-crashes-and-occupant-conflicts",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::creation::tests::failures_at_durable_creation_boundaries_gate_reads_and_recover_without_tools",
+            "empack-lib::engine::publication::creation::tests::actual_process_exit_before_and_after_root_rename_is_recoverable",
+            "empack-lib::engine::publication::creation::tests::competing_destination_and_changed_candidate_cannot_be_adopted_by_recovery",
+            "empack-lib::engine::api::recovery_tests::creation_recovery_approval_cannot_overwrite_a_new_occupant_or_replay_progress"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Faults at private recovery data, creation-index/intent, root publication, directory-sync and commit preserve absent destinations or gate reads until exact recovery",
+            "An actual worker exits before and after root rename; restart publishes complete expected contents and an idempotent receipt without a second destination",
+            "A competing occupant, changed private candidate or already progressed journal invalidates recovery authority instead of adopting or overwriting unrelated content"
+          ]
+        },
+        {
+          "id": "UX-078.prepared-recovery-authority",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::recovery_tests::engine_recovery_is_read_only_until_exact_approval_and_does_not_require_valid_intent",
+            "empack-lib::engine::api::recovery_tests::recovery_rejects_wrong_operation_cross_engine_and_late_user_edits",
+            "empack-lib::engine::publication::tests::recovery_plans_are_read_only_and_bind_journal_and_visible_effects",
+            "empack-lib::engine::publication::tests::approved_recovery_rejects_late_edits_and_journal_progress"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Inspection and preparation leave project bytes and journal progress unchanged and do not create missing host state; invalid author intent does not prevent recovery",
+            "Finish/restore require the exact plan and replacement grant, selected operation, owning engine and unchanged live effects",
+            "Late user edits or journal progress invalidate approval; successful recovery yields the selected old/new contents and releases operation reservations"
+          ]
+        },
+        {
+          "id": "UX-078.corrupt-state-and-live-preimages",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::publication::tests::progress_flags_do_not_authorize_overwriting_an_external_edit",
+            "empack-lib::engine::publication::tests::unchanged_input_conflicts_are_detected_before_resuming_any_replacement",
+            "empack-lib::engine::publication::tests::corrupted_candidates_and_unknown_journals_block_recovery_without_overwrite",
+            "empack-lib::engine::publication::tests::restoration_preserves_conflicting_user_edits_and_corrupt_before_images"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A partially published tree is reported as recovery-required without reading it as a healthy author project; inspection does not perform recovery",
+            "Neither progress flags nor unchanged-file assumptions authorize replacing external edits; a conflicting retained input prevents further replacements",
+            "Corrupt candidate/preimage bytes, unsupported journals and truncated state refuse recovery, preserve affected live bytes and keep the unresolved recovery requirement"
+          ]
+        },
+        {
+          "id": "UX-078.host-recovery-command-authority",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::tests::recovery_dispatch_inspects_previews_declines_and_recovers_native_publication",
+            "empack-lib::application::engine_host::tests::recovery_parsing_and_state_selection_have_one_invocation_root"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Handler inspection, preview, decline, unattended missing approval and wrong operation preserve project and host bytes for both finish and restore",
+            "An exact approved command performs the selected action and clears the pending status; invocation-relative work/state paths retain one selected root"
+          ]
+        },
+        {
+          "id": "UX-078.public-recovery-instructions",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_recovery::cli_recovery_commands_bind_the_reported_context_and_available_actions",
+            "empack-tests::cli_offline::cli_recovery_inspection_is_read_only_without_valid_project"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A separate native fault driver prepares interrupted publication, restoration and creation; ordinary empack reports recovery commands that execute from the stated invocation context",
+            "Printed inspection and dry-run commands preserve observed files/attributes, wrong operations and unsupported actions refuse, and mutation requires explicit approval",
+            "The approved printed command finishes/restores the selected fixture; replay refuses without changing completed contents. Inspection without a valid project does not create recovery state",
+            "Fault injection remains in the separate test binary; no production fault-control environment is used"
+          ]
         }
       ],
       "owner_now": [
@@ -12539,7 +12677,7 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-079",
