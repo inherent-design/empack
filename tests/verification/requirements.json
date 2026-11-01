@@ -4099,7 +4099,7 @@
         "DEP"
       ],
       "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
-      "required_work": "Controlled host fixtures prove actual changed/retained selections, exact pins, operation/root/project release-policy precedence and explicit file roles. The live ordinary CLI keeps the pinned-only assessment, then adds an older independent automatic Lithium root, verifies it could advance in a read-only preview, and requires it to remain untouched while Sodium alone is updated. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. Distinguishing public binary flag evidence and actual execution of each declared host/product/live variant remain required.",
+      "required_work": "Controlled host fixtures prove changed/retained selections, exact pins, operation/root/project release-policy precedence and explicit file roles. Separate live ordinary CLI fixtures protect an older unselected automatic root and distinguish public policy flags using independent current catalog observations, including the necessary transitive closure. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. All newly bound assertions and every declared host/product/live variant require actual execution.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4136,7 +4136,7 @@
             "An authored any-release root preference overrides the stable-only project preference during update; explicit and primary-role placements survive a changed provider filename and two synchronizations",
             "The same host preparation path used by public update compares absent, any, stable-only and prefer-stable operation policies against an authored any root and stable-only project: overrides select distinct alpha/stable versions without rewriting authoring, runtime, edges or placements; preview and receipt counts agree and repeated sync retains the selected version"
           ],
-          "remaining_group_evidence": "The shared host path establishes operation-policy precedence with distinguishing candidates; ordinary binary flag translation still needs its own distinguishing candidate evidence, and every declared execution variant remains required"
+          "remaining_group_evidence": "The shared host path establishes operation-policy precedence with distinguishing candidates; ordinary binary translation has a separate live case below, and every declared execution variant remains required"
         },
         {
           "id": "UX-026.provider-release-policy-ordering",
@@ -4157,7 +4157,7 @@
             "Any chooses the newer alpha candidate while stable-only and prefer-stable select the newer compatible stable candidate using publication instants rather than response order or version spelling",
             "Stable-only rejects an alpha-only catalog; prefer-stable keeps its compatible alpha fallback; wrong loader and alternate game candidates do not displace an exact compatible match"
           ],
-          "remaining_group_evidence": "Provider parsing and candidate ranking only; this does not prove the public update flag overrides authored preferences, full candidate compatibility or actual consumer behavior"
+          "remaining_group_evidence": "Provider parsing and candidate ranking only; the separate public live case tests flag precedence. This does not establish full candidate compatibility or actual consumer behavior."
         },
         {
           "id": "UX-026.live-pinned-update",
@@ -4204,6 +4204,28 @@
             "Updates bind aliases without changing raw intent or unselected installations",
             "Transitive changes require retained dependents and cannot promote temporary roots; explicit pins and installed identity boundaries remain enforced"
           ]
+        },
+        {
+          "id": "UX-026.live-operation-policy",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_update_release_policy_overrides_authored_preference"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Independent compatible Modrinth metadata supplies a newer prerelease and older stable discriminator; public stable-only/prefer-stable flags override an authored any preference, while any and absent override select the permitted prerelease",
+            "Each dry-run preserves the whole fixture; application preserves raw authoring, automatic selection policy, runtime, edges and root membership while changing only the selected dependency and its exact required Sodium closure",
+            "Completed selected-root counts agree with the actual changed/retained pin; the transitive library is not promoted to an author root and two ordinary synchronizations converge"
+          ],
+          "remaining_group_evidence": "This catalog distinguishes any from the two stable preferences; the alpha-only prefer-stable fallback is established by a separate component case, not this public fixture. Observed identities are current evidence rather than fixed latest-version goldens, and nondiscriminating upstream data fails the precondition. Metadata-only selection does not establish payload, consumer or final-package verification; every declared host/product run remains required."
         }
       ],
       "owner_now": [

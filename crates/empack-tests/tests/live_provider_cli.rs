@@ -696,6 +696,241 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     }
 }
 
+#[test]
+#[ignore = "requires live Modrinth policy-discriminating catalog"]
+fn live_cli_update_release_policy_overrides_authored_preference() {
+    use empack_core::model::{DependencySelection, ReleasePolicy};
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    // Observe provider metadata independently of empack's selection/report code.
+    // This fixture must remain discriminating: a newer prerelease and an older stable
+    // release, both compatible with the same runtime. Drift is not a product pass.
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("empack-verification/0.8.4 (+https://github.com/inherent-design/empack)")
+        .build()
+        .unwrap()
+        .get(concat!(
+            "https://api.modrinth.com/v2/project/SfMw2IZN/version",
+            "?game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D"
+        ))
+        .send()
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let mut bytes = Vec::new();
+    response
+        .take((2 << 20) + 1)
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert!(
+        bytes.len() <= 2 << 20,
+        "catalog exceeds fixture metadata allowance"
+    );
+    let catalog: Vec<serde_json::Value> = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        catalog.iter().all(|row| {
+            row["project_id"] == "SfMw2IZN"
+                && row["game_versions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|value| value == "1.21.1")
+                && row["loaders"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|value| value == "fabric")
+        }),
+        "policy fixture catalog must describe the selected project and runtime"
+    );
+    let instant = |row: &serde_json::Value| {
+        // Modrinth's UTC profile; normalize optional fractional seconds so the
+        // independent oracle never relies on variable-width lexical ordering.
+        let utc = row["date_published"]
+            .as_str()
+            .unwrap()
+            .strip_suffix('Z')
+            .unwrap();
+        let (seconds, fraction) = utc.split_once('.').unwrap_or((utc, ""));
+        assert_eq!(seconds.len(), 19);
+        assert!(seconds.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 => b == b'-',
+            10 => b == b'T',
+            13 | 16 => b == b':',
+            _ => b.is_ascii_digit(),
+        }));
+        assert!(fraction.len() <= 9 && fraction.bytes().all(|b| b.is_ascii_digit()));
+        format!("{seconds}.{fraction:0<9}")
+    };
+    assert!(
+        catalog.iter().all(|row| matches!(
+            row["version_type"].as_str(),
+            Some("release" | "beta" | "alpha")
+        )),
+        "unreviewed provider release channel"
+    );
+    let latest = |release: bool| {
+        catalog
+            .iter()
+            .filter(|row| {
+                row["status"] == "listed" && (row["version_type"] == "release") == release
+            })
+            .max_by_key(|row| instant(row))
+            .expect("live fixture needs both listed prerelease and stable versions")
+    };
+    let prerelease = latest(false);
+    let stable = latest(true);
+    assert!(
+        instant(prerelease) > instant(stable),
+        "Nvidium catalog no longer distinguishes any from stable policies; review the fixture rather than accepting a nondiscriminating run"
+    );
+    eprintln!(
+        "Modrinth policy discriminator: stable={:?}, prerelease={:?}, catalog-sha256={}",
+        stable["id"].as_str().unwrap(),
+        prerelease["id"].as_str().unwrap(),
+        empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&bytes).into()).hex()
+    );
+    let project = TestProject::workflow_fixture("provider-release-policy", "fabric", "1.21.1");
+    run(
+        &project,
+        &[
+            "--yes",
+            "add",
+            "--platform",
+            "modrinth",
+            "--version-id",
+            "cl0HrTL6",
+            "nvidium",
+        ],
+    );
+    let initial = read_project(project.dir());
+    assert_eq!(initial.intent().roots.len(), 1);
+    let key = initial.intent().roots.keys().next().unwrap().clone();
+    let root_project = ProviderProjectId::Modrinth(
+        empack_core::identity::ModrinthProjectId::parse("SfMw2IZN").unwrap(),
+    );
+    let sodium_project = ProviderProjectId::Modrinth(
+        empack_core::identity::ModrinthProjectId::parse("AANobbMI").unwrap(),
+    );
+    assert_eq!(
+        initial.lock().dependencies[&key].identity,
+        ResolvedIdentity::Provider(root_project.clone())
+    );
+    run(&project, &["--yes", "unpin", key.as_str()]);
+    let unpinned = read_project(project.dir());
+    let mut authored = unpinned.intent().clone();
+    authored.dependency_policy = ReleasePolicy::StableOnly;
+    authored.roots.get_mut(&key).unwrap().releases = Some(ReleasePolicy::Any);
+    empack_lib::testing::write_authoring(&project.dir().join("empack.yml"), &authored).unwrap();
+    run(&project, &["--yes", "sync"]);
+    let baseline = read_project(project.dir());
+    assert_eq!(baseline.intent(), &authored);
+    assert_eq!(
+        baseline.lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        root_project.parse_pin("cl0HrTL6").unwrap()
+    );
+    assert_eq!(baseline.lock().dependencies.len(), 2);
+    let sodium_key = baseline
+        .lock()
+        .dependencies
+        .iter()
+        .find(|(_, dependency)| {
+            dependency.identity == ResolvedIdentity::Provider(sodium_project.clone())
+        })
+        .unwrap()
+        .0
+        .clone();
+    let author_bytes = std::fs::read(project.dir().join("empack.yml")).unwrap();
+    for (flag, expected) in [
+        (Some("stable-only"), stable),
+        (Some("any"), prerelease),
+        (Some("prefer-stable"), stable),
+        (None, prerelease),
+    ] {
+        let before = read_project(project.dir());
+        let version = expected["id"].as_str().unwrap();
+        let pin = root_project.parse_pin(version).unwrap();
+        let changed = usize::from(
+            before.lock().dependencies[&key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection
+                != pin,
+        );
+        let mut args = vec!["--yes", "update", key.as_str()];
+        if let Some(policy) = flag {
+            args.extend(["--release-policy", policy]);
+        }
+        let mut preview = vec!["--dry-run"];
+        preview.extend(args.iter().copied());
+        let complete_before = snapshot(project.dir());
+        run(&project, &preview);
+        assert_eq!(snapshot(project.dir()), complete_before);
+        let output = run(&project, &args);
+        let rendered = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(rendered.contains(&format!("Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent", 1 - changed)), "{rendered}");
+        let updated = read_project(project.dir());
+        assert_eq!(updated.intent(), &authored);
+        assert_eq!(
+            updated.intent().roots[&key].selection,
+            DependencySelection::Automatic
+        );
+        assert_eq!(
+            std::fs::read(project.dir().join("empack.yml")).unwrap(),
+            author_bytes
+        );
+        assert_eq!(updated.lock().runtime, baseline.lock().runtime);
+        assert_eq!(
+            updated.lock().required_edges,
+            baseline.lock().required_edges
+        );
+        assert_eq!(updated.lock().dependencies.len(), 2);
+        assert_eq!(
+            updated.lock().dependencies[&key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection,
+            pin
+        );
+        // The selected mod requires an exact Sodium version. Policy changes may
+        // change that necessary closure, but must not promote it to an author root.
+        let required = expected["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["dependency_type"] == "required")
+            .collect::<Vec<_>>();
+        assert_eq!(required.len(), 1);
+        assert_eq!(required[0]["project_id"], "AANobbMI");
+        assert_eq!(
+            updated.lock().dependencies[&sodium_key]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection,
+            sodium_project
+                .parse_pin(required[0]["version_id"].as_str().unwrap())
+                .unwrap()
+        );
+        let converged = author_snapshot(project.dir());
+        for _ in 0..2 {
+            run(&project, &["--yes", "sync"]);
+            assert_eq!(author_snapshot(project.dir()), converged);
+        }
+    }
+}
+
 // Reuse the already verified immutable payload; adoption observes the installed
 // copies while the live provider routes establish identity, never a latest choice.
 fn adopt_existing_live_content(bytes: &[u8], url: &str) {
