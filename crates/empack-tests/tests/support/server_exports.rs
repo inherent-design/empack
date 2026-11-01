@@ -153,6 +153,11 @@ pub fn verify() {
         .timeout(Duration::from_secs(30))
         .arg(&source)
         .args(&properties);
+    // Linux Java decodes native arguments and filenames using the locale even
+    // with JDK 21's UTF-8 file-content default. Keep the Unicode-path fixture and
+    // select an explicit UTF-8 locale for this consumer, not product commands.
+    #[cfg(target_os = "linux")]
+    java.env("LANG", "C.UTF-8").env("LC_ALL", "C.UTF-8");
     let output = java.assert().success().get_output().clone();
     eprintln!("{}", String::from_utf8_lossy(&output.stderr));
     let rows: Vec<Value> = String::from_utf8(output.stdout)

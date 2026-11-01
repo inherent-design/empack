@@ -13,7 +13,9 @@ class PropertiesProbe {
         if (args.length == 0) {
             throw new IllegalArgumentException("Expected captured properties files");
         }
-        System.err.println("Properties probe: Java " + Runtime.version());
+        System.err.println("Properties probe: Java " + Runtime.version()
+                + ", native.encoding=" + System.getProperty("native.encoding")
+                + ", sun.jnu.encoding=" + System.getProperty("sun.jnu.encoding"));
         for (String arg : args) {
             byte[] bytes = Files.readAllBytes(Path.of(arg));
             Properties stream = new Properties();
