@@ -4116,7 +4116,8 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::application::engine_host::cli::migration::tests::journey::host_populated_migration_matches_displayed_plan_and_materialized_inventory",
-            "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection"
+            "empack-lib::application::engine_host::cli::tests::file_roles::host_provider_roles_survive_update_adoption_and_side_projection",
+            "empack-lib::application::engine_host::cli::tests::primary_placement_update_survives_filename_change_and_converges_with_sync"
           ],
           "required_platforms": [
             "linux",
@@ -4131,9 +4132,31 @@
             "Selected automatic root advances while an exact pin with a newer available version stays exact; dry-run preserves the project",
             "Primary-role destination survives changed provider filenames; materialized bytes match independently supplied content",
             "Displayed per-root preview and completed receipt report one changed and one retained selection; runtime, required edges, all unselected records and raw authoring/bindings remain unchanged",
-            "A multi-file provider root retains its explicit primary/companion roles and side projections through update and adoption"
+            "A multi-file provider root retains its explicit primary/companion roles and side projections through update and adoption",
+            "An authored any-release root preference overrides the stable-only project preference during update; explicit and primary-role placements survive a changed provider filename and two synchronizations"
           ],
-          "remaining_group_evidence": "Broader public release-policy permutations remain required; the frozen catalog proves a changed selection while live catalogs may already be current"
+          "remaining_group_evidence": "The controlled host journeys establish authored root-policy precedence and changed selections; the ordinary public --release-policy override still needs distinguishing candidate evidence, and every declared execution variant remains required"
+        },
+        {
+          "id": "UX-026.provider-release-policy-ordering",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::providers::compatible::tests::selection_orders_instants_and_explicit_policy_not_response_order_or_semver"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Any chooses the newer alpha candidate while stable-only and prefer-stable select the newer compatible stable candidate using publication instants rather than response order or version spelling",
+            "Stable-only rejects an alpha-only catalog; prefer-stable keeps its compatible alpha fallback; wrong loader and alternate game candidates do not displace an exact compatible match"
+          ],
+          "remaining_group_evidence": "Provider parsing and candidate ranking only; this does not prove the public update flag overrides authored preferences, full candidate compatibility or actual consumer behavior"
         },
         {
           "id": "UX-026.live-pinned-update",
