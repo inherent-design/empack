@@ -13741,7 +13741,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI multi-operation budget/backpressure, cancellation during running work and host-facing diagnostics retain their separate obligations; actual I/O deadline and retirement checks remain separate. Reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI-host capacity refusal/retry diagnostics and cancellation of an active acquisition with another retained preparation are now bound separately from precancellation. CLI multi-operation budget/backpressure, actual I/O deadlines and native retirement checks retain their separate obligations. Reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -14019,6 +14019,28 @@
             "After releasing the competing reservation, a fresh build succeeds through the same host while the previous diagnostic remains alive; its exact ZIP member inventory and author-config bytes are checked, unrelated files are preserved and no operation reservation remains"
           ],
           "remaining_group_evidence": "In-process CLI host and public Engine composition only; this is not a final executable/subprocess or running-worker cancellation/backpressure check. Those original obligations retain separate evidence requirements."
+        },
+        {
+          "id": "UX-080.host-running-acquisition-cancellation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::tests::running_build_cancellation_retires_acquisition_without_releasing_other_preparations"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Two public Engine preparations share the fixture governor; the approved bundled build starts an owned stalled HTTP acquisition before host cancellation is requested",
+            "The host awaits an interrupted terminal outcome and closed response socket, refunds only that operation, and preserves the other preparation's complete reservation in every resource dimension",
+            "Author, previous-artifact, world and host-neighbor bytes, readonly flags and an empty author directory survive; dropping the remaining preparation restores capacity and permits a fresh preparation"
+          ],
+          "remaining_group_evidence": "Controlled CLI-host/library execution through an existing test-only transport; not binary signal handling, an external provider or actual consumer execution. CLI batch/backpressure and other resource obligations remain separate."
         }
       ],
       "owner_now": [
