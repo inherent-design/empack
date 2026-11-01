@@ -24,6 +24,8 @@ Dependency and tool changes follow [Dependency and tool maintenance](docs/depend
 
 `empack-core` contains pure values and planners with no runtime or I/O dependency. `empack-lib` composes narrow ports, adapters and the operation engine. `empack` owns the host runtime and executable lifecycle. CLI translation and presentation live in the library application adapter. `empack-tests` exercises native executable workflows; library suites verify provider, archive, filesystem and process contracts.
 
+The library's `testing` module is available to its unit tests and callers that explicitly enable `test-utils`. Keep fixture helpers inside that boundary. `empack-tests` opts in; ordinary CLI builds must not enable it. Check the ordinary package separately from the workspace test graph, whose features can be unified.
+
 Do not introduce a broad session facade into the core, success-returning placeholder verifiers, deserializable approval proofs, or a second command-specific publication path. New features must contribute normalized intent, expected effects and verified postconditions. The [feature requirements](docs/design/features.md) describe the useful capabilities the implementation must provide.
 
 ## Source and documentation

@@ -32,6 +32,7 @@ pub mod platform;
 pub mod primitives;
 pub mod terminal;
 
+#[cfg(any(test, feature = "test-utils"))]
 pub mod testing;
 
 pub use application::{AppConfig, Cli, CliLoad, Commands, EmpackExitCode, execute_command};
