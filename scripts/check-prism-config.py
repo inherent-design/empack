@@ -90,7 +90,7 @@ unix:!macx:QMAKE_LFLAGS += -Wl,--gc-sections
                 checked("git", "-C", str(source), "status", "--porcelain")):
             raise ValueError("Empack source changed during probe; rerun against a stable checkout")
         failures = observation_failures(json.loads(fixture_bytes), observations)
-        print(json.dumps({"schema": 2, "kind": "prism-parser-observations",
+        print(json.dumps({"schema": 3, "kind": "prism-parser-observations",
                           "created_at": datetime.now(timezone.utc).isoformat(),
                           "status": "FAIL" if failures else "PASS", "inputs": inputs,
                           "probe_sha256": hashlib.sha256((work / "prism-config-probe").read_bytes()).hexdigest(),

@@ -8,7 +8,7 @@ from verification.evidence import sha256
 
 def prism_record(revision, root=ROOT, system="Linux"):
     fixtures = json.loads((root / FIXTURE_PATH).read_text(encoding="utf-8"))
-    return dict(schema=2, kind="prism-parser-observations", empack_commit=revision,
+    return dict(schema=3, kind="prism-parser-observations", empack_commit=revision,
         empack_dirty=False, prism_commit=PRISM_COMMIT, status="PASS", inputs=input_hashes(root),
         created_at="2026-10-23T00:00:00+00:00", probe_sha256="f" * 64,
         evidence_scope="supported-dependency headless parser probe", fixture_sha256=sha256(root / FIXTURE_PATH),
@@ -18,5 +18,6 @@ def prism_record(revision, root=ROOT, system="Linux"):
         build_configuration=dict(mode="release", cxx_standard=20, CXX="synthetic c++"),
         fixtures=[dict(fixture=case["name"], supported=case["accepted"], consumer=dict(
             loaded=case["accepted"], override=case.get("consumer_override", case["accepted"]),
-            prepare=PREPARE if case["accepted"] else "", wrapper=WRAPPER if case["accepted"] else "", version="1.2"))
+            prepare=PREPARE if case["accepted"] else "", wrapper=WRAPPER if case["accepted"] else "", version="1.2",
+            display_name=case.get("display_name", ""), display_name_is_string="display_name" in case))
             for case in fixtures])

@@ -83,13 +83,24 @@ class ParserAdmission(unittest.TestCase):
                 result = inspect_prism_record(record, 'a' * 40)
                 self.assertEqual(result['status'], 'FAIL')
                 self.assertEqual(result['failed_fixtures'], ['supported-1.2'])
+        for key, value in [('display_name', 'changed scalar'), ('display_name_is_string', False)]:
+            record = copy.deepcopy(original)
+            scalar = next(row for row in record['fixtures'] if row['fixture'] == 'ini-scalar-nul-1.2')
+            scalar['consumer'][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'status disagrees'):
+                inspect_prism_record(record, 'a' * 40)
+            record['status'] = 'FAIL'
+            result = inspect_prism_record(record, 'a' * 40)
+            self.assertEqual(result['failed_fixtures'], ['ini-scalar-nul-1.2'])
 
     def test_probe_inputs_environment_and_complete_observations_are_required(self):
         import copy
         from verification.consumer import inspect_prism_record
         original = self.record()
         for mutate in [
+            lambda r: r.update(schema=2),
             lambda r: r['inputs'].pop('scripts/check-prism-config.py'),
+            lambda r: r['inputs'].pop('crates/empack-lib/src/engine/templates/encoding.rs'),
             lambda r: r['inputs'].update({'scripts/consumer/prism-config-probe.cpp': '0' * 64}),
             lambda r: r.update(probe_sha256='not-a-digest'),
             lambda r: r.update(created_at='2026-10-23T00:00:00'),
@@ -100,6 +111,8 @@ class ParserAdmission(unittest.TestCase):
             lambda r: r.update(host_system='unobserved'),
             lambda r: r['fixtures'].append(r['fixtures'][0]),
             lambda r: r['fixtures'][0]['consumer'].update(override='true'),
+            lambda r: r['fixtures'][0]['consumer'].update(display_name=0),
+            lambda r: r['fixtures'][0]['consumer'].update(display_name_is_string='true'),
             lambda r: r['fixtures'][0].pop('consumer'),
             lambda r: r.update(environment=None),
         ]:

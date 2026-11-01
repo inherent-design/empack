@@ -8068,7 +8068,8 @@
           ],
           "assertions": [
             "INI scalar encoding retains string type, literal separators, backslashes, quotes, adjacent hexadecimal characters, controls, Unicode and empty values",
-            "Java properties encoding retains literal escapes, whitespace, line endings, Unicode and supplementary UTF-16 code units; these literal assertions are not execution of Qt or Java"
+            "Java properties encoding retains literal escapes, whitespace, line endings, Unicode and supplementary UTF-16 code units; these literal assertions are not execution of Qt or Java",
+            "The actual Rust INI encoder matches shared scalar fixture bytes embedded in the configurations also consumed by the pinned Prism probe; neither a constant output assertion nor successful parsing alone establishes readback"
           ]
         },
         {
@@ -8135,7 +8136,25 @@
             "On Unix the actual archived shell bytes execute directly with their encoded mode and emit the original description; source script mode remains unchanged",
             "Missing values, explicit invalid UTF-8 and duplicate template destinations reject every archive format before replacing prior artifacts"
           ],
-          "remaining_group_evidence": "Public server-template variants, supported consumer interpretation of emitted INI/properties, and complete platform qualification remain required"
+          "remaining_group_evidence": "Public server-template variants and Java Properties readback remain unbound. The separate Qt scalar case requires supported consumer parsing; it does not establish Java behavior or launcher import."
+        },
+        {
+          "id": "UX-048.qt-scalar-readback",
+          "boundary": "C",
+          "test_ids": [
+            "consumer::prism::managed-config-grammar"
+          ],
+          "required_platforms": [
+            "linux"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Pinned Prism source with supported Qt reads the shared name scalars back as QString values equal to their originals in formats1.2 and1.3",
+            "Leading QVariant syntax, quoted separators/whitespace, backslashes/quotes, Unicode/supplementary characters, adjacent hex escapes, encoded controls/NUL and empty values cannot silently change type or content",
+            "The probe records encoder source/fixture/build identities and refuses a claimed pass after mismatched scalar content or QVariant type; this is headless parser evidence, not Java properties or actual GUI acceptance"
+          ]
         }
       ],
       "owner_now": [

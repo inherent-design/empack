@@ -13,7 +13,8 @@ FIXTURE_PATH = "crates/empack-lib/src/engine/build/client/fixtures.json"
 PRISM_TEST = "consumer::prism::managed-config-grammar"
 PRISM_BINDING = {"id": PRISM_TEST, "boundary": "C", "platforms": ["linux", "macos"]}
 INPUTS = (FIXTURE_PATH, "scripts/consumer/prism-config-probe.cpp",
-          "scripts/check-prism-config.py", "scripts/verification/consumer.py")
+          "scripts/check-prism-config.py", "scripts/verification/consumer.py",
+          "crates/empack-lib/src/engine/templates/encoding.rs")
 PREPARE = ('empack --workdir "$INST_DIR" --yes instance prepare '
            '"$INST_DIR/.minecraft/.empack-consumer/release.json" --sha256 '
            + '0' * 64 + ' --layout prism --side client')
@@ -41,14 +42,16 @@ def observation_failures(fixtures, observations):
     failed = []
     for case, observed in zip(fixtures, observations, strict=True):
         value = observed["consumer"]
-        if (any(type(value[key]) is not bool for key in ("loaded", "override"))
-                or any(not isinstance(value[key], str) for key in ("version", "prepare", "wrapper"))):
+        if (any(type(value[key]) is not bool for key in ("loaded", "override", "display_name_is_string"))
+                or any(not isinstance(value[key], str) for key in ("version", "prepare", "wrapper", "display_name"))):
             raise ValueError("Malformed consumer settings observation")
         integrated = (value["loaded"] and value["override"]
                       and value["prepare"] == PREPARE and value["wrapper"] == WRAPPER)
         if (case["accepted"] and not integrated
                 or case["name"] == "legacy-shadow" and integrated
-                or "consumer_override" in case and value["override"] != case["consumer_override"]):
+                or "consumer_override" in case and value["override"] != case["consumer_override"]
+                or "display_name" in case and (value["display_name"] != case["display_name"]
+                                                or not value["display_name_is_string"])):
             failed.append(case["name"])
     return failed
 
@@ -61,7 +64,7 @@ def inspect_prism_record(record, revision, root=ROOT):
 
 
 def _inspect_prism_record(record, revision, root):
-    if (record.get("schema") != 2 or record.get("kind") != "prism-parser-observations"
+    if (record.get("schema") != 3 or record.get("kind") != "prism-parser-observations"
             or record["empack_commit"] != revision or record["empack_dirty"] is not False
             or record["prism_commit"] != PRISM_COMMIT
             or record["evidence_scope"] != "supported-dependency headless parser probe"
