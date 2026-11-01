@@ -54,6 +54,8 @@ class ChangeSelection(unittest.TestCase):
             ("crates/empack-lib/tests/live_server_distribution_startup.rs", ["live-catalog", "server-cli", "runtime-current"], False),
             ("crates/empack-lib/src/engine/build/server/unix.rs", ["live-catalog", "server-cli", "runtime-current", "pinned-import"], False),
             ("crates/empack-tests/tests/cli_server.rs", ["live-catalog", "server-cli", "runtime-current"], False),
+            ("crates/empack-tests/tests/support/server_exports.rs", ["live-catalog", "server-cli", "runtime-current"], False),
+            ("tests/fixtures/templates/PropertiesProbe.java", ["live-catalog", "server-cli", "runtime-current"], False),
             ("crates/empack-tests/src/bin/java-fixture.rs", ["live-catalog", "server-cli", "runtime-current"], False),
             ("crates/empack-lib/src/application/engine_host/instance/prelaunch.rs", ["live-catalog", "server-cli", "runtime-current"], False),
             ("crates/empack-lib/src/engine/prism.rs", ["pinned-import"], True),

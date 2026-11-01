@@ -54,6 +54,7 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-lib/src/engine/api/launch", "crates/empack-lib/src/engine/instance",
         "crates/empack-tests/tests/live_cli_init", "crates/empack-tests/tests/live_server",
         "crates/empack-tests/tests/cli_server", "crates/empack-tests/src/bin/java-fixture.rs",
+        "crates/empack-tests/tests/support/server_exports.rs", "tests/fixtures/templates/",
         "crates/empack-tests/tests/runtime_", "crates/empack-lib/templates/server/",
         "crates/empack-lib/tests/live_runtime_catalog_contract.rs",
         "crates/empack-lib/tests/live_server_distribution_startup.rs",

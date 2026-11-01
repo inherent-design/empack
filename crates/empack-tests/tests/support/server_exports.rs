@@ -13,6 +13,9 @@ use std::{
 };
 
 const AUTHOR: &str = "schema: 5\npack: {id: server.fixture, name: Server fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: 21}\ndependencies: {}\n";
+const DESCRIPTION: &str = " a\\u0041\r\né🦀\t#!=:value \u{c}";
+// A literal oracle, independent of the product's properties encoder.
+const PROPERTIES: &[u8] = b"motd=\\ a\\\\u0041\\u000d\\u000a\\u00e9\\ud83e\\udd80\\u0009#!=:value\\ \\u000c\r\nempty=\r\n";
 const CONTENT: [(&str, &[u8], &str); 3] = [
     ("config/feature.txt", b"server configuration\n", "seed"),
     ("server.properties", b"motd=Fixture server\n", "managed"),
@@ -39,7 +42,15 @@ pub fn verify() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
     };
-    put("empack.yml", AUTHOR.as_bytes());
+    // JSON's quoted string is also a YAML scalar; retain the exact metadata value.
+    let author = AUTHOR.replace(
+        "version: '1'",
+        &format!(
+            "version: '1', description: {}",
+            serde_json::to_string(DESCRIPTION).unwrap()
+        ),
+    );
+    put("empack.yml", author.as_bytes());
     put("pack/config/feature.txt", b"common configuration\n");
     put(
         "overrides/client/config/feature.txt",
@@ -53,6 +64,10 @@ pub fn verify() {
         b"{{NAME}} / {{VERSION}}\n",
     );
     put("templates/common/banner.bin", &[0, 255, 1]);
+    put(
+        "templates/server/generated.properties.template",
+        b"motd={{properties_value DESCRIPTION}}\r\nempty={{properties_value \"\"}}\r\n",
+    );
     put("templates/client/client-only.txt", b"excluded");
     put("dist/prior.zip", b"prior artifact");
     let command = || {
@@ -62,18 +77,17 @@ pub fn verify() {
     };
     command().args(["--yes", "sync"]).assert().success();
     let author = || {
-        let mut values = BTreeMap::new();
-        for name in ["empack.yml", "empack.lock"] {
-            values.insert(name.into(), fs::read(project.dir().join(name)).unwrap());
-        }
-        for name in ["pack", "overrides", "templates"] {
-            for (path, bytes) in snapshot(&project.dir().join(name)).files {
-                values.insert(std::path::PathBuf::from(name).join(path), bytes);
-            }
-        }
-        values
+        (
+            ["empack.yml", "empack.lock"].map(|name| fs::read(project.dir().join(name)).unwrap()),
+            ["pack", "overrides", "templates"].map(|name| snapshot(&project.dir().join(name))),
+        )
     };
     let before = author();
+    let probe = tempfile::Builder::new()
+        .prefix("server properties Ω ")
+        .tempdir()
+        .unwrap();
+    let mut properties = Vec::new();
     for delivery in ["references", "bundled"] {
         let mut previous = None;
         for format in ["zip", "tar.gz", "7z"] {
@@ -94,6 +108,13 @@ pub fn verify() {
                 assert_dist_artifact_suffix(project.dir(), &format!("-server-{delivery}.{format}"));
             let members = distribution_inventory(&artifact, format);
             check(&members, delivery == "references", &pin);
+            let captured = probe.path().join(format!("{delivery}-{format}.properties"));
+            fs::write(
+                &captured,
+                members["generated.properties"].small.as_ref().unwrap(),
+            )
+            .unwrap();
+            properties.push(captured);
             if let Some(previous) = previous.replace(members.clone()) {
                 assert_eq!(
                     members, previous,
@@ -107,6 +128,64 @@ pub fn verify() {
             );
         }
     }
+    // A changed scalar must be observable independently of the archive oracle.
+    let control = probe.path().join("changed.properties");
+    fs::write(&control, b"motd=changed\r\nempty=\r\n").unwrap();
+    properties.push(control);
+    let source = probe.path().join("PropertiesProbe.java");
+    fs::write(
+        &source,
+        include_str!("../../../../tests/fixtures/templates/PropertiesProbe.java"),
+    )
+    .unwrap();
+    let inputs = snapshot(probe.path());
+    // Reuse the product fixture's positive environment allowlist, excluding JVM
+    // injection variables from the caller. The probe itself has no product state.
+    let environment = project.cmd();
+    let mut java = assert_cmd::Command::new("java");
+    java.env_clear()
+        .envs(
+            environment
+                .get_envs()
+                .filter_map(|(key, value)| value.map(|value| (key, value))),
+        )
+        .current_dir(probe.path())
+        .timeout(Duration::from_secs(30))
+        .arg(&source)
+        .args(&properties);
+    let output = java.assert().success().get_output().clone();
+    eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+    let rows: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len(), properties.len());
+    for (index, row) in rows.iter().enumerate() {
+        let original = if index == properties.len() - 1 {
+            "changed"
+        } else {
+            DESCRIPTION
+        };
+        let points: Vec<u32> = original.chars().map(u32::from).collect();
+        assert_eq!(
+            row,
+            &json!({
+                "stream": points, "reader": points,
+                "stream_keys": 2, "reader_keys": 2,
+                "stream_empty": true, "reader_empty": true,
+            }),
+            "{}",
+            properties[index].display()
+        );
+    }
+    assert_ne!(rows[0], *rows.last().unwrap());
+    assert_eq!(
+        snapshot(probe.path()),
+        inputs,
+        "Java changed captured inputs"
+    );
+    assert_eq!(author(), before);
 }
 
 fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
@@ -119,12 +198,20 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
         "install_pack.bat",
     ];
     let mut expected: BTreeSet<String> = scripts.into_iter().map(str::to_owned).collect();
-    expected.extend(["banner.bin".into(), "notes.txt".into()]);
+    expected.extend([
+        "banner.bin".into(),
+        "notes.txt".into(),
+        "generated.properties".into(),
+    ]);
     assert_eq!(
         members["banner.bin"].small.as_deref(),
         Some(&[0, 255, 1][..])
     );
     assert_eq!(text(&members["notes.txt"]), "Server fixture / 1\n");
+    assert_eq!(
+        members["generated.properties"].small.as_deref(),
+        Some(PROPERTIES)
+    );
     let release_hash = if managed {
         let path = ".empack-consumer/release.json";
         expected.insert(path.into());
