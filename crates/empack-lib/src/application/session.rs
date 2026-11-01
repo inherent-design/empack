@@ -4,7 +4,6 @@ use crate::Result;
 use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::terminal::TerminalCapabilities;
-#[cfg(windows)]
 use anyhow::Context;
 use indicatif::MultiProgress;
 use std::{
@@ -13,6 +12,8 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(unix)]
+mod unix_confirmation;
 #[cfg(windows)]
 mod windows_input;
 
@@ -482,10 +483,14 @@ impl InteractiveProvider for LiveInteractiveProvider {
             return Ok(default);
         }
 
-        use dialoguer::Confirm;
-
+        #[cfg(unix)]
+        {
+            unix_confirmation::read(prompt, default, &self.cancellation)
+                .context("Failed to read confirmation")
+        }
+        #[cfg(not(unix))]
         self.prompt("Failed to read confirmation", || {
-            Confirm::new()
+            dialoguer::Confirm::new()
                 .with_prompt(prompt)
                 .default(default)
                 .interact()

@@ -427,7 +427,8 @@
           ],
           "assertions": [
             "Initialization, local addition and ready build refuse closed or piped affirmative/negative stdin without --yes; yes plus dry-run, an actual terminal decline and Ctrl-C at the approval prompt preserve workspace and host bytes, directories and native attributes; interruption exits 130",
-            "Explicit affirmative requests publish independently checked author semantics, selected local bytes or a complete mrpack inventory; terminal author decisions produce the intended initialized project"
+            "Explicit affirmative requests publish independently checked author semantics, selected local bytes or a complete mrpack inventory; terminal author decisions produce the intended initialized project",
+            "On Unix, the shared public approval fixture also sends SIGINT to the selected executable while its confirmation is displayed, requires diagnostic/status 130, and preserves complete author and host snapshots. This is confirmation evidence, not text or selection adapter cancellation."
           ]
         },
         {
@@ -566,6 +567,25 @@
           "assertions": [
             "Confirmation, text, selection and fuzzy-selection adapters handle actual console Ctrl-C as interruption without returning default authorization",
             "The private native child can obtain a separate follow-up decision on the same thread and preserves fixture files; the public recovery journey independently checks actual CLI wiring"
+          ]
+        },
+        {
+          "id": "UX-003.unix-confirmation-retirement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::session::unix_confirmation::tests::confirmation_pty_accepts_keys_and_retires_both_input_and_host_cancellation"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real PTY receives the displayed confirmation with noncanonical, signal-disabled input; affirmative, negative and default choices return the intended decision",
+            "Ctrl-C input and token cancellation without input both retire the read and preserve the original terminal flags, control characters and speeds; an escape sequence cannot grant approval"
           ]
         }
       ],

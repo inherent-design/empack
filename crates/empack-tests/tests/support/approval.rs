@@ -61,4 +61,9 @@ pub fn preserve_without_approval(
     unchanged();
     empack_tests::harness::terminal::interrupt(command(), prompt);
     unchanged();
+    #[cfg(unix)]
+    {
+        empack_tests::harness::terminal::interrupt_host(command(), prompt);
+        unchanged();
+    }
 }

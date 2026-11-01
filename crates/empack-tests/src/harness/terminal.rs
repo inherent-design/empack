@@ -149,6 +149,19 @@ pub fn interrupt(command: std::process::Command, prompt: &str) {
     assert_eq!(terminal.get_process().wait(Some(20_000)).unwrap(), 130);
 }
 
+/// A host signal must retire a displayed prompt even without an input byte.
+#[cfg(unix)]
+pub fn interrupt_host(command: std::process::Command, prompt: &str) {
+    use expectrl::{Expect, Regex, process::unix::Signal};
+    let mut terminal = expectrl::session::log(spawn(command), std::io::stderr()).unwrap();
+    terminal.set_expect_timeout(Some(std::time::Duration::from_secs(20)));
+    terminal.expect(Regex(prompt)).unwrap();
+    terminal.get_process_mut().signal(Signal::SIGINT).unwrap();
+    terminal.expect(Regex("(?i)operation interrupted")).unwrap();
+    terminal.expect(expectrl::Eof).unwrap();
+    wait_for_exit(terminal.get_process(), 130);
+}
+
 /// Establish terminal-child exit after draining its output.
 #[cfg(not(windows))]
 pub fn wait_for_exit(

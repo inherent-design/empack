@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::application::session::unix_confirmation::tests::confirmation_pty_accepts_keys_and_retires_both_input_and_host_cancellation", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "N", "api": "CLI", "platforms": ["linux", "macos"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::acquisition::tests::transfer_budget_preserves_original_deadline_and_bytes_under_controlled_time", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "IO", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::cli_build::profiles::cli_managed_prism_rejects_consumer_grammar_mismatches_before_replacing_artifacts", "binary": "empack-tests::cli_build", "binary_name": "cli_build", "boundary": "X", "api": "BUILD", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-tests::journey_publisher::cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_files", "binary": "empack-tests::journey_publisher", "binary_name": "journey_publisher", "boundary": "I", "api": "INST", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
