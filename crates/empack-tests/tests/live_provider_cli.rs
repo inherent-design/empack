@@ -63,7 +63,14 @@ fn live_cli_pty_search_requires_choice_and_approval() {
     let project = TestProject::workflow_fixture("deliberate-search", "fabric", "1.21.1");
     let scratch = tempfile::tempdir().unwrap();
     std::fs::write(project.dir().join("prior-build.zip"), b"previous artifact").unwrap();
-    let before = author_snapshot(project.dir());
+    std::fs::create_dir(project.dir().join("empty author directory")).unwrap();
+    let observe = || {
+        snapshot_excluding(
+            project.dir(),
+            &[".host-state", ".empack-cache", ".harness-home"],
+        )
+    };
+    let before = observe();
     assert!(read_project(project.dir()).intent().roots.is_empty());
     // Search ranking may change. Select the canonical project from the displayed
     // labels rather than assuming the first result or a particular row number.
@@ -96,7 +103,7 @@ fn live_cli_pty_search_requires_choice_and_approval() {
                 .unwrap();
             // A choice is not publication approval. Candidate files use the
             // separate scratch root rather than the author tree.
-            assert_eq!(author_snapshot(project.dir()), before);
+            assert_eq!(observe(), before);
             console.send_line(if approve { "y" } else { "n" }).unwrap();
             console
                 .expect(Regex(if approve {
@@ -122,7 +129,7 @@ fn live_cli_pty_search_requires_choice_and_approval() {
             if approval.is_none() { 130 } else { 0 }
         );
         if approval != Some(true) {
-            assert_eq!(author_snapshot(project.dir()), before);
+            assert_eq!(observe(), before);
         }
     }
     let result = read_project(project.dir());
@@ -134,9 +141,15 @@ fn live_cli_pty_search_requires_choice_and_approval() {
         ResolvedIdentity::Provider(selected.clone())
     );
     assert_eq!(dependency.selected.as_ref().unwrap().project, selected);
-    for (path, bytes) in before {
+    let after = observe();
+    for (path, bytes) in before.files {
         if path != Path::new("empack.yml") && path != Path::new("empack.lock") {
             assert_eq!(std::fs::read(project.dir().join(path)).unwrap(), bytes);
+        }
+    }
+    for (path, attributes) in before.entries {
+        if path != Path::new("empack.yml") && path != Path::new("empack.lock") {
+            assert_eq!(after.entries.get(&path), Some(&attributes), "{path:?}");
         }
     }
 }

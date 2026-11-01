@@ -3042,7 +3042,11 @@
           "id": "UX-019.ranked-pages",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::engine::providers::search::tests::search_retains_choices_provider_order_and_page_boundaries"
+            "empack-lib::engine::providers::search::tests::search_retains_choices_provider_order_and_page_boundaries",
+            "empack-lib::engine::providers::search::tests::accepted_game_alternatives_keep_separate_bounded_windows",
+            "empack-lib::engine::providers::search::tests::bounded_unicode_ranking_and_loader_queries_preserve_content_kind",
+            "empack-lib::engine::providers::search::tests::invalid_pagination_duplicates_kinds_and_owners_fail_closed",
+            "empack-lib::engine::providers::search::tests::paging_ceiling_retains_truncation_and_out_of_range_empty_is_valid"
           ],
           "required_platforms": [
             "linux",
@@ -3054,7 +3058,9 @@
             "telemetry"
           ],
           "assertions": [
-            "Controlled search retains distinct candidates, provider order, page boundaries and truncation; ranking does not select a project"
+            "Controlled search retains distinct candidates, provider order, page boundaries and truncation; ranking does not select a project",
+            "Game-version windows are independently bounded and deduplicated; Unicode ranking retains content/loader query semantics without selecting a root",
+            "Inconsistent pagination, duplicate project identities, wrong owners/kinds/game versions and paging ceilings cannot manufacture a selectable candidate"
           ]
         },
         {
@@ -3081,7 +3087,9 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::engine::providers::search::tests::search_http_failures_remain_distinct_from_empty_results",
-            "empack-lib::engine::providers::search::tests::missing_auth_and_invalid_queries_make_no_requests"
+            "empack-lib::engine::providers::search::tests::missing_auth_and_invalid_queries_make_no_requests",
+            "empack-lib::engine::providers::search::tests::provider_errors_and_cumulative_limits_discard_earlier_choices",
+            "empack-lib::engine::providers::search::tests::unsupported_world_search_is_not_reported_as_provider_not_found"
           ],
           "required_platforms": [
             "linux",
@@ -3094,7 +3102,8 @@
           ],
           "assertions": [
             "HTTP 401/403, 404, 429 and 503 retain distinct typed errors, while an empty valid page is successful empty search",
-            "Read-only retry counts remain bounded, error bodies do not replace typed diagnostics, invalid queries and missing authorization make no requests, and resource reservations retire"
+            "Read-only retry counts remain bounded, error bodies do not replace typed diagnostics, invalid queries and missing authorization make no requests, and resource reservations retire",
+            "A later provider denial or exhausted shared transfer budget discards earlier partial choices; unsupported provider capability remains separate from an empty/not-found result"
           ]
         },
         {
@@ -3135,7 +3144,8 @@
           "assertions": [
             "Real PTY/ConPTY and live Modrinth search permit canonical-ID filtering without relying on rank",
             "Escape returns interruption with no publication; selected-result approval decline preserves author bytes; choosing alone does not publish",
-            "Approval records the chosen root and matching exact provider pin while preserving previous artifacts; no Java or gameplay acceptance is claimed"
+            "Approval records the chosen root and matching exact provider pin while preserving previous artifacts; no Java or gameplay acceptance is claimed",
+            "Selection and rejection compare full author snapshots, including portable attributes and empty directories; after approved publication, every previously unrelated entry retains its bytes and attributes"
           ]
         }
       ],
@@ -3149,7 +3159,7 @@
         "empack-cli",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-020",
