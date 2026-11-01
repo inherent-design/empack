@@ -18,6 +18,8 @@ mise run test:live
 
 Use a development branch and submit a PR to `main`. Commit coherent, reviewable landings. Record exact commands, outcomes and tested revisions; coverage is supplemental evidence rather than a substitute for contract tests.
 
+Dependency and tool changes follow [Dependency and tool maintenance](docs/dependencies.md), including coupled features, owned patches, generated outputs, and qualification.
+
 ## Boundaries
 
 `empack-core` contains pure values and planners with no runtime or I/O dependency. `empack-lib` composes narrow ports, adapters and the operation engine. `empack` owns the host runtime and executable lifecycle. CLI translation and presentation live in the library application adapter. `empack-tests` exercises native executable workflows; library suites verify provider, archive, filesystem and process contracts.

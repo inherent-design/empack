@@ -19,6 +19,7 @@ Use the documentation at your installed release tag. The main branch can describ
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [Contributing](../CONTRIBUTING.md)                                              | Toolchain, checks and contribution conventions                             |
 | [Testing](testing.md)                                                           | Deterministic tests and external consumer acceptance                       |
+| [Dependency maintenance](dependencies.md)                                       | Update inputs, coupled tools, owned patches, and validation                |
 | [v0.9 browser authoring candidate](candidates/v0.9.0-beta-browser-authoring.md) | Proposed portable editing engine and browser capabilities; not implemented |
 | [Design contracts](design/README.md)                                            | Engine boundaries, formats and guarantees                                  |
 | [Modrinth integration](reference/MODRINTH.md)                                   | Provider identity and format behavior                                      |

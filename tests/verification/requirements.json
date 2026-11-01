@@ -9,7 +9,7 @@
   "gates": {
     "critical_applicable_obligations": "100% pass on required evidence boundaries",
     "public_surface_mapping": "100% leaf commands/options classified; zero unknown tests/unknown capability exclusions",
-    "overall_applicable_obligations": "target 100%; at least 98% with only low-risk, owner-approved, expiring waivers",
+    "overall_applicable_obligations": "100% of all applicable mandatory acceptance cases passed; no waiver admission",
     "do_not_infer_current_percentage": true
   },
   "requirements": [
