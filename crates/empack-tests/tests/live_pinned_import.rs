@@ -92,6 +92,7 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
     verify_pinned_pack(
         fixture,
         (50, 63),
+        (16 << 20, 64 << 20),
         [
             ("net.fabricmc.fabric-loader", "0.19.3"),
             ("net.minecraft", "1.21.1"),
@@ -125,6 +126,7 @@ fn live_pinned_quilt_import_retains_client_sides_and_complete_inventory() {
     verify_pinned_pack(
         fixture,
         (17, 10),
+        (16 << 20, 64 << 20),
         [
             ("org.quiltmc.quilt-loader", "0.26.0"),
             ("net.minecraft", "1.20.1"),
@@ -151,6 +153,7 @@ fn live_pinned_neoforge_import_preserves_local_jar_and_complete_inventory() {
     verify_pinned_pack(
         fixture,
         (13, 14),
+        (16 << 20, 64 << 20),
         [("net.neoforged", "21.1.194"), ("net.minecraft", "1.21.1")],
         "config/ferritecore.mixin.properties",
         |bytes| {
@@ -177,6 +180,7 @@ fn live_pinned_legacy_forge_import_preserves_default_sides_and_complete_inventor
     verify_pinned_pack(
         fixture,
         (5, 31),
+        (16 << 20, 64 << 20),
         [
             ("net.minecraftforge", "10.13.4.1614"),
             ("net.minecraft", "1.7.10"),
@@ -195,9 +199,44 @@ fn live_pinned_legacy_forge_import_preserves_default_sides_and_complete_inventor
     );
 }
 
+#[test]
+#[ignore = "pinned Horror OneBlock world archive and 44 exact CDN files (253 MB); live network required"]
+fn live_pinned_world_import_preserves_saved_world_and_complete_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/horror-oneblock-1.1.1-neoforge.json"
+    ))
+    .unwrap();
+    let world = "overrides/saves/Horror OneBlock/";
+    let overrides = fixture["overrides"].as_object().unwrap();
+    assert_eq!(
+        overrides
+            .keys()
+            .filter(|name| name.starts_with(world))
+            .count(),
+        11
+    );
+    assert_eq!(overrides[&format!("{world}level.dat")]["size"], 1642);
+    verify_pinned_pack(
+        fixture,
+        (44, 100),
+        // This selected pack includes an 84,811,632-byte AmbientSounds JAR.
+        // Keep its known workload separate from the four smaller fixtures.
+        (96 << 20, 256 << 20),
+        [("net.neoforged", "21.1.235"), ("net.minecraft", "1.21.1")],
+        "saves/Horror OneBlock/serverconfig/readme.txt",
+        |bytes| {
+            assert!(bytes.starts_with(b"Any server configs put in this folder"));
+            let mut edited = bytes.to_vec();
+            edited.extend_from_slice(b"Author note: retain this world's server configuration.\n");
+            edited
+        },
+    );
+}
+
 fn verify_pinned_pack(
     fixture: Value,
     (files, overrides): (usize, usize),
+    (member_limit, total_limit): (u64, u64),
     expected_components: [(&str, &str); 2],
     edited_override: &str,
     edit: impl FnOnce(&[u8]) -> Vec<u8>,
@@ -317,9 +356,9 @@ fn verify_pinned_pack(
         }
         let name = entry.name().unwrap().into_owned();
         let size = entry.size();
-        assert!(size <= 16 << 20);
+        assert!(size <= member_limit);
         total += size;
-        assert!(total <= 64 << 20);
+        assert!(total <= total_limit);
         let mut bytes = Vec::new();
         entry.take(size + 1).read_to_end(&mut bytes).unwrap();
         assert_eq!(bytes.len() as u64, size);
