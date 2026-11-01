@@ -77,7 +77,11 @@ fn live_cli_pty_search_requires_choice_and_approval() {
     let selected = ProviderProjectId::Modrinth(
         empack_core::identity::ModrinthProjectId::parse("SfMw2IZN").unwrap(),
     ); // Nvidium
-    for approval in [None, Some(false), Some(true)] {
+    let mut actions = vec!["escape", "keyboard-interrupt"];
+    #[cfg(unix)]
+    actions.extend(["host-interrupt", "closed-input"]);
+    actions.extend(["decline", "approve"]);
+    for action in actions {
         let mut command = project.cmd();
         for variable in ["TMPDIR", "TMP", "TEMP"] {
             command.env(variable, scratch.path());
@@ -95,7 +99,8 @@ fn live_cli_pty_search_requires_choice_and_approval() {
         console
             .expect(Regex("Select Mod for rendering engine"))
             .unwrap();
-        if let Some(approve) = approval {
+        let approve = action == "approve";
+        if matches!(action, "approve" | "decline") {
             console.send("SfMw2IZN").unwrap();
             console.send_line("").unwrap();
             console
@@ -113,23 +118,45 @@ fn live_cli_pty_search_requires_choice_and_approval() {
                 }))
                 .unwrap();
         } else {
-            console.send("\u{1b}").unwrap();
-            console.expect(Regex("(?i)interrupted")).unwrap();
+            match action {
+                "escape" => console.send("\u{1b}").unwrap(),
+                "keyboard-interrupt" => console.send(expectrl::ControlCode::EndOfText).unwrap(),
+                #[cfg(unix)]
+                "host-interrupt" => console
+                    .get_process_mut()
+                    .signal(expectrl::process::unix::Signal::SIGINT)
+                    .unwrap(),
+                #[cfg(unix)]
+                "closed-input" => console
+                    .send(expectrl::ControlCode::EndOfTransmission)
+                    .unwrap(),
+                _ => unreachable!(),
+            }
+            console
+                .expect(Regex(if action == "closed-input" {
+                    "(?i)unexpected end of file"
+                } else {
+                    "(?i)interrupted"
+                }))
+                .unwrap();
         }
+        let expected = match action {
+            "approve" | "decline" => 0,
+            "closed-input" => 1,
+            _ => 130,
+        };
         #[cfg(not(windows))]
         {
             console.expect(expectrl::Eof).unwrap();
-            assert!(matches!(console.get_process().wait().unwrap(),
-                expectrl::process::unix::WaitStatus::Exited(_, code)
-                if code == if approval.is_none() { 130 } else { 0 }));
+            terminal::wait_for_exit(console.get_process(), expected);
         }
         #[cfg(windows)]
         assert_eq!(
             console.get_process().wait(Some(120_000)).unwrap(),
-            if approval.is_none() { 130 } else { 0 }
+            expected as u32
         );
-        if approval != Some(true) {
-            assert_eq!(observe(), before);
+        if !approve {
+            assert_eq!(observe(), before, "{action} changed the author tree");
         }
     }
     let result = read_project(project.dir());

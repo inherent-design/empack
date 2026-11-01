@@ -527,9 +527,10 @@
             "telemetry"
           ],
           "assertions": [
-            "The explicitly selected live terminal route obtains a deliberate catalog choice and separate mutation approval rather than treating search ranking as authority"
+            "The explicitly selected live terminal route obtains a deliberate catalog choice and separate mutation approval rather than treating search ranking as authority",
+            "The public live-search chooser rejects Escape and keyboard Ctrl-C on Unix/Windows, host SIGINT on Unix, and Unix closed-input control before any choice; final diagnostics/status and complete author bytes/attributes/empty directories are checked before a later explicit selection and approval"
           ],
-          "remaining_group_evidence": "Live route evidence, other terminal EOF/cancellation variants and final platform/candidate execution remain required; the public recovery fixture is a protocol fixture, not Minecraft consumer acceptance."
+          "remaining_group_evidence": "Live selection/refusal/interruption definitions are bound; actual platform/product/candidate observations remain required. Unix closed-input and host signals are distinct from Windows console interruption, and this fixture does not establish actual browser or Minecraft consumer acceptance."
         },
         {
           "id": "UX-003.public-recovery-decisions",
