@@ -2218,7 +2218,7 @@
             "Public preview leaves destination absent; import and two syncs preserve author documents and exact runtime selection",
             "Exported Modrinth metadata and complete override inventory match independent literal expectations"
           ],
-          "remaining_group_evidence": "Remote/provider content, optional choices, conversions and real-pack qualification remain separate cases"
+          "remaining_group_evidence": "This pinned synthetic archive contains overrides only; restricted provider/manual content is covered by the host case and actual API/CDN access by the live case. Real-pack and consumer qualification have their own requirements."
         },
         {
           "id": "UX-013.restricted-provider-and-overrides",
@@ -2238,11 +2238,32 @@
           "assertions": [
             "Controlled CurseForge records with no download URL require explicit verified bytes; preview and wrong bytes preserve the destination and pending state",
             "Saved import resumes after deleting the original archive, retaining exact provider project/file selection, MD5 assertion, optional participation and separately owned embedded overrides",
-            "Explicit local or URL conversion of manually supplied provider bytes is rejected before project publication, preserving the saved continuation and all prior files",
+            "Both unsupported persistence variants (local and URL) reject manually supplied provider bytes before creating the destination, preserving the saved continuation and all prior files",
             "CurseForge export refuses unacknowledged optional metadata loss without changing author inputs or prior artifacts",
             "Acknowledged export matches a literal manifest and complete override inventory; restricted provider bytes stay references rather than embedded overrides"
           ],
-          "remaining_group_evidence": "Controlled provider HTTP is host evidence only; the actual credentialed provider route and broader public conversion cases remain unqualified"
+          "remaining_group_evidence": "Loopback HTTP establishes importer interpretation and continuation behavior. Actual authenticated provider/CDN access is covered separately; no real-pack or consumer acceptance is inferred."
+        },
+        {
+          "id": "UX-013.credentialed-provider-evidence",
+          "boundary": "L",
+          "test_ids": [
+            "empack-lib::live_provider_contract::curseforge_identity_and_exact_bytes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual authenticated CurseForge selector, exact pinned file and owner lookup agree on canonical provider identity and original file assertions",
+            "Actual downloaded bytes match declared size/digests and content identification retains their provider project/filename association; operation resource reservations retire",
+            "This is independent provider-route evidence paired with the controlled mixed-content import and pinned archive; it does not claim to import or launch a real modpack"
+          ]
         }
       ],
       "owner_now": [
@@ -2255,7 +2276,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable catalog interpretation; native/Fetch transport"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-014",

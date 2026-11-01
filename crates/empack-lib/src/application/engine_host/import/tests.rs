@@ -774,6 +774,10 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     )
     .await;
     assert!(wrong.is_err());
+    assert!(
+        !root.path().join("project").exists(),
+        "wrong supplied bytes created an import destination"
+    );
     assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
     let mut selected = request(ImportSource::Saved, false);
     selected.supplied.insert(key.clone(), observed(b"payload"));
@@ -856,6 +860,10 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         assert!(
             format!("{rejected:#}").contains("Provider imports must preserve canonical identity"),
             "{rejected:#}"
+        );
+        assert!(
+            !root.path().join("project").exists(),
+            "unsupported provider conversion created an import destination"
         );
         assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
     }

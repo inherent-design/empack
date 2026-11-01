@@ -257,7 +257,14 @@ fn live_cli_curseforge_import_reports_or_completes_required_input() {
             "EMPACK_KEY_CURSEFORGE",
             empack_tests::harness::process::curseforge_key(),
         )
-        .args(["--yes", "build", "prism", "--optional-defaults"])
+        .args([
+            "--yes",
+            "build",
+            "prism",
+            "--delivery",
+            "bundled",
+            "--optional-defaults",
+        ])
         .output()
         .expect("failed to spawn empack build prism");
 
