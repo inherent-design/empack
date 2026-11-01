@@ -301,6 +301,110 @@ async fn owned_build_publishes_all_outputs_and_retains_receipt_resources() {
     engine.shutdown().await;
 }
 #[tokio::test]
+async fn prepared_operations_share_capacity_and_cancellation_preserves_other_owners() {
+    use crate::engine::resources::{AdmissionError, ResourceKind};
+
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    put(host.path(), "neighbor.txt", b"unrelated host data");
+    let before = inventory(root.path());
+    let host_before = inventory(host.path());
+    let config = engine(host.path().join("state")).0.config.clone();
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 17 << 20,
+        scratch_bytes: 64 << 20,
+        open_files: 128,
+    });
+    let engine = Engine::new(config.clone(), governor.clone()).unwrap();
+    let first = ready(&engine, root.path(), request()).await;
+    let second = ready(&engine, root.path(), request()).await;
+    assert_eq!(
+        governor.status().reserved,
+        ResourceRequest {
+            memory_bytes: 2 << 20,
+            open_files: 2,
+            ..Default::default()
+        }
+    );
+    // Each preparation fits alone. Together, retained inputs leave too little
+    // capacity for the next capture; refusal must not charge another dimension.
+    let error = engine
+        .prepare(root.path().to_path_buf(), request())
+        .await
+        .err()
+        .expect("a third capture must share the same capacity ledger");
+    assert!(matches!(
+        error.downcast_ref::<RuntimeError>(),
+        Some(RuntimeError::Admission(AdmissionError::Busy {
+            resource: ResourceKind::MemoryBytes,
+            requested: 16_777_216,
+            available: 15_728_640,
+        }))
+    ));
+    assert_eq!(
+        format!("{error:#}"),
+        "Resource budget unavailable for estimated memory: requested 16.0 MiB (16777216 bytes); currently available 15.0 MiB (15728640 bytes)"
+    );
+    let approval = grant(&second);
+    let mut handle = engine.start(second.authorize(approval).unwrap()).unwrap();
+    // This current-thread test cancels before yielding to the new driver.
+    handle.cancel();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Failed(RuntimeError::Cancelled)
+            | OperationOutcome::Completed(ExecutionOutcome::InterruptedBeforePublication)
+    ));
+    assert!(engine.release_completed(handle.id()));
+    drop((outcome, handle));
+    assert_eq!(
+        governor.status().reserved,
+        ResourceRequest {
+            memory_bytes: 1 << 20,
+            open_files: 1,
+            ..Default::default()
+        },
+        "cancelling one operation must retain the other preparation's ownership"
+    );
+    drop(first);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    drop(ready(&engine, root.path(), request()).await);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+
+    // A request that cannot fit even in an empty ledger is a distinct error.
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 15 << 20,
+        scratch_bytes: 64 << 20,
+        open_files: 128,
+    });
+    let engine = Engine::new(config, governor.clone()).unwrap();
+    let error = engine
+        .prepare(root.path().to_path_buf(), request())
+        .await
+        .err()
+        .expect("oversized capture must fail before effects");
+    assert!(matches!(
+        error.downcast_ref::<RuntimeError>(),
+        Some(RuntimeError::Admission(AdmissionError::TooLarge {
+            resource: ResourceKind::MemoryBytes,
+            requested: 16_777_216,
+            maximum: 15_728_640,
+        }))
+    ));
+    assert_eq!(
+        format!("{error:#}"),
+        "Resource budget exceeded for estimated memory: requested 16.0 MiB (16777216 bytes); configured limit 15.0 MiB (15728640 bytes). This is a work estimate, not measured RAM usage"
+    );
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    assert_eq!(inventory(root.path()), before);
+    assert_eq!(inventory(host.path()), host_before);
+    engine.shutdown().await;
+}
+#[tokio::test]
 async fn source_conflicts_cancellation_and_late_failure_preserve_every_artifact() {
     for scenario in ["conflict", "cancel", "template"] {
         let root = tempfile::tempdir().unwrap();

@@ -13596,7 +13596,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public multi-operation budget/cancellation journeys and their host-facing diagnostics remain unbound; actual I/O deadline and retirement checks remain separate. Reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI multi-operation budget/backpressure, cancellation during running work and host-facing diagnostics retain their separate obligations; actual I/O deadline and retirement checks remain separate. Reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -13830,6 +13830,28 @@
             "An actual exited child is held as an unreaped zombie using waitid with WNOWAIT; the macOS group signal returns EPERM before reaping",
             "After the same child is reaped and the group is absent, the shared retirement boundary preserves known retirement despite the earlier signal error; live-group denial remains a separate refusal case"
           ]
+        },
+        {
+          "id": "UX-080.shared-api-admission-and-cancellation",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::tests::prepared_operations_share_capacity_and_cancellation_preserves_other_owners"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Two independently prepared public Engine builds retain separate reservations in one capacity ledger; a third capture refuses with typed Busy and exact requested/available memory diagnostics",
+            "Cancelling the second approved operation before its driver runs releases its own inputs while the first preparation remains charged; releasing that preparation permits a later capture",
+            "A capture larger than an empty ledger returns typed TooLarge with the configured limit and estimate warning; refusals and pre-execution cancellation preserve the complete captured project/host file inventories"
+          ],
+          "remaining_group_evidence": "In-process Engine composition with pre-execution cancellation only; running-worker retirement, CLI presentation, multi-operation backpressure and final-artifact execution remain separate requirements"
         }
       ],
       "owner_now": [
