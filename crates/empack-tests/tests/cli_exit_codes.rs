@@ -58,6 +58,14 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     assert!(output(&project, &["--yes", "sync"]).status.success());
     let author = fs::read(project.dir().join("empack.yml")).unwrap();
     let lock = fs::read(project.dir().join("empack.lock")).unwrap();
+    let secret = "PRIVATE_REPORT_API_KEY_MUST_NOT_ENTER_OUTPUT";
+    let report_command = || {
+        let mut command = command(&project);
+        command
+            .env("EMPACK_KEY_MODRINTH", secret)
+            .env("EMPACK_KEY_CURSEFORGE", secret);
+        command
+    };
     let routes: &[&[&str]] = &[
         &["status", "--json"],
         &["manifest", "check", "--json"],
@@ -79,7 +87,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         for format in ["text", "json", "yaml"] {
             for stream in ["stderr", "stdout"] {
                 for route in routes {
-                    let result = command(&project)
+                    let result = report_command()
                         .args([
                             "--color",
                             color,
@@ -102,6 +110,14 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
                     assert!(value.is_object(), "{context}");
                     assert!(!result.stdout.contains(&0x1b), "{context}");
                     assert!(
+                        !String::from_utf8_lossy(&result.stdout).contains(secret),
+                        "{context}"
+                    );
+                    assert!(
+                        !String::from_utf8_lossy(&result.stderr).contains(secret),
+                        "{context}"
+                    );
+                    assert!(
                         String::from_utf8_lossy(&result.stderr)
                             .contains("Logger initialized successfully"),
                         "logging must remain observable: {context}"
@@ -115,7 +131,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     }
     // Human output still honors an explicit log destination.
     for stream in ["stderr", "stdout"] {
-        let result = command(&project)
+        let result = report_command()
             .args([
                 "--color",
                 "never",
@@ -130,6 +146,8 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         assert!(result.status.success());
         let stdout = String::from_utf8(result.stdout).unwrap();
         let stderr = String::from_utf8(result.stderr).unwrap();
+        assert!(!stdout.contains(secret));
+        assert!(!stderr.contains(secret));
         assert_eq!(
             stdout.contains("Logger initialized successfully"),
             stream == "stdout"
@@ -145,7 +163,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         vec!["manifest", "explain", "unknown-key", "--json"],
         vec!["pending", "show", "unknown-key", "--json"],
     ] {
-        let result = command(&project)
+        let result = report_command()
             .args([
                 "--color",
                 "never",
@@ -160,6 +178,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         assert!(!result.status.success());
         assert!(result.stdout.is_empty(), "{result:?}");
         let diagnostic = String::from_utf8(result.stderr).unwrap();
+        assert!(!diagnostic.contains(secret), "{diagnostic}");
         assert!(diagnostic.contains("Error:"), "{diagnostic}");
         assert!(
             diagnostic.contains("Logger initialized successfully"),

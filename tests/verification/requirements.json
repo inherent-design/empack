@@ -1251,8 +1251,7 @@
           "assertions": [
             "Constructed completed errors retain full diagnostics and typed exit status despite a cancellation request",
             "Clean interruption has no invented recovery warning; late cancellation does not change completed success"
-          ],
-          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+          ]
         },
         {
           "id": "UX-008.executable-interruption",
@@ -1273,8 +1272,7 @@
             "An ordinary CLI launches a controlled child and handles an actual host SIGINT",
             "Known retirement with failed ownership cleanup reaches actual stderr with the recovery action even when exit status is 130",
             "Clean interruption clears ownership without a false recovery warning; nonzero child status remains diagnostic with empack status 1"
-          ],
-          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+          ]
         },
         {
           "id": "UX-008.report-streams",
@@ -1294,9 +1292,9 @@
           "assertions": [
             "Seven executable JSON report routes remain single JSON values without ANSI across color/log-format/log-stream combinations",
             "Diagnostic logs remain observable on stderr; human output honors its chosen log stream",
-            "Failed JSON lookups retain stderr diagnostics without a successful payload; author and lock bytes remain unchanged"
-          ],
-          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+            "Failed JSON lookups retain stderr diagnostics without a successful payload; author and lock bytes remain unchanged",
+            "Synthetic Modrinth and CurseForge API-key values remain absent from stdout and stderr across JSON reports, selected human log destinations and failed requests, in both product graphs"
+          ]
         },
         {
           "id": "UX-008.telemetry-results",
@@ -1319,8 +1317,7 @@
             "An actual telemetry product flushes static command and terminal outcome spans; private selector and API-key sentinels are absent",
             "A JSON report remains independent of diagnostic JSON and trace output",
             "A controlled OTLP collector receives the command span; failed collection does not replace successful execution"
-          ],
-          "remaining_group_evidence": "Windows executable interruption, interactive presentation and final-package evidence remain separate; these cases do not qualify every outcome or consumer."
+          ]
         },
         {
           "id": "UX-008.retained-host-outcomes",
@@ -1389,7 +1386,8 @@
           ],
           "assertions": [
             "The exact extracted default product preserves separate machine JSON/log streams, ANSI-free JSON, typed usage status and explicit-approval refusal on all five targets",
-            "Ordinary development/telemetry observations cannot replace archive-bound execution of these packaged cases"
+            "Ordinary development/telemetry observations cannot replace archive-bound execution of these packaged cases",
+            "The same report fixture checks key redaction in JSON, human and error output against each extracted default archive; this does not depend on telemetry being enabled"
           ]
         },
         {
@@ -1422,7 +1420,7 @@
         "empack-cli",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-009",
