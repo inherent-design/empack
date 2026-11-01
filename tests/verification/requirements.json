@@ -11549,7 +11549,7 @@
             "Installation and ownership evidence plus all pre-existing cache bytes and attributes remain unchanged; only the independently verified exact incoming B blob may be added to cache",
             "After controlled retirement, the existing authenticated update workflow proceeds while preserving player state"
           ],
-          "remaining_group_evidence": "Packaged-target execution and actual Java/consumer acceptance remain separate obligations; Unix native-byte transport has its own public-executable case"
+          "remaining_group_evidence": "The separate P case requires this public launch/ownership journey through all five extracted executables. Actual Java/consumer acceptance remains independently bound; Unix-native argv/path-byte cases retain their stated host/filesystem scopes."
         },
         {
           "id": "UX-072.unix-native-runtime-program-and-arguments",
@@ -11636,6 +11636,55 @@
             "Changing the selected server entry-point bytes refuses later launch preparation"
           ],
           "remaining_group_evidence": "Command preparation and native drift checks do not establish actual Java startup, installer success or gameplay"
+        },
+        {
+          "id": "UX-072.authenticated-prelaunch-authority",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::instance::prelaunch::tests::runtime_transition_retains_observation_but_requires_supported_launch_integration"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Authenticated prelaunch refuses runtime-changing Prism/client or unsupported server combinations instead of silently applying a release to an already loaded launch plan, even when offline fallback is allowed",
+            "Only the explicitly approved observation advances the replay floor; declined transition leaves other project bytes intact and acquires no runtime asset",
+            "Supported managed-server selection requires server mode and a declared completed entrypoint; this controlled handler test does not execute a runtime"
+          ]
+        },
+        {
+          "id": "UX-072.packaged-host-selected-runtime",
+          "boundary": "P",
+          "test_ids": [
+            "empack-tests::journey_publisher::journey_signed_local_channels_update_repair_rollback_and_retain_trust"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_targets": [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc"
+          ],
+          "required_product_features": [
+            "default"
+          ],
+          "assertions": [
+            "Each of the five exact extracted default executables launches the explicitly selected local fixture program from a path containing spaces/Unicode and records exact game cwd and literal argument vectors",
+            "Empty arguments, quotes, dollar/percent expansions, command substitutions, backticks, semicolons, leading-option spellings, newline and trailing backslash remain literal; no sentinel shell command executes",
+            "A live owned child prevents update, repair, artifact cleanup and duplicate launch until explicit retirement; installation/player/ownership bytes and portable attributes remain intact while only exact verified acquisition may be retained",
+            "This real native child is a compiler-bound fixture, not Java or a consumer; final actual-runtime acceptance remains separately required"
+          ]
         }
       ],
       "owner_now": [
@@ -11648,7 +11697,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-073",
