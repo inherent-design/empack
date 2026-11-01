@@ -13741,11 +13741,12 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI-host capacity refusal/retry diagnostics and cancellation of an active acquisition with another retained preparation are now bound separately from precancellation. CLI multi-operation budget/backpressure, actual I/O deadlines and native retirement checks retain their separate obligations. Reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI-host capacity refusal/retry diagnostics and cancellation of an active acquisition with another retained preparation are now bound separately from precancellation. An existing executable two-output build journey now uses --cpu-jobs 1 for sync, dry-run, late-template refusal and repaired rebuild/cleanup, with independent complete output inventories. Broader budget/backpressure, actual I/O deadlines and native retirement checks retain their separate obligations. Reservations are estimates, not OS memory/disk quotas.",
       "evidence_tiers": [
         "U",
         "H",
-        "N"
+        "N",
+        "X"
       ],
       "risk": "critical",
       "run_gate": "pr",
@@ -14019,6 +14020,28 @@
             "After releasing the competing reservation, a fresh build succeeds through the same host while the previous diagnostic remains alive; its exact ZIP member inventory and author-config bytes are checked, unrelated files are preserved and no operation reservation remains"
           ],
           "remaining_group_evidence": "In-process CLI host and public Engine composition only; this is not a final executable/subprocess or running-worker cancellation/backpressure check. Those original obligations retain separate evidence requirements."
+        },
+        {
+          "id": "UX-080.single-worker-executable-build-batch",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::profiles::cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The selected ordinary executable receives --cpu-jobs 1 for sync and a two-output mrpack/subscribed-Prism build; complete archive inventories, literal runtime metadata and authored content are checked independently",
+            "A later template failure with and without cleanup preserves both prior archives and unrelated author files; repairing the template permits same-version rebuild and explicit cleanup through the same single-worker setting",
+            "This exercises the actual public worker-limit setting across sequential batch stages; it does not impose an OS memory quota, change the product budget or establish concurrent multi-process admission"
+          ],
+          "remaining_group_evidence": "No arbitrary fixture capacity override or external acquisition; broader backpressure, output bounds, native I/O retirement and exact packaged-candidate execution retain their own requirements."
         },
         {
           "id": "UX-080.host-running-acquisition-cancellation",

@@ -825,6 +825,13 @@ fn cli_profile_selection_refusals_preserve_existing_artifacts() {
 fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_inputs() {
     let fixture = Fixture::new(false);
     let root = fixture.project.dir();
+    // Exercise the public single-worker limit across capture, both archive
+    // candidates, refusal and retry; do not rely on the host's CPU count.
+    let command = || {
+        let mut command = fixture.command();
+        command.args(["--cpu-jobs", "1"]);
+        command
+    };
     let author = AUTHOR
         .replace("default: [curated]", "default: [exchange, curated]")
         .replace(
@@ -832,7 +839,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
             "    exchange: {target: modrinth, format: zip}\n    curated:",
         );
     fs::write(root.join("empack.yml"), &author).unwrap();
-    fixture.command().args(["--yes", "sync"]).assert().success();
+    command().args(["--yes", "sync"]).assert().success();
     fs::create_dir_all(root.join("templates/client")).unwrap();
     let template = root.join("templates/client/notice.txt.template");
     fs::write(&template, b"{{NAME}} / {{VERSION}} / first\n").unwrap();
@@ -843,7 +850,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
 
     let build = |configuration: &[u8], notice: &[u8], clean: bool| {
         let mut before = snapshot(root).files;
-        let mut command = fixture.command();
+        let mut command = command();
         command.args(["--yes", "build"]);
         if clean {
             command.arg("--clean");
@@ -889,8 +896,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
 
     let (initial_client, _) = build(CONTENT[0].1, b"Profile fixture / 1 / first\n", false);
     let before = snapshot(root).files;
-    fixture
-        .command()
+    command()
         .args(["--dry-run", "build", "--clean"])
         .assert()
         .success();
@@ -905,7 +911,7 @@ fn cli_multi_output_failure_preserves_prior_archives_and_rebuilds_same_version_i
     fs::write(&template, b"{{missing_required_value}}").unwrap();
     let refused = snapshot(root).files;
     for clean in [false, true] {
-        let mut command = fixture.command();
+        let mut command = command();
         command.args(["--yes", "build"]);
         if clean {
             command.arg("--clean");
