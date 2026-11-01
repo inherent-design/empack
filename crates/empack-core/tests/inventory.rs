@@ -49,7 +49,11 @@ fn sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers() {
         input(ContentLayer::Common, "config/a", 1),
         input(ContentLayer::Client, "config/a", 2),
     ];
-    for (target, byte) in [(Recipe::PRISM_BUNDLED, 2), (Recipe::SERVER_BUNDLED, 3)] {
+    for (target, byte) in [
+        (Recipe::PRISM_BUNDLED, 2),
+        (Recipe::SERVER_BUNDLED, 3),
+        (Recipe::CURSEFORGE, 2),
+    ] {
         let inventory =
             BuildInventory::project(&entries, target, &OptionalPolicy::Preserve).unwrap();
         assert_eq!(inventory.entries().len(), 1);

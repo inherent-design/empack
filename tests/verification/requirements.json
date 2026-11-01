@@ -7598,6 +7598,26 @@
       "variant_axes": "",
       "cases": [
         {
+          "id": "UX-045.client-side-projection",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::inventory::sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The CurseForge recipe selects the client payload over common/server alternatives for the same destination and records deliberate precedence",
+            "The selected representation retains its original content identity and attributes; platform-specific rejection of unrepresentable attributes remains a separate export check"
+          ]
+        },
+        {
           "id": "UX-045.exact-platform-references",
           "boundary": "H",
           "test_ids": [
@@ -7705,7 +7725,27 @@
             "A captured provider filename differing from the authored destination refuses CurseForge export before replacing prior outputs",
             "The same late refusal in a Modrinth/CurseForge batch preserves both archives; a separate generic mrpack export can retain the authored destination explicitly"
           ],
-          "remaining_group_evidence": "Actual supported importer, provider-resolution/hosting evidence, broader source conversions and complete platform qualification remain required"
+          "remaining_group_evidence": "Controlled captured-provider records and artifact oracles do not establish actual supported importer behavior. The C case requires that task; generic archive validity and platform hosting eligibility remain distinct."
+        },
+        {
+          "id": "UX-045.actual-supported-import",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::consumer::curseforge-import"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual named supported consumer imports the selected manifest, resolves any required restricted provider content, and compares selected files/runtime with an independent expected inventory",
+            "The operator starts the exact candidate and retains source/distribution/product-bound observations; loopback records, schema validation or a suffix check cannot establish this task"
+          ]
         }
       ],
       "owner_now": [
@@ -7716,7 +7756,7 @@
         "shared recipes/template/archive verification in empack-engine + sink capabilities",
         "portable evidence/codecs; content/transport host ports"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-046",
