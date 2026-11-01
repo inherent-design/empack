@@ -2,6 +2,7 @@
 use empack_tests::harness::{
     archive::zip_members,
     process::{TestProject, assert_dist_artifact_suffix, empack_cmd},
+    workspace::snapshot_excluding,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256, Sha512};
@@ -89,12 +90,26 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
         &["init", "--from", archive.to_str().unwrap(), "imported"],
     );
     let imported = project.dir().join("imported");
+    fs::create_dir_all(imported.join("author notes/empty")).unwrap();
+    fs::write(imported.join("author notes/keep.txt"), b"author decision").unwrap();
+    let observe = || {
+        snapshot_excluding(
+            &imported,
+            &["dist", ".host-state", ".empack-cache", ".harness-home"],
+        )
+    };
     let author = fs::read(imported.join("empack.yml")).unwrap();
     let lock = fs::read(imported.join("empack.lock")).unwrap();
-    for _ in 0..2 {
+    for iteration in 0..2 {
+        // The first sync may materialize references. The next must converge on
+        // the whole author tree, not merely unchanged manifest and lock bytes.
+        let before = (iteration == 1).then(observe);
         run(&imported, &["sync"]);
         assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), author);
         assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), lock);
+        if let Some(before) = before {
+            assert_eq!(observe(), before, "repeated sync changed author content");
+        }
     }
     run(&imported, &["build", "modrinth"]);
     let exported = assert_dist_artifact_suffix(&imported, ".mrpack");
@@ -176,12 +191,18 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
     fs::write(&config, &edited).unwrap();
     let prior_bundled = fs::read(&bundled).unwrap();
     let prior_export = fs::read(&exported).unwrap();
+    let edited_author = observe();
     assert_cmd::Command::from_std(empack_cmd(&imported))
         .args(["--yes", "sync"])
         .timeout(Duration::from_secs(600))
         .assert()
         .failure()
         .stderr(predicates::str::contains("Source size differs from lock"));
+    assert_eq!(
+        observe(),
+        edited_author,
+        "failed sync changed author content"
+    );
     assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), lock);
     assert_eq!(fs::read(&exported).unwrap(), prior_export);
     assert_eq!(fs::read(&bundled).unwrap(), prior_bundled);
@@ -202,4 +223,32 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
     assert_eq!(fs::read(&bundled).unwrap(), prior_bundled);
     assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), author);
     assert_eq!(fs::read(archive).unwrap(), bytes);
+    // Adoption changes the accepted lock; it does not authorize changing other
+    // captured author files, directory structure or their portable attributes.
+    let accepted_author = observe();
+    assert!(accepted_author.files.keys().eq(edited_author.files.keys()));
+    assert!(
+        accepted_author
+            .entries
+            .keys()
+            .eq(edited_author.entries.keys())
+    );
+    for (path, original) in edited_author.files {
+        if path != Path::new("empack.lock") {
+            assert_eq!(
+                accepted_author.files.get(&path),
+                Some(&original),
+                "{path:?}"
+            );
+        }
+    }
+    for (path, original) in edited_author.entries {
+        if path != Path::new("empack.lock") {
+            assert_eq!(
+                accepted_author.entries.get(&path),
+                Some(&original),
+                "{path:?}"
+            );
+        }
+    }
 }

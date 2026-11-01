@@ -2828,8 +2828,10 @@
             "Fresh isolated acquisition checks fixed archive size/SHA-256/SHA-512 and independent complete index/override expectations before public import",
             "Two sync commands preserve author and lock bytes; Modrinth export preserves every declared URL, digest, size, side participation, exact runtime and override byte",
             "Bundled Prism output independently verifies all 50 acquired file SHA-512 digests, all 63 override bytes, exact game inventory and runtime components; source archive and author documents remain unchanged",
-            "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override"
-          ]
+            "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override",
+            "After reference materialization, the second sync preserves full author bytes, directory structure and portable attributes; a failed sync preserves the edited source tree, and explicit adoption changes only authorized lock/content observations while retaining unrelated author work"
+          ],
+          "remaining_group_evidence": "This real Fabric/Modrinth pack has no optional, side-only, world or restricted members. Pinned real-pack coverage of legacy Forge, NeoForge, Quilt, CurseForge, optional/client-only content, world templates, restricted files and custom-layer precedence remains unbound; synthetic/control fixtures and rolling surveys do not supply those real-pack obligations."
         }
       ],
       "owner_now": [
