@@ -12773,8 +12773,7 @@
           ],
           "assertions": [
             "Only typed Network and Deadline channel failures are eligible for an explicit offline policy; authorization, HTTP status, byte/redirect limits, signature-like errors and cancellation remain hard failures"
-          ],
-          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+          ]
         },
         {
           "id": "UX-077.actual-http-failure-classification",
@@ -12794,8 +12793,7 @@
           "assertions": [
             "Actual metadata HTTP 401/403/404/429/400/500/503 responses retain the expected typed transfer category and refuse fallback even with offline permission",
             "Encoded bodies, cross-origin or looping redirects, and oversized metadata are rejected with their policy/limit categories before changing the installed project or durable floor"
-          ],
-          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+          ]
         },
         {
           "id": "UX-077.authenticated-prelaunch-decisions",
@@ -12818,8 +12816,7 @@
             "Malformed envelopes, untrusted signing keys, corrupted trusted signatures, expired channels and validly signed replayed sequences return errors rather than the completed-release selection; failed authentication preserves the durable floor and never requests a release",
             "After an approved valid channel observation, missing, malformed, untrusted or identity-mismatched releases cannot trigger fallback; the completed installation remains unchanged and the approved sequence floor persists",
             "Preview and declined approval never authorize installation or launch; a genuine refused connection needs explicit offline permission, while revoked enrollment still refuses"
-          ],
-          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+          ]
         },
         {
           "id": "UX-077.publisher-transport-credentials",
@@ -12838,8 +12835,7 @@
           ],
           "assertions": [
             "Publisher metadata requests with configured provider credentials omit the provider key, including same-origin redirects; cross-origin, downgraded and credential-bearing redirects refuse"
-          ],
-          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+          ]
         },
         {
           "id": "UX-077.executable-offline-launch-policy",
@@ -12861,8 +12857,29 @@
             "Explicit allow-offline reports the completed release and runs the selected compiler-bound local runtime in the game directory, preserving installation, enrollment and player data",
             "Changed managed bytes refuse launch after connection failure; a changed retained release descriptor and revoked enrollment refuse before any proxy connection, even with offline permission",
             "Every refusal preserves the relevant complete fixture snapshot and leaves no runtime-start observation; the original export remains unchanged"
+          ]
+        },
+        {
+          "id": "UX-077.live-hosted-publisher-policy",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::cli_publisher::live_cli_hosted_channel_verifies_inputs_before_local_publication",
+            "empack-tests::cli_exit_codes::live_cli_hosted_missing_channel_never_grants_offline_launch"
           ],
-          "remaining_group_evidence": "Fresh external HTTPS publisher-route qualification remains required; loopback adapters and a refusing local proxy do not establish live publisher or consumer availability"
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The companion positive publisher journey verifies the existing immutable hosted envelope/assets through real HTTPS before declaring this route qualified; fixture deletion or upstream outage cannot qualify the pair",
+            "An installed subscribed instance requesting the missing channel in that immutable hosted fixture exits NotFound with and without allow-offline, never invokes the selected runtime and preserves the whole author/export/installation/host tree",
+            "Actual transport failure/deadline fallback remains separately exercised by controlled classification and the public CONNECT-refusal journey; HTTPS status failure is not offline permission, and this case does not claim launcher/gameplay availability"
+          ]
         }
       ],
       "owner_now": [
@@ -12875,7 +12892,7 @@
         "shared release meaning/signature verification + native signing custody and publication",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-078",

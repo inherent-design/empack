@@ -444,6 +444,88 @@ build:
 }
 
 #[test]
+#[ignore = "requires the immutable hosted-publisher fixture through actual HTTPS"]
+fn live_cli_hosted_missing_channel_never_grants_offline_launch() {
+    use empack_tests::harness::{
+        process::{empack_cmd, offline_command},
+        publication::Driver,
+        workspace::snapshot,
+    };
+
+    // This existing immutable fixture has releases but no channels directory.
+    // The companion positive publisher journey checks the same HTTPS origin.
+    const CHANNEL: &str = concat!(
+        "https://raw.githubusercontent.com/inherent-design/empack/",
+        "dd677b62f894030bf149bef7147d14231cdb2a36/",
+        "tests/fixtures/hosted-publication/good/channels/stable.json"
+    );
+    const CHILD: &str = "engine::api::launch::tests::runtime_fixture";
+    let driver = Driver::native_fixture(CHILD);
+    let root = tempfile::tempdir().unwrap();
+    let (export, id, _) = runtime_release(root.path());
+    let instance = root.path().join("hosted offline policy Ω");
+    fs::create_dir(&instance).unwrap();
+    offline_command(&instance)
+        .args(["--yes", "instance", "install"])
+        .arg(export.join("release.json"))
+        .args(["--sha256", &id])
+        .assert()
+        .success();
+    let key = ed25519_dalek::SigningKey::from_bytes(&[47; 32]);
+    let key = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    offline_command(&instance)
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.runtime",
+            "--channel",
+            "stable",
+            CHANNEL,
+            "--key",
+        ])
+        .arg(key)
+        .assert()
+        .success();
+    let game = instance.join("game");
+    fs::write(game.join("player-note.txt"), b"player content").unwrap();
+    fs::write(game.join("launch-fixture"), b"record actual invocation").unwrap();
+    fs::write(game.join("launch-exit"), b"return immediately").unwrap();
+    let before = snapshot(root.path());
+    for allow_offline in [false, true] {
+        let mut launch = empack_cmd(&instance);
+        launch.env("EMPACK_NET_TIMEOUT", "10").args([
+            "--yes",
+            "instance",
+            "launch",
+            "--check-updates",
+        ]);
+        if allow_offline {
+            launch.arg("--allow-offline");
+        }
+        launch
+            .arg("--")
+            .arg(driver.program())
+            .args(["--exact", CHILD, "--nocapture", "--test-threads=1"])
+            .stdin(Stdio::null());
+        let result = assert_cmd::Command::from_std(launch)
+            .timeout(Duration::from_secs(30))
+            .output()
+            .unwrap();
+        check(&result, EmpackExitCode::NotFound, "Download was not found");
+        assert_eq!(snapshot(root.path()), before);
+        assert!(!game.join("launch-started").exists());
+        assert!(!game.join("launch-observed.json").exists());
+    }
+}
+
+#[test]
 fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_trust() {
     use empack_tests::harness::{
         process::{empack_cmd, offline_command},

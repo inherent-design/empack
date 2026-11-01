@@ -59,8 +59,9 @@ SUITES = {
     "pinned-import": Suite(("live_pinned_import",), ignored=True, timeout=1800),
     "telemetry": Suite(("cli_telemetry",), ignored=True, telemetry=True),
     "live-catalog": Suite(("live_cli_init", "live_runtime_catalog_contract"), ignored=True),
-    "publisher-cli": Suite(("cli_publisher",), ignored=True, timeout=600,
-                           cases=("live_cli_hosted_channel_verifies_inputs_before_local_publication",)),
+    "publisher-cli": Suite(("cli_publisher", "cli_exit_codes"), ignored=True, timeout=600,
+                           cases=("live_cli_hosted_channel_verifies_inputs_before_local_publication",
+                                  "live_cli_hosted_missing_channel_never_grants_offline_launch")),
     "live-provider": Suite(("live_provider_cli", "live_provider_contract"), ignored=True,
                            required_env=("EMPACK_KEY_CURSEFORGE",)),
     "live-provider-cli": Suite(("live_provider_cli",), ignored=True, cases=(

@@ -23,4 +23,6 @@ The other directories deliberately change the hosted result:
 
 The live executable test pins the fixture commit and reads these files through GitHub's ordinary HTTPS raw-content route. It publishes a pointer only in its temporary local workspace. The repository contains no deployed channel pointer. Successful local publication does not establish network deployment or consumer startup. The live test remains distinct from controlled-host tests and is excluded from ordinary offline runs.
 
+Run `python3 scripts/verify.py publisher-cli` for the paired hosted checks. The companion instance-launch fixture enrolls the same immutable origin at `good/channels/stable.json`, which is absent from that commit. It requires a not-found result with and without `--allow-offline`, no runtime invocation, and unchanged author/export/installation/host snapshots. A missing HTTPS resource is not transport failure or permission to launch offline. The positive publication journey must also pass; a missing repository or unavailable origin cannot qualify the pair.
+
 Git attributes preserve these files byte-for-byte on every checkout platform. Changing the fixture requires a new immutable source pin and reviewed manifest hashes; a moving branch URL cannot substitute for that pin.

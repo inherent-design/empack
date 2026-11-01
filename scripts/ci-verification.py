@@ -78,6 +78,7 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-lib/src/engine/release", "crates/empack-lib/src/engine/api/release_publication",
         "crates/empack-lib/src/application/engine_host/release",
         "crates/empack-tests/tests/cli_publisher", "crates/empack-tests/tests/support/publisher",
+        "crates/empack-tests/tests/cli_exit_codes.rs",
         "tests/fixtures/hosted-publication/",
     )) for p in code):
         live.append("publisher-cli")

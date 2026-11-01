@@ -69,6 +69,7 @@ class ChangeSelection(unittest.TestCase):
             ("crates/empack-lib/src/engine/release/trust.rs", ["publisher-cli"], False),
             ("crates/empack-lib/src/application/engine_host/release.rs", ["publisher-cli"], False),
             ("crates/empack-tests/tests/cli_publisher.rs", ["publisher-cli"], False),
+            ("crates/empack-tests/tests/cli_exit_codes.rs", ["publisher-cli"], False),
             ("crates/empack-tests/tests/support/publisher.rs", ["publisher-cli"], False),
             ("tests/fixtures/hosted-publication/manifest.json", ["publisher-cli"], False),
         ]
