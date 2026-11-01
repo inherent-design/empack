@@ -67,7 +67,7 @@ The opt-in `publisher-cli` suite uses the selected product against the immutable
 python3 scripts/verify.py publisher-cli --product-profile release
 ```
 
-The opt-in `native-remount` suite creates disposable APFS images on macOS and requires `hdiutil`, `diskutil`, and `plutil`. It exercises persistent identity, continuations, publication recovery, and publisher/instance workflows across device reassignment. Image browsing and auto-open are disabled. Cleanup rechecks ownership before detach, uses no forced detach, and preserves diagnostic state when retirement cannot be confirmed. Run these cases serially on an isolated host that permits the image operations; a metadata simulation is not an actual remount.
+The opt-in `native-remount` suite creates disposable APFS images on macOS and requires `hdiutil`, `diskutil`, and `plutil`. It exercises persistent identity, continuations, publication recovery, and publisher/instance workflows across device reassignment. Image browsing and auto-open are disabled. Cleanup rechecks ownership before each of at most five detach requests. Only a typed busy result permits another request, with 200, 400, 800 and 1,600 ms between requests; the native command timeout remains 90 seconds. Confirmed retirement after a retry records the backing identity, request count and elapsed time. Cleanup uses no forced detach and preserves diagnostic state when retirement cannot be confirmed. Run these cases serially on an isolated host that permits the image operations; a metadata simulation is not an actual remount.
 
 ```sh
 python3 scripts/verify.py native-remount --product-features default --test-features minimal

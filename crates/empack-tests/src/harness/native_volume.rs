@@ -215,6 +215,14 @@ impl ApfsFixture {
             else {
                 // Retirement is the postcondition. An earlier busy status
                 // cannot invalidate a fresh observation of this exact backing.
+                if attempt > 1 {
+                    eprintln!(
+                        "Owned APFS backing {} observed retired after {} requests in {:?}",
+                        self.images[image].display(),
+                        attempt - 1,
+                        started.elapsed()
+                    );
+                }
                 return Ok(());
             };
             let mut arguments = vec!["detach".as_ref(), "-verbose".as_ref()];
@@ -233,6 +241,13 @@ impl ApfsFixture {
                             .any(|(path, _)| path == &self.images[image]),
                         "Owned image remains attached"
                     );
+                    if attempt > 1 {
+                        eprintln!(
+                            "Owned APFS backing {} retired after {attempt} requests in {:?}",
+                            self.images[image].display(),
+                            started.elapsed()
+                        );
+                    }
                     return Ok(());
                 }
                 Err(error) => {
@@ -242,7 +257,9 @@ impl ApfsFixture {
                         .any(|(path, _)| path == &self.images[image])
                     {
                         eprintln!(
-                            "Owned APFS backing retired after a failed detach request: {error:#}"
+                            "Owned APFS backing {} observed retired after failed request {attempt} in {:?}: {error:#}",
+                            self.images[image].display(),
+                            started.elapsed()
                         );
                         return Ok(());
                     }
@@ -262,7 +279,9 @@ impl ApfsFixture {
                         started.elapsed()
                     );
                     on_busy()?;
-                    std::thread::sleep(Duration::from_millis(100 << (attempt - 1)));
+                    // Unmount completion need not make the backing immediately
+                    // ejectable. Space the same five ownership-checked requests.
+                    std::thread::sleep(Duration::from_millis(200 << (attempt - 1)));
                 }
             }
         }
