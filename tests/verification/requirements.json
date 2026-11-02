@@ -13838,8 +13838,29 @@
           "assertions": [
             "The ordinary executable builds an artifact, then previews, refuses unapproved/invalid cleanup, applies and repeats default/builds/cache/all selections",
             "Invalid author text, source configuration, templates, player data, another project and its recovery evidence remain byte-identical; cache cleanup alone preserves the artifact and complete prior state",
-            "Build cleanup affects only dist; cache cleanup affects only the selected initialized content store, retaining unknown downloads and neighboring cache files; repeated cleanup is a byte-inventory no-op"
+            "Build cleanup affects only dist; cache cleanup affects only the selected initialized content store, retaining unknown downloads and neighboring cache files; repeated cleanup is a byte-inventory no-op",
+            "Terminal-generated interruption at the ordinary cleanup approval prompt returns status 130 and preserves complete project/host file, empty-directory and permission observations before a successful approved retry"
           ]
+        },
+        {
+          "id": "UX-079.executable-cleanup-prompt-signal",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_build::cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An actual SIGINT delivered to the ordinary executable while default/builds/cache/all cleanup awaits approval returns status 130 and reports interruption",
+            "Captured project and host bytes, directories, portable attributes, neighboring cache content and recovery records remain unchanged; the subsequent approved cleanup and repeated no-op use the same selections"
+          ],
+          "remaining_group_evidence": "Unix host-signal interruption before approval only. Terminal input interruption has its own all-host assertion. This does not establish an OS interrupt after deletion begins, process retirement during mutation or final-package execution."
         },
         {
           "id": "UX-079.executable-empty-scope-no-state",

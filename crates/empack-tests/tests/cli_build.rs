@@ -1,5 +1,7 @@
 use empack_tests::harness::archive::{zip_member, zip_members};
-use empack_tests::harness::process::{TestProject, assert_dist_artifact_suffix, offline_command};
+use empack_tests::harness::process::{
+    TestProject, assert_dist_artifact_suffix, offline_command, offline_empack_cmd,
+};
 
 use empack_tests::harness::workspace::snapshot;
 #[path = "support/native_exports.rs"]
@@ -138,13 +140,18 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
         let host = tempfile::tempdir().unwrap();
         let state = host.path().join("state");
         let cache = host.path().join("cache");
-        let command = || {
-            let mut command = offline_command(project.dir());
+        let native_command = || {
+            let mut command = offline_empack_cmd(project.dir());
             command
                 .arg("--state-dir")
                 .arg(&state)
                 .arg("--cache-dir")
                 .arg(&cache);
+            command
+        };
+        let command = || {
+            let mut command = assert_cmd::Command::from_std(native_command());
+            command.timeout(std::time::Duration::from_secs(30));
             command
         };
         for (name, bytes) in [
@@ -270,6 +277,35 @@ fn cli_clean_scopes_require_approval_and_preserve_authoring_and_recovery() {
             before_host,
             "invalid target {target:?}"
         );
+
+        // Interrupt the ordinary executable while approval is pending. This is
+        // distinct from crash recovery or cancellation after deletion starts.
+        let pending_project = snapshot(project.dir());
+        let pending_host = snapshot(host.path());
+        let mut interrupted = native_command();
+        interrupted.args(selection());
+        empack_tests::harness::terminal::interrupt(interrupted, "(?i)apply this cleanup plan");
+        assert_eq!(
+            snapshot(project.dir()),
+            pending_project,
+            "prompt {target:?}"
+        );
+        assert_eq!(snapshot(host.path()), pending_host, "prompt {target:?}");
+        #[cfg(unix)]
+        {
+            let mut interrupted = native_command();
+            interrupted.args(selection());
+            empack_tests::harness::terminal::interrupt_host(
+                interrupted,
+                "(?i)apply this cleanup plan",
+            );
+            assert_eq!(
+                snapshot(project.dir()),
+                pending_project,
+                "SIGINT {target:?}"
+            );
+            assert_eq!(snapshot(host.path()), pending_host, "SIGINT {target:?}");
+        }
 
         command().arg("--yes").args(selection()).assert().success();
         let mut expected_project = before_project;
