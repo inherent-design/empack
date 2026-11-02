@@ -168,6 +168,124 @@ class CommandEvidence(unittest.TestCase):
 
 
 class AttemptPolicy(unittest.TestCase):
+    def test_rustdoc_execution_uses_private_application_state_with_existing_compiler_homes(self):
+        import tomllib
+        from unittest.mock import patch
+        import verify
+        pin = tomllib.loads((verify.ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+
+        def checked(command, attempt, name, environment, **options):
+            if name == "revision":
+                return "a" * 40
+            if name == "worktree":
+                return ""
+            if name == "rustc-version":
+                return f"rustc fixture\nrelease: {pin}\nhost: x86_64-unknown-linux-gnu"
+            if name == "rustdoc-version":
+                return f"rustdoc {pin} fixture"
+            return "controlled listing"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inherited = dict(HOME="host-home", EMPACK_STATE_DIR="host-state",
+                             EMPACK_CACHE_DIR="host-cache", EMPACK_TEST_FAULT="host-fault",
+                             CARGO_HOME="compiler-cargo", RUSTUP_HOME="compiler-rustup")
+            with patch("verify.checked", side_effect=checked), \
+                    patch("verify.source_snapshot", return_value={}), \
+                    patch("verification.doctests.inventory", return_value={}), \
+                    patch("verification.doctests.evaluate", return_value=([], "FAIL", None)), \
+                    patch("verify.run", return_value=(1, "controlled failure", False)) as worker:
+                self.assertEqual(verify.run_doctests(root, inherited, "minimal"), 1)
+            environment = worker.call_args.kwargs["env"]
+            home = Path(environment["HOME"])
+            self.assertTrue(home.is_relative_to(root))
+            self.assertTrue(home.is_dir())
+            for key in ("EMPACK_STATE_DIR", "EMPACK_CACHE_DIR"):
+                self.assertTrue(Path(environment[key]).is_relative_to(home))
+            for key in ("CARGO_HOME", "RUSTUP_HOME"):
+                self.assertEqual(environment[key], inherited[key])
+            self.assertNotIn("EMPACK_TEST_FAULT", environment)
+            self.assertEqual(inherited["HOME"], "host-home")
+            worker.assert_called_once()
+
+    def test_suite_worker_isolates_application_state_without_copying_compiler_homes(self):
+        import json
+        from unittest.mock import patch
+        from verify import run_suite
+        from verification.suites import Suite
+        inventory = SuiteEvidence().inventory()
+        artifact = dict(path="/ordinary/product", sha256="0" * 64,
+                        version="0.0.0-dev", features="default", target="aarch64-apple-darwin")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inherited = dict(HOME="host-home", USERPROFILE="host-profile", APPDATA="host-config",
+                             LOCALAPPDATA="host-local", XDG_CONFIG_HOME="host-xdg-config",
+                             XDG_DATA_HOME="host-data", XDG_CACHE_HOME="host-cache",
+                             EMPACK_STATE_DIR="host-state", EMPACK_CACHE_DIR="host-app-cache",
+                             EMPACK_YES="1", EMPACK_TEST_FAULT="host-fault",
+                             EMPACK_KEY_CURSEFORGE="synthetic-key",
+                             home="lowercase-home", emPACK_YES="lowercase-control",
+                             CARGO_HOME=str(root / "installed-cargo"),
+                             RUSTUP_HOME=str(root / "installed-rustup"))
+            homes = []
+            for label, required, configured in (("without-key", (), True),
+                                                 ("with-key", ("EMPACK_KEY_CURSEFORGE",), True),
+                                                 ("default-compiler-homes", (), False)):
+                with self.subTest(label=label, required=required):
+                    attempt = root / label
+                    attempt.mkdir()
+                    record = {}
+                    environment = dict(inherited)
+                    if not configured:
+                        for key in ("CARGO_HOME", "RUSTUP_HOME"):
+                            environment.pop(key)
+                    with patch("verify.checked", return_value=json.dumps(inventory)), \
+                            patch("verify.compare_rust_inventory"), \
+                            patch("verify.Path.home", return_value=root / "installed-home"), \
+                            patch("verify.run", return_value=(1, "controlled failure", False)) as worker:
+                        run_suite("deterministic", Suite(required_env=required), attempt,
+                                  environment, artifact, record, "minimal")
+                    selected = worker.call_args.kwargs["env"]
+                    home = attempt / "deterministic/worker-home"
+                    homes.append(home)
+                    for key in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
+                                "XDG_DATA_HOME", "XDG_CACHE_HOME", "EMPACK_STATE_DIR", "EMPACK_CACHE_DIR"):
+                        self.assertNotEqual(selected[key], inherited[key], key)
+                        self.assertTrue(Path(selected[key]).is_relative_to(home), key)
+                    self.assertEqual(selected["HOME"], str(home))
+                    self.assertNotEqual(selected["EMPACK_STATE_DIR"], selected["EMPACK_CACHE_DIR"])
+                    self.assertTrue(home.is_dir())
+                    self.assertEqual(list(home.iterdir()), [])
+                    for key, directory in (("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")):
+                        expected = inherited[key] if configured else str(root / "installed-home" / directory)
+                        self.assertEqual(selected[key], expected)
+                        self.assertFalse(Path(expected).exists(), "compiler storage must not be copied")
+                    for key in ("EMPACK_YES", "EMPACK_TEST_FAULT"):
+                        self.assertNotIn(key, selected)
+                    for key in ("home", "emPACK_YES"):
+                        if os.name == "nt":
+                            self.assertNotIn(key, selected)
+                        else:
+                            self.assertEqual(selected[key], inherited[key])
+                    self.assertEqual(selected.get("EMPACK_KEY_CURSEFORGE"),
+                                     "synthetic-key" if required else None)
+                    self.assertEqual(selected["EMPACK_E2E_BIN"], artifact["path"])
+                    self.assertEqual(selected["RUSTUP_AUTO_INSTALL"], "0")
+                    self.assertEqual(record["status"], "FAIL")
+                    worker.assert_called_once()
+            self.assertNotEqual(homes[0], homes[1])
+            self.assertNotEqual(homes[1], homes[2])
+            self.assertEqual(inherited["HOME"], "host-home")
+            from verify import Blocked
+            missing = {key: value for key, value in inherited.items() if key != "EMPACK_KEY_CURSEFORGE"}
+            with patch("verify.checked") as discovery, patch("verify.run") as worker:
+                with self.assertRaisesRegex(Blocked, "prerequisites unavailable: EMPACK_KEY_CURSEFORGE"):
+                    run_suite("deterministic", Suite(required_env=("EMPACK_KEY_CURSEFORGE",)),
+                              root / "missing-key", missing, artifact, {}, "minimal")
+            discovery.assert_not_called()
+            worker.assert_not_called()
+            self.assertFalse((root / "missing-key").exists())
+
     def test_windows_compiler_discovery_survives_without_host_cargo_or_application_state(self):
         from unittest.mock import patch
         from verify import isolated_environment
@@ -243,6 +361,7 @@ class AttemptPolicy(unittest.TestCase):
                 self.assertEqual(config["profile"]["verification"]["junit"]["store-success-output"],
                                  name in {"native-remount", "server-cli"})
                 self.assertFalse(config["profile"]["verification"]["junit"]["store-failure-output"])
+                self.assertEqual(config["profile"]["verification"]["retries"], 0)
 
     def test_python_worker_builds_offline_with_installed_tools_and_isolated_state(self):
         import subprocess

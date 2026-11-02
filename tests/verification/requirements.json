@@ -15539,7 +15539,7 @@
         "PACKAGE"
       ],
       "required_assertions": "Each attempt uses clean home/state/cache; expected network mode enforced; no automatic mutation replay; logs redacted; missing prerequisite not passed.",
-      "required_work": "Self-tests for classifier, inventory, retry policy, receipt tamper, wrong binary, stale coverage and unknown tests.",
+      "required_work": "Bound self-tests cover worker/product-child environment isolation, exact compiler/discovery membership and result admission, prerequisite and no-replay policy, selected product/version and stale coverage-binary refusal, receipt/source/evidence tampering, bounded retained diagnostics, native fixture ownership, and operator-record admission/handoff. The suite worker has private application paths while the compiler coordinator reuses its existing storage. Actual required host/product, package, consumer and hosted-handoff observations remain separate from definition completeness.",
       "evidence_tiers": [
         "U",
         "H",
@@ -15967,6 +15967,260 @@
             "A changed digest remains unequal after default interpretation; this helper cannot excuse missing or altered content"
           ],
           "remaining_group_evidence": "Pure fixture-oracle control only; raw archive/index identity is independently checked and actual importer, exporter, native hosts and consumers still require execution."
+        },
+        {
+          "id": "UX-088.suite-worker-state",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_verification_runner.AttemptPolicy.test_suite_worker_isolates_application_state_without_copying_compiler_homes",
+            "python::test_verification_runner.AttemptPolicy.test_rustdoc_execution_uses_private_application_state_with_existing_compiler_homes",
+            "python::test_coverage_runner.CoverageRunner.test_inventory_binds_test_process_and_report_cannot_erase_test_failure"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Nextest, instrumented coverage and Rustdoc execution receive fresh owned application homes and state/cache paths rather than caller application settings; native environment-name rules are preserved and the input environment stays unchanged",
+            "Configured or default compiler homes are retained by reference without copying storage or creating toolchains; worker execution disables automatic toolchain installation",
+            "Ambient application overrides and test-fault settings are excluded; only explicitly declared prerequisite values are forwarded alongside the runner-selected product and inventory identities",
+            "Missing declared credentials stop before discovery or execution; controlled subprocess failure remains FAIL and cannot become success because the environment was prepared"
+          ],
+          "remaining_group_evidence": "Controlled runner dispatch with inert paths and mocked compiler/product execution; actual Nextest, product-child and native-host executions remain separate."
+        },
+        {
+          "id": "UX-088.product-child-environment",
+          "boundary": "U",
+          "test_ids": [
+            "empack-tests::harness::process::harness_tests::child_environment_excludes_host_configuration_and_test_authority",
+            "empack-tests::harness::process::harness_tests::child_environment_uses_native_variable_name_case_rules"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Product-child command construction retains native process essentials but supplies owned home/state/cache/tmp paths and excludes ambient application, secret, proxy and fixture-authority overrides",
+            "Windows variable names are compared using their native case rules while Unix names remain case-sensitive; configuration construction does not precreate application state"
+          ],
+          "remaining_group_evidence": "Command/environment construction only; actual selected-product behavior and compilation authority retain their own cases."
+        },
+        {
+          "id": "UX-088.inventory-and-classifier-refusal",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_test_map.TestDiscoveryBinding.test_unknown_test_is_an_error",
+            "python::test_test_map.TestDiscoveryBinding.test_vanished_selector_is_an_error",
+            "python::test_test_map.TestDiscoveryBinding.test_missing_binary_is_not_an_empty_pass",
+            "python::test_test_map.TestDiscoveryBinding.test_empty_inventory_and_empty_classification_are_not_a_pass",
+            "python::test_test_map.TestDiscoveryBinding.test_count_mismatch_fails",
+            "python::test_test_map.TestDiscoveryBinding.test_unrecognized_boundary_fails",
+            "python::test_test_map.RustPlatformBindings.test_required_test_or_whole_binary_cannot_vanish",
+            "python::test_test_map.RustPlatformBindings.test_new_test_and_changed_ignore_policy_require_review",
+            "python::test_test_map.RustPlatformBindings.test_cross_compilation_does_not_substitute_for_host_inventory",
+            "python::test_test_map.RustPlatformBindings.test_corrupt_policy_cannot_make_unknown_ids_applicable"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Unknown identities/boundaries, missing selected tests or binaries, empty inventories and inconsistent counts fail classification rather than supplying an empty pass",
+            "Changed ignore policy and missing required native members require review; a cross-compilation or corrupted applicability policy cannot stand in for a host inventory"
+          ],
+          "remaining_group_evidence": "Synthetic compiler/discovery dictionaries test admission rules, not actual execution on a represented host."
+        },
+        {
+          "id": "UX-088.suite-result-refusal",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_verification_runner.SuiteEvidence.test_required_case_retains_module_path",
+            "python::test_verification_runner.SuiteEvidence.test_selected_ignored_case_requires_explicit_selection",
+            "python::test_verification_runner.SuiteEvidence.test_actual_success_is_pass",
+            "python::test_verification_runner.SuiteEvidence.test_skip_and_absence_are_not_pass",
+            "python::test_verification_runner.SuiteEvidence.test_failure_error_and_flake_remain_failures",
+            "python::test_verification_runner.SuiteEvidence.test_duplicate_and_unknown_results_are_rejected",
+            "python::test_verification_runner.SuiteEvidence.test_inconsistent_count_is_rejected",
+            "python::test_verification_runner.SuiteEvidence.test_unrecognized_result_cannot_be_a_pass"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Exact selected identities retain their module path and ignored tests require explicit selection",
+            "A positive JUnit control passes, while skipped/absent, failed/error/flaky, duplicate/unknown, inconsistent and unrecognized results cannot qualify"
+          ],
+          "remaining_group_evidence": "Synthetic JUnit/discovery controls; real compiler and test outcomes are admitted separately."
+        },
+        {
+          "id": "UX-088.stale-discovery-refusal",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_test_map.ToolingOwnership.test_failed_discovery_cannot_reuse_an_old_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "A failed tooling discovery is reported even when an older inventory file already exists; stale output cannot supply a passing discovery"
+          ]
+        },
+        {
+          "id": "UX-088.failed-or-tampered-receipts",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_attempt_reports.AttemptAdmission.test_failed_junit_is_retained_but_never_accepted_by_strict_gate",
+            "python::test_attempt_reports.AttemptAdmission.test_timeout_without_junit_cannot_supply_passing_tests",
+            "python::test_attempt_reports.AttemptAdmission.test_preflight_records_blocker_without_fabricating_an_executable",
+            "python::test_attempt_reports.AttemptAdmission.test_changed_inputs_or_evidence_cannot_reuse_earlier_pass_rows",
+            "python::test_attempt_reports.AttemptAdmission.test_unstarted_suites_do_not_hide_failed_or_blocked_suites"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Original failed JUnit remains visible and strict admission refuses it; a receipt cannot relabel its failure as PASS",
+            "Timed-out execution without JUnit retains missing observations, and an unrelated stale JUnit cannot fill that gap",
+            "Blocked preflight does not invent an executable or test pass; changed product/source/evidence and malformed XML invalidate earlier pass rows",
+            "Unstarted suites do not hide the original failed or blocked suite"
+          ],
+          "remaining_group_evidence": "Controlled retained receipts and files verify admission, not actual product execution."
+        },
+        {
+          "id": "UX-088.selected-product-and-xml-identity",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_verification_runner.AttemptPolicy.test_external_artifact_requires_complete_identity",
+            "python::test_verification_runner.AttemptPolicy.test_wrong_digest_and_version_cannot_qualify",
+            "python::test_verification_runner.AttemptPolicy.test_malformed_xml_is_not_a_command_success"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "An externally selected executable requires complete identity; wrong bytes refuse before execution and a mismatched reported version cannot qualify",
+            "Successful command status cannot turn malformed JUnit into passing test evidence"
+          ],
+          "remaining_group_evidence": "Inert executable bytes and mocked version/test commands; actual compiler and package identity remain independently required."
+        },
+        {
+          "id": "UX-088.stale-coverage-binary-selection",
+          "boundary": "N",
+          "test_ids": [
+            "empack-tests::harness::process::harness_tests::coverage_uses_instrumented_binary_even_with_existing_debug_build",
+            "empack-tests::harness::process::harness_tests::ordinary_runs_do_not_select_stale_coverage_binary"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Coverage selection prefers its instrumented executable even when an ordinary debug build exists",
+            "Ordinary selection excludes stale instrumented outputs and retains the normal executable/PATH policy"
+          ],
+          "remaining_group_evidence": "Real native path/file selection, not execution or proof of LCOV coverage; fixed candidate identity has stricter separate admission."
+        },
+        {
+          "id": "UX-088.bounded-command-and-no-mutation-replay",
+          "boundary": "N",
+          "test_ids": [
+            "python::test_verification_runner.CommandEvidence.test_timeout_does_not_retry_mutation",
+            "python::test_verification_runner.CommandEvidence.test_nonzero_status_and_separate_stdout_are_preserved",
+            "python::test_verification_runner.CommandEvidence.test_large_output_is_bounded"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "An actual owned Python subprocess writes a counter once and times out; the command runner does not replay the mutation",
+            "Original nonzero status and separate stdout/stderr are retained; oversized retained text is bounded with explicit truncation"
+          ],
+          "remaining_group_evidence": "Native runner subprocess fixtures, not empack runtime-tree or gameplay acceptance."
+        },
+        {
+          "id": "UX-088.blocked-empty-and-retry-policy",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_verification_runner.AttemptPolicy.test_empty_and_inapplicable_runs_are_not_passes",
+            "python::test_verification_runner.AttemptPolicy.test_failure_and_blocked_prerequisites_remain_visible_with_unstarted_suites",
+            "python::test_verification_runner.AttemptPolicy.test_standard_suite_supplies_bound_inventory_to_test_process"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Empty/inapplicable work is distinct from PASS, and an unstarted suite cannot hide an earlier failure or missing prerequisite",
+            "Native-remount fixtures are serial and applicable only on their declared host; this policy does not claim execution elsewhere",
+            "The actual rendered Nextest verification profile fixes retries to zero and binds the selected product/compiler inventory to the command; mocked failed execution remains FAIL"
+          ]
+        },
+        {
+          "id": "UX-088.explicit-offline-proxy",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_exit_codes::cli_network_failure_exits_three"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An ordinary public provider command honors its explicitly configured unreachable proxy and returns the network exit classification through the executable",
+            "The offline guard uses ordinary proxy configuration rather than a fixture endpoint or a claimed OS network sandbox"
+          ]
         }
       ],
       "owner_now": [
@@ -15975,7 +16229,7 @@
       "owner_09": [
         "CLI archive and SDK client/worker packages"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "PORT-001",

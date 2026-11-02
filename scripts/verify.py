@@ -85,6 +85,24 @@ def python_environment(home, attempt, environment):
     return worker, dict(rustc=rustc, cargo=cargo, toolchain=pin, automatic_installation=False)
 
 
+def suite_environment(home, environment, required):
+    """Isolate application inputs while reusing the coordinator's compiler storage."""
+    paths = dict(HOME=home, USERPROFILE=home, APPDATA=home / "roaming", LOCALAPPDATA=home / "local",
+                 XDG_CONFIG_HOME=home / "config", XDG_DATA_HOME=home / "data",
+                 XDG_CACHE_HOME=home / "cache", EMPACK_CACHE_DIR=home / "cache",
+                 EMPACK_STATE_DIR=home / "state")
+    native_name = str.upper if os.name == "nt" else lambda name: name
+    worker = {name: value for name, value in environment.items()
+              if native_name(name) not in paths and not native_name(name).startswith("EMPACK_")}
+    for name, directory in (("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")):
+        if not any(native_name(key) == name for key in worker):
+            worker[name] = str(Path.home() / directory)
+    worker.update({name: str(path) for name, path in paths.items()})
+    worker.update({name: environment[name] for name in required})
+    worker.update(NO_COLOR="1", LANG="C", LC_ALL="C", TZ="UTC", RUSTUP_AUTO_INSTALL="0")
+    return worker
+
+
 def product(args, attempt, environment, host):
     features = args.product_features
     profile = args.product_profile
@@ -197,7 +215,10 @@ junit.store-failure-output = false
     record["classification_sha256"] = sha256(ROOT / "tests/verification/test-bindings.json")
     record["selected"] = selected
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")
-    run_env = dict(environment, EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
+    home = suite_dir / "worker-home"
+    home.mkdir(mode=0o700)
+    run_env = dict(suite_environment(home, environment, suite.required_env),
+                   EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
                    EMPACK_E2E_BIN=artifact["path"], EMPACK_EXPECT_BINARY_SHA256=artifact["sha256"],
                    EMPACK_EXPECT_VERSION=artifact["version"], EMPACK_TEST_PYTHON=sys.executable)
     # Only test processes receive compiler discovery for private crash fixtures.
@@ -315,7 +336,10 @@ def run_doctests(attempt, environment, features):
             listings[action] = checked(record["commands"][action], attempt, action, environment, timeout=1800)
             (attempt / f"{action}.stdout").write_text(listings[action], encoding="utf-8")
         expected = inventory(listings["list"], listings["ignored"], json.loads((ROOT / BINDINGS).read_text()))
-        code, output, timed_out = run(record["commands"]["run"], cwd=ROOT, env=environment,
+        home = attempt / "worker-home"
+        home.mkdir(mode=0o700)
+        code, output, timed_out = run(record["commands"]["run"], cwd=ROOT,
+                                     env=suite_environment(home, environment, ()),
                                      log=attempt / "run.log", timeout=1800, separate_stdout=True)
         (attempt / "run.stdout").write_text(output, encoding="utf-8")
         record.update(exit_code=code, timed_out=timed_out)

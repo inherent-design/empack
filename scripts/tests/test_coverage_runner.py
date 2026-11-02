@@ -53,8 +53,11 @@ class CoverageRunner(unittest.TestCase):
                         return 0, inventory, False
                     return {"tests": test_status, "report": report_status}.get(name, 0), "", False
 
+                inherited = {"PATH": "fixture tools", "HOME": "host-home", "EMPACK_STATE_DIR": "host-state",
+                             "EMPACK_CACHE_DIR": "host-cache", "EMPACK_TEST_FAULT": "host-fault",
+                             "CARGO_HOME": "compiler-cargo", "RUSTUP_HOME": "compiler-rustup"}
                 with patch.object(runner, "run", side_effect=worker):
-                    self.assertEqual(runner.coverage(Path(directory), {"PATH": "fixture tools"}), expected)
+                    self.assertEqual(runner.coverage(Path(directory), inherited), expected)
                 tests = next(row for row in seen if row[1]["log"].stem == "tests")
                 environment = tests[1]["env"]
                 selected = Path(environment["EMPACK_TEST_INVENTORY"])
@@ -63,6 +66,18 @@ class CoverageRunner(unittest.TestCase):
                 self.assertEqual(environment["EMPACK_TEST_INVENTORY_SHA256"],
                                  hashlib.sha256(selected.read_bytes()).hexdigest())
                 self.assertEqual(tests[0][-3:], ["--retries", "0", "--no-fail-fast"])
+                home = Path(environment["HOME"])
+                self.assertTrue(home.is_relative_to(Path(directory) / "target/verification/coverage"))
+                self.assertTrue(home.is_dir())
+                self.assertNotEqual(environment["EMPACK_STATE_DIR"], inherited["EMPACK_STATE_DIR"])
+                self.assertNotEqual(environment["EMPACK_CACHE_DIR"], inherited["EMPACK_CACHE_DIR"])
+                self.assertNotIn("EMPACK_TEST_FAULT", environment)
+                for key in ("CARGO_HOME", "RUSTUP_HOME"):
+                    self.assertEqual(environment[key], inherited[key])
+                self.assertEqual(environment["CARGO_LLVM_COV"], "1")
+                self.assertEqual(environment["RUSTC_WRAPPER"], "/tool path/cargo-llvm-cov")
+                self.assertEqual(environment["EMPACK_TEST_PYTHON"], sys.executable)
+                self.assertEqual(inherited["HOME"], "host-home")
                 self.assertEqual(seen[-1][1]["log"].stem, "report")
                 self.assertNotIn("EMPACK_TEST_INVENTORY", seen[-1][1]["env"])
 

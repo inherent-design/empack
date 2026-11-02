@@ -6,7 +6,9 @@ from pathlib import Path
 import re
 import shlex
 import sys
+import tempfile
 
+from verify import suite_environment
 from verification.evidence import sha256
 from verification.process import run
 from verification.progress import phase
@@ -66,6 +68,8 @@ def coverage(root=ROOT, environment=None):
     invoke(["cargo", "llvm-cov", "clean", "--workspace"], "clean", environment)
     _, settings = invoke(["cargo", "llvm-cov", "show-env", "--sh"], "environment", environment, capture=True)
     instrumented = instrumented_environment(settings, environment)
+    home = Path(tempfile.mkdtemp(prefix="worker-home-", dir=output))
+    instrumented = suite_environment(home, instrumented, ())
     invoke(["cargo", "run", "--locked", "-p", "empack", "--features", "telemetry", "--", "version"],
            "product", instrumented)
     _, inventory = invoke(["cargo", "nextest", "list", "--locked", "--workspace", "--features", FEATURES,
@@ -76,7 +80,8 @@ def coverage(root=ROOT, environment=None):
     inventory_path = output / "inventory.json"
     inventory_path.write_text(inventory, encoding="utf-8")
     instrumented.update(EMPACK_TEST_INVENTORY=str(inventory_path.resolve()),
-                        EMPACK_TEST_INVENTORY_SHA256=sha256(inventory_path))
+                        EMPACK_TEST_INVENTORY_SHA256=sha256(inventory_path),
+                        EMPACK_TEST_PYTHON=sys.executable)
     # These are instrumented development tests, not release qualification receipts.
     status, _ = invoke(["cargo", "nextest", "run", "--locked", "--workspace", "--features", FEATURES,
                         "--retries", "0", "--no-fail-fast"], "tests", instrumented, checked=False)

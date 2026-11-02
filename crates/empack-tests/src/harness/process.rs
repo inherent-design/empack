@@ -889,6 +889,8 @@ mod harness_tests {
             ("EMPACK_E2E_BIN", "/wrong/binary"),
             ("EMPACK_QUALIFY", "1"),
             ("EMPACK_WORKDIR", "/wrong/project"),
+            ("EMPACK_STATE_DIR", "/private/state"),
+            ("EMPACK_CACHE_DIR", "/private/cache"),
             ("EMPACK_YES", "1"),
             ("EMPACK_KEY_CURSEFORGE", "private"),
             ("EMPACK_TEST_FAULT", "1"),
@@ -913,6 +915,15 @@ mod harness_tests {
             env.get(std::ffi::OsStr::new("HOME")).unwrap(),
             &root.path().join(".harness-home").into_os_string()
         );
+        for (key, relative) in [
+            ("EMPACK_STATE_DIR", ".host-state"),
+            ("EMPACK_CACHE_DIR", ".empack-cache"),
+        ] {
+            assert_eq!(
+                env.get(std::ffi::OsStr::new(key)).unwrap(),
+                &root.path().join(relative).into_os_string()
+            );
+        }
         for key in ["TMPDIR", "TMP", "TEMP"] {
             assert_eq!(env.get(std::ffi::OsStr::new(key)).unwrap(), root.path());
         }
