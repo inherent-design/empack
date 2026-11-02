@@ -12054,7 +12054,7 @@
         "BUILD"
       ],
       "required_assertions": "Prepared runtime/profile and content published consistently; unrelated Prism components preserved; prelaunch cannot mutate loaded plan unsafely.",
-      "required_work": "Pure profile transitions, coupled native publication/rollback, authenticated host prelaunch and a signed public Prism journey are bound. Actual supported-consumer restart/import checks and all declared host/product variants remain required; metadata and fixture execution are not launcher acceptance. The existing reference-Prism consumer procedure now explicitly requires refusal of a runtime-changing update while the launcher holds the old profile, followed by stopped-launcher application and restart. This reuses its existing host/product records; content-only update evidence cannot establish that transition.",
+      "required_work": "Pure profile transitions, coupled native publication/rollback, authenticated host prelaunch and a signed public Prism journey are bound. Actual supported-consumer restart/import checks and all declared host/product variants remain required; metadata and fixture execution are not launcher acceptance. The existing reference-Prism consumer procedure now explicitly requires refusal of a runtime-changing update while the launcher holds the old profile, followed by stopped-launcher application and restart. This reuses its existing host/product records; content-only update evidence cannot establish that transition. The existing live migration journey binds the official-selection/export stage separately from native installation and actual consumer activation. All original assertions and declared boundaries now have concrete cases; completeness describes decomposition, not execution.",
       "evidence_tiers": [
         "U",
         "H",
@@ -12175,6 +12175,27 @@
           ]
         },
         {
+          "id": "UX-071.official-runtime-migration-outputs",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_provider_cli::live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The ordinary executable exercises live provider/runtime resolution for a requested migration from Minecraft 1.21.1 to 1.21.2 with Fabric 0.16.14, preserving explicit dependency pins and local policy while independently checking the selected content bytes",
+            "Native client/server archives assert Minecraft 1.21.2, Java 21 and exact declared content; a stale authored Prism profile refuses without changing the captured author/artifact inventory, then regenerating the profile yields the selected Minecraft component and expected client files"
+          ],
+          "remaining_group_evidence": "Actual provider/authoring/export route only; it does not install or start a game, update an imported Prism instance or prove gameplay compatibility. Installed-profile publication and consumer restart retain their separate N/X/C cases."
+        },
+        {
           "id": "UX-071.consumer-runtime-transition",
           "boundary": "C",
           "test_ids": [
@@ -12191,7 +12212,8 @@
           ],
           "assertions": [
             "Actual supported Prism holds the old runtime profile while an authenticated update changes Minecraft or loader requirements; prelaunch refuses activation and game startup while the previous completed release, game inventory and profile remain intact",
-            "With Prism stopped, the same update publishes the selected runtime profile and content, preserves unrelated user components and player data, and a fresh launcher process loads and starts the new runtime"
+            "With Prism stopped, the same update publishes the selected runtime profile and content, preserves unrelated user components and player data, and a fresh launcher process loads and starts the new runtime",
+            "Initial default-reference import/preparation/startup remain separate from the explicitly enrolled updates:empack reference fixture used for generated-wrapper channel checking"
           ],
           "remaining_group_evidence": "Existing reference-instance operator records supply these observations; no new platform/product tuple or simulated consumer pass is added. Signature/channel observation state may advance independently of refused activation."
         },
@@ -12226,7 +12248,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-072",
@@ -14977,7 +14999,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Actual supported Prism import, independent inventory, required preparation, invalid-descriptor refusal before Java, exact-candidate startup, seed icon preservation and signed update/relaunch; a changed runtime must refuse in the loaded launcher and activate only after stopped-launcher update and restart"
+            "Actual supported Prism import, independent inventory, required preparation, invalid-descriptor refusal before Java, exact-candidate startup, seed icon preservation and signed update/relaunch; a changed runtime must refuse in the loaded launcher and activate only after stopped-launcher update and restart",
+            "Default reference snapshots retain their initial import/startup check; runtime-changing prelaunch uses a separate explicitly subscribed reference fixture and its generated --check-updates wrapper"
           ],
           "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
         },
