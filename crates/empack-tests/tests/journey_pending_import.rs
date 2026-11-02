@@ -156,9 +156,13 @@ fn import_roundtrip(
     let supplied = fixture.project.dir().join("renamed download.bin");
     fs::write(&supplied, b"INVALID").unwrap();
     let association = format!("{selector}={}", supplied.display());
+    let named = fixture.host.path().join("declared.zip");
+    fs::write(&named, b"INVALID").unwrap();
+    let named_association = format!("{selector}={}", named.display());
     let original = snapshot(fixture.project.dir()).files;
     let retained = snapshot(&fixture.state).files;
     for associations in [
+        vec![named_association.as_str()],
         vec![association.as_str()],
         vec!["declared:999=missing"],
         vec![association.as_str(), association.as_str()],
@@ -173,6 +177,7 @@ fn import_roundtrip(
         assert_eq!(snapshot(&fixture.state).files, retained);
         assert_eq!(fixture.pending(), operation);
     }
+    assert_eq!(fs::read(&named).unwrap(), b"INVALID");
     fs::write(&supplied, b"payload").unwrap();
     fs::remove_file(&fixture.archive).unwrap();
     // The original source is gone. Normal continuation must recover the retained

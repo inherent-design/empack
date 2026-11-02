@@ -62,6 +62,7 @@ fn build_roundtrip(
     assert_ne!(operation["state"], "stale");
     assert_eq!(operation["inputs"].as_array().unwrap().len(), 1);
     let input = &operation["inputs"][0];
+    assert_eq!(input["filename"], "manual.zip");
     assert_eq!(input["bytes"], 7);
     assert_eq!(
         input["digests"],
@@ -83,8 +84,13 @@ fn build_roundtrip(
     // Same length as the selected payload: digest verification, not length or name.
     fs::write(&supplied, b"INVALID").unwrap();
     let association = format!("{key}={}", supplied.display());
+    let named = host.path().join("manual.zip");
+    // The selected basename is not evidence that these bytes are correct.
+    fs::write(&named, b"INVALID").unwrap();
+    let named_association = format!("{key}={}", named.display());
     let retained = snapshot(&state).files;
     for args in [
+        vec!["pending", "resume", id, "--file", &named_association],
         vec!["pending", "resume", id, "--file", &association],
         vec!["pending", "resume", id, "--file", "unknown=missing"],
         vec![
@@ -102,6 +108,7 @@ fn build_roundtrip(
         assert_eq!(snapshot(&state).files, retained);
         assert_eq!(pending(&project, &state, "build"), operation);
     }
+    assert_eq!(fs::read(&named).unwrap(), b"INVALID");
 
     fs::write(&supplied, b"payload").unwrap();
     // Execute the next command exposed by pending, adding only the displayed key.
@@ -283,6 +290,7 @@ fn sync_roundtrip(
     assert_eq!(operation["inputs"].as_array().unwrap().len(), 2);
     let first = sync_input(&operation, "123");
     let second = sync_input(&operation, "124");
+    assert_eq!(first["filename"], "one.jar");
     assert_eq!(first["bytes"], 5);
     assert_eq!(second["bytes"], 6);
     assert_eq!(first["provider_selection"]["selection"], "456");
@@ -314,17 +322,24 @@ fn sync_roundtrip(
         first_path.display()
     );
     fs::write(&first_path, b"wrong").unwrap();
+    let named = host.path().join("one.jar");
+    fs::write(&named, b"wrong").unwrap();
+    let named_association = format!("{}={}", first["key"].as_str().unwrap(), named.display());
     let retained = snapshot(&state).files;
     command(&project, &state)
         .args(["--dry-run", "pending", "resume", id])
         .assert()
         .success();
-    command(&project, &state)
-        .args(["pending", "resume", id, "--file", &association])
-        .assert()
-        .failure();
-    assert_eq!(snapshot(&state).files, retained);
-    assert_eq!(snapshot(project.dir()).files, original);
+    for association in [&named_association, &association] {
+        command(&project, &state)
+            .args(["pending", "resume", id, "--file", association])
+            .assert()
+            .failure();
+        assert_eq!(snapshot(&state).files, retained);
+        assert_eq!(snapshot(project.dir()).files, original);
+        assert_eq!(pending(&project, &state, "sync"), operation);
+    }
+    assert_eq!(fs::read(&named).unwrap(), b"wrong");
 
     fs::write(&first_path, b"first").unwrap();
     command(&project, &state)

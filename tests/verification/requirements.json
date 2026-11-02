@@ -5576,7 +5576,7 @@
         "LIFE"
       ],
       "required_assertions": "Wrong bytes/same filename rejected; correct bytes/new filename accepted; ambiguous role rejected; receipt retains original evidence.",
-      "required_work": "Use public printed keys for every association; never discover private state to perform the UX step. All four families bind verified renamed input, ambiguity/refusal, fresh approval and packaged execution. Current-format lookup/resume survives actual native remount; inspection reports otherwise intact obsolete/unknown records as unavailable, resume refuses them without rewriting, and supported test-owned bytes restore the same public view. Source bindings remain distinct from actual required host/product/package observations.",
+      "required_work": "Use public printed keys for every association; never discover private state to perform the UX step. All four families explicitly reject equal-length wrong content under selected and renamed basenames, preserve the supplied files and saved work, and retain correct renamed input, role ambiguity, original integrity evidence, fresh approval and five-target packaged cases. Current-format lookup/resume has real native remount cases; obsolete/unknown records remain unavailable and unchanged rather than migrated. All declared host/product/package executions remain required; complete definitions do not establish execution.",
       "evidence_tiers": [
         "H",
         "X",
@@ -5608,7 +5608,8 @@
           "assertions": [
             "Association key comes from public JSON, not private state",
             "Equal-length wrong bytes, unknown keys and duplicate associations are rejected without changing saved work",
-            "Correct renamed bytes are retained in the independently inspected artifact"
+            "Correct renamed bytes are retained in the independently inspected artifact",
+            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow"
           ]
         },
         {
@@ -5628,7 +5629,8 @@
           ],
           "assertions": [
             "Association keys come from public exact-provider selections; equal-length wrong bytes leave project and saved operation unchanged",
-            "Correct renamed inputs materialize the independent complete two-file inventory"
+            "Correct renamed inputs materialize the independent complete two-file inventory",
+            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow"
           ]
         },
         {
@@ -5648,7 +5650,8 @@
           ],
           "assertions": [
             "Exact association selector comes from the initial public diagnostic, not private continuation storage",
-            "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory"
+            "Wrong equal-length bytes, unknown and duplicate associations preserve author files and saved work; correct renamed bytes appear in the independent exported inventory",
+            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow"
           ]
         },
         {
@@ -5668,7 +5671,8 @@
           ],
           "assertions": [
             "Public displayed keys authorize association; same-length wrong bytes, unknown keys and duplicate associations produce specific diagnostics without modifying the instance or saved operation",
-            "Correct renamed bytes and retained input produce the independently expected complete game-directory inventory"
+            "Correct renamed bytes and retained input produce the independently expected complete game-directory inventory",
+            "Equal-length wrong content also refuses under the original selected basename, without changing author/installed bytes, saved work or the supplied wrong file; correct renamed content still completes the existing verified workflow"
           ]
         },
         {
@@ -5746,7 +5750,8 @@
             "Repeat the public manual-input association journeys",
             "Execute the extracted final binary on each native target; archive admission binds its digest and version without discovery fallback",
             "Wrong bytes or declined approval preserve author work, saved obligations and prior artifacts; only verified approved input permits completion",
-            "The extracted product also rejects intact obsolete/unknown saved formats for all four families without rewriting rejected records or neighboring work"
+            "The extracted product also rejects intact obsolete/unknown saved formats for all four families without rewriting rejected records or neighboring work",
+            "The same extracted-product journeys reject equal-length wrong content under the selected basename as well as a renamed basename, retaining the correct renamed-input positive controls"
           ]
         },
         {
@@ -5988,7 +5993,7 @@
         "portable evidence/codecs; content/transport host ports",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-036",

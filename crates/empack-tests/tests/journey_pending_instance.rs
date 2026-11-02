@@ -199,14 +199,21 @@ fn instance_roundtrip(
         assert_eq!(row["provider_selection"], Value::Null);
     }
     let id = operation["id"].as_str().unwrap();
-    let key = inputs.iter().find(|r| r["needed"] == true).unwrap()["key"]
-        .as_str()
-        .unwrap();
+    let needed = inputs.iter().find(|r| r["needed"] == true).unwrap();
+    assert_eq!(needed["filename"], "second.jar");
+    let key = needed["key"].as_str().unwrap();
     let supplied = fixture.host.path().join("second renamed.bin");
     fs::write(&supplied, b"WRONG!").unwrap();
     let association = format!("{key}={}", supplied.display());
+    let named = fixture.host.path().join("second.jar");
+    fs::write(&named, b"WRONG!").unwrap();
+    let named_association = format!("{key}={}", named.display());
     let retained = snapshot(&fixture.state).files;
     for (args, diagnostic) in [
+        (
+            vec!["pending", "resume", id, "--file", &named_association],
+            "Content differs from the accepted observation",
+        ),
         (
             vec!["pending", "resume", id, "--file", &association],
             "Content differs from the accepted observation",
@@ -238,6 +245,7 @@ fn instance_roundtrip(
         assert_eq!(snapshot(&fixture.state).files, retained);
         assert_eq!(fixture.pending(), operation);
     }
+    assert_eq!(fs::read(&named).unwrap(), b"WRONG!");
     fs::remove_file(fixture.host.path().join("first renamed.bin")).unwrap();
     fs::remove_file(&fixture.release).unwrap();
     // Retention must survive ordinary cache eviction, not rely on a cache hit.
