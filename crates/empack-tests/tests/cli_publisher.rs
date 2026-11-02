@@ -417,6 +417,83 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .success()
         .stdout(contains("upload this channel file last"));
     let first = fixture.pointer("a", 1, expires);
+    let player = TestProject::new();
+    let game = player.dir().join("game");
+    let channel = fixture.project.dir().join("dist/channels/stable.json");
+    let first_channel = tempfile::NamedTempFile::new().unwrap();
+    fs::write(first_channel.path(), &first).unwrap();
+    let command = || {
+        let mut command = assert_cmd::Command::from_std(player.cmd());
+        command.timeout(Duration::from_secs(90));
+        command
+    };
+    offline_command(player.dir())
+        .args([
+            "--yes",
+            "instance",
+            "subscribe",
+            "--pack",
+            "verification.hosted",
+            "--channel",
+            "stable",
+        ])
+        .arg(format!("{}channels/stable.json", Publisher::base("good")))
+        .arg("--key")
+        .arg(fixture.public("a"))
+        .arg("--key")
+        .arg(fixture.public("b"))
+        .assert()
+        .success();
+    offline_command(player.dir())
+        .args(["--yes", "instance", "check-updates"])
+        .arg(&channel)
+        .assert()
+        .success();
+    assert!(!game.exists(), "enrollment and observation cannot install");
+    // Only the signed channel is supplied locally. No local release or assets
+    // argument may substitute for fetching the immutable HTTPS fixture.
+    command()
+        .args(["--yes", "instance", "update"])
+        .assert()
+        .success();
+    let assert_installed = |label: &str| {
+        let id = fixture.release(label)["id"].as_str().unwrap();
+        offline_command(player.dir())
+            .args(["instance", "inspect"])
+            .assert()
+            .success()
+            .stdout(contains(format!("release {id};")));
+        assert_eq!(
+            fs::read(player.dir().join(format!(".empack/releases/{id}.json"))).unwrap(),
+            fs::read(fixture.input(label).join("release.json")).unwrap()
+        );
+    };
+    assert_installed("a");
+    let initial = snapshot(&game);
+    assert_eq!(
+        initial.files,
+        std::collections::BTreeMap::from([
+            (
+                PathBuf::from(".empack-layout"),
+                b"empack-game-layout-v1\n".to_vec()
+            ),
+            (
+                PathBuf::from("config/hosted.toml"),
+                b"# Hosted publication fixture.\nenabled = true\n".to_vec()
+            )
+        ])
+    );
+    let seed_attributes = initial.entries[std::path::Path::new("config/hosted.toml")];
+    assert!(!seed_attributes.0);
+    #[cfg(unix)]
+    assert_eq!(seed_attributes.1 & 0o311, 0o200);
+    #[cfg(windows)]
+    assert_eq!(seed_attributes.1, 0);
+    fs::write(game.join("config/hosted.toml"), b"player settings\n").unwrap();
+    fs::create_dir_all(game.join("saves/played/empty")).unwrap();
+    fs::write(game.join("saves/played/level.dat"), b"player world").unwrap();
+    fs::write(player.dir().join("player notes.txt"), b"retain player work").unwrap();
+    let played = snapshot(&game);
     for (variant, previous, diagnostic) in [
         ("good", None, "PublisherAuthenticationFailed"),
         (
@@ -463,6 +540,38 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .stdout(contains("Published channel stable"));
     let second = fixture.pointer("b", 2, expires);
     assert_ne!(first, second);
+    offline_command(player.dir())
+        .args(["--yes", "instance", "check-updates"])
+        .arg(&channel)
+        .assert()
+        .success();
+    for _ in 0..2 {
+        command()
+            .args(["--yes", "instance", "update"])
+            .assert()
+            .success();
+        assert_installed("b");
+        assert_eq!(snapshot(&game), played);
+    }
+    offline_command(player.dir())
+        .args(["--yes", "instance", "rollback"])
+        .arg(fixture.release("a")["id"].as_str().unwrap())
+        .assert()
+        .success();
+    assert_installed("a");
+    assert_eq!(snapshot(&game), played);
+    let rolled_back = snapshot(player.dir());
+    offline_command(player.dir())
+        .args(["--yes", "instance", "check-updates"])
+        .arg(first_channel.path())
+        .assert()
+        .failure()
+        .stderr(contains("Channel sequence replay rejected"));
+    assert_eq!(snapshot(player.dir()), rolled_back);
+    assert_eq!(
+        fs::read(player.dir().join("player notes.txt")).unwrap(),
+        b"retain player work"
+    );
     fixture
         .publish("b", &Publisher::base("good"), 2, expires)
         .arg("--yes")

@@ -10338,7 +10338,7 @@
         "BUILD"
       ],
       "required_assertions": "Exact released content and runtime, local changes, choices, restrictions and rollback context compose correctly.",
-      "required_work": "One deterministic signed A/B/C fixture driven entirely through public commands; hosted route supplementary.",
+      "required_work": "Signed public A/B/C journeys bind exact content/runtime, player changes, choices, restricted input and rollback. The host component retains authenticated selection, acquisition approval, corrupt-content refusal and repair after trust revocation. The live publisher fixture now connects locally generated signed A/B channels to a separate player using actual immutable HTTPS release/asset retrieval, seed/world preservation, repeat update, rollback and replay refusal. Channel deployment and actual consumers remain separate obligations; all declared ordinary, live and five-target packaged executions are still required.",
       "evidence_tiers": [
         "H",
         "X",
@@ -10462,6 +10462,52 @@
             "The exact extracted production archive executes the signed publisher/player, optional/restricted-input and runtime-transition journeys on each declared native target",
             "Ordinary native suite passes do not substitute for archive identity and package execution evidence"
           ]
+        },
+        {
+          "id": "UX-060.hosted-release-approval-and-repair",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::api::subscription::tests::remote_release_uses_durable_channel_and_acquires_exact_relative_assets_after_approval"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A durable authenticated channel binds the exact release before preparation; hosted relative assets are not requested until execution approval",
+            "Asset, URL, provider, manual and archive-member provenance retain exact bytes and source meaning through hosted acquisition; corrupt content refuses before installation while preserving the observed sequence floor",
+            "Repair after trust revocation uses the retained completed locator without selecting an update; it restores managed content but does not refill an initialized world, and the fetch reservations retire"
+          ],
+          "remaining_group_evidence": "Controlled transport at the private host seam; no actual TLS, launcher or gameplay evidence. Ordinary CLI composition, real HTTPS and extracted archives have their separate cases."
+        },
+        {
+          "id": "UX-060.https-publisher-player-composition",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::cli_publisher::live_cli_hosted_channel_verifies_inputs_before_local_publication"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The ordinary product stages and verifies exact independently hashed A/B release envelopes and assets against the immutable HTTPS fixture before local signed-channel publication",
+            "Explicit player enrollment and public observation of those local signed channels install nothing; instance update without local release or asset arguments obtains the authenticated release and initial seed bytes through actual HTTPS",
+            "Public inspection and retained release bytes identify exact A then B and the declared runtime; a complete independent initial game inventory matches the literal fixture",
+            "Edited seed configuration, world bytes, empty directories and player notes survive B update, repeated update and explicit rollback to A; the authenticated sequence floor still rejects the earlier channel afterward",
+            "Publisher inputs, staged releases and keys retain their original bytes and attributes; untrusted signing history, corrupt or missing hosted assets and regressed publication remain refusals"
+          ],
+          "remaining_group_evidence": "Channel envelopes are delivered through the supported local-file observation argument, not deployed to an HTTPS channel endpoint. The existing immutable release/asset origin is read only. Synthetic configuration is not Java/launcher/gameplay acceptance, and every declared host/product live execution remains required."
         }
       ],
       "owner_now": [
@@ -10474,7 +10520,7 @@
         "portable inventory/ownership semantics; native instance effects",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-061",
