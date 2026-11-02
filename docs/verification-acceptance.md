@@ -6,6 +6,14 @@ The internal checklist is [acceptance-procedures.json](../tests/verification/acc
 
 Consumer records are required on Linux, macOS and Windows for default and telemetry products. The initial selected host for human tasks is macOS. This does not turn a human task on one host into evidence for another. Actual-consumer and human results remain unperformed until their records exist; helper tests cannot supply them. The current consumer group remains partially decomposed rather than claiming that these initial checklists settle every consumer/profile combination.
 
+## Prism runtime update
+
+The reference-instance procedure's signed update must change a supported Minecraft or loader requirement as well as selected content. Capture the old and proposed runtime/profile identities and independent inventories. Retain an unrelated user component, launcher-written icon and played-world sentinel so preservation is observable. A content-only update cannot establish the runtime-transition case.
+
+Keep Prism running with the old profile loaded when the signed update becomes available. The required prelaunch must refuse the runtime change before starting the game or replacing the completed release, game inventory or component profile. Record the refusal and compare those inputs afterward. An authenticated channel observation and its anti-replay floor may advance; that is distinct from activating the new release.
+
+Then stop Prism, apply the same selected update with `instance update`, and restart the launcher so it reloads the component metadata. Check the new runtime/profile and content together, preservation of the unrelated component and player data, and actual startup through the selected runtime. Retain both runtime identities, the before/after profiles, inventories and redacted launcher/process observations. If the consumer, runtime or authorized startup is unavailable, record the missing step as blocked rather than substituting a fixture. See [Prism runtime transitions](design/instances.md#prism-runtime-transitions).
+
 ## Server GUI tasks
 
 The separate `acceptance::server::managed-gui` and `acceptance::server::bundled-gui` procedures qualify the existing GUI entry points. Run them in an isolated desktop session with a selected Minecraft runtime that supports its server window and a GUI-capable Java installation. Record the actual desktop environment, server/runtime versions and generated distribution. A missing desktop or unsupported runtime remains blocked; console observations and fake tools cannot establish GUI behavior.

@@ -7,7 +7,7 @@
       "boundary": "C",
       "platforms": ["linux", "macos", "windows"],
       "operator_roles": ["maintainer"],
-      "steps": ["import-reference-archive", "compare-independent-inventory", "run-required-preparation", "refuse-invalid-descriptor-before-java", "launch-exact-candidate", "preserve-launcher-written-seed-icon", "apply-signed-update-and-relaunch"]
+      "steps": ["import-reference-archive", "compare-independent-inventory", "run-required-preparation", "refuse-invalid-descriptor-before-java", "launch-exact-candidate", "preserve-launcher-written-seed-icon", "refuse-runtime-change-in-loaded-launcher", "apply-signed-update-and-relaunch"]
     },
     {
       "id": "acceptance::prism::bundled-instance",

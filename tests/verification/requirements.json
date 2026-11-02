@@ -12054,7 +12054,7 @@
         "BUILD"
       ],
       "required_assertions": "Prepared runtime/profile and content published consistently; unrelated Prism components preserved; prelaunch cannot mutate loaded plan unsafely.",
-      "required_work": "Pure profile transitions, coupled native publication/rollback, authenticated host prelaunch and a signed public Prism journey are bound. Actual supported-consumer restart/import checks and all declared host/product variants remain required; metadata and fixture execution are not launcher acceptance.",
+      "required_work": "Pure profile transitions, coupled native publication/rollback, authenticated host prelaunch and a signed public Prism journey are bound. Actual supported-consumer restart/import checks and all declared host/product variants remain required; metadata and fixture execution are not launcher acceptance. The existing reference-Prism consumer procedure now explicitly requires refusal of a runtime-changing update while the launcher holds the old profile, followed by stopped-launcher application and restart. This reuses its existing host/product records; content-only update evidence cannot establish that transition.",
       "evidence_tiers": [
         "U",
         "H",
@@ -12173,6 +12173,47 @@
             "Preview and missing approval preserve the workspace; an invalid user profile is refused without replacing it or publishing new content; repeated old-bootstrap preparation retains the active update",
             "Rollback preserves the authenticated sequence floor and replay refusal; immutable publisher inputs, keys and staged releases are unchanged. No actual Prism or Java startup is claimed"
           ]
+        },
+        {
+          "id": "UX-071.consumer-runtime-transition",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::prism::reference-instance"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual supported Prism holds the old runtime profile while an authenticated update changes Minecraft or loader requirements; prelaunch refuses activation and game startup while the previous completed release, game inventory and profile remain intact",
+            "With Prism stopped, the same update publishes the selected runtime profile and content, preserves unrelated user components and player data, and a fresh launcher process loads and starts the new runtime"
+          ],
+          "remaining_group_evidence": "Existing reference-instance operator records supply these observations; no new platform/product tuple or simulated consumer pass is added. Signature/channel observation state may advance independently of refused activation."
+        },
+        {
+          "id": "UX-071.operator-runtime-step-admission",
+          "boundary": "H",
+          "test_ids": [
+            "python::test_operator_acceptance.OperatorAcceptance.test_reference_runtime_transition_is_required_and_preserves_blocking"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Synthetic reference-instance records omitting the runtime-refusal observation are rejected despite a PASS aggregate and otherwise matching candidate/procedure identities",
+            "BLOCKED, FAIL and NOT_RUN runtime steps retain their nonpassing outcome and operator-reported scope"
+          ],
+          "remaining_group_evidence": "Admission logic with explicitly synthetic records; it does not execute Prism, Java, authentication or a runtime transition."
         }
       ],
       "owner_now": [
@@ -14936,7 +14977,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Actual supported Prism import, independent inventory, required preparation, invalid-descriptor refusal before Java, exact-candidate startup, seed icon preservation and signed update/relaunch"
+            "Actual supported Prism import, independent inventory, required preparation, invalid-descriptor refusal before Java, exact-candidate startup, seed icon preservation and signed update/relaunch; a changed runtime must refuse in the loaded launcher and activate only after stopped-launcher update and restart"
           ],
           "remaining_group_evidence": "Requires an attributable actual task record and retained supporting files bound to the admitted source, distribution and product; fixture and parser results cannot supply it"
         },

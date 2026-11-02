@@ -52,6 +52,26 @@ class OperatorAcceptance(unittest.TestCase):
             write_json(self.path, record)
         return inspect_acceptance_evidence(self.path, REVISION, VERSION, PAYLOAD, self.products)
 
+    def test_reference_runtime_transition_is_required_and_preserves_blocking(self):
+        step = "refuse-runtime-change-in-loaded-launcher"
+        steps = procedures()[IDENTITY]["steps"]
+        self.assertIn(step, steps)
+        self.assertLess(steps.index(step), steps.index("apply-signed-update-and-relaunch"))
+        missing = copy.deepcopy(self.record)
+        missing["observations"] = [row for row in missing["observations"] if row["step"] != step]
+        with self.assertRaisesRegex(ValueError, "omits, reorders or invents procedure steps"):
+            self.inspect(missing)
+        for status in ("BLOCKED", "FAIL", "NOT_RUN"):
+            with self.subTest(status=status):
+                record = copy.deepcopy(self.record)
+                next(row for row in record["observations"] if row["step"] == step)["status"] = status
+                with self.assertRaisesRegex(ValueError, "status differs"):
+                    self.inspect(record)
+                record["status"] = status
+                result = self.inspect(record)
+                self.assertEqual(result["status"], status)
+                self.assertIn("operator-reported", result["evidence_scope"])
+
     def test_retained_observations_keep_operator_scope_and_exact_candidate_identity(self):
         result = self.inspect()
         self.assertEqual(result["status"], "PASS", "synthetic admission only")
