@@ -8501,6 +8501,7 @@
           "assertions": [
             "Public server builds preserve independent complete inventories, copy/binary templates and exact properties scalar bytes across reference and bundled delivery in ZIP, TAR.GZ and 7z",
             "The real JDK parses the actual archived scalar with Properties.load(InputStream) and Properties.load(Reader), recovering original Unicode code points, literal backslash-u, whitespace, controls and empty values without extra keys",
+            "The JDK reports each input's real parent-directory code points matching the original Unicode fixture directory; ASCII relative probe arguments keep that file-access assertion separate from native launcher argument encoding",
             "A changed scalar control produces different consumer observations; author sources/attributes, previous artifacts and captured Java inputs remain unchanged; this does not establish game startup or GUI acceptance",
             "Missing values, explicit non-UTF-8 templates and duplicate output paths refuse every server delivery/format before changing author bytes/attributes or any previous archive"
           ]

@@ -17,7 +17,8 @@ class PropertiesProbe {
                 + ", native.encoding=" + System.getProperty("native.encoding")
                 + ", sun.jnu.encoding=" + System.getProperty("sun.jnu.encoding"));
         for (String arg : args) {
-            byte[] bytes = Files.readAllBytes(Path.of(arg));
+            Path input = Path.of(arg).toRealPath();
+            byte[] bytes = Files.readAllBytes(input);
             Properties stream = new Properties();
             stream.load(new ByteArrayInputStream(bytes));
             Properties reader = new Properties();
@@ -29,7 +30,9 @@ class PropertiesProbe {
                     + ",\"stream_keys\":" + stream.size()
                     + ",\"reader_keys\":" + reader.size()
                     + ",\"stream_empty\":" + "".equals(stream.getProperty("empty"))
-                    + ",\"reader_empty\":" + "".equals(reader.getProperty("empty")) + "}");
+                    + ",\"reader_empty\":" + "".equals(reader.getProperty("empty"))
+                    + ",\"parent\":" + Arrays.toString(input.getParent().getFileName()
+                            .toString().codePoints().toArray()) + "}");
         }
     }
 }

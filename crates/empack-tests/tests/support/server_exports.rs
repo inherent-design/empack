@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    path::PathBuf,
     time::Duration,
 };
 
@@ -142,7 +143,16 @@ pub fn verify() {
     // Reuse the product fixture's positive environment allowlist, excluding JVM
     // injection variables from the caller. The probe itself has no product state.
     let environment = project.cmd();
-    let mut java = assert_cmd::Command::new("java");
+    // Match the verification runner's selected Java instead of allowing PATH to
+    // choose a different installation when JAVA_HOME is present.
+    let executable = std::env::var_os("JAVA_HOME")
+        .map(|home| {
+            PathBuf::from(home)
+                .join("bin")
+                .join(if cfg!(windows) { "java.exe" } else { "java" })
+        })
+        .unwrap_or_else(|| PathBuf::from("java"));
+    let mut java = assert_cmd::Command::new(executable);
     java.env_clear()
         .envs(
             environment
@@ -151,8 +161,12 @@ pub fn verify() {
         )
         .current_dir(probe.path())
         .timeout(Duration::from_secs(30))
-        .arg(&source)
-        .args(&properties);
+        .arg("-showversion")
+        // The Windows launcher lost the absolute path's Omega before entering
+        // source-file mode. Keep the Unicode cwd and files; pass ASCII basenames
+        // and verify their real Unicode parent inside the consumer below.
+        .arg(source.file_name().unwrap())
+        .args(properties.iter().map(|path| path.file_name().unwrap()));
     // Linux Java decodes native arguments and filenames using the locale even
     // with JDK 21's UTF-8 file-content default. Keep the Unicode-path fixture and
     // select an explicit UTF-8 locale for this consumer, not product commands.
@@ -166,6 +180,15 @@ pub fn verify() {
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert_eq!(rows.len(), properties.len());
+    let parent_points: Vec<u32> = probe
+        .path()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .chars()
+        .map(u32::from)
+        .collect();
     for (index, row) in rows.iter().enumerate() {
         let original = if index == properties.len() - 1 {
             "changed"
@@ -179,6 +202,7 @@ pub fn verify() {
                 "stream": points, "reader": points,
                 "stream_keys": 2, "reader_keys": 2,
                 "stream_empty": true, "reader_empty": true,
+                "parent": parent_points,
             }),
             "{}",
             properties[index].display()
