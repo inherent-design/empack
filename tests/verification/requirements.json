@@ -14214,7 +14214,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI-host capacity refusal/retry diagnostics and cancellation of an active acquisition with another retained preparation are now bound separately from precancellation. An existing executable two-output build journey now uses --cpu-jobs 1 for sync, dry-run, late-template refusal and repaired rebuild/cleanup, with independent complete output inventories. Broader budget/backpressure, actual I/O deadlines and native retirement checks retain their separate obligations. Reservations are estimates, not OS memory/disk quotas. The Windows captured-process fixture independently verifies actual stream EOF while its child remains alive, then checks the production capture path for deadline and cancellation retirement through creation-bound native process handles.",
+      "required_work": "Atomic admission covers worker, estimated-memory, scratch-byte and open-file reservations, including Busy versus TooLarge, overflow, unchanged charges on refusal and release of mixed permits. Bounded registries and retained results keep ownership until their last reader or explicit release; cancellation, driver panic and shutdown wait for worker retirement. Controlled-clock transfer budgets retain the original byte allowance and total deadline. Local-file and stalled HTTP fixtures establish actual owner/socket retirement and specific byte-limit/deadline errors. Unix groups and Windows jobs retain capture deadlines after both streams close, enforce exact per-stream output limits and retire despite full or disconnected progress queues. Public Engine preparations share capacity; CLI-host refusal, retry and running-acquisition cancellation preserve other owners and author/player data. The selected executable uses --cpu-jobs 1 across a two-output build, late refusal, repaired rebuild and cleanup with independent archive inventories. Each case retains its declared host/product variants and execution requirement; definition completeness does not establish execution or final-artifact qualification. Reservations are admission estimates, not OS memory or filesystem quotas.",
       "evidence_tiers": [
         "U",
         "H",
@@ -14571,7 +14571,7 @@
         "native effects and recovery in empack-native; expected inventories remain shared",
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-081",

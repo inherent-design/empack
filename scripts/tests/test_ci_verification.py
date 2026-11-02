@@ -459,7 +459,7 @@ class RequiredGate(unittest.TestCase):
             native_complete = {
                 "UX-002", "UX-005", "UX-006", "UX-007", "UX-011", "UX-015", "UX-016", "UX-022", "UX-023",
                 "UX-024", "UX-027", "UX-028", "UX-029", "UX-034", "UX-036", "UX-038",
-                "UX-040", "UX-049", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-074", "UX-075", "UX-076", "UX-078", "UX-079", "UX-088",
+                "UX-040", "UX-049", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-074", "UX-075", "UX-076", "UX-078", "UX-079", "UX-080", "UX-088",
             }
             for requirement in acceptance:
                 # This synthetic matrix supplies the complete native definitions
@@ -522,6 +522,12 @@ class RequiredGate(unittest.TestCase):
             self.assertEqual(archive_admission["status"], "NOT_RUN")
             conflicts = next(r for r in partial["requirements"] if r["id"] == "UX-065")
             self.assertEqual(conflicts["status"], "NOT_RUN")
+            resources = next(r for r in partial["requirements"] if r["id"] == "UX-080")
+            self.assertEqual(resources["status"], "NOT_RUN")
+            windows_capture = next(c for c in resources["cases"]
+                                   if c["id"] == "UX-080.windows-closed-stream-retirement")
+            self.assertEqual({(v["features"], v["status"]) for v in windows_capture["variants"]},
+                             {("default", "NOT_RUN"), ("telemetry", "PASS")})
             windows = next(c for c in key_setup["cases"]
                            if c["id"] == "UX-054.windows-private-directory-refusal")
             self.assertEqual({(v["features"], v["status"]) for v in windows["variants"]},

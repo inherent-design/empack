@@ -312,9 +312,12 @@ async fn chunk_overflow_and_deadline_do_not_wait_for_a_stalled_eof() {
             .await
             .unwrap();
         let error = failure(&outcome);
-        assert_eq!(
-            matches!(error.downcast_ref(), Some(TransferError::Deadline)),
-            expected_deadline
+        assert!(
+            matches!(
+                (error.downcast_ref::<TransferError>(), expected_deadline),
+                (Some(TransferError::Deadline), true) | (Some(TransferError::ByteLimit), false)
+            ),
+            "unexpected transfer failure: {error:#}"
         );
         assert_eq!(governor.status().reserved, ResourceRequest::default());
         fixture.assert_closed();
