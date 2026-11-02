@@ -216,6 +216,8 @@ mod tests {
         let error = execute_command(CliConfig {
             app_config: AppConfig {
                 workdir: Some(temp_dir.path().to_path_buf()),
+                state_dir: Some(temp_dir.path().join("state")),
+                cache_dir: Some(temp_dir.path().join("cache")),
                 ..AppConfig::default()
             },
             command: Some(Commands::Build(application::BuildArgs {
