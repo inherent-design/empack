@@ -33,6 +33,20 @@ class RequirementBindings(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Binding status"):
             checker.validate_requirements(self.document)
 
+    def test_completed_bindings_cover_each_declared_evidence_boundary(self):
+        row = dict(id="RULE", evidence_tiers=["U", "L"], case_bindings_status="complete",
+                   cases=[dict(id="RULE.unit", boundary="U", test_ids=["fixture::unit"],
+                               required_platforms=["linux"], required_product_features=["default"])])
+        document = dict(schema=1, requirements=[row])
+        with self.assertRaisesRegex(ValueError, "Completed bindings omit declared evidence boundaries: RULE: L"):
+            checker.validate_requirements(document)
+        row["case_bindings_status"] = "partial"
+        self.assertEqual(checker.validate_requirements(document), ({"RULE"}, {"RULE.unit"}))
+        row["cases"].append(dict(row["cases"][0], id="RULE.live", boundary="L",
+                                 test_ids=["fixture::live"]))
+        row["case_bindings_status"] = "complete"
+        self.assertEqual(checker.validate_requirements(document), ({"RULE"}, {"RULE.unit", "RULE.live"}))
+
     def test_case_requires_positive_test_membership(self):
         self.row["cases"][0]["test_ids"] = []
         with self.assertRaisesRegex(ValueError, "concrete tests"):

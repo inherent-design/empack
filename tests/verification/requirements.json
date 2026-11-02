@@ -3267,6 +3267,27 @@
           ]
         },
         {
+          "id": "UX-019.live-search-project-identity",
+          "boundary": "L",
+          "test_ids": [
+            "empack-lib::live_provider_contract::modrinth_search_preserves_deliberate_canonical_selection"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Official Modrinth search returns the requested bounded provider/game window with distinct canonical project identities",
+            "The independently pinned Sodium ID is selected from the returned candidates without assuming display rank; explicit slug resolution agrees with that identity",
+            "Retained search pages keep their resource ownership until released; this provider probe does not stand in for interactive approval, installation or consumer acceptance"
+          ]
+        },
+        {
           "id": "UX-019.live-terminal-choice",
           "boundary": "I",
           "test_ids": [
@@ -8764,6 +8785,29 @@
       "scope": "stable",
       "variant_axes": "",
       "cases": [
+        {
+          "id": "UX-050.portable-member-namespace",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::contracts::portable_paths_reject_host_dependent_or_ambiguous_names",
+            "empack-core::contracts::file_values_preserve_unicode_and_punctuation",
+            "empack-core::contracts::opaque_archive_names_preserve_spelling_without_granting_portable_destinations"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Archive/project destinations reject the literal rooted, traversal, ambiguous and nonportable component fixtures before placement",
+            "Valid Unicode and punctuation retain exact spelling rather than being normalized into another destination",
+            "Opaque internal archive names preserve reserved native names without granting portable extraction authority; complete encoded inventories remain separately verified"
+          ]
+        },
         {
           "id": "UX-050.shared-codec-inventory",
           "boundary": "H",
@@ -15371,6 +15415,25 @@
       "scope": "stable",
       "variant_axes": "",
       "cases": [
+        {
+          "id": "UX-088.complete-boundary-definitions",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_test_map.RequirementBindings.test_completed_bindings_cover_each_declared_evidence_boundary"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "A definition marked complete cannot omit any declared evidence boundary even when its existing cases are structurally valid",
+            "An explicitly partial definition remains valid but unqualified; adding the missing boundary permits complete definition validation without claiming execution"
+          ]
+        },
         {
           "id": "UX-088.python-lifecycle",
           "boundary": "U",

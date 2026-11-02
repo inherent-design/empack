@@ -1176,6 +1176,13 @@
       ]
     },
     {
+      "id": "python::test_test_map.RequirementBindings.test_completed_bindings_cover_each_declared_evidence_boundary",
+      "boundary": "U",
+      "requirements": [
+        "UX-088"
+      ]
+    },
+    {
       "id": "python::test_test_map.RequirementBindings.test_case_cannot_substitute_another_host_boundary",
       "boundary": "U",
       "requirements": [

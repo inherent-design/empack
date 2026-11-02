@@ -72,6 +72,7 @@ SUITES = {
         "live_cli_direct_url_retains_observed_content",
         "live_cli_runtime_migration_preserves_pins_and_verifies_consumer_outputs")),
     "live-modrinth": Suite(("live_provider_contract",), ignored=True, cases=(
+        "modrinth_search_preserves_deliberate_canonical_selection",
         "modrinth_mod_identity_and_exact_bytes", "modrinth_resource_pack_identity_and_exact_bytes",
         "modrinth_compatible_selection_and_bytes", "modrinth_mixed_project_selects_datapack_bytes",
         "modrinth_required_closure_and_all_selected_bytes")),

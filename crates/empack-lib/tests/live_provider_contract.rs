@@ -122,6 +122,113 @@ async fn verify(
     Ok(())
 }
 #[tokio::test]
+#[ignore = "requires official Modrinth search and project catalogs"]
+async fn modrinth_search_preserves_deliberate_canonical_selection() -> anyhow::Result<()> {
+    use empack_core::model::{ContentKind, GameVersion, LoaderKind};
+    use empack_lib::engine::providers::{SearchLimits, SearchQuery};
+    use std::collections::BTreeSet;
+
+    let catalog = ProviderCatalog::new(None, Arc::new(HostBudgetRegistry::new()))?;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 256 << 20,
+        scratch_bytes: 256 << 20,
+        open_files: 16,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime.start(move |mut scope| async move {
+        let result = async {
+            let limits = SearchLimits::default();
+            let found = catalog
+                .search_projects(
+                    &mut scope,
+                    SearchQuery {
+                        text: "Sodium".into(),
+                        providers: NonEmpty::new(vec![ProviderKind::Modrinth])?,
+                        kind: ContentKind::Mod,
+                        game_versions: NonEmpty::new(vec![GameVersion::parse("1.21.1")?])?,
+                        loader: LoaderKind::Fabric,
+                        offset: 0,
+                    },
+                    limits,
+                )
+                .await?;
+            anyhow::ensure!(
+                found.unsupported.is_empty() && found.pages.len() == 1,
+                "Official Modrinth search did not return its requested provider/game window"
+            );
+            let page = &found.pages[0];
+            anyhow::ensure!(
+                page.provider == ProviderKind::Modrinth
+                    && page.game.as_str() == "1.21.1"
+                    && page.offset == 0
+                    && !page.candidates.is_empty()
+                    && page.candidates.len() <= limits.page_size as usize
+                    && page.total >= page.candidates.len() as u64,
+                "Official search lost its bounded provider/game window"
+            );
+            let identities: BTreeSet<_> = page
+                .candidates
+                .iter()
+                .map(|candidate| candidate.project.to_string())
+                .collect();
+            anyhow::ensure!(
+                identities.len() == page.candidates.len(),
+                "Official search repeated a canonical project within one window"
+            );
+            // Neither display rank nor title establishes project authority. Find
+            // the independently pinned ID, then resolve its explicit selector.
+            let expected = ProviderProjectId::Modrinth(ModrinthProjectId::parse("AANobbMI")?);
+            let selected = page
+                .candidates
+                .iter()
+                .find(|candidate| candidate.project == expected)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Search no longer includes the pinned Sodium project")
+                })?;
+            anyhow::ensure!(
+                selected.slug == "sodium",
+                "Search changed the selected project slug"
+            );
+            let authoritative = catalog
+                .resolve_selector(
+                    &mut scope,
+                    ProjectSelector::parse(ProviderKind::Modrinth, "sodium")?,
+                    limits.catalog,
+                )
+                .await?;
+            anyhow::ensure!(
+                authoritative.id == selected.project,
+                "Explicit provider selection disagrees with the displayed canonical identity"
+            );
+            Ok::<_, anyhow::Error>(found)
+        }
+        .await;
+        Ok(result)
+    })?;
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    drop(handle);
+    drop(runtime);
+    match &*outcome {
+        OperationOutcome::Completed(Ok(_)) => {}
+        OperationOutcome::Completed(Err(error)) => {
+            anyhow::bail!("Official search probe failed: {error:#}")
+        }
+        _ => anyhow::bail!("Official search operation did not complete"),
+    }
+    anyhow::ensure!(
+        governor.status().reserved.memory_bytes > 0,
+        "Search pages lost their retained resource ownership"
+    );
+    drop(outcome);
+    anyhow::ensure!(
+        governor.status().reserved == ResourceRequest::default(),
+        "Search resources remained reserved after their retained results were released"
+    );
+    Ok(())
+}
+#[tokio::test]
 #[ignore = "requires official Modrinth API and CDN"]
 async fn modrinth_mod_identity_and_exact_bytes() -> anyhow::Result<()> {
     verify(ProviderKind::Modrinth, "sodium", "AANobbMI", "NM9w06Kr").await

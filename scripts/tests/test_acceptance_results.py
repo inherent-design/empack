@@ -17,7 +17,7 @@ class AcceptanceResults(unittest.TestCase):
                      "required_platforms": ["linux", "windows"],
                      "required_product_features": ["default", "telemetry"]}
         self.row = {"id": "UX-001", "scope": "stable", "risk": "critical",
-                    "evidence_tiers": ["X", "P"], "case_bindings_status": "complete",
+                    "evidence_tiers": ["X"], "case_bindings_status": "complete",
                     "cases": [self.case]}
         self.document = {"schema": 1, "requirements": [self.row]}
         self.bindings = {"targets": {"linux-target": "linux", "windows-target": "windows"},
@@ -48,6 +48,7 @@ class AcceptanceResults(unittest.TestCase):
                 self.assertEqual(test["receipts"], [evidence["receipt_sha256"]])
 
     def test_packaged_interactive_cases_require_admitted_archive_evidence(self):
+        self.row["evidence_tiers"] = ["P"]
         self.case.update(boundary="P", required_targets=list(self.bindings["targets"]))
         for binding in self.bindings["tests"]:
             binding["boundary"] = "I"
@@ -105,11 +106,12 @@ class AcceptanceResults(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "another revision"):
             self.result()
         self.evidence[0]["source_revision"] = REVISION
-        self.row["evidence_tiers"].append("H")
+        self.row["evidence_tiers"] = ["H"]
         self.case["boundary"] = "H"
         with self.assertRaisesRegex(ValueError, "required test boundary"):
             self.result()
         self.case["boundary"] = "X"
+        self.row["evidence_tiers"] = ["X"]
         self.bindings["tests"][0]["platforms"] = ["linux"]
         self.evidence = []
         with self.assertRaisesRegex(ValueError, "unclassified platform"):

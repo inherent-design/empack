@@ -91,6 +91,9 @@ class CandidatePolicy(unittest.TestCase):
     def test_partial_mapping_and_missing_consumer_boundary_block_even_with_passing_cases(self):
         row = next(r for r in self.document["requirements"] if r["id"] == "UX-084")
         row["evidence_tiers"].append("C")
+        with self.assertRaisesRegex(ValueError, "Completed bindings omit declared evidence boundaries: UX-084: C"):
+            self.evaluate()
+        row["case_bindings_status"] = "partial"
         result = self.evaluate()
         self.assertFalse(result["qualification"])
         self.assertIn("Missing required evidence boundaries: C", result["blockers"][0]["reasons"])

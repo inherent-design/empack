@@ -62,6 +62,10 @@ def validate_requirements(document):
                 raise ValueError("Python tooling cannot stand in for a product feature build")
             if PRISM_TEST in case["test_ids"] and features != ["independent"]:
                 raise ValueError("Consumer parser evidence is independent of product feature builds")
+        missing = set(row["evidence_tiers"]) - {case["boundary"] for case in row["cases"]}
+        if state == "complete" and missing:
+            raise ValueError("Completed bindings omit declared evidence boundaries: "
+                             + row["id"] + ": " + ", ".join(sorted(missing)))
     return requirements, cases
 
 
