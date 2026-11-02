@@ -474,6 +474,7 @@ impl Drop for ApfsFixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsRawFd;
     use std::os::unix::process::ExitStatusExt;
 
     #[test]
@@ -571,6 +572,8 @@ mod tests {
 
         volume.attach(0, &volume.mount)?;
         let held = fs::File::create(volume.root().join("held-until-failure.txt"))?;
+        let held_descriptor = held.as_raw_fd();
+        let held_identity = held.metadata()?;
         let mut still_busy = 0;
         let error = volume
             .detach_with_busy(0, || {
@@ -591,6 +594,32 @@ mod tests {
                 .any(|(path, _)| path == &volume.images[0])
         );
         drop(held);
+        // A numeric descriptor can be reused after drop. Record its current
+        // device/inode in this process without selecting the host filesystem
+        // or interpreting the diagnostic as detach authority.
+        let pid = std::process::id().to_string();
+        let descriptor = held_descriptor.to_string();
+        let observation = match run(
+            "/usr/sbin/lsof",
+            &[
+                "-nP".as_ref(),
+                "-a".as_ref(),
+                "-p".as_ref(),
+                pid.as_ref(),
+                "-d".as_ref(),
+                descriptor.as_ref(),
+                "-FpfDti".as_ref(),
+            ],
+            None,
+        ) {
+            Ok(bytes) => diagnostic(&bytes),
+            Err(error) => format!("{error:#}"),
+        };
+        eprintln!(
+            "After dropping fixture reader: pid {pid}, descriptor {descriptor}, expected device {:#x}, inode {}; descriptor-only observation:\n{observation}",
+            held_identity.dev(),
+            held_identity.ino()
+        );
         volume.finish()
     }
 }
