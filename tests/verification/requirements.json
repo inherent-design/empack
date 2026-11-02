@@ -13610,7 +13610,7 @@
         "PEND"
       ],
       "required_assertions": "Known ownership only; custom sources/active leases/unknown neighboring files/pending recovery survive; preview no deletion.",
-      "required_work": "Public scope selection, active runtime refusal, permission/read-sharing preflight, retained-category cleanup and crash recovery are bound. Linked artifact roots and members now have Unix symlink and Windows junction variants; the Windows fixture must establish a native reparse point. Private native cancellation at recovery-data, durable-intent and first-removal boundaries is bound separately from crash recovery and prompt-stage signals. Running-driver/OS-interruption retirement and complete host/product/package execution obligations remain separate.",
+      "required_work": "Concrete cases cover each public scope; read-only preview and approval refusal; active runtime, stale selection, link and native access refusal; retained-input and pending-work ownership; interrupted publication with finish/restore recovery; partial cache eviction and re-ingestion; and cancellation at approval, durable publication boundaries and shared receipt collection. Native filesystem, ordinary executable and shared runtime assertions retain their separate boundaries. Final-package and consumer execution remain qualification obligations; these bindings do not claim an OS signal delivered after ordinary CLI deletion begins.",
       "evidence_tiers": [
         "H",
         "N",
@@ -13686,6 +13686,26 @@
             "Fresh ordinary Engine preparation permits the early-cancel retry and observes the late-cancel no-op; author documents, templates, source content, player bytes, empty artifact directories and an unrelated Unix link survive, and reservations retire"
           ],
           "remaining_group_evidence": "Native filesystem fixture uses the existing private publication hook after ordinary Engine preparation and exact authorization. It does not claim an OS signal after ordinary CLI deletion starts, cancellation of the complete running driver or packaged/consumer execution."
+        },
+        {
+          "id": "UX-079.publication-receipt-after-late-cancel",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::runtime::tests::publication_receipt_survives_cancellation_after_worker_completion"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The shared runtime path used by artifact cleanup accepts its completed blocking-worker output after the operation cancellation token is set; it returns the retained value instead of replacing it with interruption",
+            "The receipt reservation stays charged while observers hold it and retires after registry release and observer drop; this component fixture uses a value receipt and does not claim native deletion or an OS signal during CLI cleanup"
+          ]
         },
         {
           "id": "UX-079.artifact-interruption-recovery",
@@ -14045,7 +14065,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared pending semantics + native/browser retention and UI"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-080",

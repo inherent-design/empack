@@ -459,7 +459,7 @@ class RequiredGate(unittest.TestCase):
             native_complete = {
                 "UX-002", "UX-005", "UX-006", "UX-007", "UX-011", "UX-015", "UX-016", "UX-022", "UX-023",
                 "UX-024", "UX-027", "UX-028", "UX-029", "UX-034", "UX-036", "UX-038",
-                "UX-040", "UX-049", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-074", "UX-075", "UX-076", "UX-078",
+                "UX-040", "UX-049", "UX-051", "UX-052", "UX-054", "UX-057", "UX-058", "UX-059", "UX-063", "UX-065", "UX-066", "UX-074", "UX-075", "UX-076", "UX-078", "UX-079",
             }
             for requirement in acceptance:
                 # This synthetic matrix supplies the complete native definitions
