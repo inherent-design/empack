@@ -13610,7 +13610,7 @@
         "PEND"
       ],
       "required_assertions": "Known ownership only; custom sources/active leases/unknown neighboring files/pending recovery survive; preview no deletion.",
-      "required_work": "Public scope selection, active runtime refusal, permission/read-sharing preflight, retained-category cleanup and crash recovery are bound. Linked artifact roots and members now have Unix symlink and Windows junction variants; the Windows fixture must establish a native reparse point. Remaining cancellation/retirement and complete host/product/package execution obligations are not supplied by these definitions.",
+      "required_work": "Public scope selection, active runtime refusal, permission/read-sharing preflight, retained-category cleanup and crash recovery are bound. Linked artifact roots and members now have Unix symlink and Windows junction variants; the Windows fixture must establish a native reparse point. Private native cancellation at recovery-data, durable-intent and first-removal boundaries is bound separately from crash recovery and prompt-stage signals. Running-driver/OS-interruption retirement and complete host/product/package execution obligations remain separate.",
       "evidence_tiers": [
         "H",
         "N",
@@ -13664,6 +13664,28 @@
             "Late member edits or additions refuse the entire prepared cleanup before deleting any artifact",
             "An admitted artifact larger than the source-member limit remains eligible for bounded cleanup"
           ]
+        },
+        {
+          "id": "UX-079.artifact-cancellation-at-commit",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::engine::api::cleanup::tests::artifact_cleanup_cancellation_at_durable_boundaries_preserves_data_and_reports_completion"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Cancellation after recovery data is durable but before intent returns the typed interruption, retains both artifacts and leaves no hot journal",
+            "Cancellation at durable intent or the first artifact removal completes both removals, returns a Published receipt and leaves no hot journal; a cancellation request cannot erase that completed effect",
+            "Fresh ordinary Engine preparation permits the early-cancel retry and observes the late-cancel no-op; author documents, templates, source content, player bytes, empty artifact directories and an unrelated Unix link survive, and reservations retire"
+          ],
+          "remaining_group_evidence": "Native filesystem fixture uses the existing private publication hook after ordinary Engine preparation and exact authorization. It does not claim an OS signal after ordinary CLI deletion starts, cancellation of the complete running driver or packaged/consumer execution."
         },
         {
           "id": "UX-079.artifact-interruption-recovery",

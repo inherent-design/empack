@@ -247,6 +247,120 @@ async fn artifact_cleanup_refuses_linked_roots_and_members_before_any_deletion()
     }
 }
 #[tokio::test]
+async fn artifact_cleanup_cancellation_at_durable_boundaries_preserves_data_and_reports_completion()
+{
+    use crate::application::process_runtime::{Cancellation, Interrupted};
+
+    for point in [
+        PublicationPoint::RecoveryDataDurable,
+        PublicationPoint::IntentDurable,
+        PublicationPoint::TargetChanged,
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        tests::put(root.path(), "world/level.dat", b"keep player bytes");
+        let protected: Vec<_> = [
+            "empack.yml",
+            "pack/data",
+            "templates/start.sh",
+            "notes",
+            "world/level.dat",
+        ]
+        .into_iter()
+        .map(|path| (path, fs::read(root.path().join(path)).unwrap()))
+        .collect();
+        let artifacts: Vec<_> = ["dist/archive.zip", "dist/old/nested.mrpack"]
+            .into_iter()
+            .map(|path| (path, fs::read(root.path().join(path)).unwrap()))
+            .collect();
+        let state = host.path().join("state");
+        let (engine, governor) = tests::engine(state.clone());
+        let prepared = ready(&engine, root.path()).await;
+        let permission = grant(&prepared);
+        let approved = prepared.authorize(permission).unwrap();
+        let (kind, reservation) = approved.prepared.data.into_parts();
+        let PreparedKind::Clean(prepared) = kind else {
+            panic!("not artifact cleanup");
+        };
+        let publisher = Publisher::open(&state).unwrap();
+        let cancel = Cancellation::default();
+        let mut reached = false;
+        let result = publisher.publish_test_change(
+            &prepared.root,
+            prepared.verified,
+            &cancel,
+            &mut |actual| {
+                if actual == point && !reached {
+                    reached = true;
+                    cancel.cancel();
+                }
+                Ok(())
+            },
+        );
+        assert!(reached && cancel.is_cancelled(), "{point:?}");
+        assert!(!publisher.recovery_required(&prepared.root).unwrap());
+        if point == PublicationPoint::RecoveryDataDurable {
+            let error = result.expect_err("cancellation must precede durable intent");
+            assert!(error.downcast_ref::<Interrupted>().is_some(), "{error:#}");
+            for (path, bytes) in &artifacts {
+                assert_eq!(fs::read(root.path().join(path)).unwrap(), *bytes);
+            }
+        } else {
+            let receipt = result.unwrap();
+            assert_eq!(receipt.disposition, PublicationDisposition::Published);
+            assert_eq!(receipt.changed_files, 2);
+            for (path, _) in &artifacts {
+                assert!(!root.path().join(path).exists(), "{point:?}: {path}");
+            }
+        }
+        drop(reservation);
+
+        // A fresh ordinary preparation remains usable after either outcome.
+        // Early cancellation retries the exact cleanup; late cancellation is a no-op.
+        let retry = ready(&engine, root.path()).await;
+        let changes = retry.view().clean().unwrap().files.changes().len();
+        assert_eq!(
+            changes,
+            usize::from(point == PublicationPoint::RecoveryDataDurable) * 2
+        );
+        if changes != 0 {
+            let permission = grant(&retry);
+            let mut handle = engine.start(retry.authorize(permission).unwrap()).unwrap();
+            let outcome = handle.wait().await;
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Clean(
+                    _
+                )))
+            ));
+            engine.release_completed(handle.id());
+            drop((outcome, handle));
+        } else {
+            drop(retry);
+        }
+        for (path, _) in &artifacts {
+            assert!(!root.path().join(path).exists(), "retry {point:?}: {path}");
+        }
+        for (path, bytes) in protected {
+            assert_eq!(
+                fs::read(root.path().join(path)).unwrap(),
+                bytes,
+                "{point:?}: {path}"
+            );
+        }
+        assert!(root.path().join("dist/old").is_dir());
+        #[cfg(unix)]
+        assert_eq!(
+            fs::read_link(root.path().join("pack/unrelated-link")).unwrap(),
+            Path::new("missing")
+        );
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        engine.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn interrupted_artifact_cleanup_uses_shared_finish_and_restore_recovery() {
     for action in [RecoveryAction::Finish, RecoveryAction::Restore] {
         let root = tempfile::tempdir().unwrap();
