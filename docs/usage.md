@@ -270,7 +270,7 @@ empack --workdir my-pack pending resume OPERATION_ID --downloads-dir /path/to/Do
 empack --workdir my-pack pending discard OPERATION_ID
 ```
 
-IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata, v0.6 compatibility and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `build --continue`, `init --continue`, `sync --continue` and `instance continue` remain supported.
+IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `build --continue`, `init --continue`, `sync --continue` and `instance continue` remain supported.
 
 ## Generated GitHub workflows
 

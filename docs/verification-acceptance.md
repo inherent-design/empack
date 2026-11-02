@@ -36,6 +36,8 @@ The product identity comes from the already checked archive or auxiliary telemet
 
 Use the actual supported consumer and dependency configuration. Record its versions and relevant settings rather than calling a fixture or parser probe a launcher run. For licensed startup, use an authorized account and a disposable profile. Record the reached checkpoint without storing account credentials or claiming gameplay certification. Sandbox publication must identify its disposable repository and scoped permissions; it must not use a production publishing target.
 
+For pre-release sandbox publication, provision the admitted candidate executable in the disposable workflow instead of invoking the generated installer's published-tag lookup. Keep the generated helper and its build, staging, tag checks and publication steps unchanged. Retain the original workflow and the provisioning diff, and record the runner's executable digest alongside the initializing executable's identity when they use different hosts. This checks the candidate's generated build/publication path; availability of its future release-download endpoint remains unverified.
+
 ## Observations and supporting files
 
 Each step uses `PASS`, `FAIL`, `BLOCKED` or `NOT_RUN`. Its `observed` text states what happened, including limitations. Passing and failing steps must reference at least one retained supporting file. Unperformed steps may have no files, but must remain `NOT_RUN`; writing down an expected result does not establish it.
