@@ -4143,7 +4143,7 @@
         "DEP"
       ],
       "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
-      "required_work": "Controlled host fixtures prove changed/retained selections, exact pins, operation/root/project release-policy precedence and explicit file roles. Separate live ordinary CLI fixtures protect an older unselected automatic root and distinguish public policy flags against independent current catalog observations and valid baselines with retained exact transitive pins and an explicit refusal when only the selected root would require changing an unselected library. Counts, full unselected records/edges, authored intent, runtime and materialized bytes remain separately checked. All newly bound assertions and every declared host/product/live variant require actual execution.",
+      "required_work": "Cases cover selected/unselected scope and exact pins; operation/root/project release-policy precedence; explicit, primary and companion roles with changed filenames; public preview, application, partial completion and retry; and truthful changed/retained counts with two-sync convergence. Controlled-host and live ordinary-provider cases establish automatic selection; the separate executable local-source journey establishes the shared update publication/reporting path. All declared live prerequisites and host/product/package execution remain qualification requirements.",
       "evidence_tiers": [
         "U",
         "H",
@@ -4271,6 +4271,27 @@
             "A stable installation updated toward the newer beta with only Nvidium selected rejects the unselected Sodium change, in both dry-run and application, with the retained-content diagnostic and unchanged complete project tree"
           ],
           "remaining_group_evidence": "This catalog distinguishes any from the two stable preferences; the alpha-only prefer-stable fallback is established by a separate component case, not this public fixture. Observed identities are current evidence rather than fixed latest-version goldens, and nondiscriminating upstream data fails the precondition. Metadata-only selection does not establish payload, consumer or final-package verification; every declared host/product run remains required."
+        },
+        {
+          "id": "UX-026.executable-selected-update-outcomes",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_offline::journeys::journey_independent_add_reports_partial_effects_and_converges"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Malformed local source input refuses the whole request even in independent-group mode; a blocked all-requested update and every independent-group preview preserve the complete project inventory",
+            "Explicit independent-group application updates the ready local root while preserving the blocked root record, authored intent and every unrelated project byte; literal output reports one changed selection and partial completion",
+            "A successful retry reports zero changed and two retained selections, and two subsequent synchronizations preserve the complete project; this local/manual fixture establishes shared CLI publication/reporting, while separate host/live cases establish automatic provider selection"
+          ]
         }
       ],
       "owner_now": [
@@ -4281,7 +4302,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "portable planners and engine; CLI request mapping; native effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-027",
@@ -15148,7 +15169,7 @@
         "LIFE"
       ],
       "required_assertions": "No harness/test-control entry point in product; ordinary backend/endpoint policies unchanged; production executable ignores harness selector.",
-      "required_work": "Audit transitive normal features; build -p empack isolated locked graph; no debug_assertions shortcut; compare default vs telemetry.",
+      "required_work": "Retain separate ordinary default/telemetry compiled-graph audits, private-constructor compile-fail examples, archive/auxiliary compilation binding, candidate dispatch isolation, and the packaged local export/preparation journey with conflicting child-only harness controls. Test support and clock features cannot enter ordinary product builds, and debug assertions do not grant fixture authority. Every actual compilation/execution and final-package observation remains separately required.",
       "evidence_tiers": [
         "U",
         "N",
@@ -15268,7 +15289,8 @@
           ],
           "assertions": [
             "Each of the five default-feature archives passes compiled-product audit and archive/build/execution binding before its CLI receipt can qualify this case",
-            "The exact extracted ordinary executable performs the local export/prepare journey without adding a fixture feature or recompiling shipped bytes"
+            "The exact extracted ordinary executable performs the local export/prepare journey without adding a fixture feature or recompiling shipped bytes",
+            "The already-selected product receives conflicting EMPACK_E2E_BIN, EMPACK_QUALIFY, EMPACK_EXPECT_BINARY_SHA256 and EMPACK_EXPECT_VERSION values in its child environment; successful independently checked exports and installed bytes establish that those harness-only controls do not redirect the product or require harness qualification from it"
           ],
           "remaining_group_evidence": "Requires the real five-target archive gate and its execution receipts. Tiny Cargo workspaces and synthetic package records cannot supply P evidence. Actual consumer launch remains separate."
         },
@@ -15329,7 +15351,7 @@
         "CLI archive and SDK client/worker packages",
         "portable lifecycle in empack-engine; scheduling/effects in native/wasm"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-087",

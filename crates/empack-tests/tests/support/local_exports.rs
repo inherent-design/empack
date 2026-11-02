@@ -9,13 +9,23 @@ pub fn export_prepare(targets: &[&str], live: bool) {
     let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
     project.configure_native_distribution("local.content", 21);
     let command = || {
-        if live {
+        let mut cmd = if live {
             let mut cmd = assert_cmd::Command::from_std(project.cmd());
             cmd.timeout(std::time::Duration::from_secs(240));
             cmd
         } else {
             offline_command(project.dir())
-        }
+        };
+        // Select the product first, then give only its child environment conflicting
+        // harness controls. Product operations must not interpret fixture authority.
+        cmd.env(
+            "EMPACK_E2E_BIN",
+            project.dir().join("unused-harness-selector"),
+        )
+        .env("EMPACK_QUALIFY", "1")
+        .env("EMPACK_EXPECT_BINARY_SHA256", "not-the-selected-artifact")
+        .env("EMPACK_EXPECT_VERSION", "not-the-product-version");
+        cmd
     };
     let source = project.dir().join("local.zip");
     let mut archive = zip::ZipWriter::new(std::fs::File::create(&source).unwrap());
