@@ -513,13 +513,16 @@ mod windows_tests {
     use super::*;
 
     #[test]
-    #[ignore = "private console runtime, selected only by its executable fixture"]
+    #[ignore = "private runtime, selected only by its executable fixtures"]
     fn console_runtime_child() {
         use std::io::Write;
         use windows_sys::Win32::{
-            Foundation::FILETIME,
+            Foundation::{CloseHandle, FILETIME},
             System::{
-                Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler},
+                Console::{
+                    CTRL_BREAK_EVENT, CTRL_C_EVENT, GetStdHandle, STD_ERROR_HANDLE,
+                    STD_OUTPUT_HANDLE, SetConsoleCtrlHandler,
+                },
                 Threading::{GetCurrentProcess, GetProcessTimes},
             },
         };
@@ -527,7 +530,11 @@ mod windows_tests {
         let Ok(mode) = std::fs::read("console-runtime-mode") else {
             return;
         };
-        assert_eq!(mode, b"wait");
+        let captured = match mode.as_slice() {
+            b"wait" => false,
+            b"captured" => true,
+            _ => panic!("unknown private runtime mode"),
+        };
         unsafe extern "system" fn retain_runtime(signal: u32) -> i32 {
             // The host must cancel and retire this child. Letting both exit on
             // Ctrl-C would race a clean interruption against completed success.
@@ -537,8 +544,10 @@ mod windows_tests {
                 0
             }
         }
-        assert_ne!(unsafe { SetConsoleCtrlHandler(None, 0) }, 0);
-        assert_ne!(unsafe { SetConsoleCtrlHandler(Some(retain_runtime), 1) }, 0);
+        if !captured {
+            assert_ne!(unsafe { SetConsoleCtrlHandler(None, 0) }, 0);
+            assert_ne!(unsafe { SetConsoleCtrlHandler(Some(retain_runtime), 1) }, 0);
+        }
         // Commit the PID before announcing readiness, so the owner can retain a
         // native process handle without observing a partially written identifier.
         let mut created = FILETIME::default();
@@ -571,8 +580,180 @@ mod windows_tests {
         std::fs::rename("console-runtime-pid.tmp", "console-runtime-pid").unwrap();
         println!("WINDOWS_RUNTIME_READY");
         std::io::stdout().flush().unwrap();
+        if captured {
+            std::io::stderr().flush().unwrap();
+            for stream in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+                assert_ne!(unsafe { CloseHandle(GetStdHandle(stream)) }, 0);
+            }
+            std::fs::write("capture-pipes-closed.tmp", b"closed").unwrap();
+            std::fs::rename("capture-pipes-closed.tmp", "capture-pipes-closed").unwrap();
+        }
         loop {
             std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    #[tokio::test]
+    async fn captured_closed_streams_keep_deadline_and_cancellation_until_job_retirement() {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+        use tokio::io::AsyncReadExt;
+        use windows_sys::Win32::{
+            Foundation::{FILETIME, WAIT_OBJECT_0, WAIT_TIMEOUT},
+            System::Threading::{
+                GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+                PROCESS_SYNCHRONIZE, WaitForSingleObject,
+            },
+        };
+
+        fn command(root: &std::path::Path) -> std::process::Command {
+            std::fs::write(root.join("console-runtime-mode"), b"captured").unwrap();
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "application::process_runtime::windows_tests::console_runtime_child",
+                    "--ignored",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .current_dir(root);
+            command
+        }
+
+        async fn running_child(root: &std::path::Path) -> OwnedHandle {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !root.join("capture-pipes-closed").exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("the owned fixture must close its streams before the operation deadline");
+            assert_eq!(
+                std::fs::read(root.join("capture-pipes-closed")).unwrap(),
+                b"closed"
+            );
+            let identity: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(root.join("console-runtime-pid")).unwrap())
+                    .unwrap();
+            let pid = u32::try_from(identity["pid"].as_u64().unwrap()).unwrap();
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                    0,
+                    pid,
+                )
+            };
+            assert!(!handle.is_null(), "cannot retain the live fixture process");
+            let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+            let mut created = FILETIME::default();
+            let mut exited = FILETIME::default();
+            let mut kernel = FILETIME::default();
+            let mut user = FILETIME::default();
+            assert_ne!(
+                unsafe {
+                    GetProcessTimes(
+                        handle.as_raw_handle(),
+                        &mut created,
+                        &mut exited,
+                        &mut kernel,
+                        &mut user,
+                    )
+                },
+                0
+            );
+            assert_eq!(
+                u64::from(created.dwLowDateTime),
+                identity["created_low"].as_u64().unwrap()
+            );
+            assert_eq!(
+                u64::from(created.dwHighDateTime),
+                identity["created_high"].as_u64().unwrap()
+            );
+            assert_eq!(
+                unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) },
+                WAIT_TIMEOUT
+            );
+            handle
+        }
+
+        // Establish actual EOF, not just a child-side promise to close handles.
+        let control = tempfile::tempdir().unwrap();
+        let mut control_command = tokio::process::Command::from(command(control.path()));
+        control_command
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let (mut child, tree) =
+            spawn_windows_child(&mut control_command, ProcessTree::new).unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::try_join!(stdout.read_to_end(&mut out), stderr.read_to_end(&mut err))
+        })
+        .await
+        .expect("both captured streams must reach EOF while the child remains alive")
+        .unwrap();
+        assert!(
+            String::from_utf8(out)
+                .unwrap()
+                .contains("WINDOWS_RUNTIME_READY")
+        );
+        assert!(err.is_empty());
+        let handle = running_child(control.path()).await;
+        assert!(child.try_wait().unwrap().is_none());
+        assert!(tree.has_processes().unwrap());
+        let termination = tree.terminate();
+        tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        tree.wait_retired(termination).await.unwrap();
+        assert_eq!(
+            unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) },
+            WAIT_OBJECT_0
+        );
+
+        for cancel in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let cancellation = Cancellation::default();
+            let began = std::time::Instant::now();
+            let execute = execute_captured(
+                command(root.path()),
+                Duration::from_secs(10),
+                cancellation.clone(),
+                None,
+                4096,
+            );
+            let observe = async {
+                let handle = running_child(root.path()).await;
+                if cancel {
+                    cancellation.cancel();
+                }
+                handle
+            };
+            let (retired, handle) = tokio::time::timeout(Duration::from_secs(15), async {
+                tokio::join!(execute, observe)
+            })
+            .await
+            .expect("closed pipes must not detach or indefinitely retain the runtime");
+            let error = retired
+                .expect("the owned Windows job must be confirmed retired")
+                .0
+                .unwrap_err();
+            if cancel {
+                assert!(error.is::<Interrupted>(), "{error:#}");
+            } else {
+                assert!(
+                    error.to_string().contains("timed out after 10 seconds"),
+                    "{error:#}"
+                );
+                assert!(began.elapsed() >= Duration::from_secs(10));
+            }
+            assert_eq!(
+                unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) },
+                WAIT_OBJECT_0
+            );
         }
     }
 

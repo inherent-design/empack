@@ -14151,7 +14151,7 @@
         "RUN"
       ],
       "required_assertions": "Reservations retained through actual retirement; no unbounded result retention; tiny budget busy/oversize distinct; output/backpressure limits.",
-      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI-host capacity refusal/retry diagnostics and cancellation of an active acquisition with another retained preparation are now bound separately from precancellation. An existing executable two-output build journey now uses --cpu-jobs 1 for sync, dry-run, late-template refusal and repaired rebuild/cleanup, with independent complete output inventories. Broader budget/backpressure, actual I/O deadlines and native retirement checks retain their separate obligations. Reservations are estimates, not OS memory/disk quotas.",
+      "required_work": "Existing governor, runtime, native file/process, acquisition and API receipt cases are bound, including all four admission dimensions, Unix/Windows captured-output variants and a controlled-clock total-transfer budget. Public Engine preparations now exercise shared capacity, busy versus oversized refusal, cancellation of one approved operation while another preparation stays retained, and subsequent readmission. CLI-host capacity refusal/retry diagnostics and cancellation of an active acquisition with another retained preparation are now bound separately from precancellation. An existing executable two-output build journey now uses --cpu-jobs 1 for sync, dry-run, late-template refusal and repaired rebuild/cleanup, with independent complete output inventories. Broader budget/backpressure, actual I/O deadlines and native retirement checks retain their separate obligations. Reservations are estimates, not OS memory/disk quotas. The Windows captured-process fixture independently verifies actual stream EOF while its child remains alive, then checks the production capture path for deadline and cancellation retirement through creation-bound native process handles.",
       "evidence_tiers": [
         "U",
         "H",
@@ -14319,6 +14319,26 @@
             "A disconnected observer cannot prevent a later owned command from completing or lose its exact 200-line output"
           ],
           "remaining_group_evidence": "Windows native process supervision only; public multi-operation and final-package budgets remain separately required"
+        },
+        {
+          "id": "UX-080.windows-closed-stream-retirement",
+          "boundary": "N",
+          "test_ids": [
+            "empack-lib::application::process_runtime::windows_tests::captured_closed_streams_keep_deadline_and_cancellation_until_job_retirement"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An owned private-runtime control reaches EOF on both captured streams while its child remains alive and its Windows job still contains a process; closing the streams is observed by the parent, not inferred from a marker alone",
+            "Separate production capture cases observe atomic startup and closed-handle markers, then retain the child process handle with a matching creation timestamp before requesting cancellation or allowing the explicit deadline",
+            "Deadline expiry retains the timeout diagnostic and cancellation retains Interrupted, each through the confirmed-retirement result; the retained native handle is signalled after both cases and after control cleanup"
+          ],
+          "remaining_group_evidence": "Native fixture process/job/pipe behavior only; no Java, GUI, OS quota or final-package qualification claim. Public multi-operation and broader resource/backpressure obligations remain separate."
         },
         {
           "id": "UX-080.acquisition-retention",

@@ -115,6 +115,8 @@ Managed Prism tests separately verify the root icon's seed policy and rejection 
 
 The Windows termination-denial fixture keeps a real owned job alive while checking that failed termination cannot establish retirement. Dropping the owner explicitly retries job termination before closing its kill-on-close handle; the fixture must then reap the child within the existing bound. This cleanup attempt does not change the already reported uncertainty into a retirement proof or clear recovery state.
 
+The Windows captured-runtime fixture first observes EOF on both output pipes while its private child remains alive in the owned job. Separate calls through the production capture supervisor then exercise deadline expiry and cancellation after observed startup and closure of the child's output handles. Retained process handles are checked against kernel creation times before interruption and must be signalled after retirement. These native checks complement the exact-output, overflow and disconnected-progress cases; they do not establish Java or GUI acceptance.
+
 Executable finalization is tested separately from process supervision:
 
 ```sh
