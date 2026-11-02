@@ -37,13 +37,14 @@ pub(in crate::application::engine_host) async fn open_pins(
         "Browser assistance is limited to 16 exact selections per invocation; associate files explicitly for larger batches"
     );
     let config = session.config().app_config();
+    let timeout = Duration::from_secs(config.net_timeout);
+    let deadline = tokio::time::Instant::now()
+        .checked_add(remaining.map_or(timeout, |left| left.min(timeout)))
+        .context("Browser page discovery deadline is out of range; reduce --net-timeout; continuation was retained")?;
     let catalog = ProviderCatalog::new(
         config.curseforge_api_client_key.clone(),
         Arc::new(HostBudgetRegistry::new()),
     )?;
-    let timeout = Duration::from_secs(config.net_timeout);
-    let deadline =
-        tokio::time::Instant::now() + remaining.map_or(timeout, |left| left.min(timeout));
     for pin in pins {
         session.process().check_cancelled()?;
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -208,7 +209,7 @@ mod admission_tests {
     use crate::application::{
         process_runtime::{Cancellation, Interrupted},
         session::LiveProcessProvider,
-        session_mocks::{MockCommandSession, MockInvocationProvider},
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
     };
     use empack_core::{
         identity::{ModrinthProjectId, ModrinthVersionId, PinSelector, ProviderProjectId},
@@ -308,6 +309,52 @@ mod admission_tests {
                 outcome.expect("a completed handoff must survive late host cancellation");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn oversized_discovery_deadline_refuses_without_losing_prior_openings() {
+        let cancellation = Cancellation::default();
+        cancellation.cancel();
+        let mut session = MockCommandSession::new().with_config(MockConfigProvider::new(
+            crate::application::AppConfig {
+                net_timeout: u64::MAX,
+                ..Default::default()
+            },
+        ));
+        session.process_provider = LiveProcessProvider::new().with_cancellation(cancellation);
+        let pin = ResolvedPin {
+            project: ProviderProjectId::Modrinth(ModrinthProjectId::parse("12345678").unwrap()),
+            selection: PinSelector::ModrinthVersion(ModrinthVersionId::parse("abcdefgh").unwrap()),
+        };
+        let mut prior = pin.clone();
+        prior.project = ProviderProjectId::Modrinth(ModrinthProjectId::parse("87654321").unwrap());
+        let mut opened = BTreeSet::from([prior]);
+        let before = opened.clone();
+        let requested = BTreeSet::from([pin]);
+        let error = open_pins(&session, requested.clone(), &mut opened, None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Browser page discovery deadline is out of range; reduce --net-timeout; continuation was retained"
+        );
+        assert_eq!(opened, before);
+        // A representable remaining wait bounds even this configuration. The
+        // pre-cancelled host then stops before provider I/O or desktop launch.
+        let error = open_pins(
+            &session,
+            requested,
+            &mut opened,
+            Some(Duration::from_secs(5)),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.is::<Interrupted>(), "{error:#}");
+        assert_eq!(opened, before);
+        open_pins(&session, BTreeSet::new(), &mut opened, None)
+            .await
+            .unwrap();
+        assert_eq!(opened, before);
     }
 
     #[tokio::test]

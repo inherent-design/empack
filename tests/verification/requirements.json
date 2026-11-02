@@ -6386,7 +6386,7 @@
         "CLI"
       ],
       "required_assertions": "Exact permitted provider page; no opener on preview/decline; bounds/timeout; verified scans do not use uniqueness as identity.",
-      "required_work": "Controlled Unix/Windows launcher supervision and verified renamed-file scans are bound, along with a pre-discovery cumulative page-limit case. The Windows fixture uses cmd argument forwarding and a real test-owned child/process handle; it does not invoke the registered browser. Actual Windows desktop-opener handoff, interactive integration and remaining failure handoffs retain their separate evidence requirements. Controlled launchers and fixture bytes do not establish actual browser interaction or a live restricted-download policy.",
+      "required_work": "Controlled Unix/Windows launcher supervision and verified renamed-file scans are bound, along with a pre-discovery cumulative page-limit case. The Windows fixture uses cmd argument forwarding and a real test-owned child/process handle; it does not invoke the registered browser. Actual Windows desktop-opener handoff, interactive integration and remaining failure handoffs retain their separate evidence requirements. Controlled launchers and fixture bytes do not establish actual browser interaction or a live restricted-download policy. Page-discovery deadline overflow is a checked refusal before provider construction; controlled capped-wait and public saved-operation recovery cases retain their separate scopes.",
       "evidence_tiers": [
         "U",
         "N",
@@ -6680,6 +6680,49 @@
             "A completed handoff returned after cancellation remains successful, while the owned worker and its resource reservations still retire before the host returns"
           ],
           "remaining_group_evidence": "Controlled terminal facts through the actual production host/WorkScope completion path, not a browser or an injected operating-system failure. Generic content/publication acceptance remains unchanged; real Unix/Windows launcher tests, every required variant and consumer/package tasks remain separate."
+        },
+        {
+          "id": "UX-037.discovery-deadline-admission",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::build::browser::admission_tests::oversized_discovery_deadline_refuses_without_losing_prior_openings"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "An unrepresentable configured page-discovery deadline returns the specific retained-continuation diagnostic instead of panicking; previously opened selections remain unchanged",
+            "A representable remaining wait caps the same configuration and permits the existing pre-cancellation check; empty requests remain successful without deadline admission"
+          ],
+          "remaining_group_evidence": "No actual browser, provider, human or final-package qualification. Existing launcher, interactive, live and consumer obligations remain separate."
+        },
+        {
+          "id": "UX-037.discovery-deadline-public-recovery",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_pending::journey_pending_download_deadline_refusal_preserves_recipe_and_recovers"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The selected ordinary executable saves a real restricted build and obtains its operation ID and content selector exclusively through public pending output",
+            "pending resume --open-downloads with the largest u64 net timeout returns status1 and the exact deadline diagnostic, preserving author/prior-artifact/host/saved-state inventories and the same public operation",
+            "Supplying the exact required payload resumes that operation successfully, independently verifies its complete mrpack inventory, removes the pending record and preserves original author, prior-artifact, empty-directory and user-download bytes"
+          ],
+          "remaining_group_evidence": "No actual browser, provider, human or final-package qualification. Existing launcher, interactive, live and consumer obligations remain separate."
         }
       ],
       "owner_now": [

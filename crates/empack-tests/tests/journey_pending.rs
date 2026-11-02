@@ -29,6 +29,68 @@ fn pending(project: &TestProject, state: &Path, kind: &str) -> Value {
 }
 
 #[test]
+fn journey_pending_download_deadline_refusal_preserves_recipe_and_recovers() {
+    let project = fixture("pending-deadline");
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    fs::create_dir_all(project.dir().join("dist")).unwrap();
+    fs::write(project.dir().join("dist/prior.zip"), b"prior artifact").unwrap();
+    fs::create_dir(project.dir().join("empty author directory")).unwrap();
+    fs::write(host.path().join("neighbor.txt"), b"unrelated host data").unwrap();
+    command(&project, &state)
+        .args(["build", "modrinth"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    let selected = pending(&project, &state, "build");
+    let id = selected["id"].as_str().unwrap();
+    let key = selected["inputs"][0]["key"].as_str().unwrap();
+    let author = snapshot(project.dir());
+    let retained = snapshot(host.path());
+    command(&project, &state)
+        .args([
+            "--net-timeout",
+            "18446744073709551615",
+            "pending",
+            "resume",
+            id,
+            "--open-downloads",
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicates::str::contains(
+            "Browser page discovery deadline is out of range; reduce --net-timeout; continuation was retained",
+        ));
+    assert_eq!(snapshot(project.dir()), author);
+    assert_eq!(snapshot(host.path()), retained);
+    assert_eq!(pending(&project, &state, "build"), selected);
+    let supplied = host.path().join("renamed-download.bin");
+    fs::write(&supplied, b"payload").unwrap();
+    let association = format!("{key}={}", supplied.display());
+    command(&project, &state)
+        .args(["pending", "resume", id, "--file", &association])
+        .assert()
+        .success();
+    assert_eq!(
+        report(&project, &state, &["pending", "list", "--json"])["operations"],
+        json!([])
+    );
+    empack_tests::fixtures::restricted::assert_mrpack(
+        &assert_dist_artifact_suffix(project.dir(), ".mrpack"),
+        "pending-deadline",
+    );
+    for (path, bytes) in author.files {
+        assert_eq!(fs::read(project.dir().join(path)).unwrap(), bytes);
+    }
+    assert!(project.dir().join("empty author directory").is_dir());
+    assert_eq!(fs::read(supplied).unwrap(), b"payload");
+    assert_eq!(
+        fs::read(host.path().join("neighbor.txt")).unwrap(),
+        b"unrelated host data"
+    );
+}
+
+#[test]
 fn journey_pending_build_uses_public_keys_and_resumes_verified_renamed_bytes() {
     build_roundtrip(
         fixture("pending-public"),
