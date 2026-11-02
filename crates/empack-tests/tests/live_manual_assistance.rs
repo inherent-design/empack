@@ -18,7 +18,10 @@ fn live_cli_manual_assistance_opens_exact_page_and_verifies_supplied_bytes() {
     fs::write(downloads.join("user-notes.txt"), b"keep my notes").unwrap();
     let original_downloads = snapshot(&downloads).files;
     let mut cmd = browser_command(&project, host.path());
+    // Bound initial page discovery below the outer fixture guard.
     cmd.args([
+        "--net-timeout",
+        "60",
         "--yes",
         "build",
         "modrinth",

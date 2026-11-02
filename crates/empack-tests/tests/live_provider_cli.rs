@@ -24,7 +24,8 @@ fn author_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 fn execute(project: &TestProject, args: &[&str], credential: Option<&str>) -> std::process::Output {
     let mut command = project.cmd();
-    command.args(args);
+    // Use an explicit network allowance below the outer fixture guard.
+    command.args(["--net-timeout", "60"]).args(args);
     if let Some(key) = credential {
         command.env("EMPACK_KEY_CURSEFORGE", key);
     }
@@ -46,7 +47,8 @@ fn checked(project: &TestProject, args: &[&str], credential: Option<&str>) -> st
     let output = execute(project, args, credential);
     assert!(
         output.status.success(),
-        "{args:?} failed: {}\n{}",
+        "{args:?} failed with {}:\nstdout:\n{}\nstderr:\n{}",
+        output.status,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -87,6 +89,8 @@ fn live_cli_pty_search_requires_choice_and_approval() {
             command.env(variable, scratch.path());
         }
         command.args([
+            "--net-timeout",
+            "60",
             "add",
             "--platform",
             "modrinth",
