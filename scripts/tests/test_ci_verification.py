@@ -67,6 +67,7 @@ class ChangeSelection(unittest.TestCase):
             ("tests/fixtures/import-corpus/universalized-optimized-1.21.1-neoforge.json", ["pinned-import"], False),
             ("tests/fixtures/import-corpus/rapid-optimization-7.10an-2.1.1.json", ["pinned-import"], False),
             ("tests/fixtures/import-corpus/horror-oneblock-1.1.1-neoforge.json", ["pinned-import"], False),
+            ("tests/fixtures/import-corpus/bte-germany-1.6.0-optional.json", ["pinned-import"], False),
             ("crates/empack-tests/tests/live_pinned_import.rs", ["pinned-import"], False),
             ("crates/empack-tests/tests/live_pinned_import/curseforge.rs", ["pinned-import"], False),
             ("tests/fixtures/import-corpus/fabulously-optimized-5.4.1-curseforge.json", ["pinned-import"], False),

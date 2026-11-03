@@ -2,7 +2,7 @@
 #[path = "live_pinned_import/curseforge.rs"]
 mod curseforge;
 use empack_tests::harness::{
-    archive::{zip_members_with_bounds, zip_members_with_limit},
+    archive::zip_members_with_bounds,
     process::{TestProject, assert_dist_artifact_suffix, empack_cmd, read_project},
     workspace::snapshot_excluding,
 };
@@ -93,6 +93,7 @@ fn live_pinned_modrinth_import_converges_and_exports_complete_inventory() {
     .unwrap();
     verify_pinned_pack(
         fixture,
+        (1 << 20, 16 << 20, 16 << 20),
         (50, 63, 256),
         (16 << 20, 64 << 20),
         [
@@ -127,6 +128,7 @@ fn live_pinned_quilt_import_retains_client_sides_and_complete_inventory() {
     );
     verify_pinned_pack(
         fixture,
+        (1 << 20, 16 << 20, 16 << 20),
         (17, 10, 256),
         (16 << 20, 64 << 20),
         [
@@ -154,6 +156,7 @@ fn live_pinned_neoforge_import_preserves_local_jar_and_complete_inventory() {
     );
     verify_pinned_pack(
         fixture,
+        (1 << 20, 16 << 20, 16 << 20),
         (13, 14, 256),
         (16 << 20, 64 << 20),
         [("net.neoforged", "21.1.194"), ("net.minecraft", "1.21.1")],
@@ -181,6 +184,7 @@ fn live_pinned_legacy_forge_import_preserves_default_sides_and_complete_inventor
     );
     verify_pinned_pack(
         fixture,
+        (1 << 20, 16 << 20, 16 << 20),
         (5, 31, 256),
         (16 << 20, 64 << 20),
         [
@@ -220,6 +224,7 @@ fn live_pinned_world_import_preserves_saved_world_and_complete_inventory() {
     assert_eq!(overrides[&format!("{world}level.dat")]["size"], 1642);
     verify_pinned_pack(
         fixture,
+        (1 << 20, 16 << 20, 16 << 20),
         (44, 100, 256),
         // This selected pack includes an 84,811,632-byte AmbientSounds JAR.
         // Keep its known workload separate from the four smaller fixtures.
@@ -268,6 +273,7 @@ fn live_pinned_layered_import_preserves_common_client_server_inventory() {
     );
     verify_pinned_pack(
         fixture,
+        (1 << 20, 16 << 20, 16 << 20),
         (163, 274, 512),
         (32 << 20, 320 << 20),
         [("net.minecraft", "1.21.1"), ("net.neoforged", "21.1.264")],
@@ -280,8 +286,51 @@ fn live_pinned_layered_import_preserves_common_client_server_inventory() {
     );
 }
 
+#[test]
+#[ignore = "pinned BTE Germany optional archive and 51 exact CDN files; live network required"]
+fn live_pinned_optional_import_preserves_choices_and_selected_client_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/import-corpus/bte-germany-1.6.0-optional.json"
+    ))
+    .unwrap();
+    let files = fixture["index"]["files"].as_array().unwrap();
+    assert_eq!(
+        files
+            .iter()
+            .filter(|file| file["env"]["client"] == "optional")
+            .count(),
+        8
+    );
+    assert_eq!(
+        files
+            .iter()
+            .filter(|file| file["env"]["server"] == "optional")
+            .count(),
+        5
+    );
+    verify_pinned_pack(
+        fixture,
+        // The archive contains a 134,021,001-byte menu animation. One required
+        // reference is a 201,008,177-byte disabled JAR; neither is executed here.
+        (144 << 20, 144 << 20, 160 << 20),
+        (51, 35, 256),
+        (224 << 20, 512 << 20),
+        [
+            ("net.fabricmc.fabric-loader", "0.19.5"),
+            ("net.minecraft", "26.3"),
+        ],
+        "config/configureddefaults/config/DistantHorizons.toml",
+        |bytes| {
+            let mut edited = bytes.to_vec();
+            edited.extend_from_slice(b"\n# Explicitly adopted verification edit\n");
+            edited
+        },
+    );
+}
+
 fn verify_pinned_pack(
     fixture: Value,
+    (source_limit, input_member_limit, input_total_limit): (u64, u64, u64),
     (files, overrides, archive_entries): (usize, usize, usize),
     (member_limit, total_limit): (u64, u64),
     expected_components: [(&str, &str); 2],
@@ -291,7 +340,7 @@ fn verify_pinned_pack(
     let project = TestProject::new();
     let source = &fixture["source"];
     let size = source["size"].as_u64().unwrap();
-    assert!(size < 1 << 20);
+    assert!(size < source_limit);
     let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
@@ -308,7 +357,12 @@ fn verify_pinned_pack(
     assert_eq!(hex(Sha512::digest(&bytes)), source["sha512"]);
     let archive = project.dir().join("input.mrpack");
     fs::write(&archive, &bytes).unwrap();
-    let mut input = zip_members_with_limit(&archive, archive_entries);
+    let mut input = zip_members_with_bounds(
+        &archive,
+        archive_entries,
+        input_member_limit,
+        input_total_limit,
+    );
     assert_eq!(
         canonical_index(&input.remove("modrinth.index.json").unwrap()),
         fixture["index"]
@@ -317,12 +371,32 @@ fn verify_pinned_pack(
     assert_eq!(input.len(), overrides);
     assert_eq!(fixture["index"]["files"].as_array().unwrap().len(), files);
 
-    // A new isolated project/cache must acquire the pinned content. There are no
-    // optional or auxiliary members in this input, so no lossy consent flags.
-    run(
-        project.dir(),
-        &["init", "--from", archive.to_str().unwrap(), "imported"],
-    );
+    let optional = fixture["index"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|file| {
+            file.get("env")
+                .is_some_and(|env| env["client"] == "optional" || env["server"] == "optional")
+        });
+    // Mrpack does not specify an optional default. Refusing to invent one must
+    // leave the source archive and destination unchanged, even with --yes.
+    let mut init = vec!["init", "--from", archive.to_str().unwrap()];
+    if optional {
+        assert_cmd::Command::from_std(project.cmd())
+            .arg("--yes")
+            .args(&init)
+            .arg("imported")
+            .timeout(Duration::from_secs(600))
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("--import-optional-default"));
+        assert!(!project.dir().join("imported").exists());
+        assert_eq!(fs::read(&archive).unwrap(), bytes);
+        init.extend(["--import-optional-default", "true"]);
+    }
+    init.push("imported");
+    run(project.dir(), &init);
     let imported = project.dir().join("imported");
     fs::create_dir_all(imported.join("author notes/empty")).unwrap();
     fs::write(imported.join("author notes/keep.txt"), b"author decision").unwrap();
@@ -348,6 +422,7 @@ fn verify_pinned_pack(
     // Check both sides against the independently pinned raw index, including
     // server-only references. A client bundle alone cannot establish server policy.
     let resolved = read_project(&imported);
+    let mut choices = std::collections::BTreeSet::new();
     for declared in fixture["index"]["files"].as_array().unwrap() {
         let path = declared["path"].as_str().unwrap();
         // Source integrity is independent of consumer projection: the server-only
@@ -386,14 +461,58 @@ fn verify_pinned_pack(
             {
                 "required" => empack_core::requirements::Requirement::Required,
                 "unsupported" => empack_core::requirements::Requirement::Unsupported,
-                _ => panic!("this pinned scenario does not resolve optional files"),
+                "optional" => {
+                    let empack_core::requirements::Requirement::Optional(choice) = actual else {
+                        panic!("optional participation lost: {path} {side}");
+                    };
+                    assert!(choice.default_enabled, "{path} {side}");
+                    choices.insert(choice.key.as_str().to_owned());
+                    continue;
+                }
+                _ => panic!("unsupported pinned side requirement"),
             };
             assert_eq!(actual, &expected, "{path} {side}");
         }
     }
-    run(&imported, &["build", "modrinth"]);
+    assert_eq!(
+        choices.len(),
+        fixture["index"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|file| {
+                file.get("env")
+                    .is_some_and(|env| env["client"] == "optional" || env["server"] == "optional")
+            })
+            .count(),
+        "distinct source files must retain independent optional choices"
+    );
+    let mut export_args = vec!["build", "modrinth"];
+    if optional {
+        fs::create_dir_all(imported.join("dist")).unwrap();
+        fs::write(imported.join("dist/prior.zip"), b"prior artifact").unwrap();
+        let before = observe();
+        let prior_dist = snapshot_excluding(&imported.join("dist"), &[]);
+        assert_cmd::Command::from_std(empack_cmd(&imported))
+            .args(["--yes", "build", "modrinth"])
+            .timeout(Duration::from_secs(600))
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains(
+                "conversion needs acknowledgement",
+            ));
+        assert_eq!(observe(), before);
+        assert_eq!(snapshot_excluding(&imported.join("dist"), &[]), prior_dist);
+        export_args.push("--allow-optional-metadata-loss");
+    }
+    run(&imported, &export_args);
     let exported = assert_dist_artifact_suffix(&imported, ".mrpack");
-    let mut output = zip_members_with_limit(&exported, archive_entries);
+    let mut output = zip_members_with_bounds(
+        &exported,
+        archive_entries,
+        input_member_limit,
+        input_total_limit,
+    );
     assert_eq!(
         effective_index(canonical_index(
             &output.remove("modrinth.index.json").unwrap()
@@ -402,64 +521,61 @@ fn verify_pinned_pack(
     );
     assert_eq!(override_inventory(&output), fixture["overrides"]);
     assert_eq!(output, input);
+    let export_digest = hex(Sha256::digest(fs::read(&exported).unwrap()));
 
     // Independently hash acquired bytes, rather than trusting copied assertions
     // in the re-exported index. Bound each member and the complete decoded ZIP.
-    run(&imported, &["build", "prism", "--delivery", "bundled"]);
+    let mut client_args = vec!["build", "prism", "--delivery", "bundled"];
+    if optional {
+        let before = observe();
+        let prior_dist = snapshot_excluding(&imported.join("dist"), &[]);
+        assert_cmd::Command::from_std(empack_cmd(&imported))
+            .arg("--yes")
+            .args(&client_args)
+            .timeout(Duration::from_secs(600))
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("choice"));
+        assert_eq!(observe(), before);
+        assert_eq!(snapshot_excluding(&imported.join("dist"), &[]), prior_dist);
+        client_args.push("--optional-defaults");
+    }
+    run(&imported, &client_args);
     let bundled = assert_dist_artifact_suffix(&imported, "prism-bundled.zip");
-    let mut actual =
-        zip_members_with_bounds(&bundled, archive_entries - 1, member_limit, total_limit);
-    for file in fixture["index"]["files"].as_array().unwrap() {
-        let path = format!(".minecraft/{}", file["path"].as_str().unwrap());
-        if file
-            .get("env")
-            .is_some_and(|env| env["client"] == "unsupported")
-        {
-            assert!(!actual.contains_key(&path), "server-only reference: {path}");
-            continue;
-        }
-        let bytes = actual
-            .remove(&path)
-            .unwrap_or_else(|| panic!("missing {path}"));
-        assert_eq!(bytes.len() as u64, file["fileSize"]);
-        assert_eq!(
-            hex(Sha512::digest(&bytes)),
-            file["hashes"]["sha512"],
-            "{path}"
-        );
-    }
-    // Independent consumer projection: common files, then client files. Retain
-    // all three source layers in the mrpack round-trip above. No server layer
-    // may leak into the complete client inventory checked below.
-    let mut client_overrides = BTreeMap::new();
-    for prefix in ["overrides/", "client-overrides/"] {
-        for (path, bytes) in &input {
-            if let Some(relative) = path.strip_prefix(prefix) {
-                client_overrides.insert(format!(".minecraft/{relative}"), bytes);
-            }
-        }
-    }
-    for (destination, bytes) in client_overrides {
-        assert_eq!(
-            actual.remove(&destination).unwrap(),
-            *bytes,
-            "{destination}"
-        );
-    }
-    // Only the two launcher-generated metadata members may remain.
-    assert_eq!(
-        actual.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["instance.cfg", "mmc-pack.json"]
+    verify_client_inventory(
+        &fixture,
+        &bundled,
+        (archive_entries, member_limit, total_limit),
+        &input,
+        expected_components,
+        true,
     );
-    let runtime: Value = serde_json::from_slice(&actual["mmc-pack.json"]).unwrap();
-    assert_eq!(runtime["components"].as_array().unwrap().len(), 2);
-    let components: BTreeMap<_, _> = runtime["components"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| (v["uid"].as_str().unwrap(), v["version"].as_str().unwrap()))
-        .collect();
-    assert_eq!(components, BTreeMap::from(expected_components));
+    if optional {
+        // Explicit choices override the imported enabled defaults. Verify the
+        // whole second artifact, so absence is not inferred from a CLI receipt.
+        let disabled: Vec<_> = choices.iter().map(|key| format!("{key}=false")).collect();
+        let mut args = client_args.clone();
+        for choice in &disabled {
+            args.extend(["--optional", choice.as_str()]);
+        }
+        run(&imported, &args);
+        verify_client_inventory(
+            &fixture,
+            &bundled,
+            (archive_entries, member_limit, total_limit),
+            &input,
+            expected_components,
+            false,
+        );
+        assert_eq!(
+            fs::read(imported.join("dist/prior.zip")).unwrap(),
+            b"prior artifact"
+        );
+    }
+    assert_eq!(
+        hex(Sha256::digest(fs::read(&exported).unwrap())),
+        export_digest
+    );
     assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), author);
     assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), lock);
     // Keep the authored version: content freshness must not require a version bump.
@@ -493,8 +609,13 @@ fn verify_pinned_pack(
     );
     run(&imported, &["sync"]);
     assert_eq!(fs::read(&exported).unwrap(), prior_export);
-    run(&imported, &["build", "modrinth"]);
-    let mut refreshed = zip_members_with_limit(&exported, archive_entries);
+    run(&imported, &export_args);
+    let mut refreshed = zip_members_with_bounds(
+        &exported,
+        archive_entries,
+        input_member_limit,
+        input_total_limit,
+    );
     assert_eq!(
         effective_index(canonical_index(
             &refreshed.remove("modrinth.index.json").unwrap()
@@ -535,4 +656,66 @@ fn verify_pinned_pack(
             );
         }
     }
+}
+
+fn verify_client_inventory(
+    fixture: &Value,
+    bundled: &Path,
+    (archive_entries, member_limit, total_limit): (usize, u64, u64),
+    input: &BTreeMap<String, Vec<u8>>,
+    expected_components: [(&str, &str); 2],
+    optional_enabled: bool,
+) {
+    let mut actual =
+        zip_members_with_bounds(bundled, archive_entries - 1, member_limit, total_limit);
+    for file in fixture["index"]["files"].as_array().unwrap() {
+        let path = format!(".minecraft/{}", file["path"].as_str().unwrap());
+        if file.get("env").is_some_and(|env| {
+            env["client"] == "unsupported" || (env["client"] == "optional" && !optional_enabled)
+        }) {
+            assert!(!actual.contains_key(&path), "excluded reference: {path}");
+            continue;
+        }
+        let bytes = actual
+            .remove(&path)
+            .unwrap_or_else(|| panic!("missing {path}"));
+        assert_eq!(bytes.len() as u64, file["fileSize"]);
+        assert_eq!(
+            hex(Sha512::digest(&bytes)),
+            file["hashes"]["sha512"],
+            "{path}"
+        );
+    }
+    // Independent consumer projection: common files, then client files. Retain
+    // all three source layers in the mrpack round-trip above. No server layer
+    // may leak into the complete client inventory checked below.
+    let mut client_overrides = BTreeMap::new();
+    for prefix in ["overrides/", "client-overrides/"] {
+        for (path, bytes) in input {
+            if let Some(relative) = path.strip_prefix(prefix) {
+                client_overrides.insert(format!(".minecraft/{relative}"), bytes);
+            }
+        }
+    }
+    for (destination, bytes) in client_overrides {
+        assert_eq!(
+            actual.remove(&destination).unwrap(),
+            *bytes,
+            "{destination}"
+        );
+    }
+    // Only the two launcher-generated metadata members may remain.
+    assert_eq!(
+        actual.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["instance.cfg", "mmc-pack.json"]
+    );
+    let runtime: Value = serde_json::from_slice(&actual["mmc-pack.json"]).unwrap();
+    assert_eq!(runtime["components"].as_array().unwrap().len(), 2);
+    let components: BTreeMap<_, _> = runtime["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| (v["uid"].as_str().unwrap(), v["version"].as_str().unwrap()))
+        .collect();
+    assert_eq!(components, BTreeMap::from(expected_components));
 }
