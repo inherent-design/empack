@@ -330,7 +330,7 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
             empack_core::requirements::Requirement::Required
         );
     }
-    commands.run(project.dir(), &target, &["build", "curseforge"]);
+    commands.run(project.dir(), &target, &["build", "--ad-hoc", "curseforge"]);
     let exported = assert_dist_artifact_suffix(&target, "curseforge.zip");
     let mut output = zip_members_with_limit(&exported, 256);
     assert_eq!(
@@ -341,7 +341,7 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
     commands.run(
         project.dir(),
         &target,
-        &["build", "prism", "--delivery", "bundled"],
+        &["build", "--ad-hoc", "prism", "--delivery", "bundled"],
     );
     let bundled = assert_dist_artifact_suffix(&target, "prism-bundled.zip");
     let mut output = zip_members_with_bounds(&bundled, 256, 8 << 20, 32 << 20);
@@ -407,7 +407,7 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         &["adopt", &format!("CommonOverride:{relative}")],
     );
     commands.run(project.dir(), &target, &["sync"]);
-    commands.run(project.dir(), &target, &["build", "curseforge"]);
+    commands.run(project.dir(), &target, &["build", "--ad-hoc", "curseforge"]);
     let mut refreshed = zip_members_with_limit(&exported, 256);
     assert_eq!(
         canonical_manifest(&refreshed.remove("manifest.json").unwrap()),
