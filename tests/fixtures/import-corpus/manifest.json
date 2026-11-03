@@ -6,7 +6,7 @@
     {
       "id": "modrinth-layered",
       "archive": "layered.mrpack",
-      "sha256": "50f63bde4740b3049bc63c96b95090bcaa2e0891d4b6a4527e0d9894c3faffaa",
+      "sha256": "43e48441d13277730c39407f73c71b1e0877a6b2cd85f27a72d0e48d232fc50d",
       "expected": {
         "name": "local-fixture-pack",
         "version": "2.1.0",
@@ -15,9 +15,19 @@
           "fabric-loader": "0.15.11"
         },
         "files": {
-          "overrides/config/example.toml": "# shared configuration\nenabled = true\n",
           "client-overrides/options.txt": "renderDistance:8\n",
-          "server-overrides/server.properties": "motd=Corpus server\n"
+          "server-overrides/server.properties": "motd=Corpus server\n",
+          "client-overrides/config/example.toml": "# client configuration\nenabled = false\n",
+          "server-overrides/config/example.toml": "# server configuration\nenabled = true\n"
+        },
+        "retained_sources": {
+          "overrides/common/config/example.toml": "# shared configuration\nenabled = true\n",
+          "overrides/client/config/example.toml": "# client configuration\nenabled = false\n",
+          "overrides/server/config/example.toml": "# server configuration\nenabled = true\n"
+        },
+        "client_files": {
+          "config/example.toml": "# client configuration\nenabled = false\n",
+          "options.txt": "renderDistance:8\n"
         }
       }
     },

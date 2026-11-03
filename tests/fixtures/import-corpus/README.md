@@ -4,6 +4,8 @@ The original synthetic archives are distributed under the repository's [Apache-2
 
 The corpus covers Modrinth side-specific overrides, CurseForge common overrides, exact runtime selections, and traversal refusal. `journey_import` checks the hashes before invoking the ordinary executable, preserves imported documents across two syncs, and compares the complete exported content inventory and runtime metadata. The fixture expectation is not derived from empack's importer or writer.
 
+The owned layered mrpack gives `config/example.toml` three distinct common/client/server byte sequences. Its independently authored export expectation contains the two effective side views; the shadowed common source remains unchanged in the editable project. A bundled Prism check compares the complete client inventory and runtime, excluding the server view. This synthetic fixture exercises public CLI composition. Live upstream cases retain their separate archive identities and acquisition checks.
+
 Run `python3 scripts/check-import-corpus.py` from the repository root. It uses the shared verification runner, including executable identity and result receipts. This local corpus needs no network, Java, or provider credentials. It does not qualify external provider behavior or real launcher/game consumption.
 
 Changes to archives or expected output require deliberate review of both the source contents and expectations. The checker never refreshes them. Moving upstream packs belong to `scripts/survey-imports.py`; survey observations cannot replace these pinned expectations.

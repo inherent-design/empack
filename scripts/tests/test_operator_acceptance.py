@@ -136,6 +136,42 @@ class OperatorAcceptance(unittest.TestCase):
                                                 evidence=["observation.txt"]) for step in console_steps]
                 with self.assertRaisesRegex(ValueError, "procedure steps"):
                     self.inspect(record)
+        # These actual-consumer obligations cannot disappear behind generic
+        # launch/summary labels. Fixtures below prove admission mechanics only.
+        for identity, required in [
+            ("acceptance::consumer::modrinth-import", "confirm-recipient-empack-unavailable"),
+            ("acceptance::consumer::curseforge-import", "confirm-recipient-empack-unavailable"),
+            ("acceptance::server::managed-console", "compare-independent-inventory"),
+        ]:
+            with self.subTest(procedure=identity):
+                self.assertIn(required, procedures()[identity]["steps"])
+                _, record = fixture(self.path.parent, identity)
+                self.assertEqual(self.inspect(record)["status"], "PASS", "synthetic admission only")
+                record["observations"] = [row for row in record["observations"] if row["step"] != required]
+                with self.assertRaisesRegex(ValueError, "procedure steps"):
+                    self.inspect(record)
+        desktop = "acceptance::desktop::windows-download-handoff"
+        required = ["open-exact-permitted-provider-page", "verify-open-request-is-not-completion",
+                    "refuse-wrong-downloaded-bytes", "associate-correct-renamed-content"]
+        self.assertTrue(set(required) <= set(procedures()[desktop]["steps"]))
+        _, record = fixture(self.path.parent, desktop)
+        with self.assertRaisesRegex(ValueError, "platform"):
+            self.inspect(record)  # A Linux fixture cannot supply Windows desktop evidence.
+        record.update(target="x86_64-pc-windows-msvc", platform="windows")
+        self.products[(record["target"], "default")] = PRODUCT
+        self.assertEqual(self.inspect(record)["status"], "PASS", "synthetic admission only")
+        for step in required:
+            missing = copy.deepcopy(record)
+            missing["observations"] = [row for row in missing["observations"] if row["step"] != step]
+            with self.subTest(step=step), self.assertRaisesRegex(ValueError, "procedure steps"):
+                self.inspect(missing)
+        for status in ("FAIL", "BLOCKED", "NOT_RUN"):
+            incomplete = copy.deepcopy(record)
+            next(row for row in incomplete["observations"] if row["step"] == required[1])["status"] = status
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, "status differs"):
+                self.inspect(incomplete)
+            incomplete["status"] = status
+            self.assertEqual(self.inspect(incomplete)["status"], status)
 
     def test_supporting_file_identity_and_path_confinement_are_rechecked(self):
         for name in ("../elsewhere", "/absolute", "sub/../file", "sub//file", "./file", "a\\b", "C:file", self.path.name):

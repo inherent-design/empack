@@ -4,7 +4,21 @@ The candidate gate accepts operator-recorded tasks separately from native suites
 
 The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles and GUIs, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
 
-Consumer records are required on Linux, macOS and Windows for default and telemetry products. The initial selected host for human tasks is macOS. This does not turn a human task on one host into evidence for another. Actual-consumer and human results remain unperformed until their records exist; helper tests cannot supply them. The current consumer group remains partially decomposed rather than claiming that these initial checklists settle every consumer/profile combination.
+Prism, platform-import and server consumer records are required on Linux, macOS and Windows for default and telemetry products. The registered-browser handoff procedure is Windows-specific. The selected host for human tasks is macOS. A result on one host does not supply evidence for another. Actual-consumer and human tasks remain unperformed until their records exist; helper tests cannot supply them.
+
+The qualification profile selects the following existing workflows. Complete case definitions identify the required observations; they do not certify arbitrary custom configurations, every possible recipe or gameplay.
+
+| Procedure                                              | Selected workflow                                                                                                                                        |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prism reference                                        | Default reference snapshot import/preparation/startup, then a separately enrolled subscribed fixture for a signed runtime update and relaunch.           |
+| Prism bundled                                          | Standalone bundled snapshot; recipient empack is unavailable.                                                                                            |
+| Modrinth / CurseForge import                           | Platform snapshot imported through the supported consumer, with independent content/runtime verification and recipient empack unavailable during launch. |
+| Managed server console / GUI                           | Generated reference-snapshot entry points, preparation before Java and comparison with the independent inventory. Console and GUI tasks stay separate.   |
+| Bundled server console / GUI                           | Standalone bundled snapshot with recipient empack unavailable; direct Java status and retirement are observed.                                           |
+| Windows desktop handoff                                | The registered browser opens the permitted page; only verified content can complete the pending operation.                                               |
+| Human startup / recovery / documentation / publication | The separately attributed tasks in the checklist, including authorized accounts and a disposable publication repository.                                 |
+
+For platform imports, keep empack unavailable in the consumer's launch environment rather than relying on it being unused. For managed server consoles, compare the installed inventory before testing input and shutdown. Record the actual application, dependency and runtime versions; missing prerequisites remain blocked. These selected consumer tasks complement all required native, executable, package and parser cases.
 
 ## Prism runtime update
 
@@ -23,6 +37,14 @@ The separate `acceptance::server::managed-gui` and `acceptance::server::bundled-
 Use the extracted candidate's unmodified `start_gui.sh` or `start_gui.bat` as described in [Server distributions](servers.md). For managed delivery, retain preparation-before-Java evidence and use the admitted empack executable. For standalone bundled delivery, keep recipient empack unavailable. Compare the installed inventory independently, confirm the actual server window opens and `nogui` is absent, issue a command through that window, then stop the server through its GUI. Record process retirement, the resulting status and whether the invoking terminal remains usable. Use a disposable world; observe the existing EULA procedure without having empack accept it automatically.
 
 Retain the relevant terminal log and GUI observations, such as a redacted screenshot and the server's response to the command. The GUI records are separate from the console records, which still exercise terminal input, interruption and shutdown. Both procedures require their declared Linux/macOS/Windows and default/telemetry variants. Writing these checklists or admitting synthetic records does not perform them.
+
+## Windows registered-browser handoff
+
+Run `acceptance::desktop::windows-download-handoff` in an isolated Windows desktop using the exact candidate and the ordinary registered browser. Record the browser name/version, desktop and URL association. A fixture executable replacing the opener cannot supply this record.
+
+Start with genuinely pending restricted content and independently retained provider identity, assertions and expected inventory. Use public `pending list` and `pending show` output to identify the operation and its file key. Resume with the documented `--open-downloads` and `--downloads-dir` assistance, following [pending-work usage](usage.md#shared-pending-inputs). Observe the exact permitted provider page in the browser. Before supplying bytes, confirm that the operation remains pending: accepting an open request does not establish a completed download or installation.
+
+Attempt association with wrong bytes and retain the refusal without changing the pending operation, author data or player sentinels. Download the actual required content through the permitted page, rename it, and explicitly associate it with the public file key. Resume the same operation and compare the completed inventory independently. Retain redacted public diagnostics and browser/download observations. A provider restriction, unavailable desktop, failed download or incomplete operation stays blocked or failed; neither a checklist nor a synthetic admission result substitutes for this task. Both declared product variants require their own observations.
 
 ## Record identity
 

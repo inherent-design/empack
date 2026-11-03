@@ -21,21 +21,21 @@
       "boundary": "C",
       "platforms": ["linux", "macos", "windows"],
       "operator_roles": ["maintainer"],
-      "steps": ["import-mrpack", "compare-independent-inventory", "verify-selected-content-and-runtime", "launch-exact-candidate"]
+      "steps": ["import-mrpack", "compare-independent-inventory", "verify-selected-content-and-runtime", "confirm-recipient-empack-unavailable", "launch-exact-candidate"]
     },
     {
       "id": "acceptance::consumer::curseforge-import",
       "boundary": "C",
       "platforms": ["linux", "macos", "windows"],
       "operator_roles": ["maintainer"],
-      "steps": ["import-curseforge-manifest", "resolve-required-restricted-content", "compare-independent-inventory", "launch-exact-candidate"]
+      "steps": ["import-curseforge-manifest", "resolve-required-restricted-content", "compare-independent-inventory", "confirm-recipient-empack-unavailable", "launch-exact-candidate"]
     },
     {
       "id": "acceptance::server::managed-console",
       "boundary": "C",
       "platforms": ["linux", "macos", "windows"],
       "operator_roles": ["maintainer"],
-      "steps": ["run-generated-start-script", "verify-preparation-before-java", "send-console-input", "normal-server-shutdown", "terminal-interrupt", "verify-retirement-and-terminal-restoration"]
+      "steps": ["run-generated-start-script", "verify-preparation-before-java", "compare-independent-inventory", "send-console-input", "normal-server-shutdown", "terminal-interrupt", "verify-retirement-and-terminal-restoration"]
     },
     {
       "id": "acceptance::server::bundled-console",
@@ -57,6 +57,13 @@
       "platforms": ["linux", "macos", "windows"],
       "operator_roles": ["maintainer"],
       "steps": ["record-desktop-session-and-supported-gui-runtime", "run-generated-gui-start-script-without-recipient-empack", "compare-independent-inventory", "verify-server-window-and-no-nogui-argument", "send-command-through-server-gui", "stop-server-through-gui", "verify-java-status-and-terminal-restoration"]
+    },
+    {
+      "id": "acceptance::desktop::windows-download-handoff",
+      "boundary": "C",
+      "platforms": ["windows"],
+      "operator_roles": ["maintainer"],
+      "steps": ["record-registered-browser-and-desktop", "open-exact-permitted-provider-page", "verify-open-request-is-not-completion", "refuse-wrong-downloaded-bytes", "associate-correct-renamed-content", "resume-using-public-instructions", "verify-author-and-player-content-preserved"]
     },
     {
       "id": "acceptance::human::licensed-startup",

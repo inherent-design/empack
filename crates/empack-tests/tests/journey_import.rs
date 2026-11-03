@@ -134,6 +134,64 @@ fn corpus(id: &str) {
         .map(|(name, text)| (name.clone(), text.as_str().unwrap().as_bytes().to_vec()))
         .collect();
     assert_eq!(members, expected_members);
+    if let Some(retained) = expected["retained_sources"].as_object() {
+        // Side replacements affect the exported views, not editable common work.
+        let check_sources = || {
+            for (path, text) in retained {
+                assert_eq!(
+                    fs::read(imported.join(path)).unwrap(),
+                    text.as_str().unwrap().as_bytes()
+                );
+            }
+        };
+        check_sources();
+        offline_command(&imported)
+            .args([
+                "--yes",
+                "build",
+                "--ad-hoc",
+                "prism",
+                "--delivery",
+                "bundled",
+            ])
+            .assert()
+            .success();
+        let mut client = zip_members(&assert_dist_artifact_suffix(&imported, "prism-bundled.zip"));
+        let runtime: Value =
+            serde_json::from_slice(&client.remove("mmc-pack.json").unwrap()).unwrap();
+        let components: BTreeMap<_, _> = runtime["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                (
+                    entry["uid"].as_str().unwrap(),
+                    entry["version"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            components,
+            BTreeMap::from([
+                ("net.minecraft", "1.21.1"),
+                ("net.fabricmc.fabric-loader", "0.15.11"),
+            ])
+        );
+        assert!(client.remove("instance.cfg").is_some());
+        let expected_client: BTreeMap<_, _> = expected["client_files"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, text)| {
+                (
+                    format!(".minecraft/{name}"),
+                    text.as_str().unwrap().as_bytes().to_vec(),
+                )
+            })
+            .collect();
+        assert_eq!(client, expected_client);
+        check_sources();
+    }
     assert_eq!(fs::read(imported.join("empack.yml")).unwrap(), config);
     assert_eq!(fs::read(imported.join("empack.lock")).unwrap(), locked);
     assert_eq!(fs::read(&archive).unwrap(), bytes);

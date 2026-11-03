@@ -3018,6 +3018,29 @@
             "An imported TOML edit requires explicit adoption without a version bump; refusal and subsequent re-export preserve unrelated author bytes/attributes/empty directories, original source archive and prior artifacts"
           ],
           "remaining_group_evidence": "The independent oracle and case definition are not product execution. Every declared host/product must run the complete changed-source journey. Referenced and embedded payloads are temporary and never committed; this does not execute the disabled JAR, launcher, Minecraft, menu animation or shaders, or replace the remaining overlapping-layer and actual-consumer obligations."
+        },
+        {
+          "id": "UX-017.public-layered-import",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::journey_import::journey_local_mrpack_import_reexport"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The explicitly synthetic Apache-2.0 mrpack is checked against its fixed SHA256 before ordinary executable import; its same-path common/client/server configuration bytes are independently authored",
+            "Two syncs retain author documents and lock; complete mrpack output contains the exact effective client/server configurations, while all three original configuration sources remain editable and unchanged",
+            "An explicit ad-hoc bundled Prism export contains exactly the client configuration and options plus its two launcher metadata files, excludes server-only content and retains the literal Minecraft/Fabric runtime",
+            "Source archive, author documents, lock and retained common/client/server bytes remain unchanged through both exports"
+          ],
+          "remaining_group_evidence": "This is an owned synthetic X fixture, not a real upstream archive. The separate pinned L cases supply real-pack acquisition and inventories. It binds the previously missing X boundary without resolving or removing the pending real-overlap archive obligation; all declared variants still require execution."
         }
       ],
       "owner_now": [
@@ -6434,14 +6457,15 @@
         "CLI"
       ],
       "required_assertions": "Exact permitted provider page; no opener on preview/decline; bounds/timeout; verified scans do not use uniqueness as identity.",
-      "required_work": "Controlled Unix/Windows launcher supervision and verified renamed-file scans are bound, along with a pre-discovery cumulative page-limit case. The Windows fixture uses cmd argument forwarding and a real test-owned child/process handle; it does not invoke the registered browser. Actual Windows desktop-opener handoff, interactive integration and remaining failure handoffs retain their separate evidence requirements. Controlled launchers and fixture bytes do not establish actual browser interaction or a live restricted-download policy. Page-discovery deadline overflow is a checked refusal before provider construction; controlled capped-wait and public saved-operation recovery cases retain their separate scopes.",
+      "required_work": "Controlled opener lifetime, bounded discovery, exact renamed-file scans, public interruption/recovery, interactive refusal and real provider-page lookup retain their existing U/H/N/X/I/L cases. The separate Windows registered-browser procedure binds the remaining actual desktop handoff at C for both product variants. These definitions do not establish execution: every declared suite variant and actual desktop record remains required.",
       "evidence_tiers": [
         "U",
         "N",
         "H",
         "X",
         "I",
-        "L"
+        "L",
+        "C"
       ],
       "risk": "critical",
       "run_gate": "pr+external",
@@ -6771,6 +6795,26 @@
             "Supplying the exact required payload resumes that operation successfully, independently verifies its complete mrpack inventory, removes the pending record and preserves original author, prior-artifact, empty-directory and user-download bytes"
           ],
           "remaining_group_evidence": "No actual browser, provider, human or final-package qualification. Existing launcher, interactive, live and consumer obligations remain separate."
+        },
+        {
+          "id": "UX-037.windows-desktop-handoff",
+          "boundary": "C",
+          "test_ids": [
+            "acceptance::desktop::windows-download-handoff"
+          ],
+          "required_platforms": [
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The exact candidate uses its ordinary Windows registered desktop opener to request the permitted page for a genuinely pending restricted file; the record identifies the actual browser and desktop",
+            "Page opening alone leaves the operation pending; wrong downloaded bytes are refused, and explicitly associated correct renamed bytes resume the same operation",
+            "Retained observations identify the independent distribution/inventory and preserved author/player data; a fixture opener or a written checklist cannot supply actual browser evidence"
+          ],
+          "remaining_group_evidence": "An attributable actual Windows/browser task record is required for both product variants. Defining the procedure is not execution; controlled cmd fixtures and Unix official-page lookup remain separate evidence."
         }
       ],
       "owner_now": [
@@ -6783,7 +6827,7 @@
         "portable catalog interpretation; native/Fetch transport",
         "empack-cli"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-038",
@@ -14835,7 +14879,7 @@
         "REL"
       ],
       "required_assertions": "Wrong tag/build failure/tampered downloaded executable fails before publication; draft then uploads then reveal; no arbitrary dist glob.",
-      "required_work": "Python mocked gh protocol + one sandbox publication manual candidate; never production tokens on untrusted PR.",
+      "required_work": "The helper, emitted workflow and native artifact-path cases bind validation/upload/reveal ordering; the sandbox-publication procedure binds actual authorized GitHub execution, including a failed validation that cannot publish. These are complete case definitions, not evidence of publication. Actual records on the declared candidate/product variants and permission to provision the sandbox remain required; no production tokens on untrusted PR.",
       "evidence_tiers": [
         "H",
         "N",
@@ -14978,7 +15022,7 @@
         "shared scaffold generation + native/script acceptance",
         "shared release meaning/signature verification + native signing custody and publication"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-083",
@@ -15064,7 +15108,7 @@
         "INST"
       ],
       "required_assertions": "Independent consumer reads inventory; reference hooks run and abort invalid descriptors before Java; platform snapshots do not require empack.",
-      "required_work": "Actual consumer and operator task intake is bound; disposable profiles, supported consumer/dependency environments, source/distribution/inventory identity and retained observations still require execution. Human startup uses an authorized account without recording credentials; no gameplay certification inferred. The initial selected human task host is macOS; consumer records require all three native families and both product graphs.",
+      "required_work": "The selected consumer profile binds reference Prism snapshot startup and a separately enrolled subscribed runtime update, standalone bundled Prism, Modrinth/CurseForge platform imports without recipient empack, managed/reference and standalone server consoles/GUI, and licensed startup. Disposable profiles, independent inventories, exact candidate identity, actual supported application/dependency observations and all declared host/product records remain mandatory. Complete definitions do not establish execution or gameplay.",
       "evidence_tiers": [
         "C",
         "M"
@@ -15224,7 +15268,7 @@
         "empack-native only for Java/process/native leases; CLI presentation remains shared outcome use",
         "portable inventory/ownership semantics; native instance effects"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-085",
@@ -15589,7 +15633,7 @@
         "AUTO"
       ],
       "required_assertions": "Documented commands parse/run against appropriate fixture; user can finish without private state knowledge; terminology and expected output clear.",
-      "required_work": "Fresh-user task review recorded separately from automated correctness; every public leaf has owner and tests.",
+      "required_work": "Executable/rustdoc/literal-authoring cases and the separately attributed fresh-user task card bind the stated documentation obligations. Every public leaf retains its owner/tests. Complete definitions do not establish human usability: the declared fresh-user candidate/product observations remain required and cannot be supplied by automated correctness checks.",
       "evidence_tiers": [
         "U",
         "X",
@@ -15703,7 +15747,7 @@
         "empack-cli",
         "shared scaffold generation + native/script acceptance"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-088",
