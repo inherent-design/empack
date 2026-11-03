@@ -286,7 +286,7 @@ fn live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory(
         before_resume
     );
     let observe = || snapshot_excluding(&target, &["dist", ".harness-home"]);
-    fs::create_dir(target.join("notes/empty")).unwrap();
+    fs::create_dir_all(target.join("notes/empty")).unwrap();
     fs::write(target.join("notes/keep.txt"), b"author decision").unwrap();
     let author = fs::read(target.join("empack.yml")).unwrap();
     let lock = fs::read(target.join("empack.lock")).unwrap();
