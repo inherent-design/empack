@@ -319,7 +319,7 @@ fn live_pinned_optional_import_preserves_choices_and_selected_client_inventory()
             ("net.fabricmc.fabric-loader", "0.19.5"),
             ("net.minecraft", "26.3"),
         ],
-        "config/configureddefaults/config/DistantHorizons.toml",
+        "configureddefaults/config/DistantHorizons.toml",
         |bytes| {
             let mut edited = bytes.to_vec();
             edited.extend_from_slice(b"\n# Explicitly adopted verification edit\n");
