@@ -291,17 +291,20 @@ class AttemptPolicy(unittest.TestCase):
         from unittest.mock import patch
         from verify import run_suite
         from verification.suites import SUITES
-        inventory = {"test-count": 3, "rust-suites": {
+        inventory = {"test-count": 4, "rust-suites": {
             "pkg::contract": {"status": "listed", "binary-name": "live_provider_contract",
                 "testcases": {name: {"ignored": True, "filter-match": {"status": "matches"}}
                     for name in ("curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes")}},
             "pkg::cli": {"status": "listed", "binary-name": "live_provider_cli",
                 "testcases": {"live_cli_curseforge_selectors_converge": {
+                    "ignored": True, "filter-match": {"status": "matches"}}}},
+            "pkg::pinned": {"status": "listed", "binary-name": "live_pinned_import",
+                "testcases": {"curseforge::live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory": {
                     "ignored": True, "filter-match": {"status": "matches"}}}}}}
         artifact = dict(path="/ordinary/product", sha256="0" * 64, version="0.0.0-dev",
                         features="default", target="x86_64-unknown-linux-gnu")
         with tempfile.TemporaryDirectory() as directory:
-            for name in ("live-provider", "live-curseforge"):
+            for name in ("live-provider", "live-curseforge", "pinned-import"):
                 for label, override in (("absent", None), ("empty", ""), ("configured", "fixture-private-key")):
                     with self.subTest(suite=name, override=label):
                         attempt = Path(directory) / name / label

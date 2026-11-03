@@ -1,0 +1,890 @@
+{
+  "source": {
+    "project": "396246",
+    "version": "4800279",
+    "url": "https://mediafilez.forgecdn.net/files/4800/279/Fabulously.Optimized-5.4.1.zip",
+    "size": 3995507,
+    "sha256": "5591c18c35defd291fc96213d2cd34c4daccb6f9193916e92a17859d10eaf2e0",
+    "sha512": "404c03f751a86165947ed0d82d912425889c9e2f0b8fa627d2d64b2106fb0770bee806729c7a545c1dcd5d70985020a120672f6679ac82312b82c3d1500ba67f"
+  },
+  "manifest": {
+    "minecraft": {
+      "version": "1.20.1",
+      "modLoaders": [
+        {
+          "id": "fabric-0.14.23",
+          "primary": true
+        }
+      ]
+    },
+    "manifestType": "minecraftModpack",
+    "manifestVersion": 1,
+    "name": "Fabulously Optimized",
+    "version": "5.4.1",
+    "author": "robotkoer",
+    "files": [
+      {
+        "projectID": 374274,
+        "fileID": 4581910,
+        "required": true
+      },
+      {
+        "projectID": 844662,
+        "fileID": 4759940,
+        "required": true
+      },
+      {
+        "projectID": 518319,
+        "fileID": 3902698,
+        "required": true
+      },
+      {
+        "projectID": 348521,
+        "fileID": 4633442,
+        "required": true
+      },
+      {
+        "projectID": 563977,
+        "fileID": 4639312,
+        "required": true
+      },
+      {
+        "projectID": 335493,
+        "fileID": 4773500,
+        "required": true
+      },
+      {
+        "projectID": 527334,
+        "fileID": 4768667,
+        "required": true
+      },
+      {
+        "projectID": 521427,
+        "fileID": 4577525,
+        "required": true
+      },
+      {
+        "projectID": 408481,
+        "fileID": 4580689,
+        "required": true
+      },
+      {
+        "projectID": 308769,
+        "fileID": 4719981,
+        "required": true
+      },
+      {
+        "projectID": 403815,
+        "fileID": 4613752,
+        "required": true
+      },
+      {
+        "projectID": 404870,
+        "fileID": 4615543,
+        "required": true
+      },
+      {
+        "projectID": 360438,
+        "fileID": 4765724,
+        "required": true
+      },
+      {
+        "projectID": 310205,
+        "fileID": 4606487,
+        "required": true
+      },
+      {
+        "projectID": 393442,
+        "fileID": 4748219,
+        "required": true
+      },
+      {
+        "projectID": 861310,
+        "fileID": 4535395,
+        "required": true
+      },
+      {
+        "projectID": 459496,
+        "fileID": 4765124,
+        "required": true
+      },
+      {
+        "projectID": 596224,
+        "fileID": 4632961,
+        "required": true
+      },
+      {
+        "projectID": 855981,
+        "fileID": 4753776,
+        "required": true
+      },
+      {
+        "projectID": 306612,
+        "fileID": 4787692,
+        "required": true
+      },
+      {
+        "projectID": 574741,
+        "fileID": 4729753,
+        "required": true
+      },
+      {
+        "projectID": 667299,
+        "fileID": 4772784,
+        "required": true
+      },
+      {
+        "projectID": 433447,
+        "fileID": 3831043,
+        "required": true
+      },
+      {
+        "projectID": 835847,
+        "fileID": 4712710,
+        "required": true
+      },
+      {
+        "projectID": 475358,
+        "fileID": 4574355,
+        "required": true
+      },
+      {
+        "projectID": 619986,
+        "fileID": 4655590,
+        "required": true
+      },
+      {
+        "projectID": 447673,
+        "fileID": 4704175,
+        "required": true
+      },
+      {
+        "projectID": 686911,
+        "fileID": 4776117,
+        "required": true
+      },
+      {
+        "projectID": 676136,
+        "fileID": 4607204,
+        "required": true
+      },
+      {
+        "projectID": 531351,
+        "fileID": 4779473,
+        "required": true
+      },
+      {
+        "projectID": 459857,
+        "fileID": 4574364,
+        "required": true
+      },
+      {
+        "projectID": 618812,
+        "fileID": 4509216,
+        "required": true
+      },
+      {
+        "projectID": 708967,
+        "fileID": 4739523,
+        "required": true
+      },
+      {
+        "projectID": 819030,
+        "fileID": 4753819,
+        "required": true
+      },
+      {
+        "projectID": 849519,
+        "fileID": 4715350,
+        "required": true
+      },
+      {
+        "projectID": 833233,
+        "fileID": 4734076,
+        "required": true
+      },
+      {
+        "projectID": 448233,
+        "fileID": 4763646,
+        "required": true
+      },
+      {
+        "projectID": 511319,
+        "fileID": 4717362,
+        "required": true
+      },
+      {
+        "projectID": 790626,
+        "fileID": 4792388,
+        "required": true
+      },
+      {
+        "projectID": 634062,
+        "fileID": 4610472,
+        "required": true
+      },
+      {
+        "projectID": 568563,
+        "fileID": 4716613,
+        "required": true
+      },
+      {
+        "projectID": 408209,
+        "fileID": 4761944,
+        "required": true
+      },
+      {
+        "projectID": 697845,
+        "fileID": 4797428,
+        "required": true
+      },
+      {
+        "projectID": 452046,
+        "fileID": 4610052,
+        "required": true
+      },
+      {
+        "projectID": 867964,
+        "fileID": 4797376,
+        "required": true
+      },
+      {
+        "projectID": 533006,
+        "fileID": 4600415,
+        "required": true
+      }
+    ],
+    "overrides": "overrides"
+  },
+  "overrides": {
+    "overrides/config/fabric_loader_dependencies.json": {
+      "size": 209,
+      "sha256": "4866b7ad778baffde66264ff149f5f0bfedc6ba2b5bed6b8551006c093f9c77d"
+    },
+    "overrides/config/isxander-main-menu-credits.json": {
+      "size": 155,
+      "sha256": "37c3d5cf244219f896e4495992184fd84c0ff1c4be20a3e7671f1051bce4a032"
+    },
+    "overrides/config/yosbr/options.txt": {
+      "size": 900,
+      "sha256": "a4e21bdb6c14b12cd603354e683a00e261161a62ee20a3c5dd03b2be841a7754"
+    },
+    "overrides/config/yosbr/config/borderlessmining.json": {
+      "size": 70,
+      "sha256": "1dfdc3360afe91b5804eef79f8b868f874e3dfc0c975495f8994f378ffe37a8f"
+    },
+    "overrides/config/yosbr/config/capes.json5": {
+      "size": 206,
+      "sha256": "c88ac7aec7bc08f867f8a9f6c7bf9396871d03d12b0f4d7100e8ef1fddfac68e"
+    },
+    "overrides/config/yosbr/config/cem.conf": {
+      "size": 26,
+      "sha256": "51519ddcc6823cbe1f22b8977fe103eb8c01b1872899634ddc06814f3ef2da9b"
+    },
+    "overrides/config/yosbr/config/citresewn.json": {
+      "size": 21,
+      "sha256": "dcb9f9dd8184ba8ee7c81e785f677434c7cda2acb925fd3d542e2a361ee78e32"
+    },
+    "overrides/config/yosbr/config/controlify.json": {
+      "size": 34,
+      "sha256": "122efb712417e034281b2d1d431026569038f05d86fbf7df3b0f9b66e769d2e0"
+    },
+    "overrides/config/yosbr/config/debugify.json": {
+      "size": 284,
+      "sha256": "eef3cca5127037fc337391ef49889a03e7102d6c2d1af866dcf007353b52324b"
+    },
+    "overrides/config/yosbr/config/dynamic_fps.json": {
+      "size": 416,
+      "sha256": "30bf7c21557b8e83356ef043c044d76478b531013a290c97443740b2c7a1b73d"
+    },
+    "overrides/config/yosbr/config/entity_texture_features.json": {
+      "size": 158,
+      "sha256": "eefa86fa9a8df6eda5d39d3bbbf53138a44df71a01a24262c27584badea97d79"
+    },
+    "overrides/config/yosbr/config/fabric_loader_dependencies.json": {
+      "size": 376,
+      "sha256": "e5210a18a1f67104b6eda85a9ea68f475b75a71bab9cff7cf7dbcc10f627369a"
+    },
+    "overrides/config/yosbr/config/fastquit.toml": {
+      "size": 99,
+      "sha256": "17225e085e6759210cec7e829e00c8c90f9c5d38714835cb5da9c98398842f7d"
+    },
+    "overrides/config/yosbr/config/iris.properties": {
+      "size": 73,
+      "sha256": "3f5878535aacbfea79ae6da2f9142963f5662af3141692f0ba945767c9096ce5"
+    },
+    "overrides/config/yosbr/config/isxander-main-menu-credits.json": {
+      "size": 187,
+      "sha256": "e9c780a3548faea77d7230f83a97497cf30ae5148d1855c632310f6fb69a5cec"
+    },
+    "overrides/config/yosbr/config/lambdynlights.toml": {
+      "size": 161,
+      "sha256": "326ec0c840e65aedf5c6048ea6016d551be38cf23f692949e105a4a388ad8be7"
+    },
+    "overrides/config/yosbr/config/midnightcontrols.json": {
+      "size": 43,
+      "sha256": "b792f2977c2889e388d0a0e83e316ed4f27050729d86c8623e8472accb8a2a46"
+    },
+    "overrides/config/yosbr/config/midnightlib.json": {
+      "size": 30,
+      "sha256": "57b848fb6d7c03b6124297de49b1e4cb169e74db042c74aecf79f035ae2f3980"
+    },
+    "overrides/config/yosbr/config/modernfix-mixins.properties": {
+      "size": 33,
+      "sha256": "3c5317882a50941e2384b9739ec3aa688f297105691c9d8d577936ad29c1d575"
+    },
+    "overrides/config/yosbr/config/modmenu.json": {
+      "size": 808,
+      "sha256": "dacff858c9d3d3d96a4b6b902133d0691e320e21a2f57adc6bb6cb9875763582"
+    },
+    "overrides/config/yosbr/config/moreculling.toml": {
+      "size": 492,
+      "sha256": "b2ff60a305956fb2a381c6c61d960d2b220d83d9c7737e2ac4ab34a1f604af56"
+    },
+    "overrides/config/yosbr/config/puzzle.json": {
+      "size": 301,
+      "sha256": "41397f8ebb5a1137f559761cee66b18a85c7289e89ac84a738140d651eecccdd"
+    },
+    "overrides/config/yosbr/config/sodium-options.json": {
+      "size": 38,
+      "sha256": "37aaf52aa7545527c7ade71ac77ad2fcf6019995bf58b6ea1fe0f52949919d18"
+    },
+    "overrides/config/yosbr/config/NoChatReports/NCR-Client.json": {
+      "size": 477,
+      "sha256": "616e09c8ff849f4a9a07165a0a3513f468469237377546b64135591fca8a0592"
+    },
+    "overrides/config/yosbr/config/NoChatReports/NCR-Common.json": {
+      "size": 96,
+      "sha256": "c335cb5e65abce1bfc063eaddcff3eca759636e32ba7e4993ea249a31ab18816"
+    },
+    "overrides/config/yosbr/config/NoChatReports/NCR-Encryption.json": {
+      "size": 128,
+      "sha256": "d7c81fae39b82fbc4be62a0fef141c7da80e96b6f97a0d80b44c245cb9a8bff6"
+    },
+    "overrides/mods/iris-mc1.20.1-1.6.10.jar": {
+      "size": 2412690,
+      "sha256": "20f00774c6bce6b3c9fd4d508240880a60a04a3ec987235e257f6e6b9e182514"
+    },
+    "overrides/mods/memoryleakfix-fabric-1.17+-1.1.2.jar": {
+      "size": 146263,
+      "sha256": "a9fadc6d369e6bbfb10eab4c00780c3295292c634b6551d2e1e2897ec38b63ab"
+    },
+    "overrides/mods/modmenu-7.2.2.jar": {
+      "size": 721366,
+      "sha256": "a041b0f0305ffa5eb90120aa23768e1cfbb27583904b1751e3783c0f69382f1a"
+    },
+    "overrides/mods/moreculling-1.20.1-0.19.0.jar": {
+      "size": 334034,
+      "sha256": "8bd332613996b6da00318888f33c4704dba21083e1f7a2503969eb7c7d388cb0"
+    },
+    "overrides/mods/sodium-fabric-mc1.20.1-0.5.3.jar": {
+      "size": 852373,
+      "sha256": "b10e60b8000194bc617fd2c396a8584a5cc33a3118c8b382128452c3f93f881d"
+    },
+    "overrides/resourcepacks/Mod Menu Helper.zip": {
+      "size": 43188,
+      "sha256": "bcfbad415e4c46e708c5566c069bee4fdb68d9a43bce1839613b4e59e3d17322"
+    }
+  },
+  "auxiliary": {
+    "modlist.html": {
+      "size": 5382,
+      "sha256": "0957cb182c1677e445cdbcf86f46b3529762421ecef0433e551fa9c6a15a241d"
+    }
+  },
+  "provenance": {
+    "provider_file": "https://api.curseforge.com/v1/mods/396246/files/4800279",
+    "observed_at": "2026-11-03T01:49:44.742544+00:00",
+    "archive_verified_against_api": [
+      "size",
+      "sha1",
+      "md5"
+    ],
+    "metadata_endpoints": [
+      "https://api.curseforge.com/v1/mods/files",
+      "https://api.curseforge.com/v1/mods"
+    ],
+    "oracle": "Original archive read with Python zipfile; exact file hash/size and project class metadata independently read from official API; no empack outputs used",
+    "license_scope": "Metadata only; no upstream archive, mod or configuration payloads redistributed. Referenced components retain their own licenses.",
+    "archive_source_page": "https://www.curseforge.com/api/v1/mods/396246/files/4800279/download",
+    "archive_download": "Pinned public CDN destination observed during the independently hashed original archive acquisition"
+  },
+  "files": [
+    {
+      "project_id": 374274,
+      "file_id": 4581910,
+      "destination": "mods/yosbr-0.1.2.jar",
+      "size": 17373,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "f0340e9c0bc95d67f3f3e9c1cd79b61054af11f9",
+      "md5": "9fcce225f25b6fd17921c87ff1c720f1"
+    },
+    {
+      "project_id": 844662,
+      "file_id": 4759940,
+      "destination": "mods/entity_model_features_fabric_1.20-1.0.2.jar",
+      "size": 290514,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "87147ac0b539ccb0f409a1eaa4914846b513db67",
+      "md5": "b910c93dad0f13c5dfe83713af08436a"
+    },
+    {
+      "project_id": 518319,
+      "file_id": 3902698,
+      "destination": "mods/morechathistory-1.19.1-1.1.1.jar",
+      "size": 11223,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "b23419da24f1c7ae16c6e77e992a38491cccf2c8",
+      "md5": "414cdb124c76eab91283ffa8df3a64bf"
+    },
+    {
+      "project_id": 348521,
+      "file_id": 4633442,
+      "destination": "mods/cloth-config-11.1.106-fabric.jar",
+      "size": 1159179,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "a05e176326365f2b8e377a35be52a5671491bcfd",
+      "md5": "c5cbac22fbb23c25e547276bd65c1083"
+    },
+    {
+      "project_id": 563977,
+      "file_id": 4639312,
+      "destination": "mods/puzzle-1.5.2+1.20.jar",
+      "size": 133463,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "5c3937cb1b9f7e2112cdf00ec0b1afce7c526ac1",
+      "md5": "398c46e49c5225266262fbb06a8bea07"
+    },
+    {
+      "project_id": 335493,
+      "file_id": 4773500,
+      "destination": "mods/dynamic-fps-3.2.1+minecraft-1.20.0.jar",
+      "size": 70316,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "d4edd1828b1595eca7be0d36d1cc45b189a17a6e",
+      "md5": "9550d2ab02fd61d3b80101e531b784ae"
+    },
+    {
+      "project_id": 527334,
+      "file_id": 4768667,
+      "destination": "mods/language-reload-1.5.9+1.20.1.jar",
+      "size": 198128,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "d647d82cbae0d16132cb8e96b472640397e68dda",
+      "md5": "45c2ee773e6bff72c90ca0637d399224"
+    },
+    {
+      "project_id": 521427,
+      "file_id": 4577525,
+      "destination": "mods/CITResewn-1.1.3+1.20.jar",
+      "size": 394652,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "53f036ebe51d7d97afaf44d541775c92c4470dad",
+      "md5": "ea52600e98699fa67784591c02940ffc"
+    },
+    {
+      "project_id": 408481,
+      "file_id": 4580689,
+      "destination": "mods/capes-1.5.2+1.20-fabric.jar",
+      "size": 170082,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "5444e301346383f6133189e66069e970d4a126fc",
+      "md5": "312590823dd12dc676f8908be2e8396d"
+    },
+    {
+      "project_id": 308769,
+      "file_id": 4719981,
+      "destination": "mods/fabric-language-kotlin-1.10.10+kotlin.1.9.10.jar",
+      "size": 6722438,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "c708f3f4e94f0f66e72c6e96858368f0512c3b38",
+      "md5": "6ecd26258df93659795c3a99b851d0f2"
+    },
+    {
+      "project_id": 403815,
+      "file_id": 4613752,
+      "destination": "mods/advancementinfo-1.20-fabric0.83.0-1.4.jar",
+      "size": 43895,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "dfa603a2db09d6e303dd2991f016550ae156e3d1",
+      "md5": "1d9875ca82a3f4d545db092f073bcc63"
+    },
+    {
+      "project_id": 404870,
+      "file_id": 4615543,
+      "destination": "mods/fabrishot-1.10.0.jar",
+      "size": 44182,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "15cd04a988726aa4f45fe59813c384329f5d8b94",
+      "md5": "1d226c57b74a130c24fffa181dab759c"
+    },
+    {
+      "project_id": 360438,
+      "file_id": 4765724,
+      "destination": "mods/lithium-fabric-mc1.20.1-0.11.2.jar",
+      "size": 645865,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "8f4642147e60827f728badac7a819d1a9f3b25d5",
+      "md5": "026ca4110d57f16f701b400ad5d2ca26"
+    },
+    {
+      "project_id": 310205,
+      "file_id": 4606487,
+      "destination": "mods/borderless-mining-1.1.8+1.20.1.jar",
+      "size": 118295,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "dbdb8a0600679f3c76480ae5d0995e2334773ce3",
+      "md5": "e35125dd22a96775fea86c1acef59a9a"
+    },
+    {
+      "project_id": 393442,
+      "file_id": 4748219,
+      "destination": "mods/lambdynamiclights-2.3.2+1.20.1.jar",
+      "size": 573183,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "71b636fa74744e51ba2d248c81a38bdbfad5d43b",
+      "md5": "9e931a5331bfe8cee677a413b8aea776"
+    },
+    {
+      "project_id": 861310,
+      "file_id": 4535395,
+      "destination": "mods/fadeless-1.0.1.jar",
+      "size": 7876,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "8a48f9abfa26e4abc06490c6e818f5cf6af1c280",
+      "md5": "1b17811bcc7052b8fc38a4c44bcf74a9"
+    },
+    {
+      "project_id": 459496,
+      "file_id": 4765124,
+      "destination": "mods/indium-1.0.27+mc1.20.1.jar",
+      "size": 104807,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "8c8e6b96243155b41f2f9d29d5940ee895bcb141",
+      "md5": "3e9cb7736e01332c1789be0e7583dbf8"
+    },
+    {
+      "project_id": 596224,
+      "file_id": 4632961,
+      "destination": "mods/Debugify-1.20.1+2.0.jar",
+      "size": 337545,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "ca859180ad2b57856fbcc8db4995c1871a7d556c",
+      "md5": "39e6ead07cd3ce225fb24775e0cb0341"
+    },
+    {
+      "project_id": 855981,
+      "file_id": 4753776,
+      "destination": "resourcepacks/Chat Reporting Helper.zip",
+      "size": 32592,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "4b3c263defd89be217bddec65543d0be15cd10f9",
+      "md5": "5d1a427bdedda893806ac856e0d3b10f"
+    },
+    {
+      "project_id": 306612,
+      "file_id": 4787692,
+      "destination": "mods/fabric-api-0.90.0+1.20.1.jar",
+      "size": 2059348,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "0d770660e6488f21c6e03426a509ced61c1c0519",
+      "md5": "b01ef4c05c587b95c06e7c826c5fe536"
+    },
+    {
+      "project_id": 574741,
+      "file_id": 4729753,
+      "destination": "mods/Zoomify-2.11.2.jar",
+      "size": 999881,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "75d8785b79cd2333f4d1d326da55ba5fc6372f8d",
+      "md5": "b65dc8a0de38334e3025fea1f8f72e3b"
+    },
+    {
+      "project_id": 667299,
+      "file_id": 4772784,
+      "destination": "mods/yet-another-config-lib-fabric-3.2.1+1.20.jar",
+      "size": 977261,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "68ed6a69b22da12916cec79043011110e93ae900",
+      "md5": "64b8d550738888a1d759b901cda19592"
+    },
+    {
+      "project_id": 433447,
+      "file_id": 3831043,
+      "destination": "mods/mixintrace-1.1.1+1.17.jar",
+      "size": 36039,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "7fbb0130db0e427ee7180d304dfa65c46f0e3b69",
+      "md5": "25673336ece740d8127ae7525bc0cd4f"
+    },
+    {
+      "project_id": 835847,
+      "file_id": 4712710,
+      "destination": "mods/Controlify-1.6.0+1.20.jar",
+      "size": 1937626,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "e275c636fcdf020f906037861a62d0614d2b0f94",
+      "md5": "4ce72ffbc246f4c9fff3c1b595e04657"
+    },
+    {
+      "project_id": 475358,
+      "file_id": 4574355,
+      "destination": "mods/bettermounthud-1.2.2.jar",
+      "size": 21587,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "6942fb39ca2e87208b0b0630a5efc4511c82dcf4",
+      "md5": "fdd255bd204f7d84850fd31ba687ad01"
+    },
+    {
+      "project_id": 619986,
+      "file_id": 4655590,
+      "destination": "mods/optigui-2.1.5.jar",
+      "size": 778903,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "1560d8656027c31b6bc3a60e39c51f50eb45e482",
+      "md5": "f1b079fbd14e13c0f4f6e773b2c0714d"
+    },
+    {
+      "project_id": 447673,
+      "file_id": 4704175,
+      "destination": "mods/sodium-extra-0.5.1+mc1.20.1-build.112.jar",
+      "size": 365533,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "74b6dce1ede645ffdecf1185fa05701cef68840d",
+      "md5": "58d4b98aa8b259665c835fc6add5021b"
+    },
+    {
+      "project_id": 686911,
+      "file_id": 4776117,
+      "destination": "mods/ImmediatelyFast-1.2.6+1.20.2.jar",
+      "size": 657143,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "13b4fd8f0214d36a01b2c874f0f88c9ddb2dd556",
+      "md5": "f788dadb0fdc91da779e56ca7008841c"
+    },
+    {
+      "project_id": 676136,
+      "file_id": 4607204,
+      "destination": "mods/modelfix-1.14-fabric.jar",
+      "size": 65430,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "7c6a38565820d9c1941eb9d1aadaae75cb11ed8b",
+      "md5": "37022aa425061707b0ed1ada2c071d97"
+    },
+    {
+      "project_id": 531351,
+      "file_id": 4779473,
+      "destination": "mods/continuity-3.0.0-beta.4+1.20.1.jar",
+      "size": 1050571,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "b662fd625ba1f06c6e4958eac373856047d0d2a9",
+      "md5": "847fd4abc379058a701ea16a52e22dcb"
+    },
+    {
+      "project_id": 459857,
+      "file_id": 4574364,
+      "destination": "mods/ferritecore-6.0.0-fabric.jar",
+      "size": 124927,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "5a57ea73c3c7c0cc300d69611a9cad93baf8e9ab",
+      "md5": "67ce14ce1a5eb1637c1ff31ac2a0b2a0"
+    },
+    {
+      "project_id": 618812,
+      "file_id": 4509216,
+      "destination": "mods/main-menu-credits-1.1.2.jar",
+      "size": 14340,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "771eb704928c6d3e9fdf0e7971ba7d97305e09dd",
+      "md5": "ca68af4e0939c9b2af2e8f0c5149f1d0"
+    },
+    {
+      "project_id": 708967,
+      "file_id": 4739523,
+      "destination": "mods/fastquit-3.0.0+1.20+.jar",
+      "size": 79306,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "68f080925502a49027e231c63d3b94128ed6499b",
+      "md5": "a1b2847e248207157f5bbe7285b41927"
+    },
+    {
+      "project_id": 819030,
+      "file_id": 4753819,
+      "destination": "resourcepacks/Fast Better Grass.zip",
+      "size": 10974,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "6f131609ff5f63d1d0035bc5b0a5147614c851b2",
+      "md5": "473edef1ac73184d6e1bbccc7ce17d44"
+    },
+    {
+      "project_id": 849519,
+      "file_id": 4715350,
+      "destination": "mods/e4mc-4.0.1+1.19.4-fabric.jar",
+      "size": 275794,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "458253f15e3c5bb0d5354f42f3eedc5b1a71472c",
+      "md5": "38a38e97a3e0d039145ed0b108860241"
+    },
+    {
+      "project_id": 833233,
+      "file_id": 4734076,
+      "destination": "mods/Rrls-3.2.0-1.20.1-fabric.jar",
+      "size": 138678,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "1cf8d8af6ac5ae5f0c219531d4a6818059d5f1ee",
+      "md5": "ffa141099e01566d097601403b2dacb5"
+    },
+    {
+      "project_id": 448233,
+      "file_id": 4763646,
+      "destination": "mods/entityculling-fabric-1.6.2-mc1.20.1.jar",
+      "size": 59348,
+      "required": true,
+      "direct_download_available": false,
+      "sha1": "8e4be2bb9703deddb3d3d212c812cdc1f9de072b",
+      "md5": "29b1642d4e958fd88822e55410f70dfd",
+      "supplied_source": {
+        "provider": "modrinth",
+        "project_id": "NNAgCjsB",
+        "version_id": "BDwHAdWc",
+        "url": "https://cdn.modrinth.com/data/NNAgCjsB/versions/BDwHAdWc/entityculling-fabric-1.6.2-mc1.20.1.jar",
+        "sha512": "0080d3733f77e6b2e80e40d5d7bfe63dd125d94984bf92568d3434ff281f68123ec382ee53eba021278c01059299c12492dd518e61de1247f5cf7e8040bc98f1",
+        "size": 59348
+      }
+    },
+    {
+      "project_id": 511319,
+      "file_id": 4717362,
+      "destination": "mods/reeses_sodium_options-1.6.5+mc1.20.1-build.95.jar",
+      "size": 70820,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "49c68b22b9b4db4e1d3eaa3bdb6fdedd1faeba29",
+      "md5": "285c0e4ed6ece301585958fb2095ac9d"
+    },
+    {
+      "project_id": 790626,
+      "file_id": 4792388,
+      "destination": "mods/modernfix-fabric-5.8.1+mc1.20.1.jar",
+      "size": 528727,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "8e54fc50037506691f10098db0457c721b8b75c4",
+      "md5": "ae3c037a32d9a790e5abfd5b677651f2"
+    },
+    {
+      "project_id": 634062,
+      "file_id": 4610472,
+      "destination": "mods/NoChatReports-FABRIC-1.20.1-v2.2.2.jar",
+      "size": 619812,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "b99f23fb76aad5a944400717e6d71aa011c4d7f7",
+      "md5": "62ebb770ad9e08008abf6df50a6a1aa7"
+    },
+    {
+      "project_id": 568563,
+      "file_id": 4716613,
+      "destination": "mods/entity_texture_features_fabric_1.20-4.5.1.jar",
+      "size": 457226,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "19d45b9054a2854ced2e50f45765d76b47a2a4ba",
+      "md5": "28f060e8dd6207a28b58d2d78492f6c2"
+    },
+    {
+      "project_id": 408209,
+      "file_id": 4761944,
+      "destination": "mods/fabricskyboxes-0.7.3+mc1.20.1.jar",
+      "size": 207272,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "31a13b9ca0a500b4caad993ec42e1199142d86d1",
+      "md5": "a3e21b6bb94f98d3b5d29c77d1ad703a"
+    },
+    {
+      "project_id": 697845,
+      "file_id": 4797428,
+      "destination": "mods/fsb-interop-1.3.6+mc1.20.1-build.50.jar",
+      "size": 49495,
+      "required": true,
+      "direct_download_available": false,
+      "sha1": "4ead20a0528788f36d4a7e38d1ebfec35218387e",
+      "md5": "87fa8fe095bad30e9ca15ceb660b5e45",
+      "supplied_source": {
+        "provider": "modrinth",
+        "project_id": "HpdHOPOp",
+        "version_id": "JRvZ5VhS",
+        "url": "https://cdn.modrinth.com/data/HpdHOPOp/versions/JRvZ5VhS/fsb-interop-1.3.6%2Bmc1.20.1-build.50.jar",
+        "sha512": "922e5048e64b82181147cebda117408dabdc0119cd101172a7c24047a936b7add14a7db21b3aa73c6f0262b97cddd7f3768bdb30e08aae3fd88913e8f9fa5ee0",
+        "size": 49495
+      }
+    },
+    {
+      "project_id": 452046,
+      "file_id": 4610052,
+      "destination": "mods/enhancedblockentities-0.9+1.20.jar",
+      "size": 490690,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "61cfe50f69f8ef9e3640c0269ef158870f5b0410",
+      "md5": "bfc7a62a2834f824bb426b73f383e0cb"
+    },
+    {
+      "project_id": 867964,
+      "file_id": 4797376,
+      "destination": "resourcepacks/SodiumTranslations.zip",
+      "size": 164722,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "fbc9454ba8128a530cf77cdaf7b942cb968c91a4",
+      "md5": "c04170ae4d2fea18606afbda4df3720d"
+    },
+    {
+      "project_id": 533006,
+      "file_id": 4600415,
+      "destination": "mods/animatica-0.6+1.20.jar",
+      "size": 69810,
+      "required": true,
+      "direct_download_available": true,
+      "sha1": "3bcb19c759f313e69d3f7848b03c48f15167b88d",
+      "md5": "d57ba4c6253e84af7ce10719ee1e7a8a"
+    }
+  ]
+}

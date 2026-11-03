@@ -10,8 +10,12 @@ pub fn zip_member(path: &Path, name: &str) -> Vec<u8> {
 }
 
 fn bounded_bytes(reader: impl Read, expected_size: u64) -> Vec<u8> {
+    bounded_bytes_with_limit(reader, expected_size, 16 << 20)
+}
+
+fn bounded_bytes_with_limit(reader: impl Read, expected_size: u64, maximum_bytes: u64) -> Vec<u8> {
     assert!(
-        expected_size <= 16 << 20,
+        expected_size <= maximum_bytes,
         "fixture member exceeds admitted bytes"
     );
     let mut bytes = Vec::new();
@@ -29,6 +33,16 @@ pub fn zip_members(path: &Path) -> BTreeMap<String, Vec<u8>> {
 
 /// Admit a reviewed fixture's entry count while retaining the decoded-byte bounds.
 pub fn zip_members_with_limit(path: &Path, maximum_entries: usize) -> BTreeMap<String, Vec<u8>> {
+    zip_members_with_bounds(path, maximum_entries, 16 << 20, 16 << 20)
+}
+
+/// Read a reviewed larger fixture with explicit per-member and total bounds.
+pub fn zip_members_with_bounds(
+    path: &Path,
+    maximum_entries: usize,
+    member_bytes: u64,
+    total_bytes: u64,
+) -> BTreeMap<String, Vec<u8>> {
     let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
     assert!(
         archive.len() <= maximum_entries,
@@ -42,10 +56,13 @@ pub fn zip_members_with_limit(path: &Path, maximum_entries: usize) -> BTreeMap<S
             continue;
         }
         total = total.checked_add(entry.size()).unwrap();
-        assert!(total <= 16 << 20, "fixture archive exceeds admitted bytes");
+        assert!(
+            total <= total_bytes,
+            "fixture archive exceeds admitted bytes"
+        );
         let name = entry.name().unwrap().into_owned();
         let expected_size = entry.size();
-        let bytes = bounded_bytes(entry, expected_size);
+        let bytes = bounded_bytes_with_limit(entry, expected_size, member_bytes);
         assert!(
             members.insert(name, bytes).is_none(),
             "duplicate archive member"

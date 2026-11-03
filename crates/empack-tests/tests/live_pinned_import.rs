@@ -1,6 +1,8 @@
 //! Immutable upstream input; no latest-version lookup or automatic fixture refresh.
+#[path = "live_pinned_import/curseforge.rs"]
+mod curseforge;
 use empack_tests::harness::{
-    archive::zip_members_with_limit,
+    archive::{zip_members_with_bounds, zip_members_with_limit},
     process::{TestProject, assert_dist_artifact_suffix, empack_cmd, read_project},
     workspace::snapshot_excluding,
 };
@@ -405,25 +407,8 @@ fn verify_pinned_pack(
     // in the re-exported index. Bound each member and the complete decoded ZIP.
     run(&imported, &["build", "prism", "--delivery", "bundled"]);
     let bundled = assert_dist_artifact_suffix(&imported, "prism-bundled.zip");
-    let mut zip = zip::ZipArchive::new(fs::File::open(&bundled).unwrap()).unwrap();
-    assert!(zip.len() < archive_entries);
-    let mut actual = BTreeMap::new();
-    let mut total = 0;
-    for i in 0..zip.len() {
-        let entry = zip.by_index(i).unwrap();
-        if entry.is_dir() {
-            continue;
-        }
-        let name = entry.name().unwrap().into_owned();
-        let size = entry.size();
-        assert!(size <= member_limit);
-        total += size;
-        assert!(total <= total_limit);
-        let mut bytes = Vec::new();
-        entry.take(size + 1).read_to_end(&mut bytes).unwrap();
-        assert_eq!(bytes.len() as u64, size);
-        assert!(actual.insert(name, bytes).is_none());
-    }
+    let mut actual =
+        zip_members_with_bounds(&bundled, archive_entries - 1, member_limit, total_limit);
     for file in fixture["index"]["files"].as_array().unwrap() {
         let path = format!(".minecraft/{}", file["path"].as_str().unwrap());
         if file

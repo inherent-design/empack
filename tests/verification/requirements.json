@@ -2823,7 +2823,7 @@
         "BUILD"
       ],
       "required_assertions": "Every expected required file and exclusion verified against immutable selected fixture; no-op convergence and fresh content established.",
-      "required_work": "Pinned Fabric, Quilt, NeoForge, legacy Forge, saved-world and common/client/server layered mrpack scenarios share exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation checks. Raw source indexes remain literal; export comparison spells out only absent env objects as required on both sides. The layered input also has a server-only reference, which must remain absent from the complete client bundle. Keep fixed inputs separate from surveys and review identity, hashes, inventories and licensing. Real CurseForge, optional content, restricted files and real overlapping-layer precedence remain incomplete; all declared host/product executions remain required.",
+      "required_work": "Pinned Fabric, Quilt, NeoForge, legacy Forge, saved-world and common/client/server layered mrpack scenarios share exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation checks. Raw source indexes remain literal; export comparison spells out only absent env objects as required on both sides. The layered input also has a server-only reference, which must remain absent from the complete client bundle. Keep fixed inputs separate from surveys and review identity, hashes, inventories and licensing. The pinned CurseForge case adds 46 required selections and two explicit restricted-file continuations. Optional content and real overlapping-layer precedence remain incomplete; all declared host/product executions remain required.",
       "evidence_tiers": [
         "X",
         "L"
@@ -2855,7 +2855,7 @@
             "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override",
             "After reference materialization, the second sync preserves full author bytes, directory structure and portable attributes; a failed sync preserves the edited source tree, and explicit adoption changes only authorized lock/content observations while retaining unrelated author work"
           ],
-          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt, NeoForge and legacy Forge fixtures add real client-only/default-side declarations and opaque local JARs; the Horror OneBlock fixture adds saved-world byte preservation. The separate layered fixture adds real common/client/server sources and server-only exclusion without overlapping paths. Real CurseForge, optional content, restricted files and real overlapping-layer precedence remain unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
+          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt, NeoForge and legacy Forge fixtures add real client-only/default-side declarations and opaque local JARs; the Horror OneBlock fixture adds saved-world byte preservation. The separate layered fixture adds real common/client/server sources and server-only exclusion without overlapping paths. The separate CurseForge case binds real restricted-file continuation; optional content and real overlapping-layer precedence remain unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
         },
         {
           "id": "UX-017.pinned-quilt-client-sides",
@@ -2946,7 +2946,7 @@
             "Public import and two syncs retain exact author documents, lock, side requirements and complete author-tree convergence; Modrinth export preserves every source reference and override, while a bundled Prism export independently verifies all acquired bytes and the complete saved world",
             "Editing the imported world serverconfig readme requires explicit adoption; refusal preserves prior artifacts and author content, and a same-version export changes only the accepted source file while all other captured author bytes and portable attributes remain unchanged"
           ],
-          "remaining_group_evidence": "New fixture execution is required on every declared host/product. This checks saved-world import and archive byte preservation; it does not launch Minecraft, prove gameplay, or update an already occupied player world. Actual consumer tasks and remaining real CurseForge/optional/restricted/overlapping-layer corpus obligations remain required."
+          "remaining_group_evidence": "New fixture execution is required on every declared host/product. This checks saved-world import and archive byte preservation; it does not launch Minecraft, prove gameplay, or update an already occupied player world. Actual consumer tasks and remaining optional/overlapping-layer corpus obligations remain required."
         },
         {
           "id": "UX-017.pinned-layered-mrpack",
@@ -2969,7 +2969,31 @@
             "The complete bundled client contains162required references and269common/client override files with exact content, plus only the2launcher metadata members; the server-only reference and server-only layer files are excluded",
             "Repeated sync preserves authoring, lock, directory membership and attributes; an edited common TOML requires explicit adoption, rebuild changes only that override, and original archive/prior bundled bytes remain unchanged"
           ],
-          "remaining_group_evidence": "This real input has no optional entries or overlapping layer destinations. It establishes neither real collision precedence nor restricted/CurseForge behavior, and does not launch its mods, server, launcher or game. Actual execution is still required on every declared host/product graph; source metadata and unchanged old test identities are not execution of the expanded helper."
+          "remaining_group_evidence": "This real input has no optional entries or overlapping layer destinations. It establishes neither real collision precedence nor the separately bound restricted/CurseForge behavior, and does not launch its mods, server, launcher or game. Actual execution is still required on every declared host/product graph; source metadata and unchanged old test identities are not execution of the expanded helper."
+        },
+        {
+          "id": "UX-017.pinned-curseforge-restricted",
+          "boundary": "L",
+          "test_ids": [
+            "empack-tests::live_pinned_import::curseforge::live_pinned_curseforge_import_resumes_restricted_files_and_exports_inventory"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Pinned CurseForge project 396246/file 4800279 is verified against independent size, SHA-256/SHA-512, the complete original manifest, 32 override inventories and one explicitly excluded auxiliary file; official metadata independently pins all 46 required identities, destinations, sizes and SHA-1 digests",
+            "Actual official catalog restrictions for two selected files save an import without publishing its destination or changing author work; incorrect supplied bytes are refused with the same saved state and a digest-verification diagnostic",
+            "Explicitly supplied matching bytes from two separately pinned public sources resume the exact obligations; partial continuation retains the first selected payload and original archive after both original paths disappear, then completion uses only the second supplied file",
+            "Two public syncs converge on the complete author tree; all 46 materialized files and both-side required placements match independent expectations, CurseForge re-export preserves the complete canonical manifest and overrides, and the bundled Prism client contains only the expected game inventory with Minecraft 1.20.1/Fabric 0.14.23 components",
+            "Changing imported YOSBR autoJump from false to true requires explicit adoption without changing the pack version; refusal preserves authors, lock and prior artifacts, subsequent re-export changes only the accepted override, and unrelated author bytes, attributes, directories and the prior bundle survive"
+          ],
+          "remaining_group_evidence": "New case definition and independent oracle are not execution. Every declared host/product graph must run the actual provider/restricted continuation and artifact checks. Explicitly supplied fixture bytes are a user action, not an automatic provider fallback or proof of browser download usability. Optional and overlapping-layer inputs plus actual consumer startup remain separate obligations."
         }
       ],
       "owner_now": [
@@ -16115,8 +16139,8 @@
           "assertions": [
             "Nextest, instrumented coverage and Rustdoc execution receive fresh owned application homes and state/cache paths rather than caller application settings; native environment-name rules are preserved and the input environment stays unchanged",
             "Configured or default compiler homes are retained by reference without copying storage or creating toolchains; worker execution disables automatic toolchain installation",
-            "Ambient application overrides and test-fault settings are excluded; only explicitly declared prerequisite values are forwarded alongside the runner-selected product and inventory identities",
-            "Missing declared credentials stop before discovery or execution; controlled subprocess failure remains FAIL and cannot become success because the environment was prepared"
+            "Ambient application overrides and test-fault settings are excluded; only explicitly declared suite inputs are forwarded alongside the runner-selected product and inventory identities",
+            "Missing mandatory prerequisites stop before discovery or execution; controlled subprocess failure remains FAIL and cannot become success because the environment was prepared"
           ],
           "remaining_group_evidence": "Controlled runner dispatch with inert paths and mocked compiler/product execution; actual Nextest, product-child and native-host executions remain separate."
         },
