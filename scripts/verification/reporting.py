@@ -8,7 +8,7 @@ def cell(value):
     return "<code>" + escape(str(value)).replace("|", "&#124;").replace("\n", "<br>") + "</code>"
 
 
-def render_gate(record):
+def render_gate(record, *, details=True):
     if record.get("schema") != 1 or record.get("qualification") is not False:
         raise ValueError("Expected a nonqualifying CI gate record")
     if record.get("status") not in {"PASS", "FAIL"}:
@@ -20,15 +20,26 @@ def render_gate(record):
              f"Tree: {cell(record.get('source_tree', 'not recorded'))}", "",
              f"Report generated: {cell(record.get('created_at', 'not recorded'))}", ""]
     if record["status"] == "FAIL":
-        lines += ["## Evidence admission failed", "", cell(record.get("reason", "No diagnostic recorded")), "",
+        reason = str(record.get("reason", "No diagnostic recorded"))
+        if not details and len(reason) > 4096:
+            reason = reason[:4096] + "… (see full diagnostic in gate.md)"
+        lines += ["## Evidence admission failed", "", cell(reason), "",
                   "No complete acceptance join was admitted. A missing or rejected record is not a pass.", "",
                   "Retain the job artifacts for failed attempts, skipped prerequisites and detailed diagnostics.", ""]
+        if not details:
+            lines += _full_report_lines()
         return "\n".join(lines)
 
-    return "\n".join(lines + _acceptance_lines(record))
+    return "\n".join(lines + _acceptance_lines(record, details=details))
 
 
-def _acceptance_lines(record):
+def _full_report_lines():
+    return ["## Full evidence", "",
+            "The verification-gate artifact contains gate.json and the complete gate.md, including",
+            "case variants, exact tests, attempt identities and full diagnostics. This step summary omits those details.", ""]
+
+
+def _acceptance_lines(record, *, details=True):
     lines = []
     acceptance = record["acceptance"]
     if acceptance.get("source_revision") != record.get("source_revision") or acceptance.get("qualification") is not False:
@@ -49,6 +60,8 @@ def _acceptance_lines(record):
     for row in requirements:
         lines.append("| " + " | ".join(cell(row.get(k, row['id'])) for k in
                      ("id", "title", "scope", "risk", "case_bindings_status", "status")) + " |")
+    if not details:
+        return lines + [""] + _full_report_lines()
 
     lines += ["", "## Admitted suite receipts", "",
               "Executed test rows were checked against compiler discovery and JUnit. Preflight failures supply no passing tests.", ""]

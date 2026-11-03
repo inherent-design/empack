@@ -16373,6 +16373,26 @@
             "An ordinary public provider command honors its explicitly configured unreachable proxy and returns the network exit classification through the executable",
             "The offline guard uses ordinary proxy configuration rather than a fixture endpoint or a claimed OS network sandbox"
           ]
+        },
+        {
+          "id": "UX-088.ci-step-summary",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_reporting.VerificationReports.test_compact_summary_preserves_gate_truth_under_github_limit"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Compact CI presentation preserves gate outcome, source identity, complete requirement-group counts and missing/partial status without claiming release qualification",
+            "Large per-test evidence remains in complete JSON/Markdown artifacts; a compact view fits the GitHub step-summary limit, does not mutate the admitted record, and identifies omitted details and the location of any shortened diagnostic"
+          ],
+          "remaining_group_evidence": "Presentation checks do not execute product or consumer work, admit new evidence, or replace original receipts. The native subprocess regression separately checks successful and failed gate command wiring."
         }
       ],
       "owner_now": [

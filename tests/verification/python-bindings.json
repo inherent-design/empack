@@ -2,6 +2,7 @@
   "schema": 1,
   "status": "unittest identities classified; fixture/helper checks are not consumer or final-package execution",
   "tests": [
+    {"id": "python::test_reporting.VerificationReports.test_compact_summary_preserves_gate_truth_under_github_limit", "boundary": "U", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.AttemptPolicy.test_rustdoc_execution_uses_private_application_state_with_existing_compiler_homes", "boundary": "H", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.AttemptPolicy.test_suite_worker_isolates_application_state_without_copying_compiler_homes", "boundary": "H", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.AttemptPolicy.test_curseforge_default_and_optional_override_reach_only_selected_suites", "boundary": "H", "requirements": ["UX-088"]},

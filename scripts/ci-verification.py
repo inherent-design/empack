@@ -222,6 +222,14 @@ def check_gate(plan, needs, artifacts):
                                for record in evidence]}
 
 
+def write_gate_reports(output, record, summary=None):
+    write_json(output, record)
+    output.with_suffix(".md").write_text(render_gate(record), encoding="utf-8")
+    if summary is not None:
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(render_gate(record, details=False), encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -230,6 +238,8 @@ def main():
     gate = commands.add_parser("gate")
     gate.add_argument("--artifacts", type=Path, required=True)
     gate.add_argument("--output", type=Path, required=True)
+    gate.add_argument("--summary", type=Path,
+                      help="Write a compact CI summary; full JSON/Markdown remain at --output")
     args = parser.parse_args()
     if args.command == "plan":
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
@@ -254,12 +264,10 @@ def main():
             result = check_gate(plan, json.loads(os.environ["CI_NEEDS_JSON"]), args.artifacts)
         except (ValueError, OSError, KeyError) as error:
             result = {**identity, "status": "FAIL", "reason": str(error)}
-            write_json(args.output, result)
-            args.output.with_suffix(".md").write_text(render_gate(result), encoding="utf-8")
+            write_gate_reports(args.output, result, args.summary)
             raise
         result.update(created_at=identity["created_at"])
-        write_json(args.output, result)
-        args.output.with_suffix(".md").write_text(render_gate(result), encoding="utf-8")
+        write_gate_reports(args.output, result, args.summary)
         print(f"CI evidence gate: {result['status']}; JSON and Markdown: {args.output.with_suffix('')}")
 
 

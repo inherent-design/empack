@@ -50,6 +50,31 @@ class VerificationReports(unittest.TestCase):
             self.assertIn(identity, text)
         self.assertNotIn("%", text)
 
+    def test_compact_summary_preserves_gate_truth_under_github_limit(self):
+        record = fixture()
+        template = record["acceptance"]["requirements"][0]["cases"][0]["variants"][0]["tests"][0]
+        record["acceptance"]["requirements"][0]["cases"][0]["variants"][0]["tests"] = [
+            dict(template, id=f"cli::observed_{index}") for index in range(7000)]
+        original = copy.deepcopy(record)
+        full = render_gate(record)
+        self.assertGreater(len(full.encode()), 1024 * 1024)
+        summary = render_gate(record, details=False)
+        self.assertLess(len(summary.encode()), 1024 * 1024)
+        for value in ("CI gate: **PASS**", "qualification has **not** been established",
+                      "| 0 | 0 | 0 | 1 |", "<code>partial</code>", "<code>NOT_RUN</code>",
+                      "verification-gate", "gate.json", "gate.md", "a" * 40, "b" * 40):
+            self.assertIn(value, summary)
+        self.assertNotIn("cli::observed_6999", summary)
+        self.assertIn("cli::observed_6999", full)
+        self.assertEqual(record, original)
+        record.update(status="FAIL", reason="<failure> " + "diagnostic " * 200000)
+        summary = render_gate(record, details=False)
+        self.assertLess(len(summary.encode()), 1024 * 1024)
+        self.assertIn("CI gate: **FAIL**", summary)
+        self.assertIn("&lt;failure&gt;", summary)
+        self.assertIn("full diagnostic", summary)
+        self.assertNotIn("## Requirement status", summary)
+
     def test_failed_admission_cannot_render_fabricated_passing_acceptance(self):
         record = fixture()
         record.update(status="FAIL", reason="Required job test is skipped")
@@ -112,7 +137,8 @@ class VerificationReports(unittest.TestCase):
                     env = dict(os.environ, CI_NEEDS_JSON=json.dumps({"plan": {"result": "success"},
                                                                "tooling": {"result": job_status}}))
                     run = subprocess.run([sys.executable, str(SCRIPTS / "ci-verification.py"), "gate",
-                        "--artifacts", str(output), "--output", str(output / "gate.json")],
+                        "--artifacts", str(output), "--output", str(output / "gate.json"),
+                        "--summary", str(output / "summary.md")],
                         cwd=root, env=env, capture_output=True, text=True, timeout=20)
                     self.assertEqual(run.returncode == 0, expected == "PASS", run.stderr)
                     record = json.loads((output / "gate.json").read_text())
@@ -123,6 +149,11 @@ class VerificationReports(unittest.TestCase):
                     text = (output / "gate.md").read_text()
                     self.assertIn(f"CI gate: **{expected}**", text)
                     self.assertIn(revision, text)
+                    summary = (output / "summary.md").read_text()
+                    self.assertIn(f"CI gate: **{expected}**", summary)
+                    self.assertIn(revision, summary)
+                    self.assertIn("gate.json", summary)
+                    self.assertLess(len(summary.encode()), 1024 * 1024)
                     if expected == "PASS":
                         self.assertEqual(len(record["acceptance"]["requirements"]), 109)
                         self.assertTrue(all(row["status"] == "NOT_RUN" for row in record["acceptance"]["requirements"]))
