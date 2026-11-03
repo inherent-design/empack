@@ -16100,6 +16100,7 @@
           "boundary": "H",
           "test_ids": [
             "python::test_verification_runner.AttemptPolicy.test_suite_worker_isolates_application_state_without_copying_compiler_homes",
+            "python::test_verification_runner.AttemptPolicy.test_curseforge_default_and_optional_override_reach_only_selected_suites",
             "python::test_verification_runner.AttemptPolicy.test_rustdoc_execution_uses_private_application_state_with_existing_compiler_homes",
             "python::test_coverage_runner.CoverageRunner.test_inventory_binds_test_process_and_report_cannot_erase_test_failure"
           ],

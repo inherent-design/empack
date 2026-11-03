@@ -217,7 +217,8 @@ junit.store-failure-output = false
     record["inventory_sha256"] = sha256(suite_dir / "inventory.json")
     home = suite_dir / "worker-home"
     home.mkdir(mode=0o700)
-    run_env = dict(suite_environment(home, environment, suite.required_env),
+    forwarded = (*suite.required_env, *(name for name in suite.optional_env if environment.get(name)))
+    run_env = dict(suite_environment(home, environment, forwarded),
                    EMPACK_QUALIFY="1", EMPACK_E2E_STRICT="1",
                    EMPACK_E2E_BIN=artifact["path"], EMPACK_EXPECT_BINARY_SHA256=artifact["sha256"],
                    EMPACK_EXPECT_VERSION=artifact["version"], EMPACK_TEST_PYTHON=sys.executable)

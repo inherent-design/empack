@@ -14,6 +14,7 @@ class Suite:
     timeout: int = 1800
     cases: tuple[str, ...] = ()
     required_env: tuple[str, ...] = ()
+    optional_env: tuple[str, ...] = ()
 
     def inapplicable_reason(self, target):
         if self.unix_only and target == "x86_64-pc-windows-msvc":
@@ -63,7 +64,7 @@ SUITES = {
                            cases=("live_cli_hosted_channel_verifies_inputs_before_local_publication",
                                   "live_cli_hosted_missing_channel_never_grants_offline_launch")),
     "live-provider": Suite(("live_provider_cli", "live_provider_contract"), ignored=True,
-                           required_env=("EMPACK_KEY_CURSEFORGE",)),
+                           optional_env=("EMPACK_KEY_CURSEFORGE",)),
     "live-provider-cli": Suite(("live_provider_cli",), ignored=True, cases=(
         "live_cli_equivalent_provider_selectors_converge",
         "live_cli_pty_search_requires_choice_and_approval",
@@ -79,7 +80,7 @@ SUITES = {
     "live-curseforge": Suite(("live_provider_contract", "live_provider_cli"), ignored=True, cases=(
         "curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes",
         "live_cli_curseforge_selectors_converge"),
-        required_env=("EMPACK_KEY_CURSEFORGE",)),
+        optional_env=("EMPACK_KEY_CURSEFORGE",)),
     "server-cli": Suite(("live_server_cli",), ignored=True, java=True),
     "live-runtime": Suite(("live_server_distribution_startup",), ignored=True, java=True, timeout=3600,
                           required_env=("EMPACK_TEST_JAVA8_HOME",)),

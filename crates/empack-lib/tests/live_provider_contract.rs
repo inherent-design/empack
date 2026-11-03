@@ -18,20 +18,21 @@ use empack_lib::{
 };
 use std::sync::Arc;
 
+fn catalog_key(provider: ProviderKind) -> Option<String> {
+    (provider == ProviderKind::CurseForge).then(|| {
+        std::env::var("EMPACK_KEY_CURSEFORGE").unwrap_or_else(|_| {
+            empack_lib::application::config::defaults::CURSEFORGE_API_CLIENT_KEY.to_string()
+        })
+    })
+}
+
 async fn verify(
     provider: ProviderKind,
     slug: &str,
     project: &str,
     selection: &str,
 ) -> anyhow::Result<()> {
-    let key = if provider == ProviderKind::CurseForge {
-        Some(
-            std::env::var("EMPACK_KEY_CURSEFORGE")
-                .map_err(|_| anyhow::anyhow!("Provider smoke requires EMPACK_KEY_CURSEFORGE"))?,
-        )
-    } else {
-        None
-    };
+    let key = catalog_key(provider);
     let catalog = ProviderCatalog::new(key, Arc::new(HostBudgetRegistry::new()))?;
     let build_catalog = catalog.clone();
     let transport = HttpAcquisition::new()?;
@@ -245,7 +246,7 @@ async fn modrinth_resource_pack_identity_and_exact_bytes() -> anyhow::Result<()>
     .await
 }
 #[tokio::test]
-#[ignore = "requires CurseForge API key and CDN"]
+#[ignore = "live CurseForge API and CDN using the application credential default or an explicit override"]
 async fn curseforge_identity_and_exact_bytes() -> anyhow::Result<()> {
     verify(ProviderKind::CurseForge, "jei", "238222", "7364663").await
 }
@@ -447,14 +448,7 @@ async fn verify_compatible(
 ) -> anyhow::Result<()> {
     use empack_core::model::GameVersion;
     use empack_lib::engine::providers::{CompatibleRequest, ReleasePolicy, SelectionLimits};
-    let key = if provider == ProviderKind::CurseForge {
-        Some(
-            std::env::var("EMPACK_KEY_CURSEFORGE")
-                .map_err(|_| anyhow::anyhow!("Provider smoke requires EMPACK_KEY_CURSEFORGE"))?,
-        )
-    } else {
-        None
-    };
+    let key = catalog_key(provider);
     let project = match provider {
         ProviderKind::Modrinth => ProviderProjectId::Modrinth(ModrinthProjectId::parse(id)?),
         ProviderKind::CurseForge => ProviderProjectId::CurseForge(CurseForgeProjectId::parse(id)?),
@@ -527,7 +521,7 @@ async fn modrinth_compatible_selection_and_bytes() -> anyhow::Result<()> {
     .await
 }
 #[tokio::test]
-#[ignore = "requires CurseForge API key and CDN"]
+#[ignore = "live CurseForge API and CDN using the application credential default or an explicit override"]
 async fn curseforge_compatible_selection_and_bytes() -> anyhow::Result<()> {
     verify_compatible(
         ProviderKind::CurseForge,

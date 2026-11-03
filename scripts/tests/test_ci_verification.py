@@ -606,7 +606,7 @@ class RequiredGate(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Empty required selection"):
                 selected_tests(inventory, False, ("empack-core",), ("another_fixture",))
 
-    def test_missing_credentials_are_blocked_before_discovery_or_execution(self):
+    def test_provider_defaults_do_not_remove_required_runtime_prerequisites(self):
         from verify import Blocked, run_suite
         sentinel = "live_cli_curseforge_selectors_converge"
         self.assertIn(sentinel, SUITES["live-curseforge"].cases)
@@ -615,9 +615,19 @@ class RequiredGate(unittest.TestCase):
         self.assertIn("live_cli_update_release_policy_overrides_authored_preference", SUITES["live-provider-cli"].cases)
         self.assertFalse(SUITES["live-provider-cli"].required_env)
         self.assertNotIn(sentinel, SUITES["live-provider-cli"].cases)
-        for name in ("live-provider", "live-curseforge", "live-runtime"):
-            with self.subTest(name=name), self.assertRaisesRegex(Blocked, "prerequisites unavailable"):
-                run_suite(name, SUITES[name], Path("unused"), {}, {"features": "telemetry", "target": ci.TARGETS[0]}, {}, "all")
+        for name in ("live-provider", "live-curseforge"):
+            self.assertFalse(SUITES[name].required_env)
+            self.assertEqual(SUITES[name].optional_env, ("EMPACK_KEY_CURSEFORGE",))
+        from unittest.mock import patch
+        for environment in ({}, {"EMPACK_TEST_JAVA8_HOME": ""}):
+            with self.subTest(environment=environment), patch("verify.checked") as discovery, \
+                    patch("verify.run") as worker, patch("verify.java_probe") as java:
+                with self.assertRaisesRegex(Blocked, "prerequisites unavailable: EMPACK_TEST_JAVA8_HOME"):
+                    run_suite("live-runtime", SUITES["live-runtime"], Path("unused"), environment,
+                              {"features": "telemetry", "target": ci.TARGETS[0]}, {}, "all")
+                discovery.assert_not_called()
+                worker.assert_not_called()
+                java.assert_not_called()
 
 
 class PushPlanning(unittest.TestCase):

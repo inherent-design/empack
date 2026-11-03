@@ -1,5 +1,5 @@
 use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
-use empack_tests::harness::process::{TestProject, read_project};
+use empack_tests::harness::process::{TestProject, curseforge_key, read_project};
 use empack_tests::harness::{
     terminal,
     workspace::{snapshot, snapshot_excluding},
@@ -198,10 +198,9 @@ fn live_cli_equivalent_provider_selectors_converge() {
     );
 }
 #[test]
-#[ignore = "requires explicit CurseForge API credential and live catalog"]
+#[ignore = "live CurseForge catalog using the application credential default or an explicit override"]
 fn live_cli_curseforge_selectors_converge() {
-    let key = std::env::var("EMPACK_KEY_CURSEFORGE")
-        .expect("CurseForge qualification requires EMPACK_KEY_CURSEFORGE");
+    let key = curseforge_key();
     assert!(!key.trim().is_empty(), "CurseForge credential is empty");
     selector_journey(
         "curseforge",

@@ -4,6 +4,7 @@
   "tests": [
     {"id": "python::test_verification_runner.AttemptPolicy.test_rustdoc_execution_uses_private_application_state_with_existing_compiler_homes", "boundary": "H", "requirements": ["UX-088"]},
     {"id": "python::test_verification_runner.AttemptPolicy.test_suite_worker_isolates_application_state_without_copying_compiler_homes", "boundary": "H", "requirements": ["UX-088"]},
+    {"id": "python::test_verification_runner.AttemptPolicy.test_curseforge_default_and_optional_override_reach_only_selected_suites", "boundary": "H", "requirements": ["UX-088"]},
     {"id": "python::test_acceptance_assets.AcceptanceAssets.test_command_arguments_wire_both_operations_without_product_execution", "boundary": "H", "requirements": ["UX-084", "UX-088"]},
     {"id": "python::test_acceptance_assets.AcceptanceAssets.test_staging_and_collection_preserve_exact_records_and_supporting_bytes", "boundary": "H", "requirements": ["UX-084", "UX-088"]},
     {"id": "python::test_acceptance_assets.AcceptanceAssets.test_missing_evidence_is_distinct_from_failed_access", "boundary": "H", "requirements": ["UX-084", "UX-088"]},
@@ -403,7 +404,7 @@
       ]
     },
     {
-      "id": "python::test_ci_verification.RequiredGate.test_missing_credentials_are_blocked_before_discovery_or_execution",
+      "id": "python::test_ci_verification.RequiredGate.test_provider_defaults_do_not_remove_required_runtime_prerequisites",
       "boundary": "H",
       "requirements": [
         "UX-088"

@@ -286,6 +286,44 @@ class AttemptPolicy(unittest.TestCase):
             worker.assert_not_called()
             self.assertFalse((root / "missing-key").exists())
 
+    def test_curseforge_default_and_optional_override_reach_only_selected_suites(self):
+        import json
+        from unittest.mock import patch
+        from verify import run_suite
+        from verification.suites import SUITES
+        inventory = {"test-count": 3, "rust-suites": {
+            "pkg::contract": {"status": "listed", "binary-name": "live_provider_contract",
+                "testcases": {name: {"ignored": True, "filter-match": {"status": "matches"}}
+                    for name in ("curseforge_identity_and_exact_bytes", "curseforge_compatible_selection_and_bytes")}},
+            "pkg::cli": {"status": "listed", "binary-name": "live_provider_cli",
+                "testcases": {"live_cli_curseforge_selectors_converge": {
+                    "ignored": True, "filter-match": {"status": "matches"}}}}}}
+        artifact = dict(path="/ordinary/product", sha256="0" * 64, version="0.0.0-dev",
+                        features="default", target="x86_64-unknown-linux-gnu")
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("live-provider", "live-curseforge"):
+                for label, override in (("absent", None), ("empty", ""), ("configured", "fixture-private-key")):
+                    with self.subTest(suite=name, override=label):
+                        attempt = Path(directory) / name / label
+                        attempt.mkdir(parents=True)
+                        environment = dict(EMPACK_YES="1", EMPACK_TEST_FAULT="unrelated-control")
+                        if override is not None:
+                            environment["EMPACK_KEY_CURSEFORGE"] = override
+                        record = {}
+                        with patch("verify.checked", return_value=json.dumps(inventory)), \
+                                patch("verify.compare_rust_inventory"), \
+                                patch("verify.run", return_value=(0, "", False)) as worker:
+                            run_suite(name, SUITES[name], attempt, environment, artifact, record, "minimal")
+                        worker.assert_called_once()
+                        selected = worker.call_args.kwargs["env"]
+                        self.assertEqual(selected.get("EMPACK_KEY_CURSEFORGE"), override or None)
+                        self.assertNotIn("EMPACK_YES", selected)
+                        self.assertNotIn("EMPACK_TEST_FAULT", selected)
+                        self.assertNotIn("fixture-private-key", json.dumps(record))
+                        if override:
+                            self.assertNotIn(override, redact(override, selected))
+                        self.assertEqual(record["status"], "FAIL", "a worker call without JUnit is not passing evidence")
+
     def test_windows_compiler_discovery_survives_without_host_cargo_or_application_state(self):
         from unittest.mock import patch
         from verify import isolated_environment
