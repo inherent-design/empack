@@ -422,6 +422,46 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     let before = snapshot(root.path());
     let host = snapshot(state.path());
 
+    // Exact republication is an idempotent retry, but still verifies hosted inputs.
+    let envelope = server
+        .mock("GET", envelope_path.as_str())
+        .with_body(encoded.clone())
+        .expect(1)
+        .create_async()
+        .await;
+    let asset = server
+        .mock("GET", asset_path.as_str())
+        .with_body("settings")
+        .expect(1)
+        .create_async()
+        .await;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_owned(), channel(1))
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let result = publish(&engine, prepared).await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(
+        ExecutionReceipt::ReleasePublication(receipt),
+    )) = &*result
+    else {
+        panic!("exact channel republication did not complete")
+    };
+    assert_eq!(receipt.release, release.id());
+    assert_eq!(receipt.channel.as_deref(), Some("stable"));
+    assert_eq!(receipt.publication.changed_files, 0);
+    drop(result);
+    envelope.assert_async().await;
+    asset.assert_async().await;
+    envelope.remove_async().await;
+    asset.remove_async().await;
+    assert_eq!(snapshot(root.path()), before);
+    assert_eq!(snapshot(state.path()), host);
+    assert_eq!(snapshot(input.path()), original_inputs);
+    assert_eq!(fs::read(&pointer_path).unwrap(), pointer);
+
     for (case, envelope_status, body, asset_status, asset_body) in [
         (
             "wrong-envelope",
@@ -550,12 +590,14 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     asset.assert_async().await;
     fs::write(&staged_asset, b"settings").unwrap();
 
-    for (sequence, diagnostic) in [
-        (1, "Channel sequence must advance"),
-        (0, "Invalid channel sequence"),
+    let mut changed = channel(1);
+    changed.base_url = "https://publisher.test/different/".into();
+    for (request, diagnostic) in [
+        (changed, "Channel sequence must advance"),
+        (channel(0), "Invalid channel sequence"),
     ] {
         let error = engine
-            .prepare(root.path().to_owned(), channel(sequence))
+            .prepare(root.path().to_owned(), request)
             .await
             .err()
             .expect("invalid channel metadata was accepted");
