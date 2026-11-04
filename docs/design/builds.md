@@ -48,6 +48,19 @@ This rule affects newly built release descriptors. Updating the empack executabl
 
 Generic native exports remain consumer-neutral and can legitimately manage a root image. Authors publishing native releases to Prism channels must explicitly retain `policies: {icon.png: seed}` in their bindings. Every Prism installation, update, repair, rollback and launch preparation validates the selected release's effective icon policy. An incompatible managed icon is rejected with publishing guidance; authenticated release policies are never rewritten on the recipient. This also prevents a conflict override from reintroducing launcher-owned managed content.
 
+## Content-layer precedence
+
+For the same game-relative file, a selected side-specific source replaces the common source as a whole file. Settings inside files are not merged.
+
+| Output | Highest to lowest precedence                        |
+| ------ | --------------------------------------------------- |
+| Client | `overrides/client/` → `overrides/common/` → `pack/` |
+| Server | `overrides/server/` → `overrides/common/` → `pack/` |
+
+If `config/example.toml` exists in common, client and server, the client receives the client copy and the server receives the server copy. The common copy is unused in those selected views and remains untouched in the authoring project. If a side has no selected replacement, it uses the common copy. A disabled optional replacement can therefore expose the lower-layer fallback; an unresolved choice must not be guessed.
+
+Normal cross-layer replacement is valid and does not produce an unused-configuration error. Ambiguous duplicate destinations within one layer, portable path aliases and file/directory conflicts remain errors. For mrpack collisions, export represents the effective client/server views without discarding the original editable sources.
+
 ## Build data flow
 
 Capture intent, lock, source layers, templates and exact runtime once. Resolve saved choices, construct the expected game inventory, project consumer requirements, then acquire only bytes needed by each recipe. Shared verified content uses leases; producing one consumer does not require publishing another consumer's artifact.

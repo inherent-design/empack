@@ -2823,7 +2823,7 @@
         "BUILD"
       ],
       "required_assertions": "Every expected required file and exclusion verified against immutable selected fixture; no-op convergence and fresh content established.",
-      "required_work": "Pinned Fabric, Quilt, NeoForge, legacy Forge, saved-world and common/client/server layered mrpack scenarios share exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation checks. Raw source indexes remain literal; export comparison spells out only absent env objects as required on both sides. The layered input also has a server-only reference, which must remain absent from the complete client bundle. Keep fixed inputs separate from surveys and review identity, hashes, inventories and licensing. The pinned CurseForge case adds 46 required selections and two explicit restricted-file continuations. The optional mrpack case binds eight genuine optional references and enabled/disabled client output. Real overlapping-layer precedence remains incomplete; all declared host/product executions remain required.",
+      "required_work": "Pinned Fabric, Quilt, NeoForge, legacy Forge, saved-world and common/client/server layered mrpack scenarios share exact acquisition, two-sync, side-authority, complete export and edit/adopt preservation checks. Raw source indexes remain literal; export comparison spells out only absent env objects as required on both sides. The layered input also has a server-only reference, which must remain absent from the complete client bundle. Keep fixed inputs separate from surveys and review identity, hashes, inventories and licensing. The pinned CurseForge case adds 46 required selections and two explicit restricted-file continuations. The optional mrpack case binds eight genuine optional references and enabled/disabled client output. Real upstream inputs cover custom layers; the separately bound owned synthetic public-import fixture covers same-path common/client/server precedence. A separate overlapping upstream archive is not required. All declared host/product executions remain required.",
       "evidence_tiers": [
         "X",
         "L"
@@ -2855,7 +2855,7 @@
             "Changing an imported local configuration makes sync refuse without modifying the lock or artifacts; explicit adoption accepts those bytes without a version bump, and the next export changes only that override",
             "After reference materialization, the second sync preserves full author bytes, directory structure and portable attributes; a failed sync preserves the edited source tree, and explicit adoption changes only authorized lock/content observations while retaining unrelated author work"
           ],
-          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt, NeoForge and legacy Forge fixtures add real client-only/default-side declarations and opaque local JARs; the Horror OneBlock fixture adds saved-world byte preservation. The separate layered fixture adds real common/client/server sources and server-only exclusion without overlapping paths. The separate CurseForge case binds real restricted-file continuation; the separate BTE case binds optional content, while real overlapping-layer precedence remains unbound; synthetic/control fixtures and rolling surveys do not supply those obligations."
+          "remaining_group_evidence": "This Fabric/Modrinth pack has no optional, side-only, world or restricted members. Separate Quilt, NeoForge and legacy Forge fixtures add real client-only/default-side declarations and opaque local JARs; the Horror OneBlock fixture adds saved-world byte preservation. The separate layered fixture adds real common/client/server sources and server-only exclusion without overlapping paths. The separate CurseForge case binds real restricted-file continuation and the BTE case binds real optional content. The owned synthetic public-import fixture separately covers same-path layer precedence; rolling surveys do not replace the pinned cases."
         },
         {
           "id": "UX-017.pinned-quilt-client-sides",
@@ -2946,7 +2946,7 @@
             "Public import and two syncs retain exact author documents, lock, side requirements and complete author-tree convergence; Modrinth export preserves every source reference and override, while a bundled Prism export independently verifies all acquired bytes and the complete saved world",
             "Editing the imported world serverconfig readme requires explicit adoption; refusal preserves prior artifacts and author content, and a same-version export changes only the accepted source file while all other captured author bytes and portable attributes remain unchanged"
           ],
-          "remaining_group_evidence": "New fixture execution is required on every declared host/product. This checks saved-world import and archive byte preservation; it does not launch Minecraft, prove gameplay, or update an already occupied player world. Actual consumer tasks and remaining optional/overlapping-layer corpus obligations remain required."
+          "remaining_group_evidence": "New fixture execution is required on every declared host/product. This checks saved-world import and archive byte preservation; it does not launch Minecraft, prove gameplay, or update an already occupied player world. The separate optional and synthetic overlap cases, actual consumer tasks and every declared host/product execution remain required."
         },
         {
           "id": "UX-017.pinned-layered-mrpack",
@@ -2969,7 +2969,7 @@
             "The complete bundled client contains162required references and269common/client override files with exact content, plus only the2launcher metadata members; the server-only reference and server-only layer files are excluded",
             "Repeated sync preserves authoring, lock, directory membership and attributes; an edited common TOML requires explicit adoption, rebuild changes only that override, and original archive/prior bundled bytes remain unchanged"
           ],
-          "remaining_group_evidence": "This real input has no optional entries or overlapping layer destinations. It establishes neither real collision precedence nor the separately bound restricted/CurseForge behavior, and does not launch its mods, server, launcher or game. Actual execution is still required on every declared host/product graph; source metadata and unchanged old test identities are not execution of the expanded helper."
+          "remaining_group_evidence": "This real input has no optional entries or overlapping layer destinations. The owned synthetic public-import case supplies collision precedence; this real fixture does not establish the separately bound restricted/CurseForge behavior and does not launch its mods, server, launcher or game. Actual execution is still required on every declared host/product graph; source metadata and unchanged old test identities are not execution of the expanded helper."
         },
         {
           "id": "UX-017.pinned-curseforge-restricted",
@@ -2993,7 +2993,7 @@
             "Two public syncs converge on the complete author tree; all 46 materialized files and both-side required placements match independent expectations, CurseForge re-export preserves the complete canonical manifest and overrides, and the bundled Prism client contains only the expected game inventory with Minecraft 1.20.1/Fabric 0.14.23 components",
             "Changing imported YOSBR autoJump from false to true requires explicit adoption without changing the pack version; refusal preserves authors, lock and prior artifacts, subsequent re-export changes only the accepted override, and unrelated author bytes, attributes, directories and the prior bundle survive"
           ],
-          "remaining_group_evidence": "New case definition and independent oracle are not execution. Every declared host/product graph must run the actual provider/restricted continuation and artifact checks. Explicitly supplied fixture bytes are a user action, not an automatic provider fallback or proof of browser download usability. Optional and overlapping-layer inputs plus actual consumer startup remain separate obligations."
+          "remaining_group_evidence": "New case definition and independent oracle are not execution. Every declared host/product graph must run the actual provider/restricted continuation and artifact checks. Explicitly supplied fixture bytes are a user action, not an automatic provider fallback or proof of browser download usability. The separately bound optional and synthetic layer-precedence cases plus actual consumer startup remain required."
         },
         {
           "id": "UX-017.pinned-optional-mrpack",
@@ -3017,7 +3017,7 @@
             "Bundled Prism output requires a choice policy; complete enabled output contains all client selections, explicit false choices omit exactly eight optional files, and both outputs retain all common override bytes and exact Minecraft 26.3/Fabric 0.19.5 components",
             "An imported TOML edit requires explicit adoption without a version bump; refusal and subsequent re-export preserve unrelated author bytes/attributes/empty directories, original source archive and prior artifacts"
           ],
-          "remaining_group_evidence": "The independent oracle and case definition are not product execution. Every declared host/product must run the complete changed-source journey. Referenced and embedded payloads are temporary and never committed; this does not execute the disabled JAR, launcher, Minecraft, menu animation or shaders, or replace the remaining overlapping-layer and actual-consumer obligations."
+          "remaining_group_evidence": "The independent oracle and case definition are not product execution. Every declared host/product must run the complete changed-source journey. Referenced and embedded payloads are temporary and never committed; this does not execute the disabled JAR, launcher, Minecraft, menu animation or shaders, or replace the separately bound synthetic layer-precedence and actual-consumer obligations."
         },
         {
           "id": "UX-017.public-layered-import",
@@ -3040,7 +3040,7 @@
             "An explicit ad-hoc bundled Prism export contains exactly the client configuration and options plus its two launcher metadata files, excludes server-only content and retains the literal Minecraft/Fabric runtime",
             "Source archive, author documents, lock and retained common/client/server bytes remain unchanged through both exports"
           ],
-          "remaining_group_evidence": "This is an owned synthetic X fixture, not a real upstream archive. The separate pinned L cases supply real-pack acquisition and inventories. It binds the previously missing X boundary without resolving or removing the pending real-overlap archive obligation; all declared variants still require execution."
+          "remaining_group_evidence": "This is an owned synthetic X fixture, not a real upstream archive. The separate pinned L cases supply real-pack acquisition and inventories. It covers same-path precedence alongside the separate real layered corpus; no overlapping upstream archive is required. All declared variants still require execution."
         }
       ],
       "owner_now": [
@@ -3053,7 +3053,7 @@
         "portable evidence/codecs; content/transport host ports",
         "shared recipes/template/archive verification in empack-engine + sink capabilities"
       ],
-      "case_bindings_status": "partial"
+      "case_bindings_status": "complete"
     },
     {
       "id": "UX-018",
