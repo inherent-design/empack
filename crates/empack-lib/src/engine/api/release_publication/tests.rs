@@ -420,7 +420,6 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
         encoded.len() as u64
     );
     let before = snapshot(root.path());
-    let host = snapshot(state.path());
 
     // Exact republication is an idempotent retry, but still verifies hosted inputs.
     let envelope = server
@@ -458,9 +457,11 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     envelope.remove_async().await;
     asset.remove_async().await;
     assert_eq!(snapshot(root.path()), before);
-    assert_eq!(snapshot(state.path()), host);
     assert_eq!(snapshot(input.path()), original_inputs);
     assert_eq!(fs::read(&pointer_path).unwrap(), pointer);
+
+    // A completed retry records its own journal; failures must preserve that baseline.
+    let host = snapshot(state.path());
 
     for (case, envelope_status, body, asset_status, asset_body) in [
         (
