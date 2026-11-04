@@ -900,15 +900,10 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             .is_err()
     );
     let channel = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "fixture".into(),
         channel: "stable".into(),
         sequence: 3,
-        expires: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
-            + 60,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: release.id().into(),

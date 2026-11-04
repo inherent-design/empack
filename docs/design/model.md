@@ -27,7 +27,7 @@ Do not normalize provider case, Unicode spelling or filenames into a different i
 | `empack.bindings.yml` | Author/integration tools | Non-default placements, stable file-role assignments and source-member mappings     |
 | `empack.lock`         | Resolver                 | Exact runtime and files, original assertions, placements, required closure evidence |
 | Release manifest      | Release builder          | Portable exact inventory, runtime, choices, acquisition and installation policies   |
-| Channel envelope      | Publisher                | Pack/channel identity, sequence, expiry and authenticated release reference         |
+| Channel envelope      | Publisher                | Pack/channel identity, sequence and authenticated release reference                 |
 | Instance record       | Instance engine          | Last completed release, owned files, side, choices, authority and source binding    |
 | Recovery journal      | Publisher                | Approved operation, native root, before/after evidence and durable progress         |
 

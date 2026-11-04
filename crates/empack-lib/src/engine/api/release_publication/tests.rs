@@ -331,25 +331,18 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
             .join(format!("dist/releases/{}/release.json", release.id())),
     )
     .unwrap();
-    let now: i64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        .try_into()
-        .unwrap();
-    let channel = |sequence, expires| PublishChannelRequest {
+    let channel = |sequence| PublishChannelRequest {
         release: release.id().into(),
         channel: "stable".into(),
         base_url: "https://publisher.test/".into(),
         sequence,
-        expires,
         keys: vec![SigningKey::from_bytes(&[27; 32])],
         previous_keys: vec![],
     };
     let original_inputs = snapshot(input.path());
     let initial = snapshot(root.path());
     let Preparation::Ready(prepared) = engine
-        .prepare(root.path().to_owned(), channel(1, now + 3600))
+        .prepare(root.path().to_owned(), channel(1))
         .await
         .unwrap()
     else {
@@ -379,7 +372,7 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
         .create_async()
         .await;
     let Preparation::Ready(prepared) = engine
-        .prepare(root.path().to_owned(), channel(1, now + 3600))
+        .prepare(root.path().to_owned(), channel(1))
         .await
         .unwrap()
     else {
@@ -416,7 +409,6 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
         .channel(
             &pointer,
             "stable",
-            now,
             &semver::Version::parse("0.8.0-beta").unwrap(),
             None,
         )
@@ -462,7 +454,7 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
             .create_async()
             .await;
         let Preparation::Ready(prepared) = engine
-            .prepare(root.path().to_owned(), channel(2, now + 3600))
+            .prepare(root.path().to_owned(), channel(2))
             .await
             .unwrap()
         else {
@@ -532,7 +524,7 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
         .create_async()
         .await;
     let Preparation::Ready(prepared) = engine
-        .prepare(root.path().to_owned(), channel(2, now + 3600))
+        .prepare(root.path().to_owned(), channel(2))
         .await
         .unwrap()
     else {
@@ -558,13 +550,12 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
     asset.assert_async().await;
     fs::write(&staged_asset, b"settings").unwrap();
 
-    for (sequence, expiry, diagnostic) in [
-        (1, now + 7200, "Channel sequence must advance"),
-        (0, now + 3600, "Invalid channel sequence or expiry"),
-        (2, now - 1, "Channel has expired"),
+    for (sequence, diagnostic) in [
+        (1, "Channel sequence must advance"),
+        (0, "Invalid channel sequence"),
     ] {
         let error = engine
-            .prepare(root.path().to_owned(), channel(sequence, expiry))
+            .prepare(root.path().to_owned(), channel(sequence))
             .await
             .err()
             .expect("invalid channel metadata was accepted");
@@ -577,7 +568,7 @@ async fn channel_publication_verifies_hosted_assets_before_replacing_pointer() {
 }
 
 #[test]
-fn expired_publisher_pointer_retains_ordering_without_update_authority() {
+fn publisher_pointer_retains_ordering_without_calendar_expiry() {
     use crate::engine::release::trust::*;
     let key = SigningKey::from_bytes(&[5; 32]);
     let trust = PublisherTrust::enroll(
@@ -587,11 +578,10 @@ fn expired_publisher_pointer_retains_ordering_without_update_authority() {
     )
     .unwrap();
     let channel = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "published".into(),
         channel: "stable".into(),
         sequence: 4,
-        expires: 1_700_000_000,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: "a".repeat(64),
@@ -609,11 +599,12 @@ fn expired_publisher_pointer_retains_ordering_without_update_authority() {
             .channel(
                 &bytes,
                 "stable",
-                1_800_000_000,
                 &semver::Version::parse("0.8.0-beta").unwrap(),
                 None
             )
-            .is_err()
+            .is_ok()
     );
     assert!(trust.previous_channel(&bytes, "other").is_err());
+    let encoded: serde_json::Value = serde_json::from_slice(&channel.encode().unwrap()).unwrap();
+    assert!(encoded.get("expires").is_none());
 }

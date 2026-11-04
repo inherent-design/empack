@@ -192,14 +192,9 @@ async fn install_with_transport(
                 move |cancel| {
                     let bytes =
                         crate::engine::release::trust::read_release_envelope(&selected, &cancel)?;
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)?
-                        .as_secs()
-                        .try_into()?;
                     crate::engine::instance::subscription::select_release(
                         &selected_root,
                         &bytes,
-                        now,
                         &version,
                         crate::engine::publication::RecoveryReader::new(state),
                         &cancel,
@@ -679,10 +674,6 @@ async fn subscription_with_transport(
             let version = crate::engine::compatibility_version();
             SubscriptionRequest::Observe {
                 envelope: bytes.iter().copied().collect(),
-                now: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)?
-                    .as_secs()
-                    .try_into()?,
                 engine: semver::Version::parse(version)?,
             }
         }
@@ -715,9 +706,8 @@ async fn subscription_with_transport(
             ));
         }
         if observing {
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs().try_into()?;
-            let channel = view.record.authenticated_channel(now, &semver::Version::parse(crate::engine::compatibility_version())?)?;
-            session.display().status().info(&format!("Offered release {}; sequence {}; expires {} UTC Unix seconds; update owner: enrolled publisher via empack", channel.document().release.id, channel.document().sequence, channel.document().expires));
+            let channel = view.record.authenticated_channel(&semver::Version::parse(crate::engine::compatibility_version())?)?;
+            session.display().status().info(&format!("Offered release {}; sequence {}; no calendar expiry; update owner: enrolled publisher via empack", channel.document().release.id, channel.document().sequence));
             session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
         }
         if !approve(session, "Publisher trust and channel observation")? {

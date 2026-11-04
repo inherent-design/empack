@@ -214,8 +214,8 @@ impl PublisherTrust {
             origin: self.origin.clone(),
         })
     }
-    /// Authenticate historical publisher state for sequence ordering only. Expired metadata
-    /// cannot select an installation through this method or construct an update proof.
+    /// Authenticate publisher state for sequence ordering only. This does not construct
+    /// an installation or update proof.
     pub(in crate::engine) fn previous_channel(
         &self,
         envelope: &[u8],
@@ -239,25 +239,15 @@ impl PublisherTrust {
         &self,
         envelope: &[u8],
         name: &str,
-        now: i64,
         engine: &semver::Version,
         floor: Option<&SequenceFloor>,
     ) -> Result<AuthenticatedChannel> {
         identifier(name)?;
-        ensure!(
-            now >= 1_577_836_800,
-            "Local clock cannot establish channel freshness"
-        );
         let payload = self.verify(EnvelopeKind::Channel, envelope)?;
         let channel = ChannelDocument::decode(&payload)?;
         ensure!(
             channel.pack == self.pack && channel.channel == name,
             "Channel subscription identity mismatch"
-        );
-        ensure!(channel.expires > now, "Channel has expired");
-        ensure!(
-            channel.expires - now <= 31 * 24 * 60 * 60,
-            "Channel expiry is beyond the supported freshness window"
         );
         ensure!(
             https(&channel.release.url)?.origin().ascii_serialization() == self.origin,
@@ -391,6 +381,8 @@ impl SelectedSnapshot {
         &self.release
     }
 }
+/// A signed, nonexpiring channel offer. Sequence ordering and current publisher
+/// enrollment govern acceptance; wall-clock age does not.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ChannelDocument {
@@ -398,8 +390,6 @@ pub struct ChannelDocument {
     pub pack: String,
     pub channel: String,
     pub sequence: u64,
-    /// Unix seconds UTC, not a locale-dependent date string.
-    pub expires: i64,
     pub release: ChannelRelease,
     pub minimum_engine: String,
 }
@@ -419,13 +409,10 @@ impl ChannelDocument {
             "Channel exceeds document byte limit"
         );
         let result: Self = serde_json::from_slice(bytes).context("Invalid channel document")?;
-        ensure!(result.schema == 1, "Unsupported channel schema");
+        ensure!(result.schema == 2, "Unsupported channel schema");
         identifier(&result.pack)?;
         identifier(&result.channel)?;
-        ensure!(
-            result.sequence > 0 && result.expires > 0,
-            "Invalid channel sequence or expiry"
-        );
+        ensure!(result.sequence > 0, "Invalid channel sequence");
         decode_hex::<32>(&result.release.id)?;
         https(&result.release.url)?;
         ensure!(

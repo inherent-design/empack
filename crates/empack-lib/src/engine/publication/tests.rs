@@ -363,14 +363,12 @@ fn interrupted_trust_rotation_recovers_keys_without_resetting_observation_or_flo
     use ed25519_dalek::SigningKey;
     let key = SigningKey::from_bytes(&[86; 32]);
     let next = SigningKey::from_bytes(&[87; 32]);
-    let now = 2_000_000_000;
     let engine_version = semver::Version::parse("0.8.0-beta").unwrap();
     let document = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "fixture".into(),
         channel: "stable".into(),
         sequence: 7,
-        expires: now + 3600,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: "a".repeat(64),
@@ -386,7 +384,7 @@ fn interrupted_trust_rotation_recovers_keys_without_resetting_observation_or_flo
     )
     .unwrap();
     let floor = trust
-        .channel(&envelope, "stable", now, &engine_version, None)
+        .channel(&envelope, "stable", &engine_version, None)
         .unwrap()
         .floor()
         .clone();
@@ -471,9 +469,7 @@ fn interrupted_trust_rotation_recovers_keys_without_resetting_observation_or_flo
             assert_eq!(recovered.channel, "stable");
             assert_eq!(recovered.url, "https://publisher.test/stable.json");
             assert_eq!(
-                recovered
-                    .authenticated_channel(now, &engine_version)
-                    .is_ok(),
+                recovered.authenticated_channel(&engine_version).is_ok(),
                 restore,
                 "old metadata must be reverified against the recovered keys"
             );
@@ -490,7 +486,6 @@ fn interrupted_trust_rotation_recovers_keys_without_resetting_observation_or_flo
                 let result = recovered.trust().unwrap().channel(
                     &signed,
                     "stable",
-                    now,
                     &engine_version,
                     recovered.floor.as_ref(),
                 );

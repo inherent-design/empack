@@ -446,9 +446,6 @@ pub enum ReleaseCommand {
         /// Increasing sequence number; changing metadata requires a higher value
         #[arg(long)]
         sequence: u64,
-        /// UTC Unix seconds; must be future-dated by at most 31 days
-        #[arg(long)]
-        expires: i64,
         /// External Ed25519 seed file, encoded as 64 lowercase hexadecimal characters
         #[arg(long = "key-file", required = true)]
         keys: Vec<PathBuf>,
@@ -1128,7 +1125,7 @@ mod tests {
             "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
             "empack --workdir ./instance instance update --side server",
             "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
-            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --expires 2000000000 --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
         ] {
             Cli::try_parse_from(command.split_whitespace())
                 .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));

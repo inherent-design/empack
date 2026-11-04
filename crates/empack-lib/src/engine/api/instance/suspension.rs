@@ -11,7 +11,6 @@ use crate::engine::{
 };
 use empack_core::digest::ContentId;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -476,10 +475,6 @@ async fn resume(
                 SelectedRelease::Subscribed(Arc::new(instance::subscription::select_release(
                     &selected,
                     envelope.as_bytes(),
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)?
-                        .as_secs()
-                        .try_into()?,
                     &version()?,
                     RecoveryReader::new(state),
                     &cancel,

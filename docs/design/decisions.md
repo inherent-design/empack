@@ -35,4 +35,4 @@ Marketplace-compatible exports are in scope. Marketplace accounts and upload aut
 
 The engine does not execute arbitrary scripts from downloaded release metadata. Trusted author templates remain explicit build inputs. External loader installers require their own verified assets and execution grant.
 
-Snapshot installation may accept a directly approved release digest without a channel subscription. Unattended channel updates require authenticated publisher identity, expiry and replay checks. A digest fetched beside untrusted bytes alone is not publisher authentication.
+Snapshot installation may accept a directly approved release digest without a channel subscription. Unattended channel updates require authenticated publisher identity and replay checks. A digest fetched beside untrusted bytes alone is not publisher authentication.

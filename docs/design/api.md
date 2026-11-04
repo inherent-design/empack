@@ -46,7 +46,7 @@ The request, prepared plan, grant and execution carry operation and attempt iden
 | `ProviderCatalog`                                 | Resolve selectors, exact pins, file roles and required evidence          |
 | `HttpAcquisition`                                 | Bounded content and publisher-metadata transfer through transport policy |
 | `PublisherTrust`                                  | Authenticate exact envelopes against explicitly enrolled keys            |
-| Subscription operations                           | Bind trust, channel identity, expiry and durable sequence observations   |
+| Subscription operations                           | Bind trust, channel identity and durable sequence observations           |
 | `ProjectReadRoot` and `NativeSnapshot` (internal) | Capture root-bound observations and immutable read sets                  |
 | `AcquiredContent`                                 | Retain verified bytes and their original source evidence                 |
 | Consumer adapters                                 | Project a complete inventory into a representable artifact               |

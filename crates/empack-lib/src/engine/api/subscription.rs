@@ -30,7 +30,6 @@ pub enum SubscriptionRequest {
     /// Verify metadata using current enrolled keys and persist its floor before acquisition.
     Observe {
         envelope: Vec<u8>,
-        now: i64,
         engine: semver::Version,
     },
 }
@@ -145,16 +144,11 @@ pub(super) async fn prepare(
                     previous.keys = encoded_keys(keys);
                     previous
                 }
-                SubscriptionRequest::Observe {
-                    envelope,
-                    now,
-                    engine,
-                } => {
+                SubscriptionRequest::Observe { envelope, engine } => {
                     let mut previous = previous.context("Instance has no subscription")?;
                     let channel = previous.trust()?.channel(
                         &envelope,
                         &previous.channel,
-                        now,
                         &engine,
                         previous.floor.as_ref(),
                     )?;

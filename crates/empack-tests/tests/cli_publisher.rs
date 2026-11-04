@@ -7,12 +7,7 @@ use empack_tests::harness::{
 use predicates::str::contains;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    net::TcpListener,
-    path::PathBuf,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{fs, net::TcpListener, path::PathBuf, time::Duration};
 
 #[path = "support/publisher.rs"]
 mod publisher_checks;
@@ -194,7 +189,7 @@ impl Publisher {
             "https://raw.githubusercontent.com/inherent-design/empack/{FIXTURE_COMMIT}/tests/fixtures/hosted-publication/{variant}/"
         )
     }
-    fn publish(&self, label: &str, base: &str, sequence: u64, expires: u64) -> assert_cmd::Command {
+    fn publish(&self, label: &str, base: &str, sequence: u64) -> assert_cmd::Command {
         let mut command = assert_cmd::Command::from_std(self.project.cmd());
         command
             .timeout(Duration::from_secs(90))
@@ -209,33 +204,24 @@ impl Publisher {
                 "--sequence",
             ])
             .arg(sequence.to_string())
-            .arg("--expires")
-            .arg(expires.to_string())
             .arg("--key-file")
             .arg(self.key(label));
         command
     }
-    fn pointer(&self, label: &str, sequence: u64, expires: u64) -> Vec<u8> {
+    fn pointer(&self, label: &str, sequence: u64) -> Vec<u8> {
         let file = self.project.dir().join("dist/channels/stable.json");
         let payload = verify_signed_payload(&file, "channel", &self.signer(label).verifying_key());
         let release = self.release(label);
         assert_eq!(
             serde_json::from_slice::<Value>(&payload).unwrap(),
             json!({
-                "schema":1,"pack":"verification.hosted","channel":"stable","sequence":sequence,
-                "expires":expires,"minimum_engine":">=0.8.0-beta",
+                "schema":2,"pack":"verification.hosted","channel":"stable","sequence":sequence,
+                "minimum_engine":">=0.8.0-beta",
                 "release":{"id":release["id"],"url":format!("{}releases/{}/release.json",Self::base("good"),release["id"].as_str().unwrap()),"maximum_bytes":release["envelope_bytes"]}
             })
         );
         fs::read(file).unwrap()
     }
-}
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 #[test]
@@ -322,13 +308,11 @@ fn cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_netwo
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());
-    let expires = now() + 3600;
-    for (mode, base, sequence, expiry, diagnostic, success) in [
+    for (mode, base, sequence, diagnostic, success) in [
         (
             "preview",
             "https://publisher.invalid/",
             1,
-            expires,
             "Dry run complete - no changes applied",
             true,
         ),
@@ -336,7 +320,6 @@ fn cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_netwo
             "unapproved",
             "https://publisher.invalid/",
             1,
-            expires,
             "Noninteractive execution requires --yes",
             false,
         ),
@@ -344,7 +327,6 @@ fn cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_netwo
             "invalid",
             "http://publisher.invalid/",
             1,
-            expires,
             "Release URLs require HTTPS",
             false,
         ),
@@ -352,28 +334,11 @@ fn cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_netwo
             "invalid",
             "https://publisher.invalid/",
             0,
-            expires,
-            "Invalid channel sequence or expiry",
-            false,
-        ),
-        (
-            "invalid",
-            "https://publisher.invalid/",
-            1,
-            1,
-            "Channel has expired",
-            false,
-        ),
-        (
-            "invalid",
-            "https://publisher.invalid/",
-            1,
-            now() + 32 * 86400,
-            "Channel expiry is beyond",
+            "Invalid channel sequence",
             false,
         ),
     ] {
-        let mut command = fixture.publish("a", base, sequence, expiry);
+        let mut command = fixture.publish("a", base, sequence);
         for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
             command.env(name, &proxy);
         }
@@ -400,6 +365,18 @@ fn cli_hosted_channel_preview_and_refusals_preserve_publisher_work_without_netwo
             std::io::ErrorKind::WouldBlock
         );
     }
+    fixture
+        .publish("a", "https://publisher.invalid/", 1)
+        .args(["--yes", "--expires", "1"])
+        .assert()
+        .failure()
+        .stderr(contains("unexpected argument '--expires'"));
+    assert_eq!(snapshot(fixture.project.dir()), before);
+    assert_eq!(snapshot(fixture.inputs.path()), inputs);
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
     assert!(!fixture.project.dir().join("dist/channels").exists());
 }
 
@@ -409,14 +386,13 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
     let fixture = Publisher::new();
     let inputs = snapshot(fixture.inputs.path());
     let immutable = snapshot(&fixture.project.dir().join("dist/releases"));
-    let expires = now() + 3600;
     fixture
-        .publish("a", &Publisher::base("good"), 1, expires)
+        .publish("a", &Publisher::base("good"), 1)
         .arg("--yes")
         .assert()
         .success()
         .stdout(contains("upload this channel file last"));
-    let first = fixture.pointer("a", 1, expires);
+    let first = fixture.pointer("a", 1);
     let player = TestProject::new();
     let game = player.dir().join("game");
     let channel = fixture.project.dir().join("dist/channels/stable.json");
@@ -509,7 +485,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         ("missing-asset", Some("a"), "Download was not found"),
     ] {
         let before = snapshot(fixture.project.dir());
-        let mut command = fixture.publish("b", &Publisher::base(variant), 2, expires);
+        let mut command = fixture.publish("b", &Publisher::base(variant), 2);
         command.arg("--yes");
         if let Some(label) = previous {
             command.arg("--previous-key").arg(fixture.public(label));
@@ -524,7 +500,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
     }
     let before = snapshot(fixture.project.dir());
     fixture
-        .publish("b", &Publisher::base("good"), 2, expires)
+        .publish("b", &Publisher::base("good"), 2)
         .args(["--dry-run", "--yes", "--previous-key"])
         .arg(fixture.public("a"))
         .assert()
@@ -532,13 +508,13 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .stdout(contains("Dry run complete - no changes applied"));
     assert_eq!(snapshot(fixture.project.dir()), before);
     fixture
-        .publish("b", &Publisher::base("good"), 2, expires)
+        .publish("b", &Publisher::base("good"), 2)
         .args(["--yes", "--previous-key"])
         .arg(fixture.public("a"))
         .assert()
         .success()
         .stdout(contains("Published channel stable"));
-    let second = fixture.pointer("b", 2, expires);
+    let second = fixture.pointer("b", 2);
     assert_ne!(first, second);
     offline_command(player.dir())
         .args(["--yes", "instance", "check-updates"])
@@ -573,23 +549,24 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         b"retain player work"
     );
     fixture
-        .publish("b", &Publisher::base("good"), 2, expires)
+        .publish("b", &Publisher::base("good"), 2)
         .arg("--yes")
         .assert()
         .success();
-    assert_eq!(fixture.pointer("b", 2, expires), second);
+    assert_eq!(fixture.pointer("b", 2), second);
     let before = snapshot(fixture.project.dir());
     // A previous signing key can authenticate history, but cannot regress its sequence.
     fixture
-        .publish("a", &Publisher::base("good"), 1, expires)
+        .publish("a", &Publisher::base("good"), 1)
         .args(["--yes", "--previous-key"])
         .arg(fixture.public("b"))
         .assert()
         .failure()
         .stderr(contains("Channel sequence must advance"));
     fixture
-        .publish("b", &Publisher::base("good"), 2, expires + 1)
-        .arg("--yes")
+        .publish("a", &Publisher::base("good"), 2)
+        .args(["--yes", "--previous-key"])
+        .arg(fixture.public("b"))
         .assert()
         .failure()
         .stderr(contains("Channel sequence must advance"));

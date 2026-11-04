@@ -93,15 +93,10 @@ fn transport(origin: &str) -> HttpAcquisition {
 }
 fn channel_document(release: &DecodedRelease, maximum: u64) -> ChannelDocument {
     ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "prelaunch".into(),
         channel: "stable".into(),
         sequence: 1,
-        expires: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
-            + 3600,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: release.id().into(),
@@ -704,8 +699,8 @@ async fn invalid_authenticated_channels_never_select_offline_launch_or_change_fl
     let baseline = crate::test_support::file_bytes(root.path());
     let mut fresh = observed.clone();
     fresh.sequence = 3;
-    let mut expired = fresh.clone();
-    expired.expires -= 3601;
+    let mut other_channel = fresh.clone();
+    other_channel.channel = "other".into();
     let mut replay = fresh.clone();
     replay.sequence = 1;
     let mut corrupt: serde_json::Value = serde_json::from_slice(&signed(&fresh, &key)).unwrap();
@@ -733,7 +728,10 @@ async fn invalid_authenticated_channels_never_select_offline_launch_or_change_fl
             serde_json::to_vec(&corrupt).unwrap(),
             "Publisher signature verification failed",
         ),
-        (signed(&expired, &key), "Channel has expired"),
+        (
+            signed(&other_channel, &key),
+            "Channel subscription identity mismatch",
+        ),
         (signed(&replay, &key), "Channel sequence replay rejected"),
     ] {
         let pointer = server

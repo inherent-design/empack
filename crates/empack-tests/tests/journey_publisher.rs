@@ -10,7 +10,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
-    time::SystemTime,
 };
 
 #[path = "support/approval.rs"]
@@ -632,17 +631,13 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
     fs::write(&unfetched, b"content is never acquired by this fixture").unwrap();
     let offered = inputs.join("channel.json");
     let id = "a".repeat(64);
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
     let observe = || {
         command()
             .args(["--yes", "instance", "check-updates"])
             .arg(&offered)
             .assert()
     };
-    channel(&offered, &old, &id, &unfetched, 2, now + 3600);
+    channel(&offered, &old, &id, &unfetched, 2);
     observe().success().stdout(contains("sequence 2"));
     let both = [
         "instance",
@@ -685,7 +680,7 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
     // Each key independently authenticates the same payload across fresh
     // executable invocations; identical metadata is an admissible retry.
     for key in [&old, &next] {
-        channel(&offered, key, &id, &unfetched, 2, now + 3600);
+        channel(&offered, key, &id, &unfetched, 2);
         observe().success().stdout(contains("sequence 2"));
     }
     channel(
@@ -694,7 +689,6 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         &id,
         &unfetched,
         200,
-        now + 3600,
     );
     let before_wrong_key = snapshot(&instance);
     observe()
@@ -706,13 +700,13 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         .assert()
         .success()
         .stdout(contains("1 enrolled keys; sequence 2"));
-    channel(&offered, &old, &id, &unfetched, 200, now + 3600);
+    channel(&offered, &old, &id, &unfetched, 200);
     let after_rotation = snapshot(&instance);
     observe()
         .failure()
         .stderr(contains("No enrolled publisher signed"));
     assert_eq!(snapshot(&instance), after_rotation);
-    channel(&offered, &next, &id, &unfetched, 3, now + 3600);
+    channel(&offered, &next, &id, &unfetched, 3);
     observe().success().stdout(contains("sequence 3"));
     let revoke = ["instance", "trust", "--revoke-all"];
     approval::preserve_without_approval(
@@ -739,13 +733,13 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         .assert()
         .success()
         .stdout(contains("2 enrolled keys; sequence 3"));
-    channel(&offered, &next, &id, &unfetched, 2, now + 3600);
+    channel(&offered, &next, &id, &unfetched, 2);
     let reenrolled = snapshot(&instance);
     observe()
         .failure()
         .stderr(contains("Channel sequence replay rejected"));
     assert_eq!(snapshot(&instance), reenrolled);
-    channel(&offered, &next, &id, &unfetched, 3, now + 3600);
+    channel(&offered, &next, &id, &unfetched, 3);
     observe().success();
     assert_eq!(
         fs::read(instance.join("player notes.txt")).unwrap(),
@@ -1064,14 +1058,13 @@ fn cli_release_stage_replays_exact_inventory_and_refuses_immutable_or_signer_con
     );
 }
 
-fn channel(path: &Path, key: &SigningKey, id: &str, envelope: &Path, sequence: u64, expires: u64) {
+fn channel(path: &Path, key: &SigningKey, id: &str, envelope: &Path, sequence: u64) {
     channel_with_identity(
         path,
         key,
         id,
         envelope,
         sequence,
-        expires,
         ("verification.publisher", "stable"),
     );
 }
@@ -1082,14 +1075,13 @@ fn channel_with_identity(
     id: &str,
     envelope: &Path,
     sequence: u64,
-    expires: u64,
     (pack, name): (&str, &str),
 ) {
     // Independent fixture encoding of the documented signed channel envelope.
     // No product planner, transport override or signature bypass supplies it.
     let payload = serde_json::to_vec(&json!({
-        "schema": 1, "pack": pack, "channel": name,
-        "sequence": sequence, "expires": expires, "minimum_engine": ">=0.8.0-beta",
+        "schema": 2, "pack": pack, "channel": name,
+        "sequence": sequence, "minimum_engine": ">=0.8.0-beta",
         "release": {"id": id, "url": format!("https://publisher.invalid/releases/{id}/release.json"),
                     "maximum_bytes": fs::metadata(envelope).unwrap().len()}
     })).unwrap();
@@ -1431,11 +1423,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
     assert!(!instance.join("game").exists());
     assert_eq!(snapshot(&export_a), bootstrap);
     let channel_a = root.join("channel-a.json");
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    channel(&channel_a, &key, &a, &envelope_a, 1, now + 3600);
+    channel(&channel_a, &key, &a, &envelope_a, 1);
     offline_command(&instance)
         .args([
             "--yes",
@@ -1497,22 +1485,14 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         &export_b.join("release.json"),
     );
     let channel_b = root.join("channel-b.json");
-    channel(&channel_b, &key, &b, &envelope_b, 2, now + 3600);
+    channel(&channel_b, &key, &b, &envelope_b, 2);
     let before_rejected_observation = snapshot(&instance);
     for identity in [
         ("another.pack", "stable"),
         ("verification.publisher", "preview"),
     ] {
         let mismatched = root.join("wrong-subscription.json");
-        channel_with_identity(
-            &mismatched,
-            &key,
-            &b,
-            &envelope_b,
-            200,
-            now + 3600,
-            identity,
-        );
+        channel_with_identity(&mismatched, &key, &b, &envelope_b, 200, identity);
         // Verify the independent fixture really has an enrolled signature; the
         // rejection must establish subscription identity, not a bad signature.
         let envelope: serde_json::Value =
@@ -1540,31 +1520,17 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         &b,
         &envelope_b,
         2,
-        now + 3600,
     );
     observe(&instance, &wrong)
         .failure()
         .stderr(contains("No enrolled publisher signed"));
     assert_eq!(snapshot(&instance), before_rejected_observation);
     installed(&instance, &a, b"1.0.0");
-    let expired = root.join("expired.json");
-    channel(&expired, &key, &b, &envelope_b, 20, now - 1);
-    observe(&instance, &expired)
+    let zero_sequence = root.join("zero-sequence.json");
+    channel(&zero_sequence, &key, &b, &envelope_b, 0);
+    observe(&instance, &zero_sequence)
         .failure()
-        .stderr(contains("Channel has expired"));
-    assert_eq!(snapshot(&instance), before_rejected_observation);
-    let too_distant = root.join("distant-expiry.json");
-    channel(
-        &too_distant,
-        &key,
-        &b,
-        &envelope_b,
-        200,
-        now + 32 * 24 * 60 * 60,
-    );
-    observe(&instance, &too_distant).failure().stderr(contains(
-        "Channel expiry is beyond the supported freshness window",
-    ));
+        .stderr(contains("Invalid channel sequence"));
     assert_eq!(snapshot(&instance), before_rejected_observation);
     installed(&instance, &a, b"1.0.0");
     // Change authenticated payload bytes without replacing the signature.
@@ -1771,10 +1737,10 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .success();
     observe(&instance, &channel_b).failure();
     let stale_new_key = root.join("stale-new-key.json");
-    channel(&stale_new_key, &replacement, &b, &envelope_b, 1, now + 3600);
+    channel(&stale_new_key, &replacement, &b, &envelope_b, 1);
     observe(&instance, &stale_new_key).failure();
     let channel_c = root.join("channel-c.json");
-    channel(&channel_c, &replacement, &b, &envelope_b, 3, now + 3600);
+    channel(&channel_c, &replacement, &b, &envelope_b, 3);
     observe(&instance, &channel_c).success();
     let after_rotation = snapshot(&instance);
     offline_command(&instance)
@@ -1822,7 +1788,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .arg(hex(replacement.verifying_key().as_bytes()))
         .assert()
         .success();
-    channel(&stale_new_key, &replacement, &b, &envelope_b, 2, now + 3600);
+    channel(&stale_new_key, &replacement, &b, &envelope_b, 2);
     observe(&instance, &stale_new_key).failure(); // Revocation also retained the floor.
     installed(&instance, &b, b"2.0.0");
     assert_eq!(fs::read_to_string(&key_file).unwrap(), secret);
@@ -2013,15 +1979,10 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
         .arg(hex(key.verifying_key().as_bytes()))
         .assert()
         .success();
-    let expires = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        + 3600;
     let offered = inputs.join("channel.json");
     let observe = |index: usize| {
         let (id, envelope) = &releases[index];
-        channel(&offered, &key, id, envelope, index as u64 + 1, expires);
+        channel(&offered, &key, id, envelope, index as u64 + 1);
         command()
             .args(["--yes", "instance", "check-updates"])
             .arg(&offered)
@@ -2228,7 +2189,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
         .success();
     expected("B", 1, true);
     let rolled_back = snapshot(&instance);
-    channel(&offered, &key, &releases[0].0, &releases[0].1, 1, expires);
+    channel(&offered, &key, &releases[0].0, &releases[0].1, 1);
     command()
         .args(["--yes", "instance", "check-updates"])
         .arg(&offered)
@@ -2297,11 +2258,6 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
     }
     let publisher_before = snapshot(&publisher);
     let keys_before = snapshot(&keys);
-    let expires = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        + 3600;
     for (layout, side) in [("game", "client"), ("game", "server"), ("prism", "client")] {
         let instance = root.path().join(format!("{layout}-{side}"));
         fs::create_dir(&instance).unwrap();
@@ -2332,7 +2288,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             .assert()
             .success();
         let offered = host.path().join("channel.json");
-        channel(&offered, &key, &releases[0].0, &releases[0].1, 1, expires);
+        channel(&offered, &key, &releases[0].0, &releases[0].1, 1);
         command()
             .args(["--yes", "instance", "check-updates"])
             .arg(&offered)
@@ -2370,7 +2326,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
         if layout == "prism" {
             // Observe an authentic but consumer-incompatible release. Neither
             // approval nor an explicit replacement grants launcher ownership.
-            channel(&offered, &key, &releases[2].0, &releases[2].1, 2, expires);
+            channel(&offered, &key, &releases[2].0, &releases[2].1, 2);
             command()
                 .args(["--yes", "instance", "check-updates"])
                 .arg(&offered)
@@ -2392,7 +2348,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
                 assert_eq!(snapshot(host.path()), host_before);
             }
         }
-        channel(&offered, &key, &releases[1].0, &releases[1].1, 3, expires);
+        channel(&offered, &key, &releases[1].0, &releases[1].1, 3);
         let before_observation = snapshot(&instance.join(game));
         command()
             .args(["--yes", "instance", "check-updates"])
@@ -2648,15 +2604,10 @@ fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
             .stdout(contains(format!("release {id};")));
     };
     expected(&a, &profile_a, "mods/a.jar", b"A");
-    let expires = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        + 3600;
     let channel_a = root.path().join("runtime-channel-a.json");
     let channel_b = root.path().join("runtime-channel-b.json");
-    channel(&channel_a, &key, &a, &envelope_a, 1, expires);
-    channel(&channel_b, &key, &b, &envelope_b, 2, expires);
+    channel(&channel_a, &key, &a, &envelope_a, 1);
+    channel(&channel_b, &key, &b, &envelope_b, 2);
     observe(&instance, &channel_a).success();
     observe(&instance, &channel_b).success();
     let before = snapshot(&instance);

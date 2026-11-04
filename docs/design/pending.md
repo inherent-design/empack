@@ -22,7 +22,7 @@ Build records retain the recipe and verified-file associations; the report lists
 
 ## Continuation and assistance
 
-Shared commands call the existing build/import/sync/instance hosts. Those hosts retain their acquisition, expiry/trust, source-revalidation, publication, runtime lease and fresh-approval rules. The shared adapter does not create grants or change all-requested activation. Existing continuation spellings remain supported and share the same implementation.
+Shared commands call the existing build/import/sync/instance hosts. Those hosts retain their acquisition, publisher trust, source-revalidation, publication, runtime lease and fresh-approval rules. The shared adapter does not create grants or change all-requested activation. Existing continuation spellings remain supported and share the same implementation.
 
 Use the displayed exact selector with `--file`: `locked:DEPENDENCY:SLOT` for builds (components percent encoded), `DEPENDENCY/SLOT` for synchronization, release file keys for instances, and `declared:`, `override:` or `provider:` selectors for imports. Repeated or ambiguous keys fail before publication. Import representation choices can be supplied again with `--import-optional-default BOOL` and `--import-local-files`; optional participation remains optional. Use the original `init --continue` options for other import representation decisions that were not saved in import records.
 

@@ -187,11 +187,9 @@ pub(super) struct InstancePlan {
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     needed: BTreeMap<ManagedPath, ReleaseFile>,
     merge_sources: BTreeMap<String, std::path::PathBuf>,
-    subscription_expires: Option<i64>,
     asset_base: Option<reqwest::Url>,
 }
 pub(super) struct PreparedInstance {
-    subscription_expires: Option<i64>,
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     pub(super) record: InstanceRecord,
@@ -202,9 +200,6 @@ impl PreparedInstance {
         publisher: &Publisher,
         cancel: &Cancellation,
     ) -> Result<(PublicationReceipt, InstanceRecord)> {
-        if let Some(expires) = self.subscription_expires {
-            subscription::ensure_fresh(expires)?;
-        }
         ensure!(
             publisher.bound_root_key(&self.root)? == self.record.root,
             "Instance root association changed after preparation"
@@ -407,10 +402,6 @@ pub(super) fn plan(
         require_subscription || selected.release().document().require_subscription;
     let mut asset_base = match &selected {
         SelectedRelease::Subscribed(proof) => Some(proof.assets()),
-        _ => None,
-    };
-    let subscription_expires = match &selected {
-        SelectedRelease::Subscribed(proof) => Some(proof.expires()),
         _ => None,
     };
     let root = ProjectReadRoot::open(selected_root)?;
@@ -971,7 +962,6 @@ pub(super) fn plan(
     root.revalidate(&snapshot, cancel)?;
     Ok(InstancePlan {
         asset_base,
-        subscription_expires,
         root,
         snapshot,
         record,
@@ -1139,9 +1129,6 @@ impl InstancePlan {
         cancel: &Cancellation,
     ) -> Result<BTreeMap<String, AcquiredContent>> {
         self.root.revalidate(&self.snapshot, cancel)?;
-        if let Some(expires) = self.subscription_expires {
-            subscription::ensure_fresh(expires)?;
-        }
         for key in files.keys() {
             ensure!(
                 self.needed.values().any(|file| &file.key == key) && !supplied.contains_key(key),
@@ -1189,7 +1176,6 @@ impl InstancePlan {
         let stage = stage.freeze(limits, cancel)?;
         let change = VerifiedFileChange::verify_instance(self.snapshot, self.files, stage)?;
         Ok(PreparedInstance {
-            subscription_expires: self.subscription_expires,
             root: self.root,
             change,
             record: self.record,

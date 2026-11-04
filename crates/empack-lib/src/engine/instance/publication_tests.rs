@@ -282,11 +282,10 @@ fn rollback_publication_crashes_recover_content_metadata_and_preserve_player_sta
             let native = ProjectReadRoot::open(root).unwrap();
             let key = SigningKey::from_bytes(&[94; 32]);
             let document = ChannelDocument {
-                schema: 1,
+                schema: 2,
                 pack: "rollback.fixture".into(),
                 channel: "stable".into(),
                 sequence: 7,
-                expires: 2_000_003_600,
                 minimum_engine: ">=0.8.0-beta".into(),
                 release: ChannelRelease {
                     id: release(true).id().into(),
@@ -306,7 +305,6 @@ fn rollback_publication_crashes_recover_content_metadata_and_preserve_player_sta
                 .channel(
                     &envelope,
                     "stable",
-                    2_000_000_000,
                     &semver::Version::parse("0.8.0-beta").unwrap(),
                     None,
                 )

@@ -6,7 +6,7 @@ use crate::engine::{
 };
 use ed25519_dalek::VerifyingKey;
 use empack_core::model::{ExpectedContent, NonEmpty};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 pub struct PublishChannelRequest {
     pub release: String,
@@ -14,7 +14,6 @@ pub struct PublishChannelRequest {
     /// HTTPS directory serving this output root's dist/ directory.
     pub base_url: String,
     pub sequence: u64,
-    pub expires: i64,
     pub keys: Vec<SigningKey>,
     /// Explicit verification keys for the previous pointer, useful after key rotation.
     pub previous_keys: Vec<VerifyingKey>,
@@ -23,24 +22,6 @@ pub(super) struct HostedRelease {
     channel: ChannelDocument,
     envelope_hash: String,
     assets: Vec<(String, ExpectedContent, u64)>,
-}
-impl HostedRelease {
-    pub(super) fn validate_fresh(&self) -> Result<()> {
-        let now = now()?;
-        ensure!(
-            now >= 1_577_836_800
-                && now < self.channel.expires
-                && self.channel.expires - now <= 31 * 24 * 60 * 60,
-            "Channel expiry is outside the current freshness window"
-        );
-        Ok(())
-    }
-}
-fn now() -> Result<i64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs()
-        .try_into()?)
 }
 fn version() -> Result<semver::Version> {
     Ok(semver::Version::parse(
@@ -123,11 +104,10 @@ fn prepare_local(
     trust.release(&envelope, &request.release, &version()?)?;
     let release_url = url(&base, &format!("releases/{}/release.json", request.release))?;
     let channel = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: decoded.document().pack.clone(),
         channel: request.channel.clone(),
         sequence: request.sequence,
-        expires: request.expires,
         minimum_engine: decoded.document().minimum_engine.clone(),
         release: ChannelRelease {
             id: request.release.clone(),
@@ -140,7 +120,7 @@ fn prepare_local(
         &channel.encode()?,
         &request.keys.iter().collect::<Vec<_>>(),
     )?;
-    trust.channel(&bytes, &request.channel, now()?, &version()?, None)?;
+    trust.channel(&bytes, &request.channel, &version()?, None)?;
     let destination = ManagedPath::Artifact(path(&format!("channels/{}.json", request.channel))?);
     let mut paths = BTreeSet::from([
         ProjectLayout::path(&selected)?,
@@ -274,7 +254,6 @@ pub(super) async fn verify_hosted(
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<()> {
-    remote.validate_fresh()?;
     let envelope = transport
         .publisher_metadata(
             scope,
@@ -307,5 +286,5 @@ pub(super) async fn verify_hosted(
         .acquire_batch(scope, requests, config.transfer)
         .await?;
     drop(acquired);
-    remote.validate_fresh()
+    Ok(())
 }

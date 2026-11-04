@@ -62,17 +62,12 @@ async fn update_with_transport(
     #[cfg(test)]
     let engine = engine.with_test_transport(transport.clone());
     let result = async {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs()
-            .try_into()?;
         let Preparation::Ready(prepared) = cancellable(
             session,
             engine.prepare(
                 root.clone(),
                 SubscriptionRequest::Observe {
                     envelope: envelope.to_vec(),
-                    now,
                     engine: version.clone(),
                 },
             ),
