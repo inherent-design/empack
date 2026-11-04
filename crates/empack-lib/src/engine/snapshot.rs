@@ -39,6 +39,11 @@ pub struct ProjectReadRoot {
     pub(super) binding: ObjectIdentity,
 }
 impl ProjectReadRoot {
+    /// Selected location for diagnostics; native access must still use the held directory.
+    pub(super) fn selected(&self) -> &Path {
+        &self.location
+    }
+
     pub(super) fn open_child(parent: &Self, child: &str) -> Result<Self> {
         PortableRelPath::parse(child, PathSyntax::ArtifactName)?;
         parent.check_binding()?;
@@ -214,29 +219,24 @@ pub struct NativeSnapshot {
     groups: Vec<CaptureGroup>,
     entries: BTreeMap<PortableRelPath, Observation>,
 }
+
 impl NativeSnapshot {
     /// Persisted comparison data only. A matching hash does not reconstruct read authority.
-    pub(super) fn fingerprint(&self) -> [u8; 32] {
+    pub(super) fn fingerprint(&self) -> Result<[u8; 32]> {
         use sha2::{Digest, Sha256};
         fn bytes(hash: &mut Sha256, value: &[u8]) {
             hash.update((value.len() as u64).to_le_bytes());
             hash.update(value);
         }
-        fn object(hash: &mut Sha256, value: ObjectIdentity) {
-            hash.update(value.volume.to_le_bytes());
-            hash.update(value.object.to_le_bytes());
-            match value.created {
-                Some((seconds, nanos)) => {
-                    hash.update([1]);
-                    hash.update(seconds.to_le_bytes());
-                    hash.update(nanos.to_le_bytes());
-                }
-                None => hash.update([0]),
-            }
-        }
+        let object = |hash: &mut Sha256, value: ObjectIdentity| -> Result<()> {
+            hash.update(value.persistent.context(
+                "Filesystem lacks persistent object identity; retaining this operation is unsupported",
+            )?);
+            Ok(())
+        };
         let mut hash = Sha256::new();
-        hash.update(b"empack-native-inputs-v1");
-        object(&mut hash, self.root);
+        hash.update(b"empack-native-inputs-v2");
+        object(&mut hash, self.root)?;
         hash.update((self.entries.len() as u64).to_le_bytes());
         for (path, observed) in &self.entries {
             bytes(&mut hash, path.as_str().as_bytes());
@@ -244,11 +244,11 @@ impl NativeSnapshot {
                 Observation::Absent => hash.update([0]),
                 Observation::Ancestor(binding) => {
                     hash.update([1]);
-                    object(&mut hash, binding.0);
+                    object(&mut hash, binding.0)?;
                 }
                 Observation::File(file) => {
                     hash.update([2]);
-                    object(&mut hash, file.object);
+                    object(&mut hash, file.object)?;
                     hash.update(file.content);
                     hash.update(file.bytes.to_le_bytes());
                     hash.update([u8::from(file.readonly)]);
@@ -257,7 +257,7 @@ impl NativeSnapshot {
                 }
                 Observation::Directory { members, binding } => {
                     hash.update([3]);
-                    object(&mut hash, binding.0);
+                    object(&mut hash, binding.0)?;
                     hash.update((members.len() as u64).to_le_bytes());
                     for member in members {
                         bytes(&mut hash, member.as_bytes());
@@ -265,7 +265,7 @@ impl NativeSnapshot {
                 }
             }
         }
-        hash.finalize().into()
+        Ok(hash.finalize().into())
     }
     /// Filtered directory membership establishes absence only for included destinations.
     /// A missing ancestor observed directly remains independent evidence of absence.

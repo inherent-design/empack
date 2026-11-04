@@ -15,7 +15,8 @@ fn multidimensional_admission_is_atomic_and_checked_without_overflow() {
         .try_admit(ResourceRequest {
             jobs: 1,
             memory_bytes: 80,
-            ..ResourceRequest::default()
+            scratch_bytes: 160,
+            open_files: 4,
         })
         .unwrap();
     assert!(matches!(
@@ -26,16 +27,103 @@ fn multidimensional_admission_is_atomic_and_checked_without_overflow() {
         }),
         Err(AdmissionError::Busy {
             resource: ResourceKind::MemoryBytes,
-            ..
+            requested: 30,
+            available: 20,
         })
     ));
     assert_eq!(governor.status().reserved, permit.reserved());
+    // Each later dimension can refuse a mixed request without charging any of
+    // its otherwise available worker/memory/storage/file capacity.
+    for (request, expected) in [
+        (
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 1,
+                scratch_bytes: 41,
+                open_files: 1,
+            },
+            AdmissionError::Busy {
+                resource: ResourceKind::ScratchBytes,
+                requested: 41,
+                available: 40,
+            },
+        ),
+        (
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 1,
+                scratch_bytes: 1,
+                open_files: 2,
+            },
+            AdmissionError::Busy {
+                resource: ResourceKind::OpenFiles,
+                requested: 2,
+                available: 1,
+            },
+        ),
+        (
+            ResourceRequest {
+                jobs: 2,
+                ..Default::default()
+            },
+            AdmissionError::Busy {
+                resource: ResourceKind::Jobs,
+                requested: 2,
+                available: 1,
+            },
+        ),
+    ] {
+        assert_eq!(governor.try_admit(request).err(), Some(expected));
+        assert_eq!(governor.status().reserved, permit.reserved());
+    }
+    for (request, expected) in [
+        (
+            ResourceRequest {
+                memory_bytes: 101,
+                ..Default::default()
+            },
+            AdmissionError::TooLarge {
+                resource: ResourceKind::MemoryBytes,
+                requested: 101,
+                maximum: 100,
+            },
+        ),
+        (
+            ResourceRequest {
+                scratch_bytes: 201,
+                ..Default::default()
+            },
+            AdmissionError::TooLarge {
+                resource: ResourceKind::ScratchBytes,
+                requested: 201,
+                maximum: 200,
+            },
+        ),
+        (
+            ResourceRequest {
+                open_files: 6,
+                ..Default::default()
+            },
+            AdmissionError::TooLarge {
+                resource: ResourceKind::OpenFiles,
+                requested: 6,
+                maximum: 5,
+            },
+        ),
+    ] {
+        assert_eq!(governor.try_admit(request).err(), Some(expected));
+        assert_eq!(governor.status().reserved, permit.reserved());
+    }
     assert!(matches!(
         governor.try_admit(ResourceRequest {
             jobs: u64::MAX,
             ..ResourceRequest::default()
         }),
-        Err(AdmissionError::TooLarge { .. })
+        Err(AdmissionError::TooLarge {
+            resource: ResourceKind::Jobs,
+            requested: u64::MAX,
+            maximum: 2,
+        })
     ));
     drop(permit);
     assert_eq!(governor.status().reserved, ResourceRequest::default());
@@ -54,7 +142,11 @@ fn multidimensional_admission_is_atomic_and_checked_without_overflow() {
             memory_bytes: 1,
             ..ResourceRequest::default()
         }),
-        Err(AdmissionError::Busy { .. })
+        Err(AdmissionError::Busy {
+            resource: ResourceKind::MemoryBytes,
+            requested: 1,
+            available: 0,
+        })
     ));
 }
 #[test]

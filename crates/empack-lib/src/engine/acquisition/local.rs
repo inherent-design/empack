@@ -121,7 +121,10 @@ pub async fn acquire_local_file(
         },
         move |cancel| SelectedFile::capture(source, maximum, &cancel),
     )?;
-    let selected = scope.accept(work.wait().await?)?.transpose()?;
+    let selected = scope
+        .accept(work.wait().await?)?
+        .transpose()
+        .with_context(|| format!("Cannot capture local source '{}'", request.source.display()))?;
     let bytes = selected.observed.bytes;
     let work = scope.spawn_blocking(
         ResourceRequest {

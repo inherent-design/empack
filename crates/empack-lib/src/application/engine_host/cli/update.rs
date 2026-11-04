@@ -10,7 +10,7 @@ mod initial;
 mod observation;
 
 pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
-    update_with_services(session, keys, dependencies::configured_services(session)?).await
+    update_with_policy(session, keys, None, BatchPolicy::AllRequested).await
 }
 pub async fn update_with_policy(
     session: &dyn Session,
@@ -18,17 +18,12 @@ pub async fn update_with_policy(
     releases: Option<ReleasePolicy>,
     policy: BatchPolicy,
 ) -> Result<()> {
-    let services = dependencies::configured_services(session)?;
-    let current = current(session).await?;
-    let (_, project) = project_path(session)?;
-    let inputs = selections(&current, &project, keys)?;
-    dependencies::update_batch_with_services(
+    update_with_services(
         session,
-        inputs,
+        keys,
         releases,
-        SourceEvidencePolicy::Compatibility,
-        services,
         policy,
+        dependencies::configured_services(session)?,
     )
     .await
 }
@@ -167,17 +162,20 @@ pub(super) async fn adopt_with_services(
 pub(super) async fn update_with_services(
     session: &dyn Session,
     keys: Vec<String>,
+    releases: Option<ReleasePolicy>,
+    policy: BatchPolicy,
     services: dependencies::AdditionServices,
 ) -> Result<()> {
     let current = current(session).await?;
     let (_, project) = project_path(session)?;
     let inputs = selections(&current, &project, keys)?;
-    dependencies::update_with_services(
+    dependencies::update_batch_with_services(
         session,
         inputs,
-        None,
+        releases,
         SourceEvidencePolicy::Compatibility,
         services,
+        policy,
     )
     .await
 }

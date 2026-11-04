@@ -173,13 +173,19 @@ pub async fn recover(
     let config = session.config().app_config();
     let selected = config.workdir.as_deref().unwrap_or(&invocation);
     let path = absolute(&invocation, selected);
+    let location = crate::engine::publication::RecoveryLocation {
+        project: path.clone(),
+        state: state_root(config, &invocation)?,
+    };
     let target = match std::fs::symlink_metadata(&path) {
         Ok(_) => ProjectTarget::Existing(path),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProjectTarget::New(path),
         Err(error) => return Err(error.into()),
     };
     let engine = engine(config, &invocation)?;
-    let result = recover_with_engine(session, &engine, target, action, operation).await;
+    let result = recover_with_engine(session, &engine, target, action, operation, &location)
+        .await
+        .map_err(|error| location.attach(error));
     engine.shutdown().await;
     result
 }
@@ -220,6 +226,7 @@ async fn recover_with_engine(
     target: ProjectTarget,
     action: CliRecoveryAction,
     operation: Option<String>,
+    location: &crate::engine::publication::RecoveryLocation,
 ) -> Result<()> {
     session.process().check_cancelled()?;
     let status = cancellable(session, engine.inspect_recovery(target.clone())).await?;
@@ -251,7 +258,10 @@ async fn recover_with_engine(
             .info("This operation is already restoring its prior files");
     }
     let action = match action {
-        CliRecoveryAction::Inspect => return Ok(()),
+        CliRecoveryAction::Inspect => {
+            super::recovery_guidance::show(session, location, &status);
+            return Ok(());
+        }
         CliRecoveryAction::Finish => RecoveryAction::Finish,
         CliRecoveryAction::Restore => RecoveryAction::Restore,
     };
@@ -379,7 +389,7 @@ async fn execute_approved(
         OperationOutcome::Completed(ExecutionOutcome::RecoveryRequired { operation, .. }) => {
             Err(retained_failure(
                 outcome.clone(),
-                format!("{label} requires recovery for {operation}; run empack recover"),
+                format!("{label} requires recovery for {operation}"),
             ))
         }
         OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_)) => Err(
@@ -428,6 +438,19 @@ struct RetainedExecutionError {
     message: String,
     outcome: std::sync::Arc<OperationOutcome<ExecutionOutcome>>,
 }
+impl RetainedExecutionError {
+    fn original_cause(&self) -> Option<&anyhow::Error> {
+        match &*self.outcome {
+            OperationOutcome::Completed(
+                ExecutionOutcome::FailedBeforePublication(cause)
+                | ExecutionOutcome::ExecutionUncertain(cause)
+                | ExecutionOutcome::RecoveryRequired { cause, .. }
+                | ExecutionOutcome::PartiallyCompleted { cause, .. },
+            ) => Some(cause),
+            _ => None,
+        }
+    }
+}
 impl std::fmt::Debug for RetainedExecutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("RetainedExecutionError")
@@ -442,13 +465,10 @@ impl std::fmt::Display for RetainedExecutionError {
 }
 impl std::error::Error for RetainedExecutionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        if let Some(cause) = self.original_cause() {
+            return Some(cause.as_ref());
+        }
         match &*self.outcome {
-            OperationOutcome::Completed(
-                ExecutionOutcome::FailedBeforePublication(cause)
-                | ExecutionOutcome::ExecutionUncertain(cause)
-                | ExecutionOutcome::RecoveryRequired { cause, .. }
-                | ExecutionOutcome::PartiallyCompleted { cause, .. },
-            ) => Some(cause.as_ref()),
             OperationOutcome::Failed(cause) => Some(cause),
             _ => None,
         }
@@ -470,7 +490,16 @@ fn retained_failure(
             Some(diagnostic)
         }
     };
-    let error = anyhow::Error::new(RetainedExecutionError { message, outcome });
+    let retained = RetainedExecutionError { message, outcome };
+    let location = retained
+        .original_cause()
+        .and_then(|cause| cause.downcast_ref::<crate::engine::publication::RecoveryLocation>())
+        .cloned();
+    let error = anyhow::Error::new(retained);
+    let error = match location {
+        Some(location) => location.attach(error),
+        None => error,
+    };
     match diagnostic {
         Some(diagnostic) => error.context(diagnostic),
         None => error,
@@ -504,21 +533,51 @@ where
     F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
     Fut: Future<Output = Result<T>> + Send + 'static,
 {
+    session.process().check_cancelled()?;
     let runtime = crate::engine::runtime::OperationRuntime::new(governor, 1);
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let mut handle = runtime.start(move |scope| async move {
         let _ = sender.send(work(scope).await);
         Ok(())
     })?;
-    let result = cancellable(session, async {
-        match &*handle.wait().await {
-            OperationOutcome::Completed(()) => {
-                receiver.await.context("Host service result was lost")?
+    let mut ticks = tokio::time::interval(Duration::from_millis(50));
+    let mut cancellation_requested = false;
+    let outcome = loop {
+        tokio::select! {
+            result = handle.wait() => break result,
+            _ = ticks.tick(), if !cancellation_requested => {
+                if session.process().check_cancelled().is_err() {
+                    handle.cancel();
+                    cancellation_requested = true;
+                }
             }
-            OperationOutcome::Failed(error) => Err(error.clone().into()),
         }
-    })
-    .await;
+    };
+    // A service may already have published a record or deleted owned content.
+    // Retire it and preserve its terminal result instead of replacing that evidence
+    // with the request that caused cancellation.
+    let result = match &*outcome {
+        OperationOutcome::Completed(()) => receiver
+            .await
+            .context("Host service result was lost")
+            .and_then(|result| result),
+        OperationOutcome::Failed(error) => Err(error.clone().into()),
+    };
+    // As with ExecutionOutcome::failed, a result invalidated by this host's
+    // cancellation is interruption. Retain the original cause and its context;
+    // unrelated failures must not be reclassified merely because cancellation raced.
+    let result = result.map_err(|error| {
+        if cancellation_requested
+            && matches!(
+                error.downcast_ref::<RuntimeError>(),
+                Some(RuntimeError::StaleResult)
+            )
+        {
+            error.context(super::process_runtime::Interrupted)
+        } else {
+            error
+        }
+    });
     runtime.shutdown().await;
     result
 }

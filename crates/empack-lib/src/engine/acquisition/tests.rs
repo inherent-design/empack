@@ -3,6 +3,7 @@ use crate::engine::{
     resources::ResourceGovernor,
     runtime::{OperationOutcome, OperationRuntime},
 };
+use crate::testing::http::StalledHttp;
 use empack_core::digest::{DigestSet, ExpectedDigest};
 use std::{io::Write, sync::Arc};
 
@@ -62,6 +63,83 @@ fn failure(outcome: &OperationOutcome<Result<AcquiredContent>>) -> &anyhow::Erro
         OperationOutcome::Completed(Err(error)) => error,
         _ => panic!("expected transfer failure"),
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn transfer_budget_preserves_original_deadline_and_bytes_under_controlled_time() {
+    let limits = TransferLimits {
+        file_bytes: 64,
+        transfer_bytes: 10,
+        deadline: Duration::from_secs(60),
+        redirects: 2,
+    };
+    let mut budget = TransferBudget::new(limits).unwrap();
+    budget.charge_verified(4).unwrap();
+    tokio::time::advance(Duration::from_secs(20)).await;
+    let remaining = budget.remaining_limits(limits).unwrap();
+    assert_eq!(remaining.transfer_bytes, 6);
+    assert_eq!(remaining.deadline, Duration::from_secs(40));
+    assert_eq!(remaining.file_bytes, 64);
+    assert_eq!(remaining.redirects, 2);
+
+    let narrow = budget
+        .remaining_limits(TransferLimits {
+            file_bytes: 31,
+            transfer_bytes: 2,
+            deadline: Duration::from_secs(5),
+            redirects: 1,
+        })
+        .unwrap();
+    assert_eq!(narrow.transfer_bytes, 2);
+    assert_eq!(narrow.deadline, Duration::from_secs(5));
+    assert_eq!(narrow.file_bytes, 31);
+    assert_eq!(narrow.redirects, 1);
+    // A narrower request cannot mutate the shared allowance for later work.
+    assert_eq!(budget.remaining_limits(limits).unwrap().transfer_bytes, 6);
+    assert_eq!(
+        budget.remaining_limits(limits).unwrap().deadline,
+        Duration::from_secs(40)
+    );
+    assert!(matches!(
+        budget.charge_verified(7).unwrap_err().downcast_ref(),
+        Some(TransferError::ByteLimit)
+    ));
+    assert_eq!(budget.remaining_limits(limits).unwrap().transfer_bytes, 6);
+    budget.charge_verified(6).unwrap();
+    assert_eq!(budget.remaining_limits(limits).unwrap().transfer_bytes, 0);
+    assert!(matches!(
+        budget.charge_verified(1).unwrap_err().downcast_ref(),
+        Some(TransferError::ByteLimit)
+    ));
+    assert_eq!(budget.received, 10);
+
+    tokio::time::advance(Duration::from_secs(40)).await;
+    assert!(matches!(
+        budget
+            .remaining_limits(limits)
+            .err()
+            .unwrap()
+            .downcast_ref(),
+        Some(TransferError::Deadline)
+    ));
+    // Even a zero-byte/cache-only step must respect the original total deadline.
+    assert!(matches!(
+        budget.charge_verified(0).unwrap_err().downcast_ref(),
+        Some(TransferError::Deadline)
+    ));
+    assert_eq!(budget.received, 10);
+
+    let mut maximum = TransferBudget::new(TransferLimits {
+        transfer_bytes: u64::MAX,
+        ..limits
+    })
+    .unwrap();
+    maximum.charge_verified(u64::MAX).unwrap();
+    assert_eq!(
+        maximum.charge_verified(1).unwrap_err().to_string(),
+        "Acquisition byte accounting overflow"
+    );
+    assert_eq!(maximum.received, u64::MAX);
 }
 
 #[tokio::test]
@@ -208,24 +286,14 @@ async fn redirects_and_mirrors_keep_the_same_policy_and_hide_secret_locators() {
     );
 }
 
-fn stalled_server(prefix: &'static [u8]) -> (String, std::thread::JoinHandle<usize>) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let worker = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut input = [0; 4096];
-        assert!(stream.read(&mut input).unwrap() > 0);
-        stream.write_all(prefix).unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(3)))
-            .unwrap();
-        stream.read(&mut input).unwrap_or(0)
-    });
-    (format!("http://{address}/file"), worker)
-}
 #[tokio::test]
 async fn chunk_overflow_and_deadline_do_not_wait_for_a_stalled_eof() {
     for (body, deadline, expected_deadline) in [
+        (
+            &b"HTTP/1.1 200 OK\r\n"[..],
+            Duration::from_millis(100),
+            true,
+        ),
         (
             &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n"[..],
             Duration::from_secs(2),
@@ -237,24 +305,28 @@ async fn chunk_overflow_and_deadline_do_not_wait_for_a_stalled_eof() {
             true,
         ),
     ] {
-        let (url, worker) = stalled_server(body);
-        let mut request = request(vec![url], 7);
+        let fixture = StalledHttp::new(body);
+        let mut request = request(vec![fixture.url.clone()], 7);
         request.limits.deadline = deadline;
         let (outcome, governor) = tokio::time::timeout(Duration::from_secs(2), run(request))
             .await
             .unwrap();
         let error = failure(&outcome);
-        assert_eq!(
-            matches!(error.downcast_ref(), Some(TransferError::Deadline)),
-            expected_deadline
+        assert!(
+            matches!(
+                (error.downcast_ref::<TransferError>(), expected_deadline),
+                (Some(TransferError::Deadline), true) | (Some(TransferError::ByteLimit), false)
+            ),
+            "unexpected transfer failure: {error:#}"
         );
         assert_eq!(governor.status().reserved, ResourceRequest::default());
-        assert_eq!(worker.join().unwrap(), 0);
+        fixture.assert_closed();
     }
 }
 #[tokio::test]
 async fn cancellation_retires_the_blocking_verifier_and_response() {
-    let (url, worker) = stalled_server(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+    let mut fixture = StalledHttp::new(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+    let url = fixture.url.clone();
     let (runtime, governor) = runtime();
     let mut handle = runtime
         .start(move |mut scope| async move {
@@ -263,14 +335,29 @@ async fn cancellation_retires_the_blocking_verifier_and_response() {
                 .await)
         })
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    fixture.started().await;
     handle.cancel();
-    tokio::time::timeout(Duration::from_secs(2), handle.wait())
+    let outcome = tokio::time::timeout(Duration::from_secs(2), handle.wait())
         .await
         .unwrap();
+    match &*outcome {
+        OperationOutcome::Completed(Err(error)) => assert!(
+            error
+                .downcast_ref::<crate::application::process_runtime::Interrupted>()
+                .is_some()
+                // After this test explicitly cancels the operation, owner-side
+                // acceptance can reject an already-retired worker as stale.
+                // ExecutionOutcome maps that combination to interruption, but
+                // must preserve an unrelated stale result as a failure.
+                || matches!(error.downcast_ref(), Some(crate::engine::runtime::RuntimeError::StaleResult)),
+            "{error:#}"
+        ),
+        OperationOutcome::Failed(crate::engine::runtime::RuntimeError::Cancelled) => (),
+        _ => panic!("expected cancellation, not success or a worker failure"),
+    }
     runtime.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
-    assert_eq!(worker.join().unwrap(), 0);
+    fixture.assert_closed();
 }
 
 #[tokio::test]
@@ -313,26 +400,31 @@ async fn mirror_retry_counts_partial_bytes_from_the_failed_attempt() {
 
 #[tokio::test]
 async fn dropping_acquisition_future_closes_and_retires_its_verifier() {
-    let (url, worker) = stalled_server(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+    let mut fixture = StalledHttp::new(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+    let url = fixture.url.clone();
     let (runtime, governor) = runtime();
+    let (stop, stopped) = tokio::sync::oneshot::channel();
     let mut handle = runtime
         .start(move |mut scope| async move {
             let transport = transport();
-            let acquired = tokio::time::timeout(
-                Duration::from_millis(100),
-                transport.acquire(&mut scope, request(vec![url], 16)),
-            )
-            .await;
-            assert!(acquired.is_err());
+            // Drop the acquisition only after the server observed the request.
+            tokio::select! {
+                _ = stopped => (),
+                result = transport.acquire(&mut scope, request(vec![url], 16)) =>
+                    panic!("stalled acquisition completed before caller stopped: {}", result.is_ok()),
+            }
             Ok(Err(anyhow::anyhow!("caller stopped preparation")))
         })
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(2), handle.wait())
+    fixture.started().await;
+    stop.send(()).unwrap();
+    let outcome = tokio::time::timeout(Duration::from_secs(2), handle.wait())
         .await
         .unwrap();
+    assert_eq!(failure(&outcome).to_string(), "caller stopped preparation");
     runtime.shutdown().await;
+    fixture.assert_closed();
     assert_eq!(governor.status().reserved, ResourceRequest::default());
-    assert_eq!(worker.join().unwrap(), 0);
 }
 
 #[tokio::test]
@@ -437,50 +529,72 @@ fn provider_download_credentials_are_scoped_to_the_exact_https_origin() {
 #[tokio::test]
 async fn configured_provider_downloads_do_not_leak_keys_to_redirects_or_alternatives() {
     use crate::engine::providers::ProviderCatalog;
-    let mut source = mockito::Server::new_async().await;
-    let mut mirror = mockito::Server::new_async().await;
-    let missing = source
-        .mock("GET", "/missing")
-        .match_header("x-api-key", mockito::Matcher::Missing)
-        .with_status(404)
-        .create_async()
-        .await;
-    let redirect = source
-        .mock("GET", "/redirect")
-        .match_header("x-api-key", mockito::Matcher::Missing)
-        .with_status(302)
-        .with_header("location", &format!("{}/file", mirror.url()))
-        .create_async()
-        .await;
-    let file = mirror
-        .mock("GET", "/file")
-        .match_header("x-api-key", mockito::Matcher::Missing)
-        .with_body("payload")
-        .create_async()
-        .await;
-    let catalog = ProviderCatalog::for_loopback_tests(&source.url(), Some("fixture-key".into()));
-    let transport = catalog.configure_acquisition(transport());
-    let request = request(
-        vec![
-            format!("{}/missing", source.url()),
-            format!("{}/redirect", source.url()),
-        ],
-        32,
-    );
-    let (runtime, governor) = runtime();
-    let mut handle = runtime
-        .start(move |mut scope| async move { Ok(transport.acquire(&mut scope, request).await) })
-        .unwrap();
-    let outcome = handle.wait().await;
-    assert!(matches!(&*outcome, OperationOutcome::Completed(Ok(_))));
-    runtime.release_completed(handle.id());
-    runtime.shutdown().await;
-    drop(handle);
-    drop(outcome);
-    assert_eq!(governor.status().reserved, ResourceRequest::default());
-    missing.assert_async().await;
-    redirect.assert_async().await;
-    file.assert_async().await;
+    for authenticated in [false, true] {
+        let mut source = mockito::Server::new_async().await;
+        let mut mirror = mockito::Server::new_async().await;
+        let credential = if authenticated {
+            mockito::Matcher::Exact("fixture-key".into())
+        } else {
+            mockito::Matcher::Missing
+        };
+        let missing = source
+            .mock("GET", "/missing")
+            .match_header("x-api-key", credential.clone())
+            .with_status(404)
+            .create_async()
+            .await;
+        let redirect = source
+            .mock("GET", "/redirect")
+            .match_header("x-api-key", credential.clone())
+            .with_status(302)
+            .with_header("location", "/same-origin")
+            .create_async()
+            .await;
+        let same_origin = source
+            .mock("GET", "/same-origin")
+            .match_header("x-api-key", credential)
+            .with_status(302)
+            .with_header("location", &format!("{}/file", mirror.url()))
+            .create_async()
+            .await;
+        let file = mirror
+            .mock("GET", "/file")
+            .match_header("x-api-key", mockito::Matcher::Missing)
+            .with_body("payload")
+            .create_async()
+            .await;
+        let catalog =
+            ProviderCatalog::for_loopback_tests(&source.url(), Some("fixture-key".into()));
+        // Existing private host seam changes only the wire destination. Credential
+        // decisions still use the logical HTTPS origin at every request/redirect.
+        let transport = catalog
+            .configure_acquisition(transport())
+            .with_test_origin("https://edge.forgecdn.net", &source.url());
+        let origin = if authenticated {
+            "https://edge.forgecdn.net".into()
+        } else {
+            source.url()
+        };
+        let request = request(
+            vec![format!("{origin}/missing"), format!("{origin}/redirect")],
+            32,
+        );
+        let (runtime, governor) = runtime();
+        let mut handle = runtime
+            .start(move |mut scope| async move { Ok(transport.acquire(&mut scope, request).await) })
+            .unwrap();
+        let outcome = handle.wait().await;
+        assert!(matches!(&*outcome, OperationOutcome::Completed(Ok(_))));
+        runtime.release_completed(handle.id());
+        runtime.shutdown().await;
+        drop(handle);
+        drop(outcome);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        missing.assert_async().await;
+        redirect.assert_async().await;
+        same_origin.assert_async().await;
+        file.assert_async().await;
+    }
 }
 
 #[tokio::test]

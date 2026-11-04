@@ -20,7 +20,7 @@ class ProjectAutomation(unittest.TestCase):
     def report(self):
         return {'schema': 2, 'pack_id': 'fixture', 'pack': 'Pack With Spaces', 'version': '1.2.3-beta',
                 'lock': 'current', 'profiles': [
-                    {'name': 'launcher profile', 'output': 'dist/Pack With Spaces-prism.zip'},
+                    {'name': 'launcher_profile', 'output': 'dist/Pack With Spaces-prism.zip'},
                     {'name': 'modrinth', 'output': 'dist/Pack With Spaces.mrpack'}]}
 
     def test_build_selects_exact_profiles_and_stages_only_expected_outputs(self):
@@ -31,13 +31,13 @@ class ProjectAutomation(unittest.TestCase):
             for row in report['profiles']:
                 (root / row['output']).write_bytes(row['name'].encode())
             (root / 'dist/stale.zip').write_bytes(b'old')
-            with patch.dict(os.environ, {'RUNNER_TEMP': tmp, 'EMPACK_PROFILES': 'launcher profile\nmodrinth'}), \
+            with patch.dict(os.environ, {'RUNNER_TEMP': tmp, 'EMPACK_PROFILES': 'launcher_profile\nmodrinth'}), \
                  patch.object(ci.Path, 'cwd', return_value=root), \
                  patch.object(ci, 'run', return_value=json.dumps(report)) as run:
                 ci.build()
             self.assertEqual(run.call_args_list[1].args,
                              ('empack', '--yes', 'build', '--optional-defaults',
-                              '--profile', 'launcher profile', '--profile', 'modrinth'))
+                              '--profile', 'launcher_profile', '--profile', 'modrinth'))
             destination = root / 'empack-artifacts'
             self.assertEqual(len(list(destination.iterdir())), 3)
             for line in (destination / 'SHA256SUMS').read_text().splitlines():
@@ -53,12 +53,14 @@ class ProjectAutomation(unittest.TestCase):
             run.assert_not_called()
 
     def test_build_failure_never_stages_or_publishes(self):
-        with patch.object(ci, 'selection', return_value=self.report()), \
+        with patch.dict(os.environ, {'GITHUB_REF_NAME': 'v1.2.3-beta'}), \
+             patch.object(ci, 'selection', return_value=self.report()), \
              patch.object(ci, 'run', side_effect=subprocess.CalledProcessError(1, 'empack')), \
-             patch.object(ci, 'stage') as stage:
+             patch.object(ci, 'stage') as stage, patch.object(ci, 'publish') as publish:
             with self.assertRaises(subprocess.CalledProcessError):
-                ci.build()
+                ci.build(release=True)
             stage.assert_not_called()
+            publish.assert_not_called()
 
     def test_stale_lock_rejected(self):
         report = self.report()
@@ -108,10 +110,13 @@ class ProjectAutomation(unittest.TestCase):
 
     def test_missing_digest_prevents_download(self):
         asset = {'name': 'empack-0.7.1-beta-x86_64-unknown-linux-gnu.tar.gz'}
-        with patch.object(ci, 'run', return_value=json.dumps({'assets': [asset]})) as run:
-            with self.assertRaisesRegex(ValueError, 'SHA-256'):
-                ci.install('v0.7.1-beta')
-            self.assertEqual(run.call_count, 1)
+        valid = dict(asset, digest='sha256:' + '0' * 64)
+        for assets in [[], [asset], [dict(asset, digest='sha512:wrong')], [valid, valid]]:
+            with self.subTest(assets=assets), \
+                 patch.object(ci, 'run', return_value=json.dumps({'assets': assets})) as run:
+                with self.assertRaisesRegex(ValueError, 'SHA-256'):
+                    ci.install('v0.7.1-beta')
+                self.assertEqual(run.call_count, 1)
 
     def test_digest_mismatch_prevents_execution(self):
         asset = {'name': 'empack-0.7.1-beta-x86_64-unknown-linux-gnu.tar.gz',

@@ -122,7 +122,7 @@ pub(super) fn explain(
         let mut origins = BTreeMap::from([("consumer", selected.origin), ("delivery", selected.origin), ("environment", selected.origin), ("updates", selected.origin), ("format", selected.origin)]);
         for (field, changed) in [("delivery", args.delivery.is_some()), ("environment", args.environment.is_some()), ("updates", args.updates.is_some()), ("format", args.format.is_some())] { if changed { origins.insert(field, "cli-override"); } }
         if matches!(target.consumer(), Consumer::Modrinth | Consumer::CurseForge) { origins.insert("format", "consumer-required-zip"); }
-        json!({"name":selected.name,"selection":selected.origin,"recipe":crate::engine::documents::recipe::encode_profile(&BuildProfile { recipe: target, archive: output.archive }),"origins":origins,"output":format!("dist/{}",output.artifact.as_str()),"recipient_empack_required":recipient,"java":json!({"minimum_major":intent.runtime.java_major,"meaning":"declared minimum; not a complete compatibility range"}),"runtime_preparation":if target.consumer()==Consumer::Prism { "Prism prepares client game/runtime files" } else if target.consumer()==Consumer::Server { "empack prepares server runtime; recipient supplies Java" } else { "consumer-defined" },"author_acquisition":"May require verified downloads even for references; not assessed by explanation"})
+        json!({"name":selected.name,"selection":selected.origin,"recipe":crate::engine::documents::recipe::encode_profile(&BuildProfile { recipe: target, archive: output.archive }),"origins":origins,"output":format!("dist/{}",output.artifact.as_str()),"optional_policy":optional_policy(request.optional_for(target)),"recipient_empack_required":recipient,"java":json!({"minimum_major":intent.runtime.java_major,"meaning":"declared minimum; not a complete compatibility range"}),"runtime_preparation":if target.consumer()==Consumer::Prism { "Prism prepares client game/runtime files" } else if target.consumer()==Consumer::Server { "empack prepares server runtime; recipient supplies Java" } else { "consumer-defined" },"author_acquisition":"May require verified downloads even for references; not assessed by explanation"})
     }).collect::<Vec<_>>();
     let resolved = workspace.require_resolved();
     let manual = resolved.as_ref().ok().map(|project| {
@@ -145,16 +145,20 @@ pub(super) fn explain(
             })
             .collect::<Vec<_>>()
     });
-    let optional = match &request.optional {
+    let optional = optional_policy(&request.optional);
+    Ok(
+        json!({"schema":2,"pack_id":intent.metadata.id,"pack":intent.metadata.name,"version":intent.metadata.version,"profiles":profiles,"lock":if resolved.is_ok(){"current"} else if workspace.prior_lock().is_none(){"missing"}else{"stale"},"optional_policy":optional,"declared_manual_inputs":manual,"input_verification":"Not performed; unavailable provider downloads and cache contents remain unknown","clean":request.clean}),
+    )
+}
+
+fn optional_policy(policy: &OptionalPolicy) -> Value {
+    match policy {
         OptionalPolicy::Preserve => json!({"mode":"preserve"}),
         OptionalPolicy::Resolve {
             choices,
             use_defaults,
         } => json!({"mode":"resolve", "choices":choices, "use_defaults":use_defaults}),
-    };
-    Ok(
-        json!({"schema":2,"pack_id":intent.metadata.id,"pack":intent.metadata.name,"version":intent.metadata.version,"profiles":profiles,"lock":if resolved.is_ok(){"current"} else if workspace.prior_lock().is_none(){"missing"}else{"stale"},"optional_policy":optional,"declared_manual_inputs":manual,"input_verification":"Not performed; unavailable provider downloads and cache contents remain unknown","clean":request.clean}),
-    )
+    }
 }
 pub(super) fn text(report: &Value) -> String {
     let mut lines = vec![format!(
@@ -178,6 +182,10 @@ pub(super) fn text(report: &Value) -> String {
             ));
         }
         lines.push(format!(
+            "  Optional content: {}",
+            profile["optional_policy"]
+        ));
+        lines.push(format!(
             "  Recipient empack required: {}; Java: {}",
             profile["recipient_empack_required"], profile["java"]
         ));
@@ -191,7 +199,7 @@ pub(super) fn text(report: &Value) -> String {
         ));
     }
     lines.push(format!(
-        "Optional choices: {}; known manual inputs: {}",
+        "Requested optional choices: {}; known manual inputs: {}",
         report["optional_policy"], report["declared_manual_inputs"]
     ));
     lines.push(report["input_verification"].as_str().unwrap().into());

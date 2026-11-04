@@ -446,9 +446,6 @@ pub enum ReleaseCommand {
         /// Increasing sequence number; changing metadata requires a higher value
         #[arg(long)]
         sequence: u64,
-        /// UTC Unix seconds; must be future-dated by at most 31 days
-        #[arg(long)]
-        expires: i64,
         /// External Ed25519 seed file, encoded as 64 lowercase hexadecimal characters
         #[arg(long = "key-file", required = true)]
         keys: Vec<PathBuf>,
@@ -979,6 +976,26 @@ impl std::str::FromStr for SearchPlatform {
 }
 
 impl Commands {
+    /// JSON reports reserve stdout for their payload; diagnostics use stderr.
+    pub fn emits_json(&self) -> bool {
+        matches!(
+            self,
+            Self::Status { json: true, .. }
+                | Self::Outdated { json: true, .. }
+                | Self::Migrate(MigrationArgs { json: true, .. })
+                | Self::Build(BuildArgs { json: true, .. })
+                | Self::Manifest {
+                    command: ManifestCommand::Check { json: true }
+                        | ManifestCommand::Diff { json: true }
+                        | ManifestCommand::Explain { json: true, .. },
+                }
+                | Self::Pending {
+                    command: PendingCommand::List { json: true }
+                        | PendingCommand::Show { json: true, .. },
+                }
+        )
+    }
+
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
@@ -1108,7 +1125,7 @@ mod tests {
             "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
             "empack --workdir ./instance instance update --side server",
             "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
-            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --expires 2000000000 --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
         ] {
             Cli::try_parse_from(command.split_whitespace())
                 .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));

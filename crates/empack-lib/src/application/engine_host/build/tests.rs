@@ -5,6 +5,7 @@ use crate::application::{
     session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
 };
 use crate::engine::documents::DocumentCodec;
+use crate::test_support::file_bytes as snapshot;
 use std::{collections::BTreeMap, fs, io::Read};
 
 fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
@@ -38,9 +39,6 @@ async fn fixture(root: &Path) {
     fs::create_dir_all(root.join("project/pack/config")).unwrap();
     fs::write(root.join("project/pack/config/example.txt"), b"first").unwrap();
     fs::write(root.join("project/notes.txt"), b"outside managed changes").unwrap();
-}
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    super::super::tests::snapshot(root)
 }
 fn args() -> BuildArgs {
     BuildArgs {
@@ -285,6 +283,228 @@ async fn native_build_target_mapping_retains_archives_defaults_and_explicit_deci
         unsafe_intent.metadata.name = name.into();
         assert!(request(&unsafe_intent, &args(), BuildDecisions::default()).is_err());
     }
+}
+
+#[tokio::test]
+async fn running_build_cancellation_retires_acquisition_without_releasing_other_preparations() {
+    use crate::application::{process_runtime::Interrupted, session::LiveProcessProvider};
+    use crate::engine::acquisition::HttpAcquisition;
+    use crate::testing::http::StalledHttp;
+    use empack_core::{
+        digest::{DigestSet, ExpectedDigest},
+        model::*,
+        path::InstallDestination,
+        requirements::{Requirement, Requirements},
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let mut server =
+        StalledHttp::new(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\npayl\r\n");
+    let author = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
+    let resolved = DocumentCodec
+        .decode_lock(
+            &fs::read(project.join("empack.lock")).unwrap(),
+            &author,
+            "budget fixture",
+        )
+        .unwrap();
+    let mut intent = resolved.intent().clone();
+    let mut lock = resolved.lock().clone();
+    let key = DependencyKey::parse("stalled-assets").unwrap();
+    let requirements = Requirements {
+        client: Requirement::Required,
+        server: Requirement::Unsupported,
+    };
+    let placement = Placement {
+        destination: InstallDestination::parse("config/stalled-assets.txt").unwrap(),
+        layer: ContentLayer::Common,
+        requirements: requirements.clone(),
+    };
+    let downloads = NonEmpty::new(vec!["https://budget.test/file".into()]).unwrap();
+    // Literal SHA-256 of b"payload"; this response never supplies complete bytes.
+    let digests = DigestSet::new(vec![
+        ExpectedDigest::parse(
+            "sha256",
+            "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            releases: None,
+            source: SourceIntent::Url(downloads.clone()),
+            kind: ContentKind::OtherFile,
+            selection: DependencySelection::ContentAssertions(digests.clone()),
+            placement: PlacementIntent::Explicit(NonEmpty::new(vec![placement.clone()]).unwrap()),
+            requirements,
+        },
+    );
+    lock.dependencies.insert(
+        key.clone(),
+        LockedDependency {
+            incompatibilities: vec![],
+            source_selector: None,
+            title: "Stalled assets".into(),
+            kind: ContentKind::OtherFile,
+            identity: ResolvedIdentity::Url(key.clone()),
+            selected: None,
+            files: NonEmpty::new(vec![ResolvedFile {
+                slot: FileSlot::parse("main").unwrap(),
+                acquisition: AcquisitionSpec::Url(downloads),
+                expected: ExpectedContent {
+                    digests: Some(digests.clone()),
+                    size: Some(7),
+                    accepted_observation: None,
+                },
+                provenance: Provenance {
+                    source: "budget fixture".into(),
+                    location: None,
+                    declared_digests: Some(digests),
+                    conversions: vec![],
+                },
+                placements: NonEmpty::new(vec![placement]).unwrap(),
+            }])
+            .unwrap(),
+        },
+    );
+    lock.coverage.insert(key, Coverage::Unknown);
+    let author = DocumentCodec.encode_intent(&intent).unwrap();
+    let revision = DocumentCodec
+        .decode_intent(&author, "budget fixture")
+        .unwrap()
+        .semantic_revision();
+    lock.intent_revision = revision;
+    let resolved = ResolvedProject::validate(intent, lock, revision).unwrap();
+    fs::write(project.join("empack.yml"), author).unwrap();
+    fs::write(
+        project.join("empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+    fs::create_dir_all(project.join("dist")).unwrap();
+    fs::write(project.join("dist/client.zip"), b"previous artifact").unwrap();
+    fs::write(project.join("dist/neighbor.zip"), b"unrelated artifact").unwrap();
+    fs::create_dir_all(project.join("worlds/playtest")).unwrap();
+    fs::write(project.join("worlds/playtest/level.dat"), b"player bytes").unwrap();
+    fs::create_dir(project.join("empty author directory")).unwrap();
+    fs::write(root.path().join("neighbor.txt"), b"host neighbor").unwrap();
+    let readonly_note = project.join("notes.txt");
+    let original_note_permissions = fs::metadata(&readonly_note).unwrap().permissions();
+    let mut note_permissions = original_note_permissions.clone();
+    note_permissions.set_readonly(true);
+    fs::set_permissions(&readonly_note, note_permissions).unwrap();
+    let before = snapshot(root.path());
+    let permissions: BTreeMap<_, _> = before
+        .keys()
+        .map(|path| {
+            (
+                path.clone(),
+                fs::metadata(root.path().join(path))
+                    .unwrap()
+                    .permissions()
+                    .readonly(),
+            )
+        })
+        .collect();
+    let cancellation = Cancellation::default();
+    let mut host = session(root.path(), true, false);
+    host.process_provider = LiveProcessProvider::new().with_cancellation(cancellation.clone());
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 4,
+        memory_bytes: 256 << 20,
+        scratch_bytes: 1 << 30,
+        open_files: 1024,
+    });
+    let engine = engine_with_governor(host.config().app_config(), root.path(), governor.clone())
+        .unwrap()
+        .with_test_transport(
+            HttpAcquisition::for_loopback_tests()
+                .with_test_origin("https://budget.test", &server.url),
+        );
+    let request = BuildRequest {
+        clean: false,
+        outputs: NonEmpty::new(vec![BuildOutput {
+            archive: DistributionArchive::Zip,
+            target: Recipe::PRISM_BUNDLED,
+            artifact: PortableRelPath::parse("client.zip", PathSyntax::ArtifactName).unwrap(),
+        }])
+        .unwrap(),
+        optional: OptionalPolicy::Preserve,
+        mrpack_optional: OptionalConversion::RejectMetadataLoss,
+        templates: TemplateOptions::default(),
+        evidence: SourceEvidencePolicy::StrongSourceRequired,
+    };
+    let Preparation::Ready(other) = engine
+        .prepare(project.clone(), request.clone())
+        .await
+        .unwrap()
+    else {
+        panic!("declared URL content must be available for approved acquisition");
+    };
+    let retained = governor.status().reserved;
+    assert_eq!(retained.jobs, 0);
+    assert!(retained.memory_bytes > 0);
+    assert!(retained.open_files > 0);
+    let Preparation::Ready(prepared) = engine
+        .prepare(project.clone(), request.clone())
+        .await
+        .unwrap()
+    else {
+        panic!("second preparation must share the same budget");
+    };
+    assert!(prepared.view().needs_network());
+    let observe = async {
+        server.started().await;
+        let active = governor.status().reserved;
+        assert!(active.jobs > 0, "the acquisition must own running work");
+        assert!(active.memory_bytes > retained.memory_bytes);
+        cancellation.cancel();
+    };
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(4), async {
+        tokio::join!(
+            execute_approved(&host, &engine, prepared, "Build", |_| {
+                panic!("partial upstream content cannot produce a receipt")
+            }),
+            observe
+        )
+    })
+    .await
+    .expect("the host must await cancellation and retirement of active acquisition");
+    let error = result.unwrap_err();
+    assert!(error.is::<Interrupted>(), "{error:#}");
+    assert_eq!(format!("{error:#}"), "Operation interrupted");
+    assert_eq!(
+        crate::application::classify_error(&error),
+        crate::application::EmpackExitCode::Interrupted
+    );
+    server.assert_closed();
+    assert_eq!(governor.status().reserved, retained);
+    assert_eq!(snapshot(root.path()), before);
+    for (path, readonly) in permissions {
+        assert_eq!(
+            fs::metadata(root.path().join(path))
+                .unwrap()
+                .permissions()
+                .readonly(),
+            readonly
+        );
+    }
+    assert!(project.join("empty author directory").is_dir());
+    // Keep the returned error alive while the unrelated preparation and registry
+    // are released. Cancellation must not close the shared engine to later work.
+    drop(other);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let Preparation::Ready(followup) = engine.prepare(project, request).await.unwrap() else {
+        panic!("released capacity must permit a new preparation");
+    };
+    drop(followup);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+    fs::set_permissions(readonly_note, original_note_permissions).unwrap();
 }
 
 #[tokio::test]

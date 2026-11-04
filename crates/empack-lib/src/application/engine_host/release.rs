@@ -91,7 +91,6 @@ pub(in crate::application) async fn dispatch(
                 channel,
                 base_url,
                 sequence,
-                expires,
                 previous_keys,
                 ..
             } => PublishChannelRequest {
@@ -99,7 +98,6 @@ pub(in crate::application) async fn dispatch(
                 channel,
                 base_url,
                 sequence,
-                expires,
                 keys: (*keys).clone(),
                 previous_keys: release::signing::public_keys(&previous_keys)?,
             }

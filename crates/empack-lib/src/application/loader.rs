@@ -24,7 +24,7 @@ pub(crate) fn load_dotenv_files() -> Result<(), ConfigError> {
 }
 
 impl AppConfig {
-    /// Load config: defaults -> .env.local -> .env -> env vars -> CLI
+    /// Load config: defaults < .env < .env.local < inherited environment < CLI.
     pub fn load() -> Result<Self, ConfigError> {
         let mut config = Self::default();
 

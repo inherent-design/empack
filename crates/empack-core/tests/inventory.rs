@@ -49,7 +49,11 @@ fn sides_preserve_distinct_bytes_and_mrpack_keeps_all_layers() {
         input(ContentLayer::Common, "config/a", 1),
         input(ContentLayer::Client, "config/a", 2),
     ];
-    for (target, byte) in [(Recipe::PRISM_BUNDLED, 2), (Recipe::SERVER_BUNDLED, 3)] {
+    for (target, byte) in [
+        (Recipe::PRISM_BUNDLED, 2),
+        (Recipe::SERVER_BUNDLED, 3),
+        (Recipe::CURSEFORGE, 2),
+    ] {
         let inventory =
             BuildInventory::project(&entries, target, &OptionalPolicy::Preserve).unwrap();
         assert_eq!(inventory.entries().len(), 1);
@@ -232,9 +236,13 @@ fn selection_can_defer_bytes_but_completed_inventory_cannot() {
     let inputs = vec![common.clone()];
     for target in [
         Recipe::MODRINTH,
+        Recipe::CURSEFORGE,
         Recipe::PRISM_REFERENCES,
         Recipe::PRISM_BUNDLED,
+        Recipe::SERVER_REFERENCES,
         Recipe::SERVER_BUNDLED,
+        Recipe::EMPACK_REFERENCES,
+        Recipe::EMPACK_BUNDLED,
     ] {
         let selected = BuildSelection::select(&inputs, target, &OptionalPolicy::Preserve).unwrap();
         assert_eq!(selected.entries().len(), 1);

@@ -37,13 +37,14 @@ pub(in crate::application::engine_host) async fn open_pins(
         "Browser assistance is limited to 16 exact selections per invocation; associate files explicitly for larger batches"
     );
     let config = session.config().app_config();
+    let timeout = Duration::from_secs(config.net_timeout);
+    let deadline = tokio::time::Instant::now()
+        .checked_add(remaining.map_or(timeout, |left| left.min(timeout)))
+        .context("Browser page discovery deadline is out of range; reduce --net-timeout; continuation was retained")?;
     let catalog = ProviderCatalog::new(
         config.curseforge_api_client_key.clone(),
         Arc::new(HostBudgetRegistry::new()),
     )?;
-    let timeout = Duration::from_secs(config.net_timeout);
-    let deadline =
-        tokio::time::Instant::now() + remaining.map_or(timeout, |left| left.min(timeout));
     for pin in pins {
         session.process().check_cancelled()?;
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -99,7 +100,22 @@ async fn launch(session: &dyn Session, page: &DownloadPage, timeout: Duration) -
     let mut command = std::process::Command::new(program);
     command.args(prefix).arg(page.as_str());
     command.current_dir(session.invocation().current_dir()?);
-    initialize::discover(session, move |mut scope| async move {
+    execute_launcher(session, move |cancel| {
+        launch_command(command, timeout, cancel)
+    })
+    .await
+}
+
+async fn execute_launcher<F, Fut>(session: &dyn Session, run: F) -> Result<()>
+where
+    F: FnOnce(crate::application::process_runtime::Cancellation) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<()>> + Send + 'static,
+{
+    initialize::discover(session, move |scope| async move {
+        // This is the terminal outcome of an approved external handoff, not a
+        // value authorizing content or publication. Keep it after cancellation,
+        // while still waiting for the owned worker and its reservations to retire.
+        let (sender, receiver) = tokio::sync::oneshot::channel();
         let work = scope.spawn(
             ResourceRequest {
                 jobs: 1,
@@ -107,9 +123,14 @@ async fn launch(session: &dyn Session, page: &DownloadPage, timeout: Duration) -
                 ..Default::default()
             },
             ResourceRequest::default(),
-            move |cancel| launch_command(command, timeout, cancel),
+            move |cancel| async move {
+                let _ = sender.send(run(cancel).await);
+            },
         )?;
-        scope.accept(work.wait().await?)?.transpose().map(|_| ())
+        work.wait().await?;
+        receiver
+            .await
+            .context("Browser launcher terminal result was lost")?
     })
     .await
 }
@@ -134,17 +155,259 @@ async fn launch_command(
         .context("Could not start browser launcher; continuation was retained")?;
     let result = tokio::select! {
         status = child.wait() => {
-            ensure!(status?.success(), "Browser launcher failed; continuation was retained");
-            Ok(())
+            match status {
+                Ok(status) => {
+                    ensure!(status.success(), "Browser launcher failed; continuation was retained");
+                    Ok(())
+                }
+                Err(error) => Err(error).context("Could not wait for browser launcher; continuation was retained"),
+            }
         }
         _ = cancel.cancelled() => Err(crate::application::process_runtime::Interrupted.into()),
         _ = tokio::time::sleep(timeout) => Err(anyhow::anyhow!("Browser launcher did not confirm completion; continuation was retained")),
     };
-    if result.is_err() {
-        let _ = child.start_kill();
-        let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    if let Err(error) = result {
+        let termination = child.start_kill();
+        let retirement = match tokio::time::timeout(Duration::from_secs(2), child.wait()).await {
+            Ok(waited) => waited
+                .map(|_| ())
+                .context("Waiting for browser launcher failed"),
+            Err(error) => Err(error).context("Waiting for browser launcher retirement timed out"),
+        };
+        return Err(after_launcher_retirement(error, termination, retirement));
     }
-    result
+    Ok(())
+}
+
+fn after_launcher_retirement(
+    failure: anyhow::Error,
+    termination: std::io::Result<()>,
+    retirement: Result<()>,
+) -> anyhow::Error {
+    match retirement {
+        Ok(()) => failure,
+        Err(error) => {
+            // A failed kill does not imply uncertainty if wait confirmed exit.
+            // When wait cannot establish retirement, retain both facts alongside
+            // the original error, including its typed cancellation cause.
+            let details = match termination {
+                Ok(()) => format!("{error:#}"),
+                Err(termination) => {
+                    format!("Could not terminate browser launcher: {termination}; {error:#}")
+                }
+            };
+            failure.context(format!(
+                "Browser launcher retirement is unconfirmed; the launcher may still be running; continuation was retained: {details}"
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use crate::application::{
+        process_runtime::{Cancellation, Interrupted},
+        session::LiveProcessProvider,
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
+    };
+    use empack_core::{
+        identity::{ModrinthProjectId, ModrinthVersionId, PinSelector, ProviderProjectId},
+        model::ResolvedPin,
+    };
+
+    #[test]
+    fn known_launcher_retirement_preserves_the_original_failure() {
+        let error = after_launcher_retirement(
+            Interrupted.into(),
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "fixture kill denied",
+            )),
+            Ok(()),
+        );
+        assert!(error.is::<Interrupted>());
+        assert!(!format!("{error:#}").contains("unconfirmed"));
+        assert!(!format!("{error:#}").contains("fixture kill denied"));
+        let error =
+            after_launcher_retirement(anyhow::anyhow!("fixture launch deadline"), Ok(()), Ok(()));
+        assert_eq!(error.to_string(), "fixture launch deadline");
+    }
+
+    #[test]
+    fn unknown_launcher_retirement_preserves_cleanup_and_cancellation_diagnostics() {
+        let error = after_launcher_retirement(
+            Interrupted.into(),
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "fixture kill denied",
+            )),
+            Err(anyhow::anyhow!("fixture wait failed")),
+        );
+        assert!(error.is::<Interrupted>());
+        let text = format!("{error:#}");
+        for expected in [
+            "retirement is unconfirmed",
+            "may still be running",
+            "continuation was retained",
+            "fixture kill denied",
+            "fixture wait failed",
+        ] {
+            assert!(text.contains(expected), "{text}");
+        }
+        let error = after_launcher_retirement(
+            anyhow::anyhow!("fixture launch deadline"),
+            Ok(()),
+            Err(anyhow::anyhow!("fixture retirement deadline")),
+        );
+        assert!(!error.is::<Interrupted>());
+        let text = format!("{error:#}");
+        assert!(text.contains("fixture launch deadline"), "{text}");
+        assert!(text.contains("fixture retirement deadline"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn launcher_terminal_outcome_survives_host_cancellation() {
+        for failed in [false, true] {
+            let cancellation = Cancellation::default();
+            let mut session = MockCommandSession::new();
+            session.process_provider =
+                LiveProcessProvider::new().with_cancellation(cancellation.clone());
+            let (started, observed_start) = tokio::sync::oneshot::channel();
+            let requester = tokio::spawn(async move {
+                observed_start.await.unwrap();
+                cancellation.cancel();
+            });
+            let outcome = tokio::time::timeout(
+                Duration::from_secs(5),
+                execute_launcher(&session, move |cancel| async move {
+                    started.send(()).unwrap();
+                    // Wait for actual owner-side cancellation, not precancellation
+                    // or an arbitrary delay, before returning the terminal fact.
+                    cancel.cancelled().await;
+                    if failed {
+                        Err(after_launcher_retirement(
+                            Interrupted.into(),
+                            Ok(()),
+                            Err(anyhow::anyhow!("fixture retirement failure")),
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                }),
+            )
+            .await
+            .unwrap();
+            requester.await.unwrap();
+            if failed {
+                let error = outcome.unwrap_err();
+                assert!(error.is::<Interrupted>());
+                let text = format!("{error:#}");
+                assert!(text.contains("retirement is unconfirmed"), "{text}");
+                assert!(text.contains("fixture retirement failure"), "{text}");
+            } else {
+                outcome.expect("a completed handoff must survive late host cancellation");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn oversized_discovery_deadline_refuses_without_losing_prior_openings() {
+        let cancellation = Cancellation::default();
+        cancellation.cancel();
+        let mut session = MockCommandSession::new().with_config(MockConfigProvider::new(
+            crate::application::AppConfig {
+                net_timeout: u64::MAX,
+                ..Default::default()
+            },
+        ));
+        session.process_provider = LiveProcessProvider::new().with_cancellation(cancellation);
+        let pin = ResolvedPin {
+            project: ProviderProjectId::Modrinth(ModrinthProjectId::parse("12345678").unwrap()),
+            selection: PinSelector::ModrinthVersion(ModrinthVersionId::parse("abcdefgh").unwrap()),
+        };
+        let mut prior = pin.clone();
+        prior.project = ProviderProjectId::Modrinth(ModrinthProjectId::parse("87654321").unwrap());
+        let mut opened = BTreeSet::from([prior]);
+        let before = opened.clone();
+        let requested = BTreeSet::from([pin]);
+        let error = open_pins(&session, requested.clone(), &mut opened, None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Browser page discovery deadline is out of range; reduce --net-timeout; continuation was retained"
+        );
+        assert_eq!(opened, before);
+        // A representable remaining wait bounds even this configuration. The
+        // pre-cancelled host then stops before provider I/O or desktop launch.
+        let error = open_pins(
+            &session,
+            requested,
+            &mut opened,
+            Some(Duration::from_secs(5)),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.is::<Interrupted>(), "{error:#}");
+        assert_eq!(opened, before);
+        open_pins(&session, BTreeSet::new(), &mut opened, None)
+            .await
+            .unwrap();
+        assert_eq!(opened, before);
+    }
+
+    #[tokio::test]
+    async fn page_limit_counts_prior_openings_before_discovery_or_launch() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("author.txt"), b"retained author work").unwrap();
+        std::fs::create_dir(root.path().join("empty author directory")).unwrap();
+        let before = crate::test_support::file_bytes(root.path());
+        let cancellation = Cancellation::default();
+        cancellation.cancel();
+        let mut session = MockCommandSession::new().with_invocation(
+            MockInvocationProvider::new().with_current_dir(root.path().to_owned()),
+        );
+        session.process_provider = LiveProcessProvider::new().with_cancellation(cancellation);
+        let pins = |start: usize, count: usize| -> BTreeSet<ResolvedPin> {
+            (start..start + count)
+                .map(|index| ResolvedPin {
+                    project: ProviderProjectId::Modrinth(
+                        ModrinthProjectId::parse(&format!("{index:08}")).unwrap(),
+                    ),
+                    selection: PinSelector::ModrinthVersion(
+                        ModrinthVersionId::parse("abcdefgh").unwrap(),
+                    ),
+                })
+                .collect()
+        };
+        for (prior, requested, expected) in [
+            (0, 17, "limit"),
+            (16, 1, "limit"),
+            (0, 16, "cancelled"),
+            (15, 1, "cancelled"),
+            (16, 0, "empty"),
+        ] {
+            let mut opened = pins(0, prior);
+            let old_opened = opened.clone();
+            // Pre-cancellation makes admitted nonempty requests stop before
+            // provider I/O or desktop launch. Over-limit requests must instead
+            // retain their specific diagnostic, including prior page openings.
+            let result = open_pins(&session, pins(prior, requested), &mut opened, None).await;
+            match expected {
+                "limit" => assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "Browser assistance is limited to 16 exact selections per invocation; associate files explicitly for larger batches"
+                ),
+                "cancelled" => assert!(result.unwrap_err().is::<Interrupted>()),
+                "empty" => result.unwrap(),
+                _ => unreachable!(),
+            }
+            assert_eq!(opened, old_opened);
+            assert_eq!(crate::test_support::file_bytes(root.path()), before);
+            assert!(root.path().join("empty author directory").is_dir());
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -179,5 +442,64 @@ mod tests {
                 .is_err()
         );
         assert!(start.elapsed() < Duration::from_secs(3));
+
+        let mut command = std::process::Command::new("/bin/sh");
+        command.args(["-c", "exit 7"]);
+        let error = launch_command(command, Duration::from_secs(3), Default::default())
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Browser launcher failed; continuation was retained")
+        );
+
+        // Cancel only after the real launcher has started. This process deliberately
+        // has no browser descendants: cancellation owns the launcher, not the GUI.
+        let pid_path = root.path().join("launcher.pid");
+        let mut command = std::process::Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                "printf '%s\\n' \"$$\" > \"$1\"; exec sleep 60",
+                "launcher",
+            ])
+            .arg(&pid_path);
+        let cancel = crate::application::process_runtime::Cancellation::default();
+        let task = tokio::spawn(launch_command(
+            command,
+            Duration::from_secs(30),
+            cancel.clone(),
+        ));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let pid: libc::pid_t = loop {
+            if let Some(pid) = std::fs::read_to_string(&pid_path)
+                .ok()
+                .and_then(|text| text.strip_suffix('\n').and_then(|pid| pid.parse().ok()))
+            {
+                break pid;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "launcher did not start"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        cancel.cancel();
+        let error = tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(error.is::<crate::application::process_runtime::Interrupted>());
+        // SAFETY: signal zero observes the fixture's PID without delivering a signal.
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
     }
 }
+
+#[cfg(all(test, windows))]
+mod windows_tests;

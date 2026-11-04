@@ -1,0 +1,301 @@
+"""Synthetic evidence chains test admission; they are not release execution proof."""
+import copy
+import json
+from pathlib import Path
+import re
+import sys
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import test_ci_verification as ci_fixtures
+import test_release_inputs as input_fixtures
+from verification.evidence import sha256, write_json
+from verification import release
+from verification.consumer import INPUTS
+from verification.python_tests import PRODUCER_INPUTS
+from compiled_product_fixture import compilation
+from verification.product_build import build_command
+import native_image_fixture
+
+
+class ReleaseArchiveGate(unittest.TestCase):
+    def git(self, *args):
+        return release.git(self.root, *args)
+
+    def setUp(self):
+        input_fixtures.ReleaseInputs.setUp(self)
+        registry = self.root / "tests/verification"
+        registry.mkdir(parents=True)
+        for name in ("requirements.json", "test-bindings.json", "python-bindings.json"):
+            (registry / name).write_bytes((ci_fixtures.SCRIPTS.parent / "tests/verification" / name).read_bytes())
+        for name in (*INPUTS, *PRODUCER_INPUTS):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())
+        from verification.doctests import inputs as doctest_inputs
+        for name in doctest_inputs():
+            path = self.root / name
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())
+        self.git("add", "tests", "scripts", "crates")
+        self.git("commit", "-qm", "fixture registry")
+        self.revision = self.git("rev-parse", "HEAD")
+        self.version = "0.8.4-beta"
+        self.inputs = input_fixtures.release.prepare(self.root, self.version)
+        self.git("restore", "Cargo.toml", "Cargo.lock")
+        self.artifacts = self.root / ".git/artifacts"
+        self.artifacts.mkdir()
+        self.output = self.root / ".git/publish"
+        self.paths = {}
+        for target in release.TARGETS:
+            build_dir = self.artifacts / f"release-build-{target}"
+            build_dir.mkdir()
+            archive = build_dir / release.archive_name(self.version, target)
+            digest, length = native_image_fixture.archive(archive, target)
+            executable = {"sha256": digest, "length": length}
+            build = {"schema": 1, "kind": "release-archive-build", "version": self.version,
+                     "source_revision": self.revision, "target": target, "features": "default",
+                     "profile": "release", "inputs": self.inputs,
+                     "compiler": f"rustc fixture\nrelease: 1.99.1\nhost: {target}",
+                     "command": build_command(target),
+                     "compilation_sha256": compilation(build_dir, target, executable["sha256"], self.revision, self.inputs["stamped"]),
+                     "archive": {"name": archive.name, "sha256": sha256(archive), "length": archive.stat().st_size},
+                     "executable": executable}
+            write_json(build_dir / "build.json", build)
+            execution = self.artifacts / f"release-test-{target}" / "package-attempt"
+            with patch.object(ci_fixtures, "REVISION", self.revision):
+                attempt, receipt = ci_fixtures.fixture_attempt(execution / "suite", target, "default", ["cli"])
+            receipt["artifact"]["version"] = self.version
+            receipt["artifact"]["profile"] = "release"
+            receipt["artifact"]["sha256"] = digest
+            write_json(attempt / "receipt.json", receipt)
+            native_image_fixture.observation(execution / "native-image", target, digest, length)
+            package = {"schema": 2, "kind": "extracted-release-archive", "status": "PASS", "qualification": False,
+                       "version": self.version, "target": target, "features": "default", "profile": "release",
+                       "test_source_revision": self.revision, "test_worktree_dirty": False,
+                       "test_source_snapshot_sha256": receipt["source_snapshot_sha256"],
+                       "archive": {"name": archive.name, "sha256": sha256(archive)}, "executable": executable,
+                       "native_image_sha256": sha256(execution / "native-image/image.json"),
+                       "suite_receipt": (attempt / "receipt.json").relative_to(execution).as_posix(),
+                       "suite_receipt_sha256": sha256(attempt / "receipt.json")}
+            write_json(execution / "package.json", package)
+            self.paths[target] = (build_dir, execution, attempt)
+
+    def admit(self):
+        return release.admit_archives(self.root, self.artifacts, self.version, self.revision, self.output)
+
+    def test_all_five_exact_archives_are_staged_without_rebuilding(self):
+        result = self.admit()
+        self.assertEqual(result["status"], "PASS")
+        self.assertFalse(result["qualification"])
+        self.assertEqual(len(result["targets"]), 5)
+        for target, (build, _, _) in self.paths.items():
+            name = release.archive_name(self.version, target)
+            self.assertEqual((self.output / name).read_bytes(), (build / name).read_bytes())
+        digest = sha256(self.output / "archive-evidence.json")
+        self.assertEqual(release.check_payload(self.output, self.version, self.revision, digest), result)
+        manifest = self.output / "archive-evidence.json"
+        old = dict(result, schema=1)
+        write_json(manifest, old)
+        with self.assertRaisesRegex(ValueError, "incomplete candidate"):
+            release.check_payload(self.output, self.version, self.revision, sha256(manifest))
+        missing = copy.deepcopy(result)
+        del missing["targets"][0]["native_image"]
+        write_json(manifest, missing)
+        with self.assertRaisesRegex(ValueError, "native image evidence"):
+            release.check_payload(self.output, self.version, self.revision, sha256(manifest))
+
+    def test_archive_without_native_image_observation_cannot_be_staged(self):
+        _, execution, _ = self.paths["aarch64-apple-darwin"]
+        path = execution / "package.json"
+        package = json.loads(path.read_text())
+        write_json(path, dict(package, schema=1))
+        with self.assertRaisesRegex(ValueError, "unrelated archive execution"):
+            self.admit()
+        package.pop("native_image_sha256", None)
+        write_json(path, package)
+        with self.assertRaisesRegex(ValueError, "native image"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_native_image_metadata_and_backing_reports_are_rechecked_before_staging(self):
+        target = "aarch64-apple-darwin"
+        _, execution, _ = self.paths[target]
+        image = execution / "native-image/image.json"
+        package = execution / "package.json"
+        original_package, original_image = package.read_bytes(), image.read_bytes()
+        for field in ("image", "target", "commands", "tool"):
+            changed = json.loads(original_image)
+            if field == "image": changed[field]["architecture"] = "x86_64"
+            elif field == "target": changed[field] = "x86_64-apple-darwin"
+            elif field == "commands": changed[field]["dependencies"][-1] = "/unrelated/empack"
+            else: changed[field]["version"] = "another tool"
+            write_json(image, changed)
+            updated = json.loads(original_package)
+            updated["native_image_sha256"] = sha256(image)
+            write_json(package, updated)
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.assertFalse(self.output.exists())
+        package.write_bytes(original_package)
+        image.write_bytes(original_image)
+        (image.parent / "dependencies.log").write_text("replaced report")
+        with self.assertRaisesRegex(ValueError, "report changed"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_declared_target_cannot_substitute_for_the_archived_image_header(self):
+        target = "aarch64-apple-darwin"
+        build_dir, execution, attempt = self.paths[target]
+        archive = build_dir / release.archive_name(self.version, target)
+        # Rebind all byte identities to an x86 image while keeping the claimed
+        # ARM target and fabricated observation unchanged. No process is run.
+        digest, length = native_image_fixture.archive(
+            archive, target, native_image_fixture.header("x86_64-apple-darwin"))
+        build = json.loads((build_dir / "build.json").read_text())
+        build["executable"] = dict(sha256=digest, length=length)
+        build["archive"].update(sha256=sha256(archive), length=archive.stat().st_size)
+        build["compilation_sha256"] = compilation(build_dir, target, digest, self.revision, self.inputs["stamped"])
+        write_json(build_dir / "build.json", build)
+        receipt = json.loads((attempt / "receipt.json").read_text())
+        receipt["artifact"]["sha256"] = digest
+        write_json(attempt / "receipt.json", receipt)
+        package = json.loads((execution / "package.json").read_text())
+        package.update(executable=build["executable"], suite_receipt_sha256=sha256(attempt / "receipt.json"))
+        package["archive"]["sha256"] = sha256(archive)
+        write_json(execution / "package.json", package)
+        with self.assertRaisesRegex(ValueError, "architecture differs"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_cross_build_without_native_execution_is_not_a_pass(self):
+        target = "aarch64-unknown-linux-gnu"
+        build_dir, execution, _ = self.paths[target]
+        path = build_dir / "build.json"
+        build = json.loads(path.read_text())
+        build["command"][0] = "cross"
+        build["compiler"] = build["compiler"].replace(target, "x86_64-unknown-linux-gnu")
+        build["compilation_sha256"] = compilation(build_dir, target, build["executable"]["sha256"],
+                                                  self.revision, self.inputs["stamped"], builder="cross")
+        write_json(path, build)
+        (execution / "package.json").unlink()
+        with self.assertRaisesRegex(ValueError, "one archive execution"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_missing_changed_or_test_enabled_compilation_cannot_stage_archives(self):
+        build_dir, _, _ = self.paths["aarch64-apple-darwin"]
+        compile_path = build_dir / "compile.json"
+        messages = build_dir / "product-build-messages.jsonl"
+        stdout = build_dir / "build.stdout"
+        original_compile, original_messages = compile_path.read_bytes(), messages.read_bytes()
+        compile_path.unlink()
+        with self.assertRaisesRegex(ValueError, "compilation record"):
+            self.admit()
+        compile_path.write_bytes(original_compile)
+        rows = [json.loads(line) for line in messages.read_text().splitlines()]
+        library = next(r for r in rows if r.get("target", {}).get("name") == "empack_lib")
+        library["features"].append("test-utils")
+        messages.write_text("\n".join(map(json.dumps, rows)))
+        stdout.write_bytes(messages.read_bytes())
+        with self.assertRaisesRegex(ValueError, "Test-only"):
+            self.admit()
+        messages.write_bytes(original_messages)
+        stdout.write_bytes(original_messages)
+        record = json.loads(original_compile)
+        record["source"]["revision"] = "f" * 40
+        write_json(compile_path, record)
+        with self.assertRaisesRegex(ValueError, "candidate build inputs"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+        compile_path.write_bytes(original_compile)
+        self.admit()
+        payload = self.output / "archive-evidence.json"
+        record = json.loads(payload.read_text())
+        del record["targets"][0]["compiled_product"]
+        write_json(payload, record)
+        with self.assertRaisesRegex(ValueError, "lacks compiled-product evidence"):
+            release.check_payload(self.output, self.version, self.revision, sha256(payload))
+
+    def test_other_version_source_features_and_dirty_execution_are_rejected(self):
+        _, execution, _ = self.paths["aarch64-apple-darwin"]
+        path = execution / "package.json"
+        original = json.loads(path.read_text())
+        for field, value in (("version", "0.8.3-beta"), ("features", "telemetry"),
+                             ("profile", "dev"),
+                             ("test_source_revision", "f" * 40), ("test_worktree_dirty", True),
+                             ("status", "BLOCKED"), ("suite_receipt_sha256", "0" * 64)):
+            changed = copy.deepcopy(original)
+            changed[field] = value
+            write_json(path, changed)
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.admit()
+            self.assertFalse(self.output.exists())
+
+    def test_changed_bytes_or_prepared_dependency_inputs_cannot_be_published(self):
+        build_dir, _, _ = self.paths["aarch64-apple-darwin"]
+        path = build_dir / "build.json"
+        original = json.loads(path.read_text())
+        changed = copy.deepcopy(original)
+        changed["inputs"]["stamped"]["Cargo.lock"] = "e" * 64
+        write_json(path, changed)
+        with self.assertRaisesRegex(ValueError, "Build inputs"):
+            self.admit()
+        write_json(path, original)
+        (build_dir / original["archive"]["name"]).write_bytes(b"replacement")
+        with self.assertRaisesRegex(ValueError, "archive bytes changed"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_mutated_junit_is_rechecked_instead_of_trusting_a_pass_label(self):
+        _, _, attempt = self.paths["aarch64-apple-darwin"]
+        (attempt / "cli/junit.xml").write_text("not the admitted result")
+        with self.assertRaisesRegex(ValueError, "Changed test evidence"):
+            self.admit()
+        self.assertFalse(self.output.exists())
+
+    def test_downloaded_payload_is_bound_to_the_gate_digest_and_exact_file_set(self):
+        self.admit()
+        manifest = self.output / "archive-evidence.json"
+        digest = sha256(manifest)
+        manifest.write_text(manifest.read_text() + " ")
+        with self.assertRaisesRegex(ValueError, "gate output"):
+            release.check_payload(self.output, self.version, self.revision, digest)
+        # This branch uses the new digest only to reach the independent file-set
+        # check. Production takes its digest from the gate job's immutable output.
+        (self.output / "unreviewed.txt").write_text("extra")
+        with self.assertRaisesRegex(ValueError, "unexpected files"):
+            release.check_payload(self.output, self.version, self.revision, sha256(manifest))
+
+    def test_workflow_requires_five_native_execution_hosts_and_never_rebuilds_for_publication(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/release.yml").read_text()
+        build, rest = workflow.split("  test-archives:\n", 1)
+        tests, rest = rest.split("  archive-gate:\n", 1)
+        gate, publication = rest.split("  release:\n", 1)
+        for section in (build, tests):
+            targets = re.findall(r"^          - target: (\S+)$", section, re.M)
+            self.assertEqual(set(targets), set(release.TARGETS))
+            self.assertEqual(len(targets), 5)
+        self.assertIn("os: ubuntu-24.04-arm", tests)
+        self.assertIn("needs: [build, test-archives]", gate)
+        self.assertIn("needs: [archive-gate, candidate-gate]", publication)
+        self.assertIn("needs: [archive-gate, consumer, auxiliary, candidate-execution]", gate)
+        candidate = gate.split("  candidate-gate:\n", 1)[1]
+        self.assertLess(candidate.index("uses: ./.github/actions/rust-toolchain"),
+                        candidate.index("python3 scripts/verify.py python"))
+        self.assertIn("os: [ubuntu-24.04, macos-26, windows-latest]", gate)
+        self.assertIn("scripts/check-auxiliary-build.py", gate)
+        self.assertIn('gate "${auxiliary_args[@]}"', gate)
+        self.assertIn("scripts/qualify-release.py gate", gate)
+        self.assertIn("needs.candidate-gate.outputs.qualification_sha256", publication)
+        self.assertLess(publication.index("scripts/qualify-release.py verify"), publication.index("softprops/action-gh-release"))
+        self.assertIn("if: github.event_name == 'push'", publication)
+        self.assertNotIn("cargo build", publication)
+        self.assertLess(publication.index("verify-payload"), publication.index("softprops/action-gh-release"))
+        self.assertIn("needs.archive-gate.outputs.evidence_sha256", publication)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -65,15 +65,20 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
         "assets":{"source":{"kind":"url","downloads":[url]},"accept-observed":true,"type":"resource-pack","placement":"automatic","environment":environment}
     }})).unwrap(), "test.yml").unwrap();
     let key = DependencyKey::parse("assets").unwrap();
-    let content = acquired(b"payload");
-    let digests = if weak {
-        DigestSet::new(vec![
-            ExpectedDigest::parse("md5", "321c3cf486ed509164edec1e1981fec8").unwrap(),
-        ])
-        .unwrap()
-    } else {
-        content.observed_digests().clone()
-    };
+    // Model-only setup needs assertions, not a native staging lease. These
+    // literal digests describe b"payload" independently of the acquisition path.
+    let digests = DigestSet::new(
+        [
+            ("md5", "321c3cf486ed509164edec1e1981fec8"),
+            ("sha1", "f07e5a815613c5abeddc4b682247a4c42d8a95df"),
+            ("sha256", "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5"),
+            ("sha512", "70b33ce9c9047e30f917e7ea13e42f7767008c3f4f9c9baf49e4390fc625549e9625eee39b94545074e8a1824cf3f238463b11bc03d97348e0fc2999ca1fff7f"),
+        ]
+        .into_iter()
+        .filter(|(algorithm, _)| !weak || *algorithm == "md5")
+        .map(|(algorithm, value)| ExpectedDigest::parse(algorithm, value).unwrap())
+        .collect(),
+    ).unwrap();
     let files = [
         (
             "first",

@@ -1,9 +1,11 @@
 use super::*;
 use std::fs;
-fn fixture(target: &Path) -> Record {
+fn fixture(state: &Path, target: &Path) -> Record {
     Record {
         schema: 1,
-        binding: bind(target, &Cancellation::default()).unwrap().1,
+        binding: native::bind_for(state, Kind::Import, target, &Cancellation::default())
+            .unwrap()
+            .1,
         archive: [1; 32],
         archive_bytes: 7,
         archive_digests: vec![],
@@ -23,7 +25,7 @@ fn stale_import_cannot_resume_but_explicit_cleanup_remains_available() {
             fs::write(target.join("empack.yml"), b"original").unwrap();
         }
         let cancel = Cancellation::default();
-        let record = fixture(&target);
+        let record = fixture(&state, &target);
         let saved = save(&state, &target, &record, None, &cancel).unwrap();
         match change {
             "created" => fs::create_dir(&target).unwrap(),
@@ -60,7 +62,7 @@ fn extension_and_cleanup_compare_exact_observed_bytes() {
     assert!(read(&state, &target, &cancel).unwrap().is_none());
     assert!(observe(&state, &target, &cancel).unwrap().is_none());
     assert!(!state.exists());
-    let record = fixture(&target);
+    let record = fixture(&state, &target);
     let saved = save(&state, &target, &record, None, &cancel).unwrap();
     assert!(save(&state, &target, &record, None, &cancel).is_err());
     let observed = observe(&state, &target, &cancel).unwrap().unwrap();
@@ -69,7 +71,7 @@ fn extension_and_cleanup_compare_exact_observed_bytes() {
     let extended = save(&state, &target, &next, Some(&saved), &cancel).unwrap();
     assert!(!discard(&observed, &cancel).unwrap());
     assert!(save(&state, &target, &next, Some(&saved), &cancel).is_err());
-    let other_record = fixture(&other);
+    let other_record = fixture(&state, &other);
     let foreign = save(&state, &other, &other_record, None, &cancel).unwrap();
     assert!(save(&state, &target, &next, Some(&foreign), &cancel).is_err());
     assert_eq!(
@@ -91,7 +93,7 @@ fn bounded_records_reject_unknown_fields() {
     let target = root.path().join("project");
     let state = root.path().join("state");
     let cancel = Cancellation::default();
-    let record = fixture(&target);
+    let record = fixture(&state, &target);
     let saved = save(&state, &target, &record, None, &cancel).unwrap();
     let path = state.join("pending-imports").join(saved.0.name);
     let mut json = serde_json::to_value(&record).unwrap();
@@ -120,7 +122,7 @@ fn resume_rejects_symlink_targets_and_cleanup_does_not_follow_them() {
     fs::write(outside.join("sentinel"), b"keep").unwrap();
     let state = root.path().join("state");
     let cancel = Cancellation::default();
-    let record = fixture(&target);
+    let record = fixture(&state, &target);
     save(&state, &target, &record, None, &cancel).unwrap();
     symlink(&outside, &target).unwrap();
     assert!(read(&state, &target, &cancel).is_err());
@@ -136,7 +138,7 @@ fn record_growth_after_admission_is_rejected_without_mutation() {
     let target = root.path().join("project");
     let state = root.path().join("state");
     let cancel = Cancellation::default();
-    let record = fixture(&target);
+    let record = fixture(&state, &target);
     let saved = save(&state, &target, &record, None, &cancel).unwrap();
     let admitted = native::record_bytes(&state, Kind::Import, &target)
         .unwrap()
@@ -154,7 +156,7 @@ fn record_growth_after_admission_is_rejected_without_mutation() {
 #[test]
 fn serialization_admission_counts_escaped_bytes_and_rejects_overflow() {
     let root = tempfile::tempdir().unwrap();
-    let mut record = fixture(&root.path().join("project"));
+    let mut record = fixture(&root.path().join("state"), &root.path().join("project"));
     record.files.insert("quote\"\\\n日本語".into(), [5; 32]);
     let bytes = serde_json::to_vec(&record).unwrap().len() as u64;
     assert_eq!(native::encoded_bytes(&record, bytes).unwrap(), bytes);

@@ -48,9 +48,9 @@ fn release(version: &str) -> DecodedRelease {
     .unwrap()
 }
 async fn fixture(root: &Path) -> SigningKey {
-    fixture_side(root, "client").await
+    fixture_side(root, "client", None).await
 }
-async fn fixture_side(root: &Path, side: &str) -> SigningKey {
+async fn fixture_side(root: &Path, side: &str, layout: Option<&str>) -> SigningKey {
     fs::create_dir(root.join("project")).unwrap();
     let release = release("A");
     fs::write(root.join("initial.json"), release.bytes()).unwrap();
@@ -61,7 +61,7 @@ async fn fixture_side(root: &Path, side: &str) -> SigningKey {
             release: "initial.json".into(),
             sha256: release.id().into(),
             side: Some(side.into()),
-            layout: None,
+            layout: layout.map(str::to_owned),
             choices: vec![],
             files: vec![],
         },
@@ -91,32 +91,351 @@ async fn fixture_side(root: &Path, side: &str) -> SigningKey {
 fn transport(origin: &str) -> HttpAcquisition {
     HttpAcquisition::for_loopback_tests().with_test_origin("https://publisher.test", origin)
 }
+fn channel_document(release: &DecodedRelease, maximum: u64) -> ChannelDocument {
+    ChannelDocument {
+        schema: 2,
+        pack: "prelaunch".into(),
+        channel: "stable".into(),
+        sequence: 1,
+        minimum_engine: ">=0.8.0-beta".into(),
+        release: ChannelRelease {
+            id: release.id().into(),
+            url: "https://publisher.test/release.json".into(),
+            maximum_bytes: maximum,
+        },
+    }
+}
 fn channel(release: &DecodedRelease, key: &SigningKey, maximum: u64) -> Vec<u8> {
     sign(
         EnvelopeKind::Channel,
-        &ChannelDocument {
-            schema: 1,
-            pack: "prelaunch".into(),
-            channel: "stable".into(),
-            sequence: 1,
-            expires: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64
-                + 3600,
-            minimum_engine: ">=0.8.0-beta".into(),
-            release: ChannelRelease {
-                id: release.id().into(),
-                url: "https://publisher.test/release.json".into(),
-                maximum_bytes: maximum,
-            },
-        }
-        .encode()
-        .unwrap(),
+        &channel_document(release, maximum).encode().unwrap(),
         &[key],
     )
     .unwrap()
 }
+
+#[tokio::test]
+async fn preparation_handler_requires_enrollment_and_keeps_active_release() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("project");
+    fs::create_dir(&project).unwrap();
+    let initial = release("A");
+    let next = release("B");
+    fs::write(root.path().join("initial.json"), initial.bytes()).unwrap();
+    fs::write(root.path().join("next.json"), next.bytes()).unwrap();
+    let prepare = |require_subscription, digest: String| InstanceCommand::Prepare {
+        require_subscription,
+        conflicts: Default::default(),
+        release: "initial.json".into(),
+        sha256: digest,
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    };
+    let dispatch = |command| {
+        // Each invocation uses a fresh host session, as a restarted command does.
+        let session = session(root.path(), true, false);
+        async move { super::super::dispatch(&session, command).await }
+    };
+    let error = dispatch(prepare(true, initial.id().into()))
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("requires explicit publisher enrollment"));
+    assert!(!project.join(".empack/instance.json").exists());
+    assert!(!project.join("game").exists());
+
+    dispatch(prepare(false, initial.id().into())).await.unwrap();
+    let installed = || {
+        let record: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.join(".empack/instance.json")).unwrap())
+                .unwrap();
+        record["release"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(installed(), initial.id());
+    // Explicit installation selects B. Reusing A's preparation command must
+    // retain the active selection, rather than treating it as a fresh install.
+    dispatch(InstanceCommand::Install {
+        conflicts: Default::default(),
+        release: "next.json".into(),
+        sha256: next.id().into(),
+        side: None,
+        layout: None,
+        choices: vec![],
+        files: vec![],
+    })
+    .await
+    .unwrap();
+    assert_eq!(installed(), next.id());
+    let before = crate::test_support::file_bytes(&project);
+    for _ in 0..2 {
+        dispatch(prepare(false, initial.id().into())).await.unwrap();
+        assert_eq!(installed(), next.id());
+        assert_eq!(crate::test_support::file_bytes(&project), before);
+    }
+    for (required, digest, diagnostic) in [
+        (
+            true,
+            initial.id().to_owned(),
+            "requires explicit publisher enrollment",
+        ),
+        (
+            false,
+            "0".repeat(64),
+            "Selected release payload identity mismatch",
+        ),
+    ] {
+        let error = dispatch(prepare(required, digest)).await.unwrap_err();
+        assert!(format!("{error:#}").contains(diagnostic));
+        assert_eq!(crate::test_support::file_bytes(&project), before);
+    }
+    assert_eq!(
+        fs::read(root.path().join("initial.json")).unwrap(),
+        initial.bytes()
+    );
+    assert_eq!(
+        fs::read(root.path().join("next.json")).unwrap(),
+        next.bytes()
+    );
+}
+
+#[tokio::test]
+async fn runtime_transition_retains_observation_but_requires_supported_launch_integration() {
+    use crate::application::session_mocks::MockResponse;
+    use sha2::Digest;
+    fn assert_observation(prior: &[u8], saved: &[u8], pointer: &[u8]) {
+        let record = crate::engine::api::SubscriptionRecord::decode(saved).unwrap();
+        assert_eq!(record.floor.as_ref().unwrap().sequence, 1);
+        assert_eq!(
+            record.observed.as_deref(),
+            Some(std::str::from_utf8(pointer).unwrap())
+        );
+        let mut previous: serde_json::Value = serde_json::from_slice(prior).unwrap();
+        let mut observed: serde_json::Value = serde_json::from_slice(saved).unwrap();
+        for value in [&mut previous, &mut observed] {
+            value.as_object_mut().unwrap().remove("floor");
+            value.as_object_mut().unwrap().remove("observed");
+        }
+        assert_eq!(
+            observed, previous,
+            "only the approved observation may advance trust"
+        );
+    }
+    for (name, side, layout, server_mode, entrypoint, accepted, diagnostic) in [
+        (
+            "Prism client",
+            "client",
+            Some("prism"),
+            false,
+            true,
+            false,
+            "stop Prism, run instance update, then relaunch",
+        ),
+        (
+            "Prism cannot claim server mode",
+            "client",
+            Some("prism"),
+            true,
+            true,
+            false,
+            "stop Prism, run instance update, then relaunch",
+        ),
+        (
+            "game client",
+            "client",
+            None,
+            false,
+            false,
+            false,
+            "prepare its launcher/runtime integration",
+        ),
+        (
+            "server without server mode",
+            "server",
+            None,
+            false,
+            true,
+            false,
+            "prepare its launcher/runtime integration",
+        ),
+        (
+            "server without entrypoint",
+            "server",
+            None,
+            true,
+            false,
+            false,
+            "prepare its launcher/runtime integration",
+        ),
+        ("managed server", "server", None, true, true, true, ""),
+    ] {
+        for allow_offline in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let key = fixture_side(root.path(), side, layout).await;
+            let project = root.path().join("project");
+            let game = project.join(if layout == Some("prism") {
+                ".minecraft"
+            } else {
+                "game"
+            });
+            fs::create_dir_all(game.join("saves/played")).unwrap();
+            fs::write(game.join("saves/played/level.dat"), b"played world").unwrap();
+            fs::write(project.join("launcher-note.txt"), b"unrelated settings").unwrap();
+            let mut document = release("B").document().clone();
+            document.runtime.minecraft = "1.21.2".into();
+            document.runtime.loader = ReleaseLoader::Fabric {
+                version: "0.16.0".into(),
+            };
+            if entrypoint {
+                document.server_launch = Some(ReleaseServerLaunch::Jar {
+                    path: "server.jar".into(),
+                });
+                document.files.push(ReleaseFile {
+                    world_root: None,
+                    key: "runtime".into(),
+                    destination: "server.jar".into(),
+                    layer: ReleaseLayer::Common,
+                    policy: FilePolicy::Managed,
+                    client: Participation::Unsupported,
+                    server: Participation::Required,
+                    sha256: sha2::Sha256::digest(b"incoming runtime")
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                    bytes: b"incoming runtime".len() as u64,
+                    readonly: false,
+                    executable: false,
+                    assertions: vec![],
+                    asset: None,
+                    source: ReleaseSource::Asset {
+                        path: "assets/runtime".into(),
+                    },
+                });
+            }
+            let offered = DecodedRelease::encode(document).unwrap();
+            let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+            let pointer = channel(&offered, &key, envelope.len() as u64);
+            let mut remote = mockito::Server::new_async().await;
+            let channel_route = remote
+                .mock("GET", "/channel.json")
+                .with_body(pointer.clone())
+                .expect(if accepted { 2 } else { 1 })
+                .create_async()
+                .await;
+            let release_route = remote
+                .mock("GET", "/release.json")
+                .with_body(envelope)
+                .expect(if accepted { 2 } else { 1 })
+                .create_async()
+                .await;
+            let mut asset_route = remote
+                .mock("GET", "/assets/runtime")
+                .with_body("incoming runtime")
+                .expect(0)
+                .create_async()
+                .await;
+            let mut before = crate::test_support::file_bytes(&project);
+            let prior = before
+                .remove(Path::new(".empack/subscription.json"))
+                .unwrap();
+            if accepted {
+                let interactive = MockInteractiveProvider::new();
+                interactive
+                    .response_queue
+                    .lock()
+                    .unwrap()
+                    .extend([MockResponse::Confirm(true), MockResponse::Confirm(false)]);
+                let prompts = interactive.confirm_calls.clone();
+                let host = session(root.path(), false, false).with_interactive(interactive);
+                assert!(
+                    update_with_transport(
+                        &host,
+                        allow_offline,
+                        server_mode,
+                        transport(&remote.url())
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+                );
+                assert_eq!(prompts.lock().unwrap().len(), 2);
+                let mut declined = crate::test_support::file_bytes(&project);
+                let saved = declined
+                    .remove(Path::new(".empack/subscription.json"))
+                    .unwrap();
+                assert_observation(&prior, &saved, &pointer);
+                assert_eq!(
+                    declined, before,
+                    "declining installation must retain the completed project"
+                );
+                asset_route.assert_async().await;
+                asset_route.remove_async().await;
+                asset_route = remote
+                    .mock("GET", "/assets/runtime")
+                    .with_body("incoming runtime")
+                    .expect(1)
+                    .create_async()
+                    .await;
+            }
+            let interactive = MockInteractiveProvider::new().with_confirm(true);
+            let prompts = interactive.confirm_calls.clone();
+            let host = session(root.path(), false, false).with_interactive(interactive);
+            let result =
+                update_with_transport(&host, allow_offline, server_mode, transport(&remote.url()))
+                    .await;
+            let mut after = crate::test_support::file_bytes(&project);
+            let saved = after
+                .remove(Path::new(".empack/subscription.json"))
+                .unwrap();
+            assert_observation(&prior, &saved, &pointer);
+            if accepted {
+                assert_eq!(result.unwrap(), Some(offered.id().to_owned()));
+                assert_eq!(prompts.lock().unwrap().len(), 2);
+                assert_eq!(
+                    fs::read(game.join("server.jar")).unwrap(),
+                    b"incoming runtime"
+                );
+                let installed = inspect(&host, project.clone(), None, root.path().join("state"))
+                    .await
+                    .unwrap();
+                assert_eq!(installed.0.release, offered.id());
+                assert_eq!(installed.1.document().runtime, offered.document().runtime);
+            } else {
+                let error =
+                    result.expect_err("unsupported runtime transition became launch permission");
+                assert!(
+                    format!("{error:#}").contains(diagnostic),
+                    "{name}: {error:#}"
+                );
+                assert_eq!(
+                    prompts.lock().unwrap().len(),
+                    1,
+                    "{name}: installation must not be approved"
+                );
+                assert_eq!(
+                    after, before,
+                    "{name}: rejected runtime change mutated the installation"
+                );
+                let installed = inspect(&host, project.clone(), None, root.path().join("state"))
+                    .await
+                    .unwrap();
+                assert_eq!(installed.0.release, release("A").id());
+            }
+            assert_eq!(
+                fs::read(game.join("saves/played/level.dat")).unwrap(),
+                b"played world"
+            );
+            assert_eq!(
+                fs::read(project.join("launcher-note.txt")).unwrap(),
+                b"unrelated settings"
+            );
+            channel_route.assert_async().await;
+            release_route.assert_async().await;
+            asset_route.assert_async().await;
+        }
+    }
+}
+
 #[tokio::test]
 async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_release() {
     let root = tempfile::tempdir().unwrap();
@@ -124,7 +443,7 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
     let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let origin = format!("http://{}", socket.local_addr().unwrap());
     drop(socket);
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     assert!(
         update_with_transport(
             &session(root.path(), true, false),
@@ -148,7 +467,7 @@ async fn unavailable_channel_requires_explicit_offline_and_keeps_completed_relea
     );
     assert_eq!(
         before,
-        crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+        crate::test_support::file_bytes(&root.path().join("project"))
     );
     super::super::dispatch(
         &session(root.path(), true, false),
@@ -182,7 +501,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         .with_body(channel(&release, &key, envelope.len() as u64))
         .create_async()
         .await;
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     for (yes, dry) in [(true, true), (false, false)] {
         assert!(
             update_with_transport(
@@ -197,7 +516,7 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         );
         assert_eq!(
             before,
-            crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+            crate::test_support::file_bytes(&root.path().join("project"))
         );
     }
     // No release route: a failure after accepting the channel can never take offline fallback.
@@ -211,6 +530,56 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
         .await
         .is_err()
     );
+    let before_release_failure = crate::test_support::file_bytes(&root.path().join("project"));
+    for (bytes, diagnostic) in [
+        (
+            b"invalid release envelope".to_vec(),
+            "Invalid signed envelope",
+        ),
+        (
+            sign(
+                EnvelopeKind::Release,
+                release.bytes(),
+                &[&SigningKey::from_bytes(&[44; 32])],
+            )
+            .unwrap(),
+            "No enrolled publisher signed",
+        ),
+        (
+            sign(EnvelopeKind::Release, self::release("C").bytes(), &[&key]).unwrap(),
+            "Selected release payload identity mismatch",
+        ),
+    ] {
+        let rejected = server
+            .mock("GET", "/release.json")
+            .with_body(bytes)
+            .create_async()
+            .await;
+        let error = update_with_transport(
+            &session(root.path(), true, false),
+            true,
+            false,
+            transport(&server.url()),
+        )
+        .await
+        .expect_err("a failed selected release cannot become offline permission");
+        assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
+        assert_eq!(
+            crate::test_support::file_bytes(&root.path().join("project")),
+            before_release_failure
+        );
+        let saved = fs::read(root.path().join("project/.empack/subscription.json")).unwrap();
+        assert_eq!(
+            crate::engine::api::SubscriptionRecord::decode(&saved)
+                .unwrap()
+                .floor
+                .unwrap()
+                .sequence,
+            1
+        );
+        rejected.assert_async().await;
+        rejected.remove_async().await;
+    }
     let response = server
         .mock("GET", "/release.json")
         .with_body(envelope)
@@ -248,10 +617,149 @@ async fn authenticated_prelaunch_stops_on_preview_decline_and_release_failure() 
 }
 
 #[tokio::test]
+async fn channel_http_failures_do_not_become_offline_permission() {
+    for (status, encoding, body, location, expected) in [
+        (401, "identity", "", None, "Unauthorized"),
+        (403, "identity", "", None, "Unauthorized"),
+        (404, "identity", "", None, "NotFound"),
+        (429, "identity", "", None, "RateLimited"),
+        (500, "identity", "", None, "Server(500)"),
+        (503, "identity", "", None, "Server(503)"),
+        (400, "identity", "", None, "Status(400)"),
+        (200, "gzip", "encoded", None, "InvalidLocator"),
+        (
+            302,
+            "identity",
+            "",
+            Some("https://other.test/channel"),
+            "InvalidLocator",
+        ),
+        (302, "identity", "", Some("/channel.json"), "RedirectLimit"),
+        (
+            200,
+            "identity",
+            &"x".repeat((48 << 10) + 1),
+            None,
+            "ByteLimit",
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        let mut server = mockito::Server::new_async().await;
+        let mut response = server
+            .mock("GET", "/channel.json")
+            .with_status(status)
+            .with_header("content-encoding", encoding)
+            .with_body(body);
+        if let Some(location) = location {
+            response = response.with_header("location", location);
+        }
+        let response = response
+            .expect(if expected == "RedirectLimit" { 6 } else { 1 })
+            .create_async()
+            .await;
+        let before = crate::test_support::file_bytes(root.path());
+        let error = update_with_transport(
+            &session(root.path(), true, false),
+            true,
+            false,
+            transport(&server.url()),
+        )
+        .await
+        .expect_err("HTTP evidence failures must not allow offline launch");
+        let category = error
+            .downcast_ref::<crate::engine::acquisition::TransferError>()
+            .unwrap_or_else(|| panic!("lost {expected} classification: {error:#}"));
+        assert_eq!(format!("{category:?}"), expected);
+        assert_eq!(crate::test_support::file_bytes(root.path()), before);
+        response.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn invalid_authenticated_channels_never_select_offline_launch_or_change_floor() {
+    let root = tempfile::tempdir().unwrap();
+    let key = fixture(root.path()).await;
+    let offered = release("B");
+    let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
+    let signed = |document: &ChannelDocument, key: &SigningKey| {
+        sign(EnvelopeKind::Channel, &document.encode().unwrap(), &[key]).unwrap()
+    };
+    let mut observed = channel_document(&offered, envelope.len() as u64);
+    observed.sequence = 2;
+    fs::write(root.path().join("observed.json"), signed(&observed, &key)).unwrap();
+    super::super::dispatch(
+        &session(root.path(), true, false),
+        InstanceCommand::ObserveChannel {
+            envelope: Some("observed.json".into()),
+        },
+    )
+    .await
+    .unwrap();
+    let baseline = crate::test_support::file_bytes(root.path());
+    let mut fresh = observed.clone();
+    fresh.sequence = 3;
+    let mut other_channel = fresh.clone();
+    other_channel.channel = "other".into();
+    let mut replay = fresh.clone();
+    replay.sequence = 1;
+    let mut corrupt: serde_json::Value = serde_json::from_slice(&signed(&fresh, &key)).unwrap();
+    let signature = corrupt["signatures"][0]["signature"].as_str().unwrap();
+    let mut changed = signature.to_owned();
+    changed.replace_range(..1, if signature.starts_with('0') { "1" } else { "0" });
+    corrupt["signatures"][0]["signature"] = serde_json::Value::String(changed);
+    let mut server = mockito::Server::new_async().await;
+    let release_route = server
+        .mock("GET", "/release.json")
+        .expect(0)
+        .with_body(envelope)
+        .create_async()
+        .await;
+    for (bytes, diagnostic) in [
+        (
+            b"invalid signature envelope".to_vec(),
+            "Invalid signed envelope",
+        ),
+        (
+            signed(&fresh, &SigningKey::from_bytes(&[44; 32])),
+            "No enrolled publisher signed",
+        ),
+        (
+            serde_json::to_vec(&corrupt).unwrap(),
+            "Publisher signature verification failed",
+        ),
+        (
+            signed(&other_channel, &key),
+            "Channel subscription identity mismatch",
+        ),
+        (signed(&replay, &key), "Channel sequence replay rejected"),
+    ] {
+        let pointer = server
+            .mock("GET", "/channel.json")
+            .with_body(bytes)
+            .create_async()
+            .await;
+        let error = update_with_transport(
+            &session(root.path(), true, false),
+            true,
+            false,
+            transport(&server.url()),
+        )
+        .await
+        .expect_err("failed authentication cannot select the completed release");
+        assert!(format!("{error:#}").contains(diagnostic), "{error:#}");
+        assert_eq!(crate::test_support::file_bytes(root.path()), baseline);
+        pointer.assert_async().await;
+        pointer.remove_async().await;
+    }
+    release_route.assert_async().await;
+}
+
+#[tokio::test]
 async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
     use crate::application::session_mocks::MockResponse;
     let root = tempfile::tempdir().unwrap();
-    let key = fixture_side(root.path(), "server").await;
+    let key = fixture_side(root.path(), "server", None).await;
     let offered = release("B");
     let envelope = sign(EnvelopeKind::Release, offered.bytes(), &[&key]).unwrap();
     let mut server = mockito::Server::new_async().await;
@@ -269,7 +777,7 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         choices: vec![],
         files: vec![],
     };
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     for (yes, dry) in [(true, true), (false, false)] {
         super::super::install_with_transport(
             &session(root.path(), yes, dry),
@@ -280,7 +788,7 @@ async fn combined_update_checks_before_separate_apply_and_keeps_failed_floor() {
         .unwrap();
         assert_eq!(
             before,
-            crate::application::engine_host::tests::snapshot(&root.path().join("project"))
+            crate::test_support::file_bytes(&root.path().join("project"))
         );
     }
     // A missing release fails after the approved observation, preserving its floor.

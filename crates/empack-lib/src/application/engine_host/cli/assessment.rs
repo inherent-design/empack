@@ -175,5 +175,32 @@ mod tests {
         assert!(output.contains("Invalid provider field date_published in menu"));
         assert!(present(&session, &report, false, false).is_ok());
         assert!(present(&session, &report, false, true).is_err());
+        for json in [false, true] {
+            let (session, messages) = crate::application::session_mocks::MockCommandSession::new()
+                .record_status_messages();
+            let error = present(&session, &report, json, true).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Dependency assessment is incomplete; inspect the reported reasons"
+            );
+            let messages = messages.lock().unwrap();
+            assert_eq!(
+                messages.len(),
+                1,
+                "strict failure must retain exactly one report"
+            );
+            if json {
+                let actual: serde_json::Value = serde_json::from_str(&messages[0]).unwrap();
+                assert_eq!(actual["dependencies"][0]["key"], "menu");
+                assert_eq!(actual["dependencies"][0]["state"], "invalid-evidence");
+                assert_eq!(
+                    actual["dependencies"][0]["diagnostic"],
+                    "Invalid provider field date_published in menu"
+                );
+                assert_eq!(actual["joint"]["candidate_compatibility"], "not-assessed");
+            } else {
+                assert_eq!(messages[0], output);
+            }
+        }
     }
 }

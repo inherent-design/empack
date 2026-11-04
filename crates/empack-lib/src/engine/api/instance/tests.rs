@@ -332,15 +332,21 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
         default: "no".into(),
         description: None,
     });
-    assert!(
-        engine
-            .prepare(
-                root.path().to_owned(),
-                replace_document(a(), document.clone())
-            )
-            .await
-            .is_err()
+    let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let error = engine
+        .prepare(
+            root.path().to_owned(),
+            replace_document(a(), document.clone()),
+        )
+        .await
+        .err()
+        .expect("a new choice requires an explicit decision");
+    assert!(format!("{error:#}").contains("New release choice requires a decision: new"));
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        before
     );
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
     let mut input = replace_document(a(), document);
     input.choices = vec![
         ChoiceSelection {
@@ -354,6 +360,28 @@ async fn choice_defaults_do_not_reset_saved_selections_and_new_choices_require_i
     ];
     apply(&engine, root.path(), input).await;
     assert!(!root.path().join("game/mods/a.jar").exists());
+    // A later release may remove these choice definitions. An explicit stale
+    // choice is rejected, while omitted retired keys do not survive the update.
+    let before = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let mut stale = a();
+    stale.choices = vec![ChoiceSelection {
+        key: "new".into(),
+        value: "no".into(),
+    }];
+    let error = engine
+        .prepare(root.path().to_owned(), stale)
+        .await
+        .err()
+        .expect("a retired choice cannot be selected");
+    assert!(format!("{error:#}").contains("Unknown requested choice"));
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        before
+    );
+    assert!(!root.path().join("game/mods/a.jar").exists());
+    let after = apply(&engine, root.path(), a()).await;
+    assert!(after.choices.is_empty());
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
 }
 
 #[tokio::test]
@@ -1892,6 +1920,8 @@ async fn required_subscription_is_captured_and_late_revocation_prevents_installa
 
 #[tokio::test]
 async fn prism_runtime_and_content_publish_together_and_keep_extra_components() {
+    use super::super::tests::inventory as snapshot;
+    use crate::engine::diagnostics::{Diagnostic, DiagnosticCode};
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let (engine, _) = super::super::tests::engine(host.path().join("state"));
@@ -1908,6 +1938,8 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!({"uid":"user.component","version":"1","cachedName":"keep"}));
+    profile["components"][0]["cachedName"] = serde_json::json!("Game label");
+    profile["authorMetadata"] = serde_json::json!({"keep":["custom",false]});
     fs::write(&profile_path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
     fs::create_dir_all(root.path().join(".minecraft/saves/world")).unwrap();
     fs::write(
@@ -1944,25 +1976,40 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
     };
     // A profile edit after planning invalidates the whole installation, including new game bytes.
     fs::write(&profile_path, b"late edit").unwrap();
+    let edited = snapshot(root.path());
     let mut operation = engine.start(prepared.authorize(grant).unwrap()).unwrap();
-    assert!(matches!(
-        &*operation.wait().await,
-        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
-    ));
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) = &*outcome
+    else {
+        panic!("late profile edit lost its preparation failure")
+    };
+    assert_eq!(
+        error.downcast_ref::<Diagnostic>().unwrap().code,
+        DiagnosticCode::StaleSnapshot,
+        "{error:#}"
+    );
+    assert_eq!(snapshot(root.path()), edited);
+    drop(outcome);
+    assert!(engine.release_completed(operation.id()));
     assert!(!root.path().join(".minecraft/mods/b.jar").exists());
     fs::write(&profile_path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
     let after = apply(&engine, root.path(), updated()).await;
     assert_ne!(before.release, after.release);
     let changed: serde_json::Value =
         serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
-    assert_eq!(changed["components"][0]["version"], "1.21.2");
-    assert!(
-        changed["components"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|item| item["uid"] == "user.component" && item["cachedName"] == "keep")
+    let mut expected = profile.clone();
+    expected["components"][0]["version"] = serde_json::json!("1.21.2");
+    expected["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"uid":"net.fabricmc.fabric-loader","version":"0.16.0"}));
+    assert_eq!(changed, expected);
+    assert!(!root.path().join(".minecraft/mods/a.jar").exists());
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/b.jar")).unwrap(),
+        b"B"
     );
+    let current = snapshot(root.path());
     let mut original_launcher = initial();
     original_launcher.action = InstanceAction::Prepare;
     original_launcher.supplied.clear();
@@ -1970,13 +2017,18 @@ async fn prism_runtime_and_content_publish_together_and_keep_extra_components() 
         apply(&engine, root.path(), original_launcher).await.release,
         after.release
     );
+    assert_eq!(snapshot(root.path()), current);
     let mut rollback = initial();
     rollback.action = InstanceAction::Rollback;
     apply(&engine, root.path(), rollback).await;
     let restored: serde_json::Value =
         serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
-    assert_eq!(restored["components"][0]["version"], "1.21.1");
-    assert_eq!(restored["components"].as_array().unwrap().len(), 2);
+    assert_eq!(restored, profile);
+    assert_eq!(
+        fs::read(root.path().join(".minecraft/mods/a.jar")).unwrap(),
+        b"A"
+    );
+    assert!(!root.path().join(".minecraft/mods/b.jar").exists());
     assert_eq!(
         fs::read(root.path().join(".minecraft/saves/world/level.dat")).unwrap(),
         b"played"
@@ -2362,4 +2414,233 @@ async fn legacy_managed_prism_icon_migrates_to_seed_without_conflict() {
         b"launcher rewrite"
     );
     engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn instance_inspection_and_preparation_use_the_associated_root_key() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let host = state.path().join("state");
+    let (engine, _) = super::super::tests::engine(host.clone());
+    let input = || request(&[("mod", "mods/a.jar", b"A", FilePolicy::Managed)]);
+    let first = apply(&engine, root.path(), input()).await;
+    let original_bytes = fs::read(root.path().join(".empack/instance.json")).unwrap();
+    let Preparation::Ready(stale) = engine
+        .prepare(
+            root.path().to_owned(),
+            request(&[("mod", "mods/a.jar", b"B", FilePolicy::Managed)]),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("fixture unexpectedly requires input");
+    };
+    let grant = ExecutionGrant {
+        plan: stale.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        run_runtime: false,
+        replacement: stale.view().replacement(),
+    };
+    let stale = stale.authorize(grant).unwrap();
+    // Simulate consistent persisted data from the same volume under a previous
+    // device assignment. The live object and its persistent proof are unchanged.
+    let directory = host.join(&first.root);
+    let mut association: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("root-identity.json")).unwrap()).unwrap();
+    let volume = association["original"]["volume"].as_u64().unwrap() ^ 1;
+    association["original"]["volume"] = volume.into();
+    let (_, suffix) = first
+        .root
+        .strip_prefix("project-")
+        .unwrap()
+        .split_once('-')
+        .unwrap();
+    let prior_key = format!("project-{volume:016x}-{suffix}");
+    fs::write(
+        directory.join("root-identity.json"),
+        serde_json::to_vec(&association).unwrap(),
+    )
+    .unwrap();
+    fs::rename(&directory, host.join(&prior_key)).unwrap();
+    let mut operation = engine.start(stale).unwrap();
+    let outcome = operation.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) = &*outcome
+    else {
+        panic!("stale association unexpectedly published");
+    };
+    assert!(format!("{error:#}").contains("Instance root association changed after preparation"));
+    drop(outcome);
+    engine.release_completed(operation.id());
+    drop(operation);
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        original_bytes
+    );
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    let mut prior = first.clone();
+    prior.root = prior_key.clone();
+    let bytes = serde_json::to_vec(&prior).unwrap();
+    fs::write(root.path().join(".empack/instance.json"), &bytes).unwrap();
+    let (inspected, _) = crate::engine::instance::inspect(
+        root.path(),
+        None,
+        crate::engine::publication::RecoveryReader::new(host.clone()),
+        crate::engine::snapshot::SnapshotLimits::default(),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(inspected, prior);
+    let status = crate::engine::status::inspect_workspace(
+        root.path(),
+        &host,
+        Some(crate::engine::status::WorkspaceContext::Instance),
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(status.contexts.len(), 1);
+    assert_eq!(
+        status.contexts[0].state,
+        crate::engine::status::RecordState::Valid
+    );
+    assert_eq!(
+        status.contexts[0].exact.as_deref(),
+        Some(prior.release.as_str())
+    );
+    assert_eq!(
+        fs::read(root.path().join(".empack/instance.json")).unwrap(),
+        bytes
+    );
+    let mut prepare = input();
+    prepare.action = InstanceAction::Prepare;
+    let prepared = apply(&engine, root.path(), prepare).await;
+    assert_eq!(prepared.root, prior_key);
+    assert_eq!(fs::read(root.path().join("game/mods/a.jar")).unwrap(), b"A");
+    assert!(
+        !host.join(&first.root).exists(),
+        "preparation must retain original coordination"
+    );
+    for subscribed_root in [&prior_key, &"another-root".to_owned()] {
+        let subscription = crate::engine::instance::subscription::SubscriptionRecord {
+            schema: 1,
+            root: subscribed_root.clone(),
+            pack: prior.pack.clone(),
+            channel: "stable".into(),
+            url: "https://publisher.invalid/channel.json".into(),
+            keys: vec![],
+            floor: None,
+            observed: None,
+        };
+        let subscription_bytes = serde_json::to_vec(&subscription).unwrap();
+        let path = root.path().join(".empack/subscription.json");
+        fs::write(&path, &subscription_bytes).unwrap();
+        let status = crate::engine::status::inspect_workspace(
+            root.path(),
+            &host,
+            Some(crate::engine::status::WorkspaceContext::Instance),
+            &Cancellation::default(),
+        )
+        .unwrap();
+        let invalid = status
+            .findings
+            .iter()
+            .any(|f| f.code == "subscription-invalid");
+        assert_eq!(invalid, subscribed_root != &prior_key);
+        if !invalid {
+            assert_eq!(
+                status.contexts[0].update_owner,
+                "publisher subscription revoked"
+            );
+        }
+        assert_eq!(fs::read(path).unwrap(), subscription_bytes);
+        assert_eq!(
+            fs::read(root.path().join(".empack/instance.json")).unwrap(),
+            bytes
+        );
+    }
+    let copied = tempfile::tempdir().unwrap();
+    fs::create_dir(copied.path().join(".empack")).unwrap();
+    fs::write(copied.path().join(".empack/instance.json"), &bytes).unwrap();
+    let error = crate::engine::instance::inspect(
+        copied.path(),
+        None,
+        crate::engine::publication::RecoveryReader::new(host),
+        crate::engine::snapshot::SnapshotLimits::default(),
+        &Cancellation::default(),
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("another native root"));
+}
+
+#[tokio::test]
+async fn saved_instance_refuses_obsolete_schemas_without_rewriting_records() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let host = state.path().join("state");
+    let (engine, governor) = super::super::tests::engine(host.clone());
+    let mut input = request(&[
+        ("a", "mods/a.jar", b"A", FilePolicy::Managed),
+        ("b", "mods/b.jar", b"B", FilePolicy::Managed),
+    ]);
+    input.supplied.remove("b");
+    let Preparation::NeedsInput(pending) =
+        engine.prepare(root.path().to_owned(), input).await.unwrap()
+    else {
+        panic!("fixture requires b");
+    };
+    let saved = engine.suspend_instance(*pending, None).await.unwrap();
+    let path = fs::read_dir(host.join("pending-instances"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|p| p.extension().is_some_and(|s| s == "json"))
+        .unwrap();
+    let current = fs::read(&path).unwrap();
+    let supplied = state.path().join("b.jar");
+    fs::write(&supplied, b"B").unwrap();
+    let inputs = || BTreeMap::from([("b".into(), supplied.clone())]);
+    for schema in [0, 1, 3] {
+        let mut wire: serde_json::Value = serde_json::from_slice(&current).unwrap();
+        wire["schema"] = schema.into();
+        let bytes = serde_json::to_vec(&wire).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let error = engine
+            .resume_saved_instance(root.path().to_owned(), inputs(), None)
+            .await
+            .err()
+            .expect("an obsolete format cannot resume");
+        assert!(
+            format!("{error:#}").contains("Unsupported pending operation schema"),
+            "{error:#}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+    let mut changed: serde_json::Value = serde_json::from_slice(&current).unwrap();
+    changed["base"] = serde_json::to_value([0u8; 32]).unwrap();
+    let bytes = serde_json::to_vec(&changed).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    assert!(
+        engine
+            .resume_saved_instance(root.path().to_owned(), inputs(), None)
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    fs::write(&path, &current).unwrap();
+    let resumed = engine
+        .resume_saved_instance(root.path().to_owned(), inputs(), None)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(resumed.preparation, Preparation::Ready(_)));
+    assert_eq!(fs::read(&path).unwrap(), current);
+    assert_eq!(
+        fs::read_dir(root.path()).unwrap().count(),
+        0,
+        "fresh approval is required"
+    );
+    assert_eq!(fs::read(&supplied).unwrap(), b"B");
+    drop((resumed, saved));
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }

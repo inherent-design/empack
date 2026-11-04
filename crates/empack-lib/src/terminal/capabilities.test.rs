@@ -6,7 +6,6 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(unix)]
 fn clear_locale_env() {
     unsafe {
         env::remove_var("LC_ALL");
@@ -50,7 +49,9 @@ fn test_truecolor_detection_via_colorterm() {
 
 #[test]
 fn test_unicode_detection_via_lang() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     clean_test_env();
+    clear_locale_env();
     unsafe {
         env::set_var("LANG", "en_US.UTF-8");
     }
@@ -63,7 +64,9 @@ fn test_unicode_detection_via_lang() {
 
 #[test]
 fn test_unicode_detection_non_tty() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     clean_test_env();
+    clear_locale_env();
     unsafe {
         env::set_var("LANG", "en_US.UTF-8");
     }

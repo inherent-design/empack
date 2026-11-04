@@ -364,5 +364,75 @@
     "name": "paragraph-separator-key-prefix-1.3",
     "configuration": "[General]\nConfigVersion=1.3\n\u2029OverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
     "accepted": false
+  },
+  {
+    "name": "ini-scalar-leading-at-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\nname=\"@@Variant(test)\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "@Variant(test)",
+    "encoded_name": "\"@@Variant(test)\""
+  },
+  {
+    "name": "ini-scalar-separators-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\nname=\" a,;=\\\\\\\"\u00e9\ud83e\udd80 \"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": " a,;=\\\"\u00e9\ud83e\udd80 ",
+    "encoded_name": "\" a,;=\\\\\\\"\u00e9\ud83e\udd80 \""
+  },
+  {
+    "name": "ini-scalar-hex-boundary-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\nname=\"\\x1\\x61\\x46\\xa[General]\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "\u0001aF\n[General]",
+    "encoded_name": "\"\\x1\\x61\\x46\\xa[General]\""
+  },
+  {
+    "name": "ini-scalar-nul-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\nname=\"@String(x\\x0\\x61)\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "x\u0000a",
+    "encoded_name": "\"@String(x\\x0\\x61)\""
+  },
+  {
+    "name": "ini-scalar-empty-1.2",
+    "configuration": "[General]\nConfigVersion=1.2\nname=\"\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "",
+    "encoded_name": "\"\""
+  },
+  {
+    "name": "ini-scalar-leading-at-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\nname=\"@@Variant(test)\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "@Variant(test)",
+    "encoded_name": "\"@@Variant(test)\""
+  },
+  {
+    "name": "ini-scalar-separators-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\nname=\" a,;=\\\\\\\"\u00e9\ud83e\udd80 \"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": " a,;=\\\"\u00e9\ud83e\udd80 ",
+    "encoded_name": "\" a,;=\\\\\\\"\u00e9\ud83e\udd80 \""
+  },
+  {
+    "name": "ini-scalar-hex-boundary-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\nname=\"\\x1\\x61\\x46\\xa[General]\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "\u0001aF\n[General]",
+    "encoded_name": "\"\\x1\\x61\\x46\\xa[General]\""
+  },
+  {
+    "name": "ini-scalar-nul-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\nname=\"@String(x\\x0\\x61)\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "x\u0000a",
+    "encoded_name": "\"@String(x\\x0\\x61)\""
+  },
+  {
+    "name": "ini-scalar-empty-1.3",
+    "configuration": "[General]\nConfigVersion=1.3\nname=\"\"\nOverrideCommands=true\nPreLaunchCommand=@PREPARE@\nWrapperCommand=@WRAPPER@\n",
+    "accepted": true,
+    "display_name": "",
+    "encoded_name": "\"\""
   }
 ]

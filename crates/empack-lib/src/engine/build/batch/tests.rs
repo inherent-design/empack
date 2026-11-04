@@ -362,6 +362,7 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
 #[test]
 fn interrupted_clean_build_finishes_or_restores_the_same_publication() {
     use crate::engine::publication::{PublicationPoint, tests::interrupt_publication};
+    use std::io::Read;
     for restore in [false, true] {
         let root = tempfile::tempdir().unwrap();
         let host = tempfile::tempdir().unwrap();
@@ -385,7 +386,22 @@ fn interrupted_clean_build_finishes_or_restores_the_same_publication() {
             prepare_build_batch_with_cleanup(snapshot, requests(), &external, &removals, &cancel)
                 .unwrap();
         let publisher = Publisher::open(&host.path().join("private")).unwrap();
-        let prepared = batch.publication;
+        let mut prepared = batch.publication;
+        // Recovery must publish the exact admitted candidates, not merely readable ZIPs.
+        let expected: Vec<_> = ["pack.mrpack", "client.zip"]
+            .into_iter()
+            .map(|artifact| {
+                let mut bytes = Vec::new();
+                prepared
+                    .change
+                    .stage_mut()
+                    .reader(&path(&format!("dist/{artifact}")))
+                    .unwrap()
+                    .read_to_end(&mut bytes)
+                    .unwrap();
+                (artifact, bytes)
+            })
+            .collect();
         assert!(
             interrupt_publication(
                 &publisher,
@@ -413,12 +429,10 @@ fn interrupted_clean_build_finishes_or_restores_the_same_publication() {
         } else {
             publisher.recover(&prepared.root).unwrap();
             assert!(!root.path().join("dist/aaa-old.zip").exists());
-            for artifact in ["pack.mrpack", "client.zip"] {
-                assert!(
-                    zip::ZipArchive::new(
-                        fs::File::open(root.path().join("dist").join(artifact)).unwrap()
-                    )
-                    .is_ok()
+            for (artifact, bytes) in expected {
+                assert_eq!(
+                    fs::read(root.path().join("dist").join(artifact)).unwrap(),
+                    bytes
                 );
             }
         }

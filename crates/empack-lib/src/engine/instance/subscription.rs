@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 #[serde(deny_unknown_fields)]
 pub struct SubscriptionRecord {
     pub schema: u32,
+    /// Local root key retained through its verified native association.
     pub root: String,
     pub pack: String,
     pub channel: String,
@@ -21,7 +22,7 @@ pub struct SubscriptionRecord {
     pub keys: Vec<String>,
     /// Independent of the currently installed or rolled-back release.
     pub floor: Option<SequenceFloor>,
-    /// Exact authenticated envelope; reverified against current keys and time before selection.
+    /// Exact authenticated envelope; reverified against current keys before selection.
     pub observed: Option<String>,
 }
 impl SubscriptionRecord {
@@ -74,7 +75,6 @@ impl SubscriptionRecord {
     }
     pub fn authenticated_channel(
         &self,
-        now: i64,
         engine: &semver::Version,
     ) -> Result<release::trust::AuthenticatedChannel> {
         self.trust()?.channel(
@@ -83,7 +83,6 @@ impl SubscriptionRecord {
                 .context("Subscription has no authenticated observation")?
                 .as_bytes(),
             &self.channel,
-            now,
             engine,
             self.floor.as_ref(),
         )
@@ -99,7 +98,6 @@ pub struct SubscribedRelease {
     release: release::trust::AuthenticatedRelease,
     root: String,
     subscription: String,
-    expires: i64,
     assets: reqwest::Url,
     envelope: Vec<u8>,
 }
@@ -115,44 +113,28 @@ impl SubscribedRelease {
             root == self.root && release::hash(bytes) == self.subscription,
             "Publisher enrollment or observed channel changed; select the release again"
         );
-        ensure_fresh(self.expires)
+        Ok(())
     }
     pub(super) fn assets(&self) -> reqwest::Url {
         self.assets.clone()
     }
-    pub(super) fn expires(&self) -> i64 {
-        self.expires
-    }
-}
-pub(super) fn ensure_fresh(expires: i64) -> Result<()> {
-    let now: i64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs()
-        .try_into()?;
-    ensure!(
-        now >= 1_577_836_800 && now < expires,
-        "Channel observation is no longer fresh"
-    );
-    Ok(())
 }
 /// Read and authenticate only. The returned proof does not authorize writes or acquisition.
 pub fn select_release(
     selected_root: &std::path::Path,
     envelope: &[u8],
-    now: i64,
     version: &semver::Version,
     recovery: crate::engine::publication::RecoveryReader,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<SubscribedRelease> {
     let (record, subscription) = read_current(selected_root, recovery, cancel)?;
-    let channel = record.authenticated_channel(now, version)?;
+    let channel = record.authenticated_channel(version)?;
     let selected = channel.release(&record.trust()?, envelope, version)?;
     Ok(SubscribedRelease {
         release: selected,
         envelope: envelope.to_vec(),
         root: record.root,
         subscription,
-        expires: channel.document().expires,
         assets: asset_base(&channel.document().release.url)?,
     })
 }
@@ -173,7 +155,6 @@ fn read_current(
 ) -> Result<(SubscriptionRecord, String)> {
     use crate::engine::{
         layout::ProjectLayout,
-        publication::root_key,
         snapshot::{ProjectReadRoot, SnapshotLimits},
     };
     use empack_core::files::ManagedPath;
@@ -196,7 +177,7 @@ fn read_current(
     let bytes = super::read_optional(&root, &snapshot, &target, cancel)?
         .context("Instance has no enrolled subscription")?;
     let record = SubscriptionRecord::decode(&bytes)?;
-    let binding = root_key(&root)?;
+    let binding = recovery.bound_root_key(&root)?;
     ensure!(
         record.root == binding,
         "Subscription belongs to another instance root"
@@ -292,7 +273,7 @@ pub async fn fetch_release(
         move |cancel| inspect(&selected_root, RecoveryReader::new(selected_state), &cancel),
     )?;
     let record = scope.accept(read.wait().await?)?.transpose()?;
-    let channel = record.authenticated_channel(current_time()?, &version)?;
+    let channel = record.authenticated_channel(&version)?;
     let envelope = transport
         .publisher_metadata(
             scope,
@@ -316,7 +297,6 @@ pub async fn fetch_release(
             select_release(
                 &root,
                 &envelope,
-                current_time()?,
                 &version,
                 RecoveryReader::new(state),
                 &cancel,
@@ -325,13 +305,6 @@ pub async fn fetch_release(
     )?;
     scope.accept(work.wait().await?)?.transpose()
 }
-fn current_time() -> Result<i64> {
-    Ok(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs()
-        .try_into()?)
-}
-
 fn asset_base(release_url: &str) -> Result<reqwest::Url> {
     let mut base = release::https(release_url)?;
     base.set_query(None);

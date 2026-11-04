@@ -69,6 +69,33 @@ async fn assess_with_limits(
     };
     report.unwrap()
 }
+// Independent wire expectations: neither a production report writer nor a
+// candidate constructor supplies these fields.
+fn assert_selection_report(report: &UpdateAssessment, pinned: bool) {
+    let mut actual = serde_json::to_value(report).unwrap();
+    assert!(!actual["observed_at"].as_str().unwrap().is_empty());
+    actual.as_object_mut().unwrap().remove("observed_at");
+    let retained = json!({"provider":"modrinth", "project":"Project1", "selection":"Version1",
+        "version":null, "published_at":null, "channel":null});
+    let observed = json!({"provider":"modrinth", "project":"Project1", "selection":"Version2",
+        "version":"Version2", "published_at":"2026-01-01T00:00:00Z", "channel":"release"});
+    let selection = if pinned { "Version1" } else { "Version2" };
+    assert_eq!(
+        actual,
+        json!({
+            "schema":1, "release_policy":"prefer-stable",
+            "dependencies":[{"release_policy":"prefer-stable", "key":"root", "name":"Title for Project1",
+                "current":retained, "permitted":if pinned {retained.clone()} else {observed.clone()},
+                "compatible":observed, "upstream":observed, "state":if pinned {"pinned"} else {"change-available"},
+                "catalog_complete":true, "observed_records":1, "diagnostic":null,
+                "reasons":if pinned {vec!["pinned"]} else {vec![]}}],
+            "joint":{"scope":"provider-dependency-closure", "candidate_compatibility":"not-assessed",
+                "declared_incompatibilities":[], "declarations_complete":true, "state":"validated",
+                "selections":[{"provider":"modrinth", "project":"Project1", "selection":selection,
+                    "version":null, "published_at":null, "channel":null}], "reasons":[]}
+        })
+    );
+}
 #[tokio::test]
 async fn changed_rows_require_joint_validation_and_pins_remain_exact() {
     let mut server = Server::new_async().await;
@@ -80,6 +107,7 @@ async fn changed_rows_require_joint_validation_and_pins_remain_exact() {
         .await;
     let project = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
     let report = assess(&server, project.clone()).await;
+    assert_selection_report(&report, false);
     assert_eq!(report.dependencies[0].state, "change-available");
     assert_eq!(
         report.dependencies[0].permitted.as_ref().unwrap().selection,
@@ -112,6 +140,7 @@ async fn changed_rows_require_joint_validation_and_pins_remain_exact() {
         ResolvedProject::validate(intent, lock, revision).unwrap(),
     )
     .await;
+    assert_selection_report(&report, true);
     assert_eq!(report.dependencies[0].state, "pinned");
     assert_eq!(
         report.dependencies[0].permitted.as_ref().unwrap().selection,

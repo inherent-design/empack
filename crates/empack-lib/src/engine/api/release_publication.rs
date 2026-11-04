@@ -315,9 +315,6 @@ pub(super) async fn run(
             config.resources.receipt,
             move |cancel| {
                 let (prepared, _reservation) = prepared.into_parts();
-                if let Some(remote) = &prepared.remote {
-                    remote.validate_fresh()?;
-                }
                 prepared
                     .source
                     .revalidate(&prepared.source_snapshot, &cancel)?;

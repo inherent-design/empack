@@ -105,21 +105,20 @@ async fn load_selected(
     let state = state_root(session.config().app_config(), &invocation)?;
     let selected_state = state.clone();
     let resumed = initialize::discover(session, move |mut scope| async move {
-        let work =
-            scope.spawn_blocking(
-                ResourceRequest {
-                    jobs: 1,
-                    memory_bytes: 64 << 20,
-                    open_files: 16,
-                    ..Default::default()
-                },
-                ResourceRequest::default(),
-                move |cancel| {
-                    let workspace = ProjectReader::new(RecoveryReader::new(selected_state))
-                        .capture(&project, &[], SnapshotLimits::default(), &cancel)?;
-                    SyncInputContext::capture(project, &workspace, &cancel)
-                },
-            )?;
+        let work = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 64 << 20,
+                open_files: 16,
+                ..Default::default()
+            },
+            ResourceRequest::default(),
+            move |cancel| {
+                let workspace = ProjectReader::new(RecoveryReader::new(selected_state.clone()))
+                    .capture(&project, &[], SnapshotLimits::default(), &cancel)?;
+                SyncInputContext::capture(&selected_state, project, &workspace, &cancel)
+            },
+        )?;
         let context = (*scope.accept(work.wait().await?)?.transpose()?).clone();
         crate::engine::synchronization::suspension::load_pending_sync(
             &mut scope,
@@ -160,51 +159,50 @@ pub(super) async fn synchronize_mode(
     let selected = project.clone();
     let state = state_root(session.config().app_config(), &invocation)?;
     let captured = initialize::discover(session, move |mut scope| async move {
-        let work = scope.spawn_blocking(
-            ResourceRequest {
-                jobs: 1,
-                memory_bytes: 64 << 20,
-                open_files: 16,
-                ..Default::default()
-            },
-            ResourceRequest {
-                memory_bytes: 64 << 20,
-                ..Default::default()
-            },
-            move |cancel| {
-                let workspace = ProjectReader::new(RecoveryReader::new(state)).capture(
-                    &selected,
-                    &[],
-                    SnapshotLimits::default(),
-                    &cancel,
-                )?;
-                let sources: BTreeSet<_> = workspace
-                    .intent()
-                    .intent()
-                    .roots
-                    .values()
-                    .flat_map(|root| match &root.source {
-                        SourceIntent::Local(path) => vec![path.clone()],
-                        SourceIntent::LocalFiles(members) => members.values().cloned().collect(),
-                        _ => vec![],
-                    })
-                    .collect();
-                // Authored sources must remain beneath their selected project root.
-                if !sources.is_empty() {
-                    workspace.root().capture(
-                        &sources.into_iter().collect::<Vec<_>>(),
-                        SnapshotLimits::default(),
-                        &cancel,
-                    )?;
-                }
-                let context = SyncInputContext::capture(selected, &workspace, &cancel)?;
-                Ok::<_, anyhow::Error>((
-                    workspace.intent().clone(),
-                    workspace.prior_lock().cloned(),
-                    context,
-                ))
-            },
-        )?;
+        let work =
+            scope.spawn_blocking(
+                ResourceRequest {
+                    jobs: 1,
+                    memory_bytes: 64 << 20,
+                    open_files: 16,
+                    ..Default::default()
+                },
+                ResourceRequest {
+                    memory_bytes: 64 << 20,
+                    ..Default::default()
+                },
+                move |cancel| {
+                    let workspace = ProjectReader::new(RecoveryReader::new(state.clone()))
+                        .capture(&selected, &[], SnapshotLimits::default(), &cancel)?;
+                    let sources: BTreeSet<_> = workspace
+                        .intent()
+                        .intent()
+                        .roots
+                        .values()
+                        .flat_map(|root| match &root.source {
+                            SourceIntent::Local(path) => vec![path.clone()],
+                            SourceIntent::LocalFiles(members) => {
+                                members.values().cloned().collect()
+                            }
+                            _ => vec![],
+                        })
+                        .collect();
+                    // Authored sources must remain beneath their selected project root.
+                    if !sources.is_empty() {
+                        workspace.root().capture(
+                            &sources.into_iter().collect::<Vec<_>>(),
+                            SnapshotLimits::default(),
+                            &cancel,
+                        )?;
+                    }
+                    let context = SyncInputContext::capture(&state, selected, &workspace, &cancel)?;
+                    Ok::<_, anyhow::Error>((
+                        workspace.intent().clone(),
+                        workspace.prior_lock().cloned(),
+                        context,
+                    ))
+                },
+            )?;
         scope.accept(work.wait().await?)?.transpose()
     })
     .await?;

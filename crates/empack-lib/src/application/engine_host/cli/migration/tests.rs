@@ -45,26 +45,20 @@ async fn execute(
     .await
 }
 #[tokio::test]
-async fn runtime_migration_plan_preview_and_application_share_candidate_without_early_edits() {
+async fn host_runtime_migration_plan_and_apply_share_candidate() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let mut server = mockito::Server::new_async().await;
     runtime(&mut server).await;
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     execute(root.path(), &server, args(true), false)
         .await
         .unwrap();
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     execute(root.path(), &server, args(false), true)
         .await
         .unwrap();
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     execute(root.path(), &server, args(false), false)
         .await
         .unwrap();
@@ -72,12 +66,12 @@ async fn runtime_migration_plan_preview_and_application_share_candidate_without_
     assert_eq!(next.intent().runtime.minecraft.as_str(), "1.21.2");
     assert_eq!(next.lock().runtime.minecraft.as_str(), "1.21.2");
     assert!(!root.path().join("project/empack.bindings.yml").exists());
-    let completed = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let completed = crate::test_support::file_bytes(&root.path().join("project"));
     synchronization::synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
     assert_eq!(
-        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         completed
     );
 }
@@ -160,7 +154,7 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
         replaced.intent().roots[&key].selection,
         DependencySelection::Automatic
     );
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let mut invalid = args(false);
     invalid.replacements = vec!["missing=modrinth:Root0001".into()];
     assert!(
@@ -170,10 +164,7 @@ async fn migration_retains_valid_follow_compatible_pin_and_requires_explicit_pro
             .to_string()
             .contains("not an explicit")
     );
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
 }
 #[tokio::test]
 async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_documents() {
@@ -183,7 +174,7 @@ async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_docum
     runtime(&mut server).await;
     let mut invalid = args(false);
     invalid.loader_version = Some("not-published".into());
-    let before = crate::application::engine_host::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     assert!(
         execute(root.path(), &server, invalid, false)
             .await
@@ -191,10 +182,7 @@ async fn migration_rejects_stale_lock_and_unknown_runtime_without_changing_docum
             .to_string()
             .contains("absent")
     );
-    assert_eq!(
-        crate::application::engine_host::tests::snapshot(root.path()),
-        before
-    );
+    assert_eq!(crate::test_support::file_bytes(root.path()), before);
     let path = root.path().join("project/empack.yml");
     let mut intent = project(root.path()).intent().clone();
     intent.metadata.name = "Changed after lock".into();
@@ -326,7 +314,7 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         intent.runtime = MigrationOptions::parse(args(false)).unwrap().runtime;
         crate::testing::write_authoring(&root.path().join("project/empack.yml"), &intent).unwrap();
     }
-    let before = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let before = crate::test_support::file_bytes(&root.path().join("project"));
     if matches!(
         case,
         LibraryCase::DroppedIncompatible
@@ -355,7 +343,7 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
             "{error}"
         );
         assert_eq!(
-            crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+            crate::test_support::file_bytes(&root.path().join("project")),
             before
         );
         return;
@@ -364,7 +352,7 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         .await
         .unwrap();
     assert_eq!(
-        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         before
     );
     execute(root.path(), &server, args(false), false)
@@ -577,12 +565,12 @@ async fn library_migration(pinned_requirement: bool, case: LibraryCase) {
         assert!(!text.contains("revised-library.jar"));
         assert!(!text.contains(&"2a".repeat(32)));
     }
-    let after = crate::application::engine_host::tests::snapshot(&root.path().join("project"));
+    let after = crate::test_support::file_bytes(&root.path().join("project"));
     synchronization::synchronize(&session(root.path(), false), false)
         .await
         .unwrap();
     assert_eq!(
-        crate::application::engine_host::tests::snapshot(&root.path().join("project")),
+        crate::test_support::file_bytes(&root.path().join("project")),
         after
     );
 }
@@ -611,3 +599,5 @@ async fn migration_refuses_unknown_retained_library_evidence() {
 async fn migration_reports_compatible_library_dropped_from_new_closure_as_retained() {
     library_migration(false, LibraryCase::DroppedCompatible).await;
 }
+
+mod journey;

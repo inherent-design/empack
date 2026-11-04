@@ -1,0 +1,1085 @@
+{
+  "source": {
+    "project": "7y0dAVcr",
+    "version": "RgDwVwsB",
+    "url": "https://cdn.modrinth.com/data/7y0dAVcr/versions/RgDwVwsB/horror-oneblock-1.1.1-neoforge-1.21.1.mrpack",
+    "size": 221749,
+    "sha256": "1067624ed0d366167adc2a4d40b50452b7cb88e1b7177914f0b47714bfa67a6f",
+    "sha512": "2fd171c252ce8c65bf7d3a1dd0769fddee54eeed7acedde4f237db193c9e7be09e949ec7333bf1b1b46e5ed32cbb40d7ae9dcbe629542825e9a15e4022bbac4e"
+  },
+  "index": {
+    "formatVersion": 1,
+    "game": "minecraft",
+    "versionId": "1.21.1-1.1.1",
+    "name": "Horror OneBlock",
+    "summary": "OneBlock survival where isolation, false signs of other players, distant movement and the things in the dark steadily turn a tiny island into psychological horror.",
+    "files": [
+      {
+        "path": "mods/AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar",
+        "hashes": {
+          "sha512": "292a7a61836eb6db31ec225ae4a0dc838416638618635ff60c07740bdc327df44ac0be7788c0ed44912935eb4d85b987fb6c594d11e4604f2d24fa21eabc672a",
+          "sha1": "c79ab328b2c46068effebdcb3f26e98dc4404cb0"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/fM515JnW/versions/RZyxhsqY/AmbientSounds_NEOFORGE_v6.3.8_mc1.21.1.jar"
+        ],
+        "fileSize": 84811632
+      },
+      {
+        "path": "mods/Clumps-neoforge-1.21.1-19.0.0.1.jar",
+        "hashes": {
+          "sha512": "314d8d8e640d73041f27e0f3f2cad7aad8b4c77dbd7fb31700ef7760362261f77085eed5289555c725d99c3f47a114e7290cd608f39c9f0f12ef74958463bdcc",
+          "sha1": "fa2576297c7bd12b28aa7070e8141792bd66da4c"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/Wnxd13zP/versions/jo7lDoK4/Clumps-neoforge-1.21.1-19.0.0.1.jar"
+        ],
+        "fileSize": 18382
+      },
+      {
+        "path": "mods/Controlling-neoforge-1.21.1-19.0.5.jar",
+        "hashes": {
+          "sha512": "bd01b2a38a869ea38e5f2a8fcd601e67ea9b132b9883c6ae752bc35dff6e94f6d47b965e31c1ee5c2f6a1221653549680da779fcb5319d199aec261d221d179e",
+          "sha1": "8a34424fc1428778be2fdbfa4da67b21b70bcbfe"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/xv94TkTM/versions/FaNppCJJ/Controlling-neoforge-1.21.1-19.0.5.jar"
+        ],
+        "fileSize": 77555
+      },
+      {
+        "path": "mods/CrashAssistant-neoforge-1.20.6-1.21.4-1.11.11.jar",
+        "hashes": {
+          "sha1": "b6c70031b22396a87c1139ed29deae93e86f058b",
+          "sha512": "a8bc0a9a0ba218c2bdb0c95e1b7687b0f044ccd5cb9a075e72320a4906924b9717b3f0c4599521e10fbf1f29cfed21fe5110432296e1ea7b7b3114ed9ffd5cc2"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/ix1qq8Ux/versions/zCFm5qmH/CrashAssistant-neoforge-1.20.6-1.21.4-1.11.11.jar"
+        ],
+        "fileSize": 3187440
+      },
+      {
+        "path": "mods/CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar",
+        "hashes": {
+          "sha512": "2713dbd456f56f26ef934e5feb4bfb4578a66d0af056eb02670155affceb574d1237203e443e05908d88f3af8de47b52d0216d156028b77b5337f6283b7f4398",
+          "sha1": "4b666b4668b77fdc1ac34a183aae58a432999970"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/OsZiaDHq/versions/nLLornod/CreativeCore_NEOFORGE_v2.13.41_mc1.21.1.jar"
+        ],
+        "fileSize": 1218640
+      },
+      {
+        "path": "mods/Essential_1-4-1_neoforge_1-21-1.jar",
+        "hashes": {
+          "sha512": "3c933e6b06286794190ac5dbf74788145c5931fee399f5e1f620a51f770fb849cce0c74622b5c4de6ca8bb62cbdf22ab9e2d6799e37b437d12eca65ef8958ed4",
+          "sha1": "7984fb2fd97ccd032c11dbdf6990d56b49d9a0b7"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/k2ZPuTBm/versions/87kuVNPr/Essential_1-4-1_neoforge_1-21-1.jar"
+        ],
+        "fileSize": 51951880
+      },
+      {
+        "path": "mods/ImmediatelyFast-NeoForge-1.6.11+1.21.1.jar",
+        "hashes": {
+          "sha512": "9f6a8d2f90f076cccbb40b519dcb014c832c0fbc28c3995fb9cb5e69e016eb3b8c9bf74c64809374b7c417fcc07545b117238da924c6608e899a6608f1bf64c9",
+          "sha1": "6594ea2759455f4e135b9479f807bacf4b4b0b43"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/5ZwdcRci/versions/zxT50PTW/ImmediatelyFast-NeoForge-1.6.11%2B1.21.1.jar"
+        ],
+        "fileSize": 361795
+      },
+      {
+        "path": "mods/Searchables-neoforge-1.21.1-1.0.2.jar",
+        "hashes": {
+          "sha512": "d0824bac1900142ac9a53e68f7ec3b4c0d33d9366bbd3f1d0d93eed860e5eb6b5e6f5a215a69bfffa70bcb48573ff49b5a12bbaa96096ceac6636000d506027a",
+          "sha1": "5b8a0b43a474c066371b2e16f9bfb88622552a74"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/fuuu3xnx/versions/iEE85X0w/Searchables-neoforge-1.21.1-1.0.2.jar"
+        ],
+        "fileSize": 77326
+      },
+      {
+        "path": "mods/[1.21.1] SecurityCraft v1.10.2.1.jar",
+        "hashes": {
+          "sha1": "8760079e80039f982f1a92d3ee9d60a2bcab3251",
+          "sha512": "5dcd5a43fd3086d15e1d00cdcdd6e305aece216d769466a809ca77044ec22a799a519504845ffd6fdfd95e632b050e9dbc5e32c918fd88ce3e0e240b587a6b4f"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/v8jzRtAt/versions/X9nq0PvS/%5B1.21.1%5D%20SecurityCraft%20v1.10.2.1.jar"
+        ],
+        "fileSize": 5193371
+      },
+      {
+        "path": "mods/appleskin-neoforge-mc1.21-3.0.9.jar",
+        "hashes": {
+          "sha512": "f4ea46273e407334b63e262e2555c9a8204f7b5e60f23f272fbaa83ad9e88800e0ee186aca840710df2dbe0a18b37758695fef2ae1a902c10b3706e3de772937",
+          "sha1": "81cf0e668f991f83ac8820c386fbd6c9c3602246"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/EsAfCjCV/versions/uAKA6Laj/appleskin-neoforge-mc1.21-3.0.9.jar"
+        ],
+        "fileSize": 75804
+      },
+      {
+        "path": "mods/architectury-13.0.11-neoforge.jar",
+        "hashes": {
+          "sha512": "d9f7c3bb8162577dfb461ffdf04bd6a3563c7586934a0e2a744c14421beffb8286f0d88d4c758317003f20f99fe8072a39b9d675af061e036970d36db36027f0",
+          "sha1": "008656a0702801174b8ec245ed7aad1921d6e9f1"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/lhGA9TYQ/versions/1IiqEQGl/architectury-13.0.11-neoforge.jar"
+        ],
+        "fileSize": 584734
+      },
+      {
+        "path": "mods/cave_dweller-1.3b.jar",
+        "hashes": {
+          "sha512": "4d59575636c9ed999c1cdce90d9b97784fc90f73c1c3e22b1c61f148cef281b611af199a92f501f1a3849e856af22750912cb580cd12b7b34b907bf658cae70a",
+          "sha1": "30da34d32e563fe45c15042a22d70a12b68ba020"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/82njC4TT/versions/3cKL2M1m/cave_dweller-1.3b.jar"
+        ],
+        "fileSize": 2038840
+      },
+      {
+        "path": "mods/cloth-config-15.0.140-neoforge.jar",
+        "hashes": {
+          "sha1": "c3e5733ba4503b102589a026000fd5ce0212f6f2",
+          "sha512": "aaf9b010955b8cd294e5a92f069985b18729fd5e2cf22d351f1dff9680f15488688803ec41e77e941cbde130ceb535014ca4c868047d80ab69c2d508e216654d"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/9s6osm5g/versions/izKINKFg/cloth-config-15.0.140-neoforge.jar"
+        ],
+        "fileSize": 1163890
+      },
+      {
+        "path": "mods/craftbound_oneblock-1.1.1.jar",
+        "hashes": {
+          "sha1": "d55eea49a2862acf99b742c4490e81cf78ad370b",
+          "sha512": "eac612ec9b72de51045fb3f030c37a47b132dfbf14199d8b35dbf42455d60498625cc842c9e98a442a253ee25b62cd8be2c05383f6e3edcc0d9018b3d7bf0917"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/75oyVze0/versions/87Zf13uT/craftbound_oneblock-1.1.1.jar"
+        ],
+        "fileSize": 191655
+      },
+      {
+        "path": "mods/create-1.21.1-6.0.10.jar",
+        "hashes": {
+          "sha1": "0e97e49837bed766e6f28a4c95b04885d6acc353",
+          "sha512": "11cc8fc049d2f67f6548c7abfada6b82a3adb5c7ca410a742de04bbca76e03862c518721b88d806f6e6d768a4d68531fdb903a85859b25d1484d550cc7bafd4b"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/LNytGWDc/versions/UjX6dr61/create-1.21.1-6.0.10.jar"
+        ],
+        "fileSize": 19123767
+      },
+      {
+        "path": "mods/createoreexcavation-1.21-1.6.8.jar",
+        "hashes": {
+          "sha512": "844ae32ff0d22f4d3c83db3bae2f6edc0f74cd1a530f900bf18829838d5a354b1e439e52688416130d9fd9a52c3310458bbdbc7458f4c1c1d8ffb088ae802d32",
+          "sha1": "9a76b86ec7470d4bd7332f22d6e50a3693098c10"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/ResbpANg/versions/tivxiPTo/createoreexcavation-1.21-1.6.8.jar"
+        ],
+        "fileSize": 476990
+      },
+      {
+        "path": "mods/cullleaves-neoforge-4.1.1+1.21.1.jar",
+        "hashes": {
+          "sha512": "743c95fce00c21c45b0ecfe0a1b82b867c05807637c3f8aae06f77f1ddd898b4f0311bcfc970b071663d477221fd7acec6c6f75d460601d709eed1f0a64087a9",
+          "sha1": "0ea35e716f486a0607e01db8928ff7bea8148b39"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/GNxdLCoP/versions/V7PU4g8I/cullleaves-neoforge-4.1.1%2B1.21.1.jar"
+        ],
+        "fileSize": 94735
+      },
+      {
+        "path": "mods/entityculling-neoforge-1.10.5-mc1.21.1.jar",
+        "hashes": {
+          "sha1": "420d0006dbc0a20b1c2dd0b3c7c20ddb5cc51fcf",
+          "sha512": "0c22502b84b13d8ac6daffe14ac77e7306b5b7a48f5cd9b3950d9e1d60b3786104aa035fbfdb208b1c9a75ad0e356301a774da32edc3f71cb3a53e2d28fd39e6"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/NNAgCjsB/versions/5zRIon6w/entityculling-neoforge-1.10.5-mc1.21.1.jar"
+        ],
+        "fileSize": 1585287
+      },
+      {
+        "path": "mods/fakeachievementtoast-1.0.1.jar",
+        "hashes": {
+          "sha1": "c0d9467c7707bec76ef4bf4e07a3f17247b5bd67",
+          "sha512": "763659d31cc668aebee8684c1bd6b1cc96e833fc84632e0c347019c3517283c60c2843bb1ead3afd40b3952edf7dcc429af2abbc0a45e159aa5318c48feea46d"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/uQI16SAf/versions/2Vhutyu5/fakeachievementtoast-1.0.1.jar"
+        ],
+        "fileSize": 11117
+      },
+      {
+        "path": "mods/ferritecore-7.0.3-neoforge.jar",
+        "hashes": {
+          "sha1": "9563692efb708b6b568df27a01ec52f6311928ef",
+          "sha512": "19af89a2075bb10a63884fa853ebf84b02c79dc3242430ecdad056fd764fdcde367a7303276b329df01b0736e2ef264c5d80c7dc92c6aebd244f556a230bb417"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/uXXizFIs/versions/x7kQWVju/ferritecore-7.0.3-neoforge.jar"
+        ],
+        "fileSize": 121559
+      },
+      {
+        "path": "mods/geckolib-neoforge-1.21.1-4.9.2.jar",
+        "hashes": {
+          "sha512": "c91012b16cc40c8f48f69b78cb8e2e5c006486ae2431fbd289dfc01be7a4217294becea22d83a155d6b32b3969450df871352a3695e1452168b84f41355f7b9e",
+          "sha1": "14c64013cadee7d28f3685f94350f9a4d2ec6d86"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/8BmcQJ2H/versions/tPkJmim6/geckolib-neoforge-1.21.1-4.9.2.jar"
+        ],
+        "fileSize": 630584
+      },
+      {
+        "path": "mods/hauntedcore-1.0.2.jar",
+        "hashes": {
+          "sha1": "99b74f2ccd28893d07ed6ae9514dc6d52860d221",
+          "sha512": "108ef0147276c4d9bc790dd576056f24c90a77b4bc04cdfbde278f97462a91b9369d6d21295bb45aee7dedf33448301083467f25e2df14856413a8db65e173ff"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/nQuSsuqU/versions/Wm0frVx4/hauntedcore-1.0.2.jar"
+        ],
+        "fileSize": 20287
+      },
+      {
+        "path": "mods/horroractionbar-2.0.1.jar",
+        "hashes": {
+          "sha1": "034730c1932d86f3505f5a5a89c7d81c2ff757c9",
+          "sha512": "d6365bfc3d98e9d8dec838422b94f8c50a25d4dfe268138e21acd5f795a23dc9b43894f729d1d1c5c1134a2d433af32a6f5c159e09290cc2e559230143a979f0"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/YEJNxz8j/versions/mJjvlVVt/horroractionbar-2.0.1.jar"
+        ],
+        "fileSize": 36659
+      },
+      {
+        "path": "mods/horrorchatmessages-2.0.2.jar",
+        "hashes": {
+          "sha1": "7f80787d3daf4d95c129f96cfdefa6640b259a2a",
+          "sha512": "eb7b5877a9d0de9be41f9c2f7788f5317843e39fbb94c98af7216df7d62dd6f9e8150cf7f35b90f758feb447620e50f9b43004077a3880087002ca4e40070a48"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/OyLImylB/versions/m8Z53cId/horrorchatmessages-2.0.2.jar"
+        ],
+        "fileSize": 24822
+      },
+      {
+        "path": "mods/iris-neoforge-1.8.14-beta.1+mc1.21.1.jar",
+        "hashes": {
+          "sha1": "1bd129cf7bce65d6b1c0543045f0620c98a0f885",
+          "sha512": "33fddb430e16222902eac75b8b3d57c381b0f3cc729f3b56c4628df12ca108f23a0b11e2feb167923d6d14d1fc7e8ee1a977ec421b19d1951bdca74c4092b9c5"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/YL57xq9U/versions/KduFYu4t/iris-neoforge-1.8.14-beta.1%2Bmc1.21.1.jar"
+        ],
+        "fileSize": 2540723
+      },
+      {
+        "path": "mods/jei-1.21.1-neoforge-19.39.0.371.jar",
+        "hashes": {
+          "sha1": "8d9995a181fc24890a5a90cbbb9e45fd86d4641e",
+          "sha512": "83bc3719de5f93183ea3e9355e4f4b335d22c807efb1fdefd3db0bcdc037dffa4abdda612f576c950130e4a9d33f334f57d9dffba4855acbb81768fb28b22ffb"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/u6dRKJwZ/versions/TMNM8nwH/jei-1.21.1-neoforge-19.39.0.371.jar"
+        ],
+        "fileSize": 1572695
+      },
+      {
+        "path": "mods/midnightlib-neoforge-1.9.3+1.21.1.jar",
+        "hashes": {
+          "sha1": "e0c9a1ffc6a53435029a23d9c110c44620595469",
+          "sha512": "5913e7e8ebbffb72323514aa5bedce19056884416d0a33b38af1761ee74cfa600996cde9bd7d709ee2158476faa2e735b2e6ea6107296d471d2c5b7b35d9da6c"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/codAaoxh/versions/6Gv5jvTB/midnightlib-neoforge-1.9.3%2B1.21.1.jar"
+        ],
+        "fileSize": 61217
+      },
+      {
+        "path": "mods/misplacedambience-1.0.1.jar",
+        "hashes": {
+          "sha1": "8f4c84f915c299013296607e4360d47c9d5e8e26",
+          "sha512": "d6f0e5a1b2283c1eee02fb80fa3caab9401edd5e7af988ddeab1b13581b7fc5a0f09434a7455201b4cf2d941fac38ea5f5336c0841f6f563825303ae6d9f1884"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/oSs3mp4q/versions/46tOsdI1/misplacedambience-1.0.1.jar"
+        ],
+        "fileSize": 22523
+      },
+      {
+        "path": "mods/modernfix-neoforge-5.27.20+mc1.21.1.jar",
+        "hashes": {
+          "sha1": "bc1a70e72e7dba8a3ff41404765fdd03a7ac6575",
+          "sha512": "b1f0d3ac5ada811b8204bc82adc1cab8ff71752da8e97ae381f21be5f778c199ae59108850febc87d1c46757b27ccbb2669f3fc6340c837db450a205ca2d8c9c"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/nmDcB62a/versions/VsJnrw8k/modernfix-neoforge-5.27.20%2Bmc1.21.1.jar"
+        ],
+        "fileSize": 599474
+      },
+      {
+        "path": "mods/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar",
+        "hashes": {
+          "sha512": "9d929cf8e0a0ff2c806e007571b10cd9b81cd508826519f55e25f0390149109c7c12605143e4c11b5b5fac749e69de532c1ad00aa6a257e4dd0d3a3a77f2461b",
+          "sha1": "b509863deaa27890f8db600f612966a07490a6cd"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/MPCX6s5C/versions/eYNogep3/notenoughanimations-neoforge-1.12.4-mc1.21.1.jar"
+        ],
+        "fileSize": 1939625
+      },
+      {
+        "path": "mods/peripheralfigure-1.0.1.jar",
+        "hashes": {
+          "sha1": "4438559968eafaae1e2ad0dac853656e694a2fa0",
+          "sha512": "4ffc48b029c91a6c2915997fab0dbb75e8ef9195f1005a9a0b2542a54131dd4f293925f242dd0feb5d345e76c8639e4b638c49d74562891b301597d9b33d8876"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/z80srf2a/versions/iMmMGycv/peripheralfigure-1.0.1.jar"
+        ],
+        "fileSize": 39388
+      },
+      {
+        "path": "mods/phantomjoin-1.0.2.jar",
+        "hashes": {
+          "sha1": "6d6f0bfd530bbbf04261d334f800c0110da35f38",
+          "sha512": "593a39884e06188382b07ed1e52fe65b49c10104a552424839f5774a9f421ab0fc8b17d80283404aa67408659a2aca042c61d4ef2fb92e6438d398a11813c769"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/6SBVxMHm/versions/d024orTa/phantomjoin-1.0.2.jar"
+        ],
+        "fileSize": 10004
+      },
+      {
+        "path": "mods/phantomsteps-1.0.2.jar",
+        "hashes": {
+          "sha1": "44ea8edb14404a52e4dd2e6c673533e36dd52f7f",
+          "sha512": "c5deb7fa7d3ca8506863e4dd77c3dabd3863d871cec8adf2f5a53442e8c66be1fd47241f40ca5025aec4fe9f1af0c3be1a2380b91c2f4e4365e2e6535c106da6"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/LOk00nKX/versions/Uqm2oaD9/phantomsteps-1.0.2.jar"
+        ],
+        "fileSize": 12828
+      },
+      {
+        "path": "mods/playercorpse-2.0.3.jar",
+        "hashes": {
+          "sha1": "ed88f7646e1b61c51fd864224b1c682e01e2f128",
+          "sha512": "6887ad8164924d5ccc0e6850b5b2f8b5033ca448eac33527c6836264624bb6333e7e1eef3122afe9dbbba1aab0342314d1d750dd6014154217d8bcb87d66fc4d"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/tCn6q8ix/versions/DMfyZShi/playercorpse-2.0.3.jar"
+        ],
+        "fileSize": 223786
+      },
+      {
+        "path": "mods/skinlayers3d-neoforge-1.11.2-mc1.21.1.jar",
+        "hashes": {
+          "sha512": "c017d098874697ba93a03c06cfb4fe8a8bbc619448bff55c3c821089b164677fae2c8c2059e99fc9933af6ff519759c399deae763b1ac9e34593cd6e4f427f3a",
+          "sha1": "d688d428ba72a5bd57b44d8954793c59d8576838"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/zV5r3pPn/versions/xPYbAPfz/skinlayers3d-neoforge-1.11.2-mc1.21.1.jar"
+        ],
+        "fileSize": 1979027
+      },
+      {
+        "path": "mods/sodium-neoforge-0.8.12+mc1.21.1.jar",
+        "hashes": {
+          "sha512": "2a689e1b1e16acc790c011b42ec21958956207c3b49cb99cb5c006e639786adf1cc36559f9840e2c1d27485c00da9712d34020fa4279eb6810eaa54bf20b19b0",
+          "sha1": "762251ab3d6825d5accfd89c3f02f1145376105e"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/AANobbMI/versions/S3DUMfBo/sodium-neoforge-0.8.12%2Bmc1.21.1.jar"
+        ],
+        "fileSize": 1291418
+      },
+      {
+        "path": "mods/sophisticatedbackpacks-1.21.1-3.25.72.2012.jar",
+        "hashes": {
+          "sha1": "61420f42897bc3447959333ea95b989010b5ec60",
+          "sha512": "b1152b2e8bcbbf28f1651f662c6cd7177be61054b4b889327a6657b809f6725748e52e9b3d65673809371eb90312151d27cb5c8aa1f9ba83d87f9f2dacf03a8d"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/TyCTlI4b/versions/4iFGngKW/sophisticatedbackpacks-1.21.1-3.25.72.2012.jar"
+        ],
+        "fileSize": 1144139
+      },
+      {
+        "path": "mods/sophisticatedcore-1.21.1-1.4.79.2182.jar",
+        "hashes": {
+          "sha512": "d71da2bf109b80108013f18195e177eeba3bbc367611e2dcf0e1b342bd0a5e1c3cfc26b56a6f4185875cc18b1d37d6ff112e74a4d5c1c4559d72ff89717e892a",
+          "sha1": "85238f3fdfcc819c47d6d0c5cb2813dee2366c5a"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/nmoqTijg/versions/OyktdpqD/sophisticatedcore-1.21.1-1.4.79.2182.jar"
+        ],
+        "fileSize": 1673505
+      },
+      {
+        "path": "mods/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar",
+        "hashes": {
+          "sha1": "a5ac35ccb902231047709530a5708fb71dc3e3b5",
+          "sha512": "ff7e9f0b968eeb2ba0e833328a122813cad0434cfe2d5c3d527c1c0d564504f13a737fc05f22d3fea562a2f86568d31b95212bf5347dd10da36cd49ad56143a6"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/qyVF9oeo/versions/Dd2tmpsk/sound-physics-remastered-neoforge-1.21.1-1.5.1.jar"
+        ],
+        "fileSize": 202454
+      },
+      {
+        "path": "mods/tacz-neoforge-1.21.1-1.1.8-hotfix-r4.jar",
+        "hashes": {
+          "sha1": "7e511bcb01c3395611e3cf8b0f6d8e1c1a1d4cc1",
+          "sha512": "58bbfe76ba379de62acf6a58a47d85d6f49c870f0b5f53f73dee100d002c6e5d3dfb99cf76ba53a9a6f603d7523962f89b17e9b503281e847bddffa7bc9272d6"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/OypNE65K/versions/QFzpV9bs/tacz-neoforge-1.21.1-1.1.8-hotfix-r4.jar"
+        ],
+        "fileSize": 57242172
+      },
+      {
+        "path": "mods/the_boy_and_the_bath-4.0.1-neoforge-1.21.1.jar",
+        "hashes": {
+          "sha512": "2c69ef007d10c541f033b3ca492d9c9386691e2829ace0ce49d0d6f9df4d35a1773ff21a07640e6c276624e57bc7a880c0638a7d7158de150595ed20b6781bfb",
+          "sha1": "5f89053843f7d9868eeb6654022e13c45e837879"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/UqwJzAeJ/versions/bSmVEOt6/the_boy_and_the_bath-4.0.1-neoforge-1.21.1.jar"
+        ],
+        "fileSize": 911332
+      },
+      {
+        "path": "mods/the_obsessed-1.5.1e-neoforge-1.21.1.jar",
+        "hashes": {
+          "sha512": "e8d78baa267f6603cfa77c72f74a8602bb27101a823246ed3d6b1b13bfcf1b1138a428521eb0173b41845492c0bdc7a8ac3cd9ba64555d255b4dadbe18f15ba1",
+          "sha1": "bc837d8c176c4247d0e9abda880bbeedd7313ec3"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/e2UrUTKG/versions/KnbavBcm/the_obsessed-1.5.1e-neoforge-1.21.1.jar"
+        ],
+        "fileSize": 3481315
+      },
+      {
+        "path": "mods/voicechat-neoforge-1.21.1-2.6.21.jar",
+        "hashes": {
+          "sha1": "f72eff26b1156fdce12ef18c5792c48a54340142",
+          "sha512": "85b39efaab7f9b8aabd78d8a5eb80bd6964c4a3f737f6e1327d7864726e4ad1319ce51f121fb6fe2be5b3b761c51af2591b66348c4404610dc03fc458a8ea007"
+        },
+        "env": {
+          "client": "required",
+          "server": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/9eGKb6K1/versions/dbzBkplC/voicechat-neoforge-1.21.1-2.6.21.jar"
+        ],
+        "fileSize": 4913870
+      },
+      {
+        "path": "shaderpacks/ComplementaryReimagined_r5.8.1.zip",
+        "hashes": {
+          "sha512": "6bd95215755d25812556ce790d976221f7d677d63112e3e4d3e70b08a62ed41348fa3792dd31bbe720d1e46fe2d525cadb4f66e6358118e1f4aa8e0d11f25c39",
+          "sha1": "5a021081f0178ed91dd911194071465ab0a4348b"
+        },
+        "env": {
+          "server": "required",
+          "client": "required"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/HVnmMxH1/versions/yCCduG44/ComplementaryReimagined_r5.8.1.zip"
+        ],
+        "fileSize": 546925
+      }
+    ],
+    "dependencies": {
+      "minecraft": "1.21.1",
+      "neoforge": "21.1.235"
+    }
+  },
+  "overrides": {
+    "overrides/config/The Boy And The Bath spawnrate.toml": {
+      "size": 872,
+      "sha256": "5ff5e1be3d7ece855b6c37a4e0cb1c7a8b78e9187095fe52c493aa666edf7931"
+    },
+    "overrides/config/appleskin-client.toml": {
+      "size": 1376,
+      "sha256": "7127a276c7305371397053cd8d0833e6825c828850626e4067b9fed1430ed217"
+    },
+    "overrides/config/cave_dweller-server.toml": {
+      "size": 4243,
+      "sha256": "2425e90bb163d5e2ee465e938b78b2a88f418815a496e25091db8982fcd7356a"
+    },
+    "overrides/config/compassglitch-client.toml": {
+      "size": 316,
+      "sha256": "c681f5e037c27ac2517e9e8aaf70798d3b16869a2d88fdc8349d5e059a57e2f2"
+    },
+    "overrides/config/craftbound_oneblock-client.toml": {
+      "size": 371,
+      "sha256": "7a05efd41e1559e26104d09cd89ddeca8a6d7b9e87397e987f571436119ad9c9"
+    },
+    "overrides/config/craftbound_oneblock-common.toml": {
+      "size": 7289,
+      "sha256": "30e24206f0d7b958134f2fb1cfb1ccfd306b85e43d99cfb05a29d1bdea3ee311"
+    },
+    "overrides/config/craftbound_oneblock_horror-client.toml": {
+      "size": 371,
+      "sha256": "7a05efd41e1559e26104d09cd89ddeca8a6d7b9e87397e987f571436119ad9c9"
+    },
+    "overrides/config/craftbound_oneblock_horror-common.toml": {
+      "size": 10626,
+      "sha256": "34fa22657c2551671805ab71b856a48e7985c7b034c0308e7191fb743853f4fc"
+    },
+    "overrides/config/crash_assistant/config.toml": {
+      "size": 22657,
+      "sha256": "cfa98d01f529e4c39f0d49451af7bc43ed24bc9a4e6084186c92a6d555b4dd59"
+    },
+    "overrides/config/crash_assistant/crash_assistant_localization_overrides/README.md": {
+      "size": 2650,
+      "sha256": "943e1c3672b8a03f27519b357091133205119c7b3db2fcc4c25b597cabf8926d"
+    },
+    "overrides/config/crash_assistant/modlist.json": {
+      "size": 9453,
+      "sha256": "e1fc07d4e28ba9c9d8ffabd92986756505f648d74d2db4fff9c5a2cf7e5eb15d"
+    },
+    "overrides/config/crash_assistant/scripts/log_analysis/example.jexl": {
+      "size": 3495,
+      "sha256": "adde7e5e42b9d716f14a9bc49797999a21a0ee05cc67e71410a232f830115b3b"
+    },
+    "overrides/config/crash_assistant/scripts/startup/example.jexl": {
+      "size": 4408,
+      "sha256": "346378f04a9e7319cdcb405fad82d6e7f1b36b39e0e4129c00a226b49f41cf37"
+    },
+    "overrides/config/create-client.toml": {
+      "size": 4795,
+      "sha256": "cce3eab1a290cc1f0eada00031f0577f661f883aee3438cf1139283c65d1f319"
+    },
+    "overrides/config/create-common.toml": {
+      "size": 153,
+      "sha256": "2e77b1d93b40ce3f381ad7eb2a9e6d7148de917518be5c2616939a4369c4b140"
+    },
+    "overrides/config/createoreexcavation-common.toml": {
+      "size": 690,
+      "sha256": "68918aeea1ff71d7102b6554fd60a3111a7bb6601431aa1dbcdf50750e6df4dd"
+    },
+    "overrides/config/cullleaves.json": {
+      "size": 42,
+      "sha256": "6596cbe9453cc9cf69b4addfb02fe9d1501ffc9254ac047d9cd7a23bc6ce7dcc"
+    },
+    "overrides/config/delayedecho-common.toml": {
+      "size": 3112,
+      "sha256": "169184025cf42253586fc10723c541dcf084ededee31795fe247b9cbe7a389d0"
+    },
+    "overrides/config/displacement-common.toml": {
+      "size": 1950,
+      "sha256": "680018e33cf478e3c01960336546e4b540764609609729672a721f2504ffca62"
+    },
+    "overrides/config/entityculling.json": {
+      "size": 2228,
+      "sha256": "e92e6772c4b6ec28b9c179c80831d56d11fc65064591424a120133d397b2ab49"
+    },
+    "overrides/config/face_of_horror-client.toml": {
+      "size": 232,
+      "sha256": "13bbbd26365d986d26eebcb30857c49cc3d217c7a62b8de0629db3e055a2f797"
+    },
+    "overrides/config/face_of_horror-server.toml": {
+      "size": 821,
+      "sha256": "a746d48782330d3d2788bfc8810592e982f749eb5973ad0003586c24404088b2"
+    },
+    "overrides/config/facework-common.toml": {
+      "size": 2401,
+      "sha256": "99806f0e2266cba7e4d377454e264cb5245330d6412f14ef2636b60d46bde29f"
+    },
+    "overrides/config/fakeachievementtoast-client.toml": {
+      "size": 414,
+      "sha256": "a9445f929c2574fd3b6bba5ea593d1b191b28ef15da6c967d932de7812c65c44"
+    },
+    "overrides/config/fakechatmessages-client.toml": {
+      "size": 323,
+      "sha256": "c2fb2a92cd413b98ee2d8fbab03bdadb045966d26db2cb9f3fe22aa283c00053"
+    },
+    "overrides/config/flywheel-client.toml": {
+      "size": 637,
+      "sha256": "49414280350d38397bb99dc9f721e07e8d3d17920094455f08ae10079d460d9a"
+    },
+    "overrides/config/fml.toml": {
+      "size": 1550,
+      "sha256": "cc59fb1039726fda3ab1eb69b06d9b9aebb7496604ea579cfb735bc5377e7825"
+    },
+    "overrides/config/ghosttabentry-client.toml": {
+      "size": 82,
+      "sha256": "451753e893e1ce6c377c37bc42db8a6ce31665c76b6809035e073762be9af6c5"
+    },
+    "overrides/config/hauntedcore-client.toml": {
+      "size": 1278,
+      "sha256": "619f34bed19d40c17a97e61e31f28ede41621444b9d276a9d23ad280b9898099"
+    },
+    "overrides/config/hauntedlights-client.toml": {
+      "size": 1563,
+      "sha256": "5257ff38f9a52750b40efd7f44735c51bc6d850aeaebc93594e2e9f4cfb7a4b6"
+    },
+    "overrides/config/heldbreath-common.toml": {
+      "size": 1768,
+      "sha256": "e05e1ac67c8e81c42c48313278a265d7b4f7a9985259b4b29d8c45e5c043dcfb"
+    },
+    "overrides/config/horroractionbar-common-1.toml.bak": {
+      "size": 1749,
+      "sha256": "3bf25bc8d010ef184bb42c951da3b257e3c1e807651a6e8ff1165922a192aa0a"
+    },
+    "overrides/config/horroractionbar-common.toml": {
+      "size": 1283,
+      "sha256": "fe6b290665c9ea5667bac10a87f876d00dc0377f2a4cfb7bf9955df69c081564"
+    },
+    "overrides/config/horrorchatmessages-common-1.toml.bak": {
+      "size": 1434,
+      "sha256": "83eee35ccf7e3418d42c6cb5d3940127dc77e2df16f759fbfd86d1a1c7242e81"
+    },
+    "overrides/config/horrorchatmessages-common.toml": {
+      "size": 854,
+      "sha256": "70b065ce61330d32f28f805d9db16a8120c54dac14eb61e820822a1164f96dbd"
+    },
+    "overrides/config/hotbarghost-client.toml": {
+      "size": 309,
+      "sha256": "c666a50ee2173df608cfc4ce7f9089bda581a8877e939acb33cbcbe9ace3d96a"
+    },
+    "overrides/config/immediatelyfast.json": {
+      "size": 1114,
+      "sha256": "a6c9d147a51c9e432c5c74c00285cfc5ba8b6fa4a0c6686051a7168b158d0d7a"
+    },
+    "overrides/config/iris-excluded.json": {
+      "size": 31,
+      "sha256": "4d3264b58c502afaeca3f44e8d2db0843c54b8ba957afd21a2d450fe10dafefb"
+    },
+    "overrides/config/iris.properties": {
+      "size": 282,
+      "sha256": "54cf461851bb7039c2ffe9eb07e14772f8b080d27e5d1b53e9dd85f1d1c1762a"
+    },
+    "overrides/config/losttime-common.toml": {
+      "size": 2842,
+      "sha256": "2966b4bad6cdf62de8628fcf64f5960d8676a34b9f6e5dbfde3ab9fef792dff4"
+    },
+    "overrides/config/midnightlib.json": {
+      "size": 37,
+      "sha256": "b14c45c6447f9ee5474d70784a2ef96731abbeca1e92485b7599e76e9dce1444"
+    },
+    "overrides/config/misplacedambience-common-1.toml.bak": {
+      "size": 3889,
+      "sha256": "f6fae1413cfbd9a9679e0afa917776990ebbf6ce3154b57f3e7d2345f9026195"
+    },
+    "overrides/config/misplacedambience-common.toml": {
+      "size": 1979,
+      "sha256": "0f1a473402c5cd16ca2425219787e66a52f2e254e448ec5f41ba5e3b15a07ef0"
+    },
+    "overrides/config/modernfix-common.toml": {
+      "size": 105,
+      "sha256": "72ca2bcea2a9946a3a54842f14eff6f7b47d8fc96ef497c1b56406643b153fd7"
+    },
+    "overrides/config/modernfix-mixins.properties": {
+      "size": 5491,
+      "sha256": "cda1de84880f439d9c8a025861a483d51972e76b8a5a6a253dd0196aec821ac5"
+    },
+    "overrides/config/neoforge-client.toml": {
+      "size": 578,
+      "sha256": "d58d93e2c429410d0abf25507d1679f732e1023b03bb52414348efcf5cf3ddb0"
+    },
+    "overrides/config/neoforge-common.toml": {
+      "size": 772,
+      "sha256": "fe878a2717a145cd890621eac5b3be1e1fd656f7ff9abc6e8d53f670d37474c4"
+    },
+    "overrides/config/neoforge-server.toml": {
+      "size": 1177,
+      "sha256": "b1e3b38d612295f8d9dfa0fbdb538a992b7a1a3b7a766c491b4e9fdf3823396f"
+    },
+    "overrides/config/notenoughanimations.json": {
+      "size": 3357,
+      "sha256": "6113e4cef59566ee91ff01895e48c7792d463f376aea3eb16644333a96061a90"
+    },
+    "overrides/config/obsessed_configurations-1.toml.bak": {
+      "size": 3750,
+      "sha256": "3ab1db939af5b20bf8f6f0e01d15fb2a8177a85a9c6e7d3f332efa27b6030b53"
+    },
+    "overrides/config/obsessed_configurations.toml": {
+      "size": 3889,
+      "sha256": "5771b334d34ce802e5edf2c36966aa26880d7bef11206460a45d69fd9fe386ff"
+    },
+    "overrides/config/peripheralfigure-common-1.toml.bak": {
+      "size": 7456,
+      "sha256": "6270955853129791e7d9d0d579f79bebc1571d6a8943e540d39a64f7adb37efb"
+    },
+    "overrides/config/peripheralfigure-common.toml": {
+      "size": 4893,
+      "sha256": "74961d8b3d745e904896103d61244dcf28e4c4fbed6dafe8b0778cd628341e6b"
+    },
+    "overrides/config/peripheralsilhouette-client.toml": {
+      "size": 319,
+      "sha256": "92bc9d8da3375d9d428e676b1bb8bb64fd4b833ce8441a45cf3816271db18114"
+    },
+    "overrides/config/phantomjoin-client-1.toml.bak": {
+      "size": 606,
+      "sha256": "7296bc169ce95b8afaec0c4467b9f4a042598e3ae2344a07f0093de3430b3d5e"
+    },
+    "overrides/config/phantomjoin-client.toml": {
+      "size": 1155,
+      "sha256": "3ab5779dd52d1363c33aad0949a89f03166b1891be1dfe36edc7d0a2e39c8758"
+    },
+    "overrides/config/phantommining-common.toml": {
+      "size": 2564,
+      "sha256": "4ed800c84222caefa47fd910ea2d845827a664052a278fd57f4732a618710ac2"
+    },
+    "overrides/config/phantomsounds-client.toml": {
+      "size": 308,
+      "sha256": "82d4be96ec242284d77fd00f0d2f804e6db381b2152e9f36b1c0515485a3c8c0"
+    },
+    "overrides/config/phantomsteps-common.toml": {
+      "size": 1739,
+      "sha256": "1ea642488c2667eba14a57558d4451aba7621db98d0588de450cce308eec6543"
+    },
+    "overrides/config/playercorpse-common-1.toml.bak": {
+      "size": 3976,
+      "sha256": "f2d618d5df42d9eeac8ee235b72daf993970273183933c2f5549344060e107dc"
+    },
+    "overrides/config/playercorpse-common.toml": {
+      "size": 3719,
+      "sha256": "91d10556b1d0637f48dc09ed439899e616da6eef87948387e7cd53a3f4ea0bf8"
+    },
+    "overrides/config/ponder-client.toml": {
+      "size": 635,
+      "sha256": "55affffe67e84dfe11e590769e235aee999b77f9484a3adf7ee8247a9f3d35ba"
+    },
+    "overrides/config/screenflicker-client.toml": {
+      "size": 306,
+      "sha256": "a17191171a23d0eeb685ad10c5ed4e29d9641b7a819a5aa376a47441e33a22c3"
+    },
+    "overrides/config/securitycraft-client.toml": {
+      "size": 2020,
+      "sha256": "94cc74d38cce43405496b86a56201ee03fd74606d7364164d986f93b1ef21c4a"
+    },
+    "overrides/config/silentsubtitles-client.toml": {
+      "size": 380,
+      "sha256": "627c46363ac3b76f259f8152b13dc91a14bfe20ea97fc784d69ead2e07ffda79"
+    },
+    "overrides/config/skinlayers.json": {
+      "size": 497,
+      "sha256": "45162f45aa2db525a0edc483959f35b6d958ba2e54066a4f87e7f3c3f0f99166"
+    },
+    "overrides/config/sodium-fingerprint.json": {
+      "size": 427,
+      "sha256": "3d756e53baeee2beeca7cb2eeceb5b59e7d544ddf642d27766e23fd78042e1ee"
+    },
+    "overrides/config/sodium-mixins.properties": {
+      "size": 258,
+      "sha256": "b627c4456e6fa0bc4b5f85e2f1cd949faedae3cb9afdaf2a5f52e6f3b6ae1f01"
+    },
+    "overrides/config/sodium-options.json": {
+      "size": 762,
+      "sha256": "44478bef0973f1aa587c0493568a5cbc5426233b611f14bd2be489b5b862fa7f"
+    },
+    "overrides/config/sophisticatedbackpacks-common.toml": {
+      "size": 118,
+      "sha256": "390cb983090cdc5ba9013c0551fcde8ecf579040f970e33de5ecfc500841cb7f"
+    },
+    "overrides/config/sophisticatedcore-client.toml": {
+      "size": 478,
+      "sha256": "12f65a872b73c931b0a192d7e95c7d89f7ef7f1fd33f3ee7ff6bbda12fb8845f"
+    },
+    "overrides/config/sophisticatedcore-common.toml": {
+      "size": 108,
+      "sha256": "6928810eacfc20c8568759fc8c142df5f643e790f5c97c082719d65656274ff8"
+    },
+    "overrides/config/sound_physics_remastered/occlusion.properties": {
+      "size": 4831,
+      "sha256": "ebbac45fbb3ca01487b85ffee9601b213b71896e6606fb297bcb0f3ac9c30ffb"
+    },
+    "overrides/config/sound_physics_remastered/reflectivity.properties": {
+      "size": 4713,
+      "sha256": "e26b00784bb6239988759ed1a64551b9f301dc33c5a855d91e976ee4bf40ac8a"
+    },
+    "overrides/config/sound_physics_remastered/sound_rates.properties": {
+      "size": 67941,
+      "sha256": "a8f9c77ce8f51f98e0951461f29a3d65aaef45b47ee0f13ba332023e98932e15"
+    },
+    "overrides/config/sound_physics_remastered/soundphysics.properties": {
+      "size": 5104,
+      "sha256": "d29dede3f214ee4b1aa03314f92c3f973c21ee6e26d173eba3d01a2083237b6d"
+    },
+    "overrides/config/tacz-client.toml": {
+      "size": 3919,
+      "sha256": "95f4b4e43349699d4af80303b902daf6197d9a9f3a120f58e826f00ffa818dea"
+    },
+    "overrides/config/tacz-common.toml": {
+      "size": 2316,
+      "sha256": "eaa145c521e5cede1d746c93e43d86c98f73d38deb038e6cd7ca975bc0782bb2"
+    },
+    "overrides/config/tacz-pre.toml": {
+      "size": 218,
+      "sha256": "b127fc761c8e000a8f1aceaa19d28c644e64ed00137bdcd2d48a372540cc7bdc"
+    },
+    "overrides/config/thetenant-common.toml": {
+      "size": 2070,
+      "sha256": "3967faf40b60016adfeeb02cc948ae2a70ffd0f79f156621293eb660c34d11d7"
+    },
+    "overrides/config/trailmarks-common.toml": {
+      "size": 1362,
+      "sha256": "ddf427e869dfcad8138033174838fceb29b34f3a01a6766a8193980e3fa473a3"
+    },
+    "overrides/config/transition.json": {
+      "size": 97,
+      "sha256": "60420a41571a4658b91babfa2b47d6fefb7c1766eeea969f51ff98ab34c2431c"
+    },
+    "overrides/config/trender.json": {
+      "size": 47,
+      "sha256": "0a282f3623f7f9443a1d10b5768865f69e58b74e000dcfb4f40399626b7a6124"
+    },
+    "overrides/config/vanishingchattext-client.toml": {
+      "size": 314,
+      "sha256": "e7f7535dbf30b1a9f757c25f16e03e19b9228bb658e43fa0c8d5736c82384e16"
+    },
+    "overrides/config/voicechat/category-volumes.properties": {
+      "size": 46,
+      "sha256": "94c1c4f70e5b995fbd71e86d4fa646030437fecae0685875b560a55fbd0d0e56"
+    },
+    "overrides/config/voicechat/player-volumes.properties": {
+      "size": 44,
+      "sha256": "0332261861a5ace96f503e85b0d48a8df74ea6c2f3545cd229543a6afb55ad96"
+    },
+    "overrides/config/voicechat/translations.properties": {
+      "size": 1182,
+      "sha256": "693643b1d393cbb3ea7f062afc4474fcd66e4036c4f8d7c056434979cbf512d1"
+    },
+    "overrides/config/voicechat/voicechat-client.properties": {
+      "size": 5063,
+      "sha256": "db687cd7178c1f36b0d75ed33b3d1b335dfe49adc6efbb4dfc482e420a73e262"
+    },
+    "overrides/config/voicechat/voicechat-server.properties": {
+      "size": 3072,
+      "sha256": "7ab0846749dc8bf19a37a4df70afa4303cdca6a4aa256a033166dc58816b8428"
+    },
+    "overrides/saves/Horror OneBlock/entities/r.-1.-1.mca": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "overrides/saves/Horror OneBlock/entities/r.-1.0.mca": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "overrides/saves/Horror OneBlock/entities/r.0.-1.mca": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "overrides/saves/Horror OneBlock/entities/r.0.0.mca": {
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "overrides/saves/Horror OneBlock/icon.png": {
+      "size": 10268,
+      "sha256": "3eb3032a7e1b3526e562427d531ea3fad9a28ac82d22cdce8d5349ec5800a548"
+    },
+    "overrides/saves/Horror OneBlock/level.dat": {
+      "size": 1642,
+      "sha256": "d412cf1a583b70fbdfaa11223959521c04c3c8d261e90f5440b84cf9f70c612b"
+    },
+    "overrides/saves/Horror OneBlock/region/r.-1.-1.mca": {
+      "size": 352701,
+      "sha256": "8589e3e7fc711a3e69834b5584cb45381b4490634813fa68645ace8c9c920f60"
+    },
+    "overrides/saves/Horror OneBlock/region/r.-1.0.mca": {
+      "size": 381373,
+      "sha256": "a27c75469826d196b497d149b3218f3fefe5c4b5e4389ad298c2a7a1fc03d02e"
+    },
+    "overrides/saves/Horror OneBlock/region/r.0.-1.mca": {
+      "size": 381372,
+      "sha256": "bdc446c0e9bf1eab5a6af5aedf0d1598ca6e4faa57acc77583094768eb142cc9"
+    },
+    "overrides/saves/Horror OneBlock/region/r.0.0.mca": {
+      "size": 414141,
+      "sha256": "ae0559973ed2fa98044049890c88d829bb8777ecd4a9c48601cf05ad3fac0be4"
+    },
+    "overrides/saves/Horror OneBlock/serverconfig/readme.txt": {
+      "size": 469,
+      "sha256": "b1022ab932f8f0ea0cf78d9f312e95b85a4f96f59ca430e63f9a435e512d1186"
+    }
+  }
+}

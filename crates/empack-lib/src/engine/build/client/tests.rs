@@ -719,7 +719,14 @@ fn managed_prism_consumer_format_fixtures_use_public_preparation() {
                 "dist/client.zip",
             ]
             .into_iter()
-            .map(|name| (name, fs::read(root.path().join(name)).unwrap()))
+            .map(|name| {
+                let file = root.path().join(name);
+                (
+                    name,
+                    fs::read(&file).unwrap(),
+                    fs::metadata(&file).unwrap().permissions(),
+                )
+            })
             .collect();
             let result = prepare_build_batch(
                 capture(root.path(), host.path(), "client.zip"),
@@ -746,8 +753,10 @@ fn managed_prism_consumer_format_fixtures_use_public_preparation() {
                 fixture_case["name"],
                 result.err()
             );
-            for (name, bytes) in before {
-                assert_eq!(fs::read(root.path().join(name)).unwrap(), bytes);
+            for (name, bytes, permissions) in before {
+                let file = root.path().join(name);
+                assert_eq!(fs::read(&file).unwrap(), bytes);
+                assert_eq!(fs::metadata(file).unwrap().permissions(), permissions);
             }
         }
     }

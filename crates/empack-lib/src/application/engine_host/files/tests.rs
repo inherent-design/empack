@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::{
         BuildArgs, InitArgs,
@@ -18,7 +19,6 @@ use empack_core::{
 };
 use sha2::{Digest, Sha512};
 use std::{
-    collections::BTreeMap,
     fs,
     io::{Cursor, Read, Write},
 };
@@ -51,9 +51,6 @@ async fn fixture(root: &Path) {
     )
     .await
     .unwrap();
-}
-fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    super::super::tests::snapshot(root)
 }
 fn archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

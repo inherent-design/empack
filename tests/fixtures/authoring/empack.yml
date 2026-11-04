@@ -1,0 +1,23 @@
+# An author-owned note must survive dependency edits and repeated synchronization.
+schema: 5
+pack:
+  id: verification.pack
+  name: Verification Pack
+  version: '1.0.0'
+  authors: [Fixture Author]
+runtime:
+  minecraft: '1.21.1'
+  loader: vanilla
+  java: 21
+dependencies: {}
+build:
+  default: [exchange, client]
+  profiles:
+    exchange:
+      target: modrinth
+      delivery: references
+    client:
+      target: prism
+      delivery: bundled
+sources:
+  exclude: [private/]

@@ -11,7 +11,6 @@ use crate::engine::{
 };
 use empack_core::digest::ContentId;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -264,14 +263,16 @@ async fn save(
     let retained_files = data.content.len();
     let pending_files = data.downloads.len();
     let state = config.state_root.clone();
+    let binding_state = state.clone();
     let record = scope.spawn_blocking(
         config.resources.capture,
         config.resources.prepared,
         move |cancel| {
-            let (_, binding) = store::bind_for(Kind::Instance, &data.target, &cancel)?;
+            let (_, binding) =
+                store::bind_for(&binding_state, Kind::Instance, &data.target, &cancel)?;
             let base = data.instance.base(&cancel)?;
             let record = Record {
-                schema: 1,
+                schema: 2,
                 binding,
                 base,
                 recipe: data.resume.clone(),
@@ -474,10 +475,6 @@ async fn resume(
                 SelectedRelease::Subscribed(Arc::new(instance::subscription::select_release(
                     &selected,
                     envelope.as_bytes(),
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)?
-                        .as_secs()
-                        .try_into()?,
                     &version()?,
                     RecoveryReader::new(state),
                     &cancel,

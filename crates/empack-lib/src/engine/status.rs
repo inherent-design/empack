@@ -226,15 +226,16 @@ fn author(root: &ProjectReadRoot, cancel: &Cancellation) -> Result<ContextStatus
     });
     Ok(result)
 }
-fn instance(root: &ProjectReadRoot, cancel: &Cancellation) -> Result<ContextStatus> {
+fn instance(
+    root: &ProjectReadRoot,
+    bound_key: &str,
+    cancel: &Cancellation,
+) -> Result<ContextStatus> {
     let Some(bytes) = read(root, ".empack/instance.json", cancel)? else {
         return Ok(empty(WorkspaceContext::Instance));
     };
     let record = super::instance::InstanceRecord::decode(&bytes)?;
-    ensure!(
-        record.root == super::publication::root_key(root)?,
-        "Instance belongs to another root"
-    );
+    ensure!(record.root == bound_key, "Instance belongs to another root");
     let release = super::release::DecodedRelease::decode(
         &read(
             root,
@@ -297,7 +298,8 @@ pub fn inspect_workspace(
             report.finding("runtime-retirement-unconfirmed", "Managed runtime is active or its retirement is unconfirmed; stop all related processes before recovery", &["instance", "inspect"]);
         }
     }
-    let _guard = RecoveryReader::new(state.into()).enter(&root)?;
+    let recovery = RecoveryReader::new(state.into());
+    let _guard = recovery.enter(&root)?;
     for (kind, markers) in [
         (
             WorkspaceContext::Author,
@@ -329,12 +331,25 @@ pub fn inspect_workspace(
         if !found && context != Some(kind) {
             continue;
         }
+        // Author/publisher metadata does not need an instance binding. Capture
+        // one association view only when an existing instance is inspected.
+        let bound_key = if found && kind == WorkspaceContext::Instance {
+            Some(recovery.bound_root_key(&root)?)
+        } else {
+            None
+        };
         let inspected = if !found {
             Ok(empty(kind))
         } else {
             match kind {
                 WorkspaceContext::Author => author(&root, cancel),
-                WorkspaceContext::Instance => instance(&root, cancel),
+                WorkspaceContext::Instance => instance(
+                    &root,
+                    bound_key
+                        .as_deref()
+                        .context("Missing instance root binding")?,
+                    cancel,
+                ),
                 WorkspaceContext::Publisher => publisher(&root, cancel),
             }
         };
@@ -348,7 +363,7 @@ pub fn inspect_workspace(
                 Ok(Some(bytes)) => {
                     match super::instance::subscription::SubscriptionRecord::decode(&bytes) {
                         Ok(subscription)
-                            if subscription.root == super::publication::root_key(&root)? =>
+                            if Some(subscription.root.as_str()) == bound_key.as_deref() =>
                         {
                             value.update_owner = if subscription.keys.is_empty() {
                                 "publisher subscription revoked".into()

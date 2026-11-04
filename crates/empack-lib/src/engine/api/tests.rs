@@ -117,6 +117,90 @@ pub(super) fn request() -> BuildRequest {
         evidence: SourceEvidencePolicy::Compatibility,
     }
 }
+
+#[tokio::test]
+async fn reference_only_build_choices_refuse_before_capture_or_host_state() {
+    for recipes in [
+        vec![Recipe::MODRINTH],
+        vec![Recipe::EMPACK_REFERENCES],
+        vec![Recipe::MODRINTH, Recipe::EMPACK_REFERENCES],
+    ] {
+        for use_defaults in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            fixture(root.path());
+            // A late capture would fail to parse, distinguishing argument refusal
+            // from accidentally reaching authoring or payload interpretation.
+            put(root.path(), "empack.yml", b"invalid: [");
+            put(host.path(), "neighbor.txt", b"keep neighbor");
+            let paths = [
+                "empack.yml",
+                "empack.lock",
+                "dist/result.mrpack",
+                "dist/client.zip",
+            ];
+            let before = paths.map(|path| fs::read(root.path().join(path)).unwrap());
+            let (engine, _) = engine(host.path().join("state"));
+            let mut request = request();
+            request.outputs = NonEmpty::new(
+                recipes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, recipe)| BuildOutput {
+                        archive: DistributionArchive::Zip,
+                        target: *recipe,
+                        artifact: path(&format!(
+                            "output-{index}.{}",
+                            if *recipe == Recipe::MODRINTH {
+                                "mrpack"
+                            } else {
+                                "empack"
+                            }
+                        )),
+                    })
+                    .collect(),
+            )
+            .unwrap();
+            request.optional = OptionalPolicy::Resolve {
+                choices: if use_defaults {
+                    BTreeMap::new()
+                } else {
+                    BTreeMap::from([("art".into(), true)])
+                },
+                use_defaults,
+            };
+            let error = engine
+                .prepare(root.path().to_path_buf(), request)
+                .await
+                .err()
+                .expect("unsupported choices must refuse");
+            let diagnostic = format!("{error:#}");
+            assert!(
+                diagnostic.contains(
+                    if recipes
+                        .iter()
+                        .all(|recipe| *recipe == Recipe::EMPACK_REFERENCES)
+                    {
+                        "Native releases retain installation choices"
+                    } else {
+                        "preserve optional participation"
+                    }
+                ),
+                "{diagnostic}"
+            );
+            for (path, bytes) in paths.into_iter().zip(before) {
+                assert_eq!(fs::read(root.path().join(path)).unwrap(), bytes);
+            }
+            assert!(!host.path().join("state").exists());
+            assert_eq!(fs::read_dir(host.path()).unwrap().count(), 1);
+            assert_eq!(
+                fs::read(host.path().join("neighbor.txt")).unwrap(),
+                b"keep neighbor"
+            );
+        }
+    }
+}
+
 async fn ready(engine: &Engine, root: &Path, request: BuildRequest) -> PreparedOperation {
     match engine.prepare(root.to_path_buf(), request).await.unwrap() {
         Preparation::Ready(value) => value,
@@ -132,7 +216,7 @@ fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
         replacement: None,
     }
 }
-fn inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+pub(super) fn inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
     fn walk(root: &Path, path: &Path, map: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(path).unwrap() {
             let entry = entry.unwrap();
@@ -214,6 +298,110 @@ async fn owned_build_publishes_all_outputs_and_retains_receipt_resources() {
     drop(outcome);
     drop(handle);
     assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
+#[tokio::test]
+async fn prepared_operations_share_capacity_and_cancellation_preserves_other_owners() {
+    use crate::engine::resources::{AdmissionError, ResourceKind};
+
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    put(host.path(), "neighbor.txt", b"unrelated host data");
+    let before = inventory(root.path());
+    let host_before = inventory(host.path());
+    let config = engine(host.path().join("state")).0.config.clone();
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 17 << 20,
+        scratch_bytes: 64 << 20,
+        open_files: 128,
+    });
+    let engine = Engine::new(config.clone(), governor.clone()).unwrap();
+    let first = ready(&engine, root.path(), request()).await;
+    let second = ready(&engine, root.path(), request()).await;
+    assert_eq!(
+        governor.status().reserved,
+        ResourceRequest {
+            memory_bytes: 2 << 20,
+            open_files: 2,
+            ..Default::default()
+        }
+    );
+    // Each preparation fits alone. Together, retained inputs leave too little
+    // capacity for the next capture; refusal must not charge another dimension.
+    let error = engine
+        .prepare(root.path().to_path_buf(), request())
+        .await
+        .err()
+        .expect("a third capture must share the same capacity ledger");
+    assert!(matches!(
+        error.downcast_ref::<RuntimeError>(),
+        Some(RuntimeError::Admission(AdmissionError::Busy {
+            resource: ResourceKind::MemoryBytes,
+            requested: 16_777_216,
+            available: 15_728_640,
+        }))
+    ));
+    assert_eq!(
+        format!("{error:#}"),
+        "Resource budget unavailable for estimated memory: requested 16.0 MiB (16777216 bytes); currently available 15.0 MiB (15728640 bytes)"
+    );
+    let approval = grant(&second);
+    let mut handle = engine.start(second.authorize(approval).unwrap()).unwrap();
+    // This current-thread test cancels before yielding to the new driver.
+    handle.cancel();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Failed(RuntimeError::Cancelled)
+            | OperationOutcome::Completed(ExecutionOutcome::InterruptedBeforePublication)
+    ));
+    assert!(engine.release_completed(handle.id()));
+    drop((outcome, handle));
+    assert_eq!(
+        governor.status().reserved,
+        ResourceRequest {
+            memory_bytes: 1 << 20,
+            open_files: 1,
+            ..Default::default()
+        },
+        "cancelling one operation must retain the other preparation's ownership"
+    );
+    drop(first);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    drop(ready(&engine, root.path(), request()).await);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+
+    // A request that cannot fit even in an empty ledger is a distinct error.
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 15 << 20,
+        scratch_bytes: 64 << 20,
+        open_files: 128,
+    });
+    let engine = Engine::new(config, governor.clone()).unwrap();
+    let error = engine
+        .prepare(root.path().to_path_buf(), request())
+        .await
+        .err()
+        .expect("oversized capture must fail before effects");
+    assert!(matches!(
+        error.downcast_ref::<RuntimeError>(),
+        Some(RuntimeError::Admission(AdmissionError::TooLarge {
+            resource: ResourceKind::MemoryBytes,
+            requested: 16_777_216,
+            maximum: 15_728_640,
+        }))
+    ));
+    assert_eq!(
+        format!("{error:#}"),
+        "Resource budget exceeded for estimated memory: requested 16.0 MiB (16777216 bytes); configured limit 15.0 MiB (15728640 bytes). This is a work estimate, not measured RAM usage"
+    );
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    assert_eq!(inventory(root.path()), before);
+    assert_eq!(inventory(host.path()), host_before);
     engine.shutdown().await;
 }
 #[tokio::test]
@@ -1551,6 +1739,16 @@ async fn clean_build_rejects_symlinked_artifacts_without_touching_outside_bytes(
 
 #[test]
 fn failure_order_preserves_actual_errors_when_cancellation_races() {
+    assert!(matches!(
+        ExecutionOutcome::failed(RuntimeError::StaleResult.into(), true),
+        ExecutionOutcome::InterruptedBeforePublication
+    ));
+    assert!(matches!(
+        ExecutionOutcome::failed(RuntimeError::StaleResult.into(), false),
+        ExecutionOutcome::FailedBeforePublication(ref cause)
+            if matches!(cause.downcast_ref(), Some(RuntimeError::StaleResult))
+    ));
+
     let error = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
     let outcome = ExecutionOutcome::failed(error, true);
     assert!(

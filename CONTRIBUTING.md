@@ -1,71 +1,45 @@
 # Contributing to empack
 
-The [design contracts](docs/design/README.md) define supported behavior. Callable
-interfaces and compiled examples live in the Rust API documentation. Changes must
-preserve feature contracts and their negative-case tests.
+The [design contracts](docs/design/README.md) define supported behavior. Callable interfaces and compiled examples live in the Rust API documentation. Changes must preserve feature contracts and their negative-case tests.
 
 ## Development
 
-`rust-toolchain.toml` selects the compiler, rustfmt and Clippy for local builds and
-all CI jobs. CI reads this file through the shared toolchain action; it does not
-install a separate floating stable compiler. Update the pin and test the dependency
-graph together. Coverage additionally uses `llvm-tools-preview` and cargo-llvm-cov.
+`rust-toolchain.toml` selects the compiler, rustfmt and Clippy for local builds and all CI jobs. CI reads this file through the shared toolchain action; it does not install a separate floating stable compiler. Update the pin and test the dependency graph together. Coverage additionally uses `llvm-tools-preview` and cargo-llvm-cov.
 
-Use cargo-nextest, mise and Python 3.11 or later with that toolchain. Strict live tests additionally
-require Java, provider access and any documented credentials. Never commit credentials or include them in diagnostics.
+Use cargo-nextest, mise and Python 3.11 or later with that toolchain. Strict live tests additionally require Java, provider access and any documented credentials. Never commit credentials or include them in diagnostics.
 
 ```bash
 mise run check
 mise run clippy
 mise run test
 mise run smoke
-mise run e2e:strict
+mise run test:live
 ```
 
-Use a development branch and submit a PR to `main`. Commit coherent, reviewable
-landings. Record exact commands, outcomes and tested revisions; coverage is
-supplemental evidence rather than a substitute for contract tests.
+Use a development branch and submit a PR to `main`. Commit coherent, reviewable landings. Record exact commands, outcomes and tested revisions; coverage is supplemental evidence rather than a substitute for contract tests.
+
+Dependency and tool changes follow [Dependency and tool maintenance](docs/dependencies.md), including coupled features, owned patches, generated outputs, and qualification.
 
 ## Boundaries
 
-`empack-core` contains pure values and planners with no runtime or I/O dependency.
-`empack-lib` composes narrow ports, adapters and the operation engine. `empack`
-owns the host runtime and executable lifecycle. CLI translation and presentation
-live in the library application adapter. `empack-tests` exercises native executable
-workflows; library suites verify provider, archive, filesystem and process contracts.
+`empack-core` contains pure values and planners with no runtime or I/O dependency. `empack-lib` composes narrow ports, adapters and the operation engine. `empack` owns the host runtime and executable lifecycle. CLI translation and presentation live in the library application adapter. `empack-tests` exercises native executable workflows; library suites verify provider, archive, filesystem and process contracts.
 
-Do not introduce a broad session facade into the core, success-returning placeholder
-verifiers, deserializable approval proofs, or a second command-specific publication
-path. New features must contribute normalized intent, expected effects and verified
-postconditions. The [feature requirements](docs/design/features.md) describe the useful capabilities
-the implementation must provide.
+The library's `testing` module is available to its unit tests and callers that explicitly enable `test-utils`. Keep fixture helpers inside that boundary. `empack-tests` opts in; ordinary CLI builds must not enable it. Check the ordinary package separately from the workspace test graph, whose features can be unified.
+
+Do not introduce a broad session facade into the core, success-returning placeholder verifiers, deserializable approval proofs, or a second command-specific publication path. New features must contribute normalized intent, expected effects and verified postconditions. The [feature requirements](docs/design/features.md) describe the useful capabilities the implementation must provide.
 
 ## Source and documentation
 
-Run formatting and Clippy. Document exported contracts with inputs, outcomes and
-limitations. Prefer comments that explain an invariant over comments that restate
-code. Use structured, redacted diagnostics and remove temporary debugging output.
+Run formatting and Clippy. Document exported contracts with inputs, outcomes and limitations. Prefer comments that explain an invariant over comments that restate code. Use structured, redacted diagnostics and remove temporary debugging output.
 
-Keep normative requirements in `docs/design/` and operational instructions in the
-user guides linked from `docs/README.md`.
-Update contracts with behavior changes; keep run-specific evidence in CI and PRs.
-Keep implementation tasks in `TODO.md`; do not add historical delivery ledgers.
-Design contracts describe the target and must not claim unimplemented commands are
-available in a released executable.
+Keep normative requirements in `docs/design/` and operational instructions in the user guides linked from `docs/README.md`. Update contracts with behavior changes; keep run-specific evidence in CI and PRs. Keep implementation status in the active PR; do not add historical delivery ledgers. The [verification registry](tests/verification/README.md) owns acceptance requirements and discovery bindings, independently of run results. Design contracts describe the target and must not claim unimplemented commands are available in a released executable.
 
-Write complete, direct sentences. Avoid hype, em dashes and fragment-heavy prose.
-CLI flags and code retain their literal spelling. The brand reference is
-`inherent.design/packages/docs/knowledge/process-notes/prose-and-communication-reference.md`
-in the shared workspace.
+Write complete, direct sentences. Avoid hype, em dashes and fragment-heavy prose. CLI flags and code retain their literal spelling. The brand reference is `inherent.design/packages/docs/knowledge/process-notes/prose-and-communication-reference.md` in the shared workspace.
 
 ## Fixtures and releases
 
-Provider contracts use bounded local HTTP fixtures; opt-in live suites verify
-current provider behavior. Keep source assertions and environment semantics in
-fixtures rather than recording credentials or maintaining unused response archives.
+Provider contracts use bounded local HTTP fixtures; opt-in live suites verify current provider behavior. Keep source assertions and environment semantics in fixtures rather than recording credentials or maintaining unused response archives.
 
-Release builds derive their version from the release tag. Git-cliff generates
-GitHub release notes from commits; release automation does not write historical
-changelogs back into the source tree.
+Release builds derive their version from the release tag. Git-cliff generates GitHub release notes from commits; release automation does not write historical changelogs back into the source tree.
 
 Contributions use the [Apache 2.0 license](LICENSE).

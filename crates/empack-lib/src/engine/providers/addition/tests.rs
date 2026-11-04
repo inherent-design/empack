@@ -386,6 +386,18 @@ async fn provider_addition_shares_budget_and_rejects_foreign_pins_and_duplicate_
             matches!(&*outcome, OperationOutcome::Completed(Err(_))),
             "{failure}"
         );
+        if failure == "owner" {
+            let OperationOutcome::Completed(Err(error)) = &*outcome else {
+                unreachable!("checked completed error above");
+            };
+            assert!(
+                matches!(
+                    error.downcast_ref::<CatalogError>(),
+                    Some(CatalogError::Identity)
+                ),
+                "foreign version must fail ownership validation: {error:#}"
+            );
+        }
         drop(outcome);
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }

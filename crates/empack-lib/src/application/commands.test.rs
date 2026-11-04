@@ -1,5 +1,6 @@
 //! Native dispatch tests assert durable outcomes, preview and selected filesystem authority.
 use super::*;
+use crate::test_support::file_bytes as snapshot;
 use crate::{
     application::{
         BuildArgs, InitArgs,
@@ -12,7 +13,7 @@ use crate::{
 use std::{
     fs,
     io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
@@ -69,9 +70,6 @@ fn jar(root: &Path) -> Vec<u8> {
     let bytes = zip.finish().unwrap().into_inner();
     fs::write(root.join("fixture.jar"), &bytes).unwrap();
     bytes
-}
-fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
-    crate::application::engine_host::tests::snapshot(root)
 }
 fn resolved(root: &Path) -> empack_core::model::ResolvedProject {
     let intent = crate::testing::read_authoring(&root.join("project/empack.yml")).unwrap();
@@ -902,15 +900,10 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
             .is_err()
     );
     let channel = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "fixture".into(),
         channel: "stable".into(),
         sequence: 3,
-        expires: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
-            + 60,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: release.id().into(),

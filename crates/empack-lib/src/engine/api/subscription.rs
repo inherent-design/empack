@@ -3,7 +3,7 @@ use super::*;
 use crate::engine::{
     instance::InstanceRecord,
     layout::ProjectLayout,
-    publication::{Publisher, root_key},
+    publication::Publisher,
     release,
     snapshot::ProjectReadRoot,
     staging::MutableStage,
@@ -30,7 +30,6 @@ pub enum SubscriptionRequest {
     /// Verify metadata using current enrolled keys and persist its floor before acquisition.
     Observe {
         envelope: Vec<u8>,
-        now: i64,
         engine: semver::Version,
     },
 }
@@ -78,7 +77,8 @@ pub(super) async fn prepare(
         config.resources.prepared,
         move |cancel| {
             let root = ProjectReadRoot::open(&selected)?;
-            let _guard = RecoveryReader::new(state).enter(&root)?;
+            let recovery = RecoveryReader::new(state);
+            let _guard = recovery.enter(&root)?;
             let target = ManagedPath::InstanceSubscription;
             let snapshot = root.capture(
                 &[
@@ -88,7 +88,7 @@ pub(super) async fn prepare(
                 limits,
                 &cancel,
             )?;
-            let binding = root_key(&root)?;
+            let binding = recovery.bound_root_key(&root)?;
             let previous =
                 crate::engine::instance::read_optional(&root, &snapshot, &target, &cancel)?
                     .map(|bytes| SubscriptionRecord::decode(&bytes))
@@ -144,16 +144,11 @@ pub(super) async fn prepare(
                     previous.keys = encoded_keys(keys);
                     previous
                 }
-                SubscriptionRequest::Observe {
-                    envelope,
-                    now,
-                    engine,
-                } => {
+                SubscriptionRequest::Observe { envelope, engine } => {
                     let mut previous = previous.context("Instance has no subscription")?;
                     let channel = previous.trust()?.channel(
                         &envelope,
                         &previous.channel,
-                        now,
                         &engine,
                         previous.floor.as_ref(),
                     )?;
@@ -221,11 +216,12 @@ pub(super) async fn run(
             config.resources.receipt,
             move |cancel| {
                 let (prepared, _reservation) = prepared.into_parts();
-                let publication = Publisher::open(&config.state_root)?.publish(
-                    &prepared.root,
-                    prepared.change,
-                    &cancel,
-                )?;
+                let publisher = Publisher::open(&config.state_root)?;
+                ensure!(
+                    publisher.bound_root_key(&prepared.root)? == prepared.view.record.root,
+                    "Subscription root association changed after preparation"
+                );
+                let publication = publisher.publish(&prepared.root, prepared.change, &cancel)?;
                 Ok::<_, anyhow::Error>(SubscriptionReceipt {
                     plan: prepared.view.plan,
                     record: prepared.view.record,
