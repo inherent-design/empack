@@ -216,7 +216,7 @@ impl Publisher {
             serde_json::from_slice::<Value>(&payload).unwrap(),
             json!({
                 "schema":2,"pack":"verification.hosted","channel":"stable","sequence":sequence,
-                "minimum_engine":">=0.8.0-beta",
+                "minimum_engine":">=0.8.4-beta",
                 "release":{"id":release["id"],"url":format!("{}releases/{}/release.json",Self::base("good"),release["id"].as_str().unwrap()),"maximum_bytes":release["envelope_bytes"]}
             })
         );
