@@ -33,7 +33,7 @@ def observations():
                     sha256=hashlib.sha256(json.dumps(document).encode()).hexdigest())
         rows.append(dict(id=case["id"], schema_valid=case["expected"], before=before, after=copy.deepcopy(before),
                          exit_code=0 if case["expected"] else 1, timed_out=False,
-                         stdout='{"author_schema": 5}' if case["expected"] else "",
+                         stdout='{"author_schema": 6}' if case["expected"] else "",
                          stderr="" if case["expected"] else "synthetic validation refusal"))
     return rows
 
@@ -120,7 +120,7 @@ class SchemaEvidence(unittest.TestCase):
                 (project.parent / "state").mkdir()
             if len(calls) == 2:
                 raise module.subprocess.TimeoutExpired(arguments, 30, output=b"partial output")
-            return SimpleNamespace(returncode=0, stdout='{"author_schema": 5}', stderr="")
+            return SimpleNamespace(returncode=0, stdout='{"author_schema": 6}', stderr="")
         validator = SimpleNamespace(is_valid=lambda _: True)
         with patch.object(module.subprocess, "run", side_effect=command), \
                 patch.dict("os.environ", {"EMPACK_KEY_CURSEFORGE": "not forwarded"}):
@@ -141,6 +141,7 @@ class SchemaEvidence(unittest.TestCase):
             lambda r: r[0].update(exit_code=1),
             lambda r: r[0].update(stdout="not JSON"),
             lambda r: r[0].update(stdout='{"author_schema": 4}'),
+            lambda r: r[0].update(stdout='{"author_schema": 5}'),
             lambda r: r[0].update(timed_out=True),
             lambda r: r[0]["after"].update({"state": {"kind": "directory", "mode": 0o700}}),
             lambda r: r[0]["after"]["project/empack.yml"].update(sha256="e" * 64),

@@ -141,7 +141,7 @@ def observation_results(observations):
         if case["expected"] and row["exit_code"] == 0:
             try:
                 response = json.loads(row["stdout"])
-                valid &= isinstance(response, dict) and response.get("author_schema") == 5
+                valid &= isinstance(response, dict) and response.get("author_schema") == BASE["schema"]
             except json.JSONDecodeError:
                 valid = False
         elif not case["expected"]:
