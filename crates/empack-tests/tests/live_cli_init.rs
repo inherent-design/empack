@@ -4,7 +4,7 @@ mod runtime_selection;
 use empack_tests::harness::process::TestProject;
 use std::fs;
 
-fn initialize(loader: &str, game: Option<&str>, java: &str, prefix: Option<&str>) {
+fn initialize(loader: &str, game: Option<&str>, java: Option<&str>, prefix: Option<&str>) {
     let project = TestProject::new();
     let mut command = project.cmd();
     command.args([
@@ -12,14 +12,15 @@ fn initialize(loader: &str, game: Option<&str>, java: &str, prefix: Option<&str>
         "--yes",
         "--modloader",
         loader,
-        "--java",
-        java,
         "--author",
         "Catalog Fixture",
         "pack",
     ]);
     if let Some(game) = game {
         command.args(["--mc-version", game]);
+    }
+    if let Some(java) = java {
+        command.args(["--java", java]);
     }
     let output = command.output().unwrap();
     assert!(
@@ -40,7 +41,15 @@ fn initialize(loader: &str, game: Option<&str>, java: &str, prefix: Option<&str>
         selected_game,
         if loader == "none" { "vanilla" } else { loader },
         None,
-        java.parse().unwrap(),
+        java.map(|java| java.parse().unwrap()).unwrap_or_else(|| {
+            // This moving-catalog case checks policy/host consistency. Exact
+            // historical policy expectations are independently tested in core.
+            empack_core::java::JavaPolicy::for_game(selected_game)
+                .recommended()
+                .expect(
+                    "Fresh catalog requires a covered Java profile or an explicit fixture choice",
+                )
+        }),
     );
     if let Some(prefix) = prefix {
         assert!(
@@ -66,48 +75,48 @@ live_init_loader!(
     live_cli_init_vanilla_discovers_latest_game,
     "none",
     None,
-    "21",
+    None,
     None
 );
 live_init_loader!(
     live_cli_init_fabric_binds_runtime,
     "fabric",
     Some("1.21.1"),
-    "21",
+    Some("21"),
     None
 );
 live_init_loader!(
     live_cli_init_quilt_binds_runtime,
     "quilt",
     Some("1.21.1"),
-    "21",
+    Some("21"),
     None
 );
 live_init_loader!(
     live_cli_init_forge_binds_runtime,
     "forge",
     Some("1.21.1"),
-    "21",
+    Some("21"),
     Some("52.")
 );
 live_init_loader!(
     live_cli_init_legacy_forge_binds_runtime,
     "forge",
     Some("1.7.10"),
-    "8",
+    Some("8"),
     Some("10.13.")
 );
 live_init_loader!(
     live_cli_init_early_neoforge_binds_runtime,
     "neoforge",
     Some("1.20.1"),
-    "21",
+    Some("17"),
     Some("47.1.")
 );
 live_init_loader!(
     live_cli_init_neoforge_binds_runtime,
     "neoforge",
     Some("1.21.1"),
-    "21",
+    Some("21"),
     Some("21.1.")
 );
