@@ -51,7 +51,7 @@ fn cli_init_exact_loader_families_preserve_pins_without_catalog_or_java() {
             "1.20.1",
             Some("47.1.100"),
             Some("47.1.100"),
-            "21",
+            "17",
         ),
         (
             "neoforge",

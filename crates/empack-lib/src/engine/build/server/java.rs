@@ -43,6 +43,6 @@ case "$_EMPACK_JAVA_MAJOR" in
 esac
 "#
         );
-        script.replace("cd -- game\n", &format!("{probe}cd -- game\n"))
+        script.replace("cd -- game\n", &format!("cd -- game\n{probe}"))
     }
 }

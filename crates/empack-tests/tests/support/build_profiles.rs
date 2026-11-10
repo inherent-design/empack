@@ -965,7 +965,9 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
         } else {
             fs::write(
                 fixture.project.dir().join("empack.yml"),
-                AUTHOR.replace("java: {preferred: 21}", "java: {preferred: 22}"),
+                AUTHOR
+                    .replace("minecraft: '1.21.1'", "minecraft: '1.20.1'")
+                    .replace("java: {preferred: 21}", "java: {preferred: 17}"),
             )
             .unwrap();
         }
@@ -977,7 +979,7 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
         assert_eq!(report["profiles"][0]["output"], SUBSCRIBED);
         assert_eq!(
             report["profiles"][0]["java"]["minimum_major"],
-            if missing { 21 } else { 22 }
+            if missing { 21 } else { 17 }
         );
         fixture
             .command()
