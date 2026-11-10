@@ -1,6 +1,6 @@
 # Hosted publication fixtures
 
-These original synthetic files are licensed under Apache-2.0, like empack. They contain a 45-byte configuration file and two native release documents. No game, mod, launcher or third-party asset is included. Minecraft and Java fields are declarations; the publication tests do not start either program.
+These original synthetic files are licensed under Apache-2.0, like empack. They contain a 45-byte configuration file and two schema-2 native release documents with resolved Java requirements. No game, mod, launcher or third-party asset is included. Minecraft and Java fields are declarations; the publication tests do not start either program.
 
 `manifest.json` records exact input, envelope and asset identities. Its two signing seeds are public test data. They are used only to exercise publisher verification and key rotation. Each release is signed with its corresponding fixture key.
 

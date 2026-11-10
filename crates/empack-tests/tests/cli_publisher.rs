@@ -16,7 +16,7 @@ use publisher_checks::{hex, unhex, verify_signed_payload, verify_staged};
 #[path = "support/approval.rs"]
 mod approval;
 
-const FIXTURE_COMMIT: &str = "dd677b62f894030bf149bef7147d14231cdb2a36";
+const FIXTURE_COMMIT: &str = "be217f4abc48cc55a64156aa83c8f543a5a3f4a8";
 
 struct Publisher {
     project: TestProject,

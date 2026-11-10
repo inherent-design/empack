@@ -456,7 +456,7 @@ fn live_cli_hosted_missing_channel_never_grants_offline_launch() {
     // The companion positive publisher journey checks the same HTTPS origin.
     const CHANNEL: &str = concat!(
         "https://raw.githubusercontent.com/inherent-design/empack/",
-        "dd677b62f894030bf149bef7147d14231cdb2a36/",
+        "be217f4abc48cc55a64156aa83c8f543a5a3f4a8/",
         "tests/fixtures/hosted-publication/good/channels/stable.json"
     );
     const CHILD: &str = "engine::api::launch::tests::runtime_fixture";
