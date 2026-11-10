@@ -561,7 +561,12 @@ exit 7
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 );
-                assert!(diagnostics.contains("16, 17"), "{diagnostics}");
+                let expected = if probe_status == "0" || cfg!(windows) {
+                    "16, 17"
+                } else {
+                    "Cannot inspect Java"
+                };
+                assert!(diagnostics.contains(expected), "{diagnostics}");
             }
         }
     }
