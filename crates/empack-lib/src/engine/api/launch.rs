@@ -10,6 +10,8 @@ use std::ffi::OsString;
 pub struct LaunchInstanceRequest {
     /// Treat program as local Java and prepend the completed release's verified server entry point.
     pub server: bool,
+    /// PROGRAM is local Java, without adding a server entry point (Prism wrapper).
+    pub java_runtime: bool,
     /// Bind prelaunch/update decisions to the release the runtime will actually run.
     /// None explicitly selects whichever completed release is captured during preparation.
     pub expected_release: Option<String>,
@@ -37,7 +39,7 @@ pub(super) struct PreparedLaunch {
     pub(super) view: LaunchInstancePreview,
     instance: instance::InstancePlan,
     command: std::process::Command,
-    java_major: Option<u16>,
+    java: Option<crate::engine::release::ReleaseJava>,
 }
 pub(super) async fn prepare(
     target: ProjectTarget,
@@ -70,9 +72,8 @@ pub(super) async fn prepare(
                 "Completed release changed after the prelaunch decision; prepare launch again"
             );
             let version = semver::Version::parse(crate::engine::compatibility_version())?;
-            let java_major = request
-                .server
-                .then_some(release.document().runtime.java_major);
+            let java = (request.server || request.java_runtime)
+                .then(|| release.document().runtime.java.clone());
             let mut arguments = if request.server {
                 ensure!(
                     record.side == instance::InstanceSide::Server,
@@ -129,7 +130,7 @@ pub(super) async fn prepare(
                 },
                 instance,
                 command,
-                java_major,
+                java,
             })
         },
     )?;
@@ -171,7 +172,7 @@ pub(super) async fn run(
                 let ((prepared, mut lease), _lease_reservation) = leased.into_parts();
                 let (prepared, _prepared_reservation) = prepared.into_parts();
                 lease.begin()?;
-                let status = match prepared.java_major {
+                let status = match prepared.java {
                     Some(required) => check_java(&prepared.command, required, cancel.clone()).await
                         .context(RuntimeRecoveryRequired)?,
                     None => Ok(()),
@@ -293,7 +294,7 @@ pub(super) async fn recover(
 /// Probe only after runtime approval and under its durable lease. No release chooses this program.
 async fn check_java(
     runtime: &std::process::Command,
-    required: u16,
+    required: crate::engine::release::ReleaseJava,
     cancel: crate::application::process_runtime::Cancellation,
 ) -> Result<Result<()>> {
     let mut command = std::process::Command::new(runtime.get_program());
@@ -311,10 +312,13 @@ async fn check_java(
     )
     .await?;
     Ok(output.0.and_then(|output| {
-        ensure!(output.success, "Selected Java failed its version check: {}", output.stderr);
+        ensure!(
+            output.success,
+            "Selected Java failed its version check: {}",
+            output.stderr
+        );
         let actual = java_major(&output.stdout, &output.stderr)?;
-        ensure!(actual >= required,
-            "Selected Java is version {actual}; this release requires Java {required} or newer. Select a compatible Java executable");
+        required.check_actual(actual)?;
         Ok(())
     }))
 }

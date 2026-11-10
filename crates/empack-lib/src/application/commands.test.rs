@@ -111,7 +111,7 @@ async fn status_is_read_only_and_distinguishes_author_lock_states() {
     assert_eq!(snapshot(root.path()), before);
     let intent = project.join("empack.yml");
     let original = fs::read_to_string(&intent).unwrap();
-    fs::write(&intent, original.replace("1.21.1", "1.20.1")).unwrap();
+    fs::write(&intent, original.replace("1.21.1", "1.21.2")).unwrap();
     assert_eq!(inspect().contexts[0].lock, Some(RecordState::Stale));
     fs::write(project.join("empack.lock"), b"malformed lock").unwrap();
     assert_eq!(inspect().contexts[0].lock, Some(RecordState::Invalid));
@@ -326,14 +326,14 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
         let payload = DecodedRelease::encode(ReleaseDocument {
             require_subscription: false,
             server_launch: None,
-            schema: 1,
+            schema: crate::engine::release::RELEASE_SCHEMA,
             pack: "dispatch".into(),
             version: "1".into(),
             minimum_engine: ">=0.8.0-beta".into(),
             runtime: ReleaseRuntime {
                 minecraft: "1.21.1".into(),
                 loader: ReleaseLoader::Vanilla,
-                java_major: 21,
+                java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
             },
             choices: vec![],
             files: vec![ReleaseFile {
@@ -801,14 +801,14 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
         crate::engine::release::DecodedRelease::encode(crate::engine::release::ReleaseDocument {
             require_subscription: false,
             server_launch: None,
-            schema: 1,
+            schema: crate::engine::release::RELEASE_SCHEMA,
             pack: "another-pack".into(),
             version: "1".into(),
             minimum_engine: ">=0.8.0-beta".into(),
             runtime: crate::engine::release::ReleaseRuntime {
                 minecraft: "1.21.1".into(),
                 loader: crate::engine::release::ReleaseLoader::Vanilla,
-                java_major: 21,
+                java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
             },
             choices: vec![],
             files: vec![],
@@ -840,14 +840,14 @@ async fn instance_publisher_commands_preserve_preview_and_save_verified_floor() 
     let release = DecodedRelease::encode(ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "fixture".into(),
         version: "1".into(),
         minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![ReleaseChoice {
             key: "extra".into(),
@@ -1039,14 +1039,14 @@ async fn instance_manual_input_cli_preserves_previews_and_resumes_after_restart(
     let payload = DecodedRelease::encode(ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "manual".into(),
         version: "1".into(),
         minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files: vec![ReleaseFile {

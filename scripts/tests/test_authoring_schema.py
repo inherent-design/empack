@@ -221,6 +221,7 @@ class SchemaEvidence(unittest.TestCase):
     def test_schema_evidence_joins_only_its_product_host_and_keeps_other_boundaries_unexecuted(self):
         document = json.loads((ROOT / "tests/verification/requirements.json").read_text())
         document["requirements"] = [row for row in document["requirements"] if row["id"] == "UX-006"]
+        document["gates"].pop("v084_environment_deferrals", None)
         classification = json.loads((ROOT / "tests/verification/test-bindings.json").read_text())
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)

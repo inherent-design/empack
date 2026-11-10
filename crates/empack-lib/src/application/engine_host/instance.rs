@@ -316,6 +316,7 @@ pub(in crate::application) async fn dispatch(
         }
         InstanceCommand::Launch {
             server,
+            java_runtime,
             command,
             check_updates,
             allow_offline,
@@ -328,7 +329,7 @@ pub(in crate::application) async fn dispatch(
             } else {
                 None
             };
-            launch(session, command, expected_release, server).await
+            launch(session, command, expected_release, server, java_runtime).await
         }
         command @ (InstanceCommand::Subscribe { .. }
         | InstanceCommand::Trust { .. }
@@ -762,6 +763,7 @@ async fn launch(
     command: Vec<std::ffi::OsString>,
     expected_release: Option<String>,
     server: bool,
+    java_runtime: bool,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let mut args = command.into_iter();
@@ -790,6 +792,7 @@ async fn launch(
                 root,
                 crate::engine::api::LaunchInstanceRequest {
                     server,
+                    java_runtime,
                     expected_release,
                     program,
                     arguments: args.collect(),

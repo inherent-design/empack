@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-const AUTHOR: &str = "schema: 5\npack: {id: server.fixture, name: Server fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: 21}\ndependencies: {}\n";
+const AUTHOR: &str = "schema: 6\npack: {id: server.fixture, name: Server fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: {preferred: 21}}\ndependencies: {}\n";
 const DESCRIPTION: &str = " a\\u0041\r\né🦀\t#!=:value \u{c}";
 // A literal oracle, independent of the product's properties encoder.
 const PROPERTIES: &[u8] = b"motd=\\ a\\\\u0041\\u000d\\u000a\\u00e9\\ud83e\\udd80\\u0009#!=:value\\ \\u000c\r\nempty=\r\n";
@@ -290,7 +290,7 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
         assert_eq!(release["require_subscription"], false);
         assert_eq!(
             release["runtime"],
-            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
         );
         assert_eq!(
             release["server_launch"],

@@ -59,7 +59,7 @@ def main():
     if args.output.exists() or args.output.is_symlink():
         parser.error("Output already exists; retain each attempt separately")
     inputs, digest = input_hashes(), sha256(binary)
-    schema = json.loads((ROOT / "docs/schemas/empack.schema-5.json").read_text())
+    schema = json.loads((ROOT / "docs/schemas/empack.schema-6.json").read_text())
     bindings = json.loads((ROOT / "docs/schemas/empack.bindings.schema-1.json").read_text())
     Draft202012Validator.check_schema(schema)
     Draft202012Validator.check_schema(bindings)

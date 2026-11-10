@@ -74,9 +74,9 @@ fn cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_f
     }).collect();
     // Literal bytes establish reconciliation and approval, not runnable game content.
     let payload = serde_json::to_vec(
-        &json!({"schema":1,"pack":"verification.approval","version":"1",
+        &json!({"schema":2,"pack":"verification.approval","version":"1",
         "minimum_engine":">=0.8.0-beta","require_subscription":false,
-        "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+        "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}},
         "choices":[],"files":files}),
     )
     .unwrap();
@@ -447,9 +447,9 @@ fn cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_
         };
         // Literal supported input, not an edited private installation record.
         let payload = serde_json::to_vec(&json!({
-            "schema":1, "pack":"verification.publisher", "version":"1.0.0",
+            "schema":2, "pack":"verification.publisher", "version":"1.0.0",
             "minimum_engine":">=0.8.0-beta", "require_subscription":false,
-            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}},
             "files":[], "choices":[]
         }))
         .unwrap();
@@ -765,7 +765,7 @@ fn build_and_stage(
         "empack.yml",
         format!(
             r#"# Publisher-owned source note
-schema: 5
+schema: 6
 pack:
   id: verification.publisher
   name: Publisher Fixture
@@ -773,7 +773,7 @@ pack:
 runtime:
   minecraft: '1.21.1'
   loader: vanilla
-  java: 21
+  java: {{preferred: 21}}
 dependencies: {{}}
 build:
   default: [native]
@@ -848,12 +848,12 @@ build:
     let document: serde_json::Value = serde_json::from_slice(&payload).unwrap();
     assert_eq!(document["pack"], "verification.publisher");
     assert_eq!(document["version"], version);
-    assert_eq!(document["schema"], 1);
+    assert_eq!(document["schema"], 2);
     assert_eq!(document["require_subscription"], true);
     assert_eq!(
         document["runtime"],
         json!({
-            "minecraft":"1.21.1", "loader":{"kind":"vanilla"}, "java_major":21
+            "minecraft":"1.21.1", "loader":{"kind":"vanilla"}, "java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}
         })
     );
     let files = document["files"].as_array().unwrap();
@@ -1809,9 +1809,9 @@ fn stage_runtime_fixture(
     let export = root.join(format!("runtime export {version}"));
     fs::create_dir(&export).unwrap();
     let runtime = if fabric {
-        json!({"minecraft":"1.21.2","loader":{"kind":"fabric","version":"0.16.0"},"java_major":21})
+        json!({"minecraft":"1.21.2","loader":{"kind":"fabric","version":"0.16.0"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
     } else {
-        json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+        json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
     };
     let files: Vec<_> = [
         ("mod", if fabric { "mods/b.jar" } else { "mods/a.jar" }, "managed", version.as_bytes()),
@@ -1824,7 +1824,7 @@ fn stage_runtime_fixture(
             "assertions":[],"source":{"kind":"asset","path":format!("assets/{key}")}})
     }).collect();
     // Literal native input; no game/mod bytes or provider/build planner creates the oracle.
-    let payload = serde_json::to_vec(&json!({"schema":1,"pack":"verification.publisher","version":version,
+    let payload = serde_json::to_vec(&json!({"schema":2,"pack":"verification.publisher","version":version,
         "minimum_engine":">=0.8.0-beta","require_subscription":true,"runtime":runtime,"files":files,"choices":[]})).unwrap();
     let (id, envelope) = stage_literal_release(&export, publisher, key, &payload);
     (export, id, envelope)
@@ -1917,9 +1917,9 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
                 "source":{"kind":"manual","instructions":"Supply the exact private add-on","selection":null}}));
         }
         let runtime = if version == "C" {
-            json!({"minecraft":"1.21.2","loader":{"kind":"fabric","version":"0.16.0"},"java_major":21})
+            json!({"minecraft":"1.21.2","loader":{"kind":"fabric","version":"0.16.0"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
         } else {
-            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
         };
         let mut choices = vec![
             json!({"key":"visuals","alternatives":["lite","balanced","rich"],
@@ -1931,7 +1931,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
                 "description":"New publisher choice requires an explicit decision"}),
             );
         }
-        let payload = serde_json::to_vec(&json!({"schema":1,"pack":"verification.publisher","version":version,
+        let payload = serde_json::to_vec(&json!({"schema":2,"pack":"verification.publisher","version":version,
             "minimum_engine":">=0.8.0-beta","require_subscription":true,"runtime":runtime,"files":files,
             "choices":choices})).unwrap();
         let (id, envelope) = stage_literal_release(&export, &publisher, &key_file, &payload);
@@ -2241,9 +2241,9 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
                 "assertions":[],"source":{"kind":"asset","path":format!("assets/{name}")}})
         }).collect();
         let payload = serde_json::to_vec(
-            &json!({"schema":1,"pack":"verification.publisher","version":version,
+            &json!({"schema":2,"pack":"verification.publisher","version":version,
             "minimum_engine":">=0.8.0-beta","require_subscription":true,
-            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}},
             "files":files,"choices":[]}),
         )
         .unwrap();

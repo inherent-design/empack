@@ -1,5 +1,5 @@
 # An author-owned note must survive dependency edits and repeated synchronization.
-schema: 5
+schema: 6
 pack:
   id: verification.pack
   name: Verification Pack
@@ -8,7 +8,7 @@ pack:
 runtime:
   minecraft: '1.21.1'
   loader: vanilla
-  java: 21
+  java: {preferred: 21}
 dependencies: {}
 build:
   default: [exchange, client]

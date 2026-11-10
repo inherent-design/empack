@@ -10,11 +10,11 @@
     "bindings": {
       "type": "object",
       "additionalProperties": {
-        "$ref": "empack.schema-5.json#/$defs/binding"
+        "$ref": "empack.schema-6.json#/$defs/binding"
       }
     },
     "policies": {
-      "$ref": "empack.schema-5.json#/$defs/policies"
+      "$ref": "empack.schema-6.json#/$defs/policies"
     }
   },
   "required": [

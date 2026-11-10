@@ -397,7 +397,7 @@ fn runtime_release(root: &std::path::Path) -> (std::path::PathBuf, String, Vec<u
     fs::write(author.join("pack/managed.txt"), b"publisher content").unwrap();
     fs::write(
         author.join("empack.yml"),
-        r#"schema: 5
+        r#"schema: 6
 pack:
   id: verification.runtime
   name: Runtime Fixture
@@ -405,7 +405,7 @@ pack:
 runtime:
   minecraft: '1.21.1'
   loader: vanilla
-  java: 21
+  java: {preferred: 21}
 dependencies: {}
 build:
   default: [native]

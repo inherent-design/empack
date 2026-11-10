@@ -31,7 +31,7 @@ Do not normalize provider case, Unicode spelling or filenames into a different i
 | Instance record       | Instance engine          | Last completed release, owned files, side, choices, authority and source binding    |
 | Recovery journal      | Publisher                | Approved operation, native root, before/after evidence and durable progress         |
 
-Author intent uses schema 5, optional bindings use schema 1, and exact resolution uses schema 2. Release, channel and instance schemas have their own explicit versions. Unknown intent fields and invalid explicit variants fail; they cannot silently become search input. Original author bytes are preserved when no semantic edit is required. Canonical semantic identity and raw file revision serve different purposes. Both author documents contribute to normalized intent, and both raw revisions (including absence) are captured before approval. Earlier author schemas are rejected; there is no automatic or general-purpose migration path.
+Author intent uses schema 6, optional bindings use schema 1, and exact resolution uses schema 3. Release, channel and instance schemas have their own explicit versions. Unknown intent fields and invalid explicit variants fail; they cannot silently become search input. Original author bytes are preserved when no semantic edit is required. Canonical semantic identity and raw file revision serve different purposes. Both author documents contribute to normalized intent, and both raw revisions (including absence) are captured before approval. Earlier author schemas are rejected; there is no automatic or general-purpose migration path.
 
 ## Author intent and resolution
 
@@ -43,7 +43,7 @@ A resolved dependency can contain multiple named file roles and placements. Sour
 
 Source inclusion uses `sources.exclude` in `empack.yml`: ordered, layer-relative ignore patterns applied independently to `pack/` and each `overrides/` layer. Patterns are single lines; parent exclusions apply before leaf traversal. Explicit locked source files and placements remain required observations even when a rule excludes the same path from incidental content. Rules are captured with the author document and never inherited from host-global ignore files. Native source capture has no package-manager control filenames; exclusions are authored policy.
 
-`pack.id` is the stable publisher-selected identity. `runtime.java` declares the minimum recipient Java major. Neither belongs to a particular output consumer. `build.profiles` contains complete consumer recipes; `build.default` selects the ordered defaults. A project may omit builds until it needs a distribution. Installation policy overrides remain in integration bindings. Configuration and world content default to seeds. World content cannot become managed replacement content, including worlds placed under a custom directory.
+`pack.id` is the stable publisher-selected identity. `runtime.java.preferred` declares the preferred recipient Java major within the admitted policy; the resolved minimum and supported majors are distinct. Neither belongs to a particular output consumer. `build.profiles` contains complete consumer recipes; `build.default` selects the ordered defaults. A project may omit builds until it needs a distribution. Installation policy overrides remain in integration bindings. Configuration and world content default to seeds. World content cannot become managed replacement content, including worlds placed under a custom directory.
 
 ## Compact dependencies and integration bindings
 

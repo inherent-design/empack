@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 
-const AUTHOR: &str = r#"schema: 5
+const AUTHOR: &str = r#"schema: 6
 pack:
   id: automation.fixture
   name: Automation Pack
@@ -23,7 +23,7 @@ pack:
 runtime:
   minecraft: '1.21.1'
   loader: vanilla
-  java: 21
+  java: {preferred: 21}
 dependencies: {}
 build:
   default: [launcher_profile, exchange]

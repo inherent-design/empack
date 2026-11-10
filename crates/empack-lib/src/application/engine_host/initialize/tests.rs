@@ -48,6 +48,59 @@ fn read(root: &Path) -> empack_core::model::ResolvedProject {
         )
         .unwrap()
 }
+
+#[tokio::test]
+async fn initialization_java_recommendation_and_override_follow_the_selected_game() {
+    for (game, override_major, expected) in [
+        ("1.7.10", None, 8),
+        ("1.17.1", None, 17),
+        ("1.17.1", Some(16), 16),
+        ("1.20.4", None, 17),
+        ("1.21.1", None, 21),
+        ("26.1", None, 25),
+        ("custom-game", Some(21), 21),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut options = args();
+        options.mc_version = Some(game.into());
+        options.java = override_major;
+        initialize(&session(root.path(), true, false), &options)
+            .await
+            .unwrap();
+        let project = read(&root.path().join("pack"));
+        assert_eq!(project.intent().runtime.java_major, expected, "{game}");
+        let yaml = fs::read_to_string(root.path().join("pack/empack.yml")).unwrap();
+        assert!(yaml.contains("preferred:"), "{yaml}");
+        let lock: serde_json::Value =
+            serde_saphyr::from_slice(&fs::read(root.path().join("pack/empack.lock")).unwrap())
+                .unwrap();
+        assert_eq!(lock["java-policy"]["id"], empack_core::java::POLICY_ID);
+        if game == "custom-game" {
+            assert!(lock["java-policy"]["supported"].is_null());
+        }
+    }
+}
+
+#[tokio::test]
+async fn initialization_java_refusal_preserves_existing_author_work() {
+    for (game, selected) in [
+        ("1.17.1", Some(21)),
+        ("1.21.1", Some(17)),
+        ("custom-game", None),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.txt"), b"unrelated author work").unwrap();
+        let before = snapshot(root.path());
+        let mut options = args();
+        options.mc_version = Some(game.into());
+        options.java = selected;
+        let error = initialize(&session(root.path(), true, false), &options)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("Java"), "{error:#}");
+        assert_eq!(snapshot(root.path()), before, "{game}");
+    }
+}
 #[tokio::test]
 async fn initialization_host_preserves_preview_decline_and_exact_replacement_footprints() {
     let root = tempfile::tempdir().unwrap();
@@ -434,7 +487,7 @@ async fn initialization_catalog_matrix_selects_matching_coordinates_without_auth
         (
             "neoforge",
             "1.20.1",
-            21,
+            17,
             Some("/legacy-neoforge"),
             r#"{"versions":["1.20-46.0.0","1.20.1-47.1.99","1.20.1-47.1.100"]}"#,
             Some("47.1.100"),
@@ -488,7 +541,7 @@ async fn initialization_catalog_matrix_selects_matching_coordinates_without_auth
         let loader = if family == "none" { "vanilla" } else { family };
         assert_eq!(
             author["runtime"],
-            serde_json::json!({"java": java,"minecraft":game,"loader":loader})
+            serde_json::json!({"java": {"preferred":java},"minecraft":game,"loader":loader})
         );
         assert_eq!(
             lock["runtime"],

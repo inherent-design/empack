@@ -14,14 +14,14 @@ from .product_build import inspect_retained_build
 ROOT = Path(__file__).resolve().parents[2]
 TEST_ID = "schema::authoring::editor-cli-conformance"
 BINDING = {"id": TEST_ID, "boundary": "X", "platforms": ["linux", "macos", "windows"]}
-INPUTS = ("docs/schemas/empack.schema-5.json", "docs/schemas/empack.bindings.schema-1.json",
+INPUTS = ("docs/schemas/empack.schema-6.json", "docs/schemas/empack.bindings.schema-1.json",
           "scripts/check-authoring-schema.py", "scripts/verification/authoring_schema.py",
           "scripts/verify.py", "scripts/verification/product_build.py",
           "tests/verification/requirements.json", "tests/verification/test-bindings.json",
           "Cargo.toml", "Cargo.lock", "rust-toolchain.toml")
 
-BASE = {"schema": 5, "pack": {"id": "test", "name": "Test Pack", "version": "Autumn Update"},
-        "runtime": {"minecraft": "1.21.1", "loader": "neoforge", "java": 21}}
+BASE = {"schema": 6, "pack": {"id": "test", "name": "Test Pack", "version": "Autumn Update"},
+        "runtime": {"minecraft": "1.21.1", "loader": "neoforge", "java": {"preferred":21}}}
 
 
 def fixtures():
@@ -65,7 +65,7 @@ def fixtures():
     cases.extend([
         (True, {"build": {"default": ["client", "server"], "profiles": {"client": "prism", "server": {"target": "server", "format": "tar.gz"}}}}),
         (False, {"schema": 4}),
-        (False, {"runtime": {"minecraft": "1.21.1", "loader": "neoforge", "java": 7}}),
+        (False, {"runtime": {"minecraft": "1.21.1", "loader": "neoforge", "java": {"preferred":7}}}),
         (False, {"build": {"profiles": {"client": {"target": "prism", "unknown": True}}}}),
     ])
     binding_cases = [

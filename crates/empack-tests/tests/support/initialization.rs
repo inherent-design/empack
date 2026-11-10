@@ -37,7 +37,8 @@ pub fn assert_new_project(root: &Path, name: &str, version: &str, authors: &[&st
     assert_eq!(
         lock,
         json!({
-            "schema": 2,
+            "schema": 3,
+            "java-policy": {"id":"empack-java-1", "metadata-revision":"b8e2a3e1ba241414f8b861f13c9a6fd6bc5d922d", "historical-minimum":21, "required-minimum":21, "supported":[21], "recommended":21},
             "acceptable-versions": [],
             "coverage": {},
             "dependencies": {},

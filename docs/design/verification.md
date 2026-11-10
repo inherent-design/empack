@@ -114,3 +114,7 @@ Publish release A, install client and server, change local configuration and cho
 Trust tests cover wrong keys, unknown algorithms, duplicate fields, changed payloads, expired channels, sequence replay, same-sequence substitution, wrong pack/channel, key rotation/revocation and explicit rollback without lowering the trust floor. Test redirection and credential isolation independently from signature verification.
 
 Compile external API fixtures that cannot construct authentication, approval or publication proofs directly. Keep production ports honest when using test doubles.
+
+## Release applicability
+
+The [verification registry](../../tests/verification/README.md#package-context-and-candidate-qualification) owns required cases and release scope. The v0.8.4-beta maintainer decision defers named operator-only environment checks while preserving their observed status; it does not relax automated checks or later portable release requirements. A release result and an observation are distinct facts. Do not replace a missing consumer observation with fixture or parser evidence.

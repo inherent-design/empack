@@ -301,7 +301,7 @@ async fn capacity_failure_retains_host_diagnostics_and_other_owners_until_retry(
 
     let project = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
-    let author = b"schema: 5\npack: {id: budget.fixture, name: Budget fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: 21}\ndependencies: {}\n";
+    let author = b"schema: 6\npack: {id: budget.fixture, name: Budget fixture, version: '1'}\nruntime: {minecraft: '1.21.1', loader: vanilla, java: {preferred: 21}}\ndependencies: {}\n";
     let codec = DocumentCodec;
     let intent = codec.decode_intent(author, "empack.yml").unwrap();
     let lock = ResolutionLock {

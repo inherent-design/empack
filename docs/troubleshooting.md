@@ -6,7 +6,7 @@ Use `empack status --json` for document and lock state, `manifest diff` for auth
 
 New projects use referenced Modrinth, Prism and server snapshots. Modrinth archives work through a compatible launcher. Reference Prism/server exports require empack on the recipient machine; their scripts acquire the exact released files and stop when required inputs are missing. Restricted files remain explicit verified inputs.
 
-Reference delivery can still include authored files and prepared runtime assets. Review those assets before distribution. Choose `--delivery bundled` deliberately when you want included dependency bytes. Existing profiles are preserved; schema-5 `client: prism` and `server: server` presets still mean bundled snapshots. To change an existing project, write `target: prism` or `target: server` with explicit `delivery: references`, run `sync`, and inspect `build --explain`.
+Reference delivery can still include authored files and prepared runtime assets. Review those assets before distribution. Choose `--delivery bundled` deliberately when you want included dependency bytes. Existing profiles are preserved; schema-6 `client: prism` and `server: server` presets still mean bundled snapshots. To change an existing project, write `target: prism` or `target: server` with explicit `delivery: references`, run `sync`, and inspect `build --explain`.
 
 ## Player options reset after a launcher update
 
@@ -51,6 +51,6 @@ Failed resolution leaves the published author project unchanged. Retrying perfor
 
 ## Older author projects
 
-Author schema 5, bindings schema 1 and lock schema 2 are supported. Reading an older schema-2 lock with absent optional incompatibility evidence does not imply support for lock schema 1. An empty incompatibility list is unknown historical evidence. `migrate` changes the runtime request; it is not a document-schema converter.
+Author schema 6, bindings schema 1, lock schema 3 and native release schema 2 are supported. Older author, lock and native release formats are rejected rather than reinterpreted. Preserve interrupted work and use its original compatible executable to finish or recover it before creating current-format state. `migrate` changes the runtime request; it is not a document-schema converter.
 
 Keep a full backup before recreating a manifest or re-importing a supported archive. Work in a new author directory, preserve pins, bindings, sources and templates, and verify the resulting inventories. An untracked file is not automatically safe to replace because an older tool once generated it. Explicit adoption describes and verifies existing files; it does not grant blanket overwrite authority. Do not run schema reconstruction against a live installed instance or player world.

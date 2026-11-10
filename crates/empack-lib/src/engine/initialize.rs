@@ -80,7 +80,7 @@ impl InitializeCandidate {
                 .checked_add(bytes.len() as u64)
                 .ok_or_else(|| anyhow::anyhow!("Initialization staging size overflow"))?;
         }
-        let scaffolds = default_scaffolds();
+        let scaffolds = default_scaffolds(project.intent().runtime.java_major);
         for bytes in scaffolds.values() {
             publication_bytes = publication_bytes
                 .checked_add(bytes.len() as u64)
@@ -107,7 +107,7 @@ impl InitializeCandidate {
     }
 }
 
-fn default_scaffolds() -> BTreeMap<ManagedPath, Vec<u8>> {
+fn default_scaffolds(java_major: u16) -> BTreeMap<ManagedPath, Vec<u8>> {
     [
         (
             ManagedPath::Scaffold(ProjectScaffold::GitIgnore),
@@ -131,6 +131,7 @@ fn default_scaffolds() -> BTreeMap<ManagedPath, Vec<u8>> {
         let tag = format!("v{}", super::compatibility_version());
         let bytes = String::from_utf8_lossy(bytes)
             .replace("__EMPACK_RELEASE_TAG__", &tag)
+            .replace("__EMPACK_JAVA_MAJOR__", &java_major.to_string())
             .into_bytes();
         (path, bytes)
     })

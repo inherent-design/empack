@@ -22,7 +22,7 @@ Empack owns authoring and native installed-instance management. Consumers receiv
 | Recovery           | Durable file-level publication with expected-old checks; no global atomic visibility claim       |
 | Runtime            | One host Tokio runtime and engine-owned task retirement                                          |
 | Program delivery   | Native binaries and thin launcher integration; no second installer engine                        |
-| Schema support     | Author schema 5; older schemas fail explicitly; no conversion command                            |
+| Schema support     | Author schema 6; older schemas fail explicitly; no conversion command                            |
 | Selection          | Compatible provider selection or an exact pin; no universal version-range language               |
 | Release preference | Schema default `prefer-stable`, project policy, then dependency override                         |
 | Author edits       | Targeted changes preserve unrelated comments, ordering and formatting                            |

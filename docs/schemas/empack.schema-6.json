@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://inherent.design/empack/schemas/empack.schema-5.json",
-  "title": "Empack authoring schema 5",
+  "$id": "https://inherent.design/empack/schemas/empack.schema-6.json",
+  "title": "Empack authoring schema 6",
   "description": "Editor completion and structural validation. Use empack manifest check for composed bindings, path safety, provider ownership and semantic constraints.",
   "type": "object",
   "properties": {
     "schema": {
-      "const": 5
+      "const": 6
     },
     "pack": {
       "type": "object",
@@ -82,10 +82,19 @@
           ]
         },
         "java": {
-          "type": "integer",
-          "minimum": 8,
-          "maximum": 65535,
-          "description": "Declared minimum Java major, not a supported-version range."
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "preferred": {
+              "type": "integer",
+              "minimum": 8,
+              "maximum": 65535,
+              "description": "Preferred Java major; must satisfy the selected runtime compatibility policy."
+            }
+          },
+          "required": [
+            "preferred"
+          ]
         },
         "acceptable-versions": {
           "type": "array",

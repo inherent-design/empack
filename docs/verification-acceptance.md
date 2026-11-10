@@ -2,9 +2,11 @@
 
 The candidate gate accepts operator-recorded tasks separately from native suites and the headless Prism parser probe. Reading a record does not run the task or independently establish that its description is true. The maintainer reviews the operator's observations and retained files before selecting the record for a gate.
 
+For v0.8.4-beta, the maintainer has deferred the named operator-only cases in the [release scope registry](../tests/verification/requirements.json). They remain unrun unless actual records establish otherwise, but they do not block this beta. The procedures below remain available for voluntary and later qualification; this scope decision does not grant a pass or alter v0.9 requirements.
+
 The internal checklist is [acceptance-procedures.json](../tests/verification/acceptance-procedures.json). It covers reference and bundled Prism imports, mrpack and CurseForge imports, managed and standalone server consoles and GUIs, authorized startup, pending-work recovery, documentation tasks and sandbox publication. These are verification procedures, not additional product commands or a general workflow language.
 
-Prism, platform-import and server consumer records are required on Linux, macOS and Windows for default and telemetry products. The registered-browser handoff procedure is Windows-specific. The selected host for human tasks is macOS. A result on one host does not supply evidence for another. Actual-consumer and human tasks remain unperformed until their records exist; helper tests cannot supply them.
+When required by the selected release scope, Prism, platform-import and server consumer records cover Linux, macOS, and Windows for default and telemetry products. The registered-browser handoff procedure is Windows-specific. The selected host for human tasks is macOS. A result on one host does not supply evidence for another. Actual-consumer and human tasks remain unperformed until their records exist; helper tests cannot supply them.
 
 The qualification profile selects the following existing workflows. Complete case definitions identify the required observations; they do not certify arbitrary custom configurations, every possible recipe or gameplay.
 

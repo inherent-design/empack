@@ -101,7 +101,7 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
     assert_eq!(
         descriptor["runtime"],
         json!({
-            "minecraft":"1.21.1", "loader":{"kind":"fabric","version":"0.15.0"}, "java_major":21,
+            "minecraft":"1.21.1", "loader":{"kind":"fabric","version":"0.15.0"}, "java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"},
         })
     );
     assert_eq!(descriptor["files"], json!([]));
@@ -114,7 +114,7 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
     let prepare = format!(
         "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {hash} --layout prism --side client"
     );
-    let wrapper = "empack --workdir \"$INST_DIR\" --yes instance launch --";
+    let wrapper = "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime --";
     let configuration = std::str::from_utf8(bytes("instance.cfg")).unwrap();
     for setting in [
         "ConfigVersion=1.2".to_owned(),

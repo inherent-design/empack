@@ -16,9 +16,9 @@ mod content_kinds;
 use empack_tests::harness::workspace::snapshot;
 
 const AUTHOR: &str = r#"# Literal routing and consumer profiles.
-schema: 5
+schema: 6
 pack: {id: content.kinds, name: Content Kinds, version: '1', authors: [Fixture]}
-runtime: {minecraft: '1.21.1', loader: vanilla, java: 21}
+runtime: {minecraft: '1.21.1', loader: vanilla, java: {preferred: 21}}
 layout: {data-pack: config/paxi/datapacks, world: saves}
 dependencies: {}
 build:

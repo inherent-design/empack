@@ -33,14 +33,14 @@ fn release(version: &str) -> DecodedRelease {
     DecodedRelease::encode(ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "prelaunch".into(),
         version: version.into(),
         minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         files: vec![],
         choices: vec![],

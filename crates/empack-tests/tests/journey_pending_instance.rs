@@ -55,8 +55,8 @@ impl Fixture {
                 "assertions":[],"source":{"kind":"manual","instructions":"Supply the exact selected bytes","selection":null}
             })).collect();
         let payload = serde_json::to_vec(&json!({
-            "schema":1,"pack":"pending.instance.fixture","version":"1","minimum_engine":">=0.8.0-beta",
-            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+            "schema":2,"pack":"pending.instance.fixture","version":"1","minimum_engine":">=0.8.0-beta",
+            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}},
             "choices":[],"files":files
         })).unwrap();
         fs::write(&release, &payload).unwrap();

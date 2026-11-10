@@ -15,13 +15,13 @@ pub fn assert_selection(
         author["runtime"],
         json!({
             "minecraft": game,
-            "java": java,
+            "java": {"preferred": java},
             "loader": pin.map_or_else(|| json!(loader), |version| json!({"kind": loader, "pin": version}))
         })
     );
     let lock: Value =
         serde_saphyr::from_str(&fs::read_to_string(root.join("empack.lock")).unwrap()).unwrap();
-    assert_eq!(lock["schema"], 2);
+    assert_eq!(lock["schema"], 3);
     assert_eq!(lock["dependencies"], json!({}));
     assert_eq!(lock["runtime"]["minecraft"], game);
     assert_eq!(lock["runtime"]["loader"], loader);

@@ -36,7 +36,7 @@ Status does not verify installed content, authenticate a channel or establish th
 | `recover`                     | Inspect or finish/restore an interrupted publication                       |
 | `clean`                       | Retire explicitly owned artifacts, disposable cache or continuation        |
 
-Initialization establishes `pack.id` once. `init --java MAJOR` declares the minimum recipient Java version (default 21); adjust it for your game and loader. A display name or version change preserves the pack ID. See the [manifest guide](manifest.md) for source-specific declarations and author-only projects.
+Initialization establishes `pack.id` once. Initialization recommends Java from the selected runtime; `init --java MAJOR` overrides that preference within the admitted policy. A display name or version change preserves the pack ID. See the [manifest guide](manifest.md) for source-specific declarations and author-only projects.
 
 With explicit Minecraft and loader versions, initialization records those exact choices without consulting a catalog or running Java. Legacy Forge 1.7.10 loader versions may include the `-1.7.10` suffix; empack stores the canonical loader version. When a required version is omitted, initialization uses official catalog discovery. A chosen loader version is recorded in the lock without adding an authored pin. These steps do not prove that runtime downloads are available or that the server will start; build and launch verify their own requirements.
 
@@ -185,7 +185,7 @@ Help and version display flags remain available when unrelated dotenv files are 
 Set stable pack identity and runtime requirements in `empack.yml`:
 
 ```yaml
-schema: 5
+schema: 6
 pack:
   id: my-pack
   name: My Pack
@@ -193,7 +193,7 @@ pack:
 runtime:
   minecraft: "1.21.1"
   loader: neoforge
-  java: 21
+  java: {preferred: 21}
 build:
   default: [native]
   profiles:
@@ -274,7 +274,7 @@ IDs accept unique prefixes and remain bound to the selected root and saved-recor
 
 ## Generated GitHub workflows
 
-New projects include validation and release workflows plus `.github/scripts/empack-ci.py`. They build the profiles in `build.default`. Set `EMPACK_PROFILES` in both workflows to select explicit names, one per line. Both workflows apply authored optional defaults. Set `JAVA_VERSION` for your runtime; the generated value is `21`.
+New projects include validation and release workflows plus `.github/scripts/empack-ci.py`. They build the profiles in `build.default`. Set `EMPACK_PROFILES` in both workflows to select explicit names, one per line. Both workflows apply authored optional defaults. Set `JAVA_VERSION` for your runtime; the generated value is the selected Java preference.
 
 Commit coherent authoring documents, bindings and lock before running CI. A release tag must be `v` followed by the version in `empack.yml`. The release attaches every selected distribution and `SHA256SUMS`, using normalized download filenames. It does not upload to provider platforms. Existing workflow files are not automatically upgraded.
 

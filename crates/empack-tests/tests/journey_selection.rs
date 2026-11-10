@@ -14,14 +14,14 @@ use std::{collections::BTreeMap, fs, path::Path};
 use empack_tests::harness::workspace::snapshot;
 
 const AUTHOR: &str = r#"# Keep this author's selection notes.
-schema: 5
+schema: 6
 pack:
   id: selection.fixture
   name: &title Selection fixture
   description: *title
   version: '1'
   authors: [Fixture]
-runtime: {minecraft: '1.21.1', loader: vanilla, java: 21}
+runtime: {minecraft: '1.21.1', loader: vanilla, java: {preferred: 21}}
 dependency-policy: {releases: stable-only}
 dependencies:
   renderer-alias:

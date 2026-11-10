@@ -510,6 +510,7 @@ fn retained_failure(
 pub(super) mod tests;
 
 mod initialize;
+mod java;
 pub use initialize::initialize;
 
 mod build;

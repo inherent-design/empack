@@ -12,6 +12,7 @@ pub mod files;
 pub mod identity;
 pub mod instance;
 pub mod inventory;
+pub mod java;
 pub mod model;
 pub mod path;
 pub mod removal;

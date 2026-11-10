@@ -1,6 +1,6 @@
 # Authoring contract
 
-Schema 5 describes content requests. Exact provider selections, resolved runtime, files and original integrity assertions belong in `empack.lock`. Parsing and shorthand expansion perform no network requests or filesystem mutation.
+Schema 6 describes content requests. Exact provider selections, resolved runtime, files and original integrity assertions belong in `empack.lock`. Parsing and shorthand expansion perform no network requests or filesystem mutation.
 
 ## Inputs and ownership
 
@@ -21,7 +21,7 @@ Both author inputs contribute to semantic identity. Their raw revisions protect 
 | `pack.authors`                | Ordered attribution strings, default empty                        |
 | `runtime.minecraft`           | Exact requested game identifier                                   |
 | `runtime.loader`              | Family string or `{kind, pin}` for an exact loader request        |
-| `runtime.java`                | Declared minimum Java major, independent of a consumer            |
+| `runtime.java.preferred`      | Preferred Java major within the selected runtime policy           |
 | `runtime.acceptable-versions` | Explicit extra provider compatibility declarations, default empty |
 | `dependency-policy.releases`  | `stable-only`, `prefer-stable` or `any`; default `prefer-stable`  |
 | `dependencies`                | Logical root requests, default empty                              |
@@ -55,6 +55,8 @@ The normalized `DependencySelection` has `Automatic`, `ProviderPin` and `Content
 Effective automatic policy is schema default, then project preference, then a per-root override. An explicit operation override applies only to that operation and is shown in its explanation. Implicit required dependencies use the project preference, or an explicit operation override. Explicit roots retain their own preference. This avoids traversal-order inheritance when multiple roots share a library. Conflicting exact selections remain errors. Exact pins bypass preference ordering, not runtime, ownership or integrity validation.
 
 Sync retains valid exact selections. Update deliberately refreshes eligible selected roots and required dependencies. Outdated reports evidence without changing intent. Build consumes a satisfied lock and never refreshes dependency selections. Migration assesses the entire resulting active inventory. These operations share source, policy and file-role interpretation; only their refresh policy differs.
+
+Java selection and known compatibility limits follow the [shared Java policy](java.md). A preferred major is separate from the admitted range and the local JVM.
 
 ## Build profiles
 

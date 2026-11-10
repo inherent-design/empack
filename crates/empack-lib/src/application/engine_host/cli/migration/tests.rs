@@ -7,6 +7,7 @@ use serde_json::json;
 use std::fs;
 fn args(plan: bool) -> MigrationArgs {
     MigrationArgs {
+        java: None,
         minecraft: "1.21.2".into(),
         loader: "fabric".into(),
         loader_version: Some("0.16.14".into()),

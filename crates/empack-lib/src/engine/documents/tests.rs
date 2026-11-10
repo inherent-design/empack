@@ -1,8 +1,8 @@
 use super::*;
 
 fn source() -> Value {
-    json!({"schema":5,"pack":{"id":"fixture","name":"Pack [日本語]\n$(display data)","version":"alpha"},
-        "runtime":{"java":21,"minecraft":"1.20.1","loader":{"kind":"neoforge","pin":"47.1.106"}},
+    json!({"schema":6,"pack":{"id":"fixture","name":"Pack [日本語]\n$(display data)","version":"alpha"},
+        "runtime":{"java":{"preferred":17},"minecraft":"1.20.1","loader":{"kind":"neoforge","pin":"47.1.106"}},
         "build":{"profiles":{"modrinth":{"target":"modrinth","delivery":"references","environment":"both","updates":"snapshot","format":"7z"},"prism":{"target":"prism","delivery":"references","environment":"client","updates":"snapshot","format":"7z"},"server":{"target":"server","delivery":"references","environment":"server","updates":"snapshot","format":"7z"},"prism-4":{"target":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"7z"},"server-5":{"target":"server","delivery":"bundled","environment":"server","updates":"snapshot","format":"7z"}},"default":["modrinth","prism","server","prism-4","server-5"]},
         "layout":{"data-pack":"world/datapacks"},
         "dependencies":{"renderer alias":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":"AANobbMI"}},"pin":"Version1","placement":"automatic","environment":{"client":{"optional":"renderer","default-enabled":false,"description":"Rendering support"},"server":"unsupported"}}},
@@ -237,7 +237,7 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
     let raw = serde_saphyr::to_string(&source()).unwrap();
     assert!(
         DocumentCodec
-            .decode_intent(format!("schema: 5\n{raw}").as_bytes(), "duplicate")
+            .decode_intent(format!("schema: 6\n{raw}").as_bytes(), "duplicate")
             .is_err()
     );
     assert!(

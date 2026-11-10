@@ -24,7 +24,7 @@ fn fixture_with_policies(
     let initial = project(false, false);
     let mut intent = initial.intent().clone();
     intent.metadata.id = "test.pack".into();
-    intent.runtime.java_major = 21;
+    intent.runtime.java_major = 17;
     intent.installation_policies = policies;
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     put(

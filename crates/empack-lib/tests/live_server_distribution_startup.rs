@@ -87,14 +87,18 @@ async fn verify_live_distribution(
             .transpose()?,
     };
     let executable = if cfg!(windows) { "java.exe" } else { "java" };
-    let java_home = if matches!(game, "1.12.2" | "1.7.10")
-        || (game == "1.16.5" && runtime.loader == LoaderKind::Forge)
-    {
-        Some(std::env::var_os("EMPACK_TEST_JAVA8_HOME").ok_or_else(|| {
-            anyhow::anyhow!("Historical runtime probes require EMPACK_TEST_JAVA8_HOME")
-        })?)
-    } else {
-        std::env::var_os("JAVA_HOME")
+    let preferred = empack_core::java::JavaPolicy::for_game(game).select(None)?;
+    let java_home = match preferred {
+        8 => Some(
+            std::env::var_os("EMPACK_TEST_JAVA8_HOME")
+                .context("Java 8 runtime probes require EMPACK_TEST_JAVA8_HOME")?,
+        ),
+        17 => Some(
+            std::env::var_os("EMPACK_TEST_JAVA17_HOME")
+                .context("Java 17 runtime probes require EMPACK_TEST_JAVA17_HOME")?,
+        ),
+        21 => std::env::var_os("JAVA_HOME"),
+        _ => anyhow::bail!("This runtime probe has no configured Java {preferred} host"),
     };
     let java = java_home
         .map(|home| PathBuf::from(home).join("bin").join(executable))
@@ -263,13 +267,14 @@ async fn package_runtime(
     let project = tempfile::tempdir()?;
     let host = tempfile::tempdir()?;
     let codec = DocumentCodec;
-    let mut intent = codec.decode_intent(b"schema: 5\npack: {id: fixture, name: Runtime, version: test}\nruntime: {java: 21, minecraft: '1.20.1', loader: {kind: vanilla}}\nbuild: {profiles: {server: {target: server, delivery: bundled, environment: server, updates: snapshot, format: zip}}, default: [server]}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
+    let mut intent = codec.decode_intent(b"schema: 6\npack: {id: fixture, name: Runtime, version: test}\nruntime: {java: {preferred: 17}, minecraft: '1.20.1', loader: {kind: vanilla}}\nbuild: {profiles: {server: {target: server, delivery: bundled, environment: server, updates: snapshot, format: zip}}, default: [server]}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
     intent.runtime.minecraft = runtime.minecraft.clone();
+    intent.runtime.java_major =
+        empack_core::java::JavaPolicy::for_game(runtime.minecraft.as_str()).select(None)?;
     intent.runtime.loader = runtime.loader;
     intent.runtime.loader_version = runtime.loader_version.clone();
     if managed {
         intent.metadata.id = "runtime.smoke".into();
-        intent.runtime.java_major = 21;
         intent.installation_policies = Default::default();
     }
     let bytes = codec.encode_intent(&intent)?;

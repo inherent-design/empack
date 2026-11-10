@@ -66,7 +66,34 @@ def validate_requirements(document):
         if state == "complete" and missing:
             raise ValueError("Completed bindings omit declared evidence boundaries: "
                              + row["id"] + ": " + ", ".join(sorted(missing)))
+    release_deferrals(document, "0.8.4-beta")
     return requirements, cases
+
+
+def release_deferrals(document, version):
+    """The maintainer's fixed v0.8.4 environment scope; never substitute evidence.
+
+    Only named operator procedures may be deferred. Native, package, parser,
+    tooling and other automated obligations cannot be excluded through this field.
+    Other release versions retain their full declared obligations.
+    """
+    scope = document.get("gates", {}).get("v084_environment_deferrals")
+    if scope is None:
+        return set()
+    if (not isinstance(scope, dict) or set(scope) != {"approved_on", "reason", "cases"}
+            or scope["approved_on"] != "2026-11-10" or not isinstance(scope["reason"], str)
+            or not scope["reason"].strip() or not isinstance(scope["cases"], list)
+            or not all(isinstance(case, str) for case in scope["cases"])
+            or len(scope["cases"]) != len(set(scope["cases"]))):
+        raise ValueError("Invalid maintainer-approved v0.8.4 environment scope")
+    cases = {case["id"]: case for row in document["requirements"] for case in row["cases"]}
+    operators = procedures()
+    for identity in scope["cases"]:
+        case = cases.get(identity)
+        if (case is None or not case["test_ids"]
+                or not all(test in operators for test in case["test_ids"])):
+            raise ValueError("Environment deferral must name an existing operator-only case: " + identity)
+    return set(scope["cases"]) if version == "0.8.4-beta" else set()
 
 
 def case_results(document, classification, evidence, revision, *, package_receipts=(), consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=(), acceptance_evidence=()):

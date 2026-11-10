@@ -3,7 +3,7 @@
 Edit `empack.yml` to describe your pack. Run `empack sync` to satisfy those requests, then build from the exact selections recorded in `empack.lock`.
 
 ```yaml
-schema: 5
+schema: 6
 pack:
   id: workshop
   name: Workshop
@@ -12,7 +12,7 @@ pack:
 runtime:
   minecraft: "1.21.1"
   loader: neoforge
-  java: 21
+  java: {preferred: 21}
 dependencies:
   openloader: "modrinth:open-loader"
   menu:
@@ -93,7 +93,7 @@ dependencies:
 
 Use `empack.bindings.yml` only for non-default destinations, stable file-role selection, archive mappings or installation policy. Keep it in version control alongside the manifest and lock. See [the model reference](design/model.md) for advanced forms and per-side requirements.
 
-`build.profiles` names outputs. Initialization and ad-hoc builds prefer references; use explicit `delivery: references` in hand-written profiles. The schema-5 `prism` and `server` presets retain their original meaning and bundle pack content as fixed snapshots in ZIP archives. Expanded profiles override individual options; `empack build --explain` displays the exact selected recipes. Omit `build` until you need outputs. The pack ID stays unchanged across renames and release labels. `runtime.java` declares a minimum Java major, not compatibility with every newer JVM. Initialization uses 21 unless you select `init --java MAJOR`; choose a value appropriate for your Minecraft and loader combination.
+`build.profiles` names outputs. Initialization and ad-hoc builds prefer references; use explicit `delivery: references` in hand-written profiles. The schema-6 `prism` and `server` presets retain their original meaning and bundle pack content as fixed snapshots in ZIP archives. Expanded profiles override individual options; `empack build --explain` displays the exact selected recipes. Omit `build` until you need outputs. The pack ID stays unchanged across renames and release labels. `runtime.java.preferred` selects a Java major within the [runtime policy](design/java.md). Initialization recommends the highest admitted major; `init --java MAJOR` selects another admitted major. Unknown compatibility requires an explicit choice and remains unqualified.
 
 Use `empack manifest check` for local validation, `manifest explain menu` for an effective dependency view, and `manifest diff` to inspect authoring changes against the available lock. The lock does not retain old display metadata or build profiles, so this is a constraint comparison, not a historical manifest diff. These inspection commands do not install or update content or contact providers.
 
@@ -101,7 +101,7 @@ Commands preserve unrelated comments and ordering. Existing block declarations r
 
 ## Editor completion
 
-The repository includes [author schema 5](schemas/empack.schema-5.json) and [bindings schema 1](schemas/empack.bindings.schema-1.json) as JSON Schemas. Configure your YAML editor to associate these local files with `empack.yml` and `empack.bindings.yml`. Keep both schemas in the same directory so their references resolve without a network request.
+The repository includes [author schema 6](schemas/empack.schema-6.json) and [bindings schema 1](schemas/empack.bindings.schema-1.json) as JSON Schemas. Configure your YAML editor to associate these local files with `empack.yml` and `empack.bindings.yml`. Keep both schemas in the same directory so their references resolve without a network request.
 
 Editor checks cover syntax, supported fields and source-specific options. Run `empack manifest check` for cross-document references, shared optional choices, portable paths and effective runtime/profile validation. Neither editor validation nor manifest inspection verifies downloaded bytes or provider compatibility.
 

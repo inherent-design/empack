@@ -211,7 +211,7 @@
       ]
     },
     {
-      "id": "python::test_candidate_qualification.CandidateCommand.test_real_registry_and_archives_cannot_skip_unimplemented_consumer_obligations",
+      "id": "python::test_candidate_qualification.CandidateCommand.test_real_registry_and_archives_cannot_skip_required_automated_obligations",
       "boundary": "H",
       "requirements": [
         "UX-085",
@@ -1967,6 +1967,11 @@
     {"id": "python::test_authoring_schema.SchemaEvidence.test_release_schema_needs_exact_admitted_product_context", "boundary": "H", "requirements": ["UX-006", "UX-086", "UX-088"]},
     {"id": "python::test_candidate_execution.CandidateDispatch.test_linux_dispatch_runs_schema_on_the_extracted_default_binary", "boundary": "H", "requirements": ["UX-006", "UX-086", "UX-088"]},
     {"id": "python::test_candidate_qualification.CandidatePolicy.test_schema_observations_cannot_be_replaced_by_other_passing_candidate_cases", "boundary": "H", "requirements": ["UX-006", "UX-086", "UX-088"]},
-    {"id": "python::test_operator_acceptance.OperatorAcceptance.test_reference_runtime_transition_is_required_and_preserves_blocking", "boundary": "H", "requirements": ["UX-071", "UX-084", "UX-088"]}
+    {"id": "python::test_operator_acceptance.OperatorAcceptance.test_reference_runtime_transition_is_required_and_preserves_blocking", "boundary": "H", "requirements": ["UX-071", "UX-084", "UX-088"]},
+    {"id": "python::test_java_policy.JavaPolicyRefresh.test_refresh_binds_each_profile_to_the_pinned_index", "boundary": "U", "requirements": ["UX-073"]},
+    {"id": "python::test_java_policy.JavaPolicyRefresh.test_corrupt_or_ambiguous_profiles_do_not_produce_policy", "boundary": "U", "requirements": ["UX-073"]},
+    {"id": "python::test_java_policy.JavaPolicyRefresh.test_history_and_sparse_support_do_not_invent_compatibility", "boundary": "U", "requirements": ["UX-073"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_v084_environment_scope_preserves_unrun_observations_and_future_requirements", "boundary": "U", "requirements": ["UX-088"]},
+    {"id": "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases", "boundary": "U", "requirements": ["UX-088"]}
   ]
 }

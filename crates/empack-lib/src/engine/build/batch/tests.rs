@@ -24,7 +24,7 @@ fn fixture(root: &Path) -> BuildAcquisitions {
     let initial = project(false, false);
     let mut intent = initial.intent().clone();
     intent.metadata.id = "test.pack".into();
-    intent.runtime.java_major = 21;
+    intent.runtime.java_major = 17;
     intent.installation_policies = std::collections::BTreeMap::new();
     let project = crate::engine::mrpack::tests::explicitly_placed(intent, initial.lock().clone());
     fs::write(
@@ -621,7 +621,7 @@ fn subscribed_prism_recipes_preserve_delivery_and_require_local_enrollment() {
             .read_to_string(&mut ini)
             .unwrap();
         assert!(ini.contains("--require-subscription"));
-        assert!(ini.contains("instance launch --check-updates --"));
+        assert!(ini.contains("instance launch --java-runtime --check-updates --"));
         let mut payload = Vec::new();
         zip.by_name(".minecraft/.empack-consumer/release.json")
             .unwrap()

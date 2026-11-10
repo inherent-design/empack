@@ -14,9 +14,9 @@ use std::{
 };
 
 const AUTHOR: &str = r#"# Keep the publisher's source and durable choice identity.
-schema: 5
+schema: 6
 pack: {id: native.fixture, name: Native fixture, version: '1'}
-runtime: {minecraft: '1.21.1', loader: vanilla, java: 21}
+runtime: {minecraft: '1.21.1', loader: vanilla, java: {preferred: 21}}
 layout: {config: config}
 dependencies:
   extra:
@@ -84,15 +84,15 @@ fn fixture() -> (TestProject, tempfile::TempDir) {
 fn inventory(members: &BTreeMap<String, Member>) -> String {
     let payload = members["release.json"].small.as_ref().unwrap();
     let descriptor: Value = serde_json::from_slice(payload).unwrap();
-    assert_eq!(descriptor["schema"], 1);
+    assert_eq!(descriptor["schema"], 2);
     assert_eq!(descriptor["pack"], "native.fixture");
     assert_eq!(descriptor["version"], "1");
-    assert_eq!(descriptor["minimum_engine"], ">=0.8.0-beta");
+    assert_eq!(descriptor["minimum_engine"], ">=0.8.4-beta");
     assert_eq!(descriptor["require_subscription"], false);
     assert!(descriptor.get("server_launch").is_none());
     assert_eq!(
         descriptor["runtime"],
-        json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+        json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
     );
     assert_eq!(
         descriptor["choices"],
@@ -980,7 +980,7 @@ fn cli_native_export_requires_pack_identity_and_java_without_replacing_prior_out
         .success();
     for (from, to, diagnostic) in [
         ("id: native.fixture, ", "", "Missing field 'id'"),
-        (", java: 21", "", "Missing field 'java'"),
+        (", java: {preferred: 21}", "", "Missing field 'java'"),
     ] {
         put(
             project.dir(),

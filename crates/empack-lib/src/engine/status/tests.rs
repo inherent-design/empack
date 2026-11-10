@@ -10,7 +10,7 @@ fn report(root: &Path, state: &Path) -> WorkspaceStatus {
 }
 fn installed(root: &Path, layout: InstanceLayout, side: InstanceSide) {
     let release = DecodedRelease::encode(ReleaseDocument {
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         require_subscription: false,
         server_launch: None,
         pack: "fixture-pack".into(),
@@ -19,7 +19,7 @@ fn installed(root: &Path, layout: InstanceLayout, side: InstanceSide) {
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files: vec![],

@@ -161,7 +161,7 @@ pub struct PackMetadata {
 /// Requested runtime compatibility.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeIntent {
-    /// Declared minimum recipient Java major.
+    /// Preferred recipient Java major, validated within the runtime's admitted policy.
     pub java_major: u16,
     /// Primary game version.
     pub minecraft: GameVersion,
@@ -887,6 +887,8 @@ impl ProjectIntent {
         if self.runtime.loader == LoaderKind::Vanilla && self.runtime.loader_version.is_some() {
             return Err(invalid("Vanilla cannot select a loader version"));
         }
+        crate::java::JavaPolicy::for_game(self.runtime.minecraft.as_str())
+            .select(Some(self.runtime.java_major))?;
         let mut choices = BTreeMap::new();
         for dep in self.roots.values() {
             validate_shared_choices(&mut choices, &dep.requirements)?;

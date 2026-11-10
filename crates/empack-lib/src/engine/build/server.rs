@@ -1,4 +1,5 @@
 //! Server distributions compose verified runtime files with selected server content.
+mod java;
 mod windows;
 use windows::{install_batch, start_batch};
 
@@ -205,6 +206,21 @@ fn runtime_start(
     script.replace("-jar server.jar", &arguments)
 }
 
+fn runtime_script(
+    launch: &ServerLaunch,
+    managed: bool,
+    windows: bool,
+    interface: ServerInterface,
+    java: &crate::engine::release::ReleaseJava,
+) -> String {
+    let script = runtime_start(launch, managed, windows, interface);
+    if managed {
+        script
+    } else {
+        self::java::enforce(script, java, windows)
+    }
+}
+
 fn consumer_script(script: String, target: Recipe) -> String {
     if target.update_authority() == empack_core::distribution::UpdateAuthority::Empack {
         script
@@ -363,11 +379,24 @@ pub(super) fn prepare_server_archive(
     ]
     .into_iter()
     .any(|name| files.contains_key(&path(name).expect("static path")));
+    let mut java = crate::engine::release::ReleaseJava::for_game(
+        runtime.runtime().minecraft.as_str(),
+        game.project().intent().runtime.java_major,
+    )?;
+    if let Some(minimum) = runtime.evidence().java_major {
+        java.require_minimum(minimum, "verified server metadata")?;
+    }
     for (name, bytes, executable) in [
         (
             "start.sh",
             consumer_script(
-                runtime_start(runtime.launch(), managed, false, ServerInterface::Console),
+                runtime_script(
+                    runtime.launch(),
+                    managed,
+                    false,
+                    ServerInterface::Console,
+                    &java,
+                ),
                 target,
             )
             .into_bytes(),
@@ -376,7 +405,13 @@ pub(super) fn prepare_server_archive(
         (
             "start.bat",
             consumer_script(
-                runtime_start(runtime.launch(), managed, true, ServerInterface::Console),
+                runtime_script(
+                    runtime.launch(),
+                    managed,
+                    true,
+                    ServerInterface::Console,
+                    &java,
+                ),
                 target,
             )
             .into_bytes(),
@@ -385,7 +420,13 @@ pub(super) fn prepare_server_archive(
         (
             "start_gui.sh",
             consumer_script(
-                runtime_start(runtime.launch(), managed, false, ServerInterface::Gui),
+                runtime_script(
+                    runtime.launch(),
+                    managed,
+                    false,
+                    ServerInterface::Gui,
+                    &java,
+                ),
                 target,
             )
             .into_bytes(),
@@ -394,7 +435,7 @@ pub(super) fn prepare_server_archive(
         (
             "start_gui.bat",
             consumer_script(
-                runtime_start(runtime.launch(), managed, true, ServerInterface::Gui),
+                runtime_script(runtime.launch(), managed, true, ServerInterface::Gui, &java),
                 target,
             )
             .into_bytes(),

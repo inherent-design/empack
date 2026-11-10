@@ -982,7 +982,10 @@ async fn cli_neoforge_build_all_targets_with_default_resource_budget() {
         .clone();
     let mut intent = old.intent().clone();
     intent.metadata.id = "budget.probe".into();
-    intent.runtime.java_major = 21;
+    intent.runtime.java_major =
+        empack_core::java::JavaPolicy::for_game(intent.runtime.minecraft.as_str())
+            .select(None)
+            .unwrap();
     intent.installation_policies = BTreeMap::new();
     intent.distribution = empack_core::model::DistributionIntent::from_recipes(
         NonEmpty::new(vec![
@@ -1190,7 +1193,10 @@ async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity
     let source = crate::testing::read_authoring(&project.join("empack.yml")).unwrap();
     let mut intent = source.intent().clone();
     intent.metadata.id = "profile.fixture".into();
-    intent.runtime.java_major = 21;
+    intent.runtime.java_major =
+        empack_core::java::JavaPolicy::for_game(intent.runtime.minecraft.as_str())
+            .select(None)
+            .unwrap();
     intent.installation_policies = BTreeMap::new();
     intent.distribution.profiles.insert(
         "prism".into(),

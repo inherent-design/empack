@@ -40,7 +40,7 @@ impl NativeReleaseOptions {
         Ok(Self {
             require_subscription: false,
             pack: intent.metadata.id.clone(),
-            minimum_engine: ">=0.8.0-beta".into(),
+            minimum_engine: ">=0.8.4-beta".into(),
             java_major: intent.runtime.java_major,
             delivery: Delivery::References,
             environments: Environments::Both,
@@ -92,16 +92,13 @@ impl NativeReleasePlan {
             self.release.document().runtime.resolution()? == *runtime.runtime(),
             "Server runtime differs from release requirements"
         );
-        ensure!(
-            runtime.evidence().java_major.is_none_or(|required| self
-                .release
-                .document()
-                .runtime
-                .java_major
-                >= required),
-            "Release Java requirement is below the prepared server runtime requirement"
-        );
         let mut document = self.release.document().clone();
+        if let Some(required) = runtime.evidence().java_major {
+            document
+                .runtime
+                .java
+                .require_minimum(required, "verified Minecraft server metadata")?;
+        }
         ensure!(
             document.server_launch.is_none(),
             "Release already contains a server runtime"
@@ -576,7 +573,7 @@ impl NativeReleasePlan {
             runtime: ReleaseRuntime {
                 minecraft: runtime.minecraft.as_str().into(),
                 loader,
-                java_major: options.java_major,
+                java: ReleaseJava::for_game(runtime.minecraft.as_str(), options.java_major)?,
             },
             choices: choices.into_values().collect(),
             files,

@@ -13,9 +13,9 @@ use std::{
 };
 
 const AUTHOR: &str = r#"# Keep the author's chosen subscription and archive format.
-schema: 5
+schema: 6
 pack: {id: profiles.fixture, name: Profile fixture, version: '1', authors: [Fixture]}
-runtime: {minecraft: '1.21.1', loader: vanilla, java: 21}
+runtime: {minecraft: '1.21.1', loader: vanilla, java: {preferred: 21}}
 dependencies: {}
 build:
   default: [curated]
@@ -145,7 +145,7 @@ fn assert_inventory(
         assert_eq!(descriptor["require_subscription"], subscribed);
         assert_eq!(
             descriptor["runtime"],
-            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21})
+            json!({"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}})
         );
         assert_eq!(descriptor["choices"], json!([]));
         let files = descriptor["files"].as_array().unwrap();
@@ -192,7 +192,7 @@ fn assert_inventory(
                 }
             ),
             format!(
-                "empack --workdir \"$INST_DIR\" --yes instance launch{} --",
+                "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime{} --",
                 if subscribed { " --check-updates" } else { "" }
             ),
         )
@@ -965,7 +965,7 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
         } else {
             fs::write(
                 fixture.project.dir().join("empack.yml"),
-                AUTHOR.replace("java: 21", "java: 22"),
+                AUTHOR.replace("java: {preferred: 21}", "java: {preferred: 22}"),
             )
             .unwrap();
         }

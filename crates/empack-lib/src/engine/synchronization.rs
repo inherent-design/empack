@@ -399,6 +399,7 @@ mod tests {
             let mut desired = current.intent().clone();
             if runtime {
                 desired.runtime.minecraft = GameVersion::parse("1.21.1").unwrap();
+                desired.runtime.java_major = 21;
             } else {
                 desired.roots.values_mut().next().unwrap().selection =
                     DependencySelection::ProviderPin(PinSelector::ModrinthVersion(

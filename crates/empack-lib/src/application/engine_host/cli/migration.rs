@@ -16,6 +16,7 @@ mod delta;
 
 pub(super) struct MigrationOptions {
     pub runtime: RuntimeIntent,
+    pub java: Option<u16>,
     pub replacements: BTreeMap<DependencyKey, ProviderProjectId>,
     pub releases: Option<ReleasePolicy>,
     pub plan: bool,
@@ -56,8 +57,13 @@ impl MigrationOptions {
             );
         }
         Ok(Self {
+            java: args.java,
             runtime: RuntimeIntent {
-                java_major: 21,
+                java_major: args.java.unwrap_or_else(|| {
+                    empack_core::java::JavaPolicy::for_game(&args.minecraft)
+                        .recommended()
+                        .unwrap_or(8)
+                }),
                 minecraft: GameVersion::parse(&args.minecraft)?,
                 loader,
                 loader_version: args
@@ -87,7 +93,10 @@ impl MigrationOptions {
         let mut intent = source.intent().clone();
         let java_major = intent.runtime.java_major;
         intent.runtime = self.runtime.clone();
-        intent.runtime.java_major = java_major;
+        intent.runtime.java_major = self.java.unwrap_or(java_major);
+        empack_core::java::JavaPolicy::for_game(intent.runtime.minecraft.as_str())
+            .select(Some(intent.runtime.java_major))
+            .context("The selected runtime invalidates the preferred Java major; review the recommendation and supply migrate --java explicitly")?;
         for (key, id) in &self.replacements {
             let root = intent
                 .roots

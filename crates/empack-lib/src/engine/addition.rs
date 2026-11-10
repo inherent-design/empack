@@ -633,6 +633,7 @@ pub(in crate::engine) mod tests {
         let request = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
         let mut intent = request.intent().clone();
         intent.runtime.minecraft = GameVersion::parse("1.21.1").unwrap();
+        intent.runtime.java_major = 21;
         let mut lock = request.lock().clone();
         lock.runtime.minecraft = intent.runtime.minecraft.clone();
         let decoded = DocumentCodec

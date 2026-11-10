@@ -171,6 +171,8 @@ def java_probe(attempt, environment, label="java", home_variable="JAVA_HOME"):
     version = (attempt / f"{label}-version.log").read_text().strip()
     if label == "java8" and not re.search(r'version "1\.8\.', version):
         raise Blocked("Historical runtime suite requires Java 8 at EMPACK_TEST_JAVA8_HOME")
+    if label == "java17" and not re.search(r'version "17\.', version):
+        raise Blocked("Runtime suite requires Java 17 at EMPACK_TEST_JAVA17_HOME")
     return {"path": str(path), "sha256": sha256(path), "version": version}
 
 
@@ -185,8 +187,10 @@ def run_suite(name, suite, attempt, environment, artifact, record, test_features
         raise Blocked("Required suite prerequisites unavailable: " + ", ".join(missing))
     if suite.java:
         record["java"] = java_probe(attempt, environment)
-        if "EMPACK_TEST_JAVA8_HOME" in suite.required_env:
-            record["java8"] = java_probe(attempt, environment, "java8", "EMPACK_TEST_JAVA8_HOME")
+        for major in (8, 17):
+            variable = f"EMPACK_TEST_JAVA{major}_HOME"
+            if variable in suite.required_env:
+                record[f"java{major}"] = java_probe(attempt, environment, f"java{major}", variable)
     environment = compiler_environment(environment)
     suite_dir = attempt / name
     suite_dir.mkdir()

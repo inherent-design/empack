@@ -5,7 +5,7 @@ use empack_tests::harness::process::{TestProject, offline_command};
 use serde_json::Value;
 use std::{fs, path::Path, process::Output};
 
-const HEADER: &str = "# Author note: retain this text exactly.\nschema: 5\npack:\n  id: literal.pack\n  name: Literal Pack\n  version: Autumn Update\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: 21\n";
+const HEADER: &str = "# Author note: retain this text exactly.\nschema: 6\npack:\n  id: literal.pack\n  name: Literal Pack\n  version: Autumn Update\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: {preferred: 21}\n";
 
 fn inspect(root: &Path, args: &[&str]) -> Output {
     let before = snapshot(root);
@@ -30,7 +30,7 @@ fn report(root: &Path) -> Value {
     assert!(output.stderr.is_empty(), "{output:?}");
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["schema"], 1);
-    assert_eq!(report["author_schema"], 5);
+    assert_eq!(report["author_schema"], 6);
     assert_eq!(report["pack"], "Literal Pack");
     assert_eq!(report["lock_status"], "missing");
     assert!(report["runtime_satisfied"].is_null());
@@ -70,7 +70,7 @@ fn cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_reque
         assert!(output.stderr.is_empty(), "{pack}: {output:?}");
         let observed: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(observed["schema"], 1);
-        assert_eq!(observed["author_schema"], 5);
+        assert_eq!(observed["author_schema"], 6);
         assert_eq!(observed["pack"], pack);
         assert_eq!(observed["lock_status"], "missing");
         assert!(observed["runtime_satisfied"].is_null());
@@ -201,7 +201,7 @@ fn cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting() {
     let project = TestProject::new();
     let root = project.dir();
     for suffix in [
-        "schema: 5\n",
+        "schema: 6\n",
         "surprise: true\n",
         "dependencies:\n  example: modrinth:Example1\n  example: modrinth:OtherPrj\n",
         "dependencies:\n  example:\n    path: private.jar\n    path: other.jar\n",

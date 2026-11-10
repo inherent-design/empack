@@ -229,6 +229,11 @@ fn decisions(
 ) -> Result<ImportCandidateOptions> {
     let source = content.plan().imported();
     let loader = loader(session, args, &source.runtime)?;
+    let java_major = crate::application::engine_host::java::choose(
+        session,
+        source.runtime.minecraft.as_str(),
+        args.java,
+    )?;
     let mut acceptable_versions = args
         .game_versions
         .as_deref()
@@ -431,7 +436,7 @@ fn decisions(
         description: source.metadata.summary.clone(),
     };
     Ok(ImportCandidateOptions {
-        java_major: args.java.unwrap_or(21),
+        java_major,
         metadata,
         loader,
         acceptable_versions,

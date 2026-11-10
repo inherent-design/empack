@@ -37,9 +37,9 @@ impl Server {
         let jar = b"not a runnable JAR: invocation fixture\n";
         fs::write(export.join("assets/server.jar"), jar).unwrap();
         let release = serde_json::to_vec(&json!({
-            "schema":1,"pack":"verification.java","version":"1","minimum_engine":">=0.8.0-beta",
+            "schema":2,"pack":"verification.java","version":"1","minimum_engine":">=0.8.0-beta",
             "require_subscription":false,
-            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java_major":21},
+            "runtime":{"minecraft":"1.21.1","loader":{"kind":"vanilla"},"java":{"preferred":21,"minimum":21,"supported":[21],"policy":"empack-java-1"}},
             "server_launch":{"kind":"jar","path":"server.jar"},"choices":[],
             "files":[{"key":"server","destination":"server.jar","layer":"common","policy":"managed",
                 "client":{"kind":"unsupported"},"server":{"kind":"required"},
@@ -401,8 +401,16 @@ fn cli_server_java_selection_requires_approval_and_preserves_installation() {
         server.successful(program);
     }
     // JAVA_HOME is a generated-script choice; the CLI honors its explicit local program.
-    server.configure("java.specification.version = 25\n", "", 0, 0);
+    server.configure("java.specification.version = 21\n", "", 0, 0);
     server.successful(server.program.as_os_str());
+    server.configure("java.specification.version = 25\n", "", 0, 0);
+    server
+        .launch(&["--yes"], server.program.as_os_str())
+        .assert()
+        .code(EmpackExitCode::General.as_i32())
+        .stderr(contains("release admits [21]"));
+    server.not_started();
+    server.preserved();
 }
 
 #[test]
@@ -413,7 +421,7 @@ fn cli_server_java_probe_failures_retire_before_followup_launch() {
             "",
             "java.specification.version = 1.8\n",
             0,
-            "this release requires Java 21 or newer",
+            "release requires Java 21 or newer",
         ),
         (
             "",
@@ -583,25 +591,25 @@ fn cli_generated_server_scripts_preserve_java_selection_and_classified_status() 
     server.script(false, false).assert().success();
     server.preserved();
 
-    // Standalone scripts invoke Java directly, without its managed probe/status mapping.
+    // Standalone scripts validate Java but invoke it directly, preserving its status without managed ownership.
     server.generate_scripts(&driver, false);
     let host = snapshot(&server.instance.dir().join(".host-state"));
     for gui in [false, true] {
-        server.configure("", "", 0, 7);
+        server.configure("", "java.specification.version = 21\n", 0, 7);
         server.script(gui, true).assert().code(7);
-        assert!(
-            !server
-                .fixtures
-                .path()
-                .join("observations/probe.json")
-                .exists()
-        );
+        server.invocation("probe.json", &["-XshowSettings:properties", "-version"]);
         let mut arguments = vec!["-jar", "server.jar"];
         if !gui {
             arguments.push("nogui");
         }
         arguments.extend(["literal argument", "é"]);
         server.invocation("runtime.json", &arguments);
+        server.preserved();
+    }
+    for major in [17, 25] {
+        server.configure("", &format!("java.specification.version = {major}\n"), 0, 0);
+        server.script(false, true).assert().code(1);
+        server.not_started();
         server.preserved();
     }
     assert_eq!(snapshot(&server.instance.dir().join(".host-state")), host);

@@ -10,7 +10,43 @@
     "critical_applicable_obligations": "100% pass on required evidence boundaries",
     "public_surface_mapping": "100% leaf commands/options classified; zero unknown tests/unknown capability exclusions",
     "overall_applicable_obligations": "100% of all applicable mandatory acceptance cases passed; no waiver admission",
-    "do_not_infer_current_percentage": true
+    "do_not_infer_current_percentage": true,
+    "v084_environment_deferrals": {
+      "approved_on": "2026-11-10",
+      "reason": "Maintainer-directed v0.8.4 scope excludes unavailable human/consumer environments; retain unrun observations and all automated requirements.",
+      "cases": [
+        "UX-037.windows-desktop-handoff",
+        "UX-039.fresh-user-recovery",
+        "UX-041.actual-reference-consumer",
+        "UX-042.actual-bundled-consumer",
+        "UX-043.actual-bundled-console",
+        "UX-043.actual-managed-console",
+        "UX-044.actual-supported-import",
+        "UX-045.actual-supported-import",
+        "UX-050.actual-bundled-server-console",
+        "UX-050.actual-curseforge-import",
+        "UX-050.actual-managed-server-console",
+        "UX-050.actual-modrinth-import",
+        "UX-050.actual-prism-bundled",
+        "UX-050.actual-prism-reference",
+        "UX-062.actual-prism-preparation-and-update",
+        "UX-070.actual-launcher-icon-preservation",
+        "UX-071.consumer-runtime-transition",
+        "UX-073.actual-bundled-console",
+        "UX-073.actual-bundled-gui",
+        "UX-073.actual-managed-console",
+        "UX-073.actual-managed-gui",
+        "UX-082.sandbox-publication",
+        "UX-084.bundled-server-console",
+        "UX-084.curseforge-import",
+        "UX-084.human-licensed-startup",
+        "UX-084.managed-server-console",
+        "UX-084.modrinth-import",
+        "UX-084.prism-bundled",
+        "UX-084.prism-reference",
+        "UX-087.fresh-user-documentation"
+      ]
+    }
   },
   "requirements": [
     {
@@ -1876,6 +1912,27 @@
             "Fresh isolated CLI projects omit the Minecraft version for vanilla or loader version for modded families, requiring ordinary official catalog discovery",
             "Persisted intent remains unpinned while the lock records the observed exact choice and game-family boundaries",
             "Catalog evidence does not establish downloaded Java/installers, successful startup or actual-consumer acceptance"
+          ]
+        },
+        {
+          "id": "UX-010.java-choice",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::initialize::tests::initialization_java_recommendation_and_override_follow_the_selected_game",
+            "empack-lib::application::engine_host::initialize::tests::initialization_java_refusal_preserves_existing_author_work"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Initialization selects Java from the selected game, preserves an admitted override and records resolved policy in the lock",
+            "Unknown noninteractive defaults and incompatible overrides preserve existing author work"
           ]
         }
       ],
@@ -3770,7 +3827,7 @@
             "telemetry"
           ],
           "assertions": [
-            "A literal schema-5 project accepts explicit mod/resourcepack/shader/datapack/world CLI types with exact default or authored destinations",
+            "A literal schema-6 project accepts explicit mod/resourcepack/shader/datapack/world CLI types with exact default or authored destinations",
             "Ambiguous untyped ZIPs and malformed multi-root or mixed-root worlds refuse without modifying any project file or prior artifact; previews also preserve the project",
             "A wrapped world becomes one dependency with two members under one seed-owned world root; complete client/server export file inventories contain the expected bytes"
           ]
@@ -5912,7 +5969,7 @@
             "telemetry"
           ],
           "assertions": [
-            "Current schema-5 build records resume after engine restart using persistent fingerprints; obsolete formats are separately refused without rewriting saved work",
+            "Current schema-6 build records resume after engine restart using persistent fingerprints; obsolete formats are separately refused without rewriting saved work",
             "Inspection and preparation preserve saved record bytes; retained inputs are reverified and completed publication still requires fresh approval"
           ]
         },
@@ -8304,7 +8361,7 @@
             "telemetry"
           ],
           "assertions": [
-            "A literal schema-5 project exports reference and bundled native snapshots in ZIP, TAR.GZ and 7z; independent readers verify complete membership, bytes, output modes, descriptor SHA-256, runtime and pack identity",
+            "A literal schema-6 project exports reference and bundled native snapshots in ZIP, TAR.GZ and 7z; independent readers verify complete membership, bytes, output modes, descriptor SHA-256, runtime and pack identity",
             "Common/client/server layers and a default-disabled durable choice survive export; the public instance install command projects exact client/server inventories with the default choice and an explicit enabled selection",
             "Wrong descriptor digests and equal-length corrupted included assets fail without changing instance files, including after another installation has populated the disposable cache",
             "Repeated preparation retains installed side and choices, player-written seed data and unrelated files; extracted release bytes and raw author inputs remain unchanged",
@@ -12900,6 +12957,71 @@
             "Observed native child status 0 remains success; status 7 becomes empack General while preserving the exact original runtime-status diagnostic",
             "This host classification check does not establish a Java probe, generated-script execution or actual consumer interaction"
           ]
+        },
+        {
+          "id": "UX-073.policy-domain",
+          "boundary": "U",
+          "test_ids": [
+            "empack-core::java::tests::historical_boundaries_and_recommendations",
+            "empack-core::java::tests::exact_snapshot_boundaries_do_not_use_semver_or_prefix_guesses",
+            "empack-core::java::tests::overrides_accept_supported_lower_majors_and_refuse_unsupported_versions",
+            "empack-core::java::tests::constraints_narrow_without_recommending_outside_the_intersection",
+            "empack-core::java::tests::checked_in_profiles_are_unique_ordered_bounded_and_hash_attributed",
+            "empack-lib::engine::release::tests::java_policy_round_trip_enforces_upper_bounds_and_preserves_unknown_support"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Exact historical/snapshot profiles recommend the highest admitted major without inferring unknown ceilings",
+            "Lower admitted overrides work; unsupported majors, conflicting constraints and widened release policy are refused"
+          ]
+        },
+        {
+          "id": "UX-073.policy-refresh",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_java_policy.JavaPolicyRefresh.test_refresh_binds_each_profile_to_the_pinned_index",
+            "python::test_java_policy.JavaPolicyRefresh.test_corrupt_or_ambiguous_profiles_do_not_produce_policy",
+            "python::test_java_policy.JavaPolicyRefresh.test_history_and_sparse_support_do_not_invent_compatibility"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Policy refresh checks profile hashes against the immutable metadata index",
+            "Corrupt or ambiguous profiles are refused; sparse support does not invent intermediate majors"
+          ]
+        },
+        {
+          "id": "UX-073.standalone-java",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::build::server::tests::standalone_java_policy_rejects_unsupported_jvms_before_starting_the_server"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Generated standalone shell and batch entry points reject unsupported or missing Java majors before starting the server, accept admitted alternatives and preserve the runtime exit status without requiring empack"
+          ]
         }
       ],
       "owner_now": [
@@ -16462,6 +16584,26 @@
             "Large per-test evidence remains in complete JSON/Markdown artifacts; a compact view fits the GitHub step-summary limit, does not mutate the admitted record, and identifies omitted details and the location of any shortened diagnostic"
           ],
           "remaining_group_evidence": "Presentation checks do not execute product or consumer work, admit new evidence, or replace original receipts. The native subprocess regression separately checks successful and failed gate command wiring."
+        },
+        {
+          "id": "UX-088.v084-scope-policy",
+          "boundary": "U",
+          "test_ids": [
+            "python::test_candidate_qualification.CandidatePolicy.test_v084_environment_scope_preserves_unrun_observations_and_future_requirements",
+            "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "independent"
+          ],
+          "assertions": [
+            "Maintainer-approved v0.8.4 operator deferrals retain unrun observations and do not alter later release scope",
+            "Automated and unknown cases cannot be excluded through environment deferrals"
+          ]
         }
       ],
       "owner_now": [

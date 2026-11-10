@@ -13,14 +13,14 @@ use std::{
 };
 
 const AUTHOR: &str = r#"# Keep the exact pin and local policy across runtime changes.
-schema: 5
+schema: 6
 pack: {id: live.migration, name: Migration Fixture, version: '1', authors: [Fixture]}
 runtime:
   minecraft: '1.21.1'
   loader:
     kind: fabric
     pin: '0.16.14'
-  java: 21
+  java: {preferred: 21}
 dependencies:
   renderer: {source: 'modrinth:AANobbMI', side: client}
   history:
@@ -67,7 +67,7 @@ fn native(root: &Path, side: &str, expected: &BTreeMap<String, Vec<u8>>) {
     ));
     let release: Value = serde_json::from_slice(&members["release.json"]).unwrap();
     assert_eq!(release["runtime"]["minecraft"], "1.21.2");
-    assert_eq!(release["runtime"]["java_major"], 21);
+    assert_eq!(release["runtime"]["java"]["preferred"], 21);
     let files = release["files"].as_array().unwrap();
     assert_eq!(files.len(), expected.len());
     assert_eq!(

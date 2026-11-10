@@ -123,6 +123,35 @@ class CandidatePolicy(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "applicability changed"):
             self.evaluate()
 
+    def test_v084_environment_scope_preserves_unrun_observations_and_future_requirements(self):
+        row = next(row for row in self.document["requirements"] if row["id"] == "UX-001")
+        identity = "UX-001.operator-fixture"
+        row["evidence_tiers"].append("C")
+        row["cases"].append(dict(id=identity, boundary="C",
+            test_ids=["acceptance::prism::reference-instance"],
+            required_platforms=["linux"], required_product_features=["default"]))
+        self.document["gates"] = dict(v084_environment_deferrals=dict(
+            approved_on="2026-11-10", reason="Synthetic scope test, not consumer evidence", cases=[identity]))
+        result = self.evaluate()
+        self.assertTrue(result["qualification"], "synthetic gate mechanics only")
+        observed = next(row for row in result["acceptance"]["requirements"] if row["id"] == "UX-001")
+        self.assertEqual(observed["status"], "NOT_RUN")
+        self.assertEqual(observed["release_status"], "PASS")
+        operator = next(case for case in observed["cases"] if case["id"] == identity)
+        self.assertEqual(operator["status"], "NOT_RUN")
+        self.assertFalse(operator["required_for_release"])
+        self.assertEqual(result["deferred_environment_cases"], [identity])
+        future = self.evaluate("0.9.0-beta")
+        self.assertFalse(future["qualification"])
+        self.assertEqual(future["deferred_environment_cases"], [])
+
+    def test_environment_scope_cannot_exclude_automated_or_unknown_cases(self):
+        for identity in ["UX-001.fixture", "missing-case"]:
+            self.document["gates"] = dict(v084_environment_deferrals=dict(
+                approved_on="2026-11-10", reason="Synthetic negative test", cases=[identity]))
+            with self.subTest(identity=identity), self.assertRaisesRegex(ValueError, "operator-only"):
+                self.evaluate()
+
     def test_package_case_needs_proof_for_each_architecture_not_just_each_os(self):
         row = next(r for r in self.document["requirements"] if r["id"] == "UX-085")
         row["evidence_tiers"] = ["P"]
@@ -151,7 +180,7 @@ class CandidatePolicy(unittest.TestCase):
             path = Path(temp) / "candidate.json"
             write_json(path, record)
             digest = sha256(path)
-            check_qualification(path, digest, REVISION, "0.8.4-beta", "b" * 64)
+            check_qualification(path, digest, REVISION, "0.8.4-beta", "b" * 64, document=self.document)
             for field, value in (("qualification", False), ("status", "BLOCKED"),
                                  ("source_revision", "c" * 40), ("version", "0.8.3-beta"),
                                  ("archive_evidence_sha256", "d" * 64), ("blockers", [{}]),
@@ -160,9 +189,9 @@ class CandidatePolicy(unittest.TestCase):
                 changed[field] = value
                 write_json(path, changed)
                 with self.subTest(field=field), self.assertRaises(ValueError):
-                    check_qualification(path, sha256(path), REVISION, "0.8.4-beta", "b" * 64)
+                    check_qualification(path, sha256(path), REVISION, "0.8.4-beta", "b" * 64, document=self.document)
             with self.assertRaisesRegex(ValueError, "gate output"):
-                check_qualification(path, digest, REVISION, "0.8.4-beta", "b" * 64)
+                check_qualification(path, digest, REVISION, "0.8.4-beta", "b" * 64, document=self.document)
 
 
 class CandidateCommand(unittest.TestCase):
@@ -245,7 +274,7 @@ class CandidateCommand(unittest.TestCase):
         self.assertEqual(process.returncode, 1, process.stderr)
         self.assertIn("reason", json.loads(output.read_text()))
 
-    def test_real_registry_and_archives_cannot_skip_unimplemented_consumer_obligations(self):
+    def test_real_registry_and_archives_cannot_skip_required_automated_obligations(self):
         self.admit()
         output = self.root / ".git/candidate.json"
         command = [sys.executable, str(SCRIPTS / "qualify-release.py"), "gate",
@@ -255,8 +284,9 @@ class CandidateCommand(unittest.TestCase):
         self.assertEqual(process.returncode, 2, process.stderr)
         record = json.loads(output.read_text())
         self.assertFalse(record["qualification"])
-        self.assertEqual(len(record["applicable_requirements"]), 88)
-        self.assertEqual(len(record["blockers"]), 88)
+        self.assertEqual(set(record["applicable_requirements"]), NATIVE - {"UX-084"})
+        self.assertEqual(len(record["blockers"]), 87)
+        self.assertEqual(len(record["deferred_environment_cases"]), 30)
         row = next(r for r in record["acceptance"]["requirements"] if r["id"] == "UX-085")
         self.assertEqual(row["status"], "NOT_RUN", "one package case is still a partial requirement")
         self.assertEqual(row["cases"][0]["status"], "PASS", "synthetic archive admission mechanics, not real execution")

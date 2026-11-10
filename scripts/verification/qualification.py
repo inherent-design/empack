@@ -13,16 +13,21 @@ from .candidate_execution import inspect_execution
 from .receipts import inspect_suite_receipt
 from .release import TARGETS, check_payload, git
 from .release_inputs import release_version, stamped_sources
-from .requirements import case_results
+from .requirements import case_results, release_deferrals
 
 NATIVE = {f"UX-{number:03}" for number in range(1, 89)}
 PORTABLE = {f"PORT-{number:03}" for number in range(1, 22)}
 
 
-def applicable_requirements(version):
+def applicable_requirements(version, document=None):
     release_version(version)
     major, minor, _ = map(int, version.split("-", 1)[0].split("."))
-    return NATIVE | PORTABLE if (major, minor) >= (0, 9) else NATIVE
+    applicable = NATIVE | PORTABLE if (major, minor) >= (0, 9) else set(NATIVE)
+    if document is not None:
+        deferred = release_deferrals(document, version)
+        applicable -= {row["id"] for row in document["requirements"]
+                       if row["cases"] and all(case["id"] in deferred for case in row["cases"])}
+    return applicable
 
 
 def evaluate_requirements(document, classification, evidence, revision, version, package_receipts, consumer_evidence=(), tooling_evidence=(), doctest_evidence=(), schema_evidence=(), acceptance_evidence=()):
@@ -36,10 +41,17 @@ def evaluate_requirements(document, classification, evidence, revision, version,
             raise ValueError(f"Requirement applicability changed without a candidate policy change: {identity}")
     # Portable obligations become mandatory at their planned release, never by
     # silently changing the denominator or relying on a caller's exclusions.
-    applicable = applicable_requirements(version)
+    applicable = applicable_requirements(version, document)
+    deferred = release_deferrals(document, version)
     acceptance = case_results(document, classification, evidence, revision, package_receipts=package_receipts, consumer_evidence=consumer_evidence, tooling_evidence=tooling_evidence, doctest_evidence=doctest_evidence, schema_evidence=schema_evidence, acceptance_evidence=acceptance_evidence)
     blockers = []
     for row in acceptance["requirements"]:
+        for case in row["cases"]:
+            case["required_for_release"] = case["id"] not in deferred
+        required = [case["status"] for case in row["cases"] if case["required_for_release"]]
+        if row["case_bindings_status"] != "complete":
+            required.append("NOT_RUN")
+        row["release_status"] = aggregate_outcomes(required) if required else "DEFERRED"
         row["applicable"] = row["id"] in applicable
         if not row["applicable"]:
             continue
@@ -53,13 +65,13 @@ def evaluate_requirements(document, classification, evidence, revision, version,
         for case in declared["cases"]:
             if case["boundary"] == "P" and set(case.get("required_targets", [])) != set(TARGETS):
                 reasons.append("Package case must retain all five execution targets: " + case["id"])
-        if row["status"] != "PASS":
-            reasons.append("Required observations are " + row["status"])
+        if row["release_status"] != "PASS":
+            reasons.append("Required observations are " + row["release_status"])
         if reasons:
             blockers.append({"requirement": row["id"], "reasons": reasons})
-    # No approved low-risk waiver policy is installed. Missing critical or actual
-    # consumer evidence cannot be waived by setting a result field to WAIVED.
-    states = [row["status"] for row in acceptance["requirements"] if row["applicable"]]
+    # Scope does not erase observed results. Any supplied failed receipt still
+    # blocks; no caller-provided WAIVED/PASS label substitutes for execution.
+    states = [row["release_status"] for row in acceptance["requirements"] if row["applicable"]]
     for record in [*evidence, *consumer_evidence, *tooling_evidence, *doctest_evidence, *schema_evidence, *acceptance_evidence]:
         if record.get("status") != "PASS":
             blockers.append({"requirement": "candidate", "reasons": [
@@ -68,6 +80,7 @@ def evaluate_requirements(document, classification, evidence, revision, version,
     status = "FAIL" if observed == "FAIL" else "BLOCKED" if blockers else "PASS"
     return {"status": status, "qualification": status == "PASS", "acceptance": acceptance,
             "applicable_requirements": sorted(applicable), "blockers": blockers,
+            "deferred_environment_cases": sorted(deferred),
             "waivers": [], "waiver_policy": "No waiver admission; all applicable obligations must pass"}
 
 
@@ -126,7 +139,7 @@ def qualify(root, payload, payload_sha256, revision, version, receipt_paths=(), 
     return result
 
 
-def check_qualification(path, digest, revision, version, archive_digest):
+def check_qualification(path, digest, revision, version, archive_digest, *, document=None):
     """Publication trusts only the immutable output of its candidate gate job."""
     if sha256(path) != digest:
         raise ValueError("Candidate evidence differs from the qualification gate output")
@@ -137,15 +150,22 @@ def check_qualification(path, digest, revision, version, archive_digest):
             or record.get("archive_evidence_sha256") != archive_digest or record.get("blockers")
             or record.get("waivers") != []):
         raise ValueError("Candidate is unqualified, incomplete or belongs to another archive payload")
-    applicable = applicable_requirements(version)
+    if document is None:
+        document = json.loads((Path(__file__).resolve().parents[2] / "tests/verification/requirements.json").read_text())
+    applicable = applicable_requirements(version, document)
+    deferred = release_deferrals(document, version)
     acceptance = record.get("acceptance", {})
     rows = acceptance.get("requirements", [])
     if (acceptance.get("source_revision") != revision
             or record.get("applicable_requirements") != sorted(applicable)
+            or record.get("deferred_environment_cases") != sorted(deferred)
             or len(rows) != len(NATIVE | PORTABLE)
             or {row["id"] for row in rows} != NATIVE | PORTABLE
             or any(row.get("applicable") != (row["id"] in applicable)
-                   or row["id"] in applicable and (row["status"] != "PASS" or row["case_bindings_status"] != "complete")
+                   or row["id"] in applicable and (row.get("release_status") != "PASS" or row["case_bindings_status"] != "complete")
+                   or any(case.get("required_for_release") != (case["id"] not in deferred)
+                          or case["id"] not in deferred and row["id"] in applicable and case["status"] != "PASS"
+                          for case in row["cases"])
                    for row in rows)):
         raise ValueError("Candidate qualification lost required observations or applicability")
     return record

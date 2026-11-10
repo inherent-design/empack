@@ -7,14 +7,14 @@ fn source(root: &Path, assertions: Vec<SourceDigest>) -> DecodedRelease {
     let release = DecodedRelease::encode(ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "published".into(),
         version: "1".into(),
         minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files: vec![ReleaseFile {

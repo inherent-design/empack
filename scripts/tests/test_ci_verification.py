@@ -27,7 +27,7 @@ REVISION = "a" * 40
 
 class ChangeSelection(unittest.TestCase):
     def test_docs_and_editor_schemas_select_executable_tooling_without_native_matrix(self):
-        plan = ci.selection(["README.md", ".github/README.md", "docs/schemas/empack.schema-5.json"], trusted=False)
+        plan = ci.selection(["README.md", ".github/README.md", "docs/schemas/empack.schema-6.json"], trusted=False)
         self.assertEqual(plan["required_jobs"], ["tooling"])
         self.assertFalse(plan["native_targets"])
         self.assertFalse(plan["blocked_jobs"])
@@ -220,7 +220,7 @@ def fixture_attempt(directory, target, features="telemetry", suites=None, test_f
 
 class RequiredGate(unittest.TestCase):
     def test_schema_observations_are_required_even_for_docs_only_changes(self):
-        plan = bound(ci.selection(["docs/schemas/empack.schema-5.json"], trusted=False))
+        plan = bound(ci.selection(["docs/schemas/empack.schema-6.json"], trusted=False))
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             tooling_attempt(root)

@@ -202,13 +202,14 @@ async fn initialize_with_catalog(
         };
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
+    let java_major = super::java::choose(session, game.as_str(), args.java)?;
     let intent = ProjectIntent {
         dependency_policy: Default::default(),
         installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata,
         runtime: RuntimeIntent {
-            java_major: args.java.unwrap_or(21),
+            java_major,
             minecraft: game,
             acceptable_versions,
             loader,

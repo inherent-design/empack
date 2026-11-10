@@ -368,7 +368,7 @@ pub(super) fn patch(original: &[u8], old: &[u8], next: &[u8]) -> Result<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    const INPUT: &str = "# café\nschema: 5\npack:\n  id: demo\n  name: 'Démo' # retain name\n  version: one # release\nruntime:\n  minecraft: '1.21.1'\n  loader: fabric\n  java: 21\ndependencies:\n  # Keep this provider spelling\n  alpha: modrinth:Alpha001 # alpha note\n  beta: modrinth:Beta0001 # beta note\n";
+    const INPUT: &str = "# café\nschema: 6\npack:\n  id: demo\n  name: 'Démo' # retain name\n  version: one # release\nruntime:\n  minecraft: '1.21.1'\n  loader: fabric\n  java: {preferred: 21}\ndependencies:\n  # Keep this provider spelling\n  alpha: modrinth:Alpha001 # alpha note\n  beta: modrinth:Beta0001 # beta note\n";
     #[test]
     fn metadata_preserves_comments_unicode_crlf_and_defaults() {
         for input in [INPUT.to_owned(), INPUT.replace('\n', "\r\n")] {

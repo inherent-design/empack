@@ -15,10 +15,14 @@ def render(record):
              f"Archive evidence: {cell(record['archive_evidence_sha256'])}", ""]
     if record.get("reason"):
         return "\n".join(lines + [cell(record["reason"]), "", "No qualification was established.", ""])
-    lines += [record["waiver_policy"], "", "| Requirement | Applicable | Observations |",
-              "| --- | --- | --- |"]
+    lines += [record["waiver_policy"], "", "| Requirement | Required for release | Observations | Release result |",
+              "| --- | --- | --- | --- |"]
     for row in record["acceptance"]["requirements"]:
-        lines.append(f"| {cell(row['id'])} | {cell(row['applicable'])} | {cell(row['status'])} |")
+        lines.append(f"| {cell(row['id'])} | {cell(row['applicable'])} | {cell(row['status'])} | {cell(row['release_status'])} |")
+    if record.get("deferred_environment_cases"):
+        lines += ["", "## Deferred environment checks", "",
+                  "These maintainer-deferred v0.8.4 checks are outside this release's blocking scope. Their actual observations remain unchanged; missing execution is not a pass.", ""]
+        lines += [f"- {cell(identity)}" for identity in record["deferred_environment_cases"]]
     lines += ["", "## Outstanding obligations", ""]
     for blocker in record["blockers"]:
         lines.append(f"- {cell(blocker['requirement'])}: {cell('; '.join(blocker['reasons']))}")

@@ -53,7 +53,7 @@ fn release(next: bool) -> DecodedRelease {
     })
     .collect();
     DecodedRelease::encode(ReleaseDocument {
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "rollback.fixture".into(),
         version: if next { "B" } else { "A" }.into(),
         minimum_engine: ">=0.8.0-beta".into(),
@@ -62,7 +62,7 @@ fn release(next: bool) -> DecodedRelease {
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files,

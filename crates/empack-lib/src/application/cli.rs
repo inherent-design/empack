@@ -34,6 +34,9 @@ pub struct MigrationArgs {
     /// Exact loader version; otherwise retain a valid version or resolve a compatible one
     #[arg(long)]
     pub loader_version: Option<String>,
+    /// Preferred Java major for the resulting runtime; otherwise preserve the author's choice.
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..))]
+    pub java: Option<u16>,
     /// Explicit alternative Minecraft versions accepted for provider compatibility
     #[arg(long = "accept-version")]
     pub acceptable_versions: Vec<String>,
@@ -207,8 +210,8 @@ pub struct InitArgs {
     )]
     pub mc_version: Option<String>,
 
-    /// Minimum recipient Java major; defaults to 21 when omitted.
-    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Declared minimum Java major (default: 21; adjust for your game/loader)")]
+    /// Preferred recipient Java major; defaults to the selected runtime's recommendation.
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Preferred Java major within the runtime policy (default: highest admitted major)")]
     pub java: Option<u16>,
 
     /// Author name
@@ -483,6 +486,9 @@ pub enum InstanceCommand {
         /// Use the completed release's server entry point; PROGRAM is locally selected Java
         #[arg(long)]
         server: bool,
+        /// PROGRAM is Java; validate its major without adding a server entry point
+        #[arg(long)]
+        java_runtime: bool,
         /// Check the explicitly enrolled channel and apply a verified update before launch
         #[arg(long)]
         check_updates: bool,
@@ -1172,6 +1178,7 @@ mod tests {
             "empack",
             "instance",
             "launch",
+            "--java-runtime",
             "--",
             "/path with spaces/java",
             "-Xmx2G",
@@ -1179,11 +1186,17 @@ mod tests {
         ])
         .unwrap();
         let Some(Commands::Instance {
-            command: InstanceCommand::Launch { command, .. },
+            command:
+                InstanceCommand::Launch {
+                    command,
+                    java_runtime,
+                    ..
+                },
         }) = cli.command
         else {
             panic!()
         };
+        assert!(java_runtime);
         assert_eq!(
             command,
             vec![

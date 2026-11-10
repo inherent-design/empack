@@ -8,14 +8,14 @@ use std::{
 };
 
 const AUTHOR: &str = r#"# Keep the exact pin and local authoring during migration.
-schema: 5
+schema: 6
 pack: {id: migration.fixture, name: Migration Fixture, version: '1.0', authors: [Tester]}
 runtime:
   minecraft: '1.21.1'
   loader:
     kind: fabric
     pin: '0.16.14'
-  java: 21
+  java: {preferred: 21}
 dependencies:
   root: modrinth:Root0001
   pinned: {source: 'modrinth:Pinned01', pin: PinVer01}

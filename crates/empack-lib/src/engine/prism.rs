@@ -159,7 +159,7 @@ mod tests {
         let mut old = ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         };
         let mut bytes = br#"{ "formatVersion":1,"custom":{"keep":true},"components":[{"uid":"net.minecraft","version":"1.21.1","important":true,"cachedName":"Game label"},{"uid":"user.component","version":"7","extra":[1,false]}] }"#.to_vec();
         let base: Value = serde_json::from_slice(&bytes).unwrap();
@@ -209,7 +209,10 @@ mod tests {
         }
         // Java policy changes do not rewrite unrelated component/profile bytes.
         let changed_java = ReleaseRuntime {
-            java_major: 25,
+            java: crate::engine::release::ReleaseJava {
+                preferred: 25,
+                ..old.java.clone()
+            },
             ..old.clone()
         };
         assert_eq!(
@@ -238,7 +241,7 @@ mod tests {
         let requirements = super::super::release::ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: super::super::release::ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         };
         let bytes = br#"{ "formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.21.1","important":true}] }"#;
         assert_eq!(

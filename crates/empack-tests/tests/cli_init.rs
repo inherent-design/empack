@@ -241,7 +241,7 @@ fn cli_init_custom_content_routes_preserve_explicit_paths_and_refuse_traversal()
             .unwrap();
         assert!(output.status.success(), "{output:?}");
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["author_schema"], 5);
+        assert_eq!(report["author_schema"], 6);
         assert_eq!(snapshot(project.dir()), before);
     }
 }
