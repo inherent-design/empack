@@ -278,8 +278,10 @@ async fn publish_with_refreshed_locator(
         PinSelector::ModrinthVersion(id) => id.to_string(),
         _ => anyhow::bail!("Resource fixture must use Modrinth"),
     };
+    // The provider's declared game can advance independently of this content fixture.
+    let java = empack_core::java::JavaPolicy::for_game(game).select(None)?;
     let intent_bytes = serde_json::to_vec(
-        &json!({"schema":6,"pack":{"id":"fixture","name":"Provider smoke","version":"alpha"},"runtime":{"java":{"preferred":21},"minecraft":game,"loader":{"kind":"vanilla"}},"build":{"profiles":{"prism":{"target":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"zip"}},"default":["prism"]},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"type":"resource-pack","pin":selection,"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
+        &json!({"schema":6,"pack":{"id":"fixture","name":"Provider smoke","version":"alpha"},"runtime":{"java":{"preferred":java},"minecraft":game,"loader":{"kind":"vanilla"}},"build":{"profiles":{"prism":{"target":"prism","delivery":"bundled","environment":"client","updates":"snapshot","format":"zip"}},"default":["prism"]},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"type":"resource-pack","pin":selection,"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
     )?;
     let intent = DocumentCodec.decode_intent(&intent_bytes, "provider-smoke")?;
     let key = DependencyKey::parse("resources")?;
