@@ -221,7 +221,8 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         );
     }
     Ok(ImportCandidateOptions {
-        java_major: 21,
+        java_major: empack_core::java::JavaPolicy::for_game(source.runtime.minecraft.as_str())
+            .select(None)?,
         metadata: PackMetadata {
             id: "test-pack".into(),
             name: source
