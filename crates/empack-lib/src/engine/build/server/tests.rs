@@ -485,7 +485,7 @@ fn standalone_java_policy_rejects_unsupported_jvms_before_starting_the_server() 
             br#"#!/bin/sh
 if [ "$1" = '-XshowSettings:properties' ]; then
   echo "    java.specification.version = $FIXTURE_JAVA" >&2
-  exit 0
+  exit "$FIXTURE_PROBE_STATUS"
 fi
 printf '%s\n' "$@" > started
 exit 7
@@ -498,13 +498,15 @@ exit 7
         .unwrap();
     }
     #[cfg(windows)]
-    put(root.path(), "java home/bin/java.cmd", b"@echo off\r\nif \"%~1\"==\"-XshowSettings:properties\" (\r\n  echo     java.specification.version = %FIXTURE_JAVA%\r\n  exit /b 0\r\n)\r\necho %* > started\r\nexit /b 7\r\n");
-    for (version, accepted) in [
-        ("1.8", false),
-        ("16", true),
-        ("17", true),
-        ("21", false),
-        ("garbage", false),
+    put(root.path(), "java home/bin/java.cmd", b"@echo off\r\nif \"%~1\"==\"-XshowSettings:properties\" (\r\n  echo     java.specification.version = %FIXTURE_JAVA%\r\n  exit /b %FIXTURE_PROBE_STATUS%\r\n)\r\necho %* > started\r\nexit /b 7\r\n");
+    for (version, probe_status, accepted) in [
+        ("1.8", "0", false),
+        ("16", "0", true),
+        ("17", "0", true),
+        ("21", "0", false),
+        ("garbage", "0", false),
+        ("", "0", false),
+        ("17", "9", false),
     ] {
         for interface in [ServerInterface::Console, ServerInterface::Gui] {
             let marker = root.path().join("game/started");
@@ -541,6 +543,7 @@ exit 7
             let output = command
                 .env("JAVA_HOME", root.path().join("java home"))
                 .env("FIXTURE_JAVA", version)
+                .env("FIXTURE_PROBE_STATUS", probe_status)
                 .env("EMPACK_NO_PAUSE", "1")
                 .output()
                 .unwrap();
