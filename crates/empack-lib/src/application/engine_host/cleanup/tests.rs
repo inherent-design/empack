@@ -42,12 +42,12 @@ async fn cleanup_previews_every_scope_and_confirms_once_without_requiring_valid_
     project(root.path());
     let cache = cache(root.path());
     let all = Selection::parse(&["all".into()]).unwrap();
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     for (yes, dry) in [(true, true), (false, false)] {
         clean_selected(&session(root.path(), yes, dry), all, Some(cache.clone()))
             .await
             .unwrap();
-        assert_eq!(before, super::super::tests::snapshot(root.path()));
+        assert_eq!(before, crate::test_support::file_bytes(root.path()));
     }
     let interactive = MockInteractiveProvider::new().with_confirm(true);
     let calls = interactive.confirm_calls.clone();
@@ -85,7 +85,7 @@ async fn cache_cleanup_does_not_require_a_project_or_create_an_absent_store() {
         )
         .await
         .unwrap();
-        assert!(super::super::tests::snapshot(root.path()).is_empty());
+        assert!(crate::test_support::file_bytes(root.path()).is_empty());
         assert!(!root.path().join("absent").exists());
     }
     let cache = cache(root.path());
@@ -107,7 +107,7 @@ async fn artifact_defaults_unknown_targets_and_failed_second_preflight_preserve_
     project(root.path());
     let cache = cache(root.path());
     assert!(Selection::parse(&["builds".into(), "typo".into()]).is_err());
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     // A malformed canonical cache object must prevent the artifact cleanup from starting.
     fs::create_dir(cache.join(format!("{}.blob", "cd".repeat(32)))).unwrap();
     assert!(
@@ -119,7 +119,7 @@ async fn artifact_defaults_unknown_targets_and_failed_second_preflight_preserve_
         .await
         .is_err()
     );
-    assert_eq!(before, super::super::tests::snapshot(root.path()));
+    assert_eq!(before, crate::test_support::file_bytes(root.path()));
     assert!(!root.path().join("state").exists());
     clean_selected(
         &session(root.path(), true, false),
@@ -140,7 +140,7 @@ async fn combined_cleanup_rejects_overlapping_storage_before_approval() {
     project(root.path());
     let cache = root.path().join("project/dist/content-v1");
     FileContentStore::open(&cache, ContentStoreLimits::default()).unwrap();
-    let before = super::super::tests::snapshot(root.path());
+    let before = crate::test_support::file_bytes(root.path());
     let error = clean_selected(
         &session(root.path(), true, false),
         Selection::parse(&["all".into()]).unwrap(),
@@ -149,7 +149,7 @@ async fn combined_cleanup_rejects_overlapping_storage_before_approval() {
     .await
     .unwrap_err();
     assert!(error.to_string().contains("overlap"));
-    assert_eq!(before, super::super::tests::snapshot(root.path()));
+    assert_eq!(before, crate::test_support::file_bytes(root.path()));
 }
 
 #[tokio::test]

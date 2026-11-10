@@ -17,11 +17,56 @@ fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(file, bytes).unwrap();
 }
+
+/// Component setup for executable tests of the unmodified generated entry points.
+/// The ordinary product never reads this marker or selects this private driver.
+#[test]
+fn generated_server_entrypoint_fixture() {
+    let root = std::env::current_dir().unwrap();
+    let marker = root.join("server-script-fixture.json");
+    if !marker.is_file() {
+        return;
+    }
+    let input: serde_json::Value = serde_json::from_slice(&fs::read(marker).unwrap()).unwrap();
+    let managed = input["managed"].as_bool().unwrap();
+    let digest = input["release_sha256"].as_str().unwrap();
+    let release = managed.then_some(digest);
+    let java = crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap();
+    let launch = ServerLaunch::Jar(path("server.jar").unwrap());
+    for (name, bytes) in [
+        ("install_pack.sh", install_script(release)),
+        ("install_pack.bat", install_batch(release)),
+        (
+            "start.sh",
+            runtime_script(&launch, managed, false, ServerInterface::Console, &java),
+        ),
+        (
+            "start.bat",
+            runtime_script(&launch, managed, true, ServerInterface::Console, &java),
+        ),
+        (
+            "start_gui.sh",
+            runtime_script(&launch, managed, false, ServerInterface::Gui, &java),
+        ),
+        (
+            "start_gui.bat",
+            runtime_script(&launch, managed, true, ServerInterface::Gui, &java),
+        ),
+    ] {
+        put(&root, name, bytes.as_bytes());
+        #[cfg(unix)]
+        if name.ends_with(".sh") {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(root.join(name), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+}
+
 pub(in crate::engine::build) fn fixture(root: &Path) -> BuildAcquisitions {
     let original = project(false, false);
     let mut intent = original.intent().clone();
     intent.metadata.id = "server.fixture".into();
-    intent.runtime.java_major = 21;
+    intent.runtime.java_major = 17;
     intent.installation_policies = BTreeMap::new();
     intent.runtime.loader = LoaderKind::Vanilla;
     intent.runtime.loader_version = None;
@@ -421,6 +466,110 @@ fn generated_shell_scripts_keep_java_path_and_user_arguments_separate() {
             .unwrap()
             .success()
     );
+}
+
+#[test]
+fn standalone_java_policy_rejects_unsupported_jvms_before_starting_the_server() {
+    let root = tempfile::Builder::new()
+        .prefix("Java policy ")
+        .tempdir()
+        .unwrap();
+    fs::create_dir(root.path().join("game")).unwrap();
+    let java = crate::engine::release::ReleaseJava::for_game("1.17.1", 17).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        put(
+            root.path(),
+            "java home/bin/java",
+            br#"#!/bin/sh
+if [ "$1" = '-XshowSettings:properties' ]; then
+  echo "    java.specification.version = $FIXTURE_JAVA" >&2
+  exit "$FIXTURE_PROBE_STATUS"
+fi
+printf '%s\n' "$@" > started
+exit 7
+"#,
+        );
+        fs::set_permissions(
+            root.path().join("java home/bin/java"),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+    }
+    #[cfg(windows)]
+    put(root.path(), "java home/bin/java.cmd", b"@echo off\r\nif \"%~1\"==\"-XshowSettings:properties\" (\r\n  echo     java.specification.version = %FIXTURE_JAVA%\r\n  exit /b %FIXTURE_PROBE_STATUS%\r\n)\r\necho %* > started\r\nexit /b 7\r\n");
+    for (version, probe_status, accepted) in [
+        ("1.8", "0", false),
+        ("16", "0", true),
+        ("17", "0", true),
+        ("21", "0", false),
+        ("garbage", "0", false),
+        ("", "0", false),
+        ("17", "9", false),
+    ] {
+        for interface in [ServerInterface::Console, ServerInterface::Gui] {
+            let marker = root.path().join("game/started");
+            if marker.exists() {
+                fs::remove_file(&marker).unwrap();
+            }
+            let script = runtime_script(
+                &ServerLaunch::Jar(path("server.jar").unwrap()),
+                false,
+                cfg!(windows),
+                interface,
+                &java,
+            );
+            #[cfg(unix)]
+            let mut command = {
+                put(root.path(), "start.sh", script.as_bytes());
+                let mut command = std::process::Command::new("bash");
+                command.arg(root.path().join("start.sh"));
+                command
+            };
+            #[cfg(windows)]
+            let mut command = {
+                let script = script.replace("java.exe", "java.cmd").replace(
+                    "  \"%JAVA_HOME%\\bin\\java.cmd\"",
+                    "  call \"%JAVA_HOME%\\bin\\java.cmd\"",
+                );
+                put(root.path(), "start.bat", script.as_bytes());
+                let mut command = std::process::Command::new("cmd");
+                command
+                    .args(["/D", "/C"])
+                    .arg(root.path().join("start.bat"));
+                command
+            };
+            let output = command
+                .env("JAVA_HOME", root.path().join("java home"))
+                .env("FIXTURE_JAVA", version)
+                .env("FIXTURE_PROBE_STATUS", probe_status)
+                .env("EMPACK_NO_PAUSE", "1")
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(if accepted { 7 } else { 1 }),
+                "{version}: {} {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(marker.exists(), accepted, "{version}");
+            if !accepted {
+                let diagnostics = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let expected = if probe_status == "0" || cfg!(windows) {
+                    "16, 17"
+                } else {
+                    "Cannot inspect Java"
+                };
+                assert!(diagnostics.contains(expected), "{diagnostics}");
+            }
+        }
+    }
 }
 #[test]
 fn computed_runtime_hash_does_not_upgrade_original_source_assurance() {

@@ -14,7 +14,7 @@ pub(crate) mod signing;
 pub mod trust;
 
 /// Independent of the author schema and executable version.
-pub const RELEASE_SCHEMA: u32 = 1;
+pub const RELEASE_SCHEMA: u32 = 2;
 /// Bound wire input before parsing or allocating nested values.
 pub const MAX_RELEASE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -64,7 +64,101 @@ impl ReleaseServerLaunch {
 pub struct ReleaseRuntime {
     pub minecraft: String,
     pub loader: ReleaseLoader,
-    pub java_major: u16,
+    pub java: ReleaseJava,
+}
+
+/// Resolved Java policy carried by a release, separate from the preferred major.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseJava {
+    pub preferred: u16,
+    pub minimum: u16,
+    /// Unknown support is explicit and admits only the chosen major at execution.
+    pub supported: Option<Vec<u16>>,
+    pub policy: String,
+}
+impl ReleaseJava {
+    pub fn for_game(game: &str, preferred: u16) -> Result<Self> {
+        let policy = empack_core::java::JavaPolicy::for_game(game);
+        policy.select(Some(preferred))?;
+        Ok(Self {
+            preferred,
+            minimum: policy.required_minimum(),
+            supported: policy.supported().map(<[u16]>::to_vec),
+            policy: empack_core::java::POLICY_ID.into(),
+        })
+    }
+
+    pub fn validate(&self, game: &str) -> Result<()> {
+        let base = empack_core::java::JavaPolicy::for_game(game);
+        ensure!(
+            self.policy == empack_core::java::POLICY_ID,
+            "Unsupported Java policy; use an engine that understands the selected release"
+        );
+        ensure!(
+            self.minimum >= base.required_minimum() && self.preferred >= self.minimum,
+            "Preferred Java or declared minimum contradicts the runtime requirement"
+        );
+        match (&self.supported, base.supported()) {
+            (Some(majors), Some(admitted)) => ensure!(
+                !majors.is_empty()
+                    && majors.contains(&self.preferred)
+                    && majors.windows(2).all(|pair| pair[0] < pair[1])
+                    && majors
+                        .iter()
+                        .all(|major| *major >= self.minimum && admitted.contains(major)),
+                "Release Java majors are outside the admitted runtime policy"
+            ),
+            (None, None) => {}
+            _ => anyhow::bail!("Release Java support must retain the known/unknown runtime policy"),
+        }
+        Ok(())
+    }
+
+    pub fn check_actual(&self, actual: u16) -> Result<()> {
+        ensure!(
+            actual >= self.minimum,
+            "Selected Java is version {actual}; release requires Java {} or newer within its admitted policy",
+            self.minimum
+        );
+        if let Some(majors) = &self.supported {
+            ensure!(
+                majors.contains(&actual),
+                "Selected Java is version {actual}; release admits {:?} and prefers Java {}. Select a compatible Java executable",
+                majors,
+                self.preferred
+            );
+        } else {
+            ensure!(
+                actual == self.preferred,
+                "Java compatibility is unqualified; selected Java {actual} differs from the explicitly preferred Java {}",
+                self.preferred
+            );
+        }
+        Ok(())
+    }
+
+    /// Verified game/loader evidence may narrow support without changing the author's preference.
+    pub fn require_minimum(&mut self, required: u16, source: &str) -> Result<()> {
+        let minimum = self.minimum.max(required);
+        let mut supported = self.supported.clone();
+        if let Some(majors) = &mut supported {
+            majors.retain(|major| *major >= minimum);
+            ensure!(
+                majors.contains(&self.preferred),
+                "Preferred Java {} conflicts with {source}, which requires at least Java {required}; review the author selection",
+                self.preferred
+            );
+        }
+        ensure!(
+            self.preferred >= minimum,
+            "Preferred Java {} conflicts with {source}, which requires at least Java {required}",
+            self.preferred
+        );
+        self.minimum = minimum;
+        self.supported = supported;
+        Ok(())
+    }
 }
 impl ReleaseRuntime {
     pub(crate) fn resolution(&self) -> Result<empack_core::model::RuntimeResolution> {
@@ -359,7 +453,7 @@ impl ReleaseDocument {
         semver::VersionReq::parse(&self.minimum_engine)
             .context("Invalid minimum engine requirement")?;
         identifier(&self.runtime.minecraft)?;
-        ensure!(self.runtime.java_major >= 8, "Invalid Java requirement");
+        self.runtime.java.validate(&self.runtime.minecraft)?;
         match &self.runtime.loader {
             ReleaseLoader::Vanilla => {}
             ReleaseLoader::Fabric { version }

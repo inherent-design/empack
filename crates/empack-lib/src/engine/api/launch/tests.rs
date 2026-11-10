@@ -37,6 +37,22 @@ fn runtime_fixture() {
         drop(descendant);
         return;
     }
+    let observed = serde_json::json!({
+        "cwd": current,
+        "program": std::env::current_exe().unwrap(),
+        "arguments": std::env::args().skip(1).collect::<Vec<_>>(),
+        "pid": std::process::id(),
+    });
+    fs::write(
+        current.join("launch-observed.tmp"),
+        serde_json::to_vec(&observed).unwrap(),
+    )
+    .unwrap();
+    fs::rename(
+        current.join("launch-observed.tmp"),
+        current.join("launch-observed.json"),
+    )
+    .unwrap();
     fs::write(current.join("launch-started"), b"running").unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
     while !current.join("launch-exit").exists() {
@@ -78,14 +94,14 @@ fn install_request(bytes: &[u8]) -> InstallInstanceRequest {
     let payload = DecodedRelease::encode(ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "launch".into(),
         version: "1".into(),
         minimum_engine: ">=0.8.0-beta".into(),
         runtime: ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files: vec![file],
@@ -122,6 +138,7 @@ fn grant(prepared: &PreparedOperation, runtime: bool) -> ExecutionGrant {
 }
 fn request() -> LaunchInstanceRequest {
     LaunchInstanceRequest {
+        java_runtime: false,
         server: false,
         expected_release: None,
         program: std::env::current_exe().unwrap(),
@@ -547,16 +564,29 @@ async fn server_launch_uses_completed_entry_point_and_refuses_runtime_drift() {
         &*operation.wait().await,
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
     ));
+    engine.release_completed(operation.id());
+    let selected_program = std::env::current_exe().unwrap();
     let selected = || LaunchInstanceRequest {
+        java_runtime: false,
         server: true,
         expected_release: Some(release.id().into()),
-        program: std::env::current_exe().unwrap(),
+        program: selected_program.clone(),
         arguments: vec!["nogui".into(), "literal argument".into()],
     };
     let prepared = prepare(&engine, root.path(), selected()).await;
     let PreparedKind::Launch(launch) = &**prepared.data else {
         panic!()
     };
+    assert_eq!(launch.command.get_program(), selected_program.as_os_str());
+    assert_eq!(
+        launch
+            .command
+            .get_current_dir()
+            .unwrap()
+            .canonicalize()
+            .unwrap(),
+        root.path().join("game").canonicalize().unwrap()
+    );
     assert_eq!(
         launch.command.get_args().collect::<Vec<_>>(),
         ["-jar", "server-exact.jar", "nogui", "literal argument"]
@@ -625,11 +655,22 @@ async fn java_validation_requires_approval_and_retires_before_rejecting_old_java
         OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Instance(_)))
     ));
     let program = state.path().join("selected-java");
-    for version in ["1.8", "21"] {
+    for (server, version) in [
+        (true, "1.8"),
+        (true, "25"),
+        (true, "21"),
+        (false, "25"),
+        (false, "21"),
+    ] {
+        let started = root.path().join("game/server-started");
+        if started.exists() {
+            fs::remove_file(&started).unwrap();
+        }
         fs::write(&program, format!("#!/bin/sh\nif [ \"$1\" = '-XshowSettings:properties' ]; then\n  echo probe > java-probed\n  echo 'java.specification.version = {version}' >&2\n  exit 0\nfi\nprintf '%s\\n' \"$@\" > server-started\n")).unwrap();
         fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
         let selected = || LaunchInstanceRequest {
-            server: true,
+            java_runtime: !server,
+            server,
             expected_release: None,
             program: program.clone(),
             arguments: vec!["nogui".into()],
@@ -642,13 +683,17 @@ async fn java_validation_requires_approval_and_retires_before_rejecting_old_java
         let approved = grant(&prepared, true);
         let mut operation = engine.start(prepared.authorize(approved).unwrap()).unwrap();
         let result = operation.wait().await;
-        if version == "1.8" {
+        if version != "21" {
             let OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) =
                 &*result
             else {
                 panic!()
             };
-            assert!(error.to_string().contains("requires Java 21"));
+            if version == "1.8" {
+                assert!(error.to_string().contains("requires Java 21"));
+            } else {
+                assert!(error.to_string().contains("release admits [21]"));
+            }
             assert!(!root.path().join("game/server-started").exists());
         } else {
             assert!(matches!(
@@ -659,10 +704,15 @@ async fn java_validation_requires_approval_and_retires_before_rejecting_old_java
             ));
             assert_eq!(
                 fs::read_to_string(root.path().join("game/server-started")).unwrap(),
-                "-jar\nmods/a.jar\nnogui\n"
+                if server {
+                    "-jar\nmods/a.jar\nnogui\n"
+                } else {
+                    "nogui\n"
+                }
             );
         }
         fs::remove_file(root.path().join("game/java-probed")).unwrap();
+        engine.release_completed(operation.id());
         // Both successful and incompatible probes retire normally; neither strands runtime evidence.
         assert!(
             engine

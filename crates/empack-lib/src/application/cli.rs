@@ -34,6 +34,9 @@ pub struct MigrationArgs {
     /// Exact loader version; otherwise retain a valid version or resolve a compatible one
     #[arg(long)]
     pub loader_version: Option<String>,
+    /// Preferred Java major for the resulting runtime; otherwise preserve the author's choice.
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..))]
+    pub java: Option<u16>,
     /// Explicit alternative Minecraft versions accepted for provider compatibility
     #[arg(long = "accept-version")]
     pub acceptable_versions: Vec<String>,
@@ -207,8 +210,8 @@ pub struct InitArgs {
     )]
     pub mc_version: Option<String>,
 
-    /// Minimum recipient Java major; defaults to 21 when omitted.
-    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Declared minimum Java major (default: 21; adjust for your game/loader)")]
+    /// Preferred recipient Java major; defaults to the selected runtime's recommendation.
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Preferred Java major within the runtime policy (default: highest admitted major)")]
     pub java: Option<u16>,
 
     /// Author name
@@ -446,9 +449,6 @@ pub enum ReleaseCommand {
         /// Increasing sequence number; changing metadata requires a higher value
         #[arg(long)]
         sequence: u64,
-        /// UTC Unix seconds; must be future-dated by at most 31 days
-        #[arg(long)]
-        expires: i64,
         /// External Ed25519 seed file, encoded as 64 lowercase hexadecimal characters
         #[arg(long = "key-file", required = true)]
         keys: Vec<PathBuf>,
@@ -486,6 +486,9 @@ pub enum InstanceCommand {
         /// Use the completed release's server entry point; PROGRAM is locally selected Java
         #[arg(long)]
         server: bool,
+        /// PROGRAM is Java; validate its major without adding a server entry point
+        #[arg(long)]
+        java_runtime: bool,
         /// Check the explicitly enrolled channel and apply a verified update before launch
         #[arg(long)]
         check_updates: bool,
@@ -979,6 +982,26 @@ impl std::str::FromStr for SearchPlatform {
 }
 
 impl Commands {
+    /// JSON reports reserve stdout for their payload; diagnostics use stderr.
+    pub fn emits_json(&self) -> bool {
+        matches!(
+            self,
+            Self::Status { json: true, .. }
+                | Self::Outdated { json: true, .. }
+                | Self::Migrate(MigrationArgs { json: true, .. })
+                | Self::Build(BuildArgs { json: true, .. })
+                | Self::Manifest {
+                    command: ManifestCommand::Check { json: true }
+                        | ManifestCommand::Diff { json: true }
+                        | ManifestCommand::Explain { json: true, .. },
+                }
+                | Self::Pending {
+                    command: PendingCommand::List { json: true }
+                        | PendingCommand::Show { json: true, .. },
+                }
+        )
+    }
+
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
@@ -1108,7 +1131,7 @@ mod tests {
             "empack --workdir ./instance instance install ./export/release.json --sha256 PAYLOAD_SHA256",
             "empack --workdir ./instance instance update --side server",
             "empack --workdir ./publisher --yes release stage ./export --key-file /tmp/publisher.key",
-            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --expires 2000000000 --key-file /tmp/publisher.key",
+            "empack --workdir ./publisher --yes release publish-channel RELEASE_ID --channel stable --base-url https://packs.example.org/ --sequence 1 --key-file /tmp/publisher.key",
         ] {
             Cli::try_parse_from(command.split_whitespace())
                 .unwrap_or_else(|error| panic!("Documented command failed: {command}: {error}"));
@@ -1155,6 +1178,7 @@ mod tests {
             "empack",
             "instance",
             "launch",
+            "--java-runtime",
             "--",
             "/path with spaces/java",
             "-Xmx2G",
@@ -1162,11 +1186,17 @@ mod tests {
         ])
         .unwrap();
         let Some(Commands::Instance {
-            command: InstanceCommand::Launch { command, .. },
+            command:
+                InstanceCommand::Launch {
+                    command,
+                    java_runtime,
+                    ..
+                },
         }) = cli.command
         else {
             panic!()
         };
+        assert!(java_runtime);
         assert_eq!(
             command,
             vec![

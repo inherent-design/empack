@@ -1,9 +1,13 @@
+//! Trusted fixture helpers for unit tests and callers enabling `test-utils`.
+
+#[cfg(test)]
+pub(crate) mod http;
+
 pub mod filesystem;
 
 pub use filesystem::TempDirFixture;
 
 /// Read both author documents in a trusted test fixture. This is not a native engine snapshot.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn read_authoring(
     path: &std::path::Path,
 ) -> anyhow::Result<crate::engine::documents::DecodedIntent> {
@@ -21,7 +25,6 @@ pub fn read_authoring(
 }
 
 /// Replace author inputs in a trusted fixture; production mutations use verified publication.
-#[cfg(any(test, feature = "test-utils"))]
 pub fn write_authoring(
     path: &std::path::Path,
     intent: &empack_core::model::ProjectIntent,

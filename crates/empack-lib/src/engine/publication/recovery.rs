@@ -80,10 +80,8 @@ pub(in crate::engine::publication) fn file_content(value: &Fingerprint) -> FileC
 impl Publisher {
     fn read_recovery(&self, root: &ProjectReadRoot) -> Result<Option<(Dir, File, Journal)>> {
         root.check_binding()?;
-        let state = match self.host.open_dir_nofollow(root_key(root)?) {
-            Ok(state) => state,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(error.into()),
+        let Some(state) = self.find_project_state(root)? else {
+            return Ok(None);
         };
         native::reject_reparse(&state.try_clone()?.into_std_file())?;
         // A journal is published only after its coordination file exists. Never create one here.

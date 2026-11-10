@@ -1,94 +1,46 @@
 # Running a server distribution
 
-Extract the complete server archive before running its scripts. Keep the scripts
-beside `game/`; Minecraft configuration, logs and worlds live inside that directory.
-Install the Java version required by the pack. Scripts use `JAVA_HOME/bin/java`
-when `JAVA_HOME` is set, otherwise Java on `PATH`.
+Extract the complete server archive before running its scripts. Keep the scripts beside `game/`; Minecraft configuration, logs and worlds live inside that directory. Install the Java version required by the pack. Scripts use `JAVA_HOME/bin/java` when `JAVA_HOME` is set, otherwise Java on `PATH`. Generated standalone entry points check the resolved admitted majors before starting the game. See [Java selection](design/java.md) for the recommendation, overrides and support limits.
+
+For a managed installation, `empack instance launch --server -- /path/to/java` uses the local program you select. A bare program name is resolved on `PATH`; `JAVA_HOME` selection belongs to the generated scripts. After approval, empack probes that executable's Java specification version and checks it against the completed release's Java policy before starting the server. Preview does not run the probe. A failed or incompatible probe stops the launch and reports the reason.
 
 ## Starting the server
 
-| Interface | Windows | macOS and Linux |
-| --- | --- | --- |
-| Console, without the Minecraft GUI | `start.bat` | `./start.sh` |
-| Minecraft GUI | `start_gui.bat` | `./start_gui.sh` |
+| Interface                          | Windows         | macOS and Linux  |
+| ---------------------------------- | --------------- | ---------------- |
+| Console, without the Minecraft GUI | `start.bat`     | `./start.sh`     |
+| Minecraft GUI                      | `start_gui.bat` | `./start_gui.sh` |
 
-The default scripts supply `nogui` to Minecraft. The GUI scripts omit that argument;
-a GUI still requires a desktop session and support from the selected server runtime.
-Both variants pass additional command-line arguments through to the server. For
-example, `./start.sh --port 25566` selects another port. These are server arguments,
-not JVM options.
+The default scripts supply `nogui` to Minecraft. The GUI scripts omit that argument; a GUI still requires a desktop session and support from the selected server runtime. Both variants pass additional command-line arguments through to the server. For example, `./start.sh --port 25566` selects another port. These are server arguments, not JVM options.
 
-On the first run, Minecraft may stop until you review and accept its EULA in
-`game/eula.txt`. Empack never accepts the EULA for you.
+On the first run, Minecraft may stop until you review and accept its EULA in `game/eula.txt`. Empack never accepts the EULA for you.
 
 ## Interactive Unix consoles
 
-With v0.8.3-beta, empack-supervised Java receives foreground terminal ownership
-before it starts. Console commands such as `list` and `stop` work through the normal
-start scripts, and terminal Ctrl-C reaches Java's shutdown handler. Empack restores
-the terminal after the runtime exits. Prefer `stop` for an ordinary server shutdown;
-explicit operation cancellation still terminates the owned process tree.
+Empack-supervised Java receives foreground terminal ownership before it starts. Console commands such as `list` and `stop` work through the normal start scripts, and terminal Ctrl-C reaches Java's shutdown handler. Empack restores the terminal after the runtime exits. Prefer `stop` for an ordinary server shutdown; explicit operation cancellation still terminates the owned process tree.
 
-This console does not implement shell `fg`/`bg` job control. Terminal Ctrl-Z and
-delayed-suspend keys are disabled during the runtime and restored when it finishes.
-Use `stop` or Ctrl-C to finish normally. If an operator externally stops the process
-group, it remains owned until resumed with SIGCONT or retired by cancellation.
-A terminal-restoration error is reported separately from process retirement; confirmed
-retired processes do not need a false recovery acknowledgement for console cleanup.
-The CLI reports the completed outcome even when host cancellation was requested:
-cleanup and recovery failures still reach stderr. A clean interruption exits 130;
-other failures retain their classified exit status. Cancellation arriving after
-success does not change that success into an interrupted result.
+This console does not implement shell `fg`/`bg` job control. Terminal Ctrl-Z and delayed-suspend keys are disabled during the runtime and restored when it finishes. Use `stop` or Ctrl-C to finish normally. If an operator externally stops the process group, it remains owned until resumed with SIGCONT or retired by cancellation. A terminal-restoration error is reported separately from process retirement; confirmed retired processes do not need a false recovery acknowledgement for console cleanup. The CLI reports the completed outcome even when host cancellation was requested: cleanup and recovery failures still reach stderr. A clean interruption exits 130; other failures retain their classified exit status. Cancellation arriving after success does not change that success into an interrupted result.
 
-Run interactive launches in the foreground. Services can redirect all three console
-streams. This fix belongs to the recipient empack executable; it does not require
-changing mods or adding a Java wrapper. Existing custom workarounds should be
-removed only after testing the corrected executable with that installation.
+Run interactive launches in the foreground. Services can redirect all three console streams. Foreground terminal handling is provided by the recipient empack executable; no mod changes or Java wrapper are required.
 
 ## Installation and updates
 
-Bundled snapshots already include their pack and runtime files. Their
-`install_pack` script confirms that state; use a start script to launch Minecraft.
-Reference and empack-managed exports also need `empack` on `PATH`. Both start
-variants prepare the exact release before launching and stop if preparation fails.
-Subscribed exports check their enrolled update channel before launch.
+Bundled snapshots already include their pack and runtime files. Their `install_pack` script confirms that state; use a start script to launch Minecraft. Reference and empack-managed exports also need `empack` on `PATH`. Both start variants prepare the exact release before launching and stop if preparation fails. Subscribed exports check their enrolled update channel before launch.
 
-See [publishing](publishing.md) for publisher enrollment and
-[instance commands](usage.md#native-release-example) for manual installation and updates.
+See [publishing](publishing.md) for publisher enrollment and [instance commands](usage.md#native-release-example) for manual installation and updates.
 
 ## Windows console output
 
-The install and start batch scripts keep their console open when they finish so
-errors and EULA messages remain visible. Set `EMPACK_NO_PAUSE=1` for unattended
-operation. If startup fails, report the preceding console output and the Java
-version you selected.
+The install and start batch scripts keep their console open when they finish so errors and EULA messages remain visible. Set `EMPACK_NO_PAUSE=1` for unattended operation. If startup fails, report the preceding console output and the Java version you selected.
 
 ## Exit status
 
-The scripts preserve the status returned by the command they invoke.
-Standalone bundled start scripts invoke Java directly and return its status.
-Managed start scripts invoke empack and return its classified status. An ordinary
-nonzero runtime exit, such as Java exiting 7, produces empack exit code 1 with the
-original runtime status in the diagnostic. A clean interruption of the empack host
-returns 130. Preparation, verification and recovery failures use empack's own error
-categories. This distinction also applies to the Unix start scripts.
+The scripts preserve the status returned by the command they invoke. Standalone bundled start scripts invoke Java directly and return its status. Managed start scripts invoke empack and return its classified status. An ordinary nonzero runtime exit, such as Java exiting 7, produces empack exit code 1 with the original runtime status in the diagnostic. A clean interruption of the empack host returns 130. Preparation, verification and recovery failures use empack's own error categories. This distinction also applies to the Unix start scripts.
 
 ## Existing exports and custom scripts
 
-Rebuild a server distribution with v0.7.2-beta or later to receive both start
-variants and the default `nogui` argument. Updating the empack executable does not
-rewrite an existing ZIP or extracted server.
+Rebuild a server distribution to apply changes to generated entry points. Updating the empack executable does not rewrite an existing ZIP or extracted server.
 
-Bundled snapshots allow custom scripts in `templates/server/`. Reference snapshots
-and all empack-managed update recipes require the generated `start`, `start_gui`
-and `install_pack` scripts for both shell and batch entry points. A replacement
-must match the generated bytes; a different script fails build preparation.
-Accepted copies receive the generated output attributes: `start.sh`, `start_gui.sh`
-and `install_pack.sh` are executable even when their sources were created on
-Windows or have mode `0644`. Source permissions are not modified. This normalization
-applies only to the managed entry points, not arbitrary shell templates.
-Remove the conflicting template to use the generated entry point. Empack does not
-rewrite user scripts or infer their behavior from command text.
+Bundled snapshots allow custom scripts in `templates/server/`. Reference snapshots and all empack-managed update recipes require the generated `start`, `start_gui` and `install_pack` scripts for both shell and batch entry points. A replacement must match the generated bytes; a different script fails build preparation. Accepted copies receive the generated output attributes: `start.sh`, `start_gui.sh` and `install_pack.sh` are executable even when their sources were created on Windows or have mode `0644`. Source permissions are not modified. This normalization applies only to the managed entry points, not arbitrary shell templates. Remove the conflicting template to use the generated entry point. Empack does not rewrite user scripts or infer their behavior from command text.
 
-Server properties and unrelated templates remain customizable. Select bundled
-snapshot delivery only when you intend to supply a standalone launch workflow.
+Server properties and unrelated templates remain customizable. Select bundled snapshot delivery only when you intend to supply a standalone launch workflow.

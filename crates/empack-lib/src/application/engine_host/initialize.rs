@@ -21,6 +21,24 @@ use empack_core::{
 };
 use std::collections::BTreeMap;
 
+/// Interpret explicit routing identically for empty initialization and import.
+/// These paths express content placement; they grant no native file access.
+pub(super) fn content_layout(args: &InitArgs) -> Result<BTreeMap<ContentKind, PortableRelPath>> {
+    let mut layout = BTreeMap::new();
+    for (kind, folder) in [
+        (ContentKind::World, args.world_folder.as_deref()),
+        (ContentKind::DataPack, args.datapack_folder.as_deref()),
+    ] {
+        if let Some(folder) = folder {
+            layout.insert(
+                kind,
+                PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
+            );
+        }
+    }
+    Ok(layout)
+}
+
 /// Initialize an empty project through native preparation and approved publication.
 /// Source imports enter the separate normalized import host.
 pub async fn initialize(session: &dyn Session, args: &InitArgs) -> Result<()> {
@@ -78,19 +96,7 @@ async fn initialize_with_catalog(
         "Noninteractive initialization requires --loader-version or --yes for the latest compatible loader"
     );
     // Validate independent options before any discovery request or native preparation.
-    let mut layout = BTreeMap::new();
-    if let Some(folder) = &args.world_folder {
-        layout.insert(
-            ContentKind::World,
-            PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
-        );
-    }
-    if let Some(folder) = &args.datapack_folder {
-        layout.insert(
-            ContentKind::DataPack,
-            PortableRelPath::parse(folder, PathSyntax::ProjectContent)?,
-        );
-    }
+    let layout = content_layout(args)?;
     let mut acceptable_versions = args
         .game_versions
         .as_deref()
@@ -196,13 +202,14 @@ async fn initialize_with_catalog(
         };
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
+    let java_major = super::java::choose(session, game.as_str(), args.java)?;
     let intent = ProjectIntent {
         dependency_policy: Default::default(),
         installation_policies: BTreeMap::new(),
         source_excludes: Vec::new(),
         metadata,
         runtime: RuntimeIntent {
-            java_major: args.java.unwrap_or(21),
+            java_major,
             minecraft: game,
             acceptable_versions,
             loader,

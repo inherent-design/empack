@@ -2,7 +2,7 @@
 use super::*;
 use crate::engine::{
     native,
-    publication::{open_private_directory, root_key},
+    publication::{Publisher, RecoveryReader, open_private_directory},
     snapshot::ProjectReadRoot,
     staging::create_temporary,
 };
@@ -56,7 +56,10 @@ pub(super) fn probe(
 ) -> Result<Option<Selected>> {
     cancel.check()?;
     let selected = ProjectReadRoot::open(project)?;
-    let name = format!("{}.json", root_key(&selected)?);
+    let name = format!(
+        "{}.json",
+        RecoveryReader::new(state.into()).bound_root_key(&selected)?
+    );
     let directory = match open_private_directory(&state.join("pending-builds"), false) {
         Ok(directory) => directory,
         Err(error) if missing(&error) => return Ok(None),
@@ -148,7 +151,7 @@ pub(super) fn read(selected: Selected, cancel: &Cancellation) -> Result<Option<L
     selected.check_binding()?;
     let record: record::Record =
         serde_json::from_slice(&bytes).context("Invalid pending build record")?;
-    ensure!(record.schema == 4, "Unsupported pending build schema");
+    record.validate_schema()?;
     let snapshot = selected.capture(
         &[
             PortableRelPath::parse("empack.yml", PathSyntax::ProjectContent)?,
@@ -182,7 +185,9 @@ pub(super) fn save(
     workspace
         .root()
         .revalidate(workspace.observations(), cancel)?;
-    let name = format!("{}.json", root_key(workspace.root())?);
+    let publisher = Publisher::open(state)?;
+    publisher.retain_root_association(workspace.root())?;
+    let name = format!("{}.json", publisher.bound_root_key(workspace.root())?);
     let directory = open_private_directory(&state.join("pending-builds"), true)?;
     let _guard = lock(&directory)?;
     let replaced = match native::open_file(&directory, &name) {

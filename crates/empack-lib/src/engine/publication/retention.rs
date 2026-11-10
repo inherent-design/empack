@@ -5,7 +5,7 @@ use super::*;
 #[serde(deny_unknown_fields)]
 struct Preparation {
     schema: u32,
-    root: Binding,
+    root: JournalBinding,
     operation: String,
     files: BTreeSet<String>,
 }
@@ -20,8 +20,8 @@ pub(super) fn record_preparation(
         state,
         "retention.json",
         &Preparation {
-            schema: 1,
-            root: root.binding.into(),
+            schema: 2,
+            root: JournalBinding::capture(root.binding)?,
             operation: operation.into(),
             files,
         },
@@ -52,7 +52,7 @@ pub(super) fn reclaim_preparation(state: &Dir, root: &ProjectReadRoot) -> Result
     drop(file);
     let record: Preparation = serde_json::from_slice(&bytes).context("Corrupt retention record")?;
     ensure!(
-        record.schema == 1 && record.root == Binding::from(root.binding),
+        record.schema == 2 && record.root.matches(root.binding),
         "Retention root or schema mismatch"
     );
     let journal = load_journal(state)?;

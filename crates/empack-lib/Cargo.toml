@@ -66,8 +66,10 @@ sevenz-rust2 = { workspace = true }
 
 [dev-dependencies]
 mockito = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [target."cfg(unix)".dependencies]
+fuzzy-matcher = { workspace = true }
 libc = { workspace = true }
 
 [target."cfg(windows)".dependencies]

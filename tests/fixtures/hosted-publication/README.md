@@ -1,0 +1,30 @@
+# Hosted publication fixtures
+
+These original synthetic files are licensed under Apache-2.0, like empack. They contain a 45-byte configuration file and two schema-2 native release documents with resolved Java requirements. No game, mod, launcher or third-party asset is included. Minecraft and Java fields are declarations; the publication tests do not start either program.
+
+`manifest.json` records exact input, envelope and asset identities. Its two signing seeds are public test data. They are used only to exercise publisher verification and key rotation. Each release is signed with its corresponding fixture key.
+
+The unsigned documents were written as literal JSON. The recorded empack executable then staged each through `release stage`, using the fixture key outside the input and publisher directories. The staged envelope was frozen here. Reproduction uses the ordinary command:
+
+```sh
+empack --workdir PUBLISHER --yes release stage INPUT --key-file FIXTURE_KEY
+```
+
+`INPUT` is a copy of `inputs/a` or `inputs/b`; `FIXTURE_KEY` contains that manifest entry's hexadecimal seed and must be outside `INPUT` and `PUBLISHER`. Compare the resulting `dist/releases/RELEASE_ID/` with `good/releases/RELEASE_ID/`. Expected payload and file hashes are computed independently from the literal bytes, rather than from a candidate publication plan. The executable test also verifies channel signatures directly with Ed25519 and checks the complete decoded pointer fields.
+
+The other directories deliberately change the hosted result:
+
+| Directory        | Hosted result                                             |
+| ---------------- | --------------------------------------------------------- |
+| `good`           | Exact staged envelopes and configuration bytes.           |
+| `wrong-envelope` | Different bytes at the selected release-envelope address. |
+| `wrong-asset`    | Exact envelope, but corrupt configuration bytes.          |
+| `missing-asset`  | Exact envelope, with the configuration absent.            |
+
+The live executable test pins the fixture commit and reads these files through GitHub's ordinary HTTPS raw-content route. It publishes a pointer only in its temporary local workspace. The repository contains no deployed channel pointer. Successful local publication does not establish network deployment or consumer startup. The live test remains distinct from controlled-host tests and is excluded from ordinary offline runs.
+
+Run `python3 scripts/verify.py publisher-cli` for the paired hosted checks. The companion instance-launch fixture enrolls the same immutable origin at `good/channels/stable.json`, which is absent from that commit. It requires a not-found result with and without `--allow-offline`, no runtime invocation, and unchanged author/export/installation/host snapshots. A missing HTTPS resource is not transport failure or permission to launch offline. The positive publication journey must also pass; a missing repository or unavailable origin cannot qualify the pair.
+
+The publication test also enrolls a separate player, supplies the locally generated signed A/B channels through `instance check-updates`, and runs `instance update` without local release or asset arguments. The release envelope and initial seed asset must come from the immutable HTTPS origin. Public inspection and retained release bytes identify the selected content/runtime; repeated update and explicit rollback preserve edited seed configuration, world bytes, empty directories and player notes. Rollback cannot lower the authenticated channel sequence floor. This does not deploy a channel or start Minecraft.
+
+Git attributes preserve these files byte-for-byte on every checkout platform. Changing the fixture requires a new immutable source pin and reviewed manifest hashes; a moving branch URL cannot substitute for that pin.

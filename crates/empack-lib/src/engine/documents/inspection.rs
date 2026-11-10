@@ -89,7 +89,7 @@ mod tests {
     use super::*;
     #[test]
     fn inspection_reports_readable_but_noneditable_nodes_and_url_evidence() {
-        let input = b"schema: 5\npack: {id: fixture, name: Fixture, version: alpha}\nruntime: {minecraft: '1.21.1', loader: neoforge, java: 21}\ndependencies:\n  custom: {url: 'https://example.org/mod.jar', accept-observed: true}\n";
+        let input = b"schema: 6\npack: {id: fixture, name: Fixture, version: alpha}\nruntime: {minecraft: '1.21.1', loader: neoforge, java: {preferred: 21}}\ndependencies:\n  custom: {url: 'https://example.org/mod.jar', accept-observed: true}\n";
         let source = DocumentCodec.decode_intent(input, "fixture").unwrap();
         let report = DocumentCodec.inspect_authoring(&source, None);
         assert_eq!(source.original(), input);

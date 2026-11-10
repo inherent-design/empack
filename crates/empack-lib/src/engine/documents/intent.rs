@@ -29,6 +29,8 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
     )?;
     let load = required(runtime, "loader")?;
     fields(load, &["kind", "version"])?;
+    let java = required(runtime, "java")?;
+    fields(java, &["preferred"])?;
     let distribution = required(value, "distribution")?;
     fields(distribution, &["profiles", "defaults"])?;
     let source_excludes = if let Some(sources) = value.get("sources") {
@@ -74,9 +76,9 @@ pub(super) fn decode(value: &Value) -> Result<ProjectIntent> {
         },
         runtime: RuntimeIntent {
             java_major: u16::try_from(
-                required(runtime, "java")?
+                required(java, "preferred")?
                     .as_u64()
-                    .context("runtime.java must be an integer")?,
+                    .context("runtime.java.preferred must be an integer")?,
             )?,
             minecraft: GameVersion::parse(text(required(runtime, "minecraft")?)?)?,
             acceptable_versions: runtime
@@ -274,7 +276,7 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
     }).collect();
     json!({"schema":INTENT_SCHEMA,"dependency-policy":intent.dependency_policy.as_str(),
         "pack":{"id":intent.metadata.id,"name":intent.metadata.name,"version":intent.metadata.version,"authors":intent.metadata.authors,"description":intent.metadata.description},
-        "runtime":{"java":intent.runtime.java_major,"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
+        "runtime":{"java":{"preferred":intent.runtime.java_major},"minecraft":intent.runtime.minecraft.as_str(),"acceptable-versions":intent.runtime.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"loader":{"kind":loader_name(intent.runtime.loader),"version":intent.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}},
         "dependencies":roots,
         "sources":{"exclude":intent.source_excludes},
         "layout":intent.layout.iter().map(|(k,v)| (kind_name(*k),v.as_str())).collect::<BTreeMap<_,_>>(),

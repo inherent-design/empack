@@ -1,8 +1,8 @@
 use super::*;
 use std::fs;
-const DOCUMENT: &str = r#"schema: 5
+const DOCUMENT: &str = r#"schema: 6
 pack: {id: fixture, name: Example, version: alpha}
-runtime: {java: 21, minecraft: '1.20.1', loader: {kind: vanilla}}
+runtime: {java: {preferred: 17}, minecraft: '1.20.1', loader: {kind: vanilla}}
 build: {default: [modrinth], profiles: {modrinth: {target: modrinth, delivery: references, environment: both, updates: snapshot, format: zip}}}
 dependencies: {}
 layout: {}

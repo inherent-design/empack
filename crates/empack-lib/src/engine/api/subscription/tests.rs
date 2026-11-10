@@ -20,11 +20,10 @@ fn observe_bounded(
     maximum_bytes: u64,
 ) -> SubscriptionRequest {
     let document = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "fixture".into(),
         channel: "stable".into(),
         sequence,
-        expires: 2_000_000_060,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: release.into(),
@@ -34,8 +33,7 @@ fn observe_bounded(
     };
     SubscriptionRequest::Observe {
         envelope: sign(EnvelopeKind::Channel, &document.encode().unwrap(), &[key]).unwrap(),
-        now: 2_000_000_000,
-        engine: semver::Version::parse("0.8.0-beta").unwrap(),
+        engine: semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
     }
 }
 async fn apply(engine: &Engine, root: &Path, request: SubscriptionRequest) -> SubscriptionRecord {
@@ -79,7 +77,17 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     };
     drop(preview);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
-    apply(&engine, root.path(), enroll(&key)).await;
+    let enrolled = apply(&engine, root.path(), enroll(&key)).await;
+    let public: String = key
+        .verifying_key()
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(enrolled.pack, "fixture");
+    assert_eq!(enrolled.channel, "stable");
+    assert_eq!(enrolled.url, "https://publisher.test/stable.json");
+    assert_eq!(enrolled.keys, [public]);
     assert!(
         engine
             .prepare(root.path().to_owned(), enroll(&next))
@@ -90,6 +98,30 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     engine.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     let (engine, governor) = super::super::tests::engine(host.path().join("state"));
+    let persisted = fs::read(root.path().join(".empack/subscription.json")).unwrap();
+    let Preparation::Ready(reopened) = engine
+        .prepare(
+            root.path().to_owned(),
+            SubscriptionRequest::ReplaceKeys {
+                keys: vec![key.verifying_key()],
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    let OperationPreview::Subscription(view) = reopened.view() else {
+        panic!()
+    };
+    assert_eq!(view.record.pack, "fixture");
+    assert_eq!(view.record.channel, "stable");
+    assert_eq!(view.record.url, "https://publisher.test/stable.json");
+    drop(reopened);
+    assert_eq!(
+        fs::read(root.path().join(".empack/subscription.json")).unwrap(),
+        persisted
+    );
     assert!(
         engine
             .prepare(root.path().to_owned(), observe(&key, 6, &"a".repeat(64)))
@@ -114,8 +146,7 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     assert!(
         rotated
             .authenticated_channel(
-                2_000_000_000,
-                &semver::Version::parse("0.8.0-beta").unwrap()
+                &semver::Version::parse(crate::engine::compatibility_version()).unwrap()
             )
             .is_err(),
         "Retained metadata must be reverified after key replacement"
@@ -137,8 +168,7 @@ async fn enrollment_rotation_revocation_and_restart_retain_sequence_authority() 
     assert!(
         disabled
             .authenticated_channel(
-                2_000_000_000,
-                &semver::Version::parse("0.8.0-beta").unwrap()
+                &semver::Version::parse(crate::engine::compatibility_version()).unwrap()
             )
             .is_err()
     );
@@ -199,14 +229,14 @@ fn native_release(key: &SigningKey, version: &str) -> (release::DecodedRelease, 
     let document = release::DecodedRelease::encode(release::ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "fixture".into(),
         version: version.into(),
         minimum_engine: ">=0.8.0-beta".into(),
         runtime: release::ReleaseRuntime {
             minecraft: "1.21.1".into(),
             loader: release::ReleaseLoader::Vanilla,
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files: vec![],
@@ -241,12 +271,11 @@ async fn subscribed_selection_binds_current_keys_floor_and_exact_signed_release(
     let other = SigningKey::from_bytes(&[12; 32]);
     let (a, signed_a) = native_release(&key, "a");
     let (b, signed_b) = native_release(&key, "b");
-    let version = semver::Version::parse("0.8.0-beta").unwrap();
+    let version = semver::Version::parse(crate::engine::compatibility_version()).unwrap();
     let select = |bytes: &[u8]| {
         select_release(
             root.path(),
             bytes,
-            2_000_000_000,
             &version,
             RecoveryReader::new(state.clone()),
             &Default::default(),
@@ -448,16 +477,11 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             .expect(1)
             .create_async()
             .await;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
         let channel = ChannelDocument {
-            schema: 1,
+            schema: 2,
             pack: "fixture".into(),
             channel: "stable".into(),
             sequence: 1,
-            expires: now + 600,
             minimum_engine: ">=0.8.0-beta".into(),
             release: ChannelRelease {
                 id: release.id().into(),
@@ -472,8 +496,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             root.path(),
             SubscriptionRequest::Observe {
                 envelope: channel_bytes,
-                now,
-                engine: semver::Version::parse("0.8.0-beta").unwrap(),
+                engine: semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
             },
         )
         .await;
@@ -492,7 +515,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
                     selected,
                     state,
                     &transport,
-                    semver::Version::parse("0.8.0-beta").unwrap(),
+                    semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
                 )
                 .await
                 .map(|proof| proof.map(std::sync::Arc::new)))
@@ -577,7 +600,7 @@ async fn remote_release_uses_durable_channel_and_acquires_exact_relative_assets_
             let snapshot = crate::engine::release::trust::SelectedSnapshot::select(
                 release.bytes(),
                 release.id(),
-                &semver::Version::parse("0.8.0-beta").unwrap(),
+                &semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
             )
             .unwrap();
             let input = InstallInstanceRequest {
@@ -640,12 +663,6 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
         instance::subscription::select_release, publication::RecoveryReader, release::*,
     };
     use sha2::{Digest, Sha256};
-    let now: i64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        .try_into()
-        .unwrap();
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
@@ -680,11 +697,10 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
     let (engine, _) = super::super::tests::engine(state.clone());
     apply(&engine, root.path(), enroll(&key)).await;
     let channel = ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "fixture".into(),
         channel: "stable".into(),
         sequence: 1,
-        expires: now + 3600,
         minimum_engine: ">=0.8.0-beta".into(),
         release: ChannelRelease {
             id: release.id().into(),
@@ -697,16 +713,14 @@ async fn saved_subscribed_input_reverifies_enrollment_before_resume() {
         root.path(),
         SubscriptionRequest::Observe {
             envelope: sign(EnvelopeKind::Channel, &channel.encode().unwrap(), &[&key]).unwrap(),
-            now,
-            engine: semver::Version::parse("0.8.0-beta").unwrap(),
+            engine: semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
         },
     )
     .await;
     let selected = select_release(
         root.path(),
         &envelope,
-        now,
-        &semver::Version::parse("0.8.0-beta").unwrap(),
+        &semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
         RecoveryReader::new(state.clone()),
         &Default::default(),
     )
@@ -859,8 +873,7 @@ async fn prism_channel_updates_require_seed_icons_from_native_producer() {
         let selected = select_release(
             root.path(),
             &envelope,
-            2_000_000_000,
-            &semver::Version::parse("0.8.0-beta").unwrap(),
+            &semver::Version::parse(crate::engine::compatibility_version()).unwrap(),
             RecoveryReader::new(state.clone()),
             &Default::default(),
         )
@@ -933,6 +946,7 @@ async fn prism_channel_updates_require_seed_icons_from_native_producer() {
                 .prepare(
                     root.path().to_owned(),
                     LaunchInstanceRequest {
+                        java_runtime: false,
                         server: false,
                         expected_release: Some(document.id().into()),
                         program: std::env::current_exe().unwrap(),

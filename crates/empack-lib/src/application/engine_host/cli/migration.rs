@@ -16,6 +16,7 @@ mod delta;
 
 pub(super) struct MigrationOptions {
     pub runtime: RuntimeIntent,
+    pub java: Option<u16>,
     pub replacements: BTreeMap<DependencyKey, ProviderProjectId>,
     pub releases: Option<ReleasePolicy>,
     pub plan: bool,
@@ -56,8 +57,13 @@ impl MigrationOptions {
             );
         }
         Ok(Self {
+            java: args.java,
             runtime: RuntimeIntent {
-                java_major: 21,
+                java_major: args.java.unwrap_or_else(|| {
+                    empack_core::java::JavaPolicy::for_game(&args.minecraft)
+                        .recommended()
+                        .unwrap_or(8)
+                }),
                 minecraft: GameVersion::parse(&args.minecraft)?,
                 loader,
                 loader_version: args
@@ -81,13 +87,16 @@ impl MigrationOptions {
         source: &DecodedIntent,
         prior: Option<&DecodedLock>,
     ) -> Result<DecodedIntent> {
-        prior
-            .context("Migration needs a current lock; synchronize the author project first")?
-            .bind(source)?;
+        let prior = prior
+            .context("Migration needs a current lock; synchronize the author project first")?;
+        prior.bind(source)?;
         let mut intent = source.intent().clone();
         let java_major = intent.runtime.java_major;
         intent.runtime = self.runtime.clone();
-        intent.runtime.java_major = java_major;
+        intent.runtime.java_major = self.java.unwrap_or(java_major);
+        empack_core::java::JavaPolicy::for_game(intent.runtime.minecraft.as_str())
+            .select(Some(intent.runtime.java_major))
+            .context("The selected runtime invalidates the preferred Java major; review the recommendation and supply migrate --java explicitly")?;
         for (key, id) in &self.replacements {
             let root = intent
                 .roots
@@ -101,7 +110,9 @@ impl MigrationOptions {
                 "Migration can replace only provider-owned roots"
             );
             ensure!(
-                root.source != SourceIntent::Provider(id.clone()),
+                root.source
+                    .canonical_project(prior.lock().dependencies.get(key))
+                    != Some(id),
                 "Replacement selects the existing project; omit it to retain its policy"
             );
             root.source = SourceIntent::Provider(id.clone());

@@ -33,9 +33,9 @@ pub struct InvalidDocument {
 /// Maximum encoded document length, before YAML allocation.
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
-pub const INTENT_SCHEMA: u64 = 5;
+pub const INTENT_SCHEMA: u64 = 6;
 /// Exact selection schema.
-pub const LOCK_SCHEMA: u64 = 2;
+pub const LOCK_SCHEMA: u64 = 3;
 
 /// Parsed intent retains raw bytes independently of canonical semantic meaning.
 #[derive(Debug, Clone)]

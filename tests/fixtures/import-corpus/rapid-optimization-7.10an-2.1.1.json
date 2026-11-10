@@ -1,0 +1,204 @@
+{
+  "source": {
+    "project": "1q7QX7Ne",
+    "version": "8fbfT75J",
+    "url": "https://cdn.modrinth.com/data/1q7QX7Ne/versions/8fbfT75J/Rapid%20Optimization%207.10An.2.1.1.mrpack",
+    "size": 313522,
+    "sha256": "e6e07f7ed709aa5775c0f3f33dff8db33fd6f4eb2481412840a45a9e6f446484",
+    "sha512": "601003cec9227895b8349aaced6e09f0ad9620d12440e5bbf3e81eb2a7ab522ac5ce879c136925827f2980d33869288302215207e6ac004c35170427bef940bc"
+  },
+  "index": {
+    "game": "minecraft",
+    "formatVersion": 1,
+    "versionId": "7.10An.2.1.1",
+    "name": "Rapid Optimization",
+    "summary": "A concise and ultimate optimization modpack!\nwith full cross-platform support across all versions.",
+    "files": [
+      {
+        "path": "mods/+unimixins-all-1.7.10-0.3.1.jar",
+        "hashes": {
+          "sha1": "75f9251b1ac4eeacdce0b86a1a68bd8ff4fbf604",
+          "sha512": "305a13cdc0ea7bdc724c49ee5d7d32f307d602e8e4d7a3b86dcf66a2fc69e1134eae113c1e9761fe7daec3d81f388886bf63e5d19438ef2e205819433f7e7112"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/ghjoiQAl/versions/SeOh2lEZ/%2Bunimixins-all-1.7.10-0.3.1.jar"
+        ],
+        "fileSize": 5519796
+      },
+      {
+        "path": "mods/[\u5b9e\u4f53\u6e32\u67d3\u673a\u5236\u4f18\u5316] entityculling-1.6.4-mc1.7.10.jar",
+        "hashes": {
+          "sha1": "9a14606b7d305b4bb1db7094b308c2c2db30fdff",
+          "sha512": "cef6dcc1a5e0c9b9c11b486f007621e26228a389c34ed6a475d88fa34c2f2169d251a4031c6cc7a5d38353533faf3a8d1255c92f2e74effe0a3e8972206a60de"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/NNAgCjsB/versions/SLiFyIon/entityculling-1.6.4-mc1.7.10.jar"
+        ],
+        "fileSize": 38712
+      },
+      {
+        "path": "mods/angelica-2.2.8.jar",
+        "hashes": {
+          "sha1": "0101cfd0b161589f4cab3a2cb475ba150e745001",
+          "sha512": "95819333c571ebd183f198e90d84546bf3775c542c60f8daeb09321dca42905cce1ed3f8027d895b4d34373050ed59c33018eb018bd046a80140868d60670100"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/XN5jnYB4/versions/hHwYZwek/angelica-2.2.8.jar"
+        ],
+        "fileSize": 9759163
+      },
+      {
+        "path": "mods/archaicfix-0.8.0.jar",
+        "hashes": {
+          "sha1": "bc23c0b52560089424d84c1ff4e9ac1d04fb83e4",
+          "sha512": "d55f3f2611533cc01e7e2463110c011281574a3a5abc6334b6ed8929f8288b3f23ae74687b0b51c1fda7d4562bd842205c0964523a852120206c5cc96027c414"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/xTJanN3v/versions/pHrxpfYF/archaicfix-0.8.0.jar"
+        ],
+        "fileSize": 293536
+      },
+      {
+        "path": "mods/gtnhlib-0.11.41.jar",
+        "hashes": {
+          "sha1": "b76a35806c8bd4a2b79453580a43353ab38b4080",
+          "sha512": "1cf42406569153299562222ee05072d2a6c5d123279040fec9cd46888dd5ec74e8e1206cefc531cffea3d975d81b320c8919ac90e8e037533cd15cb7b840397d"
+        },
+        "downloads": [
+          "https://cdn.modrinth.com/data/vTvnv7qp/versions/4gQMJllM/gtnhlib-0.11.41.jar"
+        ],
+        "fileSize": 1393639
+      }
+    ],
+    "dependencies": {
+      "minecraft": "1.7.10",
+      "forge": "10.13.4.1614"
+    }
+  },
+  "overrides": {
+    "overrides/PCL/Logo.png": {
+      "size": 3597,
+      "sha256": "48ad9b1ecfb7188ab0f316335faf3b2f0bf90c23ee40f8947c0176b3d1bbacb4"
+    },
+    "overrides/PCL/Setup.ini": {
+      "size": 469,
+      "sha256": "e6f100e270c8bd60a042088848acaa1130732614f31619a459b6f105eb4cd86c"
+    },
+    "overrides/PCL/config.v1.yml": {
+      "size": 824,
+      "sha256": "cd28e0f0001d7d0d1a8b39c935b7eaf788b808de09418f12571b926f224f91eb"
+    },
+    "overrides/PCL/config.v1.yml.bak": {
+      "size": 823,
+      "sha256": "e5fb73547678cac314e0e84193c002a7a28859ce47a9df0a64e4b6e835d8b208"
+    },
+    "overrides/config/angelica-compat.cfg": {
+      "size": 797,
+      "sha256": "c6880f64cf9027973dae411c7db60b6d31b2482a67a723c7a0c73331c316ce7c"
+    },
+    "overrides/config/angelica-modules.cfg": {
+      "size": 13908,
+      "sha256": "4eeb12a5f3c84954d958288cd4b46312a89987e4471c5c70f0aa5cb891c02ae5"
+    },
+    "overrides/config/angelica-options.json": {
+      "size": 998,
+      "sha256": "193f5ebc9f1296e2272997769c498904f8e7d43be9361b2eeccc860ad7df8822"
+    },
+    "overrides/config/angelica.cfg": {
+      "size": 2385,
+      "sha256": "a4fa455132daa599ba57d3246649e343e85a9c66b8611be545d2cbe2e28ff4ef"
+    },
+    "overrides/config/archaicfix.cfg": {
+      "size": 6242,
+      "sha256": "c4df7d0b5b31251bbfb698cfd44663801bc9d9479607c7d474056fa213caf7de"
+    },
+    "overrides/config/bbm/AI_Improvements/AI_Improvements.cfg": {
+      "size": 928,
+      "sha256": "b94a14d509f7765b30b6860a6249a6f9b8545e0309672ef71ea471e4857841d4"
+    },
+    "overrides/config/bbm/AI_Improvements/overrides/minecraft.attack.arrow.cfg": {
+      "size": 3272,
+      "sha256": "ecd62b194f6e1f363eac07129c8442d8ef209325e455ad80c3f84e748232415f"
+    },
+    "overrides/config/bbm/AI_Improvements/overrides/minecraft.attack.collide.cfg": {
+      "size": 4365,
+      "sha256": "342cd8f89666b2f6174bf8fde70ab19d42cbf50d817da397a0748c046e83cd84"
+    },
+    "overrides/config/entityculling.json": {
+      "size": 235,
+      "sha256": "1305e625d04e81377d8c2aa7d7144ca8acb7a195704c8f12ea148db29aef311f"
+    },
+    "overrides/config/falsepatternlib-early.json": {
+      "size": 69,
+      "sha256": "319e81be94da37114b477797a88f0b9998ccaca3ca22b80eb31d39c0a5d25a22"
+    },
+    "overrides/config/foamfix.cfg": {
+      "size": 3326,
+      "sha256": "4b0a4a0362a7a1ef694a54f6236b6f73431e9da8b4e080c80fdbd2bbb321ee9e"
+    },
+    "overrides/config/forge.cfg": {
+      "size": 2365,
+      "sha256": "56acf28c2653e1d5d159648edbbbd9bc86832bd956a8a4e7be7adf7c558a5c7e"
+    },
+    "overrides/config/forgeChunkLoading.cfg": {
+      "size": 2025,
+      "sha256": "ef4ca42f2810a1b5fef2d14fed9d7ef0bb5e1751b71966ec5c0e08addf3479f5"
+    },
+    "overrides/config/gtnhlib-number-formatting.cfg": {
+      "size": 2536,
+      "sha256": "0e6ca2e9729265b96f053ba90a9ee99f9372939998e17d8f19912380356cbfbd"
+    },
+    "overrides/config/gtnhlib.cfg": {
+      "size": 3505,
+      "sha256": "126cca588320827a6805c3aedcaccad8a4aca91bdbea222f4ac592ca588d307a"
+    },
+    "overrides/config/gtnhlibEarly.properties": {
+      "size": 123,
+      "sha256": "d81d4f3bb93cc12228f8a3175acf5e6fc53fd5f6362f9bb67f87d091dee0cb8f"
+    },
+    "overrides/config/mcpatcherforge.cfg": {
+      "size": 4042,
+      "sha256": "8946edbee37502a512df576b84764aad81c81cea7c4a72ce9a3defe51206f16d"
+    },
+    "overrides/config/mixingasm/transformer_exclusion_list.txt": {
+      "size": 236,
+      "sha256": "261c3c0fd863923371aad3676766d81c0bfc2a527b88e479166dfd59efaed3af"
+    },
+    "overrides/config/mixingasm/transformer_inclusion_list.txt": {
+      "size": 253,
+      "sha256": "9b747b0e71125a99a70237f549d3c275e2fb3dc5c1e74b426992fd4cc5fc6b75"
+    },
+    "overrides/config/mixingasm/transformer_inclusion_list_default.txt": {
+      "size": 1260,
+      "sha256": "e837dc092b502c353910c2ca44befe0965cdb8af28edc15bfe7e5ff8bef6f19c"
+    },
+    "overrides/config/notfine/notfine.cfg": {
+      "size": 1438,
+      "sha256": "e7d32744a499aaf2ce3e476225dd38996101f593f17eadffaa52a369a2dbdf7b"
+    },
+    "overrides/config/shaders.properties": {
+      "size": 295,
+      "sha256": "14026fc31d57f87e21a1ca03da885dddc59ea11d4bbe20239e57d6c37f451f21"
+    },
+    "overrides/config/splash.properties": {
+      "size": 339,
+      "sha256": "68c5f5ef9f57467f79e3eaeda3b81b1f9993af148623ab881e9d3a21e6913dab"
+    },
+    "overrides/config/unimixins.properties": {
+      "size": 764,
+      "sha256": "350884e3ccf46194eef318bec5f9b2b1e74f9b3067b3b8abafcbaeffe42029ad"
+    },
+    "overrides/mods/FoamFix-1.7.10-universal-1.0.8.jar": {
+      "size": 316695,
+      "sha256": "7a8fab9268b8f3401ea1f02a96a0ad76e530b51c893c8266a6ac381879cb00d5"
+    },
+    "overrides/mods/threadsafetyfixes-2.2.1.jar": {
+      "size": 19568,
+      "sha256": "032b5665166d916c261cac52604ae7d474b05e8391795481efa7285b22dc72a0"
+    },
+    "overrides/options.txt": {
+      "size": 2097,
+      "sha256": "912a54823c1282710777818314fa76e7fb221dff4d68eacaf239adbda6fc406e"
+    }
+  }
+}

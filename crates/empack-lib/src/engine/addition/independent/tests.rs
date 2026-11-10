@@ -194,7 +194,23 @@ fn negative_relationships_keep_interdependent_updates_in_one_component() {
         vec![vec![0, 1]]
     );
     let combined = AdditionGroup::combine(&current, &[&groups[0], &groups[1]]).unwrap();
-    assert!(empack_core::addition::AdditionPlan::prepare_update(&current, &combined).is_ok());
+    let updated = AdditionPlan::prepare_update(&current, &combined)
+        .unwrap()
+        .resolve(current.lock().intent_revision)
+        .unwrap();
+    assert_eq!(updated.intent(), current.intent());
+    assert_eq!(updated.lock().dependencies.len(), 2);
+    for proposed in [&a, &b] {
+        let (key, dependency) = proposed.lock().dependencies.first_key_value().unwrap();
+        assert_eq!(
+            updated.lock().dependencies[key].selected,
+            dependency.selected
+        );
+        assert_eq!(
+            updated.lock().dependencies[key].incompatibilities,
+            dependency.incompatibilities
+        );
+    }
     assert!(empack_core::addition::AdditionPlan::prepare_update(&current, &groups[0]).is_err());
 }
 

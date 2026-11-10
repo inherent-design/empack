@@ -27,7 +27,7 @@ fn request(loader: LoaderKind, replace: bool) -> InitializeRequest {
             description: Some("Pack description".into()),
         },
         runtime: RuntimeIntent {
-            java_major: 21,
+            java_major: 17,
             minecraft: runtime.minecraft.clone(),
             acceptable_versions: vec![GameVersion::parse("1.20.2").unwrap()],
             loader,

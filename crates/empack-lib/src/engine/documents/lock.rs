@@ -234,6 +234,7 @@ pub(super) fn decode(value: &Value) -> Result<ResolutionLock> {
             "required-edges",
             "coverage",
             "runtime",
+            "java-policy",
         ],
     )?;
     ensure!(
@@ -242,6 +243,11 @@ pub(super) fn decode(value: &Value) -> Result<ResolutionLock> {
     );
     let runtime = required(value, "runtime")?;
     fields(runtime, &["minecraft", "loader", "loader-version"])?;
+    let game = text(required(runtime, "minecraft")?)?;
+    ensure!(
+        required(value, "java-policy")? == &java_policy_value(game),
+        "Lock Java policy differs from this engine; review Java requirements and synchronize the project"
+    );
     Ok(ResolutionLock {
         acceptable_versions: string_list(required(value, "acceptable-versions")?)?
             .iter()
@@ -303,10 +309,17 @@ pub(super) fn encode(lock: &ResolutionLock) -> Value {
         }).collect();
         (key.as_str(),json!({"incompatibilities":dep.incompatibilities.iter().map(|entry| json!({"project":entry.project.as_ref().map(provider_value),"selection":entry.selection.as_ref().map(pin_value)})).collect::<Vec<_>>(),"source-selector":dep.source_selector.as_ref().map(provider_selector_value),"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
     }).collect();
-    json!({"schema":LOCK_SCHEMA,"acceptable-versions":lock.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
+    json!({"schema":LOCK_SCHEMA,"java-policy":java_policy_value(lock.runtime.minecraft.as_str()),"acceptable-versions":lock.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
         "required-edges":lock.required_edges.iter().map(|(key,values)|(key.as_str(),values.iter().map(DependencyKey::as_str).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>(),
         "coverage":lock.coverage.iter().map(|(key,value)|(key.as_str(),match value {Coverage::CompleteForSelection=>"complete",Coverage::Partial=>"partial",Coverage::Unknown=>"unknown"})).collect::<BTreeMap<_,_>>(),
         "runtime":{"minecraft":lock.runtime.minecraft.as_str(),"loader":loader_name(lock.runtime.loader),"loader-version":lock.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}})
+}
+
+fn java_policy_value(game: &str) -> Value {
+    let policy = empack_core::java::JavaPolicy::for_game(game);
+    json!({"id":empack_core::java::POLICY_ID,"metadata-revision":empack_core::java::METADATA_REVISION,
+        "historical-minimum":policy.historical_minimum(),"required-minimum":policy.required_minimum(),
+        "supported":policy.supported(),"recommended":policy.recommended()})
 }
 
 /// Shared wire evidence for lock persistence and semantic before/after reports.

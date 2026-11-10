@@ -61,6 +61,32 @@ mod tests {
         );
         assert_eq!(ini_value("x\0a"), "\"@String(x\\x0\\x61)\"");
         assert_eq!(ini_value(""), "\"\"");
+
+        // These exact scalar bytes are also read by the pinned Prism/Qt probe.
+        // The probe must recover the original QString, not merely accept a file.
+        let fixtures: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../build/client/fixtures.json")).unwrap();
+        let mut checked = 0;
+        for fixture in fixtures {
+            let Some(expected) = fixture.get("encoded_name") else {
+                continue;
+            };
+            let value = fixture["display_name"].as_str().unwrap();
+            let encoded = ini_value(value);
+            assert_eq!(encoded, expected.as_str().unwrap(), "{}", fixture["name"]);
+            assert!(
+                fixture["configuration"]
+                    .as_str()
+                    .unwrap()
+                    .lines()
+                    .any(|line| line == format!("name={encoded}"))
+            );
+            checked += 1;
+        }
+        assert_eq!(
+            checked, 10,
+            "both supported formats must retain scalar fixtures"
+        );
     }
 
     #[test]

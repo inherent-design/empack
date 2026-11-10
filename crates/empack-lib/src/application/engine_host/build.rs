@@ -389,14 +389,16 @@ fn request(
     for output in &outputs {
         collisions.insert_file(&output.artifact)?;
     }
-    Ok(BuildRequest {
+    let request = BuildRequest {
         clean: args.clean,
         outputs: NonEmpty::new(outputs).context("No build targets selected")?,
         optional: decisions.optional,
         mrpack_optional: decisions.mrpack_optional,
         templates: decisions.templates,
         evidence: decisions.evidence,
-    })
+    };
+    request.validate_optional_policy()?;
+    Ok(request)
 }
 
 async fn build_with_engine(
@@ -446,16 +448,17 @@ async fn finish_once(
         view.runtime.loader,
     ));
     session.display().status().info(&format!(
-        "Optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}",
+        "Requested optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}",
         view.request().optional,
         view.request().mrpack_optional,
         view.request().evidence,
     ));
     for output in &view.outputs {
         session.display().status().info(&format!(
-            "build {:?}: dist/{}",
+            "build {:?}: dist/{}; optional content: {:?}",
             output.target,
-            output.artifact.as_str()
+            output.artifact.as_str(),
+            view.request().optional_for(output.target)
         ));
     }
     if let Some(cleanup) = &view.cleanup {

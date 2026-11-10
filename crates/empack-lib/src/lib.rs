@@ -32,6 +32,7 @@ pub mod platform;
 pub mod primitives;
 pub mod terminal;
 
+#[cfg(any(test, feature = "test-utils"))]
 pub mod testing;
 
 pub use application::{AppConfig, Cli, CliLoad, Commands, EmpackExitCode, execute_command};
@@ -87,9 +88,37 @@ fn process_error_message(error: &anyhow::Error) -> String {
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    use std::convert::Infallible;
-    use std::ffi::OsString;
-    use std::sync::OnceLock;
+    use std::{
+        collections::BTreeMap,
+        convert::Infallible,
+        ffi::OsString,
+        fs,
+        path::{Path, PathBuf},
+        sync::OnceLock,
+    };
+
+    /// Byte-only view of a trusted test tree; a missing root produces an empty map.
+    /// Directories and attributes need separate assertions. This grants no native authority.
+    pub(crate) fn file_bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    visit(root, &entry.path(), files);
+                } else {
+                    files.insert(
+                        entry.path().strip_prefix(root).unwrap().to_path_buf(),
+                        fs::read(entry.path()).unwrap(),
+                    );
+                }
+            }
+        }
+        let mut files = BTreeMap::new();
+        if root.exists() {
+            visit(root, root, &mut files);
+        }
+        files
+    }
 
     const CLI_ENV_VARS: [&str; 20] = [
         "EMPACK_WORKDIR",
@@ -187,6 +216,8 @@ mod tests {
         let error = execute_command(CliConfig {
             app_config: AppConfig {
                 workdir: Some(temp_dir.path().to_path_buf()),
+                state_dir: Some(temp_dir.path().join("state")),
+                cache_dir: Some(temp_dir.path().join("cache")),
                 ..AppConfig::default()
             },
             command: Some(Commands::Build(application::BuildArgs {

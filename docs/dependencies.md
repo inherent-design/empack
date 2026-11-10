@@ -1,0 +1,36 @@
+# Dependency and tool maintenance
+
+Update dependencies as a reviewed change to existing behavior. Choose the dependency, affected boundary, and required checks before changing versions; stabilization does not require an unrelated upgrade sweep.
+
+## Version and configuration owners
+
+| Boundary                   | Owning inputs                                                                                                                                                                            | Review together                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Rust packages              | [Workspace manifest](../Cargo.toml), crate manifests, and [lockfile](../Cargo.lock)                                                                                                      | Enabled features, transitive changes, native targets, and minimum compiler requirements          |
+| Rust compiler              | [Toolchain](../rust-toolchain.toml) and [shared CI action](../.github/actions/rust-toolchain/action.yml)                                                                                 | Formatting, Clippy, native compiler setup, cross compilation, and coverage tooling               |
+| Developer tools            | [mise tasks](../mise.toml) and [Markdown configuration](../dprint.json)                                                                                                                  | Local command behavior, formatter/plugin versions, and generated-file changes                    |
+| CI tools                   | [Verification workflow](../.github/workflows/pr-ci.yml), [release workflow](../.github/workflows/release.yml), and their shared actions                                                  | Python, Nextest, uv, cross, coverage, runners, and resolved action identities                    |
+| Consumer interpretation    | [Prism action](../.github/actions/prism-parser/action.yml), [probe](../scripts/check-prism-config.py), and [shared fixtures](../crates/empack-lib/src/engine/build/client/fixtures.json) | Application source, supported Qt version, restricted grammar, and public build preparation       |
+| Java and external services | Verification suite prerequisites and the [testing guide](testing.md)                                                                                                                     | Runtime families, Java versions, provider access, transport behavior, and actual consumer checks |
+
+Read the actual manifests and workflow selections. Some references use tags, floating versions, or distribution packages; record the resolved tools used by a relevant run rather than assuming every input is pinned. Cargo metadata and `cargo tree` help inspect dependencies, but they do not replace the compiler-unit audit of an ordinary product build.
+
+## Update procedure
+
+1. Identify the reason for the change, upstream release/source, affected behavior, and the checks that can detect a regression. Separate a dependency correction from a new product capability. Keep author projects, instances, and credentials outside experiments.
+2. Inspect workspace and crate manifests, the lockfile, feature declarations, target-specific dependencies, and build/probe scripts. Review coupled libraries together, particularly the telemetry stack, archive codecs, and native filesystem/process adapters. Do not enable test utilities in the ordinary product graph to make tests compile.
+3. Make the narrow manifest and lockfile change. For a selected Rust package, replace `PACKAGE` and `VERSION` in `cargo update -p PACKAGE --precise VERSION`; review transitive changes rather than accepting the whole lockfile diff blindly. Subsequent builds and checks use `--locked`. A compiler-only or tool-only update may not need a dependency change.
+4. Update affected callers, fixtures, schemas, generated automation, consumer probes, and documentation. Keep one implementation and remove obsolete internal callers under the active compatibility policy. Do not silently change authored presets, ownership rules, or supported user workflows.
+5. Run focused regressions plus the relevant shared checks from [Testing](testing.md). Use the shared [mise commands](../mise.toml) for local/CI parity. Include minimal and expanded test graphs and the ordinary default/telemetry products where affected. Test native behavior on the required hosts; cross compilation is compilation evidence. Live/provider prerequisites and manual consumer tasks remain explicit.
+6. For consumer changes, qualify the pinned application source with dependencies that application supports. The headless parser probe and actual import/preparation/startup establish different boundaries. For compiler or archive changes, retain the audit of the actual compiled product and repeat affected package checks.
+7. Review the final diff and record actual commands, versions, source/artifact identities, outcomes, and limitations in the PR or retained verification evidence. Complete required fixed-candidate qualification after the change. Do not reuse an old package pass for newly built bytes or describe skipped checks as passing.
+
+Do not automatically retry a failed mutating scenario. Preserve the useful failure evidence, diagnose it, and reset a disposable fixture or explicitly exercise recovery before retrying. Follow existing desktop and access restrictions when choosing where checks run.
+
+## Owned patches and workarounds
+
+Before an update, inspect Cargo overrides, Git dependencies, vendored code, patch files, local wrappers, and upstream-related source comments. Classify each finding: an upstream patch, an adapter policy, a test fixture, and a generated file have different owners. The Prism probe compiles pinned unmodified consumer source; empack's restricted configuration validator is product policy, not a patch to Prism.
+
+When a maintained patch, fork, or temporary dependency workaround exists, keep one concise record here with its owning source, upstream revision/issue, reason, affected versions/features/targets, coupling or application order, regression check, and removal condition. Link to that record from related procedures instead of duplicating instructions. Record only actual exceptions; an empty patch ledger adds no maintenance value.
+
+Recheck each affected exception during an update. Remove it only after the replacement passes the relevant regression and call paths are updated. A patch applying cleanly does not establish that it is still necessary or correct.

@@ -421,7 +421,7 @@ pub(super) fn compact_preserving(mut value: Value, original: &Value) -> Result<V
 mod tests {
     use super::*;
     fn input() -> Value {
-        json!({"schema":5,"pack":{"id":"workshop","name":"Workshop","version":"Autumn Update 2","authors":["First Author","Second Author"]},"runtime":{"minecraft":"1.21.1","loader":"neoforge","java":21},"dependencies":{}})
+        json!({"schema":6,"pack":{"id":"workshop","name":"Workshop","version":"Autumn Update 2","authors":["First Author","Second Author"]},"runtime":{"minecraft":"1.21.1","loader":"neoforge","java":{"preferred":21}},"dependencies":{}})
     }
     fn decode(value: &Value) -> Result<DecodedIntent> {
         DocumentCodec.decode_intent(&serde_json::to_vec(value)?, "fixture")
@@ -553,7 +553,7 @@ mod policy_tests {
     use super::*;
     #[test]
     fn dependency_preferences_compose_and_reject_pin_or_file_overrides() {
-        let base = json!({"schema":5,"pack":{"id":"pack","name":"Pack","version":"1"},"runtime":{"minecraft":"1.21.1","loader":"fabric","java":21},"dependency-policy":{"releases":"stable-only"},"dependencies":{"a":{"source":"modrinth:AANobbMI","releases":"any"},"b":"modrinth:Root0002"}});
+        let base = json!({"schema":6,"pack":{"id":"pack","name":"Pack","version":"1"},"runtime":{"minecraft":"1.21.1","loader":"fabric","java":{"preferred":21}},"dependency-policy":{"releases":"stable-only"},"dependencies":{"a":{"source":"modrinth:AANobbMI","releases":"any"},"b":"modrinth:Root0002"}});
         let decoded = DocumentCodec
             .decode_intent(&serde_json::to_vec(&base).unwrap(), "policy")
             .unwrap();

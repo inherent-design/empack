@@ -12,7 +12,7 @@ env:
   # Empty selects build.default (new projects use reference delivery).
   # Configured profile delivery is preserved. To select outputs, list profile names below, one per line.
   EMPACK_PROFILES: ''
-  JAVA_VERSION: '21'
+  JAVA_VERSION: '__EMPACK_JAVA_MAJOR__'
 jobs:
   release:
     runs-on: ubuntu-24.04

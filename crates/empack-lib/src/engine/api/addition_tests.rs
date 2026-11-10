@@ -510,6 +510,7 @@ async fn synchronization_requires_grants_and_new_resolution_for_runtime_changes(
     let source = codec.decode_intent(&before, "fixture").unwrap();
     let mut changed = source.intent().clone();
     changed.runtime.minecraft = empack_core::model::GameVersion::parse("1.21.1").unwrap();
+    changed.runtime.java_major = 21;
     let changed = codec.encode_intent(&changed).unwrap();
     fs::write(root.path().join("empack.yml"), &changed).unwrap();
     let result = engine.prepare(root.path().to_path_buf(), sync()).await;

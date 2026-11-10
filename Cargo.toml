@@ -10,7 +10,7 @@ repository = "https://github.com/inherent-design/empack"
 version = "0.0.0-dev"
 
 [workspace.metadata.empack]
-release-target = "0.8.3-beta"
+release-target = "0.8.4-beta"
 
 [workspace.dependencies]
 empack-core = { path = "crates/empack-core" }
@@ -51,6 +51,7 @@ thiserror = "2.0.21"
 toml = "1.1.8"
 tokio = { version = "1.54.0", features = ["full"] }
 console = "0.16"
+fuzzy-matcher = "0.3.7"
 tower = "0.5.3"
 tower_governor = "0.8.0" # Rate limiting middleware
 tracing = "0.1.44"

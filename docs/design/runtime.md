@@ -1,7 +1,6 @@
 # Runtime ownership and decisions
 
-Contract for v0.8.0-beta. Callable types and signatures are defined in the
-[operation runtime](../../crates/empack-lib/src/engine/runtime.rs), [resource admission](../../crates/empack-lib/src/engine/resources.rs) and [process supervision](../../crates/empack-lib/src/application/process_runtime.rs). This page specifies their behavior and ownership.
+Callable types and signatures are defined in the [operation runtime](../../crates/empack-lib/src/engine/runtime.rs), [resource admission](../../crates/empack-lib/src/engine/resources.rs) and [process supervision](../../crates/empack-lib/src/application/process_runtime.rs). This page specifies their behavior and ownership.
 
 ## Runtime ownership, cancellation, and resource budgets
 
@@ -17,29 +16,11 @@ The owning driver accepts a result only when its operation and attempt are still
 
 Admission uses checked arithmetic and accounts for concurrent retained inputs and outputs, not only task count. Reservation estimates help scheduling but cannot guarantee physical RAM usage or allocator success. Actual downloads, decompression, captured output, and file count have separate enforced bounds.
 
-The CLI admits up to 2 GiB of estimated memory, 128 GiB of temporary storage and
-2,048 file reservations. These are accounting limits, not allocations or download
-sizes. Forge-family installers run with a 1,024 MiB Java heap and reserve another
-128 MiB for overhead. Their output capture is bounded separately from project
-capture: 1,024 entries, 2 GiB per file and 4 GiB in total. Installer work,
-retained project inputs and subsequent assembly must fit the shared budget;
-raising only the Java heap does not raise that budget. Admission failures report
-the requested quantity and configured or currently available capacity, with byte
-units made explicit. Runtime wrappers preserve the resource-admission diagnostic
-code and its expected/observed quantities.
+The CLI admits up to 2 GiB of estimated memory, 128 GiB of temporary storage and 2,048 file reservations. These are accounting limits, not allocations or download sizes. Forge-family installers run with a 1,024 MiB Java heap and reserve another 128 MiB for overhead. Their output capture is bounded separately from project capture: 1,024 entries, 2 GiB per file and 4 GiB in total. Installer work, retained project inputs and subsequent assembly must fit the shared budget; raising only the Java heap does not raise that budget. Admission failures report the requested quantity and configured or currently available capacity, with byte units made explicit. Runtime wrappers preserve the resource-admission diagnostic code and its expected/observed quantities.
 
-After a parser retires, its retained result may release unused allowance based on the
-observed manifest size and entry count. This transfer can only shrink the reservation.
-Import inspection keeps its configured parsing bounds, then charges the retained model
-for the inspected input so extraction does not also carry unused parser capacity.
+After a parser retires, its retained result may release unused allowance based on the observed manifest size and entry count. This transfer can only shrink the reservation. Import inspection keeps its configured parsing bounds, then charges the retained model for the inspected input so extraction does not also carry unused parser capacity.
 
-Continuation admission follows the observed record and encoded model size, independently
-of the maximum permitted document size. Loading first measures the native record,
-reserves its decoding allowance, and bounds the read to that observation; growth
-requires a fresh attempt. Encoding estimates include variable metadata, file roles,
-placements, locators and extensions before allocating wire representations. Small
-records must remain usable under small budgets. Limits and identity checks still
-apply, and retained decoded records keep their reservations until released.
+Continuation admission follows the observed record and encoded model size, independently of the maximum permitted document size. Loading first measures the native record, reserves its decoding allowance, and bounds the read to that observation; growth requires a fresh attempt. Encoding estimates include variable metadata, file roles, placements, locators and extensions before allocating wire representations. Small records must remain usable under small budgets. Limits and identity checks still apply, and retained decoded records keep their reservations until released.
 
 Reject an oversized request immediately; do not leave it waiting forever for capacity that can never exist. A busy request may wait with cancellation or return a retryable outcome. Do not cancel a previous usable attempt merely because a replacement failed admission.
 

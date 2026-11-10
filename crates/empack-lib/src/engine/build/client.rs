@@ -282,9 +282,9 @@ pub(super) fn prepare_client_archive(
         command.clone().unwrap_or_default(),
     );
     let wrapper = if subscribed {
-        "empack --workdir \"$INST_DIR\" --yes instance launch --check-updates --"
+        "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime --check-updates --"
     } else if managed {
-        "empack --workdir \"$INST_DIR\" --yes instance launch --"
+        "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime --"
     } else {
         ""
     };

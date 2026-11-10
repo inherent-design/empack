@@ -83,7 +83,9 @@ impl WorkflowProjectFixture {
                     description: None,
                 },
                 runtime: RuntimeIntent {
-                    java_major: 21,
+                    java_major: empack_core::java::JavaPolicy::for_game(runtime.minecraft.as_str())
+                        .select(None)
+                        .unwrap_or(21),
                     minecraft: runtime.minecraft.clone(),
                     acceptable_versions: vec![],
                     loader,

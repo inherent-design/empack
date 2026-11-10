@@ -1,12 +1,41 @@
 use super::trust::*;
 use super::*;
+
+#[test]
+fn java_policy_round_trip_enforces_upper_bounds_and_preserves_unknown_support() {
+    let mut document = document();
+    document.runtime.minecraft = "1.17.1".into();
+    document.runtime.loader = ReleaseLoader::Vanilla;
+    document.runtime.java = ReleaseJava::for_game("1.17.1", 16).unwrap();
+    let release = DecodedRelease::encode(document).unwrap();
+    let retained = DecodedRelease::decode(release.bytes()).unwrap();
+    let java = &retained.document().runtime.java;
+    java.check_actual(16).unwrap();
+    java.check_actual(17).unwrap();
+    assert!(java.check_actual(21).is_err());
+    let mut narrowed = java.clone();
+    narrowed.require_minimum(17, "selected mod").unwrap_err();
+    assert_eq!(
+        &narrowed, java,
+        "failed constraints must not change retained policy"
+    );
+    let unknown = ReleaseJava::for_game("custom-game", 21).unwrap();
+    assert!(unknown.supported.is_none());
+    unknown.check_actual(21).unwrap();
+    assert!(unknown.check_actual(25).is_err());
+    let mut corrupt = java.clone();
+    corrupt.supported = None;
+    assert!(corrupt.validate("1.17.1").is_err());
+    corrupt.supported = Some(vec![16, 17, 21]);
+    assert!(corrupt.validate("1.17.1").is_err());
+}
 use ed25519_dalek::SigningKey;
 
 pub(super) fn document() -> ReleaseDocument {
     ReleaseDocument {
         require_subscription: false,
         server_launch: None,
-        schema: 1,
+        schema: crate::engine::release::RELEASE_SCHEMA,
         pack: "test-pack".into(),
         version: "1.0".into(),
         minimum_engine: ">=0.7.0-beta".into(),
@@ -15,7 +44,7 @@ pub(super) fn document() -> ReleaseDocument {
             loader: ReleaseLoader::NeoForge {
                 version: "21.1.200".into(),
             },
-            java_major: 21,
+            java: crate::engine::release::ReleaseJava::for_game("1.21.1", 21).unwrap(),
         },
         choices: vec![],
         files: vec![ReleaseFile {
@@ -54,11 +83,10 @@ fn trust() -> PublisherTrust {
 }
 fn channel(release: &DecodedRelease) -> ChannelDocument {
     ChannelDocument {
-        schema: 1,
+        schema: 2,
         pack: "test-pack".into(),
         channel: "stable".into(),
         sequence: 3,
-        expires: 1_800_000_100,
         release: ChannelRelease {
             id: release.id().into(),
             url: "https://example.com/release.json".into(),
@@ -90,14 +118,10 @@ fn strict_decoding_rejects_duplicates_unknown_fields_and_future_schemas() {
     let bytes = DecodedRelease::encode(document()).unwrap().bytes;
     let text = String::from_utf8(bytes).unwrap();
     for malformed in [
-        text.replacen("\"schema\":1", "\"schema\":1,\"schema\":1", 1),
-        text.replacen("\"schema\":1", "\"schema\":2", 1),
-        text.replacen("\"schema\":1", "\"schema\":1,\"surprise\":true", 1),
-        text.replacen(
-            "\"java_major\":21",
-            "\"java_major\":21,\"java_major\":21",
-            1,
-        ),
+        text.replacen("\"schema\":2", "\"schema\":2,\"schema\":2", 1),
+        text.replacen("\"schema\":2", "\"schema\":3", 1),
+        text.replacen("\"schema\":2", "\"schema\":2,\"surprise\":true", 1),
+        text.replacen("\"preferred\":21", "\"preferred\":21,\"preferred\":21", 1),
     ] {
         assert!(DecodedRelease::decode(malformed.as_bytes()).is_err());
     }
@@ -205,91 +229,92 @@ fn channel_floor_prevents_replay_and_equivocation_without_blocking_retries() {
         sign(EnvelopeKind::Channel, &doc.encode().unwrap(), &[&key()]).unwrap()
     };
     let first = trust()
-        .channel(&encode(&doc), "stable", 1_800_000_000, &version(), None)
+        .channel(&encode(&doc), "stable", &version(), None)
         .unwrap();
     assert!(
         trust()
-            .channel(
-                &encode(&doc),
-                "stable",
-                1_800_000_001,
-                &version(),
-                Some(first.floor())
-            )
+            .channel(&encode(&doc), "stable", &version(), Some(first.floor()))
             .is_ok()
     );
     doc.sequence = 2;
     assert!(
         trust()
-            .channel(
-                &encode(&doc),
-                "stable",
-                1_800_000_000,
-                &version(),
-                Some(first.floor())
-            )
+            .channel(&encode(&doc), "stable", &version(), Some(first.floor()))
             .is_err()
     );
     doc.sequence = 3;
-    doc.expires += 1;
+    doc.release.maximum_bytes += 1;
     assert!(
         trust()
-            .channel(
-                &encode(&doc),
-                "stable",
-                1_800_000_000,
-                &version(),
-                Some(first.floor())
-            )
+            .channel(&encode(&doc), "stable", &version(), Some(first.floor()))
             .is_err()
     );
     doc.sequence = 4;
     assert!(
         trust()
-            .channel(
-                &encode(&doc),
-                "stable",
-                1_800_000_000,
-                &version(),
-                Some(first.floor())
-            )
+            .channel(&encode(&doc), "stable", &version(), Some(first.floor()))
             .is_ok()
     );
     let signed = sign(EnvelopeKind::Release, release.bytes(), &[&key()]).unwrap();
     assert!(first.release(&trust(), &signed, &version()).is_ok());
 }
 #[test]
-fn channel_rejects_expiry_cross_origin_wrong_subscription_and_bound_overflow() {
+fn channel_offers_have_no_calendar_expiry_or_renewal() {
+    let release = DecodedRelease::encode(document()).unwrap();
+    let doc = channel(&release);
+    let payload = doc.encode().unwrap();
+    let mut fields: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(fields["schema"], 2);
+    assert!(fields.get("expires").is_none());
+    let signed = sign(EnvelopeKind::Channel, &payload, &[&key()]).unwrap();
+    let observed = trust()
+        .channel(&signed, "stable", &version(), None)
+        .unwrap();
+    for _ in 0..3 {
+        let unchanged = trust()
+            .channel(&signed, "stable", &version(), Some(observed.floor()))
+            .unwrap();
+        assert_eq!(unchanged.document(), observed.document());
+        assert_eq!(unchanged.floor(), observed.floor());
+    }
+    // Calendar policy cannot be silently reintroduced through an old field or schema.
+    fields["expires"] = 1.into();
+    assert!(ChannelDocument::decode(&serde_json::to_vec(&fields).unwrap()).is_err());
+    fields.as_object_mut().unwrap().remove("expires");
+    fields["schema"] = 1.into();
+    assert!(ChannelDocument::decode(&serde_json::to_vec(&fields).unwrap()).is_err());
+}
+#[test]
+fn channel_rejects_wrong_subscription_origin_and_bound_overflow() {
     let release = DecodedRelease::encode(document()).unwrap();
     let encode = |doc: &ChannelDocument| {
         sign(EnvelopeKind::Channel, &doc.encode().unwrap(), &[&key()]).unwrap()
     };
     let mut doc = channel(&release);
-    assert!(
-        trust()
-            .channel(&encode(&doc), "stable", doc.expires, &version(), None)
-            .is_err()
-    );
-    assert!(
-        trust()
-            .channel(&encode(&doc), "other", 1_800_000_000, &version(), None)
-            .is_err()
-    );
-    assert!(
-        trust()
-            .channel(&encode(&doc), "stable", 0, &version(), None)
-            .is_err()
-    );
+    let mut wrong_pack = doc.clone();
+    wrong_pack.pack = "another-pack".into();
+    let mut wrong_channel = doc.clone();
+    wrong_channel.channel = "preview".into();
+    for offered in [wrong_pack, wrong_channel] {
+        assert_eq!(
+            trust()
+                .channel(&encode(&offered), "stable", &version(), None)
+                .err()
+                .expect("wrong signed subscription must be refused")
+                .to_string(),
+            "Channel subscription identity mismatch"
+        );
+    }
     doc.release.url = "https://other.example/release".into();
     assert!(
         trust()
-            .channel(&encode(&doc), "stable", 1_800_000_000, &version(), None)
+            .channel(&encode(&doc), "stable", &version(), None)
             .is_err()
     );
     doc.release.url = "https://example.com/release".into();
     doc.release.maximum_bytes = 1;
     let checked = trust()
-        .channel(&encode(&doc), "stable", 1_800_000_000, &version(), None)
+        .channel(&encode(&doc), "stable", &version(), None)
         .unwrap();
     let signed = sign(EnvelopeKind::Release, release.bytes(), &[&key()]).unwrap();
     assert!(checked.release(&trust(), &signed, &version()).is_err());

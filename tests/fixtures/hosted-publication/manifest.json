@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "license": "Apache-2.0",
+  "source": "Original synthetic empack data and public test keys; no upstream mod or game files",
+  "producer": {
+    "source_revision": "9100f45ac0398ef6932e089747b6921b3f6f8cc3",
+    "executable_sha256": "4dd24f7b63db69aa506f0c0b5614065fc459d91ea01b54e57f09de20d3611d3d",
+    "version": "0.0.0-dev"
+  },
+  "pack": "verification.hosted",
+  "asset": {
+    "path": "assets/config.toml",
+    "destination": "config/hosted.toml",
+    "bytes": 45,
+    "sha256": "e14887f97103ebfe2b00f98c1af6d73719fa6b327524b2bfd57a33d708556b50",
+    "sha512": "829295ce9d9e6adf4b2d78bef1ff43c864494468d0bf914ac97e23d330243b364a33e6640140f9f31a43fb7303e010f6433fc7f56a992990e9b6a04c4d766033"
+  },
+  "releases": [
+    {
+      "label": "a",
+      "version": "1",
+      "id": "9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609",
+      "input": "inputs/a",
+      "seed_hex": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+      "key_id": "51fb88a29a88ba4cbf3983ff16aa9e01b7acf049e1155d5811f20718f300fbfd",
+      "envelope_bytes": 2529,
+      "envelope_sha256": "5818fa8cef742c95c9855bf93ee7a4dae8d6408cc1101bbfb6f49b2cc88d67c1"
+    },
+    {
+      "label": "b",
+      "version": "2",
+      "id": "609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a",
+      "input": "inputs/b",
+      "seed_hex": "1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
+      "key_id": "9a19fc9f345c9fde2858f0d175570612fed076877902cfe67d20e0f0a15b9d9f",
+      "envelope_bytes": 2529,
+      "envelope_sha256": "8ecb4f9297d64bbe4f0a413e0e21b7cb55fa36603409180c68496ceab15e4fcf"
+    }
+  ],
+  "variants": {
+    "good": "Exact envelope and asset",
+    "wrong-envelope": "Different bytes at the expected envelope address",
+    "wrong-asset": "Exact envelope with corrupt asset bytes",
+    "missing-asset": "Exact envelope without its asset"
+  },
+  "files": {
+    "good/releases/609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a/assets/config.toml": "e14887f97103ebfe2b00f98c1af6d73719fa6b327524b2bfd57a33d708556b50",
+    "good/releases/609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a/release.json": "8ecb4f9297d64bbe4f0a413e0e21b7cb55fa36603409180c68496ceab15e4fcf",
+    "good/releases/9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609/assets/config.toml": "e14887f97103ebfe2b00f98c1af6d73719fa6b327524b2bfd57a33d708556b50",
+    "good/releases/9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609/release.json": "5818fa8cef742c95c9855bf93ee7a4dae8d6408cc1101bbfb6f49b2cc88d67c1",
+    "inputs/a/assets/config.toml": "e14887f97103ebfe2b00f98c1af6d73719fa6b327524b2bfd57a33d708556b50",
+    "inputs/a/release.json": "9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609",
+    "inputs/b/assets/config.toml": "e14887f97103ebfe2b00f98c1af6d73719fa6b327524b2bfd57a33d708556b50",
+    "inputs/b/release.json": "609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a",
+    "missing-asset/releases/609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a/release.json": "8ecb4f9297d64bbe4f0a413e0e21b7cb55fa36603409180c68496ceab15e4fcf",
+    "missing-asset/releases/9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609/release.json": "5818fa8cef742c95c9855bf93ee7a4dae8d6408cc1101bbfb6f49b2cc88d67c1",
+    "wrong-asset/releases/609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a/assets/config.toml": "134a229d682725b6498e380d83b3b97cda418b485a5cde56b8cf14d756c7b3fe",
+    "wrong-asset/releases/609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a/release.json": "8ecb4f9297d64bbe4f0a413e0e21b7cb55fa36603409180c68496ceab15e4fcf",
+    "wrong-asset/releases/9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609/assets/config.toml": "134a229d682725b6498e380d83b3b97cda418b485a5cde56b8cf14d756c7b3fe",
+    "wrong-asset/releases/9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609/release.json": "5818fa8cef742c95c9855bf93ee7a4dae8d6408cc1101bbfb6f49b2cc88d67c1",
+    "wrong-envelope/releases/609dc73e1166fd31b8fa6f8d9cc30781e9c28d362c57a0a52d838c9127387c4a/release.json": "d4c651e7f53240c6bd51f631cd1fdbdd5ced1cf130090f6650420703ecc5cbc0",
+    "wrong-envelope/releases/9ff1571732696fcd472f62c2d662c09716be4bfe58fddfb8c4cad6db6f9fe609/release.json": "d4c651e7f53240c6bd51f631cd1fdbdd5ced1cf130090f6650420703ecc5cbc0"
+  }
+}
