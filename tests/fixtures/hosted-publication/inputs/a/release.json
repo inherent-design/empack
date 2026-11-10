@@ -1,15 +1,22 @@
 {
   "require_subscription": false,
-  "schema": 1,
+  "schema": 2,
   "pack": "verification.hosted",
   "version": "1",
-  "minimum_engine": ">=0.8.0-beta",
+  "minimum_engine": ">=0.8.4-beta",
   "runtime": {
     "minecraft": "1.21.1",
     "loader": {
       "kind": "vanilla"
     },
-    "java_major": 21
+    "java": {
+      "preferred": 21,
+      "minimum": 21,
+      "supported": [
+        21
+      ],
+      "policy": "empack-java-1"
+    }
   },
   "choices": [],
   "files": [
