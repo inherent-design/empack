@@ -68,7 +68,7 @@ windows-core = "0.100.0"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
 tar = "0.4.46" # Tar archive creation for .tar.gz distribution fallback
 flate2 = "1.1" # Gzip compression paired with tar
-sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
+sevenz-rust2 = { version = "0.25.0", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
 handlebars = "6.4.4"
 
 # Telemetry (optional, behind `telemetry` feature gate)
