@@ -13,6 +13,7 @@ from .receipts import check_suite_receipt
 from .release_inputs import release_version, stamped_sources
 from .product_build import COMPILATION_FILES, build_command, inspect_compilation
 from . import native_image
+from .bootstrap import sources as bootstrap_sources
 
 TARGETS = {
     "x86_64-unknown-linux-gnu": ("tar.gz", "empack"),
@@ -175,6 +176,7 @@ def check_target(root, build_directory, execution_directory, version, target, re
             "executable": build["executable"], "suite": suite, "native_image": image,
             "compiled_product": {"target": target, "features": "default", "sha256": compiled["artifact"]["sha256"],
                                  "build_audit_sha256": compiled["artifact"]["build_audit_sha256"],
+                                 "bootstrap_sha256": json.loads((build_directory / "bootstrap-build.json").read_text(encoding="utf-8"))["jar_sha256"],
                                  "compilation_sha256": build["compilation_sha256"]}}
 
 
@@ -188,18 +190,31 @@ def admit_archives(root, artifacts, version, revision, output):
         raise ValueError("Missing or unexpected target evidence in archive gate")
     records = [check_target(root, artifacts / f"release-build-{target}", artifacts / f"release-test-{target}",
                             version, target, revision) for target in TARGETS]
+    jar = root / "bootstrap/target/empack-bootstrap.jar"
+    identity = jar.with_suffix(".json")
+    if jar.is_symlink() or not jar.is_file() or identity.is_symlink() or not identity.is_file():
+        raise ValueError("Archive gate requires the independently built bootstrap artifact")
+    bootstrap = json.loads(identity.read_text(encoding="utf-8"))
+    digest = sha256(jar)
+    if (bootstrap.get("schema") != 1 or bootstrap.get("version") != version
+            or bootstrap.get("sources") != bootstrap_sources(root) or bootstrap.get("jar_sha256") != digest
+            or any(record["compiled_product"]["bootstrap_sha256"] != digest for record in records)):
+        raise ValueError("Native products and separate bootstrap asset differ from their source-bound producer")
     # Validate every target before creating any publication payload. Copy the
     # checked archives, never rebuild them after qualification.
     output.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(jar, output / "empack-bootstrap.jar")
     for target, record in zip(TARGETS, records, strict=True):
         destination = output / record["archive"]["name"]
         shutil.copyfile(artifacts / f"release-build-{target}" / destination.name, destination)
         if sha256(destination) != record["archive"]["sha256"]:
             raise ValueError("Archive changed while staging publication payload")
     (output / "SHA256SUMS").write_text("".join(
-        f"{record['archive']['sha256']}  {record['archive']['name']}\n" for record in records), encoding="utf-8", newline="\n")
+        f"{record['archive']['sha256']}  {record['archive']['name']}\n" for record in records)
+        + f"{digest}  empack-bootstrap.jar\n", encoding="utf-8", newline="\n")
     result = {"schema": 2, "kind": "release-archive-gate", "status": "PASS", "qualification": False,
               "source_revision": revision, "version": version, "targets": records,
+              "bootstrap": {"identity": bootstrap, "length": jar.stat().st_size},
               "scope": "all five final archives and offline CLI suites; full candidate acceptance remains separate"}
     write_json(output / "archive-evidence.json", result)
     return result
@@ -214,16 +229,24 @@ def check_payload(directory, version, revision, evidence_sha256):
             or record.get("status") != "PASS" or record.get("source_revision") != revision
             or record.get("version") != version or len(record.get("targets", [])) != len(TARGETS)):
         raise ValueError("Publication payload belongs to another or incomplete candidate")
-    expected = {archive_name(version, target) for target in TARGETS} | {"SHA256SUMS", "archive-evidence.json"}
+    expected = {archive_name(version, target) for target in TARGETS} | {"SHA256SUMS", "archive-evidence.json", "empack-bootstrap.jar"}
     if set(path.name for path in directory.iterdir()) != expected:
         raise ValueError("Publication payload has missing or unexpected files")
     checksums = []
+    jar = directory / "empack-bootstrap.jar"
+    bootstrap = record.get("bootstrap", {})
+    digest = bootstrap.get("identity", {}).get("jar_sha256", "")
+    if (not re.fullmatch("[a-f0-9]{64}", digest) or jar.is_symlink() or sha256(jar) != digest
+            or jar.stat().st_size != bootstrap.get("length")
+            or bootstrap.get("identity", {}).get("version") != version):
+        raise ValueError("Publication bootstrap differs from the embedded and qualified asset")
     for target, entry in zip(TARGETS, record["targets"], strict=True):
         name = archive_name(version, target)
         archive = directory / name
         compiled = entry.get("compiled_product", {})
         if (compiled.get("target") != target or compiled.get("features") != "default"
                 or compiled.get("sha256") != entry["executable"]["sha256"]
+                or compiled.get("bootstrap_sha256") != digest
                 or any(not re.fullmatch("[a-f0-9]{64}", compiled.get(key, ""))
                        for key in ("build_audit_sha256", "compilation_sha256"))):
             raise ValueError(f"Publication payload lacks compiled-product evidence: {target}")
@@ -236,6 +259,7 @@ def check_payload(directory, version, revision, evidence_sha256):
                 or archive.stat().st_size != entry["archive"]["length"]):
             raise ValueError(f"Publication archive differs from the tested bytes: {target}")
         checksums.append(f"{entry['archive']['sha256']}  {name}\n")
+    checksums.append(f"{digest}  empack-bootstrap.jar\n")
     if (directory / "SHA256SUMS").read_text(encoding="utf-8") != "".join(checksums):
         raise ValueError("Publication checksum list differs from checked archives")
     return record

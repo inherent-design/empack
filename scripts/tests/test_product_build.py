@@ -37,6 +37,26 @@ def fixture(root, leak=""):
         (root / name / "src" / ("main.rs" if name == "empack" else "lib.rs")).write_text(
             'fn main() { println!("empack {}", env!("CARGO_PKG_VERSION")); }' if name == "empack" else "")
     subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, check=True, capture_output=True)
+    # This fixture proves Cargo/input binding only. It deliberately contains no
+    # runnable JAR and does not claim Java or recipient qualification.
+    (root / "bootstrap/src/main").mkdir(parents=True)
+    for name in ("pom.xml", "mise.toml"):
+        (root / "bootstrap" / name).write_text("synthetic compiler input")
+    fixture_bootstrap(root)
+    (root / "empack-lib/build.rs").write_text(
+        'fn main() { println!("cargo:rustc-env=EMPACK_BOOTSTRAP_SHA256=' +
+        sha256(root / "bootstrap/target/empack-bootstrap.jar") + '"); }')
+
+
+def fixture_bootstrap(root):
+    import tomllib
+    from verification.bootstrap import sources
+    target = root / "bootstrap/target"
+    target.mkdir(exist_ok=True)
+    (target / "empack-bootstrap.jar").write_bytes(b"synthetic bootstrap producer input")
+    (target / "empack-bootstrap.json").write_text(json.dumps({
+        "schema": 1, "version": tomllib.loads((root / "Cargo.toml").read_text())["workspace"]["package"]["version"],
+        "sources": sources(root), "jar_sha256": sha256(target / "empack-bootstrap.jar")}))
 
 
 def build(root, name="attempt", features="default"):
@@ -50,7 +70,7 @@ def build(root, name="attempt", features="default"):
 
 def commit_source(root):
     (root / "rust-toolchain.toml").write_bytes((Path(__file__).parents[2] / "rust-toolchain.toml").read_bytes())
-    (root / ".gitignore").write_text("/target/\n")
+    (root / ".gitignore").write_text("target/\n")
     for arguments in (("init", "-q"), ("config", "user.name", "Compiler fixture"),
                       ("config", "user.email", "fixture@example.invalid"), ("add", "."),
                       ("-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + os.devnull, "commit", "-qm", "fixture")):
@@ -184,6 +204,7 @@ class ProductBuild(unittest.TestCase):
                 stream.write('[workspace.metadata.empack]\nrelease-target = "0.8.4-beta"\n')
             commit_source(root)
             inputs = prepare(root, "0.8.4-beta")
+            fixture_bootstrap(root)
             inputs_path = root / ".git/inputs.json"
             inputs_path.write_text(json.dumps(inputs))
             compiled = root / ".git/compiled"

@@ -551,6 +551,15 @@ class AttemptPolicy(unittest.TestCase):
                     f'[package]\nname = "{name}"\nversion.workspace = true\nedition = "2024"\n' + dependency)
             (root / "empack/src/main.rs").write_text(
                 'fn main() { println!("empack {}", env!("CARGO_PKG_VERSION")); }\n')
+            from test_product_build import fixture_bootstrap
+            (root / "bootstrap/src/main").mkdir(parents=True)
+            for name in ("pom.xml", "mise.toml"):
+                (root / "bootstrap" / name).write_text("synthetic input")
+            fixture_bootstrap(root)
+            from verification.evidence import sha256
+            digest = sha256(root / "bootstrap/target/empack-bootstrap.jar")
+            (root / "empack-lib/build.rs").write_text(
+                'fn main() { println!("cargo:rustc-env=EMPACK_BOOTSTRAP_SHA256=' + digest + '"); }')
             import subprocess
             lock = subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=root, capture_output=True, text=True)
             self.assertEqual(lock.returncode, 0, lock.stderr)

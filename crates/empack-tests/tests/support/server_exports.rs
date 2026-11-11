@@ -282,6 +282,9 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
         Some(PROPERTIES)
     );
     let release_hash = if managed {
+        expected.insert(".empack-tools/empack-bootstrap.jar".into());
+        let bootstrap = &members[".empack-tools/empack-bootstrap.jar"];
+        assert!(bootstrap.bytes > 0 && bootstrap.bytes <= 8 << 20);
         let path = ".empack-consumer/release.json";
         expected.insert(path.into());
         let release: Value = serde_json::from_slice(members[path].small.as_ref().unwrap()).unwrap();
@@ -374,6 +377,8 @@ fn check(members: &BTreeMap<String, Member>, managed: bool, pin: &Value) {
     }
     for name in scripts {
         let script = text(&members[name]);
+        assert_eq!(script.contains("empack-bootstrap.jar"), managed);
+        assert_eq!(script.contains("--engine-version"), managed);
         assert!(!script.contains("eula=true"));
         if name.ends_with(".bat") {
             assert!(!script.replace("\r\n", "").contains('\n'));

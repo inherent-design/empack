@@ -406,6 +406,12 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
             let release =
                 DecodedRelease::decode(&fs::read(assets.join("release.json")).unwrap()).unwrap();
             let ini = fs::read_to_string(instance.path().join("instance.cfg")).unwrap();
+            assert_eq!(
+                fs::read(instance.path().join(super::super::bootstrap::PATH)).unwrap(),
+                include_bytes!(concat!(env!("OUT_DIR"), "/empack-bootstrap.jar"))
+            );
+            assert!(ini.contains("$INST_JAVA"));
+            assert!(ini.contains("--engine-version"));
             assert!(ini.contains("instance prepare"));
             assert!(
                 ini.lines().any(|line| line.starts_with("WrapperCommand=")

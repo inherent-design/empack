@@ -124,7 +124,7 @@ class VerificationReports(unittest.TestCase):
             # Literal docs-only plan: the subprocess still derives and checks its selection.
             plan = {"schema": 1, "qualification": False, "changed_paths": ["README.md"],
                     "trusted": True, "native": False, "live_suites": [], "consumer": False,
-                    "survey": False, "required_jobs": ["tooling"], "native_targets": [],
+                    "survey": False, "required_jobs": ["tooling", "bootstrap"], "native_targets": [],
                     "blocked_jobs": [], "source_revision": revision, "source_tree": tree}
             for mode, expected in (("success", "PASS"), ("skipped", "FAIL"),
                                    ("wrong-tree", "FAIL"), ("missing-plan", "FAIL")):
@@ -135,6 +135,7 @@ class VerificationReports(unittest.TestCase):
                         (plans / "plan.json").unlink()
                     job_status = "skipped" if mode == "skipped" else "success"
                     env = dict(os.environ, CI_NEEDS_JSON=json.dumps({"plan": {"result": "success"},
+                                                               "bootstrap": {"result": "success"},
                                                                "tooling": {"result": job_status}}))
                     run = subprocess.run([sys.executable, str(SCRIPTS / "ci-verification.py"), "gate",
                         "--artifacts", str(output), "--output", str(output / "gate.json"),

@@ -97,6 +97,7 @@ class CompilerDispatch(unittest.TestCase):
                 self.assertEqual(arguments[:2], ["cargo", "build"])
                 raise RuntimeError("controlled stop")
             with patch.object(product_build, "compiler_environment", side_effect=select) as selection, \
+                    patch.object(product_build, "admit_bootstrap", return_value={"jar_sha256": "a" * 64}), \
                     patch.object(product_build, "run", side_effect=run):
                 with self.assertRaisesRegex(RuntimeError, "controlled stop"):
                     product_build.compile_product(root, "x86_64-pc-windows-msvc", "cargo", root / "release", original)

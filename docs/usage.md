@@ -182,6 +182,8 @@ Help and version display flags remain available when unrelated dotenv files are 
 
 ## Native release example
 
+An instance release is an exact pack snapshot. Building or installing one locally does not publish it or create a GitHub release. The pack version, native release hash and empack engine version identify different things.
+
 Set stable pack identity and runtime requirements in `empack.yml`:
 
 ```yaml

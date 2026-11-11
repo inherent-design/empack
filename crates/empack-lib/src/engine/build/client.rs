@@ -209,6 +209,12 @@ pub(super) fn prepare_client_archive(
     };
     let mut template_options = options.templates.clone();
     let mut files = BTreeMap::new();
+    if managed {
+        files.insert(
+            path(super::bootstrap::PATH)?,
+            super::bootstrap::file(cancel)?,
+        );
+    }
     let command = if managed {
         let mut release_options = NativeReleaseOptions::from_project(game.project())?;
         release_options.require_subscription =
@@ -260,7 +266,8 @@ pub(super) fn prepare_client_archive(
             );
         }
         Some(format!(
-            "empack --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
+            "{} --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
+            super::bootstrap::prism(),
             release.release().id(),
             if subscribed {
                 " --require-subscription"
@@ -281,16 +288,18 @@ pub(super) fn prepare_client_archive(
         "INSTANCE_PREPARE_COMMAND".into(),
         command.clone().unwrap_or_default(),
     );
-    let wrapper = if subscribed {
-        "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime --check-updates --"
-    } else if managed {
-        "empack --workdir \"$INST_DIR\" --yes instance launch --java-runtime --"
+    let wrapper = if managed {
+        format!(
+            "{} --workdir \"$INST_DIR\" --yes instance launch --java-runtime {}--",
+            super::bootstrap::prism(),
+            if subscribed { "--check-updates " } else { "" }
+        )
     } else {
-        ""
+        String::new()
     };
     template_options
         .values
-        .insert("INSTANCE_WRAPPER_COMMAND".into(), wrapper.into());
+        .insert("INSTANCE_WRAPPER_COMMAND".into(), wrapper.clone());
     let templates = prepare_templates(workspace, target, &template_options, cancel)?;
     for (destination, file) in templates.files() {
         ensure!(
@@ -313,7 +322,7 @@ pub(super) fn prepare_client_archive(
             "INSTANCE_PREPARE_COMMAND".to_owned(),
             command.unwrap_or_default(),
         ),
-        ("INSTANCE_WRAPPER_COMMAND".to_owned(), wrapper.into()),
+        ("INSTANCE_WRAPPER_COMMAND".to_owned(), wrapper),
     ]);
     let default_instance = crate::engine::templates::render_default(
         game.project(),

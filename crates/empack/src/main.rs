@@ -2,8 +2,13 @@ use empack_lib::application::process_runtime::Cancellation;
 use empack_lib::application::{CliConfig, CliLoad, EmpackExitCode, classify_error};
 use empack_lib::primitives::ConfigError;
 
+mod bootstrap;
+
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
+    // Only the process parent supplies this channel. Project dotenv configuration
+    // must not create or replace an invocation's cancellation connection.
+    let bootstrap_descriptor = std::env::var_os("EMPACK_BOOTSTRAP_CONTROL");
     let mut config = match CliConfig::load_for_process() {
         Ok(CliLoad::Ready(config)) => *config,
         Ok(CliLoad::Display(message)) => {
@@ -53,11 +58,24 @@ async fn main() -> std::process::ExitCode {
             }
         })
     });
+    // A portable Java parent cannot send native console signals uniformly. Its
+    // authenticated local connection supplies cancellation and parent-loss input;
+    // the existing engine still owns retirement, recovery and the terminal result.
+    let bootstrap =
+        match bootstrap::attach(bootstrap_descriptor.as_deref(), cancellation.clone()).await {
+            Ok(control) => control,
+            Err(error) => {
+                empack_lib::logger::global_shutdown();
+                return finish_command(Err(error.into()), &mut std::io::stderr().lock())
+                    .as_process_exit_code();
+            }
+        };
     let result = empack_lib::application::commands::execute_command_with_cancellation(
         config,
         cancellation.clone(),
     )
     .await;
+    drop(bootstrap);
     if let Some(listener) = listener {
         listener.abort();
     }

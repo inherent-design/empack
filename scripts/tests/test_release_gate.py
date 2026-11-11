@@ -16,6 +16,7 @@ from verification.consumer import INPUTS
 from verification.python_tests import PRODUCER_INPUTS
 from compiled_product_fixture import compilation
 from verification.product_build import build_command
+from verification.bootstrap import sources as bootstrap_sources
 import native_image_fixture
 
 
@@ -39,10 +40,20 @@ class ReleaseArchiveGate(unittest.TestCase):
             if not path.exists():
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes((ci_fixtures.SCRIPTS.parent / name).read_bytes())
-        self.git("add", "tests", "scripts", "crates")
+        (self.root / "bootstrap/src/main").mkdir(parents=True)
+        for name in ("pom.xml", "mise.toml"):
+            (self.root / "bootstrap" / name).write_text("synthetic bootstrap input")
+        (self.root / ".gitignore").write_text("target/\n")
+        self.git("add", "tests", "scripts", "crates", "bootstrap", ".gitignore")
         self.git("commit", "-qm", "fixture registry")
         self.revision = self.git("rev-parse", "HEAD")
         self.version = "0.8.4-beta"
+        target = self.root / "bootstrap/target"
+        target.mkdir()
+        (target / "empack-bootstrap.jar").write_bytes(b"synthetic bootstrap producer input")
+        self.bootstrap = {"schema": 1, "version": self.version,
+                          "sources": bootstrap_sources(self.root), "jar_sha256": sha256(target / "empack-bootstrap.jar")}
+        write_json(target / "empack-bootstrap.json", self.bootstrap)
         self.inputs = input_fixtures.release.prepare(self.root, self.version)
         self.git("restore", "Cargo.toml", "Cargo.lock")
         self.artifacts = self.root / ".git/artifacts"
@@ -60,7 +71,7 @@ class ReleaseArchiveGate(unittest.TestCase):
                      "profile": "release", "inputs": self.inputs,
                      "compiler": f"rustc fixture\nrelease: 1.99.1\nhost: {target}",
                      "command": build_command(target),
-                     "compilation_sha256": compilation(build_dir, target, executable["sha256"], self.revision, self.inputs["stamped"]),
+                     "compilation_sha256": compilation(build_dir, target, executable["sha256"], self.revision, self.inputs["stamped"], bootstrap=self.bootstrap),
                      "archive": {"name": archive.name, "sha256": sha256(archive), "length": archive.stat().st_size},
                      "executable": executable}
             write_json(build_dir / "build.json", build)

@@ -25,7 +25,7 @@ Run interactive launches in the foreground. Services can redirect all three cons
 
 ## Installation and updates
 
-Bundled snapshots already include their pack and runtime files. Their `install_pack` script confirms that state; use a start script to launch Minecraft. Reference and empack-managed exports also need `empack` on `PATH`. Both start variants prepare the exact release before launching and stop if preparation fails. Subscribed exports check their enrolled update channel before launch.
+Bundled snapshots already include their pack and runtime files. Their `install_pack` script confirms that state; use a start script to launch Minecraft. Reference and empack-managed exports include `.empack-tools/empack-bootstrap.jar`. Their selected Java runs this bootstrap, which reuses or downloads the exact native empack engine without a global PATH installation. First acquisition needs network access; a matching local or cached engine works offline. Keep the tool directory with the extracted distribution. Both start variants prepare the exact release before launching and stop if preparation fails. Subscribed exports check their enrolled update channel before launch. See [engine selection and cache](design/bootstrap.md) for overrides and failure behavior.
 
 See [publishing](publishing.md) for publisher enrollment and [instance commands](usage.md#native-release-example) for manual installation and updates.
 

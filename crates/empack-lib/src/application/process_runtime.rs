@@ -132,6 +132,7 @@ pub(crate) async fn execute_captured(
     let sender = progress;
     let mut command = tokio::process::Command::from(command);
     command
+        .env_remove("EMPACK_BOOTSTRAP_CONTROL")
         .kill_on_drop(true)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -228,6 +229,7 @@ pub(crate) async fn execute_inherited(
     };
     let mut command = tokio::process::Command::from(command);
     command
+        .env_remove("EMPACK_BOOTSTRAP_CONTROL")
         .kill_on_drop(true)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
@@ -982,6 +984,39 @@ mod windows_tests {
             .unwrap()
             .unwrap();
     }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn bootstrap_control_is_not_inherited_by_captured_children() {
+    #[cfg(unix)]
+    let mut command = {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "test -z \"${EMPACK_BOOTSTRAP_CONTROL+set}\""]);
+        command
+    };
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = std::process::Command::new("cmd.exe");
+        command.args(["/d", "/c", "if defined EMPACK_BOOTSTRAP_CONTROL exit /b 9"]);
+        command
+    };
+    command.env("EMPACK_BOOTSTRAP_CONTROL", "parent-only-fixture");
+    let output = execute_captured(
+        command,
+        Duration::from_secs(3),
+        Cancellation::default(),
+        None,
+        1024,
+    )
+    .await
+    .unwrap()
+    .0
+    .unwrap();
+    assert!(
+        output.success,
+        "Child inherited its parent's control descriptor"
+    );
 }
 
 #[cfg(all(test, unix))]

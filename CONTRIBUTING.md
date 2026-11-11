@@ -8,6 +8,12 @@ The [design contracts](docs/design/README.md) define supported behavior. Callabl
 
 Use cargo-nextest, mise and Python 3.11 or later with that toolchain. Strict live tests additionally require Java, provider access and any documented credentials. Never commit credentials or include them in diagnostics.
 
+Native empack embeds the Java bootstrap used by managed exports. Run `mise run build:bootstrap` once before direct Cargo commands; normal mise build tasks include it. The Java project's `bootstrap/mise.toml` pins its maintained build JDK and Maven, while the compiler targets Java 8. Rebuild after changing bootstrap sources or stamping a release version. `python3 scripts/build-bootstrap.py --check` checks an existing artifact without acquiring dependencies. Pack authors using the packaged executable do not need these build tools.
+
+Run `python3 bootstrap/tests/test_bootstrap.py --java /path/to/java` against the packaged JAR. The same JAR is tested on the majors admitted by the [Java policy](docs/design/java.md). These tests require Python, Rust for a small native fixture, OpenSSL and Java keytool; they never use a personal instance. See the [bootstrap contract](docs/design/bootstrap.md) for the boundary and release inputs.
+
+For a Unix test of the complete JAR/native/Java console path, use `bootstrap/tests/test_native_runtime.py --help`. It requires a prepared disposable Prism instance carrying `.empack-bootstrap-fixture`, an explicit engine and Java, and a fresh output directory. Create that marker only in an instance reserved for testing. The smoke checks input, terminal Ctrl-C, cancellation of stopped work, classified statuses and terminal restoration using a synthetic Java console. It does not launch Minecraft or establish Prism GUI acceptance.
+
 ```bash
 mise run check
 mise run clippy

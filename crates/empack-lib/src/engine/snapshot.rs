@@ -167,14 +167,23 @@ impl ProjectReadRoot {
             });
         }
         let current = current.context("Snapshot has no capture groups")?;
-        ensure!(
-            current.entries == snapshot.entries,
-            anyhow::Error::new(super::diagnostics::Diagnostic::new(
+        if current.entries != snapshot.entries {
+            let changed = snapshot
+                .entries
+                .keys()
+                .chain(current.entries.keys())
+                .find(|path| snapshot.entries.get(*path) != current.entries.get(*path))
+                .expect("Unequal snapshots have a changed path");
+            let mut diagnostic = super::diagnostics::Diagnostic::new(
                 super::diagnostics::DiagnosticCode::StaleSnapshot,
-                super::diagnostics::DiagnosticPhase::Verification
-            ))
-            .context("Project inputs changed since preparation")
-        );
+                super::diagnostics::DiagnosticPhase::Verification,
+            );
+            diagnostic.object = Some(changed.as_str().to_owned());
+            return Err(anyhow::Error::new(diagnostic).context(format!(
+                "Project inputs changed since preparation: {}",
+                changed.as_str()
+            )));
+        }
         Ok(())
     }
 }

@@ -119,11 +119,13 @@ pub(super) fn explain(
     let java = empack_core::java::JavaPolicy::for_game(intent.runtime.minecraft.as_str());
     let profiles = selected.iter().zip(request.outputs.as_slice()).map(|(selected, output)| {
         let target = output.target;
-        let recipient = target.consumer() == Consumer::Empack || (matches!(target.consumer(), Consumer::Prism | Consumer::Server) && (target.delivery() == Delivery::References || target.update_authority() == UpdateAuthority::Empack));
+        let managed = crate::engine::build::instance_managed(target);
+        let recipient = target.consumer() == Consumer::Empack || managed;
+        let bootstrap = managed.then(|| json!({"jar":crate::engine::build::bootstrap::PATH,"engine_version":crate::engine::compatibility_version(),"sha256":env!("EMPACK_BOOTSTRAP_SHA256")}));
         let mut origins = BTreeMap::from([("consumer", selected.origin), ("delivery", selected.origin), ("environment", selected.origin), ("updates", selected.origin), ("format", selected.origin)]);
         for (field, changed) in [("delivery", args.delivery.is_some()), ("environment", args.environment.is_some()), ("updates", args.updates.is_some()), ("format", args.format.is_some())] { if changed { origins.insert(field, "cli-override"); } }
         if matches!(target.consumer(), Consumer::Modrinth | Consumer::CurseForge) { origins.insert("format", "consumer-required-zip"); }
-        json!({"name":selected.name,"selection":selected.origin,"recipe":crate::engine::documents::recipe::encode_profile(&BuildProfile { recipe: target, archive: output.archive }),"origins":origins,"output":format!("dist/{}",output.artifact.as_str()),"optional_policy":optional_policy(request.optional_for(target)),"recipient_empack_required":recipient,"java":json!({"preferred_major":intent.runtime.java_major,"minimum_major":java.required_minimum(),"supported_majors":java.supported(),"recommended_major":java.recommended(),"policy":empack_core::java::POLICY_ID,"meaning":"finite admitted policy, not certification of every JVM or mod combination"}),"runtime_preparation":if target.consumer()==Consumer::Prism { "Prism prepares client game/runtime files" } else if target.consumer()==Consumer::Server { "empack prepares server runtime; recipient supplies Java" } else { "consumer-defined" },"author_acquisition":"May require verified downloads even for references; not assessed by explanation"})
+        json!({"name":selected.name,"selection":selected.origin,"recipe":crate::engine::documents::recipe::encode_profile(&BuildProfile { recipe: target, archive: output.archive }),"origins":origins,"output":format!("dist/{}",output.artifact.as_str()),"optional_policy":optional_policy(request.optional_for(target)),"recipient_empack_required":recipient,"bootstrap":bootstrap,"java":json!({"preferred_major":intent.runtime.java_major,"minimum_major":java.required_minimum(),"supported_majors":java.supported(),"recommended_major":java.recommended(),"policy":empack_core::java::POLICY_ID,"meaning":"finite admitted policy, not certification of every JVM or mod combination"}),"runtime_preparation":if target.consumer()==Consumer::Prism { "Prism prepares client game/runtime files" } else if target.consumer()==Consumer::Server { "empack prepares server runtime; recipient supplies Java" } else { "consumer-defined" },"author_acquisition":"May require verified downloads even for references; not assessed by explanation"})
     }).collect::<Vec<_>>();
     let resolved = workspace.require_resolved();
     let manual = resolved.as_ref().ok().map(|project| {
@@ -190,6 +192,9 @@ pub(super) fn text(report: &Value) -> String {
             "  Recipient empack required: {}; Java: {}",
             profile["recipient_empack_required"], profile["java"]
         ));
+        if let Some(version) = profile["bootstrap"]["engine_version"].as_str() {
+            lines.push(format!("  Included Java bootstrap selects empack {version}; no global empack installation is needed."));
+        }
         lines.push(format!(
             "  {}",
             profile["runtime_preparation"].as_str().unwrap()

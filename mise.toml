@@ -9,19 +9,27 @@ CARGO_TERM_COLOR = "always"
 
 # Build
 
+[tasks."build:bootstrap"]
+description = "Build and identify the Java 8-compatible bootstrap JAR"
+run = "python3 scripts/build-bootstrap.py"
+run_windows = "python scripts/build-bootstrap.py"
+
 [tasks.build]
+depends = ["build:bootstrap"]
 alias = ["b", "bd"]
 description = "Build workspace"
 run = "cargo build --workspace"
 run_windows = "cargo build --workspace"
 
 [tasks."build:release"]
+depends = ["build:bootstrap"]
 alias = "br"
 description = "Build workspace (release)"
 run = "cargo build --workspace --release"
 run_windows = "cargo build --workspace --release"
 
 [tasks."build:bin"]
+depends = ["build:bootstrap"]
 description = "Build empack binary"
 run = "cargo build -p empack"
 run_windows = "cargo build -p empack"
@@ -29,12 +37,14 @@ run_windows = "cargo build -p empack"
 # Run
 
 [tasks.run]
+depends = ["build:bootstrap"]
 alias = ["r", "rd"]
 description = "Run empack"
 run = "cargo run -p empack --"
 run_windows = "cargo run -p empack --"
 
 [tasks."run:release"]
+depends = ["build:bootstrap"]
 alias = "rr"
 description = "Run empack (release)"
 run = "cargo run -p empack --release --"
@@ -43,6 +53,7 @@ run_windows = "cargo run -p empack --release --"
 # Test
 
 [tasks.test]
+depends = ["build:bootstrap"]
 alias = "t"
 description = "Run deterministic workspace, Python and doctest contracts"
 run = """
@@ -160,12 +171,14 @@ run_windows = "python scripts/run-coverage.py"
 # Lint
 
 [tasks.check]
+depends = ["build:bootstrap"]
 alias = "chk"
 description = "Run cargo check"
 run = "cargo check --workspace --all-targets"
 run_windows = "cargo check --workspace --all-targets"
 
 [tasks.clippy]
+depends = ["build:bootstrap"]
 alias = "lint"
 description = "Run cargo clippy"
 run = "cargo clippy --workspace --all-targets -- -D warnings"

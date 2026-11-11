@@ -145,12 +145,43 @@ async fn verify_live_distribution(
             binary.is_absolute() && binary.is_file(),
             "Invalid EMPACK_E2E_BIN"
         );
-        let paths =
-            std::env::join_paths(std::iter::once(binary.parent().unwrap().to_owned()).chain(
-                std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-            ))?;
+        let tools = root.path().join(".empack-tools");
+        fs::copy(&binary, tools.join(name))?;
+        let version = std::process::Command::new(&binary)
+            .arg("--version")
+            .output()?;
+        anyhow::ensure!(
+            version.status.success(),
+            "Fixture engine version probe failed"
+        );
+        if String::from_utf8_lossy(&version.stdout).trim() == "empack 0.0.0-dev" {
+            // Ordinary PR products are explicitly untagged. Only this local
+            // fixture opts into them; stamped candidates use unchanged scripts
+            // and the matching distribution-local engine above.
+            for script in [
+                "start.sh",
+                "start_gui.sh",
+                "install_pack.sh",
+                "start.bat",
+                "start_gui.bat",
+                "install_pack.bat",
+            ] {
+                let path = root.path().join(script);
+                let original = fs::read_to_string(&path)?;
+                let altered = original.replace(
+                    " -- --workdir",
+                    &format!(
+                        " --engine \"./.empack-tools/{name}\" --development-engine -- --workdir"
+                    ),
+                );
+                anyhow::ensure!(
+                    original != altered,
+                    "Managed fixture script omits bootstrap delegation"
+                );
+                fs::write(path, altered)?;
+            }
+        }
         command
-            .env("PATH", paths)
             .env("EMPACK_STATE_DIR", state.path().join("state"))
             .env("EMPACK_CACHE_DIR", state.path().join("cache"));
     }

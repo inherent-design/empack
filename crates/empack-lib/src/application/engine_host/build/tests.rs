@@ -1330,12 +1330,31 @@ async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity
     assert_eq!(view["profiles"][0]["recipe"]["updates"], "snapshot");
     assert_eq!(view["profiles"][0]["origins"]["updates"], "cli-override");
     assert_eq!(view["profiles"][0]["recipient_empack_required"], false);
+    assert!(view["profiles"][0]["bootstrap"].is_null());
     assert_eq!(
         view["profiles"][0]["output"],
         format!("dist/{}", selected.outputs.as_slice()[0].artifact.as_str())
     );
     assert!(view["declared_manual_inputs"].is_null());
     assert!(profiles::text(&view).contains("cli-override"));
+    let mut reference_args = args;
+    reference_args.delivery = Some("references".into());
+    let selected = request(
+        workspace.intent().intent(),
+        &reference_args,
+        BuildDecisions::default(),
+    )
+    .unwrap();
+    let view = profiles::explain(&workspace, &reference_args, &selected).unwrap();
+    assert_eq!(
+        view["profiles"][0]["bootstrap"]["engine_version"],
+        crate::engine::compatibility_version()
+    );
+    assert_eq!(
+        view["profiles"][0]["bootstrap"]["sha256"],
+        env!("EMPACK_BOOTSTRAP_SHA256")
+    );
+    assert!(profiles::text(&view).contains("no global empack installation is needed"));
 }
 
 #[tokio::test]

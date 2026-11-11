@@ -9,6 +9,7 @@ These documents define empack's authoring, distribution and installed-instance c
 | [Architecture](architecture.md) | Crates, ports and authority                                         |
 | [Authoring](authoring.md)       | Schema expansion, selection policy, editing and inspection          |
 | [Java selection](java.md)       | Historical minimums, admitted majors, preference and runtime checks |
+| [Bootstrap](bootstrap.md)       | Exact native engine selection, shared cache and Java delegation     |
 | [Model](model.md)               | Identities, authoring documents, release and instance values        |
 | [Planning](planning.md)         | Read sets, grants and postconditions                                |
 | [Assessment](assessment.md)     | Provider update evidence and explicit runtime migration             |

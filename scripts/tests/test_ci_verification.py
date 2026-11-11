@@ -28,7 +28,7 @@ REVISION = "a" * 40
 class ChangeSelection(unittest.TestCase):
     def test_docs_and_editor_schemas_select_executable_tooling_without_native_matrix(self):
         plan = ci.selection(["README.md", ".github/README.md", "docs/schemas/empack.schema-6.json"], trusted=False)
-        self.assertEqual(plan["required_jobs"], ["tooling"])
+        self.assertEqual(plan["required_jobs"], ["tooling", "bootstrap"])
         self.assertFalse(plan["native_targets"])
         self.assertFalse(plan["blocked_jobs"])
 
@@ -673,7 +673,7 @@ class PushPlanning(unittest.TestCase):
         self.commit("docs")
         result, plan = self.plan()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(plan["required_jobs"], ["tooling"])
+        self.assertEqual(plan["required_jobs"], ["tooling", "bootstrap"])
         self.assertEqual(plan["changed_paths"], ["README.md"])
         self.assertEqual(plan["source_revision"], self.git("rev-parse", "HEAD"))
         self.assertTrue(plan["trusted"])

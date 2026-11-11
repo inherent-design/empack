@@ -159,12 +159,15 @@ exec "$JAVA_PATH" -jar server.jar {{SERVER_ARGUMENTS}}"$@"
 fn start_script(references: bool, interface: ServerInterface) -> String {
     let script = START_SH.replace("{{SERVER_ARGUMENTS}}", interface.arguments());
     if references {
-        script
-            .replace("cd -- game\n", "bash ./install_pack.sh\n")
-            .replace(
-                "exec \"$JAVA_PATH\"",
-                "exec empack --workdir \"$PWD\" --yes instance launch -- \"$JAVA_PATH\"",
-            )
+        super::bootstrap::server(
+            script
+                .replace("cd -- game\n", "bash ./install_pack.sh\n")
+                .replace(
+                    "exec \"$JAVA_PATH\"",
+                    "exec empack --workdir \"$PWD\" --yes instance launch -- \"$JAVA_PATH\"",
+                ),
+            false,
+        )
     } else {
         script
     }
@@ -235,7 +238,7 @@ fn consumer_script(script: String, target: Recipe) -> String {
 }
 
 fn install_script(release: Option<&str>) -> String {
-    let command = release.map(|id| format!("empack --workdir \"$PWD\" --yes instance prepare \"$PWD/.empack-consumer/release.json\" --sha256 {id} --layout game --side server\n")).unwrap_or_default();
+    let command = release.map(|id| super::bootstrap::server(format!("JAVA_PATH=\"${{JAVA_HOME:+$JAVA_HOME/bin/}}java\"\nempack --workdir \"$PWD\" --yes instance prepare \"$PWD/.empack-consumer/release.json\" --sha256 {id} --layout game --side server\n"), false)).unwrap_or_default();
     format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
@@ -311,6 +314,12 @@ pub(super) fn prepare_server_archive(
     };
     let templates = prepare_templates(workspace, target, &options.templates, cancel)?;
     let mut files = BTreeMap::new();
+    if managed {
+        files.insert(
+            path(super::bootstrap::PATH)?,
+            super::bootstrap::file(cancel)?,
+        );
+    }
     let release = if managed {
         let mut release_options = NativeReleaseOptions::from_project(game.project())?;
         release_options.require_subscription =

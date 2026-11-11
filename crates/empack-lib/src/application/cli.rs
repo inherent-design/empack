@@ -94,6 +94,10 @@ Run empack <command> --help for its options.")]
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
+    /// Internal bootstrap interoperability probe; does not load a project or execute work.
+    #[arg(long, hide = true, exclusive = true)]
+    pub bootstrap_protocol: bool,
+
     /// Global configuration options
     #[command(flatten)]
     pub config: AppConfig,
@@ -144,6 +148,15 @@ impl CliConfig {
         T: Into<OsString> + Clone,
     {
         match Cli::try_parse_from(args) {
+            Ok(cli) if cli.bootstrap_protocol => {
+                if cli.command.is_some() {
+                    return Err(ConfigError::ParseError {
+                        value: "command line".into(),
+                        reason: "--bootstrap-protocol cannot be combined with a command".into(),
+                    });
+                }
+                Ok(CliLoad::Display("empack-bootstrap/1\n".into()))
+            }
             Ok(cli) => Ok(CliLoad::Ready(Box::new(Self {
                 app_config: cli.config,
                 command: cli.command,
@@ -294,8 +307,8 @@ pub struct InitArgs {
 #[command(after_help = "Consumers:
   modrinth    Modrinth archive with exact references and overrides
   curseforge  CurseForge client ZIP with exact references and overrides
-  prism       Launcher instance; bundled pack content by default
-  server      Prepared server runtime; bundled pack content by default
+  prism       Launcher instance using the selected delivery profile
+  server      Prepared server runtime using the selected delivery profile
   empack      Exact native release and immutable assets
 
 Without selectors, use build.default from empack.yml.

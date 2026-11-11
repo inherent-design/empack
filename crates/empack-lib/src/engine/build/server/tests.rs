@@ -158,6 +158,10 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             assert!(!build.uses_user_configuration());
             let expected = build.inventory().clone();
             assert_eq!(
+                expected.contains_key(&path(super::super::bootstrap::PATH).unwrap()),
+                lightweight
+            );
+            assert_eq!(
                 expected.contains_key(&path("game/server.jar").unwrap()),
                 !lightweight
             );
@@ -634,7 +638,7 @@ exec "$program" -jar server.jar "$@"
     put(
         root.path(),
         "java space/bin/java",
-        b"#!/bin/sh\nprintf '%s\n' \"$@\" > server-arguments\nexit \"$EMPACK_TEST_RUNTIME_STATUS\"\n",
+        b"#!/bin/sh\ncase \"$2\" in */.empack-tools/empack-bootstrap.jar) shift 5; exec \"$EMPACK_TEST_ENGINE\" \"$@\";; esac\nprintf '%s\n' \"$@\" > server-arguments\nexit \"$EMPACK_TEST_RUNTIME_STATUS\"\n",
     );
     for name in ["bin/empack", "java space/bin/java"] {
         fs::set_permissions(root.path().join(name), fs::Permissions::from_mode(0o700)).unwrap();
@@ -669,6 +673,7 @@ exec "$program" -jar server.jar "$@"
                 .env("JAVA_HOME", root.path().join("java space"))
                 .env("PATH", &paths)
                 .env("EMPACK_TEST_ARGS", root.path().join("instance-arguments"))
+                .env("EMPACK_TEST_ENGINE", root.path().join("bin/empack"))
                 .env("EMPACK_NO_PAUSE", "1")
                 .env("EMPACK_TEST_INSTALL_STATUS", code.to_string())
                 .env("EMPACK_TEST_RUNTIME_STATUS", runtime_code.to_string())
@@ -712,8 +717,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
     fs::create_dir(root.path().join("game")).unwrap();
 
     // CALL lets a batch fixture return like the empack executable it replaces.
-    let install = install_batch(Some(&"a".repeat(64)))
-        .replace("empack --workdir", "call fake-empack.cmd --workdir");
+    let install = install_batch(Some(&"a".repeat(64))).replace(
+        &super::super::bootstrap::server("empack --workdir".into(), true),
+        "call fake-empack.cmd --workdir",
+    );
     put(root.path(), "install_pack.bat", install.as_bytes());
     put(
         root.path(),
@@ -738,7 +745,10 @@ fn native_windows_start_prepares_first_and_propagates_failure_without_bash() {
                 true,
                 interface,
             )
-            .replace("empack --workdir", "call fake-empack.cmd --workdir")
+            .replace(
+                &super::super::bootstrap::server("empack --workdir".into(), true),
+                "call fake-empack.cmd --workdir",
+            )
             .as_bytes(),
         );
         for code in [0, 7] {
@@ -1246,6 +1256,12 @@ fn managed_entry_points_normalize_output_attributes_across_formats() {
                     fs::Permissions::from_mode(0o755),
                 )
                 .unwrap();
+                put(extracted.path(), "bin/java", b"#!/bin/sh\n[ \"$1\" = -jar ] && [ \"$3\" = --engine-version ] && [ \"$5\" = -- ] || exit 93\nshift 5\nexec empack \"$@\"\n");
+                fs::set_permissions(
+                    extracted.path().join("bin/java"),
+                    fs::Permissions::from_mode(0o755),
+                )
+                .unwrap();
                 let search =
                     std::env::join_paths(std::iter::once(extracted.path().join("bin")).chain(
                         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
@@ -1256,6 +1272,7 @@ fn managed_entry_points_normalize_output_attributes_across_formats() {
                         let log = extracted.path().join("calls.txt");
                         fs::write(&log, b"").unwrap();
                         let output = std::process::Command::new(extracted.path().join(name))
+                            .env_remove("JAVA_HOME")
                             .env("PATH", &search)
                             .env("EMPACK_TEST_LOG", &log)
                             .env("EMPACK_TEST_EXIT", status.to_string())

@@ -2,7 +2,7 @@
 
 Empack manages Minecraft modpacks from an editable `empack.yml`. It resolves exact dependencies into `empack.lock`, builds launcher and server distributions, and can install and update native pack releases while preserving player-owned files.
 
-This documentation describes the **v0.8.4-beta development target**. It uses author schema 6 and optional integration bindings schema 1. Lock schema 3 and native release schema 2 record the Java policy separately from the author preference. Older author, lock and native release formats are rejected; no schema converter is provided. Preserve existing projects, player data and interrupted-operation records; use the compatible old executable to finish or recover old-format work. Recreate authoring in a new directory or re-import a supported Modrinth or CurseForge archive. Use the documentation at your installed release tag when running a downloaded binary.
+This documentation describes the **v0.8.5-beta development target**. It uses author schema 6 and optional integration bindings schema 1. Lock schema 3 and native release schema 2 record the Java policy separately from the author preference. Older author, lock and native release formats are rejected; no schema converter is provided. Preserve existing projects, player data and interrupted-operation records; use the compatible old executable to finish or recover old-format work. Recreate authoring in a new directory or re-import a supported Modrinth or CurseForge archive. Use the documentation at your installed release tag when running a downloaded binary.
 
 ## Installation
 

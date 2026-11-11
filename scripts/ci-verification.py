@@ -22,7 +22,7 @@ TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-window
 NATIVE_TEST_FEATURES = {"default": "minimal", "telemetry": "all"}
 NATIVE_SUITES = {"default": ["deterministic", "native-remount"],
                  "telemetry": ["deterministic", "telemetry", "native-remount"]}
-JOBS = ("tooling", "lint", "test", "cross-build", "coverage", "live", "consumer", "survey")
+JOBS = ("bootstrap", "tooling", "lint", "test", "cross-build", "coverage", "live", "consumer", "survey")
 ROOT = Path(__file__).resolve().parents[1]
 CLASSIFICATION = ROOT / "tests/verification/test-bindings.json"
 REQUIREMENTS = ROOT / "tests/verification/requirements.json"
@@ -90,7 +90,7 @@ def selection(paths, *, trusted, full=False):
         "crates/empack-tests/tests/live_pinned_import", "tests/fixtures/import-corpus/",
     )) for p in code):
         live.append("pinned-import")
-    required = ["tooling"]
+    required = ["tooling", "bootstrap"]
     if native:
         required += ["lint", "test", "cross-build", "coverage"]
     if live:
