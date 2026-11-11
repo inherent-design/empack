@@ -173,8 +173,8 @@ pub(super) fn modes(mode: u32) -> Result<FilePermissions> {
 }
 /// Expected inventory comes from planning. A valid CRC or successful exporter is not completeness.
 /// Call in an admitted blocking task. These are member/output budgets, not a process memory ceiling:
-/// the 7z dependency does not expose a decoder allocation limit. Untrusted acquisition needs its
-/// separate input policy; the packaging adapter verifies only its privately generated candidates.
+/// this adapter does not configure the 7z decoder's separate allocation limit. Untrusted acquisition
+/// needs its own input policy; the packaging adapter verifies only its privately generated candidates.
 pub fn verify_archive(
     source: &mut dyn ArchiveRead,
     format: DistributionArchive,
@@ -272,7 +272,7 @@ pub fn verify_archive(
             let mut archive =
                 sevenz_rust2::ArchiveReader::new(&mut *source, sevenz_rust2::Password::empty())?;
             archive.set_thread_count(1);
-            archive.for_each_entries(|entry, bytes| {
+            archive.for_each_entries_with_decision(|entry, bytes| {
                 let result = (|| {
                     ensure!(
                         !entry.is_anti_item && entry.windows_attributes & 0x400 == 0,
@@ -302,7 +302,9 @@ pub fn verify_archive(
                     )
                 })();
                 result
-                    .map(|()| true)
+                    // Continue drains and validates each entry; skipping a block or stopping
+                    // early cannot establish a complete, verified inventory.
+                    .map(|()| sevenz_rust2::EntryDecision::Continue)
                     .map_err(|error| sevenz_rust2::Error::from(io::Error::other(error)))
             })?;
         }

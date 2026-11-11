@@ -125,6 +125,9 @@ fn yaml_scalar_spellings_preserve_authored_strings_and_semantic_revision() {
     for text in [
         "null",
         "yes",
+        "TRUE",
+        "False",
+        "~",
         "0xB",
         "1e3",
         "a#b",
@@ -216,6 +219,9 @@ fn invalid_explicit_intent_never_becomes_a_search_or_default() {
         ("/dependencies/renderer alias/pin", json!("latest")),
         ("/dependencies/renderer alias/source/kind", json!("unknown")),
         ("/build/profiles/modrinth/format", json!("rar")),
+        ("/build/profiles", Value::Null),
+        ("/build/default", Value::Null),
+        ("/dependencies", Value::Null),
     ];
     for (path, invalid) in paths {
         let mut value = source();
