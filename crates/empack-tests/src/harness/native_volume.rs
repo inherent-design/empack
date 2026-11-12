@@ -634,20 +634,23 @@ mod tests {
 
         // Final fixture retirement can outlast the short operation retry
         // budget, just as Disk Arbitration can remain busy after unmount.
-        // Keep a real holder beyond that budget, then release it cooperatively.
+        // Keep a real holder through that budget, then release it cooperatively.
+        // Its deliberate hold must not consume the cleanup allowance: after
+        // release, permit the same settlement requests as ordinary cleanup.
         let volume = ApfsFixture::new()?;
         let mut held = Some(fs::File::create(
             volume.root().join("delayed-retirement.txt"),
         )?);
         let mut busy = 0;
-        volume.detach_with_attempts(0, CLEANUP_DETACH_ATTEMPTS, || {
+        volume.detach_with_attempts(0, DETACH_ATTEMPTS + CLEANUP_DETACH_ATTEMPTS, || {
             busy += 1;
-            if busy > DETACH_ATTEMPTS {
+            if busy == DETACH_ATTEMPTS {
                 drop(held.take());
             }
             Ok(())
         })?;
-        assert!(busy > DETACH_ATTEMPTS);
+        assert!(busy >= DETACH_ATTEMPTS);
+        assert!(held.is_none());
         assert!(
             !volume
                 .owned()?
