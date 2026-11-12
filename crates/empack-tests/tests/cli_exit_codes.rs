@@ -723,7 +723,7 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
         .args(["instance", "inspect"])
         .assert()
         .success()
-        .stdout(contains(format!("release {id};")));
+        .stdout(contains(format!("Release: {id}")));
     for file in ["launch-started", "launch-observed.json"] {
         fs::remove_file(game.join(file)).unwrap();
     }

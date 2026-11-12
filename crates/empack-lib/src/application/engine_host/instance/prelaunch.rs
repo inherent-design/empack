@@ -76,14 +76,17 @@ async fn update_with_transport(
         else {
             anyhow::bail!("Channel observation requires input")
         };
-        session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
+        let OperationPreview::Subscription(view) = prepared.view() else {
+            anyhow::bail!("Unexpected subscription preview");
+        };
+        show_offer(session, &view.record)?;
         // Never continue after preview/decline: fetching a new release requires the durable floor.
-        if !approve(session, "Channel observation")? {
+        if !approve(session, "Update offer")? {
             return Ok(None);
         }
-        execute_approved(session, &engine, prepared, "Channel observation", |receipt| {
+        execute_approved(session, &engine, prepared, "Update offer", |receipt| {
             ensure!(matches!(receipt, ExecutionReceipt::Subscription(_)), "Unexpected channel receipt");
-            Ok("Authenticated channel observation saved".into())
+            Ok("Update offer saved".into())
         }).await?;
         let selected_root = root.clone();
         let proof = initialize::discover(session, move |mut scope| async move {
@@ -119,6 +122,8 @@ async fn update_with_transport(
         let Some(prepared) = require_instance_ready(
             session, &engine, cancellable(session, engine.prepare(root, request)).await?
         ).await? else { return Ok(None); };
+        let OperationPreview::Instance(view) = prepared.view() else { anyhow::bail!("Unexpected instance preview"); };
+        session.display().status().message(&text::plan(&view.record.release, view.files.changes().len(), view.downloads.len()));
         if !approve(session, "Prelaunch update")? {
             return Ok(None);
         }

@@ -29,10 +29,14 @@ impl SubscriptionRecord {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         ensure!(
             bytes.len() <= 128 << 10,
-            "Subscription exceeds document limit"
+            "Subscription exceeds document limit (.empack/subscription.json)"
         );
-        let record: Self = serde_json::from_slice(bytes).context("Invalid subscription record")?;
-        ensure!(record.schema == 1, "Unsupported subscription schema");
+        let record: Self = serde_json::from_slice(bytes)
+            .context("Invalid subscription record (.empack/subscription.json)")?;
+        ensure!(
+            record.schema == 1,
+            "Unsupported subscription schema (.empack/subscription.json)"
+        );
         release::identifier(&record.pack)?;
         release::identifier(&record.channel)?;
         ensure!(

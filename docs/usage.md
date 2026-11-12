@@ -98,6 +98,8 @@ Instance commands preserve worlds, operator data and unowned content. Modified m
 
 A file conflict names the affected path and explains the available choices. `--preserve PATH` keeps an existing file as a local override; `--replace PATH` accepts the release version or its requested removal; `--merge PATH=FILE` uses a merged file you prepared. These paths are relative to `game/` or `.minecraft/`, so use `config/settings.txt`, not `game/config/settings.txt`. A missing file cannot be preserved or merged. Follow the named instance command to resolve conflicts before launch; `instance launch` does not accept conflict decisions. See [file ownership and decisions](design/instances.md#configuration-and-mutable-data) for the policy.
 
+`instance inspect` shows the installed pack, game directory, exact release, saved options, local overrides and rollback history. An update check shows the signed offer before approval. Saving it records the publisher's update number without installing files; that record remains if installation is later declined or fails. Installation has its own preview and approval.
+
 ## Distribution selection
 
 Define named output profiles in `empack.yml`. Each profile selects a consumer, delivery, environment, update owner and format. `build.default` selects which profiles a plain `empack build` builds together.

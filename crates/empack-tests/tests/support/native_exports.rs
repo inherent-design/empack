@@ -549,7 +549,8 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .args(["--dry-run", "instance", "repair"])
             .assert()
             .success()
-            .stdout(contains("0 downloads"));
+            .stdout(contains("File changes: 1"))
+            .stdout(contains("Downloads:").not());
         assert_eq!(snapshot(&instance), missing);
         assert_eq!(snapshot(host.path()), retained);
         command(&instance, host.path())
@@ -808,7 +809,7 @@ fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed
         let text = String::from_utf8(inspected.stdout).unwrap();
         assert!(
             text.contains(&format!(
-                "Pack native.fixture {version} (Client), release {identity}; game directory: game/"
+                "Pack: native.fixture {version}\nEnvironment: client\nGame directory: game/\nRelease: {identity}"
             )),
             "{text}"
         );
@@ -870,7 +871,7 @@ fn cli_instance_inspection_retains_choices_history_and_refuses_invalid_completed
                 .unwrap();
             assert!(!refused.status.success(), "{problem}: {refused:?}");
             assert!(!refused.stderr.is_empty(), "{problem}: {refused:?}");
-            assert!(!String::from_utf8_lossy(&refused.stdout).contains("Pack native.fixture"));
+            assert!(!String::from_utf8_lossy(&refused.stdout).contains("Pack: native.fixture"));
             let status = command(&instance, host.path())
                 .args(["status", "--context", "instance", "--json"])
                 .assert()

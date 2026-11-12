@@ -126,10 +126,14 @@ impl InstanceRecord {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         ensure!(
             bytes.len() <= super::release::MAX_RELEASE_BYTES,
-            "Instance record exceeds byte bound"
+            "Instance record exceeds byte bound (.empack/instance.json)"
         );
-        let record: Self = serde_json::from_slice(bytes).context("Invalid instance record")?;
-        ensure!(record.schema == 1, "Unsupported instance schema");
+        let record: Self = serde_json::from_slice(bytes)
+            .context("Invalid instance record (.empack/instance.json)")?;
+        ensure!(
+            record.schema == 1,
+            "Unsupported instance schema (.empack/instance.json)"
+        );
         ensure!(
             record.layout != InstanceLayout::Prism || record.side == InstanceSide::Client,
             "Prism instance record requires client environment"

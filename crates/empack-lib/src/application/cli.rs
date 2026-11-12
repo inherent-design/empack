@@ -930,7 +930,7 @@ Updates infer the installed side/layout. update --check checks before applying."
         )]
         deps: bool,
 
-        /// Remove authoring roots while retaining their exact installed selections.
+        /// Remove direct dependencies from empack.yml; keep installed files.
         #[arg(long)]
         forget: bool,
 

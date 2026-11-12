@@ -56,6 +56,22 @@ class BootstrapTests(unittest.TestCase):
         return subprocess.run([JAVA, "-Dfile.encoding=UTF-8", "-jar", str(JAR), *args], capture_output=True,
                               timeout=20, **kwargs)
 
+    def test_diagnostics_keep_untrusted_labels_on_one_line(self):
+        unknown = self.invoke("--unknown\nFAKE\u202e", "value")
+        self.assertEqual(unknown.returncode, 2)
+        self.assertEqual(unknown.stdout, b"")
+        self.assertIn(b"\\u{a}FAKE", unknown.stderr)
+        self.assertNotIn(b"\nFAKE", unknown.stderr)
+        self.assertNotIn("\u202e".encode(), unknown.stderr)
+        with tempfile.TemporaryDirectory() as temporary:
+            missing = Path(temporary) / "missing\nFAKE"
+            result = self.invoke("--engine-version", "0.8.5-beta", "--engine", str(missing),
+                                 "--", "--fixture-argv")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, b"")
+            self.assertNotIn(b"\nFAKE", result.stderr)
+            self.assertFalse(missing.exists())
+
     def test_packaged_help_and_version(self):
         help_result = self.invoke("--help")
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
@@ -676,6 +692,7 @@ class CacheTests(unittest.TestCase):
         result = self.invoke(offline=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"corrupt", result.stderr)
+        self.assertIn(str(engine).encode(), result.stderr)
         self.assertEqual(engine.read_bytes(), b"corrupt")
         self.assertEqual(self.asset_requests, 1)
 
@@ -712,6 +729,8 @@ class CacheTests(unittest.TestCase):
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"backing is missing", result.stderr)
+        self.assertIn(b"0.8.5-beta", result.stderr)
+        self.assertIn(str(engine.parent).encode(), result.stderr)
         self.assertEqual(self.asset_requests, 1)
 
     def test_cache_redirect_cannot_authorize_engine_execution(self):

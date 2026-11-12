@@ -211,7 +211,7 @@ fn cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_f
             .assert()
             .success()
             .stdout(contains(format!(
-                "release {};",
+                "Release: {}",
                 hex(&Sha256::digest(&payload))
             )));
         assert_eq!(snapshot(&inputs), source_before);
@@ -518,7 +518,7 @@ fn cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_
             &instance,
             &state,
             &args,
-            "(?i)apply this publisher trust and channel observation plan",
+            "(?i)apply this publisher settings plan",
         );
         unchanged();
         command()
@@ -527,9 +527,9 @@ fn cli_pty_publisher_enrollment_requires_explicit_trust_and_preserves_installed_
             .assert()
             .success()
             .stdout(contains(&fingerprint))
-            .stdout(contains("1 enrolled keys; sequence 0"))
+            .stdout(contains("Trusted keys: 1"))
             .stdout(contains(
-                "Saved subscription for verification.publisher / stable",
+                "Saved publisher settings for verification.publisher / stable",
             ));
         let after = snapshot(&instance);
         for (path, bytes) in &before.files {
@@ -641,7 +641,7 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
             .assert()
     };
     channel(&offered, &old, &id, &unfetched, 2);
-    observe().success().stdout(contains("sequence 2"));
+    observe().success().stdout(contains("Update number: 2"));
     let both = [
         "instance",
         "trust",
@@ -655,7 +655,7 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         &instance,
         &state,
         &both,
-        "(?i)apply this publisher trust and channel observation plan",
+        "(?i)apply this publisher settings plan",
     );
     let before_invalid = snapshot(&instance);
     let host_before_invalid = snapshot(&host);
@@ -679,12 +679,12 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         .args(both)
         .assert()
         .success()
-        .stdout(contains("2 enrolled keys; sequence 2"));
+        .stdout(contains("Trusted keys: 2\nUpdate number: 2"));
     // Each key independently authenticates the same payload across fresh
     // executable invocations; identical metadata is an admissible retry.
     for key in [&old, &next] {
         channel(&offered, key, &id, &unfetched, 2);
-        observe().success().stdout(contains("sequence 2"));
+        observe().success().stdout(contains("Update number: 2"));
     }
     channel(
         &offered,
@@ -702,7 +702,7 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         .args(["--yes", "instance", "trust", "--key", &next_public])
         .assert()
         .success()
-        .stdout(contains("1 enrolled keys; sequence 2"));
+        .stdout(contains("Trusted keys: 1\nUpdate number: 2"));
     channel(&offered, &old, &id, &unfetched, 200);
     let after_rotation = snapshot(&instance);
     observe()
@@ -710,21 +710,21 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         .stderr(contains("No enrolled publisher signed"));
     assert_eq!(snapshot(&instance), after_rotation);
     channel(&offered, &next, &id, &unfetched, 3);
-    observe().success().stdout(contains("sequence 3"));
+    observe().success().stdout(contains("Update number: 3"));
     let revoke = ["instance", "trust", "--revoke-all"];
     approval::preserve_without_approval(
         &instance,
         &instance,
         &state,
         &revoke,
-        "(?i)apply this publisher trust and channel observation plan",
+        "(?i)apply this publisher settings plan",
     );
     command()
         .arg("--yes")
         .args(revoke)
         .assert()
         .success()
-        .stdout(contains("0 enrolled keys; sequence 3"));
+        .stdout(contains("Trusted keys: 0\nUpdate number: 3"));
     let revoked = snapshot(&instance);
     observe()
         .failure()
@@ -735,7 +735,7 @@ fn cli_pty_publisher_trust_requires_approval_and_preserves_the_replay_floor() {
         .args(both)
         .assert()
         .success()
-        .stdout(contains("2 enrolled keys; sequence 3"));
+        .stdout(contains("Trusted keys: 2\nUpdate number: 3"));
     channel(&offered, &next, &id, &unfetched, 2);
     let reenrolled = snapshot(&instance);
     observe()
@@ -1123,7 +1123,7 @@ fn installed(instance: &Path, release: &str, managed: &[u8]) {
         .args(["instance", "inspect"])
         .assert()
         .success()
-        .stdout(contains(format!("release {release};")));
+        .stdout(contains(format!("Release: {release}")));
     assert_eq!(
         fs::read(instance.join("game/managed.txt")).unwrap(),
         managed
@@ -1578,7 +1578,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .assert()
         .success()
         .stdout(contains(format!(
-            "Local override: managed.txt (accepted SHA-256 {})",
+            "Local overrides:\n    managed.txt (SHA-256 {})",
             hex(&Sha256::digest(b"local conflict"))
         )));
     // The accepted local bytes survive fresh-process repair and repeated update.
@@ -1617,7 +1617,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .assert()
         .success()
         .stdout(contains(format!(
-            "Local override: managed.txt (accepted SHA-256 {})",
+            "Local overrides:\n    managed.txt (SHA-256 {})",
             hex(&Sha256::digest(b"explicit merged result"))
         )));
     fs::write(&merge, b"later source edit").unwrap();
@@ -1645,7 +1645,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .args(["instance", "inspect"])
         .assert()
         .success()
-        .stdout(contains("Local override:").not());
+        .stdout(contains("Local overrides:").not());
     assert_eq!(fs::read(&envelope_b).unwrap(), signed_b);
     assert_eq!(fs::read(export_b.join("release.json")).unwrap(), original_b);
     verify_staged(
@@ -2041,7 +2041,7 @@ fn journey_signed_choices_and_restricted_input_compose_across_three_releases() {
             .args(["instance", "inspect"])
             .assert()
             .success()
-            .stdout(contains(format!("release {};", releases[index].0)))
+            .stdout(contains(format!("Release: {}", releases[index].0)))
             .stdout(contains("visuals=rich"));
         if version == "C" {
             inspection.stdout(contains("textures=none"));
@@ -2427,7 +2427,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
             .args(["instance", "inspect"])
             .assert()
             .success()
-            .stdout(contains(format!("release {};", releases[1].0)))
+            .stdout(contains(format!("Release: {}", releases[1].0)))
             .stdout(contains(format!("Retained release: {}", releases[0].0)));
         let status = command()
             .args(["status", "--context", "instance", "--json"])
@@ -2604,7 +2604,7 @@ fn journey_signed_runtime_changes_preserve_prism_components_and_player_data() {
             .args(["instance", "inspect"])
             .assert()
             .success()
-            .stdout(contains(format!("release {id};")));
+            .stdout(contains(format!("Release: {id}")));
     };
     expected(&a, &profile_a, "mods/a.jar", b"A");
     let channel_a = root.path().join("runtime-channel-a.json");

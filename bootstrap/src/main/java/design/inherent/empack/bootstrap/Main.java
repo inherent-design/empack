@@ -84,7 +84,7 @@ public final class Main {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
-            if ((Character.isISOControl(ch) && ch != '\n' && ch != '\t')
+            if (Character.isISOControl(ch)
                     || ch == '\u061c' || ch == '\u200e' || ch == '\u200f'
                     || (ch >= '\u202a' && ch <= '\u202e') || (ch >= '\u2066' && ch <= '\u2069')) {
                 result.append("\\u{").append(Integer.toHexString(ch)).append('}');

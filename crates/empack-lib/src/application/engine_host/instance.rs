@@ -12,6 +12,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 mod prelaunch;
+mod text;
 
 async fn install(session: &dyn Session, command: InstanceCommand) -> Result<()> {
     install_with_transport(
@@ -95,22 +96,12 @@ async fn install_with_transport(
         installed.as_ref().map(|(record, _)| record),
     )?;
     if let Some((record, decoded)) = &*installed {
-        session.display().status().info(&format!(
-            "Installed {} (release {}), {:?}/{:?}; update owner: {}",
-            decoded.document().version,
-            record.release,
-            record.side,
-            record.layout,
-            if subscribed {
-                "enrolled publisher via empack"
-            } else {
-                "explicit snapshot via empack"
-            }
-        ));
+        session
+            .display()
+            .status()
+            .message(&text::installed(record, decoded));
     } else {
-        session.display().status().info(&format!(
-            "First installation: {side:?}/{layout:?} (default: client/game)"
-        ));
+        session.display().status().info(&text::first(side, layout));
     }
     if check
         && !subscription_with_transport(
@@ -229,11 +220,10 @@ async fn install_with_transport(
             SelectedRelease::Subscribed(std::sync::Arc::clone(proof))
         }
     };
-    session.display().status().info(&format!(
-        "Offered {} (release {})",
-        release.release().document().version,
-        release.release().id()
-    ));
+    session
+        .display()
+        .status()
+        .message(&text::selected(&release));
     let request = InstallInstanceRequest {
         require_subscription,
         conflicts: conflict_resolutions(conflicts, &invocation)?,
@@ -264,11 +254,10 @@ async fn install_with_transport(
         let OperationPreview::Instance(view) = prepared.view() else {
             anyhow::bail!("Unexpected instance preview");
         };
-        session.display().status().info(&format!(
-            "Release {}: {} exact file changes, {} downloads",
-            view.record.release,
+        session.display().status().message(&text::plan(
+            &view.record.release,
             view.files.changes().len(),
-            view.downloads.len()
+            view.downloads.len(),
         ));
         apply(session, &engine, prepared, "Instance content", |receipt| {
             let ExecutionReceipt::Instance(receipt) = receipt else {
@@ -344,32 +333,10 @@ pub(in crate::application) async fn dispatch(
             let state = state_root(session.config().app_config(), &invocation)?;
             let inspected = inspect(session, root, None, state).await?;
             let (record, release) = &*inspected;
-            session.display().status().info(&format!(
-                "Pack {} {} ({:?}), release {}; game directory: {}/",
-                record.pack,
-                release.document().version,
-                record.side,
-                record.release,
-                record.layout.directory()
-            ));
-            for choice in &record.choices {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("{}={}", choice.key, choice.value));
-            }
-            for local in &record.local_overrides {
-                session.display().status().info(&format!(
-                    "Local override: {} (accepted SHA-256 {})",
-                    local.destination, local.accepted.sha256
-                ));
-            }
-            for release in &record.history {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("Retained release: {release}"));
-            }
+            session
+                .display()
+                .status()
+                .message(&text::inspect(record, &release.document().version));
             Ok(())
         }
         InstanceCommand::Options {
@@ -556,11 +523,10 @@ async fn maintain(
         let OperationPreview::Instance(view) = prepared.view() else {
             anyhow::bail!("Unexpected instance preview");
         };
-        session.display().status().info(&format!(
-            "Release {}: {} exact file changes, {} downloads",
-            view.record.release,
+        session.display().status().message(&text::plan(
+            &view.record.release,
             view.files.changes().len(),
-            view.downloads.len()
+            view.downloads.len(),
         ));
         apply(
             session,
@@ -690,37 +656,43 @@ async fn subscription_with_transport(
         let OperationPreview::Subscription(view) = prepared.view() else {
             anyhow::bail!("Unexpected subscription preview")
         };
-        session.display().status().info(&format!(
-            "Publisher for {} / {} at {}: {} enrolled keys; sequence {}",
-            view.record.pack,
-            view.record.channel,
-            reqwest::Url::parse(&view.record.url)?
-                .origin()
-                .ascii_serialization(),
-            view.record.keys.len(),
-            view.record.floor.as_ref().map_or(0, |floor| floor.sequence)
+        let fingerprints = keys(view.record.keys.clone())?
+            .iter()
+            .map(crate::engine::release::trust::key_id)
+            .collect::<Vec<_>>();
+        let origin = reqwest::Url::parse(&view.record.url)?
+            .origin()
+            .ascii_serialization();
+        session.display().status().message(&text::publisher(
+            &view.record,
+            &origin,
+            &fingerprints,
+            observing,
         ));
-        for key in keys(view.record.keys.clone())? {
-            session.display().status().info(&format!(
-                "Publisher key fingerprint: {}",
-                crate::engine::release::trust::key_id(&key)
-            ));
-        }
         if observing {
-            let channel = view.record.authenticated_channel(&semver::Version::parse(crate::engine::compatibility_version())?)?;
-            session.display().status().info(&format!("Offered release {}; sequence {}; no calendar expiry; update owner: enrolled publisher via empack", channel.document().release.id, channel.document().sequence));
-            session.display().status().info("Approval saves the authenticated anti-replay floor even if installation does not follow. Preview saves nothing and does not authorize installation.");
+            show_offer(session, &view.record)?;
         }
-        if !approve(session, "Publisher trust and channel observation")? {
+        let label = if observing {
+            "Update offer"
+        } else {
+            "Publisher settings"
+        };
+        if !approve(session, label)? {
             return Ok(false);
         }
-        execute_approved(session, &engine, prepared, "Publisher trust", |receipt| {
+        execute_approved(session, &engine, prepared, label, |receipt| {
             let ExecutionReceipt::Subscription(receipt) = receipt else {
                 anyhow::bail!("Unexpected subscription receipt")
             };
             Ok(format!(
-                "Saved subscription for {} / {}",
-                receipt.record.pack, receipt.record.channel
+                "Saved {} for {} / {}",
+                if observing {
+                    "update offer"
+                } else {
+                    "publisher settings"
+                },
+                receipt.record.pack,
+                receipt.record.channel
             ))
         })
         .await?;
@@ -729,6 +701,20 @@ async fn subscription_with_transport(
     .await;
     engine.shutdown().await;
     result
+}
+
+fn show_offer(
+    session: &dyn Session,
+    record: &crate::engine::instance::subscription::SubscriptionRecord,
+) -> Result<()> {
+    let channel = record.authenticated_channel(&semver::Version::parse(
+        crate::engine::compatibility_version(),
+    )?)?;
+    session.display().status().message(&text::offer(
+        &channel.document().release.id,
+        channel.document().sequence,
+    ));
+    Ok(())
 }
 
 async fn read_subscription(

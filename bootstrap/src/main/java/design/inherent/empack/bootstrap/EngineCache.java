@@ -188,11 +188,11 @@ final class EngineCache {
         if (!"empack-engine/1".equals(record.getProperty("kind"))
                 || !version.equals(record.getProperty("version")) || !platform.target.equals(record.getProperty("target"))
                 || !archive.matches("[0-9a-f]{64}") || !digest.matches("[0-9a-f]{64}")) {
-            throw new IOException("Engine cache has an invalid admission record; inspect this version's cache");
+            throw new IOException("Cached engine record is invalid for empack " + version + " (" + platform.target + "); inspect " + slot.resolve("ready.properties"));
         }
         Path object = slot.resolve("objects").resolve(archive);
         if (!Files.isDirectory(object, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("Cached engine backing is missing; inspect this version's cache");
+            throw new IOException("Cached engine backing is missing for empack " + version + "; inspect " + object);
         }
         directory(object);
         Path engine = object.resolve(platform.executable);
@@ -200,7 +200,7 @@ final class EngineCache {
         if (!Files.isExecutable(engine) || Files.size(engine) > EngineArchive.MAX_EXECUTABLE
                 || !Long.toString(Files.size(engine)).equals(record.getProperty("bytes"))
                 || !Digests.sha256(engine).equals(digest)) {
-            throw new IOException("Cached engine is missing, corrupt or not executable; inspect this version's cache");
+            throw new IOException("Cached engine is missing, corrupt or not executable; inspect " + engine);
         }
         return engine;
     }
@@ -247,7 +247,7 @@ final class EngineCache {
     private void regular(Path file) throws IOException {
         BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         if (!attributes.isRegularFile() || attributes.isSymbolicLink() || !file.toRealPath().equals(file.toAbsolutePath().normalize())) {
-            throw new IOException("Engine cache contains a linked or nonregular object");
+            throw new IOException("Engine cache contains a linked or nonregular object: " + file);
         }
         privateOwner(file);
     }
@@ -260,19 +260,19 @@ final class EngineCache {
         // principal beyond those already trusted to write that home. POSIX
         // ownership remains exact, independently of its write-mode check.
         if (posix ? !actualOwner.equals(owner) : !homeWriters.contains(actualOwner)) {
-            throw new IOException("Engine cache object is owned by a different user");
+            throw new IOException("Engine cache object is owned by a different user: " + path);
         }
         if (posix) {
             java.util.Set<PosixFilePermission> mode = Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS);
             if (mode.contains(PosixFilePermission.GROUP_WRITE) || mode.contains(PosixFilePermission.OTHERS_WRITE)) {
-                throw new IOException("Engine cache object permits writes by another user");
+                throw new IOException("Engine cache object permits writes by another user: " + path);
             }
         } else {
             AclFileAttributeView acl = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
             if (acl == null) throw new IOException("Engine cache filesystem cannot establish private executable permissions");
             for (AclEntry entry : acl.getAcl()) {
                 if (entry.type() == AclEntryType.ALLOW && writes(entry) && !homeWriters.contains(entry.principal())) {
-                    throw new IOException("Engine cache ACL admits a writer outside the user-home trust boundary");
+                    throw new IOException("Engine cache ACL admits a writer outside the user-home trust boundary: " + path);
                 }
             }
         }
