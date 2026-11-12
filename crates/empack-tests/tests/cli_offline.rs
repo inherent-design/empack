@@ -226,6 +226,48 @@ fn cli_preview_and_failed_add_batch_preserve_snapshot() {
     assert_eq!(snapshot(&project), before);
 }
 #[test]
+fn cli_update_requires_apply_even_with_yes() {
+    let project = initialized();
+    jar_version(&project, "fixture.jar", "1");
+    command(&project)
+        .args(["add", "fixture.jar", "--yes"])
+        .assert()
+        .success();
+    let installed = fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap();
+    jar_version(&project, "fixture.jar", "2");
+    let before = snapshot(&project);
+    for selector in ["fixture", "--all"] {
+        command(&project)
+            .args(["update", selector, "--yes"])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("Preview only; use --apply"));
+        assert_eq!(snapshot(&project), before, "preview for {selector}");
+        assert_eq!(
+            fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
+            installed
+        );
+    }
+    for args in [
+        vec!["update"],
+        vec!["update", "fixture", "--all"],
+        vec!["update", "--all", "--apply", "--dry-run"],
+    ] {
+        command(&project).args(args).assert().code(2);
+        assert_eq!(snapshot(&project), before);
+    }
+    command(&project)
+        .args(["update", "--all", "--apply", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap(),
+        fs::read(project.dir().join("fixture.jar")).unwrap()
+    );
+    assert_ne!(snapshot(&project), before);
+}
+
+#[test]
 fn cli_headless_search_refuses_implicit_choice() {
     let project = initialized();
     let before = snapshot(&project);
@@ -602,6 +644,86 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         command(&project).args(args).assert().failure();
         assert_eq!(snapshot(&project), before);
     }
+}
+
+#[test]
+fn cli_outdated_terminal_clears_progress_before_one_final_report() {
+    use empack_tests::harness::{process, terminal};
+    use expectrl::Expect;
+    let project = initialized();
+    let path = project.dir().join("manual-pack.zip");
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("pack.mcmeta", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(br#"{"pack":{"pack_format":34,"description":"Offline progress fixture"}}"#)
+        .unwrap();
+    fs::write(&path, zip.finish().unwrap().into_inner()).unwrap();
+    command(&project)
+        .args(["--yes", "add", "--type", "resourcepack"])
+        .arg(&path)
+        .assert()
+        .success();
+    let before = project_snapshot(&project);
+    for columns in [80, 40] {
+        let mut command = process::offline_empack_cmd(project.dir());
+        command.env("TERM", "xterm-256color").arg("outdated");
+        let mut session = terminal::spawn(command);
+        session.set_expect_timeout(Some(Duration::from_secs(15)));
+        #[cfg(unix)]
+        session
+            .get_process_mut()
+            .set_window_size(columns, 40)
+            .unwrap();
+        #[cfg(windows)]
+        session
+            .get_process_mut()
+            .resize(columns as i16, 40)
+            .unwrap();
+        #[cfg(not(windows))]
+        let output = {
+            let output = session.expect(expectrl::Eof).unwrap().as_bytes().to_vec();
+            terminal::wait_for_exit(session.get_process(), 0);
+            output
+        };
+        #[cfg(windows)]
+        let output = {
+            assert_eq!(session.get_process().wait(Some(15_000)).unwrap(), 0);
+            let mut output = Vec::new();
+            let mut buffer = [0u8; 8192];
+            loop {
+                match session.try_read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(size) => output.extend_from_slice(&buffer[..size]),
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(error) => panic!("read terminal: {error}"),
+                }
+                assert!(output.len() < 1 << 20, "unbounded terminal output");
+            }
+            output
+        };
+        let mut parser = vt100::Parser::new(40, columns, 0);
+        parser.process(&output);
+        let screen = parser.screen().contents();
+        assert!(
+            !screen.contains("Checking"),
+            "stale progress at {columns} columns: {screen:?}"
+        );
+        assert_eq!(
+            screen.matches("Checked 1 dependency").count(),
+            1,
+            "{screen:?}"
+        );
+        assert!(screen.contains("manual-pack: Manual"), "{screen:?}");
+        assert!(
+            screen.contains("Reason: updates must be checked manually"),
+            "{screen:?}"
+        );
+        assert!(
+            screen.contains("Call with --details for more information"),
+            "{screen:?}"
+        );
+    }
+    assert_eq!(project_snapshot(&project), before);
 }
 
 #[test]

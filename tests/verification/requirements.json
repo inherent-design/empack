@@ -50,7 +50,9 @@
     "v085_manual_scope": {
       "approved_on": "2026-11-11",
       "reason": "Maintainer-approved bootstrap and CLI acceptance uses managed Prism/server workflows on the available Mac with automated Windows/Linux coverage; retain every automated gate and all unrun manual observations.",
-      "platforms": ["macos"],
+      "platforms": [
+        "macos"
+      ],
       "procedures": [
         "acceptance::prism::reference-instance",
         "acceptance::server::managed-console",
@@ -4280,13 +4282,13 @@
     {
       "id": "UX-026",
       "family": "Dependencies and resolution",
-      "title": "Selected automatic update",
-      "public_surface": "update KEY... --release-policy",
+      "title": "Dependency update preview and application",
+      "public_surface": "update KEY... | --all [--apply] [--release-policy]",
       "api_ids": [
         "CAT",
         "DEP"
       ],
-      "required_assertions": "Only authorized roots and necessary closure change; exact pins stay exact; current/changed counts truthful; filename/role mapping retained.",
+      "required_assertions": "Explicit keys or all author roots select update scope; preview is the default and --yes cannot apply; only --apply can request publication. Only authorized roots and necessary closure change; exact pins stay exact; retained libraries are not independently upgraded; current/changed counts truthful; filename/role mapping retained.",
       "required_work": "Cases cover selected/unselected scope and exact pins; operation/root/project release-policy precedence; explicit, primary and companion roles with changed filenames; public preview, application, partial completion and retry; and truthful changed/retained counts with two-sync convergence. Controlled-host and live ordinary-provider cases establish automatic selection; the separate executable local-source journey establishes the shared update publication/reporting path. All declared live prerequisites and host/product/package execution remain qualification requirements.",
       "evidence_tiers": [
         "U",
@@ -4441,6 +4443,45 @@
             "Malformed local source input refuses the whole request even in independent-group mode; a blocked all-requested update and every independent-group preview preserve the complete project inventory",
             "Explicit independent-group application updates the ready local root while preserving the blocked root record, authored intent and every unrelated project byte; literal output reports one changed selection and partial completion",
             "A successful retry reports zero changed and two retained selections, and two subsequent synchronizations preserve the complete project; this local/manual fixture establishes shared CLI publication/reporting, while separate host/live cases establish automatic provider selection"
+          ]
+        },
+        {
+          "id": "UX-026.explicit-application-host",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::cli::synchronization::tests::update_previews_require_explicit_application_and_all_retains_libraries"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Selected and all-root previews with --yes preserve the complete fixture snapshot; explicit all-root application changes only author-requested content and preserves retained library bytes and author intent."
+          ]
+        },
+        {
+          "id": "UX-026.explicit-application-cli",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_offline::cli_update_requires_apply_even_with_yes"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The actual binary keeps source, installed, lock and state bytes unchanged for selected/all previews even with --yes; --apply updates selected bytes.",
+            "Missing scope, names combined with --all and --apply combined with --dry-run return usage status before any changes."
           ]
         }
       ],

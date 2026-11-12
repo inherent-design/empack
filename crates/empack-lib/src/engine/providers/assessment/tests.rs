@@ -846,9 +846,14 @@ async fn selected_assessment_retains_context_and_limits_catalog_work() {
     assert_eq!(report.summary().change_available, 1);
     assert!(report.is_complete());
     assert!(progress.iter().any(|event| matches!(event, AssessmentProgress::Catalog { key, total: 1, records: 1, .. } if key == "a")));
+    let closure_start = progress
+        .iter()
+        .position(|event| matches!(event, AssessmentProgress::RequiredClosure { roots: 1 }))
+        .unwrap();
+    assert!(progress[closure_start + 1..].iter().any(|event| matches!(event, AssessmentProgress::RequiredDependency { project } if project == "a")));
     assert!(matches!(
         progress.last(),
-        Some(AssessmentProgress::RequiredClosure { roots: 1 })
+        Some(AssessmentProgress::DeclaredConflicts)
     ));
     untouched.assert_async().await;
     for (keys, missing) in [(vec!["missing"], true), (vec!["a", "a"], false)] {

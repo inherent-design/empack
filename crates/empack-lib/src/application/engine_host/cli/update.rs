@@ -9,6 +9,70 @@ use empack_core::model::{
 mod initial;
 mod observation;
 
+pub async fn update_command(
+    session: &dyn Session,
+    options: crate::application::cli::UpdateArgs,
+) -> Result<()> {
+    ensure!(
+        options.all == options.dependencies.is_empty(),
+        crate::application::cli::CommandInputRequired(
+            "Select dependency names or --all, but not both"
+        )
+    );
+    ensure!(
+        !(options.apply && session.config().app_config().dry_run),
+        crate::application::cli::CommandInputRequired("--apply cannot be combined with --dry-run")
+    );
+    let current = current(session).await?;
+    let keys = if options.all {
+        current
+            .intent()
+            .roots
+            .keys()
+            .map(|key| key.as_str().to_owned())
+            .collect()
+    } else {
+        options.dependencies
+    };
+    if options.all && keys.is_empty() {
+        ensure!(
+            options.pins.is_empty(),
+            crate::application::cli::CommandInputRequired(
+                "There are no dependencies for the requested --pin selections"
+            )
+        );
+        session
+            .display()
+            .status()
+            .message("No dependencies to update.");
+        return Ok(());
+    }
+    let (_, project) = project_path(session)?;
+    let mut inputs = selections(&current, &project, keys)?.into_vec();
+    let pins = requested_pins(&current, &mut inputs, options.pins)?;
+    dependencies::update_batch_with_services(
+        session,
+        NonEmpty::new(inputs)?,
+        options.release_policy.map(Into::into),
+        SourceEvidencePolicy::Compatibility,
+        dependencies::configured_services(session)?,
+        dependencies::UpdateExecution {
+            batch: if options.continue_independent {
+                BatchPolicy::ContinueIndependent
+            } else {
+                BatchPolicy::AllRequested
+            },
+            pins,
+            mode: if options.apply {
+                ApplicationMode::Apply
+            } else {
+                ApplicationMode::Preview
+            },
+        },
+    )
+    .await
+}
+
 pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
     update_with_policy(session, keys, None, BatchPolicy::AllRequested, vec![]).await
 }
@@ -189,8 +253,11 @@ pub(super) async fn update_pinned_with_services(
         releases,
         SourceEvidencePolicy::Compatibility,
         services,
-        policy,
-        pins,
+        dependencies::UpdateExecution {
+            batch: policy,
+            pins,
+            mode: ApplicationMode::Apply,
+        },
     )
     .await
 }

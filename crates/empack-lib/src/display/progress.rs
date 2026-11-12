@@ -36,7 +36,11 @@ impl<'a> ProgressDisplay<'a> {
     /// progress.finish("Downloaded 25 mods");
     /// ```
     pub fn bar(&self, total: u64) -> ProgressTracker<'_> {
-        let pb = ProgressBar::new(total);
+        self.bar_on(total, ProgressDrawTarget::stderr())
+    }
+
+    pub(crate) fn bar_on(&self, total: u64, target: ProgressDrawTarget) -> ProgressTracker<'_> {
+        let pb = ProgressBar::with_draw_target(Some(total), target);
 
         // Use terminal-appropriate progress style
         let style = if self.styling.has_unicode() {
@@ -75,7 +79,15 @@ impl<'a> ProgressDisplay<'a> {
     /// spinner.finish("Dependencies resolved");
     /// ```
     pub fn spinner(&self, message: &str) -> ProgressTracker<'_> {
-        let pb = ProgressBar::new_spinner();
+        self.spinner_on(message, ProgressDrawTarget::stderr())
+    }
+
+    pub(crate) fn spinner_on(
+        &self,
+        message: &str,
+        target: ProgressDrawTarget,
+    ) -> ProgressTracker<'_> {
+        let pb = ProgressBar::with_draw_target(None, target);
 
         let style = if self.styling.has_unicode() {
             // Unicode spinner

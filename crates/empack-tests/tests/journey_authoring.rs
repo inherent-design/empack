@@ -387,7 +387,7 @@ fn journey_literal_authoring_rebuilds_current_configuration_and_removes_only_the
         .success();
     assert_eq!(author_snapshot(&project), before);
     offline_command(project.dir())
-        .args(["--yes", "update", "fixture"])
+        .args(["--yes", "update", "fixture", "--apply"])
         .assert()
         .success();
     assert_eq!(fs::read(project.dir().join(SOURCE)).unwrap(), updated);

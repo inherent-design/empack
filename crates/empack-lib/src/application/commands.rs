@@ -66,7 +66,7 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Init(_) => "init",
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
-        Commands::Update { .. } => "update",
+        Commands::Update(_) => "update",
         Commands::Outdated(_) => "outdated",
         Commands::Migrate(_) => "migrate",
         Commands::Adopt { .. } => "adopt",
@@ -146,24 +146,8 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
         }
         Commands::Migrate(options) => Box::pin(engine_host::cli::migrate(session, options)).await,
         Commands::Outdated(options) => Box::pin(engine_host::cli::outdated(session, options)).await,
-        Commands::Update {
-            pins,
-            release_policy,
-            dependencies,
-            continue_independent,
-        } => {
-            Box::pin(engine_host::cli::update_with_policy(
-                session,
-                dependencies,
-                release_policy.map(Into::into),
-                if continue_independent {
-                    crate::engine::api::BatchPolicy::ContinueIndependent
-                } else {
-                    crate::engine::api::BatchPolicy::AllRequested
-                },
-                pins,
-            ))
-            .await
+        Commands::Update(options) => {
+            Box::pin(engine_host::cli::update_command(session, options)).await
         }
         Commands::Adopt {
             dependencies,

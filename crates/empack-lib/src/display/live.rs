@@ -6,7 +6,7 @@
 use super::Display;
 use super::providers::*;
 use crate::terminal::display_line;
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget};
 use std::sync::Arc;
 
 /// Live implementation of DisplayProvider that owns display state for command lifecycle
@@ -140,13 +140,25 @@ impl ProgressProvider for LiveProgressProvider {
     }
 
     fn bar(&self, total: u64) -> Box<dyn ProgressTracker> {
-        let progress_bar = self.display.progress().bar(total).bar().clone();
+        // Attach before any visible draw. A standalone frame cannot be cleared
+        // later by MultiProgress after its draw target has been replaced.
+        let progress_bar = self
+            .display
+            .progress()
+            .bar_on(total, ProgressDrawTarget::hidden())
+            .bar()
+            .clone();
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
 
     fn spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
-        let progress_bar = self.display.progress().spinner(message).bar().clone();
+        let progress_bar = self
+            .display
+            .progress()
+            .spinner_on(message, ProgressDrawTarget::hidden())
+            .bar()
+            .clone();
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
@@ -167,14 +179,24 @@ struct LiveMultiProgressProvider {
 
 impl MultiProgressProvider for LiveMultiProgressProvider {
     fn add_bar(&self, total: u64, message: &str) -> Box<dyn ProgressTracker> {
-        let progress_bar = self.display.progress().bar(total).bar().clone();
+        let progress_bar = self
+            .display
+            .progress()
+            .bar_on(total, ProgressDrawTarget::hidden())
+            .bar()
+            .clone();
         progress_bar.set_message(display_line(message).into_owned());
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
 
     fn add_spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
-        let progress_bar = self.display.progress().spinner(message).bar().clone();
+        let progress_bar = self
+            .display
+            .progress()
+            .spinner_on(message, ProgressDrawTarget::hidden())
+            .bar()
+            .clone();
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }

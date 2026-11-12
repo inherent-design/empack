@@ -41,7 +41,7 @@ pub(super) use synchronization::{
     retained_input_keys as retained_sync_input_keys,
 };
 pub(crate) use update::UpdatePinInput;
-pub use update::{adopt, update, update_with_policy};
+pub use update::{adopt, update, update_command, update_with_policy};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.
 pub struct AddOptions {

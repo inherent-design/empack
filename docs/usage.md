@@ -16,7 +16,7 @@ Status shows the pack, runtime and lock status, followed by any problems and nex
 
 A successful status command means the inspection completed, not that its records are ready for a build or launch. In JSON schema 1, inspect `selected`, `contexts` and `findings`; `content_verified` is false. A valid author record can still have a missing, invalid or stale resolution lock. An ambiguous workspace has no automatic selection. `--context` chooses the context shown in the human report; JSON retains the other discovered contexts as well.
 
-Status does not verify installed content, authenticate a channel or establish that Minecraft will launch. `update` changes author dependency selections; `instance update` applies a published pack release. Neither updates empack itself.
+Status does not verify installed content, authenticate a channel or establish that Minecraft will launch. `update` previews author dependency changes and applies them with `--apply`; `instance update` applies a published pack release. Neither updates empack itself.
 
 ## Authoring
 
@@ -54,11 +54,15 @@ Provider selectors, explicit pins, typed local/URL content, named file plans and
 
 ```bash
 empack outdated --strict --json --release-policy prefer-stable
-empack --dry-run update sodium --release-policy stable-only
-empack --dry-run update sodium iris --pin sodium=VERSION_ID --pin iris=VERSION_ID
+empack update --all
+empack update sodium --release-policy stable-only
+empack update sodium iris --pin sodium=VERSION_ID --pin iris=VERSION_ID
+empack update sodium iris --apply
 empack migrate --minecraft 1.21.2 --loader fabric --plan
 empack --yes migrate --minecraft 1.21.2 --loader fabric
 ```
+
+Select dependency names or `--all`. Update previews are the default; `--apply` is required to change the project, and `--yes` alone does not apply anything. `--all` selects explicit author dependencies; retained libraries are checked as context rather than independently upgraded.
 
 Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. The result reports changed and kept dependencies separately; checking a dependency does not mean it was upgraded. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
 

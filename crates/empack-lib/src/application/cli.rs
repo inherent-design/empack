@@ -197,6 +197,33 @@ impl CliConfig {
     }
 }
 
+/// Select and preview dependency updates; application is explicit.
+#[derive(Args, Debug, Default, Clone)]
+pub struct UpdateArgs {
+    /// Existing dependency keys; select these or --all
+    #[arg(
+        value_name = "DEPENDENCY",
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
+    pub dependencies: Vec<String>,
+    /// Attempt updates for every explicit dependency; retain unrelated locked libraries
+    #[arg(long)]
+    pub all: bool,
+    /// Apply the reviewed update; without this flag only prepare a preview
+    #[arg(long, conflicts_with = "dry_run")]
+    pub apply: bool,
+    /// Deliberately change selected provider pins: KEY=VERSION_ID
+    #[arg(long = "pin", value_name = "KEY=ID")]
+    pub pins: Vec<String>,
+    /// Version preference; exact author pins remain exact
+    #[arg(long, value_enum)]
+    pub release_policy: Option<CliReleasePolicy>,
+    /// Apply validated independent groups and report any blocked groups
+    #[arg(long)]
+    pub continue_independent: bool,
+}
+
 /// Read-only catalog assessment and presentation, independent of author updates.
 #[derive(Args, Debug, Default, Clone)]
 pub struct OutdatedArgs {
@@ -838,21 +865,8 @@ Updates infer the installed side/layout. update --check checks before applying."
     /// Assess provider versions without changing the author workspace
     Outdated(OutdatedArgs),
 
-    /// Deliberately refresh selected author dependency resolutions
-    Update {
-        /// Change a direct dependency's exact provider version; repeat for a reviewed group
-        #[arg(long = "pin", value_name = "KEY=ID")]
-        pins: Vec<String>,
-        /// Provider version policy; exact author pins remain exact
-        #[arg(long, value_enum)]
-        release_policy: Option<CliReleasePolicy>,
-        /// After catalog resolution succeeds, publish independent groups and report preparation failures
-        #[arg(long)]
-        continue_independent: bool,
-        /// Exact logical keys from empack.yml or empack.lock
-        #[arg(required = true)]
-        dependencies: Vec<String>,
-    },
+    /// Preview dependency updates; use --apply to apply the reviewed changes
+    Update(UpdateArgs),
 
     /// Accept verified installed changes without rewriting payloads
     Adopt {
@@ -1054,7 +1068,7 @@ impl Commands {
             | Commands::Unpin { .. } => true,
             Commands::Build(..) => true,
             Commands::Add { .. }
-            | Commands::Update { .. }
+            | Commands::Update(_)
             | Commands::Adopt { .. }
             | Commands::Outdated(_)
             | Commands::Migrate(_) => true,
@@ -1077,7 +1091,7 @@ impl Commands {
             | Commands::Pin { .. }
             | Commands::Unpin { .. } => 5,
             Commands::Add { .. }
-            | Commands::Update { .. }
+            | Commands::Update(_)
             | Commands::Adopt { .. }
             | Commands::Outdated(_)
             | Commands::Migrate(_) => 6,
@@ -1768,6 +1782,31 @@ fn adoption_source_choices_are_explicit_and_cannot_mix_with_tracked_keys() {
 #[cfg(test)]
 mod consumer_cli_tests {
     use super::*;
+    #[test]
+    fn update_requires_one_scope_and_explicit_apply() {
+        for arguments in [
+            vec!["empack", "update"],
+            vec!["empack", "update", "--all", "sodium"],
+            vec!["empack", "update", "--all", "--apply", "--dry-run"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
+        let cli = Cli::try_parse_from(["empack", "update", "--all", "--yes"]).unwrap();
+        let Some(Commands::Update(options)) = cli.command else {
+            panic!("expected update");
+        };
+        assert!(options.all);
+        assert!(!options.apply, "--yes must never imply application");
+        assert!(options.dependencies.is_empty());
+        let cli =
+            Cli::try_parse_from(["empack", "update", "sodium", "lithium", "--apply"]).unwrap();
+        let Some(Commands::Update(options)) = cli.command else {
+            panic!("expected update");
+        };
+        assert!(!options.all);
+        assert!(options.apply);
+        assert_eq!(options.dependencies, ["sodium", "lithium"]);
+    }
     #[test]
     fn consumer_delivery_is_explicit_and_cannot_change_a_continuation() {
         let config = CliConfig::load_from([

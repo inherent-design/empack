@@ -305,6 +305,7 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             "fresh",
             "--continue-independent",
             "--yes",
+            "--apply",
         ])
         .assert()
         .failure()
@@ -324,7 +325,7 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
     .unwrap();
     let changed_sources = project_snapshot(&project);
     run()
-        .args(["update", "existing", "fresh", "--yes"])
+        .args(["update", "existing", "fresh", "--yes", "--apply"])
         .assert()
         .failure();
     assert_eq!(project_snapshot(&project), changed_sources);
@@ -339,6 +340,8 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         ]);
         if dry {
             cmd.arg("--dry-run");
+        } else {
+            cmd.arg("--apply");
         }
         let result = cmd.assert();
         let output = result.get_output();
@@ -407,6 +410,7 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             "fresh",
             "--continue-independent",
             "--yes",
+            "--apply",
         ])
         .assert()
         .success()

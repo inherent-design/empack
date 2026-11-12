@@ -3,7 +3,7 @@ use anyhow::Result;
 use empack_lib::{
     application::{
         AppConfig, BuildArgs, Commands, InitArgs,
-        cli::{CliArchiveFormat, CliProjectType},
+        cli::{CliArchiveFormat, CliProjectType, UpdateArgs},
         commands::execute_command_with_session,
         session_mocks::{
             MockCommandSession, MockConfigProvider, MockInteractiveProvider, MockInvocationProvider,
@@ -339,11 +339,14 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     let bytes = fs::read(project.root.path().join("fixture.jar"))?;
     fs::write(project.path().join("pack/mods/fixture.jar"), &bytes)?;
     let changed = project.snapshot();
-    let update = || Commands::Update {
-        pins: vec![],
-        release_policy: Default::default(),
-        continue_independent: false,
-        dependencies: vec!["fixture".into()],
+    let update = || {
+        Commands::Update(UpdateArgs {
+            pins: vec![],
+            release_policy: Default::default(),
+            continue_independent: false,
+            dependencies: vec!["fixture".into()],
+            ..Default::default()
+        })
     };
     // Updating cannot authorize overwriting externally changed source bytes.
     assert!(
@@ -361,12 +364,13 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert_eq!(project.snapshot(), changed);
     assert!(
         project
-            .run(Commands::Update {
+            .run(Commands::Update(UpdateArgs {
                 pins: vec![],
                 release_policy: Default::default(),
                 continue_independent: false,
-                dependencies: vec!["fixture".into(), "missing".into()]
-            })
+                dependencies: vec!["fixture".into(), "missing".into()],
+                ..Default::default()
+            }))
             .await
             .is_err()
     );

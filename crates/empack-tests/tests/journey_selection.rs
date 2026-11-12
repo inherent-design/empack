@@ -667,13 +667,22 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                         stdout.contains("these results are incomplete"),
                         !manual_only
                     );
-                    assert!(stdout.contains("local: updates must be checked manually"));
                     assert!(
-                        stdout.contains("Compatibility with the rest of the pack: not checked")
+                        stdout.contains(
+                            "local: Manual\n    Reason: updates must be checked manually"
+                        )
                     );
-                    assert!(stdout.contains("Incompatibility information: incomplete"));
+                    assert!(
+                        stdout
+                            .contains("These checks use mod metadata; test changes in Minecraft.")
+                    );
+                    assert!(stdout.contains(if manual_only {
+                        "Reported conflicts: not checked for manual files"
+                    } else {
+                        "Reported conflicts: check incomplete"
+                    }));
                     if !manual_only {
-                        assert!(stdout.contains("renderer-alias: could not check for updates"));
+                        assert!(stdout.contains("renderer-alias: Unknown\n    Reason: The provider could not be reached."));
                         assert!(stdout.contains("Current: modrinth:Project1@Version1"));
                         assert!(stdout.contains("The provider could not be reached."));
                     }
@@ -809,7 +818,7 @@ fn journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams() {
         if quiet {
             assert!(stderr.is_empty(), "{stderr}");
         } else {
-            assert!(stderr.contains("Checking 1 of 2 dependencies"), "{stderr}");
+            assert!(stderr.contains("Checking dependencies"), "{stderr}");
         }
         assert_eq!(snapshot(root).files, before);
     }
@@ -823,7 +832,7 @@ fn journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams() {
     let text = String::from_utf8(output).unwrap();
     assert_eq!(
         text.trim_end(),
-        "Checked 1 of 2 dependencies\n\nUpdates:\n    Available    0\n    Held         0\n    Unknown      0\n    Manual       1\n    Conflicted   0\n    Unavailable  0\n\nlocal: updates must be checked manually"
+        "Checked 1 of 2 dependencies\n\nUpdates:\n    Available    0\n    Held         0\n    Unknown      0\n    Manual       1\n    Conflicted   0\n    Unavailable  0\n\nlocal: Manual\n    Reason: updates must be checked manually\n\nCall with --details for more information"
     );
     for (keys, code, diagnostic) in [
         (

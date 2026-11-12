@@ -15,6 +15,111 @@ fn write_intent(root: &Path, intent: &ProjectIntent) {
     bytes.extend(DocumentCodec.encode_intent(intent).unwrap());
     fs::write(root.join("project/empack.yml"), bytes).unwrap();
 }
+
+#[tokio::test]
+async fn update_previews_require_explicit_application_and_all_retains_libraries() {
+    use crate::application::{Commands, cli::UpdateArgs, commands::execute_command_with_session};
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    fs::create_dir(root.path().join("project/seeds")).unwrap();
+    let mut intent = project(root.path()).intent().clone();
+    for name in ["settings", "retained"] {
+        fs::write(
+            root.path().join(format!("project/seeds/{name}.toml")),
+            b"initial",
+        )
+        .unwrap();
+        intent.roots.insert(
+            DependencyKey::parse(name).unwrap(),
+            DependencyIntent {
+                releases: None,
+                source: SourceIntent::Local(
+                    PortableRelPath::parse(
+                        &format!("seeds/{name}.toml"),
+                        PathSyntax::ProjectContent,
+                    )
+                    .unwrap(),
+                ),
+                kind: ContentKind::Config,
+                selection: DependencySelection::Automatic,
+                placement: placed(&format!("config/{name}.toml")),
+                requirements: required(),
+            },
+        );
+    }
+    write_intent(root.path(), &intent);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    let retained = DependencyKey::parse("retained").unwrap();
+    intent.roots.remove(&retained);
+    write_intent(root.path(), &intent);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    assert!(
+        project(root.path())
+            .lock()
+            .dependencies
+            .contains_key(&retained)
+    );
+    fs::write(
+        root.path().join("project/seeds/settings.toml"),
+        b"selected update",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("project/seeds/retained.toml"),
+        b"not selected",
+    )
+    .unwrap();
+    let before = snapshot(root.path());
+    for all in [false, true] {
+        let (session, messages) = session(root.path(), false).record_status_messages();
+        assert!(session.config().app_config().yes);
+        execute_command_with_session(
+            Commands::Update(UpdateArgs {
+                all,
+                dependencies: if all { vec![] } else { vec!["settings".into()] },
+                ..Default::default()
+            }),
+            &session,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            snapshot(root.path()),
+            before,
+            "preview must not publish even with --yes"
+        );
+        assert!(
+            messages
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|message| message.contains("Preview only; use --apply"))
+        );
+    }
+    execute_command_with_session(
+        Commands::Update(UpdateArgs {
+            all: true,
+            apply: true,
+            ..Default::default()
+        }),
+        &session(root.path(), false),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+        b"selected update"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/retained.toml")).unwrap(),
+        b"initial"
+    );
+    assert_eq!(project(root.path()).intent(), &intent);
+}
 fn placed(name: &str) -> PlacementIntent {
     PlacementIntent::Explicit(
         NonEmpty::new(vec![Placement {

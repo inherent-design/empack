@@ -82,6 +82,12 @@ impl ProviderCatalog {
                 continue;
             }
             scope.cancellation().check()?;
+            progress(AssessmentProgress::Catalog {
+                key: key.as_str().into(),
+                index: report.dependencies.len() + 1,
+                total: report.scope.roots.len(),
+                records: 0,
+            });
             let locked = project.lock().dependencies.get(key);
             let current = locked.and_then(|dependency| dependency.selected.as_ref());
             let mut row = DependencyAssessment {
@@ -141,7 +147,6 @@ impl ProviderCatalog {
                     records,
                 })
             };
-            observe(0);
             match self
                 .assess_versions_budget(scope, request, limits.selection, remaining, Some(&observe))
                 .await
@@ -251,7 +256,7 @@ impl ProviderCatalog {
         } else if complete {
             progress(AssessmentProgress::RequiredClosure { roots: roots.len() });
             let closure = self
-                .resolve_required_closure_budget(
+                .resolve_required_closure_observed(
                     scope,
                     ClosureRequest {
                         roots: NonEmpty::new(roots)?,
@@ -261,12 +266,30 @@ impl ProviderCatalog {
                     },
                     limits,
                     budget.expect("successful scans return their shared budget"),
-                    Some(project),
-                    false,
+                    (Some(project), false),
+                    |identity| {
+                        progress(AssessmentProgress::RequiredDependency {
+                            project: project
+                                .lock()
+                                .dependencies
+                                .iter()
+                                .find(|(_, value)| {
+                                    value
+                                        .selected
+                                        .as_ref()
+                                        .is_some_and(|pin| &pin.project == identity)
+                                })
+                                .map_or_else(
+                                    || identity.to_string(),
+                                    |(key, _)| key.as_str().to_owned(),
+                                ),
+                        })
+                    },
                 )
                 .await;
             match closure {
                 Ok(closure) => {
+                    progress(AssessmentProgress::DeclaredConflicts);
                     let (declarations, incomplete) = declared_incompatibilities(
                         scope,
                         project,

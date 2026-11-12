@@ -330,6 +330,13 @@ async fn recover_with_engine(
     .await
 }
 
+/// An application request, never an execution grant or overwrite permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationMode {
+    Preview,
+    Apply,
+}
+
 /// Callers display their exact preview before this shared approval and owned execution boundary.
 async fn apply(
     session: &dyn Session,
@@ -338,6 +345,31 @@ async fn apply(
     label: &str,
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
+    apply_in_mode(
+        session,
+        engine,
+        prepared,
+        label,
+        ApplicationMode::Apply,
+        completed,
+    )
+    .await
+}
+async fn apply_in_mode(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+    label: &str,
+    mode: ApplicationMode,
+    completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
+) -> Result<()> {
+    if mode == ApplicationMode::Preview {
+        session
+            .display()
+            .status()
+            .message("Preview only; use --apply to apply these changes.");
+        return Ok(());
+    }
     if !approve(session, label)? {
         return Ok(());
     }

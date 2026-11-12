@@ -153,6 +153,10 @@ pub enum AssessmentProgress {
     RequiredClosure {
         roots: usize,
     },
+    RequiredDependency {
+        project: String,
+    },
+    DeclaredConflicts,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]

@@ -36,6 +36,7 @@ zip.workspace = true
 ed25519-dalek.workspace = true
 mockito.workspace = true
 predicates.workspace = true
+vt100.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # expectrl 0.9 pins ConPTY 0.5, which mishandles redirected Nextest handles

@@ -45,7 +45,6 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
         lines.push(format!("    {label:<12} {count}"));
     }
     let specific = report.scope.kind == "selected-author-roots" || report.dependencies.len() == 1;
-    let mut hidden = false;
     for row in &report.dependencies {
         if !details
             && !specific
@@ -54,29 +53,13 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
                 AssessmentCategory::Held | AssessmentCategory::Manual
             )
         {
-            hidden = true;
             continue;
         }
         lines.push(String::new());
         lines.push(result(row));
-        if let Some(diagnostic) = &row.diagnostic {
-            lines.push(format!("    {}", display_line(diagnostic)));
-        } else if let Some(reason) = row
-            .reasons
-            .iter()
-            .find(|reason| !matches!(reason, UpdateReason::Pinned | UpdateReason::ManualSource))
-        {
-            lines.push(format!("    {}", explanation(reason)));
-        }
         if details {
             row_details(row, report.release_policy, &mut lines);
         }
-    }
-    if hidden {
-        lines.extend([
-            String::new(),
-            "Use --details to show kept and manual dependencies.".into(),
-        ]);
     }
     if !report.joint.declared_incompatibilities.is_empty() {
         lines.push(String::new());
@@ -92,7 +75,7 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
     {
         lines.extend([
             String::new(),
-            "Compatibility with other mods has not been checked.".into(),
+            "Test updates in Minecraft before using them.".into(),
         ]);
     }
     if details {
@@ -108,11 +91,17 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
                 }
             ),
             format!(
-                "    Incompatibility information: {}",
+                "    Reported conflicts: {}",
                 if report.joint.declarations_complete {
-                    "checked"
+                    if report.joint.declared_incompatibilities.is_empty() {
+                        "none found"
+                    } else {
+                        "see conflicts above"
+                    }
+                } else if report.joint.state == "not-applicable" {
+                    "not checked for manual files"
                 } else {
-                    "incomplete"
+                    "check incomplete"
                 }
             ),
             format!(
@@ -131,9 +120,12 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
                 report.joint.blocking_roots.join(", ")
             ));
         }
-        if report.joint.candidate_compatibility == "not-assessed" {
-            lines.push("    Compatibility with the rest of the pack: not checked".into());
-        }
+        lines.push("    These checks use mod metadata; test changes in Minecraft.".into());
+    } else {
+        lines.extend([
+            String::new(),
+            "Call with --details for more information".into(),
+        ]);
     }
     lines.join("\n")
 }
@@ -168,29 +160,58 @@ fn version(value: Option<&ObservedVersion>) -> String {
     display_line(&label).into_owned()
 }
 fn result(row: &DependencyAssessment) -> String {
-    let outcome = match row.category() {
+    let (outcome, fallback) = match row.category() {
         AssessmentCategory::Held if row.reasons.contains(&UpdateReason::Pinned) => {
-            format!("pinned at {}", short(current(row)))
+            ("Held", format!("pinned at {}", short(current(row))))
         }
-        AssessmentCategory::Held => format!("keeping {}", short(current(row))),
-        AssessmentCategory::ChangeAvailable => format!(
-            "{} -> {}",
-            short(current(row)),
-            short(row.permitted.as_ref())
+        AssessmentCategory::Held => ("Held", format!("keeping {}", short(current(row)))),
+        AssessmentCategory::ChangeAvailable => (
+            "Available",
+            format!(
+                "{} -> {}",
+                short(current(row)),
+                short(row.permitted.as_ref())
+            ),
         ),
         AssessmentCategory::Unknown
             if row.reasons.contains(&UpdateReason::NotAssessedAfterFailure) =>
         {
-            "not checked after an earlier failure".into()
+            ("Unknown", "not checked after an earlier failure".into())
         }
-        AssessmentCategory::Unknown => "could not check for updates".into(),
-        AssessmentCategory::Manual => "updates must be checked manually".into(),
-        AssessmentCategory::Unavailable => "no version matches this pack's settings".into(),
-        AssessmentCategory::Conflicted => {
-            "the selected update conflicts with another dependency".into()
-        }
+        AssessmentCategory::Unknown => ("Unknown", "could not check for updates".into()),
+        AssessmentCategory::Manual => ("Manual", "updates must be checked manually".into()),
+        AssessmentCategory::Unavailable => (
+            "Unavailable",
+            "no version matches this pack's settings".into(),
+        ),
+        AssessmentCategory::Conflicted => (
+            "Conflicted",
+            "the selected update conflicts with another dependency".into(),
+        ),
     };
-    format!("{}: {outcome}", display_line(&row.key))
+    let additional = row
+        .diagnostic
+        .as_ref()
+        .map(|value| display_line(value).into_owned())
+        .or_else(|| {
+            row.reasons
+                .iter()
+                .find(|reason| !matches!(reason, UpdateReason::Pinned | UpdateReason::ManualSource))
+                .map(|reason| explanation(reason).to_owned())
+        });
+    let mut text = format!("{}: {outcome}\n    Reason: ", display_line(&row.key));
+    if matches!(
+        row.category(),
+        AssessmentCategory::Held | AssessmentCategory::ChangeAvailable
+    ) {
+        text.push_str(&fallback);
+        if let Some(additional) = additional {
+            text.push_str(&format!("\n    {additional}"));
+        }
+    } else {
+        text.push_str(additional.as_deref().unwrap_or(&fallback));
+    }
+    text
 }
 fn row_details(row: &DependencyAssessment, default_preference: &str, lines: &mut Vec<String>) {
     if row.name != row.key {
@@ -350,7 +371,7 @@ mod tests {
         let report = report(vec![row()]);
         assert_eq!(
             render(&report, false),
-            "Checked 1 of 272 dependencies\n\nUpdates:\n    Available    0\n    Held         1\n    Unknown      0\n    Manual       0\n    Conflicted   0\n    Unavailable  0\n\nc2me-fabric: pinned at 0.4.0-alpha.0.30+1.21.1"
+            "Checked 1 of 272 dependencies\n\nUpdates:\n    Available    0\n    Held         1\n    Unknown      0\n    Manual       0\n    Conflicted   0\n    Unavailable  0\n\nc2me-fabric: Held\n    Reason: pinned at 0.4.0-alpha.0.30+1.21.1\n\nCall with --details for more information"
         );
         let machine = serde_json::to_value(&report).unwrap();
         assert_eq!(machine["schema"], 2);
@@ -377,11 +398,12 @@ mod tests {
         assert!(output.starts_with("Checked 2 of 272 dependencies\nSome checks could not finish; these results are incomplete."));
         assert!(output.contains("Available    1"));
         assert!(output.contains("Unknown      1"));
-        assert!(output.contains("menu: 1.0 -> 2.0"));
-        assert!(output.contains(
-            "broken: could not check for updates\n    Invalid provider field files in broken"
-        ));
-        assert!(output.ends_with("Compatibility with other mods has not been checked."));
+        assert!(output.contains("menu: Available\n    Reason: 1.0 -> 2.0"));
+        assert!(
+            output.contains("broken: Unknown\n    Reason: Invalid provider field files in broken")
+        );
+        assert!(output.contains("Test updates in Minecraft before using them."));
+        assert!(output.ends_with("Call with --details for more information"));
     }
     #[test]
     fn details_retain_exact_identity_without_repeating_default_bookkeeping() {
@@ -389,9 +411,10 @@ mod tests {
         let output = render(&report, true);
         assert!(output.contains("Current: 0.4.0-alpha.0.30+1.21.1 (modrinth:ProjectA@VersionA)"));
         assert!(output.contains("Required dependencies: checked"));
-        assert!(output.contains("Compatibility with the rest of the pack: not checked"));
+        assert!(output.contains("Reported conflicts: none found"));
         assert_eq!(output.matches("Version preference:").count(), 1);
-        assert!(output.ends_with("Compatibility with the rest of the pack: not checked"));
+        assert!(output.ends_with("These checks use mod metadata; test changes in Minecraft."));
+        assert!(!output.contains("Call with --details"));
         assert!(!render(&report, false).contains(&report.observed_at));
     }
     #[test]

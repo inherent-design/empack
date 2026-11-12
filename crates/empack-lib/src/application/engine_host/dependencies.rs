@@ -130,7 +130,10 @@ pub(super) async fn update_with_services(
         inputs,
         releases,
         evidence,
-        Change::Update(Default::default()),
+        Change::Update {
+            pins: Default::default(),
+            mode: ApplicationMode::Apply,
+        },
         services,
         BatchPolicy::AllRequested,
     )
@@ -205,8 +208,17 @@ pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServi
 }
 enum Change {
     Add(ExistingDependencyPolicy),
-    Update(BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>),
+    Update {
+        pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
+        mode: ApplicationMode,
+    },
     Adopt,
+}
+
+pub(super) struct UpdateExecution {
+    pub batch: BatchPolicy,
+    pub pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
+    pub mode: ApplicationMode,
 }
 
 pub(super) async fn add_with_services(
@@ -254,17 +266,19 @@ pub(super) async fn update_batch_with_services(
     releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
     services: AdditionServices,
-    policy: BatchPolicy,
-    pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
+    execution: UpdateExecution,
 ) -> Result<()> {
     change_with_services(
         session,
         inputs,
         releases,
         evidence,
-        Change::Update(pins),
+        Change::Update {
+            pins: execution.pins,
+            mode: execution.mode,
+        },
         services,
-        policy,
+        execution.batch,
     )
     .await
 }
@@ -278,7 +292,11 @@ async fn change_with_services(
     batch: BatchPolicy,
 ) -> Result<()> {
     let releases = releases.into();
-    let update = matches!(&change, Change::Update(_));
+    let update = matches!(&change, Change::Update { .. });
+    let update_mode = match &change {
+        Change::Update { mode, .. } => *mode,
+        _ => ApplicationMode::Apply,
+    };
     let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -490,7 +508,7 @@ async fn change_with_services(
                 items: NonEmpty::new(items)?,
                 change: match change {
                     Change::Add(existing) => DependencyBatchChange::Add(existing),
-                    Change::Update(pins) => DependencyBatchChange::Update { pins },
+                    Change::Update { pins, .. } => DependencyBatchChange::Update { pins },
                     Change::Adopt => unreachable!("adoption is not a dependency batch"),
                 },
             }
@@ -504,7 +522,7 @@ async fn change_with_services(
                     existing,
                 }
                 .into(),
-                Change::Update(pins) => UpdateRequest {
+                Change::Update { pins, .. } => UpdateRequest {
                     pins,
                     source_revision: Some(revision),
                     group: addition.group().clone(),
@@ -522,7 +540,7 @@ async fn change_with_services(
         if adopt {
             publish_adoption(session, &engine, prepared).await
         } else if update {
-            publish_update(session, &engine, prepared).await
+            publish_update(session, &engine, prepared, update_mode).await
         } else {
             publish_addition(session, &engine, prepared).await
         }
@@ -571,6 +589,7 @@ async fn publish_update(
     session: &dyn Session,
     engine: &Engine,
     prepared: PreparedOperation,
+    mode: ApplicationMode,
 ) -> Result<()> {
     let view = prepared.view().update().context("Missing update preview")?;
     show_batch(session, view.batch.as_ref());
@@ -616,7 +635,7 @@ async fn publish_update(
     }
     show_changes(session, &view.files)?;
     let mut details = None;
-    let result = apply(session, engine, prepared, "Update", |receipt| {
+    let result = apply_in_mode(session, engine, prepared, "Update", mode, |receipt| {
         let ExecutionReceipt::Update(receipt) = receipt else {
             anyhow::bail!("Unexpected update receipt");
         };

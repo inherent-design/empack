@@ -102,10 +102,30 @@ impl ProviderCatalog {
         scope: &mut WorkScope,
         request: ClosureRequest,
         limits: ClosureLimits,
-        mut budget: transport::RequestBudget,
+        budget: transport::RequestBudget,
         preferred: Option<&ResolvedProject>,
         revalidate_libraries: bool,
     ) -> Result<ProviderClosure> {
+        self.resolve_required_closure_observed(
+            scope,
+            request,
+            limits,
+            budget,
+            (preferred, revalidate_libraries),
+            |_| {},
+        )
+        .await
+    }
+    pub(super) async fn resolve_required_closure_observed(
+        &self,
+        scope: &mut WorkScope,
+        request: ClosureRequest,
+        limits: ClosureLimits,
+        mut budget: transport::RequestBudget,
+        preference: (Option<&ResolvedProject>, bool),
+        progress: impl Fn(&ProviderProjectId) + Send + Sync,
+    ) -> Result<ProviderClosure> {
+        let (preferred, revalidate_libraries) = preference;
         ensure!(
             limits.projects > 0
                 && limits.edges > 0
@@ -144,6 +164,7 @@ impl ProviderCatalog {
                 CatalogError::Limit
             );
             result._graph.push(graph_reservation(scope, 4096)?);
+            progress(&root.pin.project);
             let (selected, next) = self
                 .resolve_exact_budget(scope, root.pin.clone(), limits.selection.catalog, budget)
                 .await?;
@@ -166,6 +187,7 @@ impl ProviderCatalog {
             budget.check_deadline()?;
             let parent = &result.selections[&queue[cursor]];
             let from = parent.resolution.pin.clone();
+            progress(&from.project);
             let parent_kind = parent.kind;
             let coverage = parent.resolution.coverage;
             edge_count = edge_count
@@ -198,6 +220,9 @@ impl ProviderCatalog {
                         continue;
                     }
                     _ => continue,
+                }
+                if let Some(project) = &dependency.project {
+                    progress(project);
                 }
                 let existing = dependency
                     .project

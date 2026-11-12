@@ -564,7 +564,14 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     );
     let output = run(
         &project,
-        &["--yes", "update", key.as_str(), "--release-policy", "any"],
+        &[
+            "--yes",
+            "update",
+            key.as_str(),
+            "--apply",
+            "--release-policy",
+            "any",
+        ],
     );
     let rendered = format!(
         "{}\n{}",
@@ -629,7 +636,14 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     assert_eq!(snapshot(project.dir()).files, before_preview);
     let output = run(
         &project,
-        &["--yes", "update", key.as_str(), "--release-policy", "any"],
+        &[
+            "--yes",
+            "update",
+            key.as_str(),
+            "--apply",
+            "--release-policy",
+            "any",
+        ],
     );
     let resolved = read_project(project.dir());
     let changed = usize::from(
@@ -918,6 +932,7 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
         let complete_before = snapshot(project.dir());
         run(&project, &preview);
         assert_eq!(snapshot(project.dir()), complete_before);
+        args.push("--apply");
         let output = run(&project, &args);
         let rendered = format!(
             "{}\n{}",
@@ -983,6 +998,8 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
                 let mut args = vec!["--yes", "update", key.as_str(), "--release-policy", "any"];
                 if preview {
                     args.insert(0, "--dry-run");
+                } else {
+                    args.push("--apply");
                 }
                 let before = snapshot(project.dir());
                 let output = execute(&project, &args, None);

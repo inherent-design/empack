@@ -31,14 +31,11 @@ pub async fn outdated(
     });
     let mut progress = super::super::progress::ProgressDisplay::new(session, options.quiet);
     if !selected.roots.is_empty() {
-        progress.update(&format!(
-            "Checking {} of {} dependencies",
-            selected.roots.len(),
-            selected.total_roots
-        ));
+        progress.update("catalog", "Checking dependencies");
     }
     tokio::pin!(work);
     let mut observing = true;
+    let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let report = loop {
         tokio::select! {
             biased;
@@ -47,6 +44,7 @@ pub async fn outdated(
                 if changed.is_err() { observing = false; }
                 else if let Some(message) = receiver.borrow_and_update().as_ref() { observe(&mut progress, message); }
             }
+            _ = ticks.tick() => progress.flush(),
         }
     };
     drop(progress);
@@ -64,16 +62,36 @@ fn observe(
     observation: &crate::engine::providers::AssessmentProgress,
 ) {
     use crate::engine::providers::AssessmentProgress;
-    let message = match observation {
+    let (phase, message) = match observation {
         AssessmentProgress::Catalog {
             key,
             index,
             total,
-            records: _,
-        } => format!("Checking {index} of {total} dependencies: {key}"),
-        AssessmentProgress::RequiredClosure { .. } => "Checking dependency requirements".to_owned(),
+            records,
+        } => (
+            "catalog",
+            format!(
+                "Checking dependency {index} of {total}: {key}{}",
+                if *records == 0 {
+                    String::new()
+                } else {
+                    format!(" ({records} versions read)")
+                }
+            ),
+        ),
+        AssessmentProgress::RequiredClosure { .. } => (
+            "requirements",
+            "Checking dependency requirements".to_owned(),
+        ),
+        AssessmentProgress::RequiredDependency { project } => (
+            "requirements",
+            format!("Checking dependency requirements: {project}"),
+        ),
+        AssessmentProgress::DeclaredConflicts => {
+            ("conflicts", "Checking reported conflicts".to_owned())
+        }
     };
-    progress.update(&message);
+    progress.update(phase, &message);
 }
 
 fn present(
@@ -146,8 +164,8 @@ mod tests {
         report.joint.declarations_complete = true;
         assert!(present(&session, &report, true, true, true).is_ok());
         assert!(output.contains("Required dependencies: checked"));
-        assert!(output.contains("Incompatibility information: incomplete"));
-        assert!(output.contains("Compatibility with the rest of the pack: not checked"));
+        assert!(output.contains("Reported conflicts: check incomplete"));
+        assert!(output.contains("These checks use mod metadata; test changes in Minecraft."));
         assert!(output.contains(
             "Reported mod conflict: modrinth:ProjectA@Version1 and modrinth:ProjectB@Version1"
         ));

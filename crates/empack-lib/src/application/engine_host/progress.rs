@@ -8,6 +8,9 @@ pub(super) struct ProgressDisplay {
     quiet: bool,
     terminal: bool,
     last: Option<std::time::Instant>,
+    phase: Option<&'static str>,
+    plain_phases: std::collections::BTreeSet<&'static str>,
+    pending: Option<String>,
     observation: Option<WorkProgress>,
 }
 impl ProgressDisplay {
@@ -18,6 +21,9 @@ impl ProgressDisplay {
             quiet,
             terminal: session.terminal().is_tty,
             last: None,
+            phase: None,
+            plain_phases: Default::default(),
+            pending: None,
             observation: None,
         }
     }
@@ -26,52 +32,225 @@ impl ProgressDisplay {
             return;
         };
         if self.observation.as_ref() == Some(&observation) {
+            self.flush();
             return;
         }
-        let message = match &observation {
-            WorkProgress::CheckingContentCache => "Checking exact content cache".to_owned(),
+        let (phase, message) = match &observation {
+            WorkProgress::CheckingContentCache => {
+                ("cache", "Checking exact content cache".to_owned())
+            }
             WorkProgress::Downloading {
                 received_bytes,
                 total_bytes,
-            } => match total_bytes {
-                Some(total) => {
-                    format!("Downloading content: {received_bytes}/{total} bytes received")
-                }
-                None => format!("Downloading content: {received_bytes} bytes received"),
-            },
-            WorkProgress::VerifyingContent => "Verifying downloaded content".to_owned(),
+            } => (
+                "download",
+                match total_bytes {
+                    Some(total) => {
+                        format!("Downloading content: {received_bytes}/{total} bytes received")
+                    }
+                    None => format!("Downloading content: {received_bytes} bytes received"),
+                },
+            ),
+            WorkProgress::VerifyingContent => {
+                ("verification", "Verifying downloaded content".to_owned())
+            }
         };
-        if self.update(&message) {
-            self.observation = Some(observation);
+        self.update(phase, &message);
+        self.observation = Some(observation);
+    }
+    pub(super) fn update(&mut self, phase: &'static str, message: &str) {
+        self.update_at(phase, message, std::time::Instant::now());
+    }
+    fn update_at(&mut self, phase: &'static str, message: &str, now: std::time::Instant) {
+        if self.quiet {
+            return;
+        }
+        let changed_phase = self.phase != Some(phase);
+        self.phase = Some(phase);
+        // Plain logs record each phase once. Acquisition cycles cache/download/verify
+        // for each file; a phase transition alone must not turn those into log spam.
+        if !self.terminal && !self.plain_phases.insert(phase) {
+            return;
+        }
+        self.pending = Some(message.to_owned());
+        if changed_phase {
+            self.draw(now);
+        } else {
+            self.flush_at(now);
         }
     }
-    pub(super) fn update(&mut self, message: &str) -> bool {
-        if self.quiet {
-            return false;
-        }
-        let now = std::time::Instant::now();
-        if self
-            .last
-            .is_some_and(|last| now.duration_since(last) < Duration::from_millis(500))
+    pub(super) fn flush(&mut self) {
+        self.flush_at(std::time::Instant::now());
+    }
+    fn flush_at(&mut self, now: std::time::Instant) {
+        if self.pending.is_none()
+            || self
+                .last
+                .is_some_and(|last| now.duration_since(last) < Duration::from_millis(500))
         {
-            return false;
+            return;
         }
+        self.draw(now);
+    }
+    fn draw(&mut self, now: std::time::Instant) {
+        let Some(message) = self.pending.take() else {
+            return;
+        };
         if self.spinner.is_none() && self.terminal {
-            self.spinner = Some(self.provider.spinner(message));
+            self.spinner = Some(self.provider.spinner(&message));
         }
         if let Some(spinner) = &self.spinner {
-            spinner.set_message(message);
+            spinner.set_message(&message);
         } else {
-            self.provider.message(message);
+            self.provider.message(&message);
         }
         self.last = Some(now);
-        true
     }
 }
 impl Drop for ProgressDisplay {
     fn drop(&mut self) {
         if let Some(spinner) = &self.spinner {
             spinner.finish_clear();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::display::{MultiProgressProvider, ProgressProvider, ProgressTracker};
+    use std::sync::{Arc, Mutex};
+
+    struct Recorded(Arc<Mutex<Vec<String>>>);
+    impl ProgressProvider for Recorded {
+        fn message(&self, message: &str) {
+            self.0.lock().unwrap().push(message.into());
+        }
+        fn spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
+            self.message(message);
+            Box::new(Recorded(self.0.clone()))
+        }
+        fn bar(&self, _: u64) -> Box<dyn ProgressTracker> {
+            unreachable!()
+        }
+        fn multi(&self) -> Box<dyn MultiProgressProvider> {
+            unreachable!()
+        }
+    }
+    impl ProgressTracker for Recorded {
+        fn set_position(&self, _: u64) {
+            unreachable!()
+        }
+        fn inc(&self) {
+            unreachable!()
+        }
+        fn inc_by(&self, _: u64) {
+            unreachable!()
+        }
+        fn set_message(&self, message: &str) {
+            self.message(message);
+        }
+        fn tick(&self, _: &str) {
+            unreachable!()
+        }
+        fn finish(&self, _: &str) {
+            unreachable!()
+        }
+        fn abandon(&self, _: &str) {
+            unreachable!()
+        }
+        fn finish_clear(&self) {
+            self.message("<clear>");
+        }
+    }
+    fn display(terminal: bool, quiet: bool) -> (ProgressDisplay, Arc<Mutex<Vec<String>>>) {
+        let session = crate::application::session_mocks::MockCommandSession::new();
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let mut display = ProgressDisplay::new(&session, quiet);
+        display.provider = Box::new(Recorded(messages.clone()));
+        display.terminal = terminal;
+        (display, messages)
+    }
+    #[test]
+    fn progress_preserves_latest_update_and_immediate_phase_changes() {
+        let (mut display, messages) = display(true, false);
+        let start = std::time::Instant::now();
+        display.update_at("catalog", "Reading a", start);
+        display.update_at("catalog", "Reading b", start + Duration::from_millis(100));
+        display.update_at("catalog", "Reading c", start + Duration::from_millis(200));
+        assert!(
+            !messages
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|line| line == "Reading b")
+        );
+        display.flush_at(start + Duration::from_millis(500));
+        assert_eq!(messages.lock().unwrap().last().unwrap(), "Reading c");
+        display.update_at(
+            "requirements",
+            "Checking requirements",
+            start + Duration::from_millis(501),
+        );
+        assert_eq!(
+            messages.lock().unwrap().last().unwrap(),
+            "Checking requirements"
+        );
+        display.update_at(
+            "requirements",
+            "Checking library",
+            start + Duration::from_millis(502),
+        );
+        display.update_at(
+            "conflicts",
+            "Checking conflicts",
+            start + Duration::from_millis(503),
+        );
+        display.flush_at(start + Duration::from_secs(1));
+        assert_eq!(
+            messages.lock().unwrap().last().unwrap(),
+            "Checking conflicts"
+        );
+        drop(display);
+        assert_eq!(messages.lock().unwrap().last().unwrap(), "<clear>");
+    }
+    #[test]
+    fn progress_plain_output_is_phase_only_and_quiet_has_no_progress() {
+        for quiet in [false, true] {
+            let (mut display, messages) = display(false, quiet);
+            let start = std::time::Instant::now();
+            display.update_at("catalog", "Reading versions", start);
+            display.update_at(
+                "catalog",
+                "Reading another dependency",
+                start + Duration::from_secs(1),
+            );
+            display.update_at(
+                "requirements",
+                "Checking requirements",
+                start + Duration::from_millis(1001),
+            );
+            display.flush_at(start + Duration::from_secs(2));
+            for index in 0..100 {
+                display.update_at(
+                    "catalog",
+                    "Reading another dependency",
+                    start + Duration::from_secs(3 + index * 2),
+                );
+                display.update_at(
+                    "requirements",
+                    "Checking another requirement",
+                    start + Duration::from_secs(4 + index * 2),
+                );
+            }
+            drop(display);
+            let actual = messages.lock().unwrap();
+            let expected: &[&str] = if quiet {
+                &[]
+            } else {
+                &["Reading versions", "Checking requirements"]
+            };
+            assert_eq!(*actual, expected);
         }
     }
 }
