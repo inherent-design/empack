@@ -5,6 +5,7 @@ use crate::{
     engine::{
         checking::{CheckReport, CheckRequest, CheckScope, CheckState, check_project},
         providers::{ClosureLimits, ProviderCatalog},
+        publication::RecoveryReader,
     },
     networking::rate_budget::HostBudgetRegistry,
     terminal::display_line,
@@ -98,10 +99,20 @@ fn render(report: &CheckReport, details: bool) -> String {
             report.verified_files, report.references
         ));
     }
+    lines.extend(render_findings(&report.findings, details));
+    lines.join("\n")
+}
+fn render_findings(
+    findings: &[crate::engine::checking::CheckFinding],
+    details: bool,
+) -> Vec<String> {
+    let mut lines = Vec::new();
     let mut hidden = 0;
-    for finding in &report.findings {
+    for finding in findings {
         if !details
-            && (finding.state == CheckState::Passed || finding.state == CheckState::Reference)
+            && (finding.state == CheckState::Passed
+                || finding.state == CheckState::Reference
+                || finding.state == CheckState::PlayerOwned)
         {
             hidden += 1;
             continue;
@@ -111,6 +122,7 @@ fn render(report: &CheckReport, details: bool) -> String {
             CheckState::Failed => "Failed",
             CheckState::Unverified => "Not verified",
             CheckState::Reference => "Reference",
+            CheckState::PlayerOwned => "Player-owned",
         };
         lines.push(format!("  {label}: {}", display_line(&finding.subject)));
         for line in finding.message.lines() {
@@ -120,7 +132,80 @@ fn render(report: &CheckReport, details: bool) -> String {
     if !details && hidden > 0 {
         lines.push("Call with --details for more information".into());
     }
-    lines.join("\n")
+    lines
+}
+
+pub(super) async fn instance_check(
+    session: &dyn Session,
+    options: crate::application::cli::InstanceCheckArgs,
+) -> Result<()> {
+    ensure!(
+        !(options.json && options.details),
+        "Choose --json or --details, not both"
+    );
+    let (invocation, root) = project_path(session)?;
+    let state = state_root(session.config().app_config(), &invocation)?;
+    let check = scoped_with_feedback(
+        session,
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 512 << 20,
+            open_files: 32,
+            scratch_bytes: 0,
+        }),
+        options.quiet,
+        move |mut scope| async move {
+            crate::engine::instance::checking::check_scoped(
+                &mut scope,
+                root,
+                RecoveryReader::new(state),
+                SnapshotLimits::default(),
+            )
+            .await
+        },
+    )
+    .await?;
+    let report = &check.report;
+    let text = if options.json {
+        crate::terminal::json_text(report)?
+    } else {
+        let mut lines = vec![
+            format!(
+                "{}{}: {}",
+                display_line(report.pack.as_deref().unwrap_or("Instance")),
+                report
+                    .version
+                    .as_ref()
+                    .map(|v| format!(" {}", display_line(v)))
+                    .unwrap_or_default(),
+                if report.complete {
+                    "check passed"
+                } else {
+                    "check failed"
+                }
+            ),
+            "Scope: completed release, saved ownership and local content".into(),
+        ];
+        if report.verified_files > 0 {
+            lines.push(format!("Managed files verified: {}", report.verified_files));
+        }
+        if report.verified_overrides > 0 {
+            lines.push(format!(
+                "Local overrides verified: {}",
+                report.verified_overrides
+            ));
+        }
+        if report.player_owned_entries > 0 {
+            lines.push(format!(
+                "Player-owned seed/world entries: {}",
+                report.player_owned_entries
+            ));
+        }
+        lines.extend(render_findings(&report.findings, options.details));
+        lines.join("\n")
+    };
+    session.display().status().message(&text);
+    check.map(|check| check.result).transpose().map(|_| ())
 }
 
 #[cfg(test)]

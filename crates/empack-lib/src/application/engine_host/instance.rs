@@ -329,6 +329,7 @@ pub(in crate::application) async fn dispatch(
         command @ (InstanceCommand::Install { .. }
         | InstanceCommand::Prepare { .. }
         | InstanceCommand::Update { .. }) => install(session, command).await,
+        InstanceCommand::Check(options) => super::checking::instance_check(session, options).await,
         InstanceCommand::Inspect => {
             let (invocation, root) = project_path(session)?;
             let state = state_root(session.config().app_config(), &invocation)?;

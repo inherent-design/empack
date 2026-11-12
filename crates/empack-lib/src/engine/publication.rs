@@ -90,6 +90,13 @@ impl RecoveryReader {
             None => root_key(root),
         }
     }
+    /// Presence means active or unconfirmed ownership, never proof that a process is retired.
+    pub(super) fn has_runtime_evidence(&self, root: &ProjectReadRoot) -> Result<bool> {
+        match Publisher::open_existing(&self.host_state)? {
+            Some(publisher) => Ok(publisher.observe_runtime(root)?.is_some()),
+            None => Ok(false),
+        }
+    }
     pub(super) fn enter(&self, root: &ProjectReadRoot) -> Result<ProjectReadGuard> {
         let Some(publisher) = Publisher::open_existing(&self.host_state)? else {
             return Ok(ProjectReadGuard { _lock: None });

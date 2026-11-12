@@ -410,6 +410,21 @@ async fn native_snapshot_dispatch_previews_installs_updates_and_rejects_tamperin
     .await
     .unwrap();
     assert_eq!(before, snapshot(root.path()));
+    for json in [false, true] {
+        execute_command_with_session(
+            Commands::Instance {
+                command: InstanceCommand::Check(crate::application::cli::InstanceCheckArgs {
+                    json,
+                    quiet: true,
+                    ..Default::default()
+                }),
+            },
+            &session(root.path(), true, false),
+        )
+        .await
+        .unwrap();
+        assert_eq!(before, snapshot(root.path()));
+    }
     fs::remove_file(root.path().join("project/.minecraft/mods/test.jar")).unwrap();
     let repair = Commands::Instance {
         command: InstanceCommand::Repair {

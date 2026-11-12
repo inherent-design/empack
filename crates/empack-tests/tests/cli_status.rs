@@ -221,3 +221,138 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
         }
     }
 }
+
+#[test]
+fn cli_instance_check_verifies_managed_content_without_repairing_player_data() {
+    use empack_lib::engine::release::*;
+    use sha2::{Digest, Sha256};
+    let project = TestProject::new();
+    let root = project.dir();
+    fs::create_dir(root.join("assets")).unwrap();
+    let files = [
+        (
+            "mod",
+            "mods/check.jar",
+            FilePolicy::Managed,
+            &b"mod bytes"[..],
+            None,
+        ),
+        (
+            "options",
+            "options.txt",
+            FilePolicy::Seed,
+            &b"defaults"[..],
+            None,
+        ),
+        (
+            "world",
+            "saves/played/level.dat",
+            FilePolicy::Seed,
+            &b"initial level"[..],
+            Some("saves/played"),
+        ),
+    ]
+    .into_iter()
+    .map(|(key, destination, policy, bytes, world)| {
+        fs::write(root.join("assets").join(key), bytes).unwrap();
+        ReleaseFile {
+            world_root: world.map(str::to_owned),
+            key: key.into(),
+            destination: destination.into(),
+            layer: ReleaseLayer::Common,
+            policy,
+            client: Participation::Required,
+            server: Participation::Unsupported,
+            sha256: Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            bytes: bytes.len() as u64,
+            readonly: false,
+            executable: false,
+            assertions: vec![],
+            asset: None,
+            source: ReleaseSource::Asset {
+                path: format!("assets/{key}"),
+            },
+        }
+    })
+    .collect();
+    let release = DecodedRelease::encode(ReleaseDocument {
+        schema: RELEASE_SCHEMA,
+        pack: "check.fixture".into(),
+        version: "1".into(),
+        minimum_engine: ">=0.8.0-beta".into(),
+        require_subscription: false,
+        server_launch: None,
+        runtime: ReleaseRuntime {
+            minecraft: "1.21.1".into(),
+            loader: ReleaseLoader::Vanilla,
+            java: ReleaseJava::for_game("1.21.1", 21).unwrap(),
+        },
+        choices: vec![],
+        files,
+    })
+    .unwrap();
+    fs::write(root.join("release.json"), release.bytes()).unwrap();
+    offline_command(root)
+        .args([
+            "--yes",
+            "instance",
+            "install",
+            "release.json",
+            "--sha256",
+            release.id(),
+            "--layout",
+            "prism",
+        ])
+        .assert()
+        .success();
+    fs::write(root.join(".minecraft/options.txt"), b"player choices").unwrap();
+    fs::remove_file(root.join(".minecraft/saves/played/level.dat")).unwrap();
+    let before = snapshot(root);
+    for (json, details) in [(false, false), (true, false), (false, true)] {
+        let mut command = offline_command(root);
+        command.args(["instance", "check", "--quiet"]);
+        if json {
+            command.arg("--json");
+        }
+        if details {
+            command.arg("--details");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+        if json {
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["scope"], "instance");
+            assert_eq!(report["complete"], true);
+            assert_eq!(report["verified_files"], 1);
+            assert_eq!(report["player_owned_entries"], 2);
+        } else {
+            assert!(String::from_utf8_lossy(&output.stdout).contains("Managed files verified: 1"));
+        }
+        assert_eq!(snapshot(root), before);
+    }
+    fs::write(root.join(".minecraft/mods/check.jar"), b"changed").unwrap();
+    let before = snapshot(root);
+    let output = offline_command(root)
+        .args(["instance", "check", "--json", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert!(!output.stderr.is_empty());
+    assert_eq!(snapshot(root), before);
+    fs::write(root.join(".empack/instance.json"), b"{broken").unwrap();
+    let before = snapshot(root);
+    let output = offline_command(root)
+        .args(["instance", "check", "--json", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(snapshot(root), before);
+}

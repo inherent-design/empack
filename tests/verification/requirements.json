@@ -11247,11 +11247,13 @@
     {
       "id": "UX-063",
       "family": "Installed instances",
-      "title": "Inspect completed state",
-      "public_surface": "instance inspect; status --context instance",
+      "title": "Inspect and validate completed state",
+      "public_surface": "instance inspect; instance check; status --context instance",
       "api_ids": [
         "INST",
-        "CLI"
+        "CLI",
+        "PUB",
+        "RUN"
       ],
       "required_assertions": "Release/choices/history versus pending/uncertain state distinguishable; read-only; no corruption normalized away.",
       "required_work": "Machine/human reports and malformed state schema; role ambiguity.",
@@ -11372,6 +11374,52 @@
             "A controlled native publication interruption yields recovery-required status and no interpreted live contexts; inspection does not finish the publication",
             "A subsequent user edit survives recovery refusal and unrelated planned content is not published",
             "This private journal fixture proves the shared pre-context barrier, not actual process termination or consumer startup"
+          ]
+        },
+        {
+          "id": "UX-063.read-only-inventory",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::instance::checking::tests::checking_preserves_player_content_and_detects_missing_or_modified_managed_files",
+            "empack-lib::engine::instance::checking::tests::accepted_overrides_are_checked_against_their_saved_identity",
+            "empack-lib::engine::instance::checking::tests::runtime_evidence_remains_owned_and_is_never_cleared_by_checking",
+            "empack-lib::engine::instance::checking::tests::interrupted_publication_and_damaged_records_are_reported_without_recovery",
+            "empack-lib::engine::instance::checking::tests::prism_checks_admit_launcher_cache_saves_but_refuse_runtime_changes",
+            "empack-lib::engine::instance::checking::tests::player_owned_changes_during_the_check_do_not_invalidate_managed_content"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Completed root-bound descriptor, current selected managed inventory, original assertions, supported attributes and accepted local overrides are checked without preparation or mutation",
+            "Seed/world data and its concurrent changes are outside publisher-byte verification; launcher cache saves use the existing semantic Prism observation while actual runtime changes refuse",
+            "Active and unconfirmed runtime evidence, damaged records and interrupted publication fail without clearing evidence or restoring files; ordinary checks resume after confirmed cleanup"
+          ]
+        },
+        {
+          "id": "UX-063.public-check",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_status::cli_instance_check_verifies_managed_content_without_repairing_player_data"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "The real CLI returns scoped human/default/details and JSON reports for a Prism instance while preserving player settings, world absence and all workspace bytes/attributes",
+            "Modified managed content and corrupt completed records return unsuccessful checks with useful structured findings; no repair is applied"
           ]
         }
       ],

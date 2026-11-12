@@ -527,6 +527,8 @@ pub enum ReleaseCommand {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum InstanceCommand {
+    /// Verify installed managed content and saved ownership without repairing files
+    Check(InstanceCheckArgs),
     /// Resume an exact pending release with verified manual file associations.
     Continue {
         /// Associate exact missing content with its release file key
@@ -780,6 +782,20 @@ pub struct CheckArgs {
     #[arg(long, conflicts_with = "json")]
     pub details: bool,
     /// Emit a structured report, including useful findings before a failed check
+    #[arg(long)]
+    pub json: bool,
+    /// Hide temporary progress
+    #[arg(long)]
+    pub quiet: bool,
+}
+
+/// Local installed-content checks, without repair, downloads or runtime execution.
+#[derive(Debug, Clone, Default, Args)]
+pub struct InstanceCheckArgs {
+    /// Show successful checks and player-owned entries
+    #[arg(long, conflicts_with = "json")]
+    pub details: bool,
+    /// Emit one structured report, including useful findings before failure
     #[arg(long)]
     pub json: bool,
     /// Hide temporary progress
@@ -1041,6 +1057,9 @@ impl Commands {
             self,
             Self::Status { json: true, .. }
                 | Self::Check(CheckArgs { json: true, .. })
+                | Self::Instance {
+                    command: InstanceCommand::Check(InstanceCheckArgs { json: true, .. })
+                }
                 | Self::Update(UpdateArgs { json: true, .. })
                 | Self::Migrate(MigrationArgs { json: true, .. })
                 | Self::Build(BuildArgs { json: true, .. })

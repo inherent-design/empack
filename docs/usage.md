@@ -94,6 +94,7 @@ Missing manual downloads can be saved after approval. The command reports the ex
 | `instance options`                               | Inspect/change persistent optional choices                                                 |
 | `instance rollback`                              | Return managed content to a retained completed release                                     |
 | `instance launch -- PROGRAM ARGS...`             | Verify completed content and run a locally selected runtime under an instance lease        |
+| `instance check`                                 | Verify managed files, accepted overrides and saved state without repair                    |
 | `instance inspect`                               | Show the completed release, saved choices and retained rollback releases                   |
 | `instance subscribe` / `trust`                   | Enroll a channel and manage explicitly trusted publisher keys                              |
 | `instance check-updates`                         | Authenticate and save a channel observation without installing content                     |
@@ -106,6 +107,8 @@ Instances default to snapshots. Channel following, publisher trust and offline l
 Instance commands preserve worlds, operator data and unowned content. Modified managed files produce a conflict unless a bound explicit resolution is provided. A rollback changes managed pack content, not gameplay history.
 
 A file conflict names the affected path and explains the available choices. `--preserve PATH` keeps an existing file as a local override; `--replace PATH` accepts the release version or its requested removal; `--merge PATH=FILE` uses a merged file you prepared. These paths are relative to `game/` or `.minecraft/`, so use `config/settings.txt`, not `game/config/settings.txt`. A missing file cannot be preserved or merged. Follow the named instance command to resolve conflicts before launch; `instance launch` does not accept conflict decisions. See [file ownership and decisions](design/instances.md#configuration-and-mutable-data) for the policy.
+
+`instance check` verifies the completed release, managed file bytes and supported attributes, accepted overrides, layout and saved subscription state. It does not repair, download, launch, update a channel or clear recovery evidence. Seed files and initialized world content are player-owned and are not traversed or compared with publisher bytes. An active or unconfirmed managed runtime prevents a successful check; stop it and recheck, and inspect any remaining recovery evidence before acknowledging it. Use `--details` for individual checks, `--json` for the structured result, or `--quiet` to hide progress. Required failures return an error after reporting useful findings. This does not prove startup or gameplay compatibility.
 
 `instance inspect` shows the installed pack, game directory, exact release, saved options, local overrides and rollback history. An update check shows the signed offer before approval. Saving it records the publisher's update number without installing files; that record remains if installation is later declined or fails. Installation has its own preview and approval.
 

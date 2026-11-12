@@ -21,6 +21,7 @@ use std::{
     path::Path,
 };
 
+pub mod checking;
 mod conflicts;
 #[cfg(test)]
 mod publication_tests;
@@ -58,6 +59,12 @@ impl InstanceLayout {
         match self {
             Self::Game => "game",
             Self::Prism => ".minecraft",
+        }
+    }
+    fn marker(self) -> &'static [u8] {
+        match self {
+            Self::Prism => b"empack-prism-layout-v1\n",
+            Self::Game => b"empack-game-layout-v1\n",
         }
     }
     fn target(self, path: PortableRelPath) -> ManagedPath {
@@ -326,6 +333,21 @@ fn project_files(
     }
     Ok(files)
 }
+fn validate_consumer_inventory(
+    layout: InstanceLayout,
+    incoming: &BTreeMap<ManagedPath, ReleaseFile>,
+) -> Result<()> {
+    if layout == InstanceLayout::Prism {
+        for file in incoming.values() {
+            ensure!(
+                !file.destination.eq_ignore_ascii_case("icon.png")
+                    || file.policy == FilePolicy::Seed,
+                "Prism rewrites game-root icon.png before preparation; the selected release must publish it as seed (policies: {{icon.png: seed}} in empack.bindings.yml). Rebuild and publish a corrected release; a conflict override cannot authorize managed icon ownership"
+            );
+        }
+    }
+    Ok(())
+}
 pub(super) fn read_optional(
     root: &ProjectReadRoot,
     snapshot: &NativeSnapshot,
@@ -372,6 +394,23 @@ pub fn inspect_optional(
     limits: SnapshotLimits,
     cancel: &Cancellation,
 ) -> Result<Option<(InstanceRecord, DecodedRelease)>> {
+    let captured = capture_completed(selected_root, release, &recovery, limits, cancel)?;
+    Ok(captured.map(|capture| (capture.record, capture.release)))
+}
+/// A coherent read set, without preparation or mutation authority.
+struct CompletedInstance {
+    root: ProjectReadRoot,
+    snapshot: NativeSnapshot,
+    record: InstanceRecord,
+    release: DecodedRelease,
+}
+fn capture_completed(
+    selected_root: &Path,
+    release: Option<&str>,
+    recovery: &RecoveryReader,
+    limits: SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<Option<CompletedInstance>> {
     let root = ProjectReadRoot::open(selected_root)?;
     let _guard = recovery.enter(&root)?;
     let snapshot = root.capture(
@@ -407,7 +446,12 @@ pub fn inspect_optional(
         "Retained release descriptor changed"
     );
     root.revalidate(&snapshot, cancel)?;
-    Ok(Some((record, decoded)))
+    Ok(Some(CompletedInstance {
+        root,
+        snapshot,
+        record,
+        release: decoded,
+    }))
 }
 
 /// Capture precisely the previous and incoming inventories. Unrelated game data is not read.
@@ -684,15 +728,7 @@ pub(super) fn plan(
         .map(|(key, value)| ChoiceSelection { key, value })
         .collect();
     let mut incoming = project_files(release, side, layout, &choices)?;
-    if layout == InstanceLayout::Prism {
-        for file in incoming.values() {
-            ensure!(
-                !file.destination.eq_ignore_ascii_case("icon.png")
-                    || file.policy == FilePolicy::Seed,
-                "Prism rewrites game-root icon.png before preparation; the selected release must publish it as seed (policies: {{icon.png: seed}} in empack.bindings.yml). Rebuild and publish a corrected release; a conflict override cannot authorize managed icon ownership"
-            );
-        }
-    }
+    validate_consumer_inventory(layout, &incoming)?;
     let (initialized_worlds, retired_world_targets, updated_snapshot) = worlds::protect(
         &root,
         layout,
@@ -979,10 +1015,7 @@ pub(super) fn plan(
     if let Some(profile) = prism_profile {
         documents.insert(ManagedPath::PrismProfile, profile);
     }
-    let marker: &[u8] = match layout {
-        InstanceLayout::Prism => b"empack-prism-layout-v1\n",
-        InstanceLayout::Game => b"empack-game-layout-v1\n",
-    };
+    let marker = layout.marker();
     if let Some(bytes) = read_optional(&root, &snapshot, &layout_marker, cancel)? {
         ensure!(
             bytes == marker && previous.is_some(),

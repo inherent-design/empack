@@ -43,6 +43,7 @@ pub enum CheckState {
     Failed,
     Unverified,
     Reference,
+    PlayerOwned,
 }
 #[derive(Debug, Serialize)]
 pub struct CheckFinding {
@@ -82,6 +83,17 @@ struct Inspection {
     workspace: Option<WorkspaceSnapshot>,
     observed: BTreeMap<(DependencyKey, FileSlot), CheckedContent>,
 }
+impl CheckFinding {
+    pub(in crate::engine) fn failure(subject: impl Into<String>, error: &anyhow::Error) -> Self {
+        Self {
+            subject: subject.into(),
+            state: CheckState::Failed,
+            required: true,
+            message: format!("{error:#}").chars().take(8192).collect(),
+            diagnostic: Some(Diagnostic::from_error(error, DiagnosticPhase::Verification)),
+        }
+    }
+}
 impl Inspection {
     fn finding(
         &mut self,
@@ -107,16 +119,9 @@ impl Inspection {
         });
     }
     fn failed(&mut self, subject: impl Into<String>, error: anyhow::Error) {
-        self.report.findings.push(CheckFinding {
-            subject: subject.into(),
-            state: CheckState::Failed,
-            required: true,
-            message: format!("{error:#}").chars().take(8192).collect(),
-            diagnostic: Some(Diagnostic::from_error(
-                &error,
-                DiagnosticPhase::Verification,
-            )),
-        });
+        self.report
+            .findings
+            .push(CheckFinding::failure(subject, &error));
         if self.failure.is_none() {
             self.failure = Some(error);
         }
