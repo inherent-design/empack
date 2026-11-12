@@ -93,8 +93,53 @@ class BootstrapTests(unittest.TestCase):
             offset += 4
             actual.append(result.stdout[offset:offset + length].decode("utf-8"))
             offset += length
-        self.assertEqual(actual, args)
         self.assertEqual(result.stdout[offset:], data)
+        # Keep the literal-argv assertion below. This independent, nonshipping
+        # probe distinguishes JVM ingress from the shipping Java/native handoff;
+        # observing a file route must not turn a broken literal route into a pass.
+        observations = [{"route": "literal", "argv": actual, "status": result.returncode}]
+        with tempfile.TemporaryDirectory(prefix="empack argument ingress ") as temporary:
+            invocation = Path(temporary) / "invocation space.json"
+            fixture_arguments = [
+                "--engine-version", "0.8.5-beta", "--engine", str(self.engine),
+                "--", "--fixture-argv", *args]
+            invocation.write_text(json.dumps(fixture_arguments, ensure_ascii=False), encoding="utf-8")
+            classpath = os.pathsep.join([str(JAR), str(ROOT / "target/test-classes")])
+            command = [JAVA, "-cp", classpath, "design.inherent.empack.bootstrap.FixtureMain"]
+            cli = ["arguments-from-cli", *fixture_arguments]
+            file = ["arguments-from-file", str(invocation)]
+            variants = [("jvm-cli", cli, None), ("utf8-file", file, None)]
+            if os.name != "nt":
+                c_locale = dict(os.environ, LANG="C", LC_ALL="C")
+                variants.extend([("jvm-cli-C-locale", cli, c_locale),
+                                 ("utf8-file-C-locale", file, c_locale)])
+            for route, arguments, environment in variants:
+                probe = subprocess.run([*command, *arguments], env=environment, input=data,
+                                       capture_output=True, timeout=20)
+                observation = {"route": route, "status": probe.returncode}
+                try:
+                    decoded = next(line for line in probe.stderr.splitlines()
+                                   if line.startswith(b"UTF8_ARGUMENTS="))
+                    observation["jvm_arguments"] = json.loads(decoded.removeprefix(b"UTF8_ARGUMENTS="))
+                    count = struct.unpack(">I", probe.stdout[:4])[0]
+                    position, values = 4, []
+                    if count != len(args):
+                        raise ValueError("unexpected argument count")
+                    for _ in range(count):
+                        length = struct.unpack(">I", probe.stdout[position:position + 4])[0]
+                        position += 4
+                        values.append(probe.stdout[position:position + length].decode("utf-8"))
+                        position += length
+                    observation.update(argv=values, input_preserved=probe.stdout[position:] == data)
+                except (ValueError, struct.error, UnicodeError, StopIteration):
+                    observation["error"] = "probe did not return the fixture argument record"
+                observations.append(observation)
+        print(json.dumps({"scope": "argument-file feasibility; C-locale observations are supplemental",
+                          "observations": observations}), flush=True)
+        self.assertEqual(actual, args, "Literal JVM transport differs from the original Unicode arguments")
+        self.assertEqual(observations[2].get("argv"), args)
+        self.assertEqual(observations[2]["status"], 7)
+        self.assertTrue(observations[2].get("input_preserved"))
 
     def test_newer_local_engine_does_not_replace_requested_version(self):
         result = self.invoke("--engine-version", "0.8.4-beta", "--engine", str(self.engine),

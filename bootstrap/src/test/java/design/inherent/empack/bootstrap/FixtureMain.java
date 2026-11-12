@@ -2,13 +2,30 @@ package design.inherent.empack.bootstrap;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.util.Collections;
 
-/** Nonshipping harness for the same archive/catalog implementation production uses. */
+/** Nonshipping archive/cache harness and argument-boundary feasibility probe. */
 public final class FixtureMain {
     public static void main(String[] args) throws Exception {
-        if (args[0].equals("unpack")) {
+        if (args[0].equals("arguments-from-file") || args[0].equals("arguments-from-cli")) {
+            // Feasibility probe only: controlled fixture input bypasses the
+            // JVM launcher's argv decoding, then uses the shipping handoff.
+            // This is not a production argument-file parser or authority.
+            String[] decoded;
+            if (args[0].equals("arguments-from-file")) {
+                try (java.io.Reader input = Files.newBufferedReader(Paths.get(args[1]), StandardCharsets.UTF_8)) {
+                    decoded = new com.google.gson.Gson().fromJson(input, String[].class);
+                }
+            } else {
+                decoded = java.util.Arrays.copyOfRange(args, 1, args.length);
+            }
+            System.err.write(("UTF8_ARGUMENTS=" + new com.google.gson.Gson().toJson(decoded) + "\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            System.exit(Main.run(decoded));
+        } else if (args[0].equals("unpack")) {
             Platform platform = args[1].equals("current") ? Platform.current()
                     : new Platform(args[1], args[1].contains("windows") ? "empack.exe" : "empack",
                             args[1].contains("windows") ? "zip" : "tar.gz");
