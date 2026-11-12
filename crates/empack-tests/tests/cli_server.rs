@@ -519,6 +519,18 @@ fn cli_server_java_probe_failures_retire_before_followup_launch() {
     server.preserved();
     server.configure("", "java.specification.version = 21\n", 0, 0);
     server.successful(server.program.as_os_str());
+    server.configure("", "java.specification.version = 21\n", 0, 130);
+    let output = server
+        .launch(&["--yes"], server.program.as_os_str())
+        .assert()
+        .code(EmpackExitCode::Interrupted.as_i32())
+        .stderr(contains("Runtime interrupted"))
+        .get_output()
+        .clone();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Error:"));
+    server.preserved();
+    server.configure("", "java.specification.version = 21\n", 0, 0);
+    server.successful(server.program.as_os_str());
 }
 
 #[test]
@@ -629,6 +641,18 @@ fn cli_generated_server_scripts_preserve_java_selection_and_classified_status() 
         }
         server.preserved();
     }
+    // The unchanged generated entry point invokes the real JAR and selected
+    // native product. Runtime interruption must survive both parent processes.
+    server.configure("", "java.specification.version = 21\n", 0, 130);
+    let output = server
+        .script(false, true)
+        .assert()
+        .code(EmpackExitCode::Interrupted.as_i32())
+        .stderr(contains("Runtime interrupted"))
+        .get_output()
+        .clone();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Error:"));
+    server.preserved();
     assert_eq!(
         snapshot(&server.instance.dir().join(".empack-consumer")),
         bootstrap

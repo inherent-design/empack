@@ -34,6 +34,7 @@ mod retention;
 mod root_state;
 pub use creation::{PreparedCreationRecovery, PreparedRootCreation};
 pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryKind, RecoveryStatus};
+pub use root_state::UnassociatedState;
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 

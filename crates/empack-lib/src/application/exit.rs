@@ -24,6 +24,24 @@ impl EmpackExitCode {
 }
 
 pub fn classify_error(error: &Error) -> EmpackExitCode {
+    use crate::engine::diagnostics::{Diagnostic, RecoveryClassification};
+    // An interrupt can be retained beneath a failed cleanup or uncertain result.
+    // The completed operation's recovery facts take precedence over that input.
+    if find_chain_error::<Diagnostic>(error).is_some_and(|diagnostic| {
+        matches!(
+            diagnostic.recovery,
+            RecoveryClassification::Required
+                | RecoveryClassification::InspectRecovery
+                | RecoveryClassification::PartiallyCompleted
+        )
+    }) {
+        return EmpackExitCode::General;
+    }
+    if find_chain_error::<super::process_runtime::RuntimeExit>(error)
+        .is_some_and(|exit| exit.is_interrupted())
+    {
+        return EmpackExitCode::Interrupted;
+    }
     if find_chain_error::<super::process_runtime::Interrupted>(error).is_some() {
         return EmpackExitCode::Interrupted;
     }
@@ -145,11 +163,33 @@ mod tests {
             "unknown build target inside a template",
             "failed to download appears in user data",
             "no results found for query: a diagnostic",
+            "Runtime exited with exit status: 130",
         ] {
             assert_eq!(
                 classify_error(&anyhow::anyhow!(message)),
                 EmpackExitCode::General
             );
+        }
+    }
+
+    #[test]
+    fn completed_recovery_facts_take_precedence_over_cancellation() {
+        use crate::engine::diagnostics::{
+            Diagnostic, DiagnosticCode, DiagnosticPhase, RecoveryClassification,
+        };
+        for recovery in [
+            RecoveryClassification::Required,
+            RecoveryClassification::InspectRecovery,
+            RecoveryClassification::PartiallyCompleted,
+        ] {
+            let mut diagnostic = Diagnostic::new(
+                DiagnosticCode::RuntimeRecoveryRequired,
+                DiagnosticPhase::Execution,
+            );
+            diagnostic.recovery = recovery;
+            let error = Error::new(super::super::process_runtime::Interrupted).context(diagnostic);
+            assert_eq!(classify_error(&error), EmpackExitCode::General);
+            assert!(format!("{error:#}").contains("Operation interrupted"));
         }
     }
 }

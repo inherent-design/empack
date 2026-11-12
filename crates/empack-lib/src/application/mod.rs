@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod diagnostics;
 pub mod engine_host;
 pub mod env;
 pub mod exit;
@@ -17,3 +18,4 @@ pub use exit::{EmpackExitCode, classify_error};
 
 pub mod process_runtime;
 mod recovery_guidance;
+mod shell;

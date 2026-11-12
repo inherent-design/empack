@@ -14,6 +14,39 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 #[error("Operation interrupted")]
 pub struct Interrupted;
 
+/// A completed instance runtime's status, after retirement and ownership cleanup.
+/// Build tools and Java probes use their own failure policies.
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimeExit(pub std::process::ExitStatus);
+impl RuntimeExit {
+    pub fn is_interrupted(self) -> bool {
+        if self.0.code() == Some(130) {
+            return true;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            self.0.signal() == Some(libc::SIGINT)
+        }
+        #[cfg(windows)]
+        {
+            // STATUS_CONTROL_C_EXIT: the Windows console interruption status.
+            // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/596a1078-e883-4972-9bbc-49e60bebca55
+            self.0.code().map(|code| code as u32) == Some(0xC000_013A)
+        }
+    }
+}
+impl std::fmt::Display for RuntimeExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_interrupted() {
+            write!(f, "Runtime interrupted ({})", self.0)
+        } else {
+            write!(f, "Instance runtime exited with {}", self.0)
+        }
+    }
+}
+impl std::error::Error for RuntimeExit {}
+
 /// Only CreateProcess failure proves that no Windows child needs retirement.
 #[cfg(windows)]
 #[derive(Debug, thiserror::Error)]

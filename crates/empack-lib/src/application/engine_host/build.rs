@@ -75,6 +75,7 @@ pub async fn build_with_local_files(
 mod assistance;
 pub(super) mod browser;
 mod profiles;
+mod text;
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -132,9 +133,9 @@ async fn build_with_inputs(
         let report = profiles::explain(&workspace, args, &request)?;
         session.display().status().message(
             &(if args.json {
-                serde_json::to_string_pretty(&report)?
+                crate::terminal::json_text(&report)?
             } else {
-                profiles::text(&report)
+                profiles::text(&report)?
             }),
         );
         return Ok(());
@@ -442,54 +443,9 @@ async fn finish_once(
     }
     .build()
     .context("Missing build preview")?;
-    session.display().status().info(&format!(
-        "Build for Minecraft {} ({:?})",
-        view.runtime.minecraft.as_str(),
-        view.runtime.loader,
-    ));
-    session.display().status().info(&format!(
-        "Requested optional content: {:?}; mrpack conversion: {:?}; source evidence: {:?}",
-        view.request().optional,
-        view.request().mrpack_optional,
-        view.request().evidence,
-    ));
-    for output in &view.outputs {
-        session.display().status().info(&format!(
-            "build {:?}: dist/{}; optional content: {:?}",
-            output.target,
-            output.artifact.as_str(),
-            view.request().optional_for(output.target)
-        ));
-    }
+    session.display().status().message(&text::preview(view));
     if let Some(cleanup) = &view.cleanup {
         show_changes(session, &cleanup.files)?;
-    }
-    if view.needs_network {
-        session
-            .display()
-            .status()
-            .info("This build requires verified network acquisition");
-    }
-    if view.runs_installer {
-        session
-            .display()
-            .status()
-            .info("This build executes the selected runtime installer in private staging");
-    }
-    for input in &view.content {
-        // AcquisitionKey contains only logical dependency and slot names.
-        session.display().status().info(&format!(
-            "content {}: {:?} {:?}",
-            input_selector(&input.key),
-            input.kind,
-            view.file_names().get(&input.key)
-        ));
-    }
-    if !view.unresolved.is_empty() {
-        session.display().status().warning(&format!(
-            "{} content obligations require verified supplied files",
-            view.unresolved.len()
-        ));
     }
     if let Preparation::NeedsInput(pending) = prepared {
         if session.config().app_config().dry_run {
@@ -498,12 +454,15 @@ async fn finish_once(
             );
             return Ok(false);
         }
-        session.display().status().info("The build remains unpublished; saving retains its recipe and verified files for continuation");
+        session.display().status().info("No archive has been written. Save this build to continue after supplying the missing files.");
         if !approve(session, "Save pending build")? {
             return Ok(false);
         }
         let saved = cancellable(session, engine.suspend_build(*pending)).await?;
-        session.display().status().info(&format!("Saved pending build with {} verified files; continue after supplying the missing downloads",saved.retained_files));
+        session
+            .display()
+            .status()
+            .info(&text::saved(saved.retained_files));
         return Err(PendingBuildSaved { saved: saved.saved }.into());
     }
     let Preparation::Ready(prepared) = prepared else {
@@ -517,7 +476,7 @@ async fn finish_once(
         published = true;
         for artifact in &receipt.artifacts {
             if artifact.requires_platform_association() {
-                session.display().status().warning("Platform export requires upload to a platform project and installation through its project/version interface for updates. Direct archive import remains a snapshot; no platform association was created");
+                session.display().status().warning("For platform updates, publish this archive to the platform project and install that published version. Importing the file directly creates a fixed snapshot.");
             }
             if let Some(hosting) = &artifact.modrinth_hosting {
                 for blocked in &hosting.blocked_downloads {
@@ -539,11 +498,12 @@ async fn finish_once(
                 artifact.bytes
             ));
         }
-        Ok(format!(
-            "Built {} verified distributions; removed {} obsolete artifacts",
-            receipt.artifacts.len(),
-            receipt.removed_artifacts.len()
-        ))
+        let count = receipt.artifacts.len();
+        let mut summary = format!("Built {count} {}", if count == 1 { "distribution" } else { "distributions" });
+        if !receipt.removed_artifacts.is_empty() {
+            summary.push_str(&format!("; removed {} obsolete artifacts", receipt.removed_artifacts.len()));
+        }
+        Ok(summary)
     })
     .await?;
     Ok(published)
@@ -575,9 +535,9 @@ pub(super) async fn save_execution_input(
     }
     for need in input.requirements() {
         session.display().status().warning(&format!(
-            "Missing content {}: {:?}",
+            "{}: {}",
             input_selector(&need.key),
-            need.kind
+            text::requirement(need.kind)
         ));
     }
     if !approve(session, "Save pending build")? {
@@ -587,9 +547,9 @@ pub(super) async fn save_execution_input(
         .take_continuation()
         .context("Build continuation was already taken")?;
     let saved = cancellable(session, engine.suspend_build(pending)).await?;
-    session.display().status().info(&format!(
-        "Saved pending build with {} verified files; resume with build --continue",
-        saved.retained_files
-    ));
+    session
+        .display()
+        .status()
+        .info(&text::saved(saved.retained_files));
     Err(PendingBuildSaved { saved: saved.saved }.into())
 }

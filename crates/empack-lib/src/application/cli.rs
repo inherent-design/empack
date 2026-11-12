@@ -200,19 +200,19 @@ impl CliConfig {
 /// Read-only catalog assessment and presentation, independent of author updates.
 #[derive(Args, Debug, Default, Clone)]
 pub struct OutdatedArgs {
-    /// Exact explicit dependency keys; omitted means all author roots
+    /// Direct dependency names from empack.yml; omit to check all
     #[arg(value_name = "DEPENDENCY")]
     pub dependencies: Vec<String>,
-    /// Fail after reporting incomplete assessment of the selected scope
+    /// Return an error if the update report is incomplete
     #[arg(long)]
     pub strict: bool,
-    /// Emit the full versioned evidence report as JSON
+    /// Print the complete report as JSON
     #[arg(long, conflicts_with = "details")]
     pub json: bool,
-    /// Include held/manual rows and full candidate identities in text output
+    /// Show held/manual dependencies and detailed version information
     #[arg(long)]
     pub details: bool,
-    /// Suppress provisional progress on stderr; retain the report and errors
+    /// Hide progress messages
     #[arg(long)]
     pub quiet: bool,
     /// Catalog release policy; exact pins remain exact
@@ -460,13 +460,13 @@ pub struct CommandInputRequired(pub &'static str);
 /// Native instance commands are separate from author dependency updates.
 #[derive(Debug, Clone, Default, clap::Args)]
 pub struct InstanceConflictArgs {
-    /// Keep edited bytes as an explicit local deviation (release-relative path)
+    /// Keep your file as a local override; use the path shown in the conflict options
     #[arg(long = "preserve", value_name = "PATH")]
     pub preserve: Vec<String>,
-    /// Replace an exact conflicting file with selected release content, or retire it
+    /// Use the release version of a conflicting file, or remove it if no longer included
     #[arg(long = "replace", value_name = "PATH")]
     pub replace: Vec<String>,
-    /// Apply a separately prepared merge result as a local deviation
+    /// Use your prepared merged file as a local override
     #[arg(long = "merge", value_name = "PATH=FILE")]
     pub merge: Vec<String>,
 }

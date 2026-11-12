@@ -601,14 +601,14 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                 let stderr = String::from_utf8(output.stderr).unwrap();
                 if fails {
                     assert!(
-                        stderr.contains("Dependency assessment is incomplete"),
+                        stderr.contains("Some update checks could not finish"),
                         "{stderr}"
                     );
                 } else {
                     assert!(!stderr.contains("Error:"), "{stderr}");
                 }
                 assert!(
-                    stderr.contains("Assessing"),
+                    stderr.contains("Checking"),
                     "assessment progress did not reach stderr: {stderr}"
                 );
                 let stdout = String::from_utf8(output.stdout).unwrap();
@@ -654,28 +654,33 @@ fn journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_ed
                     );
                 } else {
                     assert!(
-                        stdout.contains(&format!("Assessment complete: {manual_only}")),
+                        stdout.starts_with(if manual_only {
+                            "Checked 1 dependency\n"
+                        } else {
+                            "Checked 2 dependencies\n"
+                        }),
                         "{stdout}"
                     );
-                    assert!(stdout.contains("local [local]: manual (policy: any)"));
-                    assert!(stdout.contains(
-                        "Candidate compatibility (including retained inventory): not-assessed"
-                    ));
-                    assert!(stdout.contains("Declared incompatibility list complete: false"));
+                    assert_eq!(
+                        stdout.contains("these results are incomplete"),
+                        !manual_only
+                    );
+                    assert!(stdout.contains("local: updates must be checked manually"));
+                    assert!(
+                        stdout.contains("Compatibility with the rest of the pack: not checked")
+                    );
+                    assert!(stdout.contains("Incompatibility information: incomplete"));
                     if !manual_only {
-                        assert!(
-                            stdout
-                                .contains("renderer-alias [renderer-alias]: unknown (policy: any)")
-                        );
-                        assert!(stdout.contains("current: modrinth:Project1@Version1"));
-                        for column in [
-                            "permitted",
-                            "Minecraft/loader-compatible candidate",
-                            "upstream",
-                        ] {
-                            assert!(stdout.contains(&format!("{column}: unknown")));
-                        }
-                        assert!(stdout.contains("provider-unavailable"));
+                        assert!(stdout.contains("renderer-alias: could not check for updates"));
+                        assert!(stdout.contains("Current: modrinth:Project1@Version1"));
+                        assert!(stdout.contains("The provider could not be reached."));
+                    }
+                    for internal in [
+                        "author roots",
+                        "Assessment complete:",
+                        "provider-unavailable",
+                    ] {
+                        assert!(!stdout.contains(internal), "{stdout}");
                     }
                 }
                 assert_eq!(
@@ -802,7 +807,7 @@ fn journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams() {
         if quiet {
             assert!(stderr.is_empty(), "{stderr}");
         } else {
-            assert!(stderr.contains("Assessing 1 of 2 author roots"), "{stderr}");
+            assert!(stderr.contains("Checking 1 of 2 dependencies"), "{stderr}");
         }
         assert_eq!(snapshot(root).files, before);
     }
@@ -814,19 +819,21 @@ fn journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams() {
         .stdout
         .clone();
     let text = String::from_utf8(output).unwrap();
-    assert!(text.contains("manual: 1"), "{text}");
-    assert!(text.contains("Scope: 1 of 2 author roots"));
-    assert!(
-        !text.contains("local [local]"),
-        "compact view repeated a manual row"
+    assert_eq!(
+        text.trim_end(),
+        "Checked 1 of 2 dependencies\n\nUpdates:\n    Available    0\n    Held         0\n    Unknown      0\n    Manual       1\n    Conflicted   0\n    Unavailable  0\n\nlocal: updates must be checked manually"
     );
     for (keys, code, diagnostic) in [
         (
             vec!["missing"],
             empack_lib::EmpackExitCode::NotFound.as_i32(),
-            "Assessment key is not an explicit dependency: missing",
+            "Not a direct dependency in empack.yml: missing",
         ),
-        (vec!["local", "local"], 2, "Repeated assessment key: local"),
+        (
+            vec!["local", "local"],
+            2,
+            "Dependency listed more than once: local",
+        ),
     ] {
         let output = offline_command(root)
             .arg("outdated")

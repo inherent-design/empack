@@ -1029,8 +1029,12 @@ fn cli_profile_explanation_preserves_missing_and_stale_lock_states() {
             .args(["build", "--explain", "--profile", "curated"])
             .assert()
             .success()
-            .stdout(predicates::str::contains("updates: empack (profile)"))
-            .stdout(predicates::str::contains("Recipient empack required: true"));
+            .stdout(predicates::str::contains(
+                "empack updates (channel enrollment required)",
+            ))
+            .stdout(predicates::str::contains(
+                "The included bootstrap finds or downloads empack",
+            ));
         fixture
             .command()
             .args(["--yes", "build", "--profile", "curated"])

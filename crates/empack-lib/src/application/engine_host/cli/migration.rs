@@ -134,7 +134,7 @@ impl MigrationOptions {
             session
                 .display()
                 .status()
-                .message(&serde_json::to_string_pretty(&report)?);
+                .message(&crate::terminal::json_text(&report)?);
         } else {
             for line in report.text_lines() {
                 session.display().status().info(&line);

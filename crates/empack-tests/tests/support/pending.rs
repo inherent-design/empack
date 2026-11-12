@@ -115,10 +115,10 @@ pub fn corrupt_record(invocation: &Path, root: &Path, state: &Path, kind: &str) 
                 .clone();
             let text = String::from_utf8(output).unwrap();
             assert!(
-                text.contains("unavailable") && text.contains(diagnostic),
+                text.contains("cannot read saved work") && text.contains(diagnostic),
                 "{text}"
             );
-            assert!(text.contains("Metadata only"), "{text}");
+            assert!(!text.contains("Next: empack pending resume"), "{text}");
             assert_eq!(snapshot(state), preserved);
             assert_eq!(snapshot(invocation), author);
             assert_eq!(cache.exists().then(|| snapshot(&cache)), cached);

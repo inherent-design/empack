@@ -26,7 +26,9 @@ mod conflicts;
 mod publication_tests;
 pub mod subscription;
 mod worlds;
-pub use conflicts::{ConflictChoice, ConflictResolution, FileIdentity, LocalOverride};
+pub use conflicts::{
+    ConflictChoice, ConflictResolution, FileIdentity, InstanceConflict, LocalOverride,
+};
 
 /// Snapshot selection and publisher verification both retain exact validated bytes.
 pub enum SelectedRelease {
@@ -173,11 +175,22 @@ impl InstanceRecord {
     }
 }
 /// Every requested decision is exposed before content staging or live mutation.
-#[derive(Debug, thiserror::Error)]
-#[error("Instance has unresolved file conflicts: {files:?}")]
+#[derive(Debug)]
 pub struct InstanceConflicts {
-    pub files: Vec<(String, empack_core::instance::FileConflict)>,
+    pub action: InstanceAction,
+    pub authenticated_release: bool,
+    pub files: Vec<InstanceConflict>,
 }
+impl std::fmt::Display for InstanceConflicts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Instance has unresolved file conflicts")?;
+        for file in &self.files {
+            write!(f, "\n  {:?}: {}", file.path, file.explanation())?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for InstanceConflicts {}
 
 pub(super) struct InstancePlan {
     root: ProjectReadRoot,
@@ -888,7 +901,17 @@ pub(super) fn plan(
                 removals.insert(target.clone());
             }
             FileDecision::Conflict(conflict) => {
-                conflicts.push((ProjectLayout::path(&target)?.as_str().into(), conflict))
+                let destination = incoming
+                    .get(&target)
+                    .or_else(|| old_files.get(&target))
+                    .context("Conflicting file has no release destination")?;
+                conflicts.push(InstanceConflict {
+                    path: ProjectLayout::path(&target)?.as_str().into(),
+                    destination: destination.destination.as_str().into(),
+                    reason: conflict,
+                    existing_file: matches!(current, ObservedPath::File(_)),
+                    incoming_policy: new.as_ref().map(|file| file.policy),
+                });
             }
             FileDecision::Unchanged => {
                 // A matching content address does not excuse checking a changed source assertion.
@@ -903,7 +926,14 @@ pub(super) fn plan(
         resolutions.is_empty(),
         "Conflict decision names an unselected destination"
     );
-    ensure!(conflicts.is_empty(), InstanceConflicts { files: conflicts });
+    ensure!(
+        conflicts.is_empty(),
+        InstanceConflicts {
+            action,
+            authenticated_release: !matches!(&selected, SelectedRelease::Snapshot(_)),
+            files: conflicts,
+        }
+    );
     let mut history = previous
         .as_ref()
         .map(|p| p.history.clone())

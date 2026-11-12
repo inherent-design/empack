@@ -100,7 +100,21 @@ async fn native_build_host_preserves_preview_decline_and_publishes_current_bytes
     .unwrap();
     let before = snapshot(root.path());
     for (yes, dry) in [(true, true), (false, false)] {
-        run(root.path(), &args(), yes, dry).await.unwrap();
+        let (host, messages) = session(root.path(), yes, dry).record_messages();
+        build(
+            &host,
+            &args(),
+            BuildDecisions::default(),
+            BuildAcquisitions::default(),
+        )
+        .await
+        .unwrap();
+        let captured = messages.lock().unwrap().join("\n");
+        assert!(captured.contains("Build plan: Minecraft 1.21.1 (Vanilla)"));
+        assert!(captured.contains("dist/Native Pack-1.0.mrpack"));
+        assert!(captured.contains("Prism (client), bundled files, fixed snapshot"));
+        assert!(!captured.contains("Requested optional content:"));
+        assert!(!captured.contains("Recipe {"));
         assert_eq!(snapshot(root.path()), before);
     }
     run(root.path(), &args(), true, false).await.unwrap();
@@ -1336,7 +1350,11 @@ async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity
         format!("dist/{}", selected.outputs.as_slice()[0].artifact.as_str())
     );
     assert!(view["declared_manual_inputs"].is_null());
-    assert!(profiles::text(&view).contains("cli-override"));
+    assert!(
+        profiles::text(&view)
+            .unwrap()
+            .contains("Command overrides: updates")
+    );
     let mut reference_args = args;
     reference_args.delivery = Some("references".into());
     let selected = request(
@@ -1354,7 +1372,11 @@ async fn named_profiles_keep_policy_explain_without_effects_and_reject_ambiguity
         view["profiles"][0]["bootstrap"]["sha256"],
         env!("EMPACK_BOOTSTRAP_SHA256")
     );
-    assert!(profiles::text(&view).contains("no global empack installation is needed"));
+    assert!(
+        profiles::text(&view)
+            .unwrap()
+            .contains("No separate empack installation is needed.")
+    );
 }
 
 #[tokio::test]

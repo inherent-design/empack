@@ -34,6 +34,14 @@ The library's `testing` module is available to its unit tests and callers that e
 
 Do not introduce a broad session facade into the core, success-returning placeholder verifiers, deserializable approval proofs, or a second command-specific publication path. New features must contribute normalized intent, expected effects and verified postconditions. The [feature requirements](docs/design/features.md) describe the useful capabilities the implementation must provide.
 
+## Human-facing output
+
+Lead with the result, then useful changes or problems and the next action when one is needed. Write for a modpack user without knowledge of engine internals: say checking, dependencies, files and settings. Keep technical identifiers when they help locate a version, file or failed operation. Explain which saved work is affected instead of referring to an undifferentiated state.
+
+Default output should answer the command's question. Details explain the decision; structured output retains the complete machine contract. Do not print successful booleans, empty evidence lists, debug enums or a caveat paragraph after every result. Keep incomplete checks, conflicts, partial effects and required recovery visible. An available version is not proof that the whole pack works; explain a relevant limit briefly where it affects the decision. A pinned version is a deliberate choice, not an update failure.
+
+Keep shared facts in their engine/report owner and human rendering in the application adapter. Use `crate::terminal::json_text` for JSON reports sent through the display adapter; it preserves decoded values while escaping terminal controls with valid JSON syntax. Keep canonical and signed document writers separate. Reuse typed causes and shell-safe next actions rather than matching error text. Progress belongs on stderr and must finish before the final report; JSON stdout must remain parseable. Retain Unicode names, escape unsafe terminal controls, and keep plain output usable without color. Cancellation never hides a completed effect or a cleanup failure. Review actual output with representative data, narrow terminals and redirected streams, not only string assertions.
+
 ## Source and documentation
 
 Run formatting and Clippy. Document exported contracts with inputs, outcomes and limitations. Prefer comments that explain an invariant over comments that restate code. Use structured, redacted diagnostics and remove temporary debugging output.

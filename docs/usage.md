@@ -12,7 +12,7 @@ Check the exit status as well as the report. A failed command can return a usefu
 
 Run `empack --workdir ./pack status` before choosing an author, publisher or instance operation. Add `--json` for the versioned report used by library clients, or select `--context author`, `publisher` or `instance` when a directory contains more than one context.
 
-Status reads bounded control records without network requests, document rewrites, recovery or cache creation. It distinguishes missing, malformed and stale author locks and shows the human pack version, exact release, runtime and game directory when those records are available. Publisher storage is recognized but its contents are not authenticated by status. Pending records are reported as present; resuming still validates them and requests fresh approval. Interrupted publication must be inspected with `recover inspect` before live documents can be interpreted.
+Status shows the pack, runtime and lock status, followed by any problems and next commands. Missing, invalid and out-of-date locks remain distinct; `--json` also includes the exact lock-document hash. Installed instances show their release and game directory. Inspection reads bounded control records without network requests, document rewrites, recovery or cache creation. Publisher storage is recognized but its contents are not authenticated by status. Pending records are reported as present; resuming still validates them and requests fresh approval. Interrupted publication must be inspected with `recover inspect` before live documents can be interpreted.
 
 A successful status command means the inspection completed, not that its records are ready for a build or launch. In JSON schema 1, inspect `selected`, `contexts` and `findings`; `content_verified` is false. A valid author record can still have a missing, invalid or stale resolution lock. An ambiguous workspace has no automatic selection. `--context` chooses the context shown in the human report; JSON retains the other discovered contexts as well.
 
@@ -62,7 +62,9 @@ empack --yes migrate --minecraft 1.21.2 --loader fabric
 
 Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
 
-`outdated` distinguishes the locked version, policy-permitted candidate, Minecraft/loader-compatible candidate and newest observed upstream selection. Unavailable evidence is reported as unknown, not up to date. The required-dependency closure is checked separately from each row. Known incompatibility declarations also include retained selections, but the report does not decide whether their final client/server placements overlap. A limited declaration scan retains the available rows and marks its list incomplete. Candidate compatibility remains `not-assessed` until update preparation. Neither assessment nor preparation proves that configurations or gameplay will work. Use `outdated KEY…` to assess exact author roots, `--details` for held/manual rows and all candidate identities, and `--quiet` to suppress stderr progress. JSON retains full selected evidence and its scope. See [assessment semantics](design/assessment.md).
+`outdated` shows update counts, available changes and problems. A targeted check such as `outdated sodium` also shows why that dependency is kept, including an exact pin. Use `--details` for the full list, version choices and check information; `--json` retains the complete structured report. `--quiet` hides progress on stderr. Unknown results mean a check could not finish, not that a dependency is up to date.
+
+Version choices follow your Minecraft, loader, pins and release preferences. They do not establish that the whole pack works together. Empack checks required dependencies and reports known mod conflicts; update preparation checks the proposed files separately. See [assessment semantics](design/assessment.md) for the scope and limits of these checks.
 
 A migration plan leaves the author files unchanged. Applying the same command without `--plan` resolves again and requires approval of the native changes. Valid locked selections stay selected. Use `--loader-version` for an exact loader and repeat `--accept-version` for explicitly accepted alternative game versions; the candidate replaces the previous alternative list. Replacing a project requires `--replace KEY=modrinth:CANONICAL_ID` or `KEY=curseforge:NUMERIC_ID` and deliberately resets that root to compatible version policy. It does not convert configurations, worlds or private files.
 
@@ -93,6 +95,8 @@ Missing manual downloads can be saved after approval. The command reports the ex
 Instances default to snapshots. Channel following, publisher trust and offline launch policy require explicit configuration. Platform-managed packs remain under the platform updater; switching authority is deliberate. Empack tool updates are separate from pack updates.
 
 Instance commands preserve worlds, operator data and unowned content. Modified managed files produce a conflict unless a bound explicit resolution is provided. A rollback changes managed pack content, not gameplay history.
+
+A file conflict names the affected path and explains the available choices. `--preserve PATH` keeps an existing file as a local override; `--replace PATH` accepts the release version or its requested removal; `--merge PATH=FILE` uses a merged file you prepared. These paths are relative to `game/` or `.minecraft/`, so use `config/settings.txt`, not `game/config/settings.txt`. A missing file cannot be preserved or merged. Follow the named instance command to resolve conflicts before launch; `instance launch` does not accept conflict decisions. See [file ownership and decisions](design/instances.md#configuration-and-mutable-data) for the policy.
 
 ## Distribution selection
 
@@ -169,7 +173,7 @@ If publication was interrupted, inspect the selected root with the same state di
 empack --workdir ./instance --state-dir ./state recover inspect
 ```
 
-Recovery diagnostics print an inspection command retaining both selections. Inspection then prints the available commands with the operation ID. Commands are quoted for the labelled shell: POSIX shell on Unix, PowerShell on Windows. They require `empack` on PATH and do not imply approval; review the plan before confirming or adding `--yes`. Paths that cannot be represented safely retain a diagnostic asking for the original native selections instead of a lossy copyable command.
+Recovery diagnostics print an inspection command retaining both selections. Inspection then prints the available commands with the operation ID. Commands are quoted for the labelled shell: Bash/zsh on Unix, PowerShell on Windows. They require `empack` on PATH and do not imply approval; review the plan before confirming or adding `--yes`. Paths that cannot be represented safely retain a diagnostic asking for the original native selections instead of a lossy copyable command.
 
 `recover finish --operation ID` completes the verified candidate. For an interrupted publication that has not started restoring, `recover restore --operation ID` is an alternative that undoes its owned changes. Creation and an already-started restoration support finishing only. Keep both directory selections on subsequent commands. Recovery does not require valid author documents. External edits can require a decision; do not remove recovery records to force another install. Runtime recovery is separate: stop all associated processes before `instance recover-runtime --acknowledge-stopped`.
 
@@ -270,6 +274,7 @@ Use the selected workspace or intended import destination for all four workflows
 ```sh
 empack --workdir my-pack pending list
 empack --workdir my-pack pending list --json
+empack --workdir my-pack pending show OPERATION_ID
 empack --workdir my-pack pending show OPERATION_ID --json
 empack --workdir my-pack --dry-run pending resume OPERATION_ID --file EXACT_KEY=/path/to/file
 empack --workdir my-pack pending resume OPERATION_ID --file EXACT_KEY=/path/to/file
@@ -277,7 +282,7 @@ empack --workdir my-pack pending resume OPERATION_ID --downloads-dir /path/to/Do
 empack --workdir my-pack pending discard OPERATION_ID
 ```
 
-IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `build --continue`, `init --continue`, `sync --continue` and `instance continue` remain supported.
+`pending list` summarizes saved work; `pending show ID` lists the recorded files, names, sizes and checksums. Add `--json` for the complete report, including recorded download addresses. Changed or unreadable records remain visible with their diagnostic. IDs accept unique prefixes and remain bound to the selected root and saved-record bytes. List/show do not fetch content or modify state. Resume verifies supplied bytes and asks for fresh workflow approval; discard conditionally removes only the selected recipe after approval. Preview never opens browsers or scans Downloads. Exact keys, unknown metadata and bounded assistance are described in [the pending-input contract](design/pending.md). Existing `build --continue`, `init --continue`, `sync --continue` and `instance continue` remain supported.
 
 ## Generated GitHub workflows
 

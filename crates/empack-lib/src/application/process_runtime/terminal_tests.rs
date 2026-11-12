@@ -359,6 +359,9 @@ fn terminal_child_fixture() {
     loop {
         if INTERRUPTED.load(Ordering::SeqCst) {
             println!("INTERRUPTED_GRACEFULLY");
+            if std::env::var("EMPACK_PTY_INTERRUPT_STATUS").as_deref() == Ok("130") {
+                std::process::exit(130);
+            }
             return;
         }
         assert!(Instant::now() < deadline, "console input timed out");

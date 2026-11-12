@@ -82,6 +82,9 @@ fn fixture() -> (TestProject, tempfile::TempDir) {
 }
 
 fn inventory(members: &BTreeMap<String, Member>) -> String {
+    inventory_with_settings_policy(members, "seed")
+}
+fn inventory_with_settings_policy(members: &BTreeMap<String, Member>, settings: &str) -> String {
     let payload = members["release.json"].small.as_ref().unwrap();
     let descriptor: Value = serde_json::from_slice(payload).unwrap();
     assert_eq!(descriptor["schema"], 2);
@@ -120,7 +123,9 @@ fn inventory(members: &BTreeMap<String, Member>) -> String {
         assert_eq!(file["bytes"], bytes.len());
         assert_eq!(
             file["policy"],
-            if destination.starts_with("config/") {
+            if destination == "config/settings.txt" {
+                settings
+            } else if destination.starts_with("config/") {
                 "seed"
             } else {
                 "managed"
@@ -153,6 +158,140 @@ fn inventory(members: &BTreeMap<String, Member>) -> String {
     assert_eq!(members.keys().cloned().collect::<BTreeSet<_>>(), names);
     assert!(members.values().all(|member| member.mode == 0o644));
     hash(payload)
+}
+
+#[test]
+fn cli_native_seed_ownership_conflicts_explain_only_applicable_choices() {
+    let (project, host) = fixture();
+    let export = |settings| {
+        command(project.dir(), host.path())
+            .args(["--yes", "build"])
+            .assert()
+            .success();
+        let archive = assert_dist_artifact_suffix(project.dir(), "-empack-references.empack");
+        let members = distribution_inventory(&archive, "zip");
+        // Verify literal inventory, names and hashes before copying any product paths.
+        let identity = inventory_with_settings_policy(&members, settings);
+        let directory = tempfile::tempdir().unwrap();
+        for (name, member) in members {
+            put(directory.path(), &name, member.small.as_ref().unwrap());
+        }
+        (directory, identity)
+    };
+    let (initial, initial_id) = export("seed");
+    put(
+        project.dir(),
+        "empack.bindings.yml",
+        b"schema: 1\nbindings: {}\npolicies:\n  config/settings.txt: managed\n",
+    );
+    command(project.dir(), host.path())
+        .args(["--yes", "sync"])
+        .assert()
+        .success();
+    let (incoming, incoming_id) = export("managed");
+    let author = snapshot(project.dir());
+    let inputs = snapshot(incoming.path());
+    for layout in ["game", "prism"] {
+        for state in ["unchanged", "edited", "missing"] {
+            let root = tempfile::tempdir().unwrap();
+            let instance = root.path().join("instance Ω");
+            fs::create_dir(&instance).unwrap();
+            let install = |source: &Path, id: &str| {
+                let mut cmd = command(&instance, host.path());
+                cmd.args(["--yes", "instance", "install"])
+                    .arg(source.join("release.json"))
+                    .args(["--sha256", id, "--side", "client", "--layout", layout]);
+                cmd
+            };
+            install(initial.path(), &initial_id).assert().success();
+            let game = if layout == "prism" {
+                ".minecraft"
+            } else {
+                "game"
+            };
+            let target = instance.join(game).join("config/settings.txt");
+            put(
+                &instance,
+                &format!("{game}/player-sentinel"),
+                b"keep unrelated player data",
+            );
+            match state {
+                "edited" => fs::write(&target, b"user configuration").unwrap(),
+                "missing" => fs::remove_file(&target).unwrap(),
+                _ => {}
+            }
+            let before = snapshot(&instance);
+            let host_before = snapshot(host.path());
+            let output = install(incoming.path(), &incoming_id)
+                .assert()
+                .code(1)
+                .get_output()
+                .clone();
+            let text = String::from_utf8(output.stderr).unwrap();
+            assert!(text.contains("For instance install"), "{text}");
+            assert!(
+                text.contains(&format!("{game}/config/settings.txt")),
+                "{text}"
+            );
+            assert!(text.contains("previously user-owned file"), "{text}");
+            assert!(text.contains("--replace='config/settings.txt'"), "{text}");
+            assert_eq!(
+                text.contains("--preserve='config/settings.txt'"),
+                state != "missing",
+                "{text}"
+            );
+            assert_eq!(
+                text.contains("--merge='config/settings.txt=FILE'"),
+                state != "missing",
+                "{text}"
+            );
+            assert!(!text.contains("SeedOwnership"), "{text}");
+            assert_eq!(snapshot(&instance), before);
+            assert_eq!(snapshot(host.path()), host_before);
+            let expected: &[u8] = match state {
+                "unchanged" => {
+                    install(incoming.path(), &incoming_id)
+                        .args(["--preserve", "config/settings.txt"])
+                        .assert()
+                        .success();
+                    CONTENT[3].2
+                }
+                "edited" => {
+                    let merged = root.path().join("reviewed settings.txt");
+                    fs::write(&merged, b"reviewed merged settings").unwrap();
+                    install(incoming.path(), &incoming_id)
+                        .args([
+                            "--merge",
+                            &format!("config/settings.txt={}", merged.display()),
+                        ])
+                        .assert()
+                        .success();
+                    assert_eq!(fs::read(merged).unwrap(), b"reviewed merged settings");
+                    b"reviewed merged settings"
+                }
+                "missing" => {
+                    install(incoming.path(), &incoming_id)
+                        .args(["--replace", "config/settings.txt"])
+                        .assert()
+                        .success();
+                    CONTENT[3].2
+                }
+                _ => unreachable!(),
+            };
+            assert_eq!(fs::read(&target).unwrap(), expected);
+            command(&instance, host.path())
+                .args(["--yes", "instance", "repair"])
+                .assert()
+                .success();
+            assert_eq!(fs::read(&target).unwrap(), expected);
+            assert_eq!(
+                fs::read(instance.join(game).join("player-sentinel")).unwrap(),
+                b"keep unrelated player data"
+            );
+            assert_eq!(snapshot(project.dir()), author);
+            assert_eq!(snapshot(incoming.path()), inputs);
+        }
+    }
 }
 
 #[test]
@@ -427,7 +566,7 @@ fn cli_instance_repair_uses_cache_after_export_removal_and_reports_missing_conte
             .args(["--yes", "instance", "repair"])
             .assert()
             .failure()
-            .stderr(contains("ModifiedManagedFile"));
+            .stderr(contains("A pack-managed file has local changes."));
         assert_eq!(snapshot(&instance), edited);
         command(&instance, host.path())
             .args(["--yes", "instance", "repair", "--replace", "managed.txt"])
@@ -535,10 +674,25 @@ fn cli_snapshot_install_requires_explicit_ownership_in_both_layouts() {
             install("client")
                 .assert()
                 .failure()
-                .stderr(contains("UnownedDestination"));
+                .stderr(contains("without an empack ownership record"));
             assert_eq!(snapshot(&instance), before);
         }
         fs::remove_file(&managed).unwrap();
+        fs::create_dir(&managed).unwrap();
+        fs::write(managed.join("player-note"), b"keep directory content").unwrap();
+        let directory_before = snapshot(&instance);
+        let output = install("client").assert().failure().get_output().clone();
+        let diagnostic = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            diagnostic.contains("A directory is blocking a file destination"),
+            "{diagnostic}"
+        );
+        assert!(!diagnostic.contains("--replace="), "{diagnostic}");
+        assert!(!diagnostic.contains("--preserve="), "{diagnostic}");
+        assert!(!diagnostic.contains("--merge="), "{diagnostic}");
+        assert_eq!(snapshot(&instance), directory_before);
+        fs::remove_file(managed.join("player-note")).unwrap();
+        fs::remove_dir(&managed).unwrap();
         let marker = instance.join(game).join(".empack-layout");
         fs::write(&marker, format!("empack-{layout}-layout-v1\n")).unwrap();
         let before = snapshot(&instance);
@@ -905,7 +1059,7 @@ fn cli_instance_choices_retain_decisions_through_missing_content_and_conflicts()
     choose("disabled")
         .assert()
         .failure()
-        .stderr(contains("ModifiedManagedFile"));
+        .stderr(contains("A pack-managed file has local changes."));
     assert_eq!(snapshot(&instance), before);
     inspect("enabled");
     choose("disabled")

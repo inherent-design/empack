@@ -148,8 +148,15 @@ async fn shared_pending_views_and_discard_preserve_neighboring_state() {
                 serde_json::to_value(&view).unwrap()
             );
         } else {
-            assert_eq!(captured[0], view.text());
-            assert!(captured[0].contains("Metadata only"));
+            assert!(captured[0].starts_with("Saved work: 4\n"));
+            assert!(!captured[0].contains("Metadata only"));
+            for operation in &view.operations {
+                assert!(captured[0].contains(&operation.id[..12]));
+                assert!(captured[0].contains(operation.diagnostic.as_ref().unwrap()));
+                assert!(
+                    !captured[0].contains(&format!("Next: empack pending resume {}", operation.id))
+                );
+            }
         }
         for operation in &view.operations {
             execute_command_with_session(

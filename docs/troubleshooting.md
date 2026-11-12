@@ -2,6 +2,12 @@
 
 Use `empack status --json` for document and lock state, `manifest diff` for authored changes, and `build --explain` for selected outputs. These inspections do not verify installed payload bytes or prove Minecraft startup.
 
+## Saved operations need review
+
+Saved operation records retain interrupted changes and runtime ownership. They are separate from your author files, lock, Minecraft settings and disposable download cache. If empack cannot match older records safely to the current project directory, it reports the project and affected record directories and refuses the operation.
+
+Keep those directories. Use the empack version that created them to inspect unfinished work and complete or restore it where supported. If that version cannot establish the association either, preserve the records for manual recovery review. Updating mod versions does not repair this association. A separate `--state-dir` selects different operation records; it does not recover the originals or establish that bypassing them is safe for writes.
+
 ## Reference distributions
 
 New projects use referenced Modrinth, Prism and server snapshots. Modrinth archives work through a compatible launcher. Managed Prism/server exports carry the [bootstrap JAR](design/bootstrap.md), which selects their exact native empack version locally, from its cache or by verified download. Java must already be available. Preparation acquires the exact released files and stops when required inputs are missing; restricted files remain explicit verified inputs.
@@ -18,7 +24,7 @@ Empack preparation and updates preserve an existing regular file when the incomi
 
 `outdated` separates the current, policy-permitted, Minecraft/loader-compatible and upstream selections. A newer beta can match the runtime while `prefer-stable` retains a release. An exact pin remains exact. A successful partial report does not mean every root was assessed; `outdated --strict --json` gives automation a failing exit status for incomplete evidence while preserving the report.
 
-Malformed records leave their root unknown. Independent catalog checks continue under the original allowance; throttling, authorization, deadlines and transport failures stop further queries. Joint closure assessment identifies the roots blocking it. Update preparation still validates retained inventory and placements separately. Use exact-key `outdated KEY…` to limit an investigation and `--details` for held/manual rows; the full JSON report identifies its scope. Field/invariant diagnostics describe malformed eligible evidence without dumping provider responses. See [assessment semantics](design/assessment.md).
+Malformed records leave their root unknown. Independent catalog checks continue under the original allowance; throttling, authorization, deadlines and transport failures stop further queries. Joint closure assessment identifies the roots blocking it. Update preparation still validates retained inventory and placements separately. Use `outdated KEY…` to check named dependencies and `--details` for the full list and version choices; the full JSON report identifies its scope. Field/invariant diagnostics describe malformed eligible evidence without dumping provider responses. See [assessment semantics](design/assessment.md).
 
 `update --continue-independent` isolates preparation/publication conflicts after input resolution succeeds. It does not isolate catalog failures or malformed local sources that fail before a complete candidate is available. Those failures publish nothing. Use the named dependency to inspect the requested source, pin, game and loader. Do not remove dependencies merely to make a report succeed.
 

@@ -1,5 +1,18 @@
 use super::*;
 
+#[test]
+fn native_root_associations_render_untrusted_paths_as_data() {
+    let error = UnassociatedState {
+        project: "/project 日本\nfalse heading".into(),
+        records: vec!["/state\nfalse action".into()],
+    };
+    let message = error.to_string();
+    assert!(message.contains("日本\\nfalse heading"), "{message}");
+    assert!(message.contains("state\\nfalse action"), "{message}");
+    assert!(!message.contains("\nfalse heading"));
+    assert!(!message.contains("\nfalse action"));
+}
+
 // This fixture simulates a prior device assignment in host metadata. It does not
 // change the current live observation or claim an actual operating-system remount.
 fn move_state_to_prior_device(publisher: &Publisher, root: &ProjectReadRoot) -> String {
@@ -114,7 +127,16 @@ fn native_root_associations_preserve_runtime_evidence_and_refuse_unassociated_st
             publisher.lease_instance(&root).err(),
         ] {
             let error = failed.expect("unassociated ownership must not be adopted");
-            assert!(format!("{error:#}").contains("lacks persistent identity evidence"));
+            let missing = error.downcast_ref::<UnassociatedState>().unwrap();
+            assert_eq!(missing.project, root.selected());
+            assert_eq!(missing.records, [publisher.location.join(&key)]);
+            let message = format!("{error:#}");
+            assert!(message.contains("Missing directory identity:"), "{message}");
+            assert!(message.contains("Keep these records"), "{message}");
+            assert!(
+                !message.contains("--state-dir"),
+                "must not recommend bypassing recovery"
+            );
         }
         assert_eq!(directory.read("runtime.json").unwrap(), evidence);
         assert!(!directory.exists("root-identity.json"));

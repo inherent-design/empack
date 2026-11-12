@@ -103,10 +103,19 @@ fn finish_command(
         Ok(()) => EmpackExitCode::Success,
         Err(error) => {
             let code = classify_error(&error);
+            // A plain interruption is an expected terminal outcome. Retain the
+            // full error rendering whenever there is additional failure context.
+            let clean_interruption = code == EmpackExitCode::Interrupted
+                && error.chain().count() == 1
+                && (error.is::<empack_lib::application::process_runtime::Interrupted>()
+                    || error.is::<empack_lib::application::process_runtime::RuntimeExit>());
             let _ = writeln!(
                 stderr,
-                "Error: {}",
-                empack_lib::terminal::display_text(&format!("{error:#}"))
+                "{}{}",
+                if clean_interruption { "" } else { "Error: " },
+                empack_lib::terminal::display_text(&empack_lib::application::diagnostics::message(
+                    &error
+                ))
             );
             code
         }
@@ -153,7 +162,40 @@ mod tests {
         cancellation.cancel();
         let (code, stderr) = finish_after_cancel(cancellation.check());
         assert_eq!(code, EmpackExitCode::Interrupted);
-        assert_eq!(stderr, "Error: Operation interrupted\n");
+        assert_eq!(stderr, "Operation interrupted\n");
+    }
+
+    #[test]
+    fn runtime_interruption_is_visible_without_a_general_error_label() {
+        use empack_lib::application::process_runtime::RuntimeExit;
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        #[cfg(unix)]
+        let status = std::process::ExitStatus::from_raw(130 << 8);
+        #[cfg(windows)]
+        let status = std::process::ExitStatus::from_raw(130);
+        let mut stderr = Vec::new();
+        assert_eq!(
+            finish_command(Err(RuntimeExit(status).into()), &mut stderr),
+            EmpackExitCode::Interrupted
+        );
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            format!("Runtime interrupted ({status})\n")
+        );
+        // Extra failure context is never discarded merely because interruption
+        // also occurred. This includes errors returned after a completed effect.
+        let error: empack_lib::Result<()> = Err(RuntimeExit(status).into());
+        let error = error
+            .unwrap_err()
+            .context("Runtime retired, but terminal cleanup failed");
+        let mut stderr = Vec::new();
+        finish_command(Err(error), &mut stderr);
+        let diagnostic = String::from_utf8(stderr).unwrap();
+        assert!(diagnostic.starts_with("Error: Runtime retired, but terminal cleanup failed:"));
+        assert!(diagnostic.contains(&status.to_string()));
     }
 
     #[test]

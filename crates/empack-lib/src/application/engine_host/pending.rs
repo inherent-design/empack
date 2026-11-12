@@ -29,11 +29,13 @@ async fn report(
     })
     .await
 }
-fn show(session: &dyn Session, view: &PendingReport, json: bool) -> Result<()> {
+mod text;
+
+fn show(session: &dyn Session, view: &PendingReport, json: bool, details: bool) -> Result<()> {
     session.display().status().message(&if json {
-        serde_json::to_string_pretty(view)?
+        crate::terminal::json_text(view)?
     } else {
-        view.text()
+        text::render(view, details)
     });
     Ok(())
 }
@@ -43,7 +45,7 @@ pub(in crate::application) async fn dispatch(
 ) -> Result<()> {
     let view = report(session).await?;
     match command {
-        PendingCommand::List { json } => show(session, &view, json),
+        PendingCommand::List { json } => show(session, &view, json, false),
         PendingCommand::Show { id, json } => {
             let selected = view.select(&id)?.clone();
             show(
@@ -54,6 +56,7 @@ pub(in crate::application) async fn dispatch(
                     operations: vec![selected],
                 },
                 json,
+                true,
             )
         }
         PendingCommand::Discard { id } => {
@@ -272,7 +275,11 @@ async fn resume(
 async fn discard(session: &dyn Session, selected: PendingOperation) -> Result<()> {
     let (invocation, root) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
-    session.display().status().info(&format!("Discard {:?} recipe {}; retained content, downloads, completed installations and recovery journals remain",selected.kind,selected.id));
+    session.display().status().info(&format!(
+        "Discard saved {} {}? Downloaded files, installed packs and recovery records will be kept.",
+        text::kind(selected.kind),
+        selected.id
+    ));
     match selected.kind {
         PendingKind::Build | PendingKind::Instance => {
             let engine = engine(session.config().app_config(), &invocation)?;

@@ -1,4 +1,4 @@
-//! Shared presentation over existing continuation records; never execution authority.
+//! Read-only facts from existing continuation records; never execution authority.
 use super::{
     continuation_store::{self as store, Kind},
     documents::DocumentCodec,
@@ -104,59 +104,6 @@ impl PendingReport {
             "Pending ID is ambiguous; supply more characters"
         );
         Ok(matching[0])
-    }
-    pub fn text(&self) -> String {
-        let mut lines = vec![format!("Pending inputs in {}", self.root.display())];
-        for op in &self.operations {
-            lines.push(format!("{} {:?}: {}", &op.id[..12], op.kind, op.state));
-            if let Some(message) = &op.diagnostic {
-                lines.push(message.clone());
-            }
-            for input in &op.inputs {
-                lines.push(format!(
-                    "  {}: {}; filename {}; bytes {}; {}; digests {}",
-                    input.key,
-                    input.name.as_deref().unwrap_or("unknown name"),
-                    input.filename.as_deref().unwrap_or("unknown"),
-                    input.bytes.map_or("unknown".into(), |n| n.to_string()),
-                    input.verification,
-                    if input.digests.is_empty() {
-                        "unknown".into()
-                    } else {
-                        input
-                            .digests
-                            .iter()
-                            .map(|(kind, value)| format!("{kind}:{value}"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    }
-                ));
-                lines.push(format!(
-                    "    provider {}; permitted page {}; candidate {}",
-                    input.provider_selection.as_ref().map_or_else(
-                        || "unknown".into(),
-                        |selected| format!(
-                            "{}:{}@{}",
-                            selected.provider, selected.project, selected.selection
-                        )
-                    ),
-                    input
-                        .download_page
-                        .as_deref()
-                        .unwrap_or("unknown (resolve explicitly with --open-downloads)"),
-                    input
-                        .supplied_candidate
-                        .as_ref()
-                        .map_or("unknown".into(), |p| p.display().to_string())
-                ));
-            }
-            lines.push(format!("Next in this root: empack {}", op.next.join(" ")));
-        }
-        if self.operations.is_empty() {
-            lines.push("No saved pending operations".into());
-        }
-        lines.push("Metadata only; continuation revalidates recipes, trust and supplied bytes before fresh approval.".into());
-        lines.join("\n")
     }
 }
 fn empty(id: String, kind: PendingKind, root: &Path) -> PendingOperation {

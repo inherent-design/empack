@@ -907,7 +907,7 @@ async fn prism_channel_updates_require_seed_icons_from_native_producer() {
                 "{message}"
             );
             assert!(
-                !message.contains("SeedOwnership"),
+                !error.is::<crate::engine::instance::InstanceConflicts>(),
                 "must fail before offering conflict decisions"
             );
             assert_eq!(

@@ -163,51 +163,121 @@ fn optional_policy(policy: &OptionalPolicy) -> Value {
         } => json!({"mode":"resolve", "choices":choices, "use_defaults":use_defaults}),
     }
 }
-pub(super) fn text(report: &Value) -> String {
+fn optional_text(value: &Value) -> Result<String> {
+    let policy = match value["mode"].as_str() {
+        Some("preserve") => OptionalPolicy::Preserve,
+        Some("resolve") => OptionalPolicy::Resolve {
+            choices: serde_json::from_value(value["choices"].clone())?,
+            use_defaults: value["use_defaults"]
+                .as_bool()
+                .context("Missing optional default policy")?,
+        },
+        _ => anyhow::bail!("Missing optional policy in build explanation"),
+    };
+    Ok(super::text::optional(&policy))
+}
+
+pub(super) fn text(report: &Value) -> Result<String> {
+    use crate::terminal::display_line;
     let mut lines = vec![format!(
-        "Build configuration for {} {} (lock: {})",
-        report["pack"].as_str().unwrap(),
-        report["version"].as_str().unwrap(),
-        report["lock"].as_str().unwrap()
+        "Build plan: {} {}",
+        display_line(report["pack"].as_str().unwrap()),
+        display_line(report["version"].as_str().unwrap())
     )];
+    let lock = match report["lock"].as_str().unwrap() {
+        "current" => "current",
+        "missing" => "not found",
+        _ => "needs sync",
+    };
+    lines.push(format!("Lock: {lock}"));
     for profile in report["profiles"].as_array().unwrap() {
+        lines.push(String::new());
+        let origin = match profile["selection"].as_str().unwrap() {
+            "default-profile" => "default profile",
+            "consumer-profile" => "profile selected by consumer",
+            "ad-hoc" => "ad hoc recipe",
+            _ => "selected profile",
+        };
         lines.push(format!(
-            "{} [{}] → {}",
-            profile["name"].as_str().unwrap(),
-            profile["selection"].as_str().unwrap(),
-            profile["output"].as_str().unwrap()
+            "{} ({origin}) -> {}",
+            display_line(profile["name"].as_str().unwrap()),
+            display_line(profile["output"].as_str().unwrap())
         ));
-        for field in ["consumer", "delivery", "environment", "updates", "format"] {
-            lines.push(format!(
-                "  {field}: {} ({})",
-                profile["recipe"][field].as_str().unwrap(),
-                profile["origins"][field].as_str().unwrap()
-            ));
+        let selected = crate::engine::documents::recipe::decode_profile(&profile["recipe"])?;
+        lines.push(format!("  {}", super::text::recipe(selected.recipe)));
+        lines.push(format!(
+            "  Optional files: {}",
+            optional_text(&profile["optional_policy"])?
+        ));
+        let overrides: Vec<_> = profile["origins"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, origin)| origin.as_str() == Some("cli-override"))
+            .map(|(field, _)| display_line(field).into_owned())
+            .collect();
+        if !overrides.is_empty() {
+            lines.push(format!("  Command overrides: {}", overrides.join(", ")));
         }
-        lines.push(format!(
-            "  Optional content: {}",
-            profile["optional_policy"]
-        ));
-        lines.push(format!(
-            "  Recipient empack required: {}; Java: {}",
-            profile["recipient_empack_required"], profile["java"]
-        ));
+        if let Some(preferred) = profile["java"]["preferred_major"].as_u64() {
+            let supported = profile["java"]["supported_majors"]
+                .as_array()
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_u64)
+                        .map(|major| major.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            lines.push(if supported.is_empty() {
+                format!("  Java: {preferred} preferred; no compatibility range established")
+            } else {
+                format!("  Java: {preferred} preferred; supported majors: {supported}")
+            });
+            if let Some(recommended) = profile["java"]["recommended_major"]
+                .as_u64()
+                .filter(|major| *major != preferred)
+            {
+                lines.push(format!("  Recommended Java: {recommended}"));
+            }
+        }
         if let Some(version) = profile["bootstrap"]["engine_version"].as_str() {
-            lines.push(format!("  Included Java bootstrap selects empack {version}; no global empack installation is needed."));
+            lines.push(format!("  The included bootstrap finds or downloads empack {}. No separate empack installation is needed.", display_line(version)));
+        } else if profile["recipient_empack_required"] == true {
+            lines.push("  Installing this release requires empack.".into());
         }
-        lines.push(format!(
-            "  {}",
-            profile["runtime_preparation"].as_str().unwrap()
-        ));
-        lines.push(format!(
-            "  {}",
-            profile["author_acquisition"].as_str().unwrap()
-        ));
+        if let Some(preparation) = profile["runtime_preparation"]
+            .as_str()
+            .filter(|text| *text != "consumer-defined")
+        {
+            lines.push(format!("  {}", display_line(preparation)));
+        }
     }
-    lines.push(format!(
-        "Requested optional choices: {}; known manual inputs: {}",
-        report["optional_policy"], report["declared_manual_inputs"]
-    ));
-    lines.push(report["input_verification"].as_str().unwrap().into());
-    lines.join("\n")
+    if let Some(manual) = report["declared_manual_inputs"]
+        .as_array()
+        .filter(|files| !files.is_empty())
+    {
+        lines.extend([
+            String::new(),
+            "Manual downloads recorded in the lock:".into(),
+        ]);
+        for file in manual {
+            if let Some(file) = file.as_str() {
+                lines.push(format!("  {}", display_line(file)));
+            }
+        }
+    }
+    if report["clean"] == true {
+        lines.push(
+            "Obsolete artifacts are removed only after every new output passes verification."
+                .into(),
+        );
+    }
+    if report["lock"] != "current" {
+        lines.push("Next: empack sync".into());
+    }
+    lines.push("Inputs have not been downloaded or checked by this explanation.".into());
+    Ok(lines.join("\n"))
 }

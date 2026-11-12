@@ -40,11 +40,13 @@ fn inspect(root: &Path, context: Option<&str>) -> (Value, String) {
             .unwrap(),
         root.canonicalize().unwrap()
     );
-    assert!(outputs[1].contains("Metadata inspection only; content bytes have not been verified."));
-    // Both renderings must retain findings and actionable argument sequences.
+    // Human output keeps actionable findings; machine-only codes remain in JSON.
     for finding in report["findings"].as_array().unwrap() {
-        assert!(outputs[1].contains(finding["code"].as_str().unwrap()));
-        assert!(outputs[1].contains(finding["message"].as_str().unwrap()));
+        let code = finding["code"].as_str().unwrap();
+        if !matches!(code, "context-not-ready" | "lock-not-current") {
+            assert!(outputs[1].contains(finding["message"].as_str().unwrap()));
+        }
+        assert!(!outputs[1].contains(&format!("{code}:")));
         let next: Vec<_> = finding["next"]
             .as_array()
             .unwrap()
@@ -52,10 +54,7 @@ fn inspect(root: &Path, context: Option<&str>) -> (Value, String) {
             .map(|part| part.as_str().unwrap())
             .collect();
         if !next.is_empty() {
-            assert!(outputs[1].contains(&format!(
-                "Next in this workspace: empack {}",
-                next.join(" ")
-            )));
+            assert!(outputs[1].contains(&format!("Next: empack {}", next.join(" "))));
         }
     }
     (report, outputs.remove(1))
@@ -120,7 +119,7 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
             assert!(contexts.is_empty());
             assert!(report["selected"].is_null());
             assert!(finding(&report, "workspace-empty"));
-            assert!(text.contains("Next in this workspace: empack init --help"));
+            assert!(text.contains("Next: empack init --help"));
             continue;
         }
         assert_eq!(report["selected"], "author");
@@ -132,7 +131,7 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
             assert!(author["lock"].is_null());
             assert!(author["name"].is_null());
             assert!(finding(&report, "context-not-ready"));
-            assert!(text.contains("Author: Invalid"));
+            assert!(text.contains("Project: invalid"));
             continue;
         }
         assert_eq!(author["state"], "valid");
@@ -144,16 +143,15 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
             if state == "stale" { "1.21.2" } else { "1.21.1" }
         );
         assert_eq!(author["loader"], "Vanilla");
-        assert!(text.contains("Author: Valid"));
-        assert!(text.contains("Pack: Verification Pack 1.0.0"));
+        assert!(text.starts_with("Project: Verification Pack 1.0.0\n"));
         let label = match state {
-            "missing" => "Missing",
-            "invalid" => "Invalid",
-            "stale" => "Stale",
-            "valid" => "Valid",
+            "missing" => "not found",
+            "invalid" => "invalid",
+            "stale" => "needs sync",
+            "valid" => "current",
             _ => unreachable!(),
         };
-        assert!(text.contains(&format!("Resolution lock: {label}")));
+        assert!(text.contains(&format!("Lock: {label}")));
         assert_eq!(finding(&report, "lock-not-current"), state != "valid");
         if state == "valid" {
             let digest: String = Sha256::digest(fs::read(root.join("empack.lock")).unwrap())
@@ -161,10 +159,11 @@ fn cli_status_distinguishes_author_and_lock_states_without_repair() {
                 .map(|byte| format!("{byte:02x}"))
                 .collect();
             assert_eq!(author["exact"], digest);
-            assert!(text.contains(&format!("Lock document SHA-256: {digest}")));
+            assert!(!text.contains(&digest));
+            assert!(text.contains("File contents have not been checked."));
         } else {
             assert!(author["exact"].is_null());
-            assert!(text.contains("Next in this workspace: empack --dry-run sync"));
+            assert!(text.contains("Next: empack --dry-run sync"));
         }
     }
 }
@@ -175,7 +174,7 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
     let root = project.dir();
     // Explicit selection distinguishes missing contexts from an undetected workspace.
     for (context, label) in [
-        ("author", "Author"),
+        ("author", "Project"),
         ("instance", "Instance"),
         ("publisher", "Publisher"),
     ] {
@@ -185,7 +184,7 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
         assert_eq!(report["contexts"][0]["state"], "missing");
         assert!(finding(&report, "context-not-ready"));
         assert!(!finding(&report, "workspace-empty"));
-        assert!(text.contains(&format!("{label}: Missing")));
+        assert!(text.contains(&format!("{label}: not found")));
     }
     fs::write(root.join("empack.yml"), b"schema: [invalid\n").unwrap();
     fs::create_dir(root.join(".empack")).unwrap();
@@ -197,9 +196,9 @@ fn cli_status_requires_explicit_context_for_mixed_roots() {
     )
     .unwrap();
     let expected = [
-        ("author", "Author", "invalid", "Invalid"),
-        ("instance", "Instance", "invalid", "Invalid"),
-        ("publisher", "Publisher", "unavailable", "Unavailable"),
+        ("author", "Project", "invalid", "invalid"),
+        ("instance", "Instance", "invalid", "invalid"),
+        ("publisher", "Publisher", "unavailable", "not verified"),
     ];
     for selected in [None, Some("author"), Some("instance"), Some("publisher")] {
         let (report, text) = inspect(root, selected);

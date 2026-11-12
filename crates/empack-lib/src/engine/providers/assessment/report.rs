@@ -165,7 +165,7 @@ pub struct AssessmentSummary {
     pub conflicted: usize,
 }
 impl ObservedVersion {
-    fn same_selection(&self, other: &Self) -> bool {
+    pub(crate) fn same_selection(&self, other: &Self) -> bool {
         self.provider == other.provider
             && self.project == other.project
             && self.selection == other.selection
@@ -239,9 +239,9 @@ impl Serialize for UpdateAssessment {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssessmentInputError {
-    #[error("Assessment key is not an explicit dependency: {}", .0.as_str())]
+    #[error("Not a direct dependency in empack.yml: {}", .0.as_str())]
     Missing(empack_core::model::DependencyKey),
-    #[error("Repeated assessment key: {}", .0.as_str())]
+    #[error("Dependency listed more than once: {}", .0.as_str())]
     Duplicate(empack_core::model::DependencyKey),
 }
 impl AssessmentRequest {

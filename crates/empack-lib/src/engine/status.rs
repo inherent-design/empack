@@ -70,59 +70,6 @@ impl WorkspaceStatus {
             next: next.iter().map(|s| (*s).into()).collect(),
         });
     }
-    pub fn text(&self) -> String {
-        let mut lines = vec![format!("Workspace: {}", self.root.display())];
-        for context in &self.contexts {
-            if self
-                .selected
-                .is_some_and(|selected| selected != context.context)
-            {
-                continue;
-            }
-            lines.push(format!("{:?}: {:?}", context.context, context.state));
-            if let Some(name) = &context.name {
-                lines.push(format!(
-                    "Pack: {name} {}",
-                    context
-                        .version
-                        .as_deref()
-                        .unwrap_or("(version unavailable)")
-                ));
-            }
-            if let Some(exact) = &context.exact {
-                let label = if context.context == WorkspaceContext::Author {
-                    "Lock document SHA-256"
-                } else {
-                    "Exact release"
-                };
-                lines.push(format!("{label}: {exact}"));
-            }
-            if let Some(lock) = context.lock {
-                lines.push(format!("Resolution lock: {lock:?}"));
-            }
-            if let Some(game) = &context.game_directory {
-                lines.push(format!("Game directory: {game}"));
-            }
-            if let Some(mc) = &context.minecraft {
-                lines.push(format!(
-                    "Minecraft: {mc}; loader: {}",
-                    context.loader.as_deref().unwrap_or("unknown")
-                ));
-            }
-            lines.push(format!("Updates: {}", context.update_owner));
-        }
-        for finding in &self.findings {
-            lines.push(format!("{}: {}", finding.code, finding.message));
-            if !finding.next.is_empty() {
-                lines.push(format!(
-                    "Next in this workspace: empack {}",
-                    finding.next.join(" ")
-                ));
-            }
-        }
-        lines.push("Metadata inspection only; content bytes have not been verified.".into());
-        lines.join("\n")
-    }
 }
 fn empty(context: WorkspaceContext) -> ContextStatus {
     ContextStatus {

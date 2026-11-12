@@ -142,6 +142,34 @@ fn build_roundtrip(
     );
     let key = input["key"].as_str().unwrap();
     let id = operation["id"].as_str().unwrap();
+    let saved_before = snapshot(host.path());
+    let listing = command(&project, &state)
+        .args(["pending", "list"])
+        .output()
+        .unwrap();
+    assert!(listing.status.success(), "{listing:?}");
+    assert!(listing.stderr.is_empty());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    assert!(listing.starts_with("Saved work: 1\n"));
+    assert!(listing.contains(&format!("build {}: saved", &id[..12])));
+    assert!(!listing.contains("digests"));
+    let detail = command(&project, &state)
+        .args(["pending", "show", id])
+        .output()
+        .unwrap();
+    assert!(detail.status.success(), "{detail:?}");
+    assert!(detail.stderr.is_empty());
+    let detail = String::from_utf8(detail.stdout).unwrap();
+    assert!(detail.contains(&format!("File: {key}")));
+    assert!(detail.contains("Filename: manual.zip"));
+    assert!(detail.contains("Size: 7 bytes"));
+    assert!(
+        detail.contains("sha256: 239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5")
+    );
+    assert!(detail.contains(&format!("Next: empack pending resume {id}")));
+    assert!(!detail.contains("unknown"));
+    assert_eq!(snapshot(host.path()), saved_before);
+    assert_eq!(snapshot(project.dir()).files, before);
     let supplied = host.path().join("renamed download.bin");
     // Same length as the selected payload: digest verification, not length or name.
     fs::write(&supplied, b"INVALID").unwrap();
@@ -629,7 +657,7 @@ fn journey_pending_missing_records_and_invalid_ids_do_not_create_storage() {
         .args(["pending", "list"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("No saved pending operations"));
+        .stdout(predicates::str::contains("No saved work."));
     for action in ["show", "resume", "discard"] {
         for (id, diagnostic) in [
             ("1234", "No pending operation matches"),

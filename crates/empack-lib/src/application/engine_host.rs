@@ -601,6 +601,7 @@ pub mod cli;
 
 pub(super) mod instance;
 pub(super) mod release;
+mod status_text;
 
 /// Metadata status uses the same report for embedded clients and the CLI.
 pub async fn status(session: &dyn Session, context: Option<String>, json: bool) -> Result<()> {
@@ -632,9 +633,9 @@ pub async fn status(session: &dyn Session, context: Option<String>, json: bool) 
     })
     .await?;
     let text = if json {
-        serde_json::to_string_pretty(&*report)?
+        crate::terminal::json_text(&*report)?
     } else {
-        report.text()
+        status_text::render(&report)
     };
     session.display().status().message(&text);
     Ok(())

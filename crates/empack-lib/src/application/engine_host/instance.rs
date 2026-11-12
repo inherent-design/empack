@@ -826,7 +826,10 @@ async fn launch(
 }
 
 fn require_runtime_success(status: std::process::ExitStatus) -> Result<()> {
-    ensure!(status.success(), "Instance runtime exited with {status}");
+    ensure!(
+        status.success(),
+        super::super::process_runtime::RuntimeExit(status)
+    );
     Ok(())
 }
 
@@ -1070,7 +1073,7 @@ mod tests {
 
     #[test]
     fn managed_runtime_exit_uses_empack_classification() {
-        for code in [0, 7] {
+        for code in [0, 7, 130] {
             // A real child supplies the same status value used by the launch receipt.
             // This tests CLI classification, not Java or generated-script acceptance.
             #[cfg(windows)]
@@ -1087,17 +1090,57 @@ mod tests {
             match require_runtime_success(status) {
                 Ok(()) => assert_eq!(code, 0),
                 Err(error) => {
-                    assert_eq!(code, 7);
                     assert_eq!(
                         crate::application::classify_error(&error),
-                        crate::application::EmpackExitCode::General
+                        if code == 130 {
+                            crate::application::EmpackExitCode::Interrupted
+                        } else {
+                            crate::application::EmpackExitCode::General
+                        }
                     );
-                    assert_eq!(
-                        format!("{error:#}"),
-                        format!("Instance runtime exited with {status}")
-                    );
+                    assert!(format!("{error:#}").contains(&status.to_string()));
                 }
             }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn signalled_runtime_retains_signal_and_interrupt_classification() {
+        use std::os::unix::process::ExitStatusExt;
+        for signal in [libc::SIGINT, libc::SIGTERM] {
+            let status = std::process::Command::new("/bin/sh")
+                .args(["-c", &format!("kill -{signal} $$")])
+                .status()
+                .unwrap();
+            assert_eq!(status.signal(), Some(signal));
+            let error = require_runtime_success(status).unwrap_err();
+            let retained = error
+                .downcast_ref::<crate::application::process_runtime::RuntimeExit>()
+                .unwrap();
+            assert_eq!(retained.0, status);
+            assert_eq!(
+                crate::application::classify_error(&error),
+                if signal == libc::SIGINT {
+                    crate::application::EmpackExitCode::Interrupted
+                } else {
+                    crate::application::EmpackExitCode::General
+                }
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_runtime_control_status_is_not_an_arbitrary_failure() {
+        use std::os::windows::process::ExitStatusExt;
+        for (raw, expected) in [
+            (0xC000_013A, crate::application::EmpackExitCode::Interrupted),
+            (0xC000_0005, crate::application::EmpackExitCode::General),
+        ] {
+            let error =
+                require_runtime_success(std::process::ExitStatus::from_raw(raw)).unwrap_err();
+            assert_eq!(crate::application::classify_error(&error), expected);
         }
     }
 }

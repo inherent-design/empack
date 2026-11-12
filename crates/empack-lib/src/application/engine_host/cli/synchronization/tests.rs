@@ -1224,10 +1224,24 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
     )
     .unwrap();
     let operation = &shared.operations[0];
-    let text = shared.text();
+    let read_before = snapshot(root.path());
+    let (host, messages) = session(root.path(), false).record_messages();
+    crate::application::execute_command_with_session(
+        crate::application::Commands::Pending {
+            command: crate::application::cli::PendingCommand::Show {
+                id: operation.id.clone(),
+                json: false,
+            },
+        },
+        &host,
+    )
+    .await
+    .unwrap();
+    let text = messages.lock().unwrap().join("\n");
     assert!(text.contains("one/primary"));
-    assert!(text.contains("curseforge:123@456"));
+    assert!(text.contains("curseforge project 123, version 456"));
     assert!(text.contains("sha512:"));
+    assert_eq!(snapshot(root.path()), read_before);
     let downloads = root.path().join("downloads");
     fs::create_dir(&downloads).unwrap();
     fs::write(downloads.join("renamed.bin"), b"second").unwrap();

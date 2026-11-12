@@ -2,6 +2,42 @@
 use super::*;
 use empack_core::{digest::ContentId, files::FilePermissions, instance::FileConflict};
 
+/// Observed conflict facts for presentation. Available choices are not grants;
+/// preparation must still bind and validate every explicit decision.
+#[derive(Debug)]
+pub struct InstanceConflict {
+    pub path: String,
+    pub destination: String,
+    pub reason: FileConflict,
+    pub existing_file: bool,
+    pub incoming_policy: Option<empack_core::instance::FilePolicy>,
+}
+impl InstanceConflict {
+    pub fn explanation(&self) -> &'static str {
+        match self.reason {
+            FileConflict::UnownedDestination => {
+                "A file already exists here without an empack ownership record."
+            }
+            FileConflict::ModifiedManagedFile => "A pack-managed file has local changes.",
+            FileConflict::WrongKind => "A directory is blocking a file destination.",
+            FileConflict::SeedOwnership => {
+                "The release asks to manage a previously user-owned file."
+            }
+        }
+    }
+    pub fn can_preserve(&self) -> bool {
+        self.reason != FileConflict::WrongKind && self.existing_file
+    }
+    pub fn can_replace(&self) -> bool {
+        self.reason != FileConflict::WrongKind
+            && (self.existing_file || self.incoming_policy.is_some())
+    }
+    pub fn can_merge(&self) -> bool {
+        self.can_preserve()
+            && self.incoming_policy == Some(empack_core::instance::FilePolicy::Managed)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictChoice {
     Preserve,
@@ -198,4 +234,75 @@ pub(super) fn capture_merge(
     };
     root.revalidate(&snapshot, cancel)?;
     Ok(verification::content(observed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use empack_core::instance::FilePolicy;
+
+    #[test]
+    fn reported_choices_match_the_actual_resolver_for_observed_conflicts() {
+        let content = |id| FileContent {
+            content: ContentId::from_sha256([id; 32]),
+            bytes: 1,
+            permissions: FilePermissions {
+                readonly: false,
+                executable: false,
+            },
+        };
+        for previous_policy in [None, Some(FilePolicy::Managed), Some(FilePolicy::Seed)] {
+            let previous = previous_policy.map(|policy| InstalledFile {
+                baseline: content(1),
+                policy,
+            });
+            for current in [
+                ObservedPath::Absent,
+                ObservedPath::Directory,
+                ObservedPath::File(content(2)),
+            ] {
+                for incoming_policy in [None, Some(FilePolicy::Managed), Some(FilePolicy::Seed)] {
+                    let incoming = incoming_policy.map(|policy| DesiredFile {
+                        content: content(3),
+                        policy,
+                    });
+                    let FileDecision::Conflict(reason) = plan_file(
+                        previous.as_ref(),
+                        &current,
+                        incoming.as_ref(),
+                        verification::native_capabilities(),
+                    ) else {
+                        continue;
+                    };
+                    let report = InstanceConflict {
+                        path: "game/config/settings".into(),
+                        destination: "config/settings".into(),
+                        reason,
+                        existing_file: matches!(&current, ObservedPath::File(_)),
+                        incoming_policy,
+                    };
+                    for (choice, advertised) in [
+                        (ConflictChoice::Preserve, report.can_preserve()),
+                        (ConflictChoice::Replace, report.can_replace()),
+                        (
+                            ConflictChoice::Merge {
+                                file: "prepared-local-input".into(),
+                            },
+                            report.can_merge(),
+                        ),
+                    ] {
+                        let outcome = resolve(
+                            &choice,
+                            Some(&content(4)),
+                            reason,
+                            &report.destination,
+                            &current,
+                            incoming.as_ref(),
+                        );
+                        assert_eq!(advertised, outcome.is_ok(), "{report:?} / {choice:?}");
+                    }
+                }
+            }
+        }
+    }
 }

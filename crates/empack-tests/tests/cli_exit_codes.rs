@@ -50,9 +50,13 @@ fn add_local(project: &TestProject) {
 #[test]
 fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     let project = TestProject::new();
+    let name = "Verification 日本 café 🦀 \u{202e} Name";
     fs::write(
         project.dir().join("empack.yml"),
-        include_str!("../../../tests/fixtures/authoring/empack.yml"),
+        include_str!("../../../tests/fixtures/authoring/empack.yml").replace(
+            "name: Verification Pack",
+            &format!("name: {}", serde_json::to_string(name).unwrap()),
+        ),
     )
     .unwrap();
     assert!(output(&project, &["--yes", "sync"]).status.success());
@@ -108,7 +112,19 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
                     let value: serde_json::Value = serde_json::from_slice(&result.stdout)
                         .unwrap_or_else(|error| panic!("{error}: {context}"));
                     assert!(value.is_object(), "{context}");
+                    if *route == ["status", "--json"] {
+                        assert_eq!(value["contexts"][0]["name"], name, "{context}");
+                    } else if *route == ["manifest", "check", "--json"]
+                        || *route == ["manifest", "diff", "--json"]
+                        || *route == ["build", "--explain", "--json"]
+                    {
+                        assert_eq!(value["pack"], name, "{context}");
+                    }
                     assert!(!result.stdout.contains(&0x1b), "{context}");
+                    assert!(
+                        !String::from_utf8_lossy(&result.stdout).contains('\u{202e}'),
+                        "{context}"
+                    );
                     assert!(
                         !String::from_utf8_lossy(&result.stdout).contains(secret),
                         "{context}"
@@ -148,6 +164,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         let stderr = String::from_utf8(result.stderr).unwrap();
         assert!(!stdout.contains(secret));
         assert!(!stderr.contains(secret));
+        assert!(!stdout.contains('\u{202e}'));
         assert_eq!(
             stdout.contains("Logger initialized successfully"),
             stream == "stdout"
@@ -382,7 +399,7 @@ fn cli_interrupt_exits_130() {
         "{diagnostic}"
     );
     assert!(
-        diagnostic.contains("Error: Operation interrupted"),
+        diagnostic.contains("Operation interrupted"),
         "Cancellation must reach executable error rendering: {diagnostic}"
     );
     drop(connection);
@@ -715,7 +732,7 @@ fn cli_offline_launch_requires_policy_and_refuses_damaged_content_or_revoked_tru
     let refused = unavailable(launch(true));
     assert!(!refused.status.success(), "{refused:?}");
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("ModifiedManagedFile"),
+        String::from_utf8_lossy(&refused.stderr).contains("A pack-managed file has local changes."),
         "{refused:?}"
     );
     assert_eq!(snapshot(&instance), damaged);
@@ -1065,10 +1082,18 @@ fn cli_runtime_cancellation_retains_cleanup_diagnostic_and_explicit_recovery() {
             "{remaining:?}"
         );
         runtime.pid = None;
-        assert_eq!(status.code(), Some(130));
+        assert_eq!(
+            status.code(),
+            Some(if interfere_with_cleanup {
+                EmpackExitCode::General.as_i32()
+            } else {
+                EmpackExitCode::Interrupted.as_i32()
+            })
+        );
         let diagnostic = fs::read_to_string(stderr.path()).unwrap();
         assert!(diagnostic.contains("Operation interrupted"), "{diagnostic}");
         if interfere_with_cleanup {
+            assert!(diagnostic.contains("Error:"), "{diagnostic}");
             assert!(
                 diagnostic.contains("Runtime evidence changed before retirement"),
                 "{diagnostic}"
@@ -1173,6 +1198,7 @@ fn cli_pty_instance_launch_restores_console_after_input_interrupt_and_failure() 
     for (mode, status) in [
         ("input", 0),
         ("interrupt", 0),
+        ("interrupt-130", 130),
         ("failure", 1),
         ("cancel", 130),
     ] {
@@ -1214,6 +1240,11 @@ exit "$result"
                 "/usr/bin/env",
                 "EMPACK_PTY_ROLE=child",
             ])
+            .arg(if mode == "interrupt-130" {
+                "EMPACK_PTY_INTERRUPT_STATUS=130"
+            } else {
+                "EMPACK_PTY_INTERRUPT_STATUS=0"
+            })
             .arg(driver.program())
             .args(["--exact", CHILD, "--nocapture", "--test-threads=1"]);
         for (name, value) in product.get_envs() {
@@ -1243,9 +1274,14 @@ exit "$result"
         match mode {
             "input" => terminal.send_line("stop").unwrap(),
             "failure" => terminal.send_line("fail").unwrap(),
-            "interrupt" => {
+            "interrupt" | "interrupt-130" => {
                 terminal.send(ControlCode::EndOfText).unwrap();
                 terminal.expect("INTERRUPTED_GRACEFULLY").unwrap();
+                if mode == "interrupt-130" {
+                    terminal
+                        .expect("Runtime interrupted (exit status: 130)")
+                        .unwrap();
+                }
             }
             "cancel" => {
                 assert!(

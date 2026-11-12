@@ -1,6 +1,6 @@
 //! Read-only author assessments use the same provider policy and captured documents as updates.
 use super::*;
-use crate::engine::providers::{ClosureLimits, ObservedVersion, UpdateAssessment};
+use crate::engine::providers::{ClosureLimits, UpdateAssessment};
 
 pub async fn outdated(
     session: &dyn Session,
@@ -30,11 +30,13 @@ pub async fn outdated(
             .await
     });
     let mut progress = super::super::progress::ProgressDisplay::new(session, options.quiet);
-    progress.update(&format!(
-        "Assessing {} of {} author roots",
-        selected.roots.len(),
-        selected.total_roots
-    ));
+    if !selected.roots.is_empty() {
+        progress.update(&format!(
+            "Checking {} of {} dependencies",
+            selected.roots.len(),
+            selected.total_roots
+        ));
+    }
     tokio::pin!(work);
     let mut observing = true;
     let report = loop {
@@ -67,11 +69,9 @@ fn observe(
             key,
             index,
             total,
-            records,
-        } => format!("Catalog {index}/{total}: {key} ({records} records observed)"),
-        AssessmentProgress::RequiredClosure { roots } => {
-            format!("Checking required provider closure for {roots} roots")
-        }
+            records: _,
+        } => format!("Checking {index} of {total} dependencies: {key}"),
+        AssessmentProgress::RequiredClosure { .. } => "Checking dependency requirements".to_owned(),
     };
     progress.update(&message);
 }
@@ -84,147 +84,24 @@ fn present(
     details: bool,
 ) -> Result<()> {
     let output = if json {
-        serde_json::to_string_pretty(report)?
+        crate::terminal::json_text(report)?
     } else {
-        text(report, details)?
+        text::render(report, details)
     };
     session.display().status().message(&output);
     ensure!(
         !strict || report.is_complete(),
-        "Dependency assessment is incomplete; inspect the reported reasons"
+        "Some update checks could not finish; see the reported problems"
     );
     Ok(())
 }
-fn version(value: Option<&ObservedVersion>) -> String {
-    value.map_or_else(
-        || "unknown".into(),
-        |value| {
-            format!(
-                "{}:{}@{}{}",
-                value.provider,
-                value.project,
-                value.selection,
-                value
-                    .version
-                    .as_ref()
-                    .map_or_else(String::new, |label| format!(" ({label})"))
-            )
-        },
-    )
-}
-fn text(report: &UpdateAssessment, details: bool) -> Result<String> {
-    let mut lines = vec![format!(
-        "Dependency assessment at {} ({})",
-        report.observed_at, report.release_policy
-    )];
-    lines.push(format!(
-        "Scope: {} of {} author roots ({}); {} locked selections retained as context",
-        report.scope.roots.len(),
-        report.scope.total_roots,
-        report.scope.kind,
-        report.scope.retained_inventory
-    ));
-    lines.push(format!("Assessment complete: {}", report.is_complete()));
-    let summary = report.summary();
-    lines.push(format!(
-        "Change available: {}; held: {}; unknown: {}; manual: {}; unavailable: {}; conflicted: {}",
-        summary.change_available,
-        summary.held,
-        summary.unknown,
-        summary.manual,
-        summary.unavailable,
-        summary.conflicted
-    ));
-    if !details {
-        lines.push("Use --details for held/manual rows and complete candidate evidence.".into());
-    }
-    for row in &report.dependencies {
-        if !details
-            && matches!(
-                row.category(),
-                crate::engine::providers::AssessmentCategory::Held
-                    | crate::engine::providers::AssessmentCategory::Manual
-            )
-        {
-            continue;
-        }
-        lines.push(format!(
-            "{} [{}]: {} (policy: {})",
-            row.name, row.key, row.state, row.release_policy
-        ));
-        if details {
-            lines.push(format!(
-                "  Release policy source: {}",
-                row.release_policy_source
-            ));
-            for (label, value) in [
-                ("current", &row.current),
-                ("permitted", &row.permitted),
-                ("Minecraft/loader-compatible candidate", &row.compatible),
-                ("upstream", &row.upstream),
-            ] {
-                lines.push(format!("  {label}: {}", version(value.as_ref())));
-            }
-            lines.push(format!(
-                "  Candidate matches automatic release-policy choice: {}",
-                row.compatible_matches_release_policy
-                    .map_or("unknown", |matches| if matches { "yes" } else { "no" })
-            ));
-        } else if row.category() == crate::engine::providers::AssessmentCategory::ChangeAvailable {
-            lines.push(format!(
-                "  {} -> {}",
-                version(row.current.as_ref()),
-                version(row.permitted.as_ref())
-            ));
-        }
-        if let Some(diagnostic) = &row.diagnostic {
-            lines.push(format!("  {diagnostic}"));
-        }
-        lines.push(format!(
-            "  Catalog complete: {}; reasons: {}",
-            row.catalog_complete,
-            serde_json::to_string(&row.reasons)?
-        ));
-    }
-    lines.push(format!(
-        "Required provider closure: {} ({})",
-        report.joint.state,
-        serde_json::to_string(&report.joint.reasons)?
-    ));
-    if !report.joint.blocking_roots.is_empty() {
-        lines.push(format!(
-            "Joint assessment blocked by roots: {}",
-            report.joint.blocking_roots.join(", ")
-        ));
-    }
-    lines.push(format!(
-        "Candidate compatibility (including retained inventory): {}",
-        report.joint.candidate_compatibility
-    ));
-    lines.push(format!(
-        "Declared incompatibility list complete: {}",
-        report.joint.declarations_complete
-    ));
-    for declaration in &report.joint.declared_incompatibilities {
-        lines.push(format!(
-            "Declared incompatibility: {} -> {} (client/server coexistence not assessed)",
-            version(Some(&declaration.from)),
-            version(Some(&declaration.target))
-        ));
-    }
-    lines.push(format!(
-        "Catalog validation: {} (other runtime payloads are not installation evidence)",
-        UpdateAssessment::CATALOG_VALIDATION_SCOPE
-    ));
-    lines.push("Available catalog observations are bounded and time-specific. A different permitted selection need not be newer. Required-closure validation does not verify complete retained-inventory compatibility, file bindings, startup, configuration or worlds; conflicts do not prove no alternative solution exists.".into());
-    Ok(lines.join("\n"))
-}
+mod text;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::providers::{
-        DeclaredIncompatibility, DependencyAssessment, JointAssessment,
+        DeclaredIncompatibility, DependencyAssessment, JointAssessment, ObservedVersion,
     };
 
     #[test]
@@ -262,18 +139,18 @@ mod tests {
                 }],
             },
         };
-        let output = text(&report, true).unwrap();
+        let output = text::render(&report, true);
         let session = crate::application::session_mocks::MockCommandSession::new();
         assert!(present(&session, &report, true, false, true).is_ok());
         assert!(present(&session, &report, true, true, true).is_err());
         report.joint.declarations_complete = true;
         assert!(present(&session, &report, true, true, true).is_ok());
-        assert!(output.contains("Required provider closure: validated"));
-        assert!(output.contains("Declared incompatibility list complete: false"));
-        assert!(
-            output.contains("Candidate compatibility (including retained inventory): not-assessed")
-        );
-        assert!(output.contains("modrinth:ProjectA@Version1 -> modrinth:ProjectB@Version1 (client/server coexistence not assessed)"));
+        assert!(output.contains("Required dependencies: checked"));
+        assert!(output.contains("Incompatibility information: incomplete"));
+        assert!(output.contains("Compatibility with the rest of the pack: not checked"));
+        assert!(output.contains(
+            "Reported mod conflict: modrinth:ProjectA@Version1 and modrinth:ProjectB@Version1"
+        ));
 
         report.dependencies.push(DependencyAssessment {
             release_policy: "prefer-stable",
@@ -292,8 +169,8 @@ mod tests {
             provider_problem: None,
             reasons: Vec::new(),
         });
-        let output = text(&report, true).unwrap();
-        assert!(output.contains("Assessment complete: false"));
+        let output = text::render(&report, true);
+        assert!(output.contains("Some checks could not finish; these results are incomplete."));
         assert!(output.contains("Invalid provider field date_published in menu"));
         assert!(present(&session, &report, false, false, true).is_ok());
         assert!(present(&session, &report, false, true, true).is_err());
@@ -303,7 +180,7 @@ mod tests {
             let error = present(&session, &report, json, true, true).unwrap_err();
             assert_eq!(
                 error.to_string(),
-                "Dependency assessment is incomplete; inspect the reported reasons"
+                "Some update checks could not finish; see the reported problems"
             );
             let messages = messages.lock().unwrap();
             assert_eq!(

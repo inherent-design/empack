@@ -116,7 +116,7 @@ fn cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_f
         .assert()
         .failure()
         .stderr(contains("game/mods/fixture.jar"))
-        .stderr(contains("ModifiedManagedFile"));
+        .stderr(contains("A pack-managed file has local changes."));
     let help = command()
         .args(["instance", "repair", "--help"])
         .assert()
@@ -1558,7 +1558,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .arg(&envelope_b)
         .assert()
         .failure()
-        .stderr(contains("ModifiedManagedFile"));
+        .stderr(contains("A pack-managed file has local changes."));
     assert_eq!(snapshot(&instance), conflicted);
     installed(&instance, &a, b"local conflict");
     let signed_b = fs::read(&envelope_b).unwrap();
@@ -1597,7 +1597,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .arg(envelope_b.parent().unwrap())
         .assert()
         .failure()
-        .stderr(contains("ModifiedManagedFile"));
+        .stderr(contains("A pack-managed file has local changes."));
     assert_eq!(snapshot(&instance), changed_override);
     let merge = root.join("merged result Ω.txt");
     fs::write(&merge, b"explicit merged result").unwrap();
@@ -1711,7 +1711,7 @@ fn publisher_player_roundtrip(root: &Path, after_install: impl FnOnce(&Path)) {
         .arg(envelope_a.parent().unwrap())
         .assert()
         .failure()
-        .stderr(contains("ModifiedManagedFile"));
+        .stderr(contains("A pack-managed file has local changes."));
     assert_eq!(snapshot(&instance), conflicted);
     offline_command(&instance)
         .args(["--yes", "instance", "rollback"])
@@ -2343,7 +2343,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
                     .failure()
                     .stderr(contains("Prism rewrites game-root icon.png"))
                     .stderr(contains("icon.png: seed"))
-                    .stderr(contains("SeedOwnership").not());
+                    .stderr(contains("previously user-owned file").not());
                 assert_eq!(snapshot(&instance), before);
                 assert_eq!(snapshot(host.path()), host_before);
             }
@@ -2452,7 +2452,7 @@ fn journey_signed_updates_retain_side_and_layout_and_refuse_context_changes() {
                 .args(["--yes", "instance", "repair"])
                 .assert()
                 .failure()
-                .stderr(contains("ModifiedManagedFile"));
+                .stderr(contains("A pack-managed file has local changes."));
             assert_eq!(snapshot(&instance), before);
             command()
                 .args(["--yes", "instance", "repair", "--replace", name])

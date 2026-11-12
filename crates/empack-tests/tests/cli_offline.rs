@@ -534,6 +534,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         .args(["outdated", "--json", "--release-policy", "stable-only"])
         .assert()
         .success()
+        .stderr(predicates::str::is_empty())
         .get_output()
         .stdout
         .clone();
@@ -545,6 +546,17 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
     assert_eq!(report["release_policy"], "stable-only");
     assert_eq!(report["joint"]["state"], "not-applicable");
     assert_eq!(report["dependencies"], serde_json::json!([]));
+    let text = command(&project)
+        .args(["outdated", "--quiet"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(
+        String::from_utf8(text).unwrap().trim_end(),
+        "No dependencies to check."
+    );
     let output = command(&project)
         .args([
             "migrate",
@@ -599,10 +611,65 @@ fn cli_strict_outdated_accepts_complete_empty_assessment() {
         .args(["outdated", "--strict", "--json"])
         .assert()
         .success()
+        .stderr(predicates::str::is_empty())
         .get_output()
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(report["joint"]["state"], "not-applicable");
     assert_eq!(report["dependencies"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn cli_unassociated_saved_operations_identify_records_without_changing_them() {
+    let project = initialized();
+    let state = project.dir().join(".host-state");
+    let mut records = Vec::new();
+    for entry in fs::read_dir(&state).unwrap() {
+        let directory = entry.unwrap().path();
+        let identity = directory.join("root-identity.json");
+        if identity.is_file() {
+            fs::remove_file(identity).unwrap();
+            fs::write(
+                directory.join("retained-evidence"),
+                b"unfinished work; keep this",
+            )
+            .unwrap();
+            records.push(directory);
+        }
+    }
+    assert!(
+        !records.is_empty(),
+        "initialization must retain its directory association"
+    );
+    let before = empack_tests::harness::workspace::snapshot(project.dir());
+    for args in [vec!["status"], vec!["outdated"], vec!["--yes", "sync"]] {
+        let output = command(&project)
+            .args(args)
+            .assert()
+            .code(1)
+            .get_output()
+            .clone();
+        assert!(
+            output.stdout.is_empty(),
+            "an unsafe read must not produce a success report"
+        );
+        let diagnostic = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            diagnostic.contains("Saved operations cannot be matched safely"),
+            "{diagnostic}"
+        );
+        assert!(diagnostic.contains("Keep these records"), "{diagnostic}");
+        assert!(
+            records
+                .iter()
+                .any(|path| diagnostic.contains(path.to_str().unwrap())),
+            "{diagnostic}"
+        );
+        assert!(!diagnostic.contains("--state-dir"), "{diagnostic}");
+        assert_eq!(
+            empack_tests::harness::workspace::snapshot(project.dir()),
+            before
+        );
+    }
 }
