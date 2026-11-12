@@ -54,7 +54,7 @@ empack --workdir ./publisher --yes release publish-channel RELEASE_ID \
   --key-file ~/.config/empack-publisher/publisher.key
 ```
 
-This verifies the hosted envelope and assets before writing `publisher/dist/channels/stable.json`. If deployment uses uploads, upload this pointer last. Increase the sequence when changing channel metadata. `--previous-key` accepts an old public key for authenticating the existing pointer after signing-key rotation; it does not sign the replacement or enroll client trust.
+This verifies the hosted envelope and assets before writing `publisher/dist/channels/stable.json` locally. A successful command creates the signed file; it does not upload it or change the hosted channel. If deployment uses uploads, upload this pointer last. Increase the sequence when changing channel metadata. `--previous-key` accepts an old public key for authenticating the existing pointer after signing-key rotation; it does not sign the replacement or enroll client trust.
 
 Subscribers enroll the hosted `channels/stable.json` URL, run `instance check-updates`, then `instance update`. Existing instances infer their validated side and layout; explicit conflicts fail before release acquisition. First installations default to client/game and display that selection; choose `--side server` for a new server. `instance update --check` composes a fresh check and installation with separate approvals. A declined or previewed check never proceeds to installation. See [usage](usage.md#native-release-example) for installation and enrollment commands and [release contracts](design/releases.md) for channel identity, key rotation and replay protection.
 

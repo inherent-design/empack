@@ -353,7 +353,8 @@ async fn compatible_loader(
             }
             Ok(_) => {}
             Err(error) => session.display().status().warning(&format!(
-                "Could not inspect {family:?} compatibility: {error:#}"
+                "Could not check {} versions: {error:#}",
+                crate::application::labels::loader(family)
             )),
         }
     }
@@ -366,17 +367,11 @@ fn choose_loader(session: &dyn Session, mut supported: Vec<LoaderChoice>) -> Res
     );
     let names = supported
         .iter()
-        .map(|(family, _)| match family {
-            LoaderKind::Vanilla => "Vanilla",
-            LoaderKind::NeoForge => "NeoForge",
-            LoaderKind::Fabric => "Fabric",
-            LoaderKind::Forge => "Forge",
-            LoaderKind::Quilt => "Quilt",
-        })
+        .map(|(family, _)| crate::application::labels::loader(*family))
         .collect::<Vec<_>>();
     let index = session
         .interactive()
-        .select("Compatible mod loader", &names)?;
+        .select("Mod loader for this Minecraft version", &names)?;
     ensure!(index < supported.len(), "Loader selection is out of range");
     Ok(supported.remove(index))
 }
@@ -484,11 +479,11 @@ async fn initialize_with_engine(
         .initialize()
         .context("Missing initialization preview")?;
     session.display().status().info(&format!(
-        "Initialize {} v{}: Minecraft {}, {:?}{}",
+        "Create {} {}: Minecraft {}, {}{}",
         view.metadata.name,
         view.metadata.version,
         view.runtime.minecraft.as_str(),
-        view.runtime.loader,
+        crate::application::labels::loader(view.runtime.loader),
         view.runtime
             .loader_version
             .as_ref()

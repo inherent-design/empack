@@ -1275,7 +1275,13 @@ async fn restricted_roundtrip(migration: bool, explicit: bool, lost_retained: bo
     // Two paths with identical verified bytes represent one candidate content identity.
     assert_eq!(operation.state, "unverified");
     if migration {
-        assert!(operation.diagnostic.as_ref().unwrap().contains("migration"));
+        assert!(
+            operation
+                .diagnostic
+                .as_ref()
+                .unwrap()
+                .contains("Minecraft or loader settings changed")
+        );
     }
     crate::application::engine_host::pending::dispatch(
         &session(root.path(), false),

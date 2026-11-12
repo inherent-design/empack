@@ -7,18 +7,18 @@ pub(super) fn choose(session: &dyn Session, game: &str, explicit: Option<u16>) -
     let status = session.display().status();
     if let Some(majors) = policy.supported() {
         status.info(&format!(
-            "Java {} recommended for Minecraft {game}; admitted majors: {}. Loader/mod requirements can narrow this policy",
+            "Java {} recommended for Minecraft {game}. Supported majors: {}. Mods and loaders may have stricter requirements.",
             policy.recommended().unwrap(),
             majors.iter().map(u16::to_string).collect::<Vec<_>>().join(", ")
         ));
     } else {
         status.warning(&format!(
-            "Java compatibility is unknown for Minecraft {game}; an explicit choice is unqualified, not evidence of a supported range"
+            "Java requirements are not known for Minecraft {game}. Choose a version explicitly; compatibility still needs checking."
         ));
     }
     if explicit.is_some() {
         let selected = policy.select(explicit)?;
-        status.info(&format!("Java {selected} selected explicitly"));
+        status.info(&format!("Java {selected} selected for this pack"));
         return Ok(selected);
     }
     if policy.supported().is_some_and(|majors| majors.len() == 1) {
@@ -42,12 +42,12 @@ pub(super) fn choose(session: &dyn Session, game: &str, explicit: Option<u16>) -
                 })
                 .collect::<Vec<_>>();
             let labels = names.iter().map(String::as_str).collect::<Vec<_>>();
-            let selected = interactive.select("Recipient Java major", &labels)?;
+            let selected = interactive.select("Java major for this pack", &labels)?;
             let major = *choices.get(selected).context("Invalid Java selection")?;
             return policy.select(Some(major)).map_err(Into::into);
         }
         let entered = interactive.text_input(
-            "Recipient Java major (compatibility unknown)",
+            "Java major for this pack (compatibility unknown)",
             String::new(),
         )?;
         return policy

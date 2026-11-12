@@ -416,14 +416,16 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             .args(["--dry-run", "remove", query, "--forget"])
             .assert()
             .success()
-            .stdout(predicates::str::contains("Select renderer-alias:"));
+            .stdout(predicates::str::contains(
+                "renderer-alias: renderer-alias (modrinth:Project1)",
+            ));
         assert_eq!(snapshot(root).files, before);
         command()
             .args(["--yes", "remove", query, "--forget"])
             .assert()
             .success()
             .stdout(predicates::str::contains(
-                "Applied ForgetRoots to 1 dependencies",
+                "Removed 1 direct dependency from empack.yml; installed files were kept",
             ));
         let demoted = read_project(root);
         let mut expected_intent = original.intent().clone();
@@ -471,9 +473,9 @@ fn journey_cli_forget_and_remove_preserve_retained_content_and_enforce_dependenc
             .assert()
             .success()
             .stdout(predicates::str::contains(if known_dependent {
-                "Applied RemoveContent to 2 dependencies"
+                "Removed 2 dependencies"
             } else {
-                "Applied RemoveContent to 1 dependencies"
+                "Removed 1 dependency"
             }));
         let removed = read_project(root);
         assert!(!removed.lock().dependencies.contains_key(&selected));

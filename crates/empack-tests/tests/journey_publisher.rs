@@ -127,7 +127,7 @@ fn cli_pty_instance_conflict_decisions_require_approval_and_preserve_unrelated_f
     let help = String::from_utf8(help).unwrap();
     let help = help.split_whitespace().collect::<Vec<_>>().join(" ");
     for guidance in [
-        "release-relative path",
+        "use the path shown in the conflict options",
         "--preserve",
         "--replace",
         "--merge",
@@ -246,7 +246,10 @@ fn cli_pty_publisher_key_setup_requires_approval_without_creating_private_state(
         .arg(&key)
         .assert()
         .success()
-        .stdout(contains("Created publisher key; public key:"));
+        .stdout(contains("Created publisher key\nPublic key:"))
+        .stdout(contains("empack --workdir"))
+        .stdout(contains("--state-dir"))
+        .stdout(contains(format!("--key-file '{}'", key.display())));
     assert_eq!(fs::read_dir(&private).unwrap().count(), 1);
     assert_eq!(snapshot(&workspace), publisher_before);
 }

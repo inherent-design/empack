@@ -414,10 +414,12 @@ async fn change_with_services(
             Ok((addition, revision))
         })
         .await?;
-        for (key, dependency) in addition.group().dependencies() {
-            session.display().status().info(&format!(
-                "Check {}: {} ({})", key.as_str(), dependency.title, identity_label(&dependency.identity)
-            ));
+        if !update {
+            for (key, dependency) in addition.group().dependencies() {
+                session.display().status().info(&format!(
+                    "Proposed {}: {} ({})", key.as_str(), dependency.title, identity_label(&dependency.identity)
+                ));
+            }
         }
         let request: Request = if batch == BatchPolicy::ContinueIndependent && !adopt {
             let items = addition.group().root_groups().into_iter().map(|group| {
@@ -456,6 +458,8 @@ async fn change_with_services(
     engine.shutdown().await;
     result
 }
+mod text;
+
 fn identity_label(identity: &empack_core::model::ResolvedIdentity) -> String {
     use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
     match identity {
@@ -472,18 +476,27 @@ async fn publish_update(
 ) -> Result<()> {
     let view = prepared.view().update().context("Missing update preview")?;
     show_batch(session, view.batch.as_ref());
+    session.display().status().message(&text::update_plan(
+        view.selected.len(),
+        view.changed_selections.len(),
+    ));
     for (requested, canonical) in &view.bindings {
-        if !view.selected.contains(canonical) {
+        if !view.selected.contains(canonical)
+            || (view.selected.len() > 1 && !view.changed_selections.contains(canonical))
+        {
             continue;
         }
+        let label = if requested == canonical {
+            requested.as_str().to_owned()
+        } else {
+            format!("{} -> {}", requested.as_str(), canonical.as_str())
+        };
         session.display().status().info(&format!(
-            "Check {} as {}: {}",
-            requested.as_str(),
-            canonical.as_str(),
+            "{label}: {}",
             if view.changed_selections.contains(canonical) {
-                "selection changed"
+                "will change"
             } else {
-                "selection retained"
+                "no change"
             },
         ));
     }
@@ -495,35 +508,35 @@ async fn publish_update(
         session
             .display()
             .status()
-            .info(&format!("Author pin {}: {version}", key.as_str()));
+            .info(&format!("Pin {} to {version}", key.as_str()));
     }
     if !view.references.is_empty() {
         session.display().status().info(&format!(
-            "Record {} exact references; payloads verify when acquired",
+            "File references: {} (contents are checked when acquired)",
             view.references.len(),
         ));
     }
     show_changes(session, &view.files)?;
-    apply(session, engine, prepared, "Update", |receipt| {
+    let mut details = None;
+    let result = apply(session, engine, prepared, "Update", |receipt| {
         let ExecutionReceipt::Update(receipt) = receipt else {
             anyhow::bail!("Unexpected update receipt");
         };
-        let authoring = if receipt.author_pin_changes.is_empty() {
-            "preserved authored intent".to_owned()
-        } else {
-            format!(
-                "{} authored pins changed; unrelated intent retained",
-                receipt.author_pin_changes.len()
-            )
-        };
-        Ok(format!(
-            "Checked {} selected dependencies: {} selections changed, {} retained; {authoring}",
+        details = Some(text::update_details(
             receipt.selected.len(),
             receipt.changed_selections.len(),
-            receipt.selected.len() - receipt.changed_selections.len()
-        ))
+            receipt.author_pin_changes.len(),
+        ));
+        Ok(text::checked(receipt.selected.len()))
     })
-    .await
+    .await;
+    // A partial receipt still describes completed work, even when apply returns
+    // an error for the remaining groups. Keep its details separate from the
+    // single-line status adapter, which deliberately escapes newlines.
+    if let Some(details) = details {
+        session.display().status().message(&details);
+    }
+    result
 }
 pub(super) async fn publish_addition(
     session: &dyn Session,
@@ -557,7 +570,7 @@ pub(super) async fn publish_addition(
     }
     if !view.references.is_empty() {
         session.display().status().info(&format!(
-            "Record {} exact content references; payloads are verified when a build requires them",
+            "File references: {} (contents are checked when acquired)",
             view.references.len()
         ));
     }
@@ -567,9 +580,13 @@ pub(super) async fn publish_addition(
             anyhow::bail!("Unexpected addition receipt");
         };
         Ok(format!(
-            "Recorded {} dependency bindings and {} exact references",
+            "Recorded {} {}",
             receipt.bindings.len(),
-            receipt.references.len()
+            if receipt.bindings.len() == 1 {
+                "dependency"
+            } else {
+                "dependencies"
+            }
         ))
     })
     .await
@@ -592,11 +609,11 @@ pub async fn adopt_observed(session: &dyn Session, request: AdoptObservedRequest
     let result = async {
         for (key, dependency) in request.group.dependencies() {
             session.display().status().info(&format!(
-                "Adopt {}: {} ({:?}, {:?}, {} files)",
+                "Record existing {}: {} ({}, {}, {} files)",
                 key.as_str(),
                 dependency.title,
-                dependency.kind,
-                dependency.identity,
+                crate::application::labels::content(dependency.kind),
+                identity_label(&dependency.identity),
                 dependency.files.as_slice().len()
             ));
         }
@@ -632,7 +649,7 @@ async fn publish_adoption(
             anyhow::bail!("Unexpected adoption receipt");
         };
         Ok(format!(
-            "Adopted {} verified dependency bindings; {} managed document changes",
+            "Recorded {} existing dependencies ({} file changes)",
             receipt.bindings.len(),
             receipt.publication.changed_files
         ))
@@ -650,16 +667,20 @@ pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()>
             .view()
             .remove()
             .context("Missing removal preview")?;
-        session
-            .display()
-            .status()
-            .info(&format!("Removal mode: {:?}", view.mode));
+        session.display().status().info(match view.mode {
+            empack_core::removal::RemovalMode::ForgetRoots => {
+                "Remove direct dependencies from empack.yml; keep installed files"
+            }
+            empack_core::removal::RemovalMode::RemoveContent => {
+                "Remove selected dependencies and their managed files"
+            }
+        });
         for selected in &view.selected {
             session.display().status().info(&format!(
-                "Select {}: {} ({:?})",
+                "{}: {} ({})",
                 selected.key.as_str(),
                 selected.title,
-                selected.identity
+                identity_label(&selected.identity)
             ));
         }
         for unknown in &view.incomplete_evidence {
@@ -673,11 +694,7 @@ pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()>
             let ExecutionReceipt::Remove(receipt) = receipt else {
                 anyhow::bail!("Unexpected removal receipt");
             };
-            Ok(format!(
-                "Applied {:?} to {} dependencies",
-                receipt.mode,
-                receipt.selected.len()
-            ))
+            Ok(text::removal(receipt.mode, receipt.selected.len()))
         })
         .await
     }
@@ -713,10 +730,15 @@ pub(super) async fn synchronize_with_outcome(
             .sync()
             .context("Missing synchronization preview")?;
         session.display().status().info(&format!(
-            "{operation_label}: {} recorded selections ({} deferred references)",
-            view.selected.len(),
-            view.references.len()
+            "{operation_label}: {} dependencies",
+            view.selected.len()
         ));
+        if !view.references.is_empty() {
+            session.display().status().info(&format!(
+                "File references: {} (contents are checked when acquired)",
+                view.references.len()
+            ));
+        }
         show_changes(session, &view.files)?;
         if !approve(session, operation_label)? {
             return Ok(false);
@@ -726,7 +748,7 @@ pub(super) async fn synchronize_with_outcome(
                 anyhow::bail!("Unexpected synchronization receipt");
             };
             Ok(format!(
-                "{operation_label}: {} recorded dependencies; {} managed file changes",
+                "{operation_label}: {} dependencies ({} file changes)",
                 receipt.project.lock().dependencies.len(),
                 receipt.publication.changed_files
             ))
@@ -758,11 +780,11 @@ fn show_batch(session: &dyn Session, report: Option<&crate::engine::api::Depende
         session
             .display()
             .status()
-            .info(&format!("Ready independent group: {}", labels(group)));
+            .info(&format!("Ready dependency group: {}", labels(group)));
     }
     for group in &report.blocked {
         session.display().status().warning(&format!(
-            "Preserve blocked group {}: {}",
+            "Keeping blocked dependency group {}: {}",
             labels(&group.requests),
             group.cause
         ));

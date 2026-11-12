@@ -248,8 +248,12 @@ async fn recover_with_engine(
         "Pending recovery operation differs from --operation"
     );
     session.display().status().info(&format!(
-        "Interrupted operation: {} ({:?})",
-        status.operation, status.kind
+        "Interrupted operation: {} ({})",
+        status.operation,
+        match status.kind {
+            crate::engine::publication::RecoveryKind::Publication => "file changes",
+            crate::engine::publication::RecoveryKind::Creation => "directory creation",
+        }
     ));
     if status.restoring {
         session
@@ -285,8 +289,12 @@ async fn recover_with_engine(
         .recovery()
         .context("Missing recovery preview")?;
     session.display().status().info(&format!(
-        "{:?}: {} managed file changes",
-        view.action,
+        "{}: {} file changes",
+        match view.action {
+            RecoveryAction::Finish if status.restoring => "Finish restoring previous files",
+            RecoveryAction::Finish => "Finish saved changes",
+            RecoveryAction::Restore => "Restore previous files",
+        },
         view.files.changes().len()
     ));
     show_changes(session, &view.files)?;
@@ -295,8 +303,14 @@ async fn recover_with_engine(
             anyhow::bail!("Unexpected recovery receipt");
         };
         Ok(format!(
-            "Recovery {:?}: {} managed files",
-            receipt.publication.disposition, receipt.publication.changed_files
+            "{} ({} file changes)",
+            match receipt.publication.disposition {
+                crate::engine::publication::PublicationDisposition::Published =>
+                    "Finished saved changes",
+                crate::engine::publication::PublicationDisposition::Restored =>
+                    "Restored previous state",
+            },
+            receipt.publication.changed_files
         ))
     })
     .await

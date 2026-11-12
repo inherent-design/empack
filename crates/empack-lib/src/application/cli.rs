@@ -254,7 +254,7 @@ pub struct InitArgs {
     pub mc_version: Option<String>,
 
     /// Preferred recipient Java major; defaults to the selected runtime's recommendation.
-    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Preferred Java major within the runtime policy (default: highest admitted major)")]
+    #[arg(long, value_parser = clap::value_parser!(u16).range(8..), help = "Java major for this pack, such as 21 (default: newest supported major)")]
     pub java: Option<u16>,
 
     /// Author name

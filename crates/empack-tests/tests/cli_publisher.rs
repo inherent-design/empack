@@ -513,7 +513,8 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .arg(fixture.public("a"))
         .assert()
         .success()
-        .stdout(contains("Published channel stable"));
+        .stdout(contains("Created signed channel stable"))
+        .stdout(contains("upload this file last"));
     let second = fixture.pointer("b", 2);
     assert_ne!(first, second);
     offline_command(player.dir())

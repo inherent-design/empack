@@ -2,7 +2,6 @@
 use super::*;
 use crate::engine::api::{BuildPreview, ContentRequirementKind};
 use crate::terminal::display_line;
-use empack_core::model::LoaderKind;
 
 pub(super) fn recipe(value: Recipe) -> String {
     let consumer = match value.consumer() {
@@ -85,13 +84,7 @@ pub(super) fn saved(files: usize) -> String {
 }
 
 pub(super) fn preview(view: &BuildPreview) -> String {
-    let loader = match view.runtime.loader {
-        LoaderKind::Vanilla => "Vanilla",
-        LoaderKind::Fabric => "Fabric",
-        LoaderKind::Quilt => "Quilt",
-        LoaderKind::Forge => "Forge",
-        LoaderKind::NeoForge => "NeoForge",
-    };
+    let loader = crate::application::labels::loader(view.runtime.loader);
     let mut lines = vec![format!(
         "Build plan: Minecraft {} ({loader})",
         view.runtime.minecraft.as_str()

@@ -205,15 +205,20 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
         }
         result.unwrap();
         for expected in [
-            "Check root as root: selection changed",
-            "Check pinned as pinned: selection retained",
+            "root: will change",
+            "Update plan: 2 dependencies\n    Change  1\n    Keep    1",
         ] {
             assert!(
                 messages.iter().any(|message| message == expected),
                 "{messages:?}"
             );
         }
-        let receipt = "Checked 2 selected dependencies: 1 selections changed, 1 retained; preserved authored intent";
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message == "pinned: no change")
+        );
+        let receipt = "    Changed  1\n    Kept     1\nAuthor settings were kept.";
         assert_eq!(
             messages
                 .iter()

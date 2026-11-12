@@ -50,7 +50,7 @@ Edit `empack.yml` directly or use authoring commands. Common provider mods can u
 
 Provider selectors, explicit pins, typed local/URL content, named file plans and side placements normalize through the same engine. Ambiguous or unsupported inputs fail with actionable decisions. Default add/update batches publish nothing when any item fails. Explicit independent batches preserve failed groups and report partial effects.
 
-## Assessing and changing versions
+## Checking and changing versions
 
 ```bash
 empack outdated --strict --json --release-policy prefer-stable
@@ -60,7 +60,7 @@ empack migrate --minecraft 1.21.2 --loader fabric --plan
 empack --yes migrate --minecraft 1.21.2 --loader fabric
 ```
 
-Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
+Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. The result reports changed and kept dependencies separately; checking a dependency does not mean it was upgraded. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
 
 `outdated` shows update counts, available changes and problems. A targeted check such as `outdated sodium` also shows why that dependency is kept, including an exact pin. Use `--details` for the full list, version choices and check information; `--json` retains the complete structured report. `--quiet` hides progress on stderr. Unknown results mean a check could not finish, not that a dependency is up to date.
 

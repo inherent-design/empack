@@ -55,7 +55,12 @@ pub(super) fn render(report: &PendingReport, details: bool) -> String {
                 if input.needed == Some(true) {
                     lines.push("    Required file".into());
                 }
-                lines.push(format!("    {}", display_line(&input.verification)));
+                let verification = match input.verification.as_str() {
+                    "retained; verification required" => "Saved file; checked again on resume",
+                    "not supplied; verification required" => "Not supplied yet",
+                    value => value,
+                };
+                lines.push(format!("    {}", display_line(verification)));
                 if let Some(bytes) = input.bytes {
                     lines.push(format!("    Size: {bytes} bytes"));
                 }
@@ -76,7 +81,7 @@ pub(super) fn render(report: &PendingReport, details: bool) -> String {
                 }
                 if let Some(path) = &input.supplied_candidate {
                     lines.push(format!(
-                        "    Supplied file: {}",
+                        "    Candidate file: {}",
                         display_line(&path.display().to_string())
                     ));
                 }

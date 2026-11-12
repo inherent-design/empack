@@ -209,19 +209,19 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             String::from_utf8_lossy(&output.stderr)
         );
         for expected in [
-            "Ready independent group: fresh",
-            "Preserve blocked group existing:",
+            "Ready dependency group: fresh",
+            "Keeping blocked dependency group existing:",
         ] {
             assert!(text.contains(expected), "{text}");
         }
         if dry {
             result.success();
             assert_eq!(project_snapshot(&project), before);
-            assert!(!text.contains("Recorded 1 dependency bindings"), "{text}");
+            assert!(!text.contains("Recorded 1 dependency"), "{text}");
         } else {
             result.failure();
             for expected in [
-                "Recorded 1 dependency bindings and 0 exact references",
+                "Recorded 1 dependency",
                 "Addition completed only part of its displayed effects",
                 "Dependency batch incomplete: 1 successful groups, 1 blocked groups",
             ] {
@@ -348,8 +348,8 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             String::from_utf8_lossy(&output.stderr)
         );
         for expected in [
-            "Ready independent group: fresh",
-            "Preserve blocked group existing:",
+            "Ready dependency group: fresh",
+            "Keeping blocked dependency group existing:",
         ] {
             assert!(text.contains(expected), "{text}");
         }
@@ -357,9 +357,17 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             result.success();
             assert_eq!(project_snapshot(&project), changed_sources);
         } else {
+            // A partial receipt warns on stderr; its completed counts remain a
+            // stdout report. Concatenating pipes does not preserve their order.
+            assert!(
+                String::from_utf8_lossy(&output.stdout)
+                    .contains("    Changed  1\n    Kept     0\nAuthor settings were kept.")
+            );
+            assert!(String::from_utf8_lossy(&output.stderr).contains("Checked 1 dependency"));
             result.failure();
             for expected in [
-                "Checked 1 selected dependencies: 1 selections changed, 0 retained; preserved authored intent",
+                "Checked 1 dependency",
+                "    Changed  1\n    Kept     0\nAuthor settings were kept.",
                 "Update completed only part of its displayed effects",
                 "Dependency batch incomplete: 1 successful groups, 1 blocked groups",
             ] {
@@ -402,9 +410,7 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
         ])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
-            "0 selections changed, 2 retained",
-        ));
+        .stdout(predicates::str::contains("Changed  0\n    Kept     2"));
     assert_eq!(project_snapshot(&project), after);
     for _ in 0..2 {
         run().args(["sync", "--yes"]).assert().success();

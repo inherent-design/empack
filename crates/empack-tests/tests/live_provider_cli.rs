@@ -101,7 +101,7 @@ fn live_cli_pty_search_requires_choice_and_approval() {
         let mut console = terminal::spawn(command);
         console.set_expect_timeout(Some(std::time::Duration::from_secs(120)));
         console
-            .expect(Regex("Select Mod for rendering engine"))
+            .expect(Regex("Choose a mod for rendering engine"))
             .unwrap();
         let approve = action == "approve";
         if matches!(action, "approve" | "decline") {
@@ -116,7 +116,7 @@ fn live_cli_pty_search_requires_choice_and_approval() {
             console.send_line(if approve { "y" } else { "n" }).unwrap();
             console
                 .expect(Regex(if approve {
-                    "Recorded [0-9]+ dependency bindings and [0-9]+ exact references"
+                    "Recorded [0-9]+ dependenc(y|ies)"
                 } else {
                     "Addition not applied"
                 }))
@@ -373,10 +373,7 @@ fn selector_journey(
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
-    assert!(
-        rendered.contains("Applied RemoveContent to 1 dependencies"),
-        "{rendered}"
-    );
+    assert!(rendered.contains("Removed 1 dependency"), "{rendered}");
     let removed = read_project(project.dir());
     assert!(!removed.intent().roots.contains_key(&alias));
     assert!(!removed.lock().dependencies.contains_key(&alias));
@@ -578,7 +575,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        rendered.contains("0 selections changed, 1 retained"),
+        rendered.contains("Changed  0\n    Kept     1"),
         "{rendered}"
     );
     let updated = read_project(project.dir());
@@ -646,7 +643,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(rendered.contains(&format!("Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent", 1 - changed)), "{rendered}");
+    assert!(rendered.contains(&format!("Checked 1 dependency\n    Changed  {changed}\n    Kept     {}\nAuthor settings were kept.", 1 - changed)), "{rendered}");
     assert_eq!(resolved.intent(), automatic.intent());
     assert_eq!(
         std::fs::read(project.dir().join("empack.yml")).unwrap(),
@@ -930,7 +927,7 @@ fn live_cli_update_release_policy_overrides_authored_preference() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(rendered.contains(&format!("Checked 1 selected dependencies: {changed} selections changed, {} retained; preserved authored intent", 1 - changed)), "{rendered}");
+        assert!(rendered.contains(&format!("Checked 1 dependency\n    Changed  {changed}\n    Kept     {}\nAuthor settings were kept.", 1 - changed)), "{rendered}");
         let updated = read_project(project.dir());
         assert_eq!(updated.intent(), &authored);
         assert_eq!(

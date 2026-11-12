@@ -239,7 +239,7 @@ fn details(
     if !current {
         op.state = "stale".into();
         op.diagnostic = Some(
-            "Saved target identity or documents changed; continuation will reject this record"
+            "The project directory or author files changed. This saved work cannot be resumed."
                 .into(),
         );
         return Ok(());
@@ -267,14 +267,14 @@ fn details(
                 })
                 .collect::<Result<BTreeSet<_>>>()?;
             locked_inputs(op, &project, &retained);
-            op.diagnostic = Some("Exact unresolved build requirements are recomputed from the saved output recipes during continuation; listed lock inputs may not all be needed".into());
+            op.diagnostic = Some("Required files are checked when you continue; not every recorded file is needed for this build.".into());
         }
         PendingKind::Sync => {
             if record["migration"]
                 .as_bool()
                 .context("Missing synchronization mode")?
             {
-                op.diagnostic = Some("Runtime migration: continuation applies the retained candidate intent only after checking the original author documents and obtaining new approval".into());
+                op.diagnostic = Some("Minecraft or loader settings changed. Continuing checks the original author files and asks for approval before applying the saved settings.".into());
             }
             let intent = DocumentCodec.decode_intent(
                 record["intent"]
@@ -375,7 +375,7 @@ fn details(
                     .push(("retained-sha256".into(), super::release::hex(&hash)));
                 op.inputs.push(row);
             }
-            op.diagnostic = Some("Saved imports retain the archive and supplied associations, not missing dependency metadata; normal continuation reparses source/provider facts. Use the original exact selectors with --file; unknown facts are not completion evidence".into());
+            op.diagnostic = Some("The import archive and files you supplied are saved. Download details are checked again when you continue. Use the original file keys with --file.".into());
         }
     }
     ensure!(

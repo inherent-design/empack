@@ -422,7 +422,8 @@ async fn search_providers(
     games.extend(current.intent().runtime.acceptable_versions.iter().cloned());
     let mut seen_games = BTreeSet::new();
     games.retain(|game| seen_games.insert(game.clone()));
-    for kind in kinds {
+    let mut found_any = false;
+    for (kind_index, kind) in kinds.iter().copied().enumerate() {
         let mut windows = vec![(providers.clone(), games.clone(), 0)];
         while !windows.is_empty() {
             let mut candidates: Vec<ProjectCandidate> = Vec::new();
@@ -463,18 +464,31 @@ async fn search_providers(
             if candidates.is_empty() && next.is_empty() {
                 break;
             }
-            let mut labels = candidates
-                .iter()
-                .map(|value| format!("{} — {} ({})", value.title, value.slug, value.project))
-                .collect::<Vec<_>>();
+            found_any |= !candidates.is_empty();
+            let mut labels = candidates.iter().map(search_label).collect::<Vec<_>>();
             let more = !next.is_empty();
             if more {
                 labels.push("More results".into());
             }
-            labels.push("Try the next content type / cancel".into());
+            let next_kind = kind_index + 1 < kinds.len();
+            labels.push(
+                if next_kind {
+                    "Try another content type"
+                } else {
+                    "Cancel"
+                }
+                .into(),
+            );
             let index = session
                 .interactive()
-                .fuzzy_select(&format!("Select {kind:?} for {text}"), &labels)?
+                .fuzzy_select(
+                    &format!(
+                        "Choose a {} for {}",
+                        crate::application::labels::content(kind),
+                        crate::terminal::display_line(text)
+                    ),
+                    &labels,
+                )?
                 .ok_or(crate::application::process_runtime::Interrupted)?;
             ensure!(index < labels.len(), "Search selection is out of range");
             if let Some(candidate) = candidates.get(index) {
@@ -482,12 +496,29 @@ async fn search_providers(
             }
             if more && index == candidates.len() {
                 windows = next;
-            } else {
+            } else if next_kind {
                 break;
+            } else {
+                return Err(crate::application::process_runtime::Interrupted.into());
             }
         }
     }
-    anyhow::bail!("No dependency selected; nothing was published")
+    if found_any {
+        anyhow::bail!("No dependency selected; no files changed")
+    }
+    anyhow::bail!(
+        "No matching dependencies found for {}",
+        crate::terminal::display_line(text)
+    )
+}
+
+fn search_label(value: &ProjectCandidate) -> String {
+    format!(
+        "{} — {} ({})",
+        crate::terminal::display_line(&value.title),
+        crate::terminal::display_line(&value.slug),
+        value.project
+    )
 }
 
 #[cfg(test)]

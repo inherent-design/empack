@@ -173,7 +173,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
             stderr.contains("Logger initialized successfully"),
             stream == "stderr"
         );
-        assert!(stdout.contains("Metadata inspection only"));
+        assert!(stdout.contains("File contents have not been checked."));
     }
     // A refused JSON request has diagnostics, not a spurious successful payload.
     for route in [

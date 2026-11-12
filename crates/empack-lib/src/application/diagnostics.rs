@@ -9,7 +9,7 @@ pub fn message(error: &anyhow::Error) -> String {
             .downcast_ref::<InstanceConflicts>()
             .map(|value| (index, value))
     }) else {
-        return format!("{error:#}");
+        return general(error);
     };
     let mut lines = Vec::new();
     for cause in error.chain().take(index) {
@@ -80,11 +80,108 @@ pub fn message(error: &anyhow::Error) -> String {
     lines.join("\n")
 }
 
+fn general(error: &anyhow::Error) -> String {
+    // Anyhow exposes typed context through downcast_ref, but its std::error
+    // chain can contain opaque context wrappers. Never drop a frame based on
+    // a failed downcast or its wording; each owner supplies readable Display.
+    if error
+        .downcast_ref::<crate::engine::diagnostics::Diagnostic>()
+        .is_some()
+        || error
+            .downcast_ref::<crate::engine::publication::RecoveryLocation>()
+            .is_some()
+    {
+        error
+            .chain()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        format!("{error:#}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::instance::InstanceConflict;
     use empack_core::instance::{FileConflict, FilePolicy};
+
+    #[test]
+    fn typed_diagnostics_keep_the_cause_and_recovery_without_debug_names() {
+        use crate::engine::diagnostics::{
+            Diagnostic, DiagnosticCode, DiagnosticPhase, RecoveryClassification,
+        };
+        let mut diagnostic = Diagnostic::new(
+            DiagnosticCode::RuntimeRecoveryRequired,
+            DiagnosticPhase::Execution,
+        );
+        diagnostic.recovery = RecoveryClassification::Required;
+        diagnostic.object = Some("runtime\u{202e}record".into());
+        let error = anyhow::Error::new(crate::application::process_runtime::Interrupted)
+            .context("Runtime retired, but ownership cleanup failed")
+            .context(diagnostic.clone());
+        let before = serde_json::to_value(&diagnostic).unwrap();
+        let text = message(&error);
+        assert!(
+            text.contains("Runtime retired, but ownership cleanup failed\nOperation interrupted"),
+            "{text}"
+        );
+        assert!(text.contains("Runtime ownership needs recovery (while running the operation)"));
+        assert!(text.contains("Recovery is required before retrying."));
+        assert!(!text.contains("RuntimeRecoveryRequired"));
+        assert!(!text.contains('\u{202e}'));
+        assert_eq!(
+            crate::application::classify_error(&error),
+            crate::application::EmpackExitCode::General
+        );
+        assert_eq!(
+            serde_json::to_value(error.downcast_ref::<Diagnostic>().unwrap()).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn a_runtime_failure_does_not_claim_that_nothing_ran() {
+        use crate::engine::diagnostics::{
+            Diagnostic, DiagnosticCode, DiagnosticPhase, RecoveryClassification,
+        };
+        let mut diagnostic =
+            Diagnostic::new(DiagnosticCode::OperationFailed, DiagnosticPhase::Execution);
+        diagnostic.recovery = RecoveryClassification::NotPublished;
+        let error = anyhow::anyhow!("terminal restoration failed")
+            .context("Instance launch failed")
+            .context(diagnostic);
+        assert_eq!(
+            message(&error),
+            "Operation failed (while running the operation)\nInstance launch failed\nterminal restoration failed"
+        );
+    }
+
+    #[test]
+    fn recovery_instructions_keep_the_failure_and_exact_directory_selections() {
+        let root = std::env::temp_dir();
+        let location = crate::engine::publication::RecoveryLocation {
+            project: root.join("pack 日本"),
+            state: root.join("saved operations"),
+        };
+        let error = super::super::recovery_guidance::annotate(
+            location.attach(anyhow::anyhow!("could not complete file changes")),
+        );
+        let text = message(&error);
+        assert!(text.ends_with("could not complete file changes"), "{text}");
+        assert!(text.contains("Recovery inspection ("));
+        assert!(text.contains("recover inspect"));
+        assert!(text.contains("pack 日本"));
+        assert!(text.contains("saved operations"));
+        assert_eq!(
+            error
+                .downcast_ref::<crate::engine::publication::RecoveryLocation>()
+                .unwrap()
+                .project,
+            location.project
+        );
+    }
 
     fn report(reason: FileConflict, existing: bool) -> InstanceConflicts {
         InstanceConflicts {

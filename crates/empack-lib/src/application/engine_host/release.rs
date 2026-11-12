@@ -17,7 +17,7 @@ pub(in crate::application) async fn dispatch(
         let file = absolute(&invocation, key_file);
         let setup = release::signing::PublisherSetup::prepare(&root, &file)?;
         session.display().status().info(&format!(
-            "Publisher workspace: {}; create private seed at {}",
+            "Publisher directory: {}; create private signing key at {}",
             root.display(),
             file.display()
         ));
@@ -42,11 +42,37 @@ pub(in crate::application) async fn dispatch(
         })
         .await?;
         let (public, fingerprint) = &*generated;
-        session.display().status().complete(&format!(
-            "Created publisher key; public key: {public}; fingerprint: {fingerprint}"
+        session.display().status().message(&format!(
+            "Created publisher key\nPublic key: {public}\nFingerprint: {fingerprint}"
         ));
         session.display().status().info("Keep the private key outside every project, export and hosted directory. Share the public key independently; subscribers must explicitly enroll it.");
-        session.display().status().info(&format!("Next: release stage EXPORT --key-file {}. Upload {}/dist/releases/RELEASE_ID/ and all its assets first; then release publish-channel and upload dist/channels/CHANNEL.json last.", file.display(), root.display()));
+        let state = state_root(session.config().app_config(), &invocation).ok();
+        if let Some(arguments) = root
+            .to_str()
+            .zip(file.to_str())
+            .zip(state.as_deref().and_then(Path::to_str))
+            .and_then(|((root, file), state)| {
+                crate::application::shell::arguments(&[
+                    "--workdir".into(),
+                    root.into(),
+                    "--state-dir".into(),
+                    state.into(),
+                    "release".into(),
+                    "stage".into(),
+                    "EXPORT".into(),
+                    "--key-file".into(),
+                    file.into(),
+                ])
+            })
+        {
+            session.display().status().message(&format!(
+                "Next ({}): empack {arguments}",
+                crate::application::shell::NAME
+            ));
+        } else {
+            session.display().status().info("Next, stage an extracted native export with release stage. Use the original publisher, state and signing-key paths; a copyable command is unavailable for these paths.");
+        }
+        session.display().status().info("After staging, upload the release directory and assets first. Create and upload the channel file last.");
         return Ok(());
     }
     let (source, keys) = match &command {
@@ -123,7 +149,7 @@ pub(in crate::application) async fn dispatch(
         }
         let label = if let Some(channel) = &view.channel {
             session.display().status().info(&format!(
-                "Verify hosted release and assets before advancing channel {channel}"
+                "Verify the hosted release and assets before creating the new {channel} channel file"
             ));
             "Channel publication"
         } else {
@@ -135,7 +161,7 @@ pub(in crate::application) async fn dispatch(
             };
             Ok(match &receipt.channel {
                 Some(channel) => format!(
-                    "Published channel {channel} for verified release {} at {}; upload this channel file last",
+                    "Created signed channel {channel} for verified release {} at {}; upload this file last",
                     receipt.release, receipt.envelope
                 ),
                 None => format!(

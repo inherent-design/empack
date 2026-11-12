@@ -616,6 +616,18 @@ fn launch_failure_summary_preserves_runtime_phase_and_cause() {
             format!("{:#}", anyhow::Error::new(error)),
             format!("Instance launch failed: {phase}: fixture failure")
         );
+        let outcome = std::sync::Arc::new(OperationOutcome::Completed(
+            ExecutionOutcome::FailedBeforePublication(
+                anyhow::Error::new(std::io::Error::other("fixture failure")).context(phase),
+            ),
+        ));
+        let error = retained_failure(outcome, failure_summary("Instance launch", true));
+        assert_eq!(
+            crate::application::diagnostics::message(&error),
+            format!(
+                "Operation failed (while running the operation)\nInstance launch failed\n{phase}\nfixture failure"
+            )
+        );
     }
     assert_eq!(
         failure_summary("Addition", false),
