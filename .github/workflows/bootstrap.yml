@@ -96,6 +96,7 @@ jobs:
           mkdir -p bootstrap/target/results
           for major in 8 16 17 21 25; do
             variable="TEST_JAVA$major"
+            python3 bootstrap/tests/probe_encoding.py --java "${!variable}/bin/java" --output "bootstrap/target/results/encoding-java$major.json"
             python3 bootstrap/tests/test_bootstrap.py --java "${!variable}/bin/java" -v > "bootstrap/target/results/java$major.log" 2>&1 || { cat "bootstrap/target/results/java$major.log"; exit 1; }
           done
       - uses: actions/upload-artifact@v7
@@ -140,6 +141,9 @@ jobs:
         with:
           distribution: ${{ matrix.distribution }}
           java-version: ${{ matrix.java }}
+      - name: Observe native and JVM encoding without changing runner locale
+        shell: bash
+        run: python3 bootstrap/tests/probe_encoding.py --output bootstrap/target/encoding-probe.json
       - name: Exercise the packaged bootstrap before native compilation
         shell: bash
         run: python3 bootstrap/tests/test_bootstrap.py -v > bootstrap/target/host-tests.log 2>&1 || { cat bootstrap/target/host-tests.log; exit 1; }
@@ -147,5 +151,7 @@ jobs:
         if: always()
         with:
           name: bootstrap-host-${{ matrix.target }}-java${{ matrix.java }}
-          path: bootstrap/target/host-tests.log
+          path: |
+            bootstrap/target/host-tests.log
+            bootstrap/target/encoding-probe.json
           if-no-files-found: error
