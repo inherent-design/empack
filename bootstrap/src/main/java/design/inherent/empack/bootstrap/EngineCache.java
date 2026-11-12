@@ -20,6 +20,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryFlag;
 import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.AclEntryType;
 import java.nio.file.attribute.AclFileAttributeView;
@@ -253,7 +254,9 @@ final class EngineCache {
         }
     }
 
-    private static boolean writes(AclEntry entry) {
+    static boolean writes(AclEntry entry) {
+        // Inherit-only entries describe descendants, not this observed object.
+        if (entry.flags().contains(AclEntryFlag.INHERIT_ONLY)) return false;
         for (AclEntryPermission permission : entry.permissions()) {
             if (WRITE_PERMISSIONS.contains(permission)) return true;
         }

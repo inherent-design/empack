@@ -484,7 +484,21 @@ class CacheTests(unittest.TestCase):
         environment = dict(os.environ, EMPACK_FIXTURE_VERSION="0.8.6-beta" if self.mode == "wrong-version" else version)
         if self.mode == "missing-protocol":
             environment["EMPACK_FIXTURE_PROTOCOL"] = "missing"
-        return subprocess.run(self.command(version, **kwargs), env=environment, capture_output=True, timeout=40)
+        result = subprocess.run(self.command(version, **kwargs), env=environment, capture_output=True, timeout=40)
+        if (os.name == "nt" and (b"Engine cache ACL admits a writer" in result.stderr
+                or b"Engine cache object is owned by a different user" in result.stderr)
+                and not getattr(type(self), "authority_observed", False)):
+            type(self).authority_observed = True
+            classpath = os.pathsep.join([str(JAR), str(ROOT / "target/test-classes")])
+            observation = subprocess.run([JAVA, "-cp", classpath,
+                "design.inherent.empack.bootstrap.FixtureMain", "cache-authority", str(self.cache)],
+                capture_output=True, timeout=20)
+            try:
+                details = json.loads(observation.stdout)
+            except (ValueError, UnicodeError):
+                details = {"probe_status": observation.returncode, "error": "ACL observation unavailable"}
+            print("Fixture cache authority: " + json.dumps(details), flush=True)
+        return result
 
     def test_verified_first_use_and_offline_reuse(self):
         first = self.invoke()
@@ -629,6 +643,13 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(marker.read_bytes(), b"not cache data")
 
     def test_shared_writable_cache_is_refused(self):
+        classpath = os.pathsep.join([str(JAR), str(ROOT / "target/test-classes")])
+        for flags, expected in [([], b"true"), (["DIRECTORY_INHERIT"], b"true"),
+                                (["DIRECTORY_INHERIT", "INHERIT_ONLY"], b"false")]:
+            observation = subprocess.run([JAVA, "-cp", classpath,
+                "design.inherent.empack.bootstrap.FixtureMain", "effective-write", *flags],
+                check=True, capture_output=True, timeout=20)
+            self.assertEqual(observation.stdout.strip(), expected)
         self.cache.mkdir()
         if os.name == "nt":
             # Use the well-known Everyone SID, not an English account name.

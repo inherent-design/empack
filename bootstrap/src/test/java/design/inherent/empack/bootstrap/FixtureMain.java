@@ -25,6 +25,27 @@ public final class FixtureMain {
             System.err.write(("UTF8_ARGUMENTS=" + new com.google.gson.Gson().toJson(decoded) + "\n")
                     .getBytes(StandardCharsets.UTF_8));
             System.exit(Main.run(decoded));
+        } else if (args[0].equals("effective-write")) {
+            java.nio.file.attribute.AclEntry.Builder entry = java.nio.file.attribute.AclEntry.newBuilder()
+                    .setType(java.nio.file.attribute.AclEntryType.ALLOW)
+                    .setPrincipal(() -> "fixture-outside-writer")
+                    .setPermissions(java.nio.file.attribute.AclEntryPermission.WRITE_DATA);
+            java.util.Set<java.nio.file.attribute.AclEntryFlag> flags = java.util.EnumSet.noneOf(
+                    java.nio.file.attribute.AclEntryFlag.class);
+            for (int i = 1; i < args.length; i++) flags.add(java.nio.file.attribute.AclEntryFlag.valueOf(args[i]));
+            entry.setFlags(flags);
+            System.out.println(EngineCache.writes(entry.build()));
+        } else if (args[0].equals("cache-authority")) {
+            java.util.Map<String, String> observation = new java.util.LinkedHashMap<>();
+            for (String kind : new String[] { "home", "cache" }) {
+                Path path = kind.equals("home") ? Paths.get(System.getProperty("user.home")) : Paths.get(args[1]);
+                observation.put(kind + "_owner", Files.getOwner(path).getName());
+                java.nio.file.attribute.AclFileAttributeView view = Files.getFileAttributeView(
+                        path, java.nio.file.attribute.AclFileAttributeView.class);
+                String acl = view == null ? "no ACL view" : view.getAcl().toString();
+                observation.put(kind + "_acl", acl.substring(0, Math.min(acl.length(), 8192)));
+            }
+            System.out.write((new com.google.gson.Gson().toJson(observation) + "\n").getBytes(StandardCharsets.UTF_8));
         } else if (args[0].equals("unpack")) {
             Platform platform = args[1].equals("current") ? Platform.current()
                     : new Platform(args[1], args[1].contains("windows") ? "empack.exe" : "empack",
