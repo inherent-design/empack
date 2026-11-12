@@ -236,6 +236,20 @@ fn cli_update_requires_apply_even_with_yes() {
     let installed = fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap();
     jar_version(&project, "fixture.jar", "2");
     let before = snapshot(&project);
+    for args in [
+        vec!["update", "fixture", "--select"],
+        vec!["--yes", "update", "fixture", "--select"],
+    ] {
+        command(&project)
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(predicates::str::contains(
+                "Version selection requires an interactive terminal",
+            ));
+        assert_eq!(snapshot(&project), before);
+    }
+
     for selector in ["fixture", "--all"] {
         command(&project)
             .args(["update", selector, "--yes"])

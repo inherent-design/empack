@@ -1018,8 +1018,7 @@ async fn analyzed_update(
                     &mut scope,
                     &project,
                     inputs,
-                    None,
-                    ClosureLimits::default(),
+                    UpdateAnalysisOptions::default(),
                     |_| {},
                 )
                 .await)
@@ -1214,4 +1213,129 @@ async fn analyzed_update_keeps_independent_findings_and_original_provider_error(
     assert!(error.downcast_ref::<ProviderRecordProblem>().is_some());
     independent.assert_async().await;
     no_candidate_fetch.assert_async().await;
+}
+
+#[tokio::test]
+async fn version_selection_refuses_unobserved_choices_and_keeps_the_original_deadline() {
+    struct Choice {
+        late: bool,
+    }
+    impl UpdateVersionSelector for Choice {
+        fn choose<'a>(
+            &'a mut self,
+            choices: &'a UpdateVersionChoices,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<PinSelector>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                assert_eq!(choices.versions.len(), 1);
+                if self.late {
+                    tokio::time::pause();
+                    tokio::time::advance(std::time::Duration::from_secs(301)).await;
+                    Ok(choices.versions[0].pin.selection.clone())
+                } else {
+                    Ok(choices.current.project.parse_pin("Unlisted").unwrap())
+                }
+            })
+        }
+    }
+    for (late, empty) in [(false, false), (false, true), (true, false)] {
+        let mut server = Server::new_async().await;
+        if empty {
+            server.mock("GET", "/project/Project1").with_body(json!({"id":"Project1","slug":"Project1","title":"Project1","project_type":"resourcepack"}).to_string()).create_async().await;
+            server
+                .mock("GET", "/project/Project1/version")
+                .match_query(Matcher::Any)
+                .with_body(
+                    json!([version("Project1", "Version2", "1.21.1", json!([]))]).to_string(),
+                )
+                .create_async()
+                .await;
+        } else {
+            records(&mut server, "Project1", "Version2", json!([])).await;
+        }
+        let project = fixture(&[("root", "Project1", "Version1")], &["root"], &[], true);
+        let input =
+            ProviderAddInput::for_update(&project, &DependencyKey::parse("root").unwrap()).unwrap();
+        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+        let runtime = OperationRuntime::new(
+            ResourceGovernor::new(ResourceRequest {
+                jobs: 2,
+                memory_bytes: 64 << 20,
+                open_files: 8,
+                ..Default::default()
+            }),
+            1,
+        );
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                let mut selector = Choice { late };
+                Ok(catalog
+                    .analyze_provider_update(
+                        &mut scope,
+                        &project,
+                        NonEmpty::new(vec![input]).unwrap(),
+                        UpdateAnalysisOptions {
+                            selector: Some(&mut selector),
+                            ..Default::default()
+                        },
+                        |_| {},
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        runtime.shutdown().await;
+        let OperationOutcome::Completed(result) = &*outcome else {
+            panic!("Selection operation failed")
+        };
+        if empty {
+            let analysis = result.as_ref().unwrap();
+            assert!(analysis.report.dependencies[0].catalog_complete);
+            assert_eq!(analysis.report.dependencies[0].state, "unavailable");
+            assert!(analysis.selected_pins.is_empty());
+            assert!(matches!(
+                analysis
+                    .proposal
+                    .as_ref()
+                    .err()
+                    .unwrap()
+                    .downcast_ref::<CatalogError>(),
+                Some(CatalogError::NoCompatibleSelection)
+            ));
+        } else if late {
+            let analysis = result.as_ref().unwrap();
+            assert!(!analysis.report.is_complete());
+            assert!(analysis.report.dependencies[0].catalog_complete);
+            assert_eq!(
+                analysis.report.dependencies[0]
+                    .permitted
+                    .as_ref()
+                    .unwrap()
+                    .selection,
+                "Version2"
+            );
+            assert!(
+                analysis
+                    .report
+                    .joint
+                    .reasons
+                    .contains(&UpdateReason::Deadline)
+            );
+            assert!(matches!(
+                analysis
+                    .proposal
+                    .as_ref()
+                    .err()
+                    .unwrap()
+                    .downcast_ref::<CatalogError>(),
+                Some(CatalogError::Deadline)
+            ));
+        } else {
+            let error = result.as_ref().err().unwrap();
+            assert!(
+                format!("{error:#}").contains("Selected version was not offered"),
+                "{error:#}"
+            );
+        }
+    }
 }

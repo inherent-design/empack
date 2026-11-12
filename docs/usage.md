@@ -56,6 +56,7 @@ empack update --all
 empack update --all --json --quiet
 empack update sodium --release-policy stable-only
 empack update sodium iris --pin sodium=VERSION_ID --pin iris=VERSION_ID
+empack update sodium iris --select
 empack update sodium iris --apply
 empack migrate --minecraft 1.21.2 --loader fabric --plan
 empack --yes migrate --minecraft 1.21.2 --loader fabric
@@ -66,6 +67,8 @@ Select dependency names or `--all`. Use `--details` for catalog observations, `-
 Update previews are the default; `--apply` is required to change the project, and `--yes` alone does not apply anything. A later `--apply` invocation prepares a fresh proposal; it does not execute a saved copy of the earlier preview. `--all` selects explicit author dependencies; retained libraries are checked as context rather than independently upgraded.
 
 Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. The result reports changed and kept dependencies separately; checking a dependency does not mean it was upgraded. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
+
+Use `update KEY… --select` to choose observed versions for named provider dependencies. The menu includes versions matching the pack's Minecraft and loader, labels prereleases and marks the installed version. Choosing deliberately pins that dependency and can override its automatic release preference. It still only previews unless `--apply` is present. The printed `--pin` command repeats the choice without reopening the menu. Selection requires an interactive terminal; it cannot be combined with `--yes`, `--all`, `--pin` or `--json`. Local and URL sources use their ordinary update path.
 
 `update --all` shows version checks, available changes and problems alongside the prepared proposal. A targeted check such as `update sodium` also shows why that dependency is kept, including an exact pin. Use `--details` for the full list, version choices and check information; `--json` retains the complete structured report. `--quiet` hides progress on stderr. Unknown results mean a check could not finish, not that a dependency is up to date.
 

@@ -62,6 +62,7 @@ struct BlockedGroup {
 }
 
 pub(in crate::application::engine_host) struct UpdatePreviewReport {
+    pub(super) repeat_command: Option<String>,
     requested: Vec<String>,
     source_kinds: BTreeMap<String, &'static str>,
     observations: Option<UpdateAssessment>,
@@ -83,6 +84,7 @@ impl UpdatePreviewReport {
         requested.sort();
         requested.dedup();
         Self {
+            repeat_command: None,
             requested,
             source_kinds,
             observations,
@@ -209,6 +211,14 @@ impl UpdatePreviewReport {
         Ok(())
     }
     pub fn finish(&self, session: &dyn Session, output: UpdateOutput) {
+        if !output.json
+            && let Some(command) = &self.repeat_command
+        {
+            session.display().status().message(&format!(
+                "Repeat this selection ({}): {command}",
+                crate::application::shell::NAME
+            ));
+        }
         if !output.json && !output.details && self.observations.is_some() {
             session
                 .display()

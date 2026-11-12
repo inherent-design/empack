@@ -628,6 +628,21 @@ where
     F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
     Fut: Future<Output = Result<T>> + Send + 'static,
 {
+    scoped_with_selections(session, governor, quiet, None, work).await
+}
+
+async fn scoped_with_selections<T, F, Fut>(
+    session: &dyn Session,
+    governor: ResourceGovernor,
+    quiet: bool,
+    mut questions: Option<tokio::sync::mpsc::Receiver<dependencies::selection::Question>>,
+    work: F,
+) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
     session.process().check_cancelled()?;
     let runtime = crate::engine::runtime::OperationRuntime::new(governor, 1);
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -642,6 +657,20 @@ where
         tokio::select! {
             biased;
             result = handle.wait() => break result,
+            question = async {
+                match questions.as_mut() {
+                    Some(receiver) => receiver.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match question {
+                    Some(question) => {
+                        progress.pause();
+                        question.answer(session);
+                    }
+                    None => questions = None,
+                }
+            }
             _ = ticks.tick(), if !cancellation_requested => {
                 progress.observe_work(handle.progress());
                 if session.process().check_cancelled().is_err() {

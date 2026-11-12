@@ -5182,6 +5182,7 @@
       "required_assertions": "Populated current/permitted/runtime-compatible/upstream/pinned/manual/failed observations; shared budget; useful findings rendered before mandatory proposal failure; no preview mutation.",
       "required_work": "Keep independent expected reports including retained inventory, native proposal and incomplete provider evidence; empty smoke alone is insufficient.",
       "evidence_tiers": [
+        "U",
         "H",
         "X",
         "L"
@@ -5334,6 +5335,48 @@
           "assertions": [
             "The actual executable assesses a populated exact-pinned Modrinth project through live routes with a schema-1 update preview, retains the pin and all author bytes, and distinguishes current/permitted from compatible/upstream observations",
             "Successful provider closure does not claim complete candidate or gameplay compatibility; the subsequent update journey preserves the same pin until explicitly unpinned"
+          ]
+        },
+        {
+          "id": "UX-032.interactive-selection",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::application::engine_host::dependencies::tests::interactive_update_uses_observed_versions_and_requires_separate_application",
+            "empack-lib::application::engine_host::dependencies::tests::interactive_update_cancellation_preserves_author_and_host_state",
+            "empack-lib::engine::providers::assessment::tests::version_selection_refuses_unobserved_choices_and_keeps_the_original_deadline"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "A real bounded provider list, including an installed version, eligible prerelease and unrelated runtime, produces the intended escaped menu and a deliberate exact pin; preview preserves source/state and separate approved application changes that pin without promoting retained libraries",
+            "Selection cancellation retains interruption status and unchanged source/state; unoffered identities are refused and a deliberate choice cannot reset the original deadline",
+            "The shared host loop clears temporary progress before a prompt, continues the same captured operation and only applies after native preparation and approval; an exact nonapplying command can repeat the selection"
+          ]
+        },
+        {
+          "id": "UX-032.selection-admission",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::providers::compatible::tests::explicit_version_choices_keep_eligible_prereleases_without_weakening_admission"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Explicit runtime-eligible prereleases remain selectable under stable-only automatic policy, but other runtimes remain excluded and eligible payload validation and catalog count bounds are unchanged"
           ]
         }
       ],

@@ -225,6 +225,9 @@ pub struct UpdateArgs {
     /// Deliberately change selected provider pins: KEY=VERSION_ID
     #[arg(long = "pin", value_name = "KEY=ID")]
     pub pins: Vec<String>,
+    /// Choose observed versions interactively and preview explicit pin changes
+    #[arg(long, conflicts_with_all = ["all", "pins", "json"])]
+    pub select: bool,
     /// Version preference; exact author pins remain exact
     #[arg(long, value_enum)]
     pub release_policy: Option<CliReleasePolicy>,
@@ -1769,6 +1772,16 @@ mod consumer_cli_tests {
             vec!["empack", "update"],
             vec!["empack", "update", "--all", "sodium"],
             vec!["empack", "update", "--all", "--apply", "--dry-run"],
+            vec!["empack", "update", "--all", "--select"],
+            vec![
+                "empack",
+                "update",
+                "sodium",
+                "--select",
+                "--pin",
+                "sodium=Version1",
+            ],
+            vec!["empack", "update", "sodium", "--select", "--json"],
         ] {
             assert!(Cli::try_parse_from(arguments).is_err());
         }
@@ -1779,6 +1792,15 @@ mod consumer_cli_tests {
         assert!(options.all);
         assert!(!options.apply, "--yes must never imply application");
         assert!(options.dependencies.is_empty());
+        let selected = Cli::try_parse_from(["empack", "update", "sodium", "--select"]).unwrap();
+        assert!(matches!(
+            selected.command,
+            Some(Commands::Update(UpdateArgs {
+                select: true,
+                apply: false,
+                ..
+            }))
+        ));
         let cli =
             Cli::try_parse_from(["empack", "update", "sodium", "lithium", "--apply"]).unwrap();
         let Some(Commands::Update(options)) = cli.command else {

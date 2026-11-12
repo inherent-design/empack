@@ -35,6 +35,7 @@ fn version(id: &str, channel: &str, date: &str, game: &str, loader: &str) -> Val
 }
 fn page(project: &CanonicalProject, policy: ReleasePolicy, versions: Vec<Value>) -> Page {
     parse_page(
+        CatalogScanMode::Observe,
         project,
         &request(project, policy),
         &serde_json::to_vec(&versions).unwrap(),
@@ -201,6 +202,7 @@ fn malformed_dates_wrong_ownership_and_entry_overflow_cannot_select_a_file() {
         let mut bad = original.clone();
         bad[field] = json!(value);
         let error = parse_page(
+            CatalogScanMode::Observe,
             &project,
             &request,
             &serde_json::to_vec(&vec![bad]).unwrap(),
@@ -223,6 +225,7 @@ fn malformed_dates_wrong_ownership_and_entry_overflow_cannot_select_a_file() {
     }
     assert!(
         parse_page(
+            CatalogScanMode::Observe,
             &project,
             &request,
             &serde_json::to_vec(&vec![original]).unwrap(),
@@ -252,6 +255,7 @@ fn malformed_version_diagnostics_identify_the_record_or_missing_field() {
             bad["date_published"] = Value::Null;
         }
         let error = parse_page(
+            CatalogScanMode::Observe,
             &project,
             &request,
             &serde_json::to_vec(&vec![bad]).unwrap(),
@@ -574,6 +578,7 @@ fn unavailable_records_need_identity_but_not_downloadable_file_evidence() {
         };
         let request = request(&project, ReleasePolicy::Any);
         let parsed = parse_page(
+            CatalogScanMode::Observe,
             &project,
             &request,
             &encode(vec![unavailable.clone(), eligible.clone()]),
@@ -591,6 +596,7 @@ fn unavailable_records_need_identity_but_not_downloadable_file_evidence() {
         }
         assert!(
             parse_page(
+                CatalogScanMode::Observe,
                 &project,
                 &request,
                 &encode(vec![unavailable, eligible]),
@@ -810,4 +816,89 @@ async fn assessment_never_returns_partial_curseforge_pages_as_latest() {
         assert_eq!(governor.status().reserved, ResourceRequest::default());
         second.assert_async().await;
     }
+}
+
+#[test]
+fn explicit_version_choices_keep_eligible_prereleases_without_weakening_admission() {
+    let project = mr_project();
+    let request = request(&project, ReleasePolicy::StableOnly);
+    let versions = vec![
+        version(
+            "stable01",
+            "release",
+            "2026-01-01T00:00:00Z",
+            "1.20.1",
+            "fabric",
+        ),
+        version(
+            "beta0001",
+            "beta",
+            "2026-02-01T00:00:00Z",
+            "1.20.1",
+            "fabric",
+        ),
+        version(
+            "other001",
+            "release",
+            "2026-03-01T00:00:00Z",
+            "1.21.1",
+            "fabric",
+        ),
+    ];
+    let bytes = serde_json::to_vec(&versions).unwrap();
+    let parsed = parse_page(
+        CatalogScanMode::Choose,
+        &project,
+        &request,
+        &bytes,
+        0,
+        3,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(parsed.count, 3);
+    assert_eq!(parsed.candidates.len(), 1);
+    assert_eq!(
+        parsed.candidates[0].selected.resolution.pin.selection,
+        project.id.parse_pin("stable01").unwrap()
+    );
+    let choices: Vec<_> = parsed
+        .choices
+        .iter()
+        .map(|(_, value)| value.pin.selection.clone())
+        .collect();
+    assert_eq!(
+        choices,
+        [
+            project.id.parse_pin("stable01").unwrap(),
+            project.id.parse_pin("beta0001").unwrap()
+        ]
+    );
+    assert!(
+        parse_page(
+            CatalogScanMode::Choose,
+            &project,
+            &request,
+            &bytes,
+            0,
+            2,
+            &Cancellation::default()
+        )
+        .is_err()
+    );
+    let mut malformed = versions;
+    malformed[1]["files"] = json!([]);
+    let error = parse_page(
+        CatalogScanMode::Choose,
+        &project,
+        &request,
+        &serde_json::to_vec(&malformed).unwrap(),
+        0,
+        3,
+        &Cancellation::default(),
+    )
+    .err()
+    .unwrap();
+    assert!(error.is::<CatalogError>());
+    assert!(format!("{error:#}").contains("files"));
 }

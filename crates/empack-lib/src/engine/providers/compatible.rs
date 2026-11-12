@@ -100,18 +100,38 @@ pub struct CatalogAssessment {
     pub observed_records: usize,
     _pages: Vec<RetainedOutput<Page>>,
 }
+#[derive(Clone, Copy)]
+pub(super) enum CatalogScanMode {
+    Resolve,
+    Observe,
+    Choose,
+}
+impl CatalogAssessment {
+    /// Runtime-eligible observations from a complete bounded choice scan. An exact
+    /// deliberate pin may override release preference, but never runtime admission.
+    pub(super) fn choices(&self) -> Vec<SelectionObservation> {
+        let mut choices: Vec<_> = self._pages.iter().flat_map(|page| &page.choices).collect();
+        choices.sort_by(|a, b| a.0.cmp(&b.0));
+        choices
+            .into_iter()
+            .map(|(_, observation)| observation.clone())
+            .collect()
+    }
+}
 struct CatalogScan {
     pages: Vec<RetainedOutput<Page>>,
     best: Option<(usize, usize)>,
     count: usize,
     budget: transport::RequestBudget,
 }
+type SelectionRank = (u8, usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin);
 type ObservationRank = (usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin);
 struct Candidate {
     selected: CompatibleSelection,
-    rank: (u8, usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin),
+    rank: SelectionRank,
 }
 struct Page {
+    choices: Vec<(SelectionRank, SelectionObservation)>,
     candidates: Vec<Candidate>,
     policy_observation: Option<SelectionObservation>,
     compatible: Option<(ObservationRank, SelectionObservation)>,
@@ -160,7 +180,14 @@ impl ProviderCatalog {
         transport::RequestBudget,
     )> {
         let mut scan = self
-            .scan_catalog(scope, request, limits, budget, false, None)
+            .scan_catalog(
+                scope,
+                request,
+                limits,
+                budget,
+                CatalogScanMode::Resolve,
+                None,
+            )
             .await?;
         let (page, candidate) = scan.best.ok_or(CatalogError::NoCompatibleSelection)?;
         Ok((
@@ -184,6 +211,7 @@ impl ProviderCatalog {
             limits,
             transport::RequestBudget::new(limits.catalog)?,
             None,
+            CatalogScanMode::Observe,
         )
         .await
         .map(|value| value.0)
@@ -195,9 +223,10 @@ impl ProviderCatalog {
         limits: SelectionLimits,
         budget: transport::RequestBudget,
         progress: Option<&(dyn Fn(usize) + Sync)>,
+        mode: CatalogScanMode,
     ) -> Result<(CatalogAssessment, transport::RequestBudget)> {
         let scan = self
-            .scan_catalog(scope, request, limits, budget, true, progress)
+            .scan_catalog(scope, request, limits, budget, mode, progress)
             .await?;
         let permitted = scan
             .best
@@ -231,7 +260,7 @@ impl ProviderCatalog {
         request: CompatibleRequest,
         limits: SelectionLimits,
         budget: transport::RequestBudget,
-        all_versions: bool,
+        mode: CatalogScanMode,
         progress: Option<&(dyn Fn(usize) + Sync)>,
     ) -> Result<CatalogScan> {
         ensure!(
@@ -277,7 +306,7 @@ impl ProviderCatalog {
             .filter(|value| unique_games.insert(value.clone()))
             .collect();
         // CurseForge accepts one gameVersion filter. Modrinth accepts the whole explicit list.
-        let queries = if all_versions {
+        let queries = if !matches!(mode, CatalogScanMode::Resolve) {
             vec![Vec::new()]
         } else {
             match &request.project {
@@ -325,8 +354,9 @@ impl ProviderCatalog {
                     retained,
                     move |cancel| {
                         let ((bytes, budget), _permit) = raw.into_parts();
-                        let page =
-                            parse_page(&project, &request, &bytes, index, remaining, &cancel)?;
+                        let page = parse_page(
+                            mode, &project, &request, &bytes, index, remaining, &cancel,
+                        )?;
                         Ok::<_, anyhow::Error>((page, budget))
                     },
                 )?;
@@ -473,6 +503,7 @@ struct CurseForgePage {
     pagination: Pagination,
 }
 fn parse_page(
+    mode: CatalogScanMode,
     project: &CanonicalProject,
     request: &CompatibleRequest,
     bytes: &[u8],
@@ -510,6 +541,7 @@ fn parse_page(
     };
     ensure!(values.len() <= maximum, CatalogError::Limit);
     let count = values.len();
+    let mut choices = Vec::new();
     let mut candidates = Vec::new();
     let mut policy_observation = None;
     let mut compatible: Option<(ObservationRank, SelectionObservation)> = None;
@@ -663,6 +695,19 @@ fn parse_page(
         if compatible.as_ref().is_none_or(|previous| rank < previous.0) {
             compatible = Some((rank, observation.clone()));
         }
+        if matches!(mode, CatalogScanMode::Choose) {
+            let preference = match (request.releases, channel) {
+                (
+                    ReleasePolicy::PreferStable | ReleasePolicy::StableOnly,
+                    ReleaseChannel::Beta | ReleaseChannel::Alpha,
+                ) => 1,
+                _ => 0,
+            };
+            choices.push((
+                (preference, game, std::cmp::Reverse(date), pin.clone()),
+                observation.clone(),
+            ));
+        }
         let channel_rank = match (request.releases, channel) {
             (ReleasePolicy::StableOnly, ReleaseChannel::Beta | ReleaseChannel::Alpha) => continue,
             (ReleasePolicy::PreferStable, ReleaseChannel::Beta | ReleaseChannel::Alpha) => 1,
@@ -688,6 +733,7 @@ fn parse_page(
         }
     }
     Ok(Page {
+        choices,
         candidates,
         policy_observation,
         compatible,

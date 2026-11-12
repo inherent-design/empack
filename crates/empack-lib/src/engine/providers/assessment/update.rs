@@ -3,10 +3,33 @@ use super::*;
 use anyhow::Context;
 use empack_core::model::{DependencyKey, ResolvedIdentity};
 
+/// A bounded list of observed runtime-eligible versions, never application authority.
+#[derive(Clone)]
+pub struct UpdateVersionChoices {
+    pub key: DependencyKey,
+    pub name: String,
+    pub current: ResolvedPin,
+    pub versions: Vec<SelectionObservation>,
+}
+/// The host obtains a deliberate choice; the catalog validates that it was offered.
+pub trait UpdateVersionSelector: Send {
+    fn choose<'a>(
+        &'a mut self,
+        choices: &'a UpdateVersionChoices,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<PinSelector>> + Send + 'a>>;
+}
+#[derive(Default)]
+pub struct UpdateAnalysisOptions<'a> {
+    pub releases: Option<ReleasePolicy>,
+    pub limits: ClosureLimits,
+    pub selector: Option<&'a mut dyn UpdateVersionSelector>,
+}
+
 /// Discovery can succeed partially while a coherent proposal is unavailable.
 /// A normalized group is not a native preparation or authority to publish it.
 pub struct ProviderUpdateAnalysis {
     pub report: UpdateAssessment,
+    pub selected_pins: BTreeMap<DependencyKey, PinSelector>,
     pub proposal: Result<ProviderAdditionOutcome>,
 }
 
@@ -22,12 +45,11 @@ impl ProviderCatalog {
         scope: &mut WorkScope,
         current: &ResolvedProject,
         inputs: NonEmpty<ProviderAddInput>,
-        releases: Option<ReleasePolicy>,
-        limits: ClosureLimits,
+        options: UpdateAnalysisOptions<'_>,
         progress: impl Fn(AssessmentProgress) + Send + Sync,
     ) -> Result<ProviderUpdateAnalysis> {
         let mut request = AssessmentRequest {
-            releases,
+            releases: options.releases,
             ..Default::default()
         };
         let mut choices = BTreeMap::new();
@@ -98,12 +120,25 @@ impl ProviderCatalog {
             report,
             closure,
             failure,
+            selected_pins,
         } = self
-            .observe_updates(scope, current, request, limits, |observation| {
-                record(observation.clone().into());
-                progress(observation);
-            })
+            .observe_updates(
+                scope,
+                current,
+                request,
+                options.limits,
+                options.selector,
+                |observation| {
+                    record(observation.clone().into());
+                    progress(observation);
+                },
+            )
             .await?;
+        for input in choices.values_mut() {
+            if let Some(pin) = input.key.as_ref().and_then(|key| selected_pins.get(key)) {
+                input.pin = Some(pin.clone());
+            }
+        }
         let proposal = match closure {
             Some(closure) if report.is_complete() || !closure.complete_for_required() => {
                 ensure!(
@@ -116,6 +151,10 @@ impl ProviderCatalog {
                 "Some dependency checks could not finish; no complete update proposal is available",
             )),
         };
-        Ok(ProviderUpdateAnalysis { report, proposal })
+        Ok(ProviderUpdateAnalysis {
+            report,
+            selected_pins,
+            proposal,
+        })
     }
 }

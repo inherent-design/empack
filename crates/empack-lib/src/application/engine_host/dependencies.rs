@@ -133,6 +133,7 @@ pub(super) async fn update_with_services(
         releases,
         evidence,
         Change::Update {
+            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
             pins: Default::default(),
             mode: ApplicationMode::Apply,
             output: UpdateOutput::default(),
@@ -209,9 +210,13 @@ pub(super) fn configured_services(session: &dyn Session) -> Result<AdditionServi
         files,
     })
 }
+pub(super) mod selection;
+pub(super) use selection::UpdateSelection;
+
 enum Change {
     Add(ExistingDependencyPolicy),
     Update {
+        selection: UpdateSelection,
         pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
         mode: ApplicationMode,
         output: UpdateOutput,
@@ -220,6 +225,7 @@ enum Change {
 }
 
 pub(super) struct UpdateExecution {
+    pub selection: UpdateSelection,
     pub batch: BatchPolicy,
     pub pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
     pub mode: ApplicationMode,
@@ -279,6 +285,7 @@ pub(super) async fn update_batch_with_services(
         releases,
         evidence,
         Change::Update {
+            selection: execution.selection,
             pins: execution.pins,
             mode: execution.mode,
             output: execution.output,
@@ -293,10 +300,47 @@ async fn change_with_services(
     inputs: NonEmpty<AddHostInput>,
     releases: impl Into<Option<ReleasePolicy>> + Send,
     evidence: SourceEvidencePolicy,
-    change: Change,
+    mut change: Change,
     services: AdditionServices,
     batch: BatchPolicy,
 ) -> Result<()> {
+    let selecting = matches!(
+        &change,
+        Change::Update {
+            selection: UpdateSelection::Interactive,
+            ..
+        }
+    );
+    if selecting {
+        ensure!(
+            !session.config().app_config().yes && session.interactive().can_choose(),
+            crate::application::cli::CommandInputRequired(
+                "Version selection requires an interactive terminal; use --pin KEY=VERSION_ID without --select"
+            )
+        );
+        ensure!(
+            matches!(
+                &change,
+                Change::Update {
+                    output: UpdateOutput { json: false, .. },
+                    ..
+                }
+            ),
+            crate::application::cli::CommandInputRequired(
+                "--select cannot be combined with --json"
+            )
+        );
+        ensure!(
+            inputs
+                .as_slice()
+                .iter()
+                .all(|input| matches!(input, AddHostInput::Provider(_)))
+                && matches!(&change, Change::Update { pins, .. } if pins.is_empty()),
+            crate::application::cli::CommandInputRequired(
+                "--select requires provider dependencies and cannot be combined with --pin"
+            )
+        );
+    }
     let releases = releases.into();
     let update = matches!(&change, Change::Update { .. });
     let update_mode = match &change {
@@ -389,11 +433,18 @@ async fn change_with_services(
     let mut limits = ClosureLimits::default();
     limits.selection.catalog.deadline = Duration::from_secs(config.net_timeout);
     let (report_sender, mut report_receiver) = tokio::sync::oneshot::channel();
+    let (mut selector, questions) = if selecting {
+        let (selector, questions) = selection::channel();
+        (Some(selector), Some(questions))
+    } else {
+        (None, None)
+    };
     let result = async {
-        let resolution = scoped_with_feedback(
+        let resolution = scoped_with_selections(
             session,
             shared,
             update_output.quiet,
+            questions,
             move |mut scope| async move {
                 let work =
                     scope.spawn_blocking(
@@ -446,12 +497,15 @@ async fn change_with_services(
                                 &mut scope,
                                 &current,
                                 NonEmpty::new(providers)?,
-                                releases,
-                                limits,
+                                crate::engine::providers::UpdateAnalysisOptions {
+                                    releases,
+                                    limits,
+                                    selector: selector.as_mut().map(|value| value as &mut dyn crate::engine::providers::UpdateVersionSelector),
+                                },
                                 |_| {},
                             )
                             .await?;
-                        let _ = report_sender.send(analysis.report);
+                        let _ = report_sender.send((analysis.report, analysis.selected_pins));
                         analysis.proposal
                     } else {
                         services
@@ -533,8 +587,14 @@ async fn change_with_services(
         .await;
         // Preserve useful independent discoveries before reporting a blocked proposal.
         // Successful proposals continue to the exact native preview below.
-        let mut report =
-            UpdatePreviewReport::new(requested, source_kinds, report_receiver.try_recv().ok());
+        let (observations, selected_pins) = report_receiver.try_recv().ok()
+            .map(|(report, pins)| (Some(report), pins)).unwrap_or_default();
+        let repeat_command = selection::repeat_command(&project, &requested, &selected_pins);
+        if let Change::Update { pins, .. } = &mut change {
+            pins.extend(selected_pins);
+        }
+        let mut report = UpdatePreviewReport::new(requested, source_kinds, observations);
+        report.repeat_command = repeat_command;
         if update && let Err(error) = &resolution {
             report.failed(error);
             report.present(session, update_output)?;

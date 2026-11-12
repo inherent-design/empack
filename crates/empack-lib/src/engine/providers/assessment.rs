@@ -1,5 +1,6 @@
 //! Read-only update evidence; catalog rows and joint dependency validation are separate.
 use super::*;
+use anyhow::Context;
 use empack_core::model::{
     DependencySelection, ProviderIncompatibility, ResolvedProject, SourceIntent,
 };
@@ -9,10 +10,13 @@ use tokio::time::Instant;
 mod report;
 mod update;
 pub use report::*;
-pub use update::ProviderUpdateAnalysis;
+pub use update::{
+    ProviderUpdateAnalysis, UpdateAnalysisOptions, UpdateVersionChoices, UpdateVersionSelector,
+};
 
 struct ObservedUpdate {
     report: UpdateAssessment,
+    selected_pins: BTreeMap<empack_core::model::DependencyKey, PinSelector>,
     closure: Option<ProviderClosure>,
     failure: Option<anyhow::Error>,
 }
@@ -52,7 +56,7 @@ impl ProviderCatalog {
         progress: impl Fn(AssessmentProgress) + Send + Sync,
     ) -> Result<UpdateAssessment> {
         Ok(self
-            .observe_updates(scope, project, request, limits, progress)
+            .observe_updates(scope, project, request, limits, None, progress)
             .await?
             .report)
     }
@@ -61,8 +65,9 @@ impl ProviderCatalog {
         &self,
         scope: &mut WorkScope,
         project: &ResolvedProject,
-        request: AssessmentRequest,
+        mut request: AssessmentRequest,
         limits: ClosureLimits,
+        mut selector: Option<&mut dyn UpdateVersionSelector>,
         progress: impl Fn(AssessmentProgress) + Send + Sync,
     ) -> Result<ObservedUpdate> {
         let policy = request.releases;
@@ -98,6 +103,7 @@ impl ProviderCatalog {
             },
         };
         let mut roots = Vec::new();
+        let mut selected_pins = BTreeMap::new();
         let mut retained_closure = None;
         let mut failure = None;
         let mut complete = true;
@@ -185,7 +191,18 @@ impl ProviderCatalog {
                 })
             };
             match self
-                .assess_versions_budget(scope, query, limits.selection, remaining, Some(&observe))
+                .assess_versions_budget(
+                    scope,
+                    query,
+                    limits.selection,
+                    remaining,
+                    Some(&observe),
+                    if selector.is_some() {
+                        super::compatible::CatalogScanMode::Choose
+                    } else {
+                        super::compatible::CatalogScanMode::Observe
+                    },
+                )
                 .await
             {
                 Ok((assessment, remaining)) => {
@@ -207,6 +224,45 @@ impl ProviderCatalog {
                         .upstream
                         .as_ref()
                         .map(ObservedVersion::observation);
+                    let choices = assessment.choices();
+                    if let Some(ref mut selector) = selector {
+                        if choices.is_empty() {
+                            row.state = "unavailable";
+                            row.reasons.push(UpdateReason::NoCompatibleSelection);
+                            complete = false;
+                            failure = Some(CatalogError::NoCompatibleSelection.into());
+                            report.dependencies.push(row);
+                            continue;
+                        }
+                        let offered = UpdateVersionChoices {
+                            key: key.clone(),
+                            name: row.name.clone(),
+                            current: current
+                                .cloned()
+                                .context("Provider dependency lacks an exact selection")?,
+                            versions: choices.clone(),
+                        };
+                        let selected = selector.choose(&offered).await?;
+                        scope.cancellation().check()?;
+                        ensure!(
+                            choices.iter().any(|value| value.pin.selection == selected
+                                && &value.pin.project == identity),
+                            "Selected version was not offered for {}",
+                            key.as_str()
+                        );
+                        request.exact.insert(key.clone(), selected.clone());
+                        selected_pins.insert(key.clone(), selected);
+                        if let Err(error) = budget
+                            .as_ref()
+                            .context("Missing shared catalog budget")?
+                            .check_deadline()
+                        {
+                            report.joint.reasons.push(UpdateReason::Deadline);
+                            failure = Some(error);
+                            complete = false;
+                            budget = None;
+                        }
+                    }
                     let held = intent.and_then(|intent| match &intent.selection {
                         DependencySelection::ProviderPin(pin) => Some(pin),
                         _ => None,
@@ -225,10 +281,15 @@ impl ProviderCatalog {
                         assessment.permitted.as_ref().map(|value| value.pin.clone())
                     };
                     row.permitted = permitted.as_ref().map(|pin| {
-                        assessment
-                            .permitted
-                            .as_ref()
-                            .filter(|value| &value.pin == pin)
+                        choices
+                            .iter()
+                            .find(|value| &value.pin == pin)
+                            .or_else(|| {
+                                assessment
+                                    .permitted
+                                    .as_ref()
+                                    .filter(|value| &value.pin == pin)
+                            })
                             .map_or_else(
                                 || ObservedVersion::from_pin(pin),
                                 ObservedVersion::observation,
@@ -384,6 +445,7 @@ impl ProviderCatalog {
         scope.cancellation().check()?;
         Ok(ObservedUpdate {
             report,
+            selected_pins,
             closure: retained_closure,
             failure,
         })

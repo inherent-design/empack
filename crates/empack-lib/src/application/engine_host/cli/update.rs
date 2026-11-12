@@ -29,6 +29,20 @@ pub async fn update_command(
             "--json previews cannot be combined with --apply or --details"
         )
     );
+    if options.select {
+        ensure!(
+            !options.all && options.pins.is_empty() && !options.json,
+            crate::application::cli::CommandInputRequired(
+                "--select cannot be combined with --all, --pin or --json"
+            )
+        );
+        ensure!(
+            !session.config().app_config().yes && session.interactive().can_choose(),
+            crate::application::cli::CommandInputRequired(
+                "Version selection requires an interactive terminal; use --pin KEY=VERSION_ID without --select"
+            )
+        );
+    }
     let current = current(session).await?;
     let keys = if options.all {
         current
@@ -67,6 +81,11 @@ pub async fn update_command(
         SourceEvidencePolicy::Compatibility,
         dependencies::configured_services(session)?,
         dependencies::UpdateExecution {
+            selection: if options.select {
+                dependencies::UpdateSelection::Interactive
+            } else {
+                dependencies::UpdateSelection::Automatic
+            },
             batch: if options.continue_independent {
                 BatchPolicy::ContinueIndependent
             } else {
@@ -269,6 +288,7 @@ pub(super) async fn update_pinned_with_services(
         SourceEvidencePolicy::Compatibility,
         services,
         dependencies::UpdateExecution {
+            selection: crate::application::engine_host::dependencies::selection::UpdateSelection::Automatic,
             batch: policy,
             pins,
             mode: ApplicationMode::Apply,

@@ -68,7 +68,8 @@ pub struct MockInteractiveProvider {
     pub text_input_calls: Arc<Mutex<Vec<(String, String)>>>, // (prompt, default)
     pub confirm_calls: Arc<Mutex<Vec<(String, bool)>>>,      // (prompt, default)
     pub select_calls: Arc<Mutex<Vec<String>>>,               // prompt
-    pub fuzzy_select_calls: Arc<Mutex<Vec<String>>>,         // prompt
+    pub fuzzy_select_options: Arc<Mutex<Vec<Vec<String>>>>,
+    pub fuzzy_select_calls: Arc<Mutex<Vec<String>>>, // prompt
     pub text_input_response: Arc<Mutex<Option<String>>>,
     pub confirm_response: Arc<Mutex<Option<bool>>>,
     pub select_response: Arc<Mutex<Option<usize>>>,
@@ -83,6 +84,7 @@ impl MockInteractiveProvider {
             text_input_calls: Arc::new(Mutex::new(Vec::new())),
             confirm_calls: Arc::new(Mutex::new(Vec::new())),
             select_calls: Arc::new(Mutex::new(Vec::new())),
+            fuzzy_select_options: Arc::new(Mutex::new(Vec::new())),
             fuzzy_select_calls: Arc::new(Mutex::new(Vec::new())),
             text_input_response: Arc::new(Mutex::new(None)),
             confirm_response: Arc::new(Mutex::new(None)),
@@ -257,7 +259,11 @@ impl InteractiveProvider for MockInteractiveProvider {
         }
     }
 
-    fn fuzzy_select(&self, prompt: &str, _options: &[String]) -> Result<Option<usize>> {
+    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<Option<usize>> {
+        self.fuzzy_select_options
+            .lock()
+            .unwrap()
+            .push(options.to_vec());
         self.fuzzy_select_calls
             .lock()
             .unwrap()

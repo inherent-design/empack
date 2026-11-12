@@ -27,6 +27,15 @@ impl ProgressDisplay {
             observation: None,
         }
     }
+    pub(super) fn pause(&mut self) {
+        if let Some(spinner) = self.spinner.take() {
+            spinner.finish_clear();
+        }
+        self.pending = None;
+        self.observation = None;
+        self.phase = None;
+        self.last = None;
+    }
     pub(super) fn observe_work(&mut self, observation: Option<WorkProgress>) {
         let Some(observation) = observation else {
             return;
@@ -236,6 +245,17 @@ mod tests {
         assert_eq!(
             messages.lock().unwrap().last().unwrap(),
             "Checking conflicts"
+        );
+        display.pause();
+        assert_eq!(messages.lock().unwrap().last().unwrap(), "<clear>");
+        display.update_at(
+            "catalog",
+            "Reading after the choice",
+            start + Duration::from_secs(2),
+        );
+        assert_eq!(
+            messages.lock().unwrap().last().unwrap(),
+            "Reading after the choice"
         );
         drop(display);
         assert_eq!(messages.lock().unwrap().last().unwrap(), "<clear>");
