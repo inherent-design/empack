@@ -53,7 +53,7 @@ class BootstrapTests(unittest.TestCase):
         cls.engine = native_engine()
 
     def invoke(self, *args, **kwargs):
-        return subprocess.run([JAVA, "-jar", str(JAR), *args], capture_output=True,
+        return subprocess.run([JAVA, "-Dfile.encoding=UTF-8", "-jar", str(JAR), *args], capture_output=True,
                               timeout=20, **kwargs)
 
     def test_packaged_help_and_version(self):
@@ -78,8 +78,11 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual(header[:4], b"\xca\xfe\xba\xbe", name)
                 self.assertLessEqual(struct.unpack(">H", header[6:8])[0], 52, name)
 
-    def test_engine_argv_streams_unicode_and_status_are_preserved(self):
-        args = ["--", "value with spaces", "日本語", "", "line\nbreak", "$(display only)"]
+    def test_literal_engine_argv_streams_and_status_are_preserved(self):
+        # Unicode static inputs have their own required file-route test below.
+        # Literal JVM ingress limits are retained by probe_encoding.py, not
+        # silently treated as successful Unicode consumer qualification.
+        args = ["--", "value with spaces", "ASCII", "", "line\nbreak", "$(display only)"]
         data = b"console input\n\x00\xff"
         result = self.invoke("--engine-version", "0.8.5-beta", "--engine", str(self.engine),
                              "--", "--fixture-argv", *args, input=data)
@@ -93,53 +96,133 @@ class BootstrapTests(unittest.TestCase):
             offset += 4
             actual.append(result.stdout[offset:offset + length].decode("utf-8"))
             offset += length
+        self.assertEqual(actual, args)
         self.assertEqual(result.stdout[offset:], data)
-        # Keep the literal-argv assertion below. This independent, nonshipping
-        # probe distinguishes JVM ingress from the shipping Java/native handoff;
-        # observing a file route must not turn a broken literal route into a pass.
-        observations = [{"route": "literal", "argv": actual, "status": result.returncode}]
-        with tempfile.TemporaryDirectory(prefix="empack argument ingress ") as temporary:
-            invocation = Path(temporary) / "invocation space.json"
-            fixture_arguments = [
-                "--engine-version", "0.8.5-beta", "--engine", str(self.engine),
-                "--", "--fixture-argv", *args]
-            invocation.write_text(json.dumps(fixture_arguments, ensure_ascii=False), encoding="utf-8")
-            classpath = os.pathsep.join([str(JAR), str(ROOT / "target/test-classes")])
-            command = [JAVA, "-cp", classpath, "design.inherent.empack.bootstrap.FixtureMain"]
-            cli = ["arguments-from-cli", *fixture_arguments]
-            file = ["arguments-from-file", str(invocation)]
-            variants = [("jvm-cli", cli, None), ("utf8-file", file, None)]
+
+    def test_invocation_file_preserves_unicode_and_runtime_boundary_after_relocation(self):
+        with tempfile.TemporaryDirectory(prefix="empack-file-invocation-") as temporary:
+            original = Path(temporary) / "original 日本語"
+            tools = original / ".empack-tools"
+            tools.mkdir(parents=True)
+            (original / ".minecraft").mkdir()
+            shutil.copyfile(JAR, tools / "empack-bootstrap.jar")
+            shutil.copy2(self.engine, tools / ("empack.exe" if os.name == "nt" else "empack"))
+            arguments = ["--fixture-argv", "日本語", "café", "😀", "", "line\nbreak", "--"]
+            document = {"schema": "empack-bootstrap-invocation/1", "engine_version": "0.8.5-beta",
+                        "arguments": arguments, "append_arguments": True}
+            record = tools / "launch.json"
+            record.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+            before = record.read_bytes()
+            relocated = original.with_name("moved 日本語 pack")
+            original.rename(relocated)
+            dynamic = ["runtime argument", "example-secret-not-for-disk"]
+            result = subprocess.run([JAVA, "-Dfile.encoding=UTF-8", "-jar",
+                                     "../.empack-tools/empack-bootstrap.jar", "--invocation-file",
+                                     "../.empack-tools/launch.json", "--", *dynamic],
+                                    cwd=relocated / ".minecraft", input=b"console input",
+                                    capture_output=True, timeout=20)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            actual, position = [], 4
+            count = struct.unpack(">I", result.stdout[:4])[0]
+            for _ in range(count):
+                length = struct.unpack(">I", result.stdout[position:position + 4])[0]
+                position += 4
+                actual.append(result.stdout[position:position + length].decode("utf-8"))
+                position += length
+            self.assertEqual(actual, arguments[1:] + dynamic)
+            self.assertEqual(result.stdout[position:], b"console input")
+            self.assertEqual(result.stderr, b"fixture returned 7\n")
+            self.assertEqual((relocated / ".empack-tools/launch.json").read_bytes(), before)
+            self.assertNotIn(dynamic[1].encode(), before)
+            self.assertEqual(sorted(p.name for p in (relocated / ".empack-tools").iterdir()),
+                             sorted(["launch.json", "empack-bootstrap.jar", "empack.exe" if os.name == "nt" else "empack"]))
+
+    def test_invocation_file_rejects_invalid_inputs_without_delegation(self):
+        document = {"schema": "empack-bootstrap-invocation/1", "engine_version": "0.8.5-beta",
+                    "arguments": ["--fixture-argv"], "append_arguments": False}
+        good = json.dumps(document).encode()
+        variants = {"truncated": good[:-1], "invalid-utf8": b"\xff", "trailing": good + b" {}",
+                    "duplicate": good[:-1] + b', "engine_version":"0.8.5-beta"}',
+                    "oversized": b" " * (1024 * 1024 + 1), "comment": b"/* comment */" + good}
+        for name, change in {
+            "unknown-field": {"unexpected": "private-value-must-not-be-echoed"},
+            "wrong-schema": {"schema": "other/1"}, "version-null": {"engine_version": None},
+            "no-arguments": {"arguments": []}, "nonstring": {"arguments": [123]},
+            "nul": {"arguments": ["bad\0value"]}, "surrogate": {"arguments": ["\ud800"]},
+            "append-not-boolean": {"append_arguments": "false"},
+            "many-arguments": {"arguments": [""] * 4097},
+            "long-argument": {"arguments": ["a" * 65537]},
+        }.items():
+            variants[name] = json.dumps(dict(document, **change)).encode()
+        with tempfile.TemporaryDirectory() as temporary:
+            tools = Path(temporary) / ".empack-tools"
+            tools.mkdir()
+            record = tools / "prepare.json"
+            for label, content in variants.items():
+                with self.subTest(label=label):
+                    record.write_bytes(content)
+                    result = self.invoke("--engine", str(self.engine), "--invocation-file", str(record))
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotEqual(result.returncode, 7)
+                    self.assertEqual(result.stdout, b"")
+                    self.assertIn(b"Invalid bootstrap invocation file", result.stderr)
+                    self.assertNotIn(b"private-value-must-not-be-echoed", result.stderr)
+                    self.assertEqual(record.read_bytes(), content)
+            record.write_bytes(good)
+            for extra in [("--", "unexpected-runtime"), ("--engine-version", "0.8.5-beta")]:
+                with self.subTest(extra=extra):
+                    result = self.invoke("--engine", str(self.engine), "--invocation-file", str(record), *extra)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertEqual(result.stdout, b"")
             if os.name != "nt":
-                c_locale = dict(os.environ, LANG="C", LC_ALL="C")
-                variants.extend([("jvm-cli-C-locale", cli, c_locale),
-                                 ("utf8-file-C-locale", file, c_locale)])
-            for route, arguments, environment in variants:
-                probe = subprocess.run([*command, *arguments], env=environment, input=data,
-                                       capture_output=True, timeout=20)
-                observation = {"route": route, "status": probe.returncode}
-                try:
-                    decoded = next(line for line in probe.stderr.splitlines()
-                                   if line.startswith(b"UTF8_ARGUMENTS="))
-                    observation["jvm_arguments"] = json.loads(decoded.removeprefix(b"UTF8_ARGUMENTS="))
-                    count = struct.unpack(">I", probe.stdout[:4])[0]
-                    position, values = 4, []
-                    if count != len(args):
-                        raise ValueError("unexpected argument count")
-                    for _ in range(count):
-                        length = struct.unpack(">I", probe.stdout[position:position + 4])[0]
-                        position += 4
-                        values.append(probe.stdout[position:position + length].decode("utf-8"))
-                        position += length
-                    observation.update(argv=values, input_preserved=probe.stdout[position:] == data)
-                except (ValueError, struct.error, UnicodeError, StopIteration):
-                    observation["error"] = "probe did not return the fixture argument record"
-                observations.append(observation)
-        print(json.dumps({"scope": "argument-file feasibility; C-locale observations are supplemental",
-                          "observations": observations}), flush=True)
-        self.assertEqual(actual, args, "Literal JVM transport differs from the original Unicode arguments")
-        self.assertEqual(observations[2].get("argv"), args)
-        self.assertEqual(observations[2]["status"], 7)
-        self.assertTrue(observations[2].get("input_preserved"))
+                record.unlink()
+                other = Path(temporary) / "other.json"
+                other.write_bytes(good)
+                record.symlink_to(other)
+                result = self.invoke("--engine", str(self.engine), "--invocation-file", str(record))
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(other.read_bytes(), good)
+                record.unlink()
+            else:
+                record.unlink()
+            tools.rmdir()
+            outside = Path(temporary) / "outside"
+            outside.mkdir()
+            (outside / "prepare.json").write_bytes(good)
+            if os.name == "nt":
+                subprocess.run(["cmd", "/d", "/c", "mklink", "/J", str(tools), str(outside)],
+                               check=True, capture_output=True)
+            else:
+                tools.symlink_to(outside, target_is_directory=True)
+            try:
+                result = self.invoke("--engine", str(self.engine), "--invocation-file", str(record))
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual((outside / "prepare.json").read_bytes(), good)
+            finally:
+                if os.name == "nt":
+                    tools.rmdir()
+                else:
+                    tools.unlink()
+
+    def test_invocation_capture_is_not_reopened_after_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            tools = Path(temporary) / ".empack-tools"
+            tools.mkdir()
+            record = tools / "prepare.json"
+            record.write_text(json.dumps({"schema": "empack-bootstrap-invocation/1",
+                                          "engine_version": "0.8.5-beta", "arguments": ["--fixture-argv", "captured"],
+                                          "append_arguments": False}), encoding="utf-8")
+            classpath = os.pathsep.join([str(JAR), str(ROOT / "target/test-classes")])
+            result = subprocess.run([
+                JAVA, "-Dfile.encoding=UTF-8", "-cp", classpath,
+                "design.inherent.empack.bootstrap.FixtureMain", "captured-invocation", str(record),
+                "--engine", str(self.engine), "--invocation-file", str(record)],
+                input=b"stdin", capture_output=True, timeout=20)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual(result.stdout, struct.pack(">II", 1, 8) + b"capturedstdin")
+            self.assertEqual(record.read_text(), "invalid replacement must not execute")
 
     def test_newer_local_engine_does_not_replace_requested_version(self):
         result = self.invoke("--engine-version", "0.8.4-beta", "--engine", str(self.engine),
@@ -174,6 +257,11 @@ class BootstrapTests(unittest.TestCase):
                                      "--", "--fixture-argv")
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(result.stdout, b"")
+        control = self.invoke("--unexpected-\x1b]52;c;YQ==\x07", "value")
+        self.assertEqual(control.returncode, 2)
+        self.assertNotIn(b"\x1b", control.stderr)
+        self.assertNotIn(b"\x07", control.stderr)
+        self.assertIn(b"\\u{1b}]52", control.stderr)
         repeated = self.invoke("--engine-version", "0.8.5-beta", "--engine-version", "0.8.5-beta",
                                "--engine", str(self.engine), "--", "--fixture-argv")
         self.assertEqual(repeated.returncode, 2)
@@ -650,7 +738,10 @@ class CacheTests(unittest.TestCase):
                 "design.inherent.empack.bootstrap.FixtureMain", "effective-write", *flags],
                 check=True, capture_output=True, timeout=20)
             self.assertEqual(observation.stdout.strip(), expected)
-        self.cache.mkdir()
+        initial = self.invoke(offline=True)
+        self.assertNotEqual(initial.returncode, 0)
+        self.assertIn(b"Requested engine is not cached", initial.stderr)
+        self.assertEqual(self.asset_requests, 0)
         if os.name == "nt":
             # Use the well-known Everyone SID, not an English account name.
             # Only this disposable directory is changed; no elevation is needed.

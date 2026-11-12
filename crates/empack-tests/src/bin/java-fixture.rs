@@ -11,24 +11,24 @@ fn main() {
     .unwrap();
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     if arguments.len() >= 5
-        && arguments[0] == "-jar"
-        && PathBuf::from(&arguments[1])
+        && arguments[0] == "-Dfile.encoding=UTF-8"
+        && arguments[1] == "-jar"
+        && PathBuf::from(&arguments[2])
             .file_name()
             .is_some_and(|name| name == "empack-bootstrap.jar")
     {
-        // Only game Java is simulated. The generated installer must still run
-        // the real JAR and native engine, including descriptor verification.
-        assert_eq!(arguments[2], "--engine-version");
-        assert_eq!(arguments[4], "--");
+        // Only game Java is simulated. The real JAR reads the generated file;
+        // the selected native engine still verifies the exact release descriptor.
+        assert_eq!(arguments[3], "--invocation-file");
         let mut command = std::process::Command::new(config["bootstrap_java"].as_str().unwrap());
         command
-            .args(&arguments[..4])
+            .args(&arguments[..3])
             .arg("--engine")
             .arg(config["engine"].as_str().unwrap());
         if config["development_engine"].as_bool().unwrap() {
             command.arg("--development-engine");
         }
-        let status = command.args(&arguments[4..]).status().unwrap();
+        let status = command.args(&arguments[3..]).status().unwrap();
         std::process::exit(status.code().unwrap_or(1));
     }
     let probe = arguments == ["-XshowSettings:properties", "-version"];

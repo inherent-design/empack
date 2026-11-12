@@ -257,6 +257,14 @@ impl Server {
         )
         .unwrap();
         command.env("PATH", paths).env("EMPACK_NO_PAUSE", "1");
+        // This fixture requires Unicode *external JVM* arguments. Keep the
+        // harness's ordinary C-locale CLI coverage separate from that contract.
+        #[cfg(target_os = "linux")]
+        command.env("LANG", "C.UTF-8").env("LC_ALL", "C.UTF-8");
+        #[cfg(target_os = "macos")]
+        command
+            .env("LANG", "en_US.UTF-8")
+            .env("LC_ALL", "en_US.UTF-8");
         if home {
             command.env(
                 "JAVA_HOME",

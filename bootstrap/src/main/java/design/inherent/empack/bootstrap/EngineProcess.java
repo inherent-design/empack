@@ -79,10 +79,11 @@ final class EngineProcess {
         }
     }
 
-    static int execute(List<String> command) throws IOException, InterruptedException {
+    static int execute(List<String> command, Path directory) throws IOException, InterruptedException {
         Integer completed = null;
         try (Control control = new Control()) {
             ProcessBuilder builder = new ProcessBuilder(command).inheritIO();
+            if (directory != null) builder.directory(directory.toFile());
             builder.environment().put("EMPACK_BOOTSTRAP_CONTROL", control.descriptor());
             Process process = builder.start();
             try {
@@ -188,7 +189,7 @@ final class EngineProcess {
                 } catch (SocketException stopped) {
                     closeCandidate(candidate);
                     if (!server.isClosed()) {
-                        System.err.println("empack-bootstrap: cancellation connection failed: " + stopped.getMessage());
+                        System.err.println("empack-bootstrap: cancellation connection failed: " + Main.safeText(stopped.getMessage()));
                     }
                     return;
                 } catch (IOException failure) {

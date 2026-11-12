@@ -27,6 +27,10 @@ import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
+import java.nio.file.attribute.FileAttribute;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -42,6 +46,7 @@ final class EngineCache {
     private final EngineCatalog catalog;
     private final UserPrincipal owner;
     private final Set<UserPrincipal> homeWriters = new HashSet<>();
+    private final FileAttribute<List<AclEntry>> directoryAcl;
     private static final Set<AclEntryPermission> WRITE_PERMISSIONS = EnumSet.of(
             AclEntryPermission.WRITE_DATA, AclEntryPermission.APPEND_DATA,
             AclEntryPermission.WRITE_ATTRIBUTES, AclEntryPermission.WRITE_NAMED_ATTRS,
@@ -56,12 +61,25 @@ final class EngineCache {
         owner = Files.getOwner(home);
         homeWriters.add(owner);
         AclFileAttributeView homeAcl = Files.getFileAttributeView(home, AclFileAttributeView.class);
-        if (homeAcl != null) {
-            // Preserve the host's existing user-home trust boundary, including
-            // system/administrator principals, without English account-name rules.
+        if (homeAcl == null) {
+            directoryAcl = null;
+        } else {
+            List<AclEntry> entries = new ArrayList<>();
             for (AclEntry entry : homeAcl.getAcl()) {
                 if (entry.type() == AclEntryType.ALLOW && writes(entry)) homeWriters.add(entry.principal());
+                if (!entry.flags().contains(AclEntryFlag.INHERIT_ONLY) || entry.type() == AclEntryType.DENY) {
+                    entries.add(AclEntry.newBuilder(entry)
+                            .setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT).build());
+                }
             }
+            entries.add(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
+                    .setPermissions(EnumSet.allOf(AclEntryPermission.class))
+                    .setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT).build());
+            List<AclEntry> captured = Collections.unmodifiableList(entries);
+            directoryAcl = new FileAttribute<List<AclEntry>>() {
+                @Override public String name() { return "acl:acl"; }
+                @Override public List<AclEntry> value() { return captured; }
+            };
         }
     }
 
@@ -209,7 +227,13 @@ final class EngineCache {
                 if (Files.getFileStore(parent).supportsFileAttributeView("posix")) {
                     Files.createDirectory(absolute, PosixFilePermissions.asFileAttribute(
                             PosixFilePermissions.fromString("rwx------")));
-                } else Files.createDirectory(absolute);
+                } else {
+                    if (directoryAcl == null) throw new IOException("Cannot establish private engine-cache ACLs");
+                    // Establish the home trust boundary atomically on creation,
+                    // rather than inheriting a temporary parent's default ACL.
+                    // Existing objects and competing winners are never repaired.
+                    Files.createDirectory(absolute, directoryAcl);
+                }
             } catch (FileAlreadyExistsException competingCreator) { /* Revalidate the winner below. */ }
         }
         BasicFileAttributes attributes = Files.readAttributes(absolute, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);

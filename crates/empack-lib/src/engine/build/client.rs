@@ -265,16 +265,22 @@ pub(super) fn prepare_client_archive(
                 file.clone(),
             );
         }
-        Some(format!(
-            "{} --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
-            super::bootstrap::prism(),
-            release.release().id(),
-            if subscribed {
-                " --require-subscription"
-            } else {
-                ""
-            }
-        ))
+        for (file, prepare) in [
+            (super::bootstrap::PREPARE, true),
+            (super::bootstrap::LAUNCH, false),
+        ] {
+            files.insert(
+                path(file)?,
+                super::bootstrap::invocation(
+                    prepare,
+                    true,
+                    subscribed,
+                    release.release().id(),
+                    cancel,
+                )?,
+            );
+        }
+        Some(super::bootstrap::prism(super::bootstrap::PREPARE))
     } else {
         for (destination, file) in game.files() {
             files.insert(
@@ -289,11 +295,7 @@ pub(super) fn prepare_client_archive(
         command.clone().unwrap_or_default(),
     );
     let wrapper = if managed {
-        format!(
-            "{} --workdir \"$INST_DIR\" --yes instance launch --java-runtime {}--",
-            super::bootstrap::prism(),
-            if subscribed { "--check-updates " } else { "" }
-        )
+        format!("{} --", super::bootstrap::prism(super::bootstrap::LAUNCH))
     } else {
         String::new()
     };

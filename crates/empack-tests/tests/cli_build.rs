@@ -81,6 +81,8 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
         members.keys().map(String::as_str).collect::<Vec<_>>(),
         [
             ".empack-tools/empack-bootstrap.jar",
+            ".empack-tools/launch.json",
+            ".empack-tools/prepare.json",
             ".minecraft/.empack-consumer/release.json",
             "instance.cfg",
             "mmc-pack.json",
@@ -115,15 +117,23 @@ fn cli_fabric_prism_tar_gz_preserves_exact_components_and_managed_commands() {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let bootstrap = format!(
-        "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} --",
-        empack_tests::harness::process::expected_automation_version()
+    let version = empack_tests::harness::process::expected_automation_version();
+    let prepare_record: Value =
+        serde_json::from_slice(bytes(".empack-tools/prepare.json")).unwrap();
+    assert_eq!(
+        prepare_record,
+        json!({"schema":"empack-bootstrap-invocation/1", "engine_version":version,
+        "arguments":["--workdir", ".", "--yes", "instance", "prepare", ".minecraft/.empack-consumer/release.json", "--sha256", hash, "--layout", "prism", "--side", "client"], "append_arguments":false})
     );
-    let prepare = format!(
-        "{bootstrap} --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {hash} --layout prism --side client"
+    let launch_record: Value = serde_json::from_slice(bytes(".empack-tools/launch.json")).unwrap();
+    assert_eq!(
+        launch_record,
+        json!({"schema":"empack-bootstrap-invocation/1", "engine_version":version,
+        "arguments":["--workdir", ".", "--yes", "instance", "launch", "--java-runtime", "--"], "append_arguments":true})
     );
-    let wrapper =
-        format!("{bootstrap} --workdir \"$INST_DIR\" --yes instance launch --java-runtime --");
+    let bootstrap = "\"$INST_JAVA\" -Dfile.encoding=UTF-8 -jar \"../.empack-tools/empack-bootstrap.jar\" --invocation-file";
+    let prepare = format!("{bootstrap} \"../.empack-tools/prepare.json\"");
+    let wrapper = format!("{bootstrap} \"../.empack-tools/launch.json\" --");
     let configuration = std::str::from_utf8(bytes("instance.cfg")).unwrap();
     for setting in [
         "ConfigVersion=1.2".to_owned(),

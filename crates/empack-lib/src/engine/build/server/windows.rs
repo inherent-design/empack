@@ -12,9 +12,12 @@ pub(super) fn start_batch(managed: bool, interface: ServerInterface) -> String {
         "cd game || goto directory_error\r\n"
     };
     let command = if managed {
-        "empack --workdir \"%cd%\" --yes instance launch -- "
+        format!(
+            "{} -- ",
+            super::super::bootstrap::server(super::super::bootstrap::LAUNCH, true)
+        )
     } else {
-        ""
+        String::new()
     };
     let arguments = interface.arguments();
     let script = format!(
@@ -23,22 +26,21 @@ pub(super) fn start_batch(managed: bool, interface: ServerInterface) -> String {
     if managed { bootstrap(script) } else { script }
 }
 
-pub(super) fn install_batch(release: Option<&str>) -> String {
-    let command = match release {
-        Some(id) => format!("empack --workdir \"%cd%\" --yes instance prepare \"%cd%\\.empack-consumer\\release.json\" --sha256 {id} --layout game --side server\r\nset \"_EMPACK_EXIT=%errorlevel%\"\r\nif not \"%_EMPACK_EXIT%\"==\"0\" (\r\n  echo Preparation failed. Check bootstrap acquisition and the preceding download or subscription error.\r\n  goto finish\r\n)\r\n"),
-        None => "if not exist game\\ goto directory_error\r\necho This bundled server already includes its pack and runtime files; no download is needed.\r\n".into(),
+pub(super) fn install_batch(managed: bool) -> String {
+    let command = if managed {
+        format!(
+            "{}\r\nset \"_EMPACK_EXIT=%errorlevel%\"\r\nif not \"%_EMPACK_EXIT%\"==\"0\" (\r\n  echo Preparation failed. Check bootstrap acquisition and the preceding download or subscription error.\r\n  goto finish\r\n)\r\n",
+            super::super::bootstrap::server(super::super::bootstrap::PREPARE, true)
+        )
+    } else {
+        "if not exist game\\ goto directory_error\r\necho This bundled server already includes its pack and runtime files; no download is needed.\r\n".into()
     };
     let script = format!(
         "{HEADER}{command}echo Server pack ready. Run start.bat to start it.\r\necho Review and accept the Minecraft EULA yourself before playing.\r\nset \"_EMPACK_EXIT=0\"\r\n{FINISH}"
     );
-    if release.is_some() {
-        bootstrap(script)
-    } else {
-        script
-    }
+    if managed { bootstrap(script) } else { script }
 }
 
 fn bootstrap(script: String) -> String {
-    let script = script.replace(HEADER, &format!("{HEADER}set \"_EMPACK_JAVA=java\"\r\nif defined JAVA_HOME set \"_EMPACK_JAVA=%JAVA_HOME%\\bin\\java.exe\"\r\n"));
-    super::super::bootstrap::server(script, true)
+    script.replace(HEADER, &format!("{HEADER}set \"_EMPACK_JAVA=java\"\r\nif defined JAVA_HOME set \"_EMPACK_JAVA=%JAVA_HOME%\\bin\\java.exe\"\r\n"))
 }

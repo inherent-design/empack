@@ -411,14 +411,34 @@ fn native_clients_preserve_exact_releases_and_install_into_prism() {
                 include_bytes!(concat!(env!("OUT_DIR"), "/empack-bootstrap.jar"))
             );
             assert!(ini.contains("$INST_JAVA"));
-            assert!(ini.contains("--engine-version"));
-            assert!(ini.contains("instance prepare"));
+            assert!(ini.contains("-Dfile.encoding=UTF-8"));
+            assert!(ini.contains("--invocation-file"));
+            assert!(ini.contains("../.empack-tools/prepare.json"));
+            assert!(ini.contains("../.empack-tools/launch.json"));
+            let prepare: Value = serde_json::from_slice(
+                &fs::read(instance.path().join(super::super::bootstrap::PREPARE)).unwrap(),
+            )
+            .unwrap();
+            let launch: Value = serde_json::from_slice(
+                &fs::read(instance.path().join(super::super::bootstrap::LAUNCH)).unwrap(),
+            )
+            .unwrap();
             assert!(
-                ini.lines().any(|line| line.starts_with("WrapperCommand=")
-                    && line.contains("instance launch --"))
+                prepare["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == release.id())
             );
-            assert!(ini.contains(release.id()));
-            assert!(ini.contains("--layout prism --side client"));
+            assert!(
+                prepare["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == "prism")
+            );
+            assert_eq!(prepare["append_arguments"], false);
+            assert_eq!(launch["append_arguments"], true);
             let provider = release
                 .document()
                 .files
@@ -669,19 +689,25 @@ fn managed_prism_templates_preserve_unrelated_custom_settings() {
             "MaxMemAlloc=4096",
             "iconKey=custom_icon",
             "OverrideCommands=true",
-            "instance prepare",
-            "instance launch",
+            "prepare.json",
+            "launch.json",
         ] {
             assert!(ini.contains(setting), "missing {setting}: {ini}");
         }
-        assert_eq!(
-            ini.contains("--check-updates"),
-            recipe.update_authority() == UpdateAuthority::Empack
-        );
-        assert_eq!(
-            ini.contains("--require-subscription"),
-            recipe.update_authority() == UpdateAuthority::Empack
-        );
+        for (file, flag) in [
+            (super::super::bootstrap::LAUNCH, "--check-updates"),
+            (super::super::bootstrap::PREPARE, "--require-subscription"),
+        ] {
+            let value: Value = serde_json::from_reader(zip.by_name(file).unwrap()).unwrap();
+            assert_eq!(
+                value["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|value| value == flag),
+                recipe.update_authority() == UpdateAuthority::Empack
+            );
+        }
         assert!(
             zip.by_name(".minecraft/.empack-consumer/release.json")
                 .is_ok()

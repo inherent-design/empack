@@ -10,21 +10,13 @@ import java.util.Collections;
 /** Nonshipping archive/cache harness and argument-boundary feasibility probe. */
 public final class FixtureMain {
     public static void main(String[] args) throws Exception {
-        if (args[0].equals("arguments-from-file") || args[0].equals("arguments-from-cli")) {
-            // Feasibility probe only: controlled fixture input bypasses the
-            // JVM launcher's argv decoding, then uses the shipping handoff.
-            // This is not a production argument-file parser or authority.
-            String[] decoded;
-            if (args[0].equals("arguments-from-file")) {
-                try (java.io.Reader input = Files.newBufferedReader(Paths.get(args[1]), StandardCharsets.UTF_8)) {
-                    decoded = new com.google.gson.Gson().fromJson(input, String[].class);
-                }
-            } else {
-                decoded = java.util.Arrays.copyOfRange(args, 1, args.length);
-            }
-            System.err.write(("UTF8_ARGUMENTS=" + new com.google.gson.Gson().toJson(decoded) + "\n")
-                    .getBytes(StandardCharsets.UTF_8));
-            System.exit(Main.run(decoded));
+        if (args[0].equals("captured-invocation")) {
+            Main.Options options = Main.Options.parse(java.util.Arrays.copyOfRange(args, 2, args.length));
+            Path record = Paths.get(args[1]);
+            Path replacement = record.resolveSibling("replacement.json");
+            Files.write(replacement, "invalid replacement must not execute".getBytes(StandardCharsets.UTF_8));
+            Files.move(replacement, record, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            System.exit(Main.run(options));
         } else if (args[0].equals("effective-write")) {
             java.nio.file.attribute.AclEntry.Builder entry = java.nio.file.attribute.AclEntry.newBuilder()
                     .setType(java.nio.file.attribute.AclEntryType.ALLOW)

@@ -156,22 +156,23 @@ JAVA_PATH="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 cd -- game
 exec "$JAVA_PATH" -jar server.jar {{SERVER_ARGUMENTS}}"$@"
 "#;
-fn start_script(references: bool, interface: ServerInterface) -> String {
+fn start_script(managed: bool, interface: ServerInterface) -> String {
     let script = START_SH.replace("{{SERVER_ARGUMENTS}}", interface.arguments());
-    if references {
-        super::bootstrap::server(
-            script
-                .replace("cd -- game\n", "bash ./install_pack.sh\n")
-                .replace(
-                    "exec \"$JAVA_PATH\"",
-                    "exec empack --workdir \"$PWD\" --yes instance launch -- \"$JAVA_PATH\"",
+    if managed {
+        script
+            .replace("cd -- game\n", "bash ./install_pack.sh\n")
+            .replace(
+                "exec \"$JAVA_PATH\"",
+                &format!(
+                    "exec {} -- \"$JAVA_PATH\"",
+                    super::bootstrap::server(super::bootstrap::LAUNCH, false),
                 ),
-            false,
-        )
+            )
     } else {
         script
     }
 }
+
 fn runtime_start(
     launch: &ServerLaunch,
     references: bool,
@@ -184,9 +185,7 @@ fn runtime_start(
         start_script(references, interface)
     };
     if references {
-        return script
-            .replace("instance launch --", "instance launch --server --")
-            .replace(" -jar server.jar", "");
+        return script.replace(" -jar server.jar", "");
     }
     let quote = |value: &str| {
         if windows {
@@ -224,21 +223,15 @@ fn runtime_script(
     }
 }
 
-fn consumer_script(script: String, target: Recipe) -> String {
-    if target.update_authority() == empack_core::distribution::UpdateAuthority::Empack {
-        script
-            .replace(
-                "instance launch --server --",
-                "instance launch --server --check-updates --",
-            )
-            .replace("--side server", "--side server --require-subscription")
+fn install_script(managed: bool) -> String {
+    let command = if managed {
+        format!(
+            "JAVA_PATH=\"${{JAVA_HOME:+$JAVA_HOME/bin/}}java\"\n{}\n",
+            super::bootstrap::server(super::bootstrap::PREPARE, false)
+        )
     } else {
-        script
-    }
-}
-
-fn install_script(release: Option<&str>) -> String {
-    let command = release.map(|id| super::bootstrap::server(format!("JAVA_PATH=\"${{JAVA_HOME:+$JAVA_HOME/bin/}}java\"\nempack --workdir \"$PWD\" --yes instance prepare \"$PWD/.empack-consumer/release.json\" --sha256 {id} --layout game --side server\n"), false)).unwrap_or_default();
+        String::new()
+    };
     format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
@@ -361,6 +354,21 @@ pub(super) fn prepare_server_archive(
             path(".empack-consumer/release.json")?,
             generated(release.release().bytes(), false, cancel)?,
         )?;
+        for (name, prepare) in [
+            (super::bootstrap::PREPARE, true),
+            (super::bootstrap::LAUNCH, false),
+        ] {
+            insert(
+                path(name)?,
+                super::bootstrap::invocation(
+                    prepare,
+                    false,
+                    target.update_authority() == empack_core::distribution::UpdateAuthority::Empack,
+                    release.release().id(),
+                    cancel,
+                )?,
+            )?;
+        }
         for (destination, file) in release.assets() {
             insert(
                 path(&format!(".empack-consumer/{}", destination.as_str()))?,
@@ -398,74 +406,54 @@ pub(super) fn prepare_server_archive(
     for (name, bytes, executable) in [
         (
             "start.sh",
-            consumer_script(
-                runtime_script(
-                    runtime.launch(),
-                    managed,
-                    false,
-                    ServerInterface::Console,
-                    &java,
-                ),
-                target,
+            runtime_script(
+                runtime.launch(),
+                managed,
+                false,
+                ServerInterface::Console,
+                &java,
             )
             .into_bytes(),
             true,
         ),
         (
             "start.bat",
-            consumer_script(
-                runtime_script(
-                    runtime.launch(),
-                    managed,
-                    true,
-                    ServerInterface::Console,
-                    &java,
-                ),
-                target,
+            runtime_script(
+                runtime.launch(),
+                managed,
+                true,
+                ServerInterface::Console,
+                &java,
             )
             .into_bytes(),
             false,
         ),
         (
             "start_gui.sh",
-            consumer_script(
-                runtime_script(
-                    runtime.launch(),
-                    managed,
-                    false,
-                    ServerInterface::Gui,
-                    &java,
-                ),
-                target,
+            runtime_script(
+                runtime.launch(),
+                managed,
+                false,
+                ServerInterface::Gui,
+                &java,
             )
             .into_bytes(),
             true,
         ),
         (
             "start_gui.bat",
-            consumer_script(
-                runtime_script(runtime.launch(), managed, true, ServerInterface::Gui, &java),
-                target,
-            )
-            .into_bytes(),
+            runtime_script(runtime.launch(), managed, true, ServerInterface::Gui, &java)
+                .into_bytes(),
             false,
         ),
         (
             "install_pack.bat",
-            consumer_script(
-                install_batch(release.as_ref().map(|release| release.release().id())),
-                target,
-            )
-            .into_bytes(),
+            install_batch(managed).into_bytes(),
             false,
         ),
         (
             "install_pack.sh",
-            consumer_script(
-                install_script(release.as_ref().map(|release| release.release().id())),
-                target,
-            )
-            .into_bytes(),
+            install_script(managed).into_bytes(),
             true,
         ),
     ] {

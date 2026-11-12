@@ -148,7 +148,11 @@ fn assert_inventory(
         })
     );
     let (prepare, wrapper) = if managed {
-        names.insert(BOOTSTRAP_PATH.into());
+        names.extend([
+            BOOTSTRAP_PATH.into(),
+            ".empack-tools/prepare.json".into(),
+            ".empack-tools/launch.json".into(),
+        ]);
         assert_bootstrap_member(&members[BOOTSTRAP_PATH]);
         let path = ".minecraft/.empack-consumer/release.json";
         names.insert(path.into());
@@ -194,22 +198,41 @@ fn assert_inventory(
             assert_eq!(members[&member].small.as_deref().unwrap(), bytes);
             names.insert(member);
         }
+        let prepare_record: Value =
+            serde_json::from_slice(bytes(".empack-tools/prepare.json")).unwrap();
+        let launch_record: Value =
+            serde_json::from_slice(bytes(".empack-tools/launch.json")).unwrap();
+        let mut prepare_arguments = vec![
+            "--workdir",
+            ".",
+            "--yes",
+            "instance",
+            "prepare",
+            ".minecraft/.empack-consumer/release.json",
+            "--sha256",
+        ];
+        let digest = hash(bytes(path));
+        prepare_arguments.extend([digest.as_str(), "--layout", "prism", "--side", "client"]);
+        if subscribed {
+            prepare_arguments.push("--require-subscription");
+        }
+        let mut launch_arguments = vec!["--workdir", ".", "--yes", "instance", "launch"];
+        if subscribed {
+            launch_arguments.push("--check-updates");
+        }
+        launch_arguments.extend(["--java-runtime", "--"]);
+        for (record, arguments, append) in [
+            (prepare_record, prepare_arguments, false),
+            (launch_record, launch_arguments, true),
+        ] {
+            assert_eq!(
+                record,
+                json!({"schema":"empack-bootstrap-invocation/1", "engine_version":empack_tests::harness::process::expected_automation_version(), "arguments":arguments, "append_arguments":append})
+            );
+        }
         (
-            format!(
-                "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} -- --workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 {} --layout prism --side client{}",
-                empack_tests::harness::process::expected_automation_version(),
-                hash(bytes(path)),
-                if subscribed {
-                    " --require-subscription"
-                } else {
-                    ""
-                }
-            ),
-            format!(
-                "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} -- --workdir \"$INST_DIR\" --yes instance launch --java-runtime{} --",
-                empack_tests::harness::process::expected_automation_version(),
-                if subscribed { " --check-updates" } else { "" }
-            ),
+            "\"$INST_JAVA\" -Dfile.encoding=UTF-8 -jar \"../.empack-tools/empack-bootstrap.jar\" --invocation-file \"../.empack-tools/prepare.json\"".to_owned(),
+            "\"$INST_JAVA\" -Dfile.encoding=UTF-8 -jar \"../.empack-tools/empack-bootstrap.jar\" --invocation-file \"../.empack-tools/launch.json\" --".to_owned(),
         )
     } else {
         for &(path, bytes) in content {
@@ -1068,13 +1091,16 @@ fn cli_reference_prism_prepares_exact_content_and_rebuilds_without_version_chang
                 .unwrap(),
         )
         .unwrap();
-        let command_prefix = format!(
-            "\"$INST_JAVA\" -jar \"$INST_DIR/.empack-tools/empack-bootstrap.jar\" --engine-version {} -- ",
-            empack_tests::harness::process::expected_automation_version()
-        );
-        let engine_prepare = prepare.strip_prefix(&command_prefix).unwrap();
-        let embedded_digest = engine_prepare.strip_prefix("--workdir \"$INST_DIR\" --yes instance prepare \"$INST_DIR/.minecraft/.empack-consumer/release.json\" --sha256 ").unwrap()
-            .strip_suffix(" --layout prism --side client").unwrap();
+        assert!(prepare.contains("--invocation-file"));
+        let invocation: Value =
+            serde_json::from_slice(&members[".empack-tools/prepare.json"]).unwrap();
+        let arguments = invocation["arguments"].as_array().unwrap();
+        let hash_index = arguments
+            .iter()
+            .position(|value| value == "--sha256")
+            .unwrap()
+            + 1;
+        let embedded_digest = arguments[hash_index].as_str().unwrap();
         assert_eq!(embedded_digest, digest);
         let instance = tempfile::Builder::new()
             .prefix("Prism instance café ")

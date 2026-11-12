@@ -56,7 +56,7 @@ public final class Main {
         try {
             code = run(args);
         } catch (IllegalArgumentException error) {
-            System.err.println("empack-bootstrap: " + error.getMessage());
+            System.err.println("empack-bootstrap: " + safeText(error.getMessage()));
             code = 2;
         } catch (InterruptedException | InterruptedIOException error) {
             Thread.currentThread().interrupt();
@@ -77,14 +77,33 @@ public final class Main {
             if (message == null || message.isEmpty()) message = error.getClass().getSimpleName();
             result.append(message.substring(0, Math.min(message.length(), 2048)));
         }
+        return safeText(result.toString());
+    }
+
+    static String safeText(String value) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if ((Character.isISOControl(ch) && ch != '\n' && ch != '\t')
+                    || ch == '\u061c' || ch == '\u200e' || ch == '\u200f'
+                    || (ch >= '\u202a' && ch <= '\u202e') || (ch >= '\u2066' && ch <= '\u2069')) {
+                result.append("\\u{").append(Integer.toHexString(ch)).append('}');
+            } else {
+                result.append(ch);
+            }
+        }
         return result.toString();
     }
 
     static int run(String[] args) throws Exception {
         if (args.length == 1 && args[0].equals("--help")) {
-            System.out.println("Usage: java -jar empack-bootstrap.jar --engine-version VERSION "
-                    + "[--engine FILE] [--cache DIRECTORY] [--offline] [--development-engine] -- EMPACK_ARGUMENTS\n"
+            System.out.println("Usage: java -Dfile.encoding=UTF-8 -jar empack-bootstrap.jar [OPTIONS] "
+                    + "--engine-version VERSION -- EMPACK_ARGUMENTS\n"
+                    + "   or: java -Dfile.encoding=UTF-8 -jar empack-bootstrap.jar [OPTIONS] "
+                    + "--invocation-file FILE [-- RUNTIME_ARGUMENTS]\n"
                     + "Run the exact selected native empack without a global installation.\n"
+                    + "--invocation-file .empack-tools/NAME.json supplies versioned UTF-8 static inputs;\n"
+                    + "append runtime arguments only after -- when the record permits it.\n"
                     + "--engine FILE selects a strict local executable.\n"
                     + "--offline uses only distribution-local or cached engines.\n"
                     + "--cache DIRECTORY overrides the private user engine cache.\n"
@@ -100,7 +119,10 @@ public final class Main {
             System.out.println("empack-bootstrap " + properties.getProperty("version"));
             return 0;
         }
-        Options options = Options.parse(args);
+        return run(Options.parse(args));
+    }
+
+    static int run(Options options) throws Exception {
         Path engine = options.engine;
         if (engine == null) {
             Path ownLocation = Paths.get(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -111,7 +133,7 @@ public final class Main {
                     EngineProcess.verifyVersion(local, options.version, false);
                     engine = local;
                 } catch (IOException refused) {
-                    System.err.println("empack-bootstrap: distribution-local engine refused: " + refused.getMessage());
+                    System.err.println("empack-bootstrap: distribution-local engine refused: " + safeText(refused.getMessage()));
                 }
             }
             if (engine == null) {
@@ -127,7 +149,7 @@ public final class Main {
         List<String> command = new ArrayList<>();
         command.add(engine.toAbsolutePath().toString());
         command.addAll(options.arguments);
-        return EngineProcess.execute(command);
+        return EngineProcess.execute(command, options.directory);
     }
 
     private static void checkLocal(Path engine) throws IOException {
@@ -144,19 +166,22 @@ public final class Main {
         final Path cache;
         final boolean offline;
         final List<String> arguments;
+        final Path directory;
 
-        Options(String version, Path engine, boolean development, Path cache, boolean offline, List<String> arguments) {
+        Options(String version, Path engine, boolean development, Path cache, boolean offline, List<String> arguments, Path directory) {
             this.version = version;
             this.engine = engine;
             this.development = development;
             this.cache = cache;
             this.offline = offline;
             this.arguments = arguments;
+            this.directory = directory;
         }
 
-        static Options parse(String[] args) {
+        static Options parse(String[] args) throws IOException {
             String version = null;
             Path engine = null;
+            Path invocation = null;
             boolean development = false;
             boolean offline = false;
             Path cache = null;
@@ -174,19 +199,35 @@ public final class Main {
                 if (index == args.length) throw new IllegalArgumentException("Missing value for " + option);
                 String value = args[index++];
                 if (option.equals("--engine-version") && version == null) version = value;
+                else if (option.equals("--invocation-file") && invocation == null) invocation = Paths.get(value);
                 else if (option.equals("--engine") && engine == null) engine = Paths.get(value);
                 else if (option.equals("--cache") && cache == null) cache = Paths.get(value);
                 else throw new IllegalArgumentException("Unknown or repeated bootstrap option: " + option);
             }
-            if (version == null || index == args.length || index + 1 == args.length) {
-                throw new IllegalArgumentException("Supply --engine-version VERSION and -- EMPACK_ARGUMENTS; see --help");
+            Path directory = null;
+            List<String> arguments = new ArrayList<>();
+            if (invocation != null) {
+                if (version != null) throw new IllegalArgumentException("Do not combine --engine-version with --invocation-file");
+                InvocationFile record = InvocationFile.read(invocation);
+                version = record.version;
+                directory = record.directory;
+                arguments.addAll(record.arguments);
+                if (index < args.length) {
+                    if (!record.appendArguments) throw new IllegalArgumentException("This invocation file does not accept runtime arguments");
+                    arguments.addAll(Arrays.asList(Arrays.copyOfRange(args, index + 1, args.length)));
+                }
+                if (engine != null && !engine.isAbsolute()) engine = directory.resolve(engine).normalize();
+            } else {
+                if (version == null || index == args.length || index + 1 == args.length) {
+                    throw new IllegalArgumentException("Supply --engine-version VERSION and -- EMPACK_ARGUMENTS, or --invocation-file FILE; see --help");
+                }
+                arguments.addAll(Arrays.asList(Arrays.copyOfRange(args, index + 1, args.length)));
             }
             validateVersion(version);
             if (development && engine == null) {
                 throw new IllegalArgumentException("--development-engine requires an explicit --engine FILE");
             }
-            return new Options(version, engine, development, cache, offline,
-                    Arrays.asList(Arrays.copyOfRange(args, index + 1, args.length)));
+            return new Options(version, engine, development, cache, offline, arguments, directory);
         }
 
         private static void validateVersion(String version) {
