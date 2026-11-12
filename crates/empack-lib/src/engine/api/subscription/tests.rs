@@ -986,3 +986,89 @@ async fn prism_channel_updates_require_seed_icons_from_native_producer() {
     }
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn damaged_subscription_after_restart_cannot_reset_publisher_history() {
+    for damage in [
+        "empty",
+        "truncated",
+        "schema",
+        "unknown-field",
+        "missing-floor",
+        "missing-observation",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let state = host.path().join("state");
+        let key = SigningKey::from_bytes(&[91; 32]);
+        let (engine, _) = super::super::tests::engine(state.clone());
+        apply(&engine, root.path(), enroll(&key)).await;
+        let saved = apply(&engine, root.path(), observe(&key, 5, &"a".repeat(64))).await;
+        assert_eq!(saved.floor.as_ref().unwrap().sequence, 5);
+        engine.shutdown().await;
+        let path = root.path().join(".empack/subscription.json");
+        let original = fs::read(&path).unwrap();
+        let mut invalid: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        match damage {
+            "schema" => invalid["schema"] = 999.into(),
+            "unknown-field" => invalid["unexpected"] = true.into(),
+            "missing-floor" => invalid["floor"] = serde_json::Value::Null,
+            "missing-observation" => invalid["observed"] = serde_json::Value::Null,
+            "empty" | "truncated" => {}
+            _ => unreachable!(),
+        }
+        let damaged = match damage {
+            "empty" => Vec::new(),
+            "truncated" => original[..original.len() / 2].to_vec(),
+            _ => serde_json::to_vec(&invalid).unwrap(),
+        };
+        fs::write(&path, &damaged).unwrap();
+        let before = crate::test_support::file_bytes(root.path());
+        let before_host = crate::test_support::file_bytes(host.path());
+        let (engine, _) = super::super::tests::engine(state);
+        for request in [
+            enroll(&key),
+            observe(&key, 6, &"b".repeat(64)),
+            SubscriptionRequest::ReplaceKeys { keys: vec![] },
+        ] {
+            let error = match engine.prepare(root.path().to_owned(), request).await {
+                Err(error) => error,
+                Ok(_) => panic!("damaged subscription accepted: {damage}"),
+            };
+            let text = format!("{error:#}");
+            assert!(
+                text.contains(match damage {
+                    "empty" | "truncated" | "unknown-field" => "Invalid subscription record",
+                    "schema" => "Unsupported subscription schema",
+                    _ => "Subscription observation and floor disagree",
+                }),
+                "{damage}: {text}"
+            );
+            assert_eq!(
+                crate::test_support::file_bytes(root.path()),
+                before,
+                "{damage}"
+            );
+            assert_eq!(
+                crate::test_support::file_bytes(host.path()),
+                before_host,
+                "{damage}"
+            );
+        }
+        // A controlled fixture restores its exact pre-damage backup. The
+        // product never infers, reconstructs or resets publisher authority.
+        fs::write(&path, &original).unwrap();
+        let restored = apply(&engine, root.path(), observe(&key, 6, &"b".repeat(64))).await;
+        assert_eq!(restored.keys, saved.keys);
+        assert_eq!(restored.floor.as_ref().unwrap().sequence, 6);
+        assert_eq!(
+            SubscriptionRecord::decode(&fs::read(&path).unwrap())
+                .unwrap()
+                .floor
+                .unwrap()
+                .sequence,
+            6
+        );
+        engine.shutdown().await;
+    }
+}

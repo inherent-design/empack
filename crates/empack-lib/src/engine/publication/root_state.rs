@@ -127,7 +127,13 @@ impl Publisher {
                 .open_dir_nofollow(name)
                 .with_context(|| format!("Cannot inspect native state directory {name}"))?;
             native::reject_reparse(&directory.try_clone()?.into_std_file())?;
-            match read(&directory)? {
+            let association = read(&directory).with_context(|| {
+                format!(
+                    "Cannot read saved operation association {:?}",
+                    self.location.join(name).join(ASSOCIATION)
+                )
+            })?;
+            match association {
                 Some(association) => {
                     if !matches(&association, name, root)? {
                         ensure!(
