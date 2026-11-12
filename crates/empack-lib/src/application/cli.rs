@@ -840,7 +840,7 @@ Updates infer the installed side/layout. update --check checks before applying."
 
     /// Deliberately refresh selected author dependency resolutions
     Update {
-        /// Explicitly change a selected author root's provider pin; repeat for a reviewed group
+        /// Change a direct dependency's exact provider version; repeat for a reviewed group
         #[arg(long = "pin", value_name = "KEY=ID")]
         pins: Vec<String>,
         /// Provider version policy; exact author pins remain exact

@@ -109,8 +109,9 @@ fn restricted_inputs(output: &Output) -> Vec<String> {
     let mut selectors: Vec<String> = text
         .lines()
         .filter_map(|line| {
-            let (_, quoted) = line.split_once("Import input ")?;
-            serde_json::from_str(quoted.strip_suffix(": RestrictedDownload")?).ok()
+            let (_, displayed) = line.split_once("Missing import file ")?;
+            let value = serde_json::Deserializer::from_str(displayed);
+            value.into_iter::<String>().next()?.ok()
         })
         .collect();
     assert!(!selectors.is_empty(), "{text}");

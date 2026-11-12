@@ -68,10 +68,9 @@ pub fn message(error: &anyhow::Error) -> String {
                 }
             ));
         }
-        // PATH=FILE uses its first '=' as the separator. Do not offer a CLI
-        // spelling that would select a different destination.
-        if file.can_merge() && !file.destination.contains('=') {
-            let argument = super::shell::quote(&format!("{}=FILE", file.destination)).unwrap();
+        if file.can_merge()
+            && let Some(argument) = super::shell::association(&file.destination, "FILE")
+        {
             lines.push(format!(
                 "    --merge={argument}  Use your prepared merged file as a local override"
             ));

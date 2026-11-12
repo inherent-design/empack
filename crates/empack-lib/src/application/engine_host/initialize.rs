@@ -453,6 +453,7 @@ async fn initialize_with_engine(
     candidate: InitializeCandidate,
     force: bool,
 ) -> Result<()> {
+    show_target_directory(session, &target);
     let prepared = match cancellable(
         session,
         engine.prepare(

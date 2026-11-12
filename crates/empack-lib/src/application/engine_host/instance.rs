@@ -77,6 +77,7 @@ async fn install_with_transport(
         _ => anyhow::bail!("Expected an instance installation request"),
     };
     let (invocation, root) = project_path(session)?;
+    show_directory(session, &root);
     let installed = inspect_optional(
         session,
         root.clone(),
@@ -462,6 +463,7 @@ async fn maintain(
     conflicts: crate::application::cli::InstanceConflictArgs,
 ) -> Result<()> {
     let (invocation, root) = project_path(session)?;
+    show_directory(session, &root);
     let state = state_root(session.config().app_config(), &invocation)?;
     let inspected = inspect(session, root.clone(), release, state).await?;
     let (record, decoded) = &*inspected;
@@ -587,6 +589,7 @@ async fn subscription_with_transport(
             .collect()
     };
     let (invocation, root) = project_path(session)?;
+    show_directory(session, &root);
     let request = match command {
         InstanceCommand::Subscribe {
             pack,

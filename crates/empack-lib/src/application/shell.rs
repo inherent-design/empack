@@ -19,6 +19,14 @@ pub(super) fn quote(value: &str) -> Option<String> {
     }
 }
 
+/// KEY=VALUE options split at the first '=' after shell parsing.
+pub(super) fn association(key: &str, value: &str) -> Option<String> {
+    if key.contains('=') {
+        return None;
+    }
+    quote(&format!("{key}={value}"))
+}
+
 /// Copyable arguments for a known command; unsafe display text is never executable guidance.
 pub(super) fn arguments(values: &[String]) -> Option<String> {
     values
@@ -73,5 +81,11 @@ mod tests {
     #[test]
     fn powershell_arguments_escape_literal_apostrophes() {
         assert_eq!(quote("name'日本"), Some("'name''日本'".into()));
+    }
+    #[test]
+    fn association_hints_preserve_the_cli_separator_and_literal_value() {
+        assert!(association("file=key", "PATH").is_none());
+        assert!(association("file\u{202e}key", "PATH").is_none());
+        assert_eq!(association("key", "a=b"), quote("key=a=b"));
     }
 }

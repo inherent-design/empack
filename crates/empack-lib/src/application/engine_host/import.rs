@@ -49,6 +49,24 @@ pub struct ImportHostRequest {
     pub local_files: Vec<ImportLocalFile>,
 }
 
+fn input_message(input: &crate::engine::import::ImportContentInput) -> Result<String> {
+    let selector = input.key.selector();
+    let reason = match input.reason {
+        crate::engine::import::ImportInputReason::RestrictedDownload => "download it manually",
+        crate::engine::import::ImportInputReason::UnsupportedTransport => {
+            "this download method is not supported; use a local file"
+        }
+    };
+    let next = match crate::application::shell::association(&selector, "PATH") {
+        Some(argument) => format!("continue this import with --import-file={argument}"),
+        None => "save this import and use its Downloads-folder search".into(),
+    };
+    Ok(format!(
+        "Missing import file {}: {reason}; {next}",
+        crate::terminal::json_text(&selector)?
+    ))
+}
+
 /// The decision callback receives verified source evidence, not a live project writer.
 /// It must preserve participation and supply explicit representation/optional choices.
 /// Provider pages resolve through the archive catalog. Durable pending-input storage and
@@ -100,6 +118,7 @@ pub(super) async fn import_with_services(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProjectTarget::New(selected),
         Err(error) => return Err(error.into()),
     };
+    show_target_directory(session, &target);
     let config = session.config().app_config();
     let shared = governor(config);
     let deadline = Duration::from_secs(config.net_timeout);
@@ -187,8 +206,8 @@ pub(super) async fn import_with_services(
                 } else {
                     ensure!(
                         !selected.file().alternatives.is_empty(),
-                        "Modpack archive {:?} requires explicit manual acquisition",
-                        selected.pin()
+                        "Modpack archive {} must be downloaded manually",
+                        crate::application::labels::pin(selected.pin())
                     );
                     transport
                         .acquire(
@@ -275,11 +294,7 @@ pub(super) async fn import_with_services(
             provided,
         } => {
             for input in &pending {
-                session.display().status().warning(&format!(
-                    "Import input {:?}: {:?}",
-                    input.key.selector(),
-                    input.reason
-                ));
+                session.display().status().warning(&input_message(input)?);
             }
             if approve(session, "Save incomplete import")? {
                 scoped(session, shared.clone(), move |mut scope| async move {
@@ -336,8 +351,10 @@ pub(super) async fn import_with_services(
         };
         let view = prepared.view().import().context("Missing import preview")?;
         session.display().status().info(&format!(
-            "Import {} {} ({:?})",
-            view.metadata.name, view.metadata.version, view.runtime.loader
+            "Import {} {} ({})",
+            view.metadata.name,
+            view.metadata.version,
+            crate::application::labels::loader(view.runtime.loader)
         ));
         show_changes(session, &view.files)?;
         if !approve(session, "Import")? {
@@ -348,8 +365,8 @@ pub(super) async fn import_with_services(
                 anyhow::bail!("Unexpected import receipt")
             };
             Ok(format!(
-                "Import {:?}: {} published files",
-                receipt.publication.disposition, receipt.publication.changed_files
+                "Imported {} files",
+                receipt.publication.changed_files
             ))
         })
         .await?;

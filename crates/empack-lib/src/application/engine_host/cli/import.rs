@@ -171,12 +171,18 @@ fn loader(
     }
     let labels = candidates
         .iter()
-        .map(|(_, value)| format!("{:?} {}", value.kind, value.version.as_str()))
+        .map(|(_, value)| {
+            format!(
+                "{} {}",
+                crate::application::labels::loader(value.kind),
+                crate::terminal::display_line(value.version.as_str())
+            )
+        })
         .collect::<Vec<_>>();
     Ok(Some(
         candidates[choose(
             session,
-            "Select imported loader (or supply --modloader/--loader-version)",
+            "Choose the imported mod loader (or supply --modloader/--loader-version)",
             &labels,
         )?]
         .0,
@@ -327,7 +333,11 @@ fn decisions(
                 } else {
                     &source.overrides[*index]
                 };
-                let label = format!("{:?}:{}", file.layer, file.destination.relative().as_str());
+                let label = format!(
+                    "{}: {}",
+                    crate::application::labels::layer(file.layer),
+                    crate::terminal::display_line(file.destination.relative().as_str())
+                );
                 let persistence = match &file.acquisition {
                     ImportedAcquisition::Embedded(_) => ImportPersistence::Local,
                     ImportedAcquisition::Downloads(urls) if !args.import_local_files => {
@@ -365,10 +375,10 @@ fn decisions(
                 } else {
                     kinds[choose(
                         session,
-                        "Select imported provider content kind",
+                        "Choose the imported dependency type",
                         &kinds
                             .iter()
-                            .map(|kind| format!("{kind:?}"))
+                            .map(|kind| crate::application::labels::content(*kind).to_owned())
                             .collect::<Vec<_>>(),
                     )?]
                 };
@@ -388,8 +398,9 @@ fn decisions(
                             _ => "this content kind has no supported import folder",
                         };
                         format!(
-                            "Imported {kind:?} project {} needs a destination: {choice}",
-                            record.project.slug.as_str()
+                            "Imported {} project {} needs a destination: {choice}",
+                            crate::application::labels::content(kind),
+                            crate::terminal::display_line(record.project.slug.as_str())
                         )
                     })?;
                 let namespace = match pin.project {

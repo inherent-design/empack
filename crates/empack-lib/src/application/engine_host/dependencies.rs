@@ -358,10 +358,17 @@ async fn change_with_services(
                 },
                 move |cancel| {
                     let workspace = ProjectReader::new(RecoveryReader::new(state)).capture(
-                        &selected, &[], SnapshotLimits::default(), &cancel,
+                        &selected,
+                        &[],
+                        SnapshotLimits::default(),
+                        &cancel,
                     )?;
                     if !tracked_sources.is_empty() {
-                        workspace.root().capture(&tracked_sources.into_iter().collect::<Vec<_>>(), SnapshotLimits::default(), &cancel)?;
+                        workspace.root().capture(
+                            &tracked_sources.into_iter().collect::<Vec<_>>(),
+                            SnapshotLimits::default(),
+                            &cancel,
+                        )?;
                     }
                     Ok::<_, anyhow::Error>(workspace)
                 },
@@ -373,86 +380,152 @@ async fn change_with_services(
             } else {
                 snapshot.require_resolved()?
             };
-            let mut supplied = identification::resolve(
-                &mut scope, identify, &mut providers, &services, evidence
-            ).await?;
+            let mut supplied =
+                identification::resolve(&mut scope, identify, &mut providers, &services, evidence)
+                    .await?;
             let provider = if providers.is_empty() {
                 None
             } else {
-                let resolved = services.catalog.resolve_addition(
-                    &mut scope, &current, NonEmpty::new(providers)?, releases, limits
-                ).await.with_context(|| format!(
-                    "Provider resolution failed before publication (shared --net-timeout {} seconds); --continue-independent applies only after resolution. For a deadline failure, retry with a larger explicit --net-timeout",
-                    limits.selection.catalog.deadline.as_secs()
-                ))?;
+                let resolved = services
+                    .catalog
+                    .resolve_addition(
+                        &mut scope,
+                        &current,
+                        NonEmpty::new(providers)?,
+                        releases,
+                        limits,
+                    )
+                    .await
+                    .map_err(|error| {
+                        provider_failure(
+                            error,
+                            limits.selection.catalog.deadline,
+                            batch == BatchPolicy::ContinueIndependent,
+                        )
+                    })?;
                 match resolved {
                     ProviderAdditionOutcome::Ready(addition) => Some(addition),
-                    ProviderAdditionOutcome::Archives(draft) => Some(draft.acquire_with_supplied(&mut scope, &services.transport, evidence, services.files, &mut supplied).await?),
-                    ProviderAdditionOutcome::NeedsInput(closure) => anyhow::bail!(
-                        "Requested dependencies were not published: required dependency evidence needs a decision: {:?}",
-                        closure.issues
+                    ProviderAdditionOutcome::Archives(draft) => Some(
+                        draft
+                            .acquire_with_supplied(
+                                &mut scope,
+                                &services.transport,
+                                evidence,
+                                services.files,
+                                &mut supplied,
+                            )
+                            .await?,
                     ),
+                    ProviderAdditionOutcome::NeedsInput(closure) => {
+                        return Err(anyhow::Error::new(
+                            crate::application::dependency_decisions::UnresolvedDependencies {
+                                issues: closure.issues,
+                            },
+                        )
+                        .context("Requested dependencies were not saved"));
+                    }
                 }
             };
             let provider_content = match &provider {
-                Some(provider) if !supplied.is_empty() && !adopt => Some(identification::content(
-                    &mut scope, provider, supplied, &services, evidence
-                ).await?),
+                Some(provider) if !supplied.is_empty() && !adopt => Some(
+                    identification::content(&mut scope, provider, supplied, &services, evidence)
+                        .await?,
+                ),
                 _ => None,
             };
             let files = if files.is_empty() {
                 None
             } else {
-                Some(FileAddition::acquire(
-                    &mut scope, &current, NonEmpty::new(files)?, &services.transport,
-                    evidence, services.files
-                ).await?)
+                Some(
+                    FileAddition::acquire(
+                        &mut scope,
+                        &current,
+                        NonEmpty::new(files)?,
+                        &services.transport,
+                        evidence,
+                        services.files,
+                    )
+                    .await?,
+                )
             };
             let addition = ResolvedAdditionBatch::combine_with_content(
-                &mut scope, current, provider, provider_content, files
-            ).await?;
+                &mut scope,
+                current,
+                provider,
+                provider_content,
+                files,
+            )
+            .await?;
             Ok((addition, revision))
         })
         .await?;
         if !update {
             for (key, dependency) in addition.group().dependencies() {
                 session.display().status().info(&format!(
-                    "Proposed {}: {} ({})", key.as_str(), dependency.title, identity_label(&dependency.identity)
+                    "Proposed {}: {} ({})",
+                    key.as_str(),
+                    dependency.title,
+                    identity_label(&dependency.identity)
                 ));
             }
         }
         let request: Request = if batch == BatchPolicy::ContinueIndependent && !adopt {
-            let items = addition.group().root_groups().into_iter().map(|group| {
-                let content = addition.content().iter().filter(|(key, _)| group.dependencies().contains_key(&key.dependency)).map(|(key, value)| (key.clone(), value.clone())).collect();
-                DependencyBatchItem { group, content }
-            }).collect();
+            let items = addition
+                .group()
+                .root_groups()
+                .into_iter()
+                .map(|group| {
+                    let content = addition
+                        .content()
+                        .iter()
+                        .filter(|(key, _)| group.dependencies().contains_key(&key.dependency))
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect();
+                    DependencyBatchItem { group, content }
+                })
+                .collect();
             DependencyBatchRequest {
-                source_revision: Some(revision), policy: batch, items: NonEmpty::new(items)?,
+                source_revision: Some(revision),
+                policy: batch,
+                items: NonEmpty::new(items)?,
                 change: match change {
                     Change::Add(existing) => DependencyBatchChange::Add(existing),
                     Change::Update(pins) => DependencyBatchChange::Update { pins },
                     Change::Adopt => unreachable!("adoption is not a dependency batch"),
                 },
-            }.into()
+            }
+            .into()
         } else {
             match change {
-            Change::Add(existing) => AddRequest {
-                source_revision: Some(revision), group: addition.group().clone(),
-                content: addition.content().clone(), existing,
-            }.into(),
-            Change::Update(pins) => UpdateRequest { pins,
-                source_revision: Some(revision), group: addition.group().clone(),
-                content: addition.content().clone(),
-            }.into(),
-            Change::Adopt => AdoptObservedRequest { group: addition.group().clone() }.into(),
-        }
+                Change::Add(existing) => AddRequest {
+                    source_revision: Some(revision),
+                    group: addition.group().clone(),
+                    content: addition.content().clone(),
+                    existing,
+                }
+                .into(),
+                Change::Update(pins) => UpdateRequest {
+                    pins,
+                    source_revision: Some(revision),
+                    group: addition.group().clone(),
+                    content: addition.content().clone(),
+                }
+                .into(),
+                Change::Adopt => AdoptObservedRequest {
+                    group: addition.group().clone(),
+                }
+                .into(),
+            }
         };
         let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
         drop(addition);
-        if adopt { publish_adoption(session, &engine, prepared).await }
-        else if update { publish_update(session, &engine, prepared).await }
-        else { publish_addition(session, &engine, prepared).await }
-
+        if adopt {
+            publish_adoption(session, &engine, prepared).await
+        } else if update {
+            publish_update(session, &engine, prepared).await
+        } else {
+            publish_addition(session, &engine, prepared).await
+        }
     }
     .await;
     engine.shutdown().await;
@@ -460,13 +533,38 @@ async fn change_with_services(
 }
 mod text;
 
+pub(super) fn provider_failure(
+    error: anyhow::Error,
+    timeout: Duration,
+    independent: bool,
+) -> anyhow::Error {
+    let deadline = matches!(
+        error.downcast_ref::<crate::engine::providers::CatalogError>(),
+        Some(crate::engine::providers::CatalogError::Deadline)
+    ) || matches!(
+        error.downcast_ref::<crate::engine::acquisition::TransferError>(),
+        Some(crate::engine::acquisition::TransferError::Deadline)
+    );
+    let mut context = if deadline {
+        format!(
+            "Dependency lookup exceeded its {}-second limit; retry with a larger --net-timeout",
+            timeout.as_secs()
+        )
+    } else {
+        "Could not resolve the requested dependencies".into()
+    };
+    if independent {
+        context.push_str("; --continue-independent cannot skip a failed lookup");
+    }
+    error.context(context)
+}
+
 fn identity_label(identity: &empack_core::model::ResolvedIdentity) -> String {
-    use empack_core::{identity::ProviderProjectId, model::ResolvedIdentity};
+    use empack_core::model::ResolvedIdentity;
     match identity {
-        ResolvedIdentity::Provider(ProviderProjectId::Modrinth(id)) => format!("modrinth:{id}"),
-        ResolvedIdentity::Provider(ProviderProjectId::CurseForge(id)) => format!("curseforge:{id}"),
-        ResolvedIdentity::Url(key) => format!("url:{}", key.as_str()),
+        ResolvedIdentity::Provider(project) => crate::application::labels::project(project),
         ResolvedIdentity::Local(key) => format!("local:{}", key.as_str()),
+        ResolvedIdentity::Url(key) => format!("url:{}", key.as_str()),
     }
 }
 async fn publish_update(

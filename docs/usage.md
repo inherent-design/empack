@@ -42,7 +42,7 @@ With explicit Minecraft and loader versions, initialization records those exact 
 
 `init --force` and `init --from ARCHIVE --force` prepare a replacement before changing an existing project. Add `--dry-run` to inspect the affected files first. An invalid candidate or a declined plan leaves the existing project unchanged. An approved replacement can remove captured content under `pack/` and `overrides/`; it preserves existing custom templates, prior `dist/` artifacts and unrelated root files or directories. Worlds placed inside a replaced source root are author content in that scope; this command is not an installed-instance update.
 
-Imported overrides are recorded as local dependencies with accepted content in the lock. When you edit an imported file that is also its managed destination, `sync` and `update` protect the previously recorded bytes. Use `empack adopt KEY` with its exact dependency key from `empack.yml` to deliberately accept the edit, then build again. This does not require changing the pack version. Custom source trees declared separately from dependencies retain their ordinary fresh-build behavior.
+Imported overrides are recorded as local dependencies with accepted content in the lock. When you edit an imported file that is also its managed destination, `sync` and `update` protect the previously recorded bytes. Use `empack adopt KEY` with its exact dependency key from `empack.yml` to deliberately accept the edit, then build again. The approval preview compares the old and proposed versions, files, digests and requirements. Download sources are summarized by host; full URLs remain in the recorded data. This does not require changing the pack version. Custom source trees declared separately from dependencies retain their ordinary fresh-build behavior.
 
 Modrinth public resolution needs no API key. CurseForge requests use the bundled client key. A nonempty `EMPACK_KEY_CURSEFORGE` overrides it; keep private overrides out of the manifest and version control. Resolution and referenced downloads require network access.
 
@@ -155,11 +155,13 @@ If acquisition requires a manual download, the command reports and saves the mis
 empack build --continue --associate-download 'FILENAME=/absolute/path/to/download.jar'
 ```
 
-Continuation keeps the original recipes and verifies the supplied bytes. Use `--import-file SELECTOR=PATH` with `init --continue` for imports, or `instance continue --file KEY=PATH` for installed releases; these identifiers are shown in the respective diagnostics.
+Missing import files are reported with their exact selector and a local-file argument when representable. After saving the import, its Downloads-folder search is also available. Continuation keeps the original recipes and verifies the supplied bytes. Use `--import-file SELECTOR=PATH` with `init --continue` for imports, or `instance continue --file KEY=PATH` for installed releases; these identifiers are shown in the respective diagnostics.
 
 ## Interaction and failures
 
 Without an interactive terminal, mutating plans require `--yes`. Piping `y` or `n` does not grant approval; closed input also returns a usage error with the next step. Use `--dry-run` to inspect a plan without approval. A resumed operation needs fresh approval even if its earlier save used `--yes`.
+
+Initialization, import and instance previews identify the selected directory before approval.
 
 Preview may resolve remote facts and use temporary scratch, but writes no project, instance, durable cache, subscription, tool installation or recovery record. Declining approval has the same preservation requirement. Unattended confirmation cannot invent missing choices or bypass integrity and ownership checks.
 

@@ -233,7 +233,7 @@ fn requested_pins(
 pub enum UpdatePinInput {
     #[error("Expected --pin KEY=ID")]
     Syntax,
-    #[error("Exact update pin requires an existing author root: {}; transitive records are not promoted", .0.as_str())]
+    #[error("Update pin requires an existing direct dependency in empack.yml: {}", .0.as_str())]
     NotAuthorRoot(DependencyKey),
     #[error("Exact update pin must also name a requested provider dependency: {}", .0.as_str())]
     NotRequestedProvider(DependencyKey),

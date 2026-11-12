@@ -444,7 +444,7 @@ async fn incomplete_required_evidence_is_a_decision_without_partial_publication(
     .await
     .unwrap_err();
     assert!(
-        format!("{error:#}").contains("required dependency evidence needs a decision"),
+        format!("{error:#}").contains("Dependency check could not finish"),
         "{error:#}"
     );
     assert_eq!(snapshot(root.path()), before);
@@ -1326,4 +1326,28 @@ async fn separated_conflicts_preserve_evidence_and_project_distinct_build_invent
         assert!(format!("{error:#}").contains("incompatib"), "{error:#}");
         assert_eq!(snapshot(&root), before);
     }
+}
+
+#[test]
+fn provider_failure_advice_uses_typed_deadlines_and_keeps_original_causes() {
+    use crate::engine::providers::CatalogError;
+    for deadline in [true, false] {
+        let cause = if deadline {
+            CatalogError::Deadline
+        } else {
+            CatalogError::Unauthorized
+        };
+        let error = super::provider_failure(cause.into(), Duration::from_secs(17), false);
+        let text = format!("{error:#}");
+        assert_eq!(text.contains("--net-timeout"), deadline, "{text}");
+        assert!(!text.contains("--continue-independent"));
+        assert!(error.downcast_ref::<CatalogError>().is_some());
+    }
+    let error =
+        super::provider_failure(CatalogError::NotFound.into(), Duration::from_secs(17), true);
+    assert!(format!("{error:#}").contains("--continue-independent cannot skip a failed lookup"));
+    assert!(matches!(
+        error.downcast_ref::<CatalogError>(),
+        Some(CatalogError::NotFound)
+    ));
 }

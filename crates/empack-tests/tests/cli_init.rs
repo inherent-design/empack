@@ -96,8 +96,14 @@ fn cli_init_exact_loader_families_preserve_pins_without_catalog_or_java() {
         if let Some(supplied) = supplied {
             args.extend(["--loader-version", supplied]);
         }
-        command().args(&args).assert().success();
         let pack = project.dir().join("pack");
+        command()
+            .arg("--workdir")
+            .arg(project.dir())
+            .args(&args)
+            .assert()
+            .success()
+            .stdout(predicates::str::contains(format!("Directory: {pack:?}")));
         runtime_selection::assert_selection(
             &pack,
             game,

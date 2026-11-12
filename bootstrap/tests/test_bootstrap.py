@@ -610,9 +610,12 @@ class CacheTests(unittest.TestCase):
         engine = Path(first.stdout.decode().strip())
         self.assertEqual(engine.read_bytes(), self.engine.read_bytes())
         self.assertEqual(self.asset_requests, 1)
+        self.assertIn(b"empack-bootstrap: Finding empack 0.8.5-beta", first.stderr)
+        self.assertIn(b"empack-bootstrap: Downloading empack 0.8.5-beta", first.stderr)
         cached = self.invoke(offline=True)
         self.assertEqual(cached.returncode, 0, cached.stderr)
         self.assertEqual(first.stdout, cached.stdout)
+        self.assertEqual(cached.stderr, b"")
         self.assertEqual(self.asset_requests, 1)
 
     def test_deadline_and_cancellation_bound_headers_and_trickling_bodies(self):

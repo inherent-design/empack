@@ -110,6 +110,12 @@ impl ImportFixture {
             .clone();
         assert_eq!(snapshot(self.project.dir()).files, before);
         assert!(!self.target.exists());
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("Directory: {:?}", self.target)),
+            "{output:?}"
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("--import-file="));
         import_selectors(&output)
     }
     fn resume(&self, operation: &Value, legacy: bool, association: &str) -> assert_cmd::Command {
@@ -150,7 +156,7 @@ fn import_roundtrip(
         operation["diagnostic"]
             .as_str()
             .unwrap()
-            .contains("original exact selectors")
+            .contains("original file keys with --file")
     );
     let id = operation["id"].as_str().unwrap();
     let supplied = fixture.project.dir().join("renamed download.bin");
@@ -484,9 +490,10 @@ fn import_selectors(output: &std::process::Output) -> Vec<String> {
     let selectors: Vec<String> = text
         .lines()
         .filter_map(|line| {
-            let (_, displayed) = line.split_once("Import input ")?;
-            let quoted = displayed.strip_suffix(": UnsupportedTransport")?;
-            Some(serde_json::from_str(quoted).unwrap())
+            let (_, displayed) = line.split_once("Missing import file ")?;
+            let value = serde_json::Deserializer::from_str(displayed);
+            let key: String = value.into_iter::<String>().next()?.ok()?;
+            Some(key)
         })
         .collect();
     assert!(!selectors.is_empty(), "{text}");

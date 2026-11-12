@@ -189,6 +189,20 @@ pub async fn recover(
     engine.shutdown().await;
     result
 }
+fn show_directory(session: &dyn Session, path: &Path) {
+    // Native debug paths preserve non-Unicode bytes and escape embedded line
+    // breaks. This is a directory label, never a copyable shell command.
+    session
+        .display()
+        .status()
+        .info(&format!("Directory: {path:?}"));
+}
+fn show_target_directory(session: &dyn Session, target: &ProjectTarget) {
+    match target {
+        ProjectTarget::Existing(path) | ProjectTarget::New(path) => show_directory(session, path),
+    }
+}
+
 fn show_changes(session: &dyn Session, files: &empack_core::files::FilePlan) -> Result<()> {
     use empack_core::files::{FileChange, ObservedPath};
     for change in files.changes() {

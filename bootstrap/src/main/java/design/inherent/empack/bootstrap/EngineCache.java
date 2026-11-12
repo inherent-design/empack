@@ -127,6 +127,7 @@ final class EngineCache {
             recoverPending(slot);
             if (Files.exists(ready, LinkOption.NOFOLLOW_LINKS)) return admitted(slot, load(ready), version, platform);
             if (offline) throw new IOException("Requested engine is not cached; offline bootstrap cannot acquire it");
+            System.err.println("empack-bootstrap: Finding empack " + Main.safeText(version) + " for " + platform.target);
             EngineCatalog.Asset asset = catalog.find(version, platform);
             Path objects = slot.resolve("objects");
             directory(objects);
@@ -152,6 +153,7 @@ final class EngineCache {
             boolean published = false;
             try {
                 Path archive = candidate.resolve("archive");
+                System.err.println("empack-bootstrap: Downloading empack " + Main.safeText(version) + " (" + asset.size + " bytes)");
                 http.download(asset.url, archive, asset.size);
                 if (!Digests.sha256(archive).equals(asset.sha256)) {
                     throw new IOException("Engine archive SHA-256 differs from authenticated official metadata");
