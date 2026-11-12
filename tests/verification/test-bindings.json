@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack::bin/empack::tests::runtime_interruption_is_visible_without_a_general_error_label", "binary": "empack::bin/empack", "binary_name": "empack", "boundary": "U", "api": "CLI", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::engine_host::instance::tests::windows_runtime_control_status_is_not_an_arbitrary_failure", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "CLI", "platforms": ["windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::dependency_decisions::tests::unresolved_relations_retain_exact_selections_without_debug_tuples", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::dependency_decisions::tests::large_error_summaries_do_not_discard_the_other_typed_issues", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "U", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
