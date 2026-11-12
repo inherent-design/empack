@@ -67,7 +67,6 @@ fn command_name(command: &Commands) -> &'static str {
         Commands::Add { .. } => "add",
         Commands::Remove { .. } => "remove",
         Commands::Update(_) => "update",
-        Commands::Outdated(_) => "outdated",
         Commands::Migrate(_) => "migrate",
         Commands::Adopt { .. } => "adopt",
         Commands::Build(_) => "build",
@@ -145,7 +144,6 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             .await
         }
         Commands::Migrate(options) => Box::pin(engine_host::cli::migrate(session, options)).await,
-        Commands::Outdated(options) => Box::pin(engine_host::cli::outdated(session, options)).await,
         Commands::Update(options) => {
             Box::pin(engine_host::cli::update_command(session, options)).await
         }

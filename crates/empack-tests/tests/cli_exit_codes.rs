@@ -75,7 +75,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
         &["manifest", "check", "--json"],
         &["manifest", "diff", "--json"],
         &["pending", "list", "--json"],
-        &["outdated", "--json"],
+        &["update", "--all", "--json"],
         &["build", "--explain", "--json"],
         &[
             "migrate",

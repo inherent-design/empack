@@ -332,12 +332,13 @@ fn selections(
     let mut inputs = Vec::new();
     for value in keys {
         let key = DependencyKey::parse(&value)?;
-        ensure!(seen.insert(key.clone()), "Repeated update key: {value}");
-        let selected = current
-            .lock()
-            .dependencies
-            .get(&key)
-            .with_context(|| format!("Unknown installed dependency key: {value}"))?;
+        ensure!(
+            seen.insert(key.clone()),
+            crate::engine::providers::DependencySelectionError::Duplicate(key.clone())
+        );
+        let selected = current.lock().dependencies.get(&key).ok_or_else(|| {
+            crate::engine::providers::DependencySelectionError::Missing(key.clone())
+        })?;
         let root = current.intent().roots.get(&key);
         let primary = &selected.files.as_slice()[0];
         let requirements = root

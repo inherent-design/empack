@@ -5171,15 +5171,16 @@
     {
       "id": "UX-032",
       "family": "Dependencies and resolution",
-      "title": "Outdated evidence and strict mode",
-      "public_surface": "outdated --json --strict",
+      "title": "Update discovery, proposal and incomplete evidence",
+      "public_surface": "update KEY\u2026 | --all [--json] [--details] [--quiet]",
       "api_ids": [
         "CAT",
         "CLI",
-        "DOC"
+        "DOC",
+        "DEP"
       ],
-      "required_assertions": "Populated current/permitted/compatible/upstream/pinned/manual/failed rows; shared budget; report rendered before strict failure; no mutation.",
-      "required_work": "Add independent expected reports incl retained inventory and incomplete provider evidence; empty smoke alone insufficient.",
+      "required_assertions": "Populated current/permitted/runtime-compatible/upstream/pinned/manual/failed observations; shared budget; useful findings rendered before mandatory proposal failure; no preview mutation.",
+      "required_work": "Keep independent expected reports including retained inventory, native proposal and incomplete provider evidence; empty smoke alone is insufficient.",
       "evidence_tiers": [
         "H",
         "X",
@@ -5271,10 +5272,10 @@
           ]
         },
         {
-          "id": "UX-032.strict-presentation",
+          "id": "UX-032.proposal-presentation",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::application::engine_host::cli::assessment::tests::text_separates_required_closure_from_candidate_compatibility"
+            "empack-lib::application::engine_host::dependencies::tests::failed_update_json_retains_provider_field_evidence_before_failure"
           ],
           "required_platforms": [
             "linux",
@@ -5286,16 +5287,16 @@
             "telemetry"
           ],
           "assertions": [
-            "A populated invalid-evidence report is emitted exactly once in text or JSON before strict-mode failure returns; retained cause and compatibility limits remain visible"
+            "An actual malformed provider file list emits exactly one schema-1 incomplete update report before failure; the typed catalog field/invariant and current exact pin survive, while author files and host state remain unchanged."
           ]
         },
         {
           "id": "UX-032.public-report-and-preservation",
           "boundary": "X",
           "test_ids": [
-            "empack-tests::journey_selection::journey_cli_outdated_renders_incomplete_rows_before_strict_failure_without_edits",
-            "empack-tests::journey_selection::journey_cli_outdated_exact_filter_and_summary_preserve_scope_and_streams",
-            "empack-tests::cli_offline::cli_strict_outdated_accepts_complete_empty_assessment"
+            "empack-tests::journey_selection::journey_cli_update_reports_incomplete_provider_work_without_edits",
+            "empack-tests::journey_selection::journey_cli_update_exact_filter_preserves_retained_scope_and_streams",
+            "empack-tests::cli_offline::cli_empty_update_is_unchanged_and_obsolete_queries_are_rejected"
           ],
           "required_platforms": [
             "linux",
@@ -5307,10 +5308,10 @@
             "telemetry"
           ],
           "assertions": [
-            "Schema2 scope, disjoint derived summary and complete predicate agree with strict-mode text/JSON; exact-key filtering can complete a selected manual root while an unselected provider is not assessed; progress uses stderr and quiet suppresses it without dropping results",
-            "The actual executable emits complete independent JSON expectations and explanatory text for manual and unavailable-provider rows; strict mode fails only the incomplete assessment after rendering its report",
-            "A manual-only root set remains complete despite retained non-root provider records; every invocation preserves all source, lock, binding, template and prior-artifact bytes",
-            "An empty assessment succeeds in strict mode without manufacturing provider observations"
+            "Schema-1 requested/source-kind scope, discovery observations and actual native proposal distinguish catalog completeness from readiness; exact-key filtering never scans an unselected provider and quiet suppresses stderr progress without dropping results",
+            "The actual executable reports manual sources and incomplete provider work without requiring --strict; obsolete outdated/strict routes are refused rather than retained as aliases",
+            "An explicit local refresh may update lock evidence without replacing payload bytes; application preserves the retained provider and a second preview is unchanged",
+            "All previews and refused selectors preserve author documents, source/template/prior-artifact bytes and external host state; incomplete previews fail after rendering useful evidence."
           ]
         },
         {
@@ -5329,7 +5330,7 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual executable assesses a populated exact-pinned Modrinth project through live routes in strict JSON mode, retains the pin and all author bytes, and distinguishes current/permitted from compatible/upstream observations",
+            "The actual executable assesses a populated exact-pinned Modrinth project through live routes with a schema-1 update preview, retains the pin and all author bytes, and distinguishes current/permitted from compatible/upstream observations",
             "Successful provider closure does not claim complete candidate or gameplay compatibility; the subsequent update journey preserves the same pin until explicitly unpinned"
           ]
         }

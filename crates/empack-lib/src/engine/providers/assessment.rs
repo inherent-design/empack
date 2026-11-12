@@ -89,7 +89,6 @@ impl ProviderCatalog {
             dependencies: Vec::new(),
             joint: JointAssessment {
                 scope: "provider-dependency-closure",
-                candidate_compatibility: "not-assessed",
                 declared_incompatibilities: Vec::new(),
                 declarations_complete: false,
                 state: "not-assessed",

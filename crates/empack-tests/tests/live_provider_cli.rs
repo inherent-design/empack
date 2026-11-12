@@ -429,12 +429,16 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         DependencySelection::ProviderPin(selected.selection.clone())
     );
     let assessment_before = author_snapshot(project.dir());
-    let output = run(&project, &["outdated", "--json", "--strict"]);
+    let output = run(&project, &["update", "--all", "--json"]);
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema"], 2);
-    assert_eq!(report["scope"]["kind"], "all-author-roots");
-    assert_eq!(report["scope"]["roots"], serde_json::json!([key.as_str()]));
-    let rows = report["dependencies"].as_array().unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["requested"], serde_json::json!([key.as_str()]));
+    assert_eq!(report["source_kinds"][key.as_str()], "provider");
+    assert!(matches!(
+        report["proposal"].as_str(),
+        Some("ready" | "unchanged")
+    ));
+    let rows = report["discovery"]["dependencies"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
     assert_eq!(row["key"], key.as_str());
@@ -454,9 +458,9 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         assert_eq!(row[column]["project"], selected.project.to_string());
         assert!(!row[column]["selection"].as_str().unwrap().is_empty());
     }
-    assert_eq!(report["joint"]["state"], "validated");
-    assert_eq!(report["joint"]["declarations_complete"], true);
-    assert_eq!(report["joint"]["candidate_compatibility"], "not-assessed");
+    assert_eq!(report["discovery"]["required_dependencies"], "validated");
+    assert_eq!(report["discovery"]["declarations_complete"], true);
+    assert!(report["discovery"].get("candidate_compatibility").is_none());
     assert_eq!(author_snapshot(project.dir()), assessment_before);
     // Keep the pinned-only assessment above. Add an independently versioned,
     // deliberately older automatic root so updating every root cannot masquerade

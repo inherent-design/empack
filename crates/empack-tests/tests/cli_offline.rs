@@ -623,7 +623,13 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
     let project = initialized();
     let before = snapshot(&project);
     let output = command(&project)
-        .args(["outdated", "--json", "--release-policy", "stable-only"])
+        .args([
+            "update",
+            "--all",
+            "--json",
+            "--release-policy",
+            "stable-only",
+        ])
         .assert()
         .success()
         .stderr(predicates::str::is_empty())
@@ -631,15 +637,13 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["schema"], 2);
-    assert_eq!(report["scope"]["kind"], "all-author-roots");
-    assert_eq!(report["scope"]["roots"], serde_json::json!([]));
-    assert_eq!(report["complete"], true);
-    assert_eq!(report["release_policy"], "stable-only");
-    assert_eq!(report["joint"]["state"], "not-applicable");
-    assert_eq!(report["dependencies"], serde_json::json!([]));
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["requested"], serde_json::json!([]));
+    assert_eq!(report["proposal"], "unchanged");
+    assert!(report["discovery"].is_null());
+    assert_eq!(report["source_kinds"], serde_json::json!({}));
     let text = command(&project)
-        .args(["outdated", "--quiet"])
+        .args(["update", "--all", "--quiet"])
         .assert()
         .success()
         .get_output()
@@ -647,7 +651,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
         .clone();
     assert_eq!(
         String::from_utf8(text).unwrap().trim_end(),
-        "No dependencies to check."
+        "No dependencies to update."
     );
     let output = command(&project)
         .args([
@@ -689,7 +693,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
             "--replace",
             "bad",
         ],
-        vec!["outdated", "--release-policy", "latest"],
+        vec!["update", "--all", "--release-policy", "latest"],
     ] {
         command(&project).args(args).assert().failure();
         assert_eq!(snapshot(&project), before);
@@ -697,7 +701,7 @@ fn cli_empty_assessment_and_noop_migration_are_read_only() {
 }
 
 #[test]
-fn cli_outdated_terminal_clears_progress_before_one_final_report() {
+fn cli_update_terminal_clears_progress_before_one_final_report() {
     use empack_tests::harness::{process, terminal};
     use expectrl::Expect;
     let project = initialized();
@@ -716,7 +720,9 @@ fn cli_outdated_terminal_clears_progress_before_one_final_report() {
     let before = project_snapshot(&project);
     for columns in [80, 40] {
         let mut command = process::offline_empack_cmd(project.dir());
-        command.env("TERM", "xterm-256color").arg("outdated");
+        command
+            .env("TERM", "xterm-256color")
+            .args(["update", "--all"]);
         let mut session = terminal::spawn(command);
         session.set_expect_timeout(Some(Duration::from_secs(15)));
         #[cfg(unix)]
@@ -758,29 +764,23 @@ fn cli_outdated_terminal_clears_progress_before_one_final_report() {
             !screen.contains("Checking"),
             "stale progress at {columns} columns: {screen:?}"
         );
+        assert_eq!(screen.matches("Proposal:").count(), 1, "{screen:?}");
         assert_eq!(
-            screen.matches("Checked 1 dependency").count(),
+            screen.matches("Update plan: 1 dependency").count(),
             1,
             "{screen:?}"
         );
-        assert!(screen.contains("manual-pack: Manual"), "{screen:?}");
-        assert!(
-            screen.contains("Reason: updates must be checked manually"),
-            "{screen:?}"
-        );
-        assert!(
-            screen.contains("Call with --details for more information"),
-            "{screen:?}"
-        );
+        assert!(screen.contains("manual-pack: no change"), "{screen:?}");
+        assert!(screen.contains("Preview only; use --apply"), "{screen:?}");
     }
     assert_eq!(project_snapshot(&project), before);
 }
 
 #[test]
-fn cli_strict_outdated_accepts_complete_empty_assessment() {
+fn cli_empty_update_is_unchanged_and_obsolete_queries_are_rejected() {
     let project = initialized();
     let output = command(&project)
-        .args(["outdated", "--strict", "--json"])
+        .args(["update", "--all", "--json"])
         .assert()
         .success()
         .stderr(predicates::str::is_empty())
@@ -788,8 +788,11 @@ fn cli_strict_outdated_accepts_complete_empty_assessment() {
         .stdout
         .clone();
     let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["joint"]["state"], "not-applicable");
-    assert_eq!(report["dependencies"].as_array().unwrap().len(), 0);
+    assert_eq!(report["proposal"], "unchanged");
+    assert_eq!(report["requested"], serde_json::json!([]));
+    for args in [vec!["outdated"], vec!["update", "--all", "--strict"]] {
+        command(&project).args(args).assert().code(2);
+    }
 }
 
 #[test]
@@ -815,7 +818,11 @@ fn cli_unassociated_saved_operations_identify_records_without_changing_them() {
         "initialization must retain its directory association"
     );
     let before = empack_tests::harness::workspace::snapshot(project.dir());
-    for args in [vec!["status"], vec!["outdated"], vec!["--yes", "sync"]] {
+    for args in [
+        vec!["status"],
+        vec!["update", "--all"],
+        vec!["--yes", "sync"],
+    ] {
         let output = command(&project)
             .args(args)
             .assert()

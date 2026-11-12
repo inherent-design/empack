@@ -38,9 +38,9 @@ Empack preparation and updates preserve an existing regular file when the incomi
 
 ## Partial assessments and retained selections
 
-`outdated` separates the current, policy-permitted, Minecraft/loader-compatible and upstream selections. A newer beta can match the runtime while `prefer-stable` retains a release. An exact pin remains exact. A successful partial report does not mean every root was assessed; `outdated --strict --json` gives automation a failing exit status for incomplete evidence while preserving the report.
+`update` separates the current, policy-permitted, Minecraft/loader-compatible and upstream selections. A newer beta can match the runtime while `prefer-stable` retains a release. An exact pin remains exact. `update --all --json` preserves useful findings and returns a failing exit status when the required checks or proposal cannot finish. A complete selected preview does not imply that every dependency was selected for catalog work.
 
-Malformed records leave their root unknown. Independent catalog checks continue under the original allowance; throttling, authorization, deadlines and transport failures stop further queries. Joint closure assessment identifies the roots blocking it. Update preparation still validates retained inventory and placements separately. Use `outdated KEY…` to check named dependencies and `--details` for the full list and version choices; the full JSON report identifies its scope. Field/invariant diagnostics describe malformed eligible evidence without dumping provider responses. See [assessment semantics](design/assessment.md).
+Malformed records leave their root unknown. Independent catalog checks continue under the original allowance; throttling, authorization, deadlines and transport failures stop further queries. Joint closure assessment identifies the roots blocking it. Update preparation still validates retained inventory and placements separately. Use `update KEY…` to check named dependencies and `--details` for the full list and version choices; the full JSON report identifies its scope. Field/invariant diagnostics describe malformed eligible evidence without dumping provider responses. See [assessment semantics](design/assessment.md).
 
 `update --continue-independent` isolates preparation/publication conflicts after input resolution succeeds. It does not isolate catalog failures or malformed local sources that fail before a complete candidate is available. Those failures publish nothing. Use the named dependency to inspect the requested source, pin, game and loader. Do not remove dependencies merely to make a report succeed.
 
@@ -54,7 +54,7 @@ Forge and NeoForge remain distinct provider loader labels. Empack does not infer
 
 Provider game/loader declarations do not prove a mod's minimum loader requirement, configuration compatibility or dedicated-server support. Authored participation remains authoritative. Review client-only content before creating a server profile; correct the dependency and any explicit binding together rather than deleting the client payload. JAR layout inspection is not a semantic loader or side audit.
 
-`outdated` assesses dependencies, not loader upgrades. Review the official loader catalog and preview an explicit target before applying it:
+`update` checks dependency versions, not loader upgrades. Review the official loader catalog and preview an explicit target before applying it:
 
 ```sh
 empack migrate --minecraft 1.21.1 --loader neoforge --loader-version VERSION --plan
@@ -68,7 +68,7 @@ Provider work shares a bounded deadline. For a large pack, increase it explicitl
 
 ```sh
 empack --net-timeout 1200 sync
-empack --net-timeout 1200 outdated --strict
+empack --net-timeout 1200 update --all
 ```
 
 Failed resolution leaves the published author project unchanged. Retrying performs new catalog work; there is no implied saved catalog continuation or unlimited budget.

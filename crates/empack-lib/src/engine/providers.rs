@@ -15,9 +15,9 @@ use std::{sync::Arc, time::Duration};
 mod addition;
 mod assessment;
 pub use assessment::{
-    AssessmentCategory, AssessmentInputError, AssessmentProgress, AssessmentRequest,
-    AssessmentScope, AssessmentSummary, DeclaredIncompatibility, DependencyAssessment,
-    JointAssessment, ObservedVersion, ProviderUpdateAnalysis, UpdateAssessment, UpdateReason,
+    AssessmentCategory, AssessmentProgress, AssessmentRequest, AssessmentScope, AssessmentSummary,
+    DeclaredIncompatibility, DependencyAssessment, DependencySelectionError, JointAssessment,
+    ObservedVersion, ProviderUpdateAnalysis, UpdateAssessment, UpdateReason,
 };
 mod batch;
 pub use addition::{

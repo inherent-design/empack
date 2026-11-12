@@ -308,6 +308,7 @@ async fn change_with_services(
         _ => UpdateOutput::default(),
     };
     let mut requested = Vec::new();
+    let mut source_kinds = BTreeMap::new();
     let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -324,6 +325,7 @@ async fn change_with_services(
             AddHostInput::Provider(input) => {
                 if let Some(key) = &input.key {
                     requested.push(key.as_str().to_owned());
+                    source_kinds.insert(key.as_str().to_owned(), "provider");
                 }
                 providers.push(input);
             }
@@ -345,6 +347,15 @@ async fn change_with_services(
             }
             AddHostInput::File(mut input) => {
                 requested.push(input.key.as_str().to_owned());
+                source_kinds.insert(
+                    input.key.as_str().to_owned(),
+                    match &input.source {
+                        DirectFileSource::Local(_) | DirectFileSource::TrackedLocal { .. } => {
+                            "local"
+                        }
+                        _ => "url",
+                    },
+                );
                 if let DirectFileSource::Local(path)
                 | DirectFileSource::ObservedUrl { path, .. }
                 | DirectFileSource::TrackedLocal { path, .. } = &mut input.source
@@ -522,7 +533,8 @@ async fn change_with_services(
         .await;
         // Preserve useful independent discoveries before reporting a blocked proposal.
         // Successful proposals continue to the exact native preview below.
-        let mut report = UpdatePreviewReport::new(requested, report_receiver.try_recv().ok());
+        let mut report =
+            UpdatePreviewReport::new(requested, source_kinds, report_receiver.try_recv().ok());
         if update && let Err(error) = &resolution {
             report.failed(error);
             report.present(session, update_output)?;

@@ -196,11 +196,24 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
             let error = format!("{:#}", result.unwrap_err());
             assert!(error.contains("incompatib"), "{error}");
             assert_eq!(snapshot(&project_dir), before_update);
+            let headline = messages
+                .iter()
+                .position(|message| message == "Proposal: blocked; no changes applied")
+                .unwrap();
+            let findings = messages
+                .iter()
+                .position(|message| message.starts_with("Checked "))
+                .unwrap();
+            assert!(
+                headline < findings,
+                "The native proposal must lead the version observations: {messages:?}"
+            );
+            assert!(!messages[findings].contains("Conflicted"));
             assert!(
                 messages
                     .iter()
                     .any(|message| message.starts_with("Checked ")
-                        && message.contains("Reported mod conflict:")),
+                        && message.contains("Declared incompatibility:")),
                 "Independent catalog findings must survive candidate refusal: {messages:?}"
             );
             assert!(

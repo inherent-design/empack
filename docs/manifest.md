@@ -87,7 +87,7 @@ dependencies:
     releases: any
 ```
 
-`prefer-stable` is the default. `stable-only` excludes provider-classified prereleases; `any` gives them equal preference. These labels describe provider classifications, not a guarantee that a mod works. Preferences govern new automatic choices; changing them does not certify or refresh every retained or exact-pinned selection. Implicit required dependencies use the project preference. `--release-policy` on update, outdated or migration overrides preferences for that operation without rewriting authored policy. Exact pins remain exact regardless of project preference. A pinned dependency cannot also declare its own release preference.
+`prefer-stable` is the default. `stable-only` excludes provider-classified prereleases; `any` gives them equal preference. These labels describe provider classifications, not a guarantee that a mod works. Preferences govern new automatic choices; changing them does not certify or refresh every retained or exact-pinned selection. Implicit required dependencies use the project preference. `--release-policy` on update or migration overrides preferences for that operation without rewriting authored policy. Exact pins remain exact regardless of project preference. A pinned dependency cannot also declare its own release preference.
 
 ## Integration and outputs
 

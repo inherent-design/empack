@@ -233,29 +233,6 @@ pub struct UpdateArgs {
     pub continue_independent: bool,
 }
 
-/// Read-only catalog assessment and presentation, independent of author updates.
-#[derive(Args, Debug, Default, Clone)]
-pub struct OutdatedArgs {
-    /// Direct dependency names from empack.yml; omit to check all
-    #[arg(value_name = "DEPENDENCY")]
-    pub dependencies: Vec<String>,
-    /// Return an error if the update report is incomplete
-    #[arg(long)]
-    pub strict: bool,
-    /// Print the complete report as JSON
-    #[arg(long, conflicts_with = "details")]
-    pub json: bool,
-    /// Show held/manual dependencies and detailed version information
-    #[arg(long)]
-    pub details: bool,
-    /// Hide progress messages
-    #[arg(long)]
-    pub quiet: bool,
-    /// Catalog release policy; exact pins remain exact
-    #[arg(long, value_enum)]
-    pub release_policy: Option<CliReleasePolicy>,
-}
-
 /// Arguments for the `init` subcommand.
 #[derive(Args, Debug, Default, Clone)]
 #[command(group(clap::ArgGroup::new("import_origin").args(["from_source", "continue_import"]).multiple(false)))]
@@ -871,9 +848,6 @@ Updates infer the installed side/layout. update --check checks before applying."
     /// Plan or apply a runtime migration without editing live intent first
     Migrate(MigrationArgs),
 
-    /// Assess provider versions without changing the author workspace
-    Outdated(OutdatedArgs),
-
     /// Preview dependency updates; use --apply to apply the reviewed changes
     Update(UpdateArgs),
 
@@ -1046,7 +1020,6 @@ impl Commands {
         matches!(
             self,
             Self::Status { json: true, .. }
-                | Self::Outdated(OutdatedArgs { json: true, .. })
                 | Self::Update(UpdateArgs { json: true, .. })
                 | Self::Migrate(MigrationArgs { json: true, .. })
                 | Self::Build(BuildArgs { json: true, .. })
@@ -1080,7 +1053,6 @@ impl Commands {
             Commands::Add { .. }
             | Commands::Update(_)
             | Commands::Adopt { .. }
-            | Commands::Outdated(_)
             | Commands::Migrate(_) => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
@@ -1103,7 +1075,6 @@ impl Commands {
             Commands::Add { .. }
             | Commands::Update(_)
             | Commands::Adopt { .. }
-            | Commands::Outdated(_)
             | Commands::Migrate(_) => 6,
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,

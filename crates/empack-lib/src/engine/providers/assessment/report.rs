@@ -93,8 +93,6 @@ pub struct DeclaredIncompatibility {
 pub struct JointAssessment {
     /// This validates required relationships, not complete inventory compatibility.
     pub scope: &'static str,
-    /// Final placements and retained-inventory coexistence require update preparation.
-    pub candidate_compatibility: &'static str,
     pub declared_incompatibilities: Vec<DeclaredIncompatibility>,
     /// False if the declaration scan did not run, timed out or exhausted its allowance.
     pub declarations_complete: bool,
@@ -272,7 +270,7 @@ impl Serialize for UpdateAssessment {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum AssessmentInputError {
+pub enum DependencySelectionError {
     #[error("Unknown dependency key: {}", .0.as_str())]
     Missing(empack_core::model::DependencyKey),
     #[error("Dependency listed more than once: {}", .0.as_str())]
@@ -287,10 +285,10 @@ impl AssessmentRequest {
         let mut selected = std::collections::BTreeSet::new();
         for key in &self.keys {
             if !project.lock().dependencies.contains_key(key) {
-                return Err(AssessmentInputError::Missing(key.clone()).into());
+                return Err(DependencySelectionError::Missing(key.clone()).into());
             }
             if !selected.insert(key) {
-                return Err(AssessmentInputError::Duplicate(key.clone()).into());
+                return Err(DependencySelectionError::Duplicate(key.clone()).into());
             }
         }
         for (key, selection) in &self.exact {

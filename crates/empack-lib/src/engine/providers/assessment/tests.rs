@@ -112,7 +112,7 @@ fn assert_selection_report(report: &UpdateAssessment, pinned: bool) {
                 "compatible":observed, "upstream":observed, "state":if pinned {"pinned"} else {"change-available"},
                 "catalog_complete":true, "observed_records":1, "diagnostic":null,
                 "reasons":if pinned {vec!["pinned"]} else {vec![]}}],
-            "joint":{"scope":"provider-dependency-closure", "candidate_compatibility":"not-assessed",
+            "joint":{"scope":"provider-dependency-closure",
                 "declared_incompatibilities":[], "declarations_complete":true, "state":"validated",
                 "selections":[{"provider":"modrinth", "project":"Project1", "selection":selection,
                     "version":null, "published_at":null, "channel":null}], "reasons":[], "blocking_roots":[]}
@@ -203,7 +203,6 @@ async fn declared_incompatibilities_do_not_claim_placement_aware_validation() {
             .all(|row| row.state == "change-available")
     );
     assert_eq!(report.joint.state, "validated");
-    assert_eq!(report.joint.candidate_compatibility, "not-assessed");
     assert_eq!(report.joint.declared_incompatibilities.len(), 1);
     assert_eq!(
         report.joint.declared_incompatibilities[0].from.selection,
@@ -409,7 +408,6 @@ async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects()
         .unwrap();
         let report = assess(&server, current.clone()).await;
         assert_eq!(report.joint.state, "validated");
-        assert_eq!(report.joint.candidate_compatibility, "not-assessed");
         assert_eq!(report.joint.declared_incompatibilities.len(), 1);
         let pair = &report.joint.declared_incompatibilities[0];
         assert_eq!(
@@ -421,7 +419,7 @@ async fn assessment_exposes_retained_conflicts_that_update_preparation_rejects()
             if reverse { "Project1" } else { "Project2" }
         );
         let json = serde_json::to_value(&report).unwrap();
-        assert_eq!(json["joint"]["candidate_compatibility"], "not-assessed");
+        assert!(json["joint"].get("candidate_compatibility").is_none());
         let group = AdditionGroup::from_resolved(&proposed).unwrap();
         let error = AdditionPlan::prepare_update(&current, &group).unwrap_err();
         assert!(error.to_string().contains("incompatib"), "{error}");
@@ -877,12 +875,12 @@ async fn selected_assessment_retains_context_and_limits_catalog_work() {
             progress.is_empty(),
             "invalid selection started catalog work"
         );
-        match error.downcast_ref::<AssessmentInputError>().unwrap() {
-            AssessmentInputError::Missing(key) => {
+        match error.downcast_ref::<DependencySelectionError>().unwrap() {
+            DependencySelectionError::Missing(key) => {
                 assert!(missing);
                 assert_eq!(key.as_str(), "missing");
             }
-            AssessmentInputError::Duplicate(key) => {
+            DependencySelectionError::Duplicate(key) => {
                 assert!(!missing);
                 assert_eq!(key.as_str(), "a");
             }

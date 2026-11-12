@@ -1412,6 +1412,10 @@ async fn update_json_preserves_provider_observations_and_prepared_proposal_witho
         "RootVer2"
     );
     assert_eq!(report["discovery"]["required_dependencies"], "validated");
+    assert_eq!(report["discovery"]["scope"]["roots"], json!(["alias"]));
+    assert_eq!(report["discovery"]["scope"]["total_roots"], 1);
+    assert_eq!(report["discovery"]["complete"], true);
+    assert_eq!(report["discovery"]["summary"]["change_available"], 1);
     assert!(report["discovery"].get("candidate_compatibility").is_none());
     assert_eq!(report["changed_selections"], json!(["alias"]));
     assert!(!report["file_changes"].as_array().unwrap().is_empty());
@@ -1420,4 +1424,80 @@ async fn update_json_preserves_provider_observations_and_prepared_proposal_witho
         before,
         "Even --yes must leave project and operation state unchanged"
     );
+}
+
+#[tokio::test]
+async fn failed_update_json_retains_provider_field_evidence_before_failure() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut selected = input("renderer", Some("alias"));
+    selected.pin = None;
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut failed = Server::new_async().await;
+    failed.mock("GET", "/project/Root0001").with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    let mut malformed = version("Root0001", "RootVer2", json!([]));
+    malformed["files"] = json!([]);
+    failed
+        .mock("GET", "/project/Root0001/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([malformed]).to_string())
+        .create_async()
+        .await;
+    let before = snapshot(root.path());
+    let (host, messages) = session(root.path(), true, false).record_status_messages();
+    let error = change_with_services(
+        &host,
+        NonEmpty::new(vec![AddHostInput::Provider(selected)]).unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            pins: Default::default(),
+            mode: ApplicationMode::Preview,
+            output: UpdateOutput {
+                json: true,
+                quiet: true,
+                details: false,
+            },
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&failed.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(
+            error.downcast_ref::<crate::engine::providers::CatalogError>(),
+            Some(crate::engine::providers::CatalogError::InvalidRecord)
+        ),
+        "{error:#}"
+    );
+    let messages = messages.lock().unwrap();
+    assert_eq!(messages.len(), 1);
+    let report: Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(report["proposal"], "incomplete");
+    assert_eq!(report["discovery"]["complete"], false);
+    assert_eq!(report["discovery"]["summary"]["unknown"], 1);
+    assert_eq!(report["discovery"]["scope"]["roots"], json!(["alias"]));
+    assert_eq!(
+        report["discovery"]["blocking_dependencies"],
+        json!(["alias"])
+    );
+    assert_eq!(report["requested"], json!(["alias"]));
+    let row = &report["discovery"]["dependencies"][0];
+    assert_eq!(row["key"], "alias");
+    assert_eq!(row["current"]["selection"], "RootVer1");
+    assert_eq!(row["reasons"], json!(["invalid-evidence"]));
+    assert_eq!(row["provider_problem"]["field"], "files");
+    assert_eq!(row["provider_problem"]["invariant"], "non-empty");
+    assert!(!row["catalog_complete"].as_bool().unwrap());
+    assert_eq!(report["file_changes"], json!([]));
+    assert_eq!(snapshot(root.path()), before);
 }

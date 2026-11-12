@@ -25,7 +25,7 @@ empack --workdir my-pack add --platform modrinth sodium
 empack --workdir my-pack build modrinth
 ```
 
-Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism. Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run `empack --workdir my-pack sync`; use `update` when you deliberately want newer compatible dependencies. `outdated` reports provider update evidence; `migrate --minecraft VERSION --loader FAMILY --plan` previews a runtime change. Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
+Import the `.mrpack` from `my-pack/dist/` into a compatible launcher such as Prism. Add authored configuration under `my-pack/pack/`. After editing `empack.yml`, run `empack --workdir my-pack sync`; use `update` when you deliberately want newer compatible dependencies. `update --all` previews dependency changes; add `--apply` to apply the prepared changes. `migrate --minecraft VERSION --loader FAMILY --plan` previews a runtime change. Commit `empack.yml`, `empack.lock` and any `empack.bindings.yml` with your sources.
 
 For an existing pack archive, use `empack init my-pack --from ./pack.mrpack` or a CurseForge manifest ZIP. Preview changes with `--dry-run`. See [usage](docs/usage.md) for imports, optional files, restricted downloads and installed-instance commands.
 

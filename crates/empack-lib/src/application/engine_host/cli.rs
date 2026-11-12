@@ -31,7 +31,6 @@ pub mod manifest;
 mod migration;
 mod synchronization;
 mod update;
-pub use assessment::outdated;
 pub use import::initialize;
 pub(super) use import::initialize_selected;
 pub use migration::migrate;

@@ -6,7 +6,7 @@ Empack separates pack authoring from installed game instances. Use `--workdir` b
 
 Commands with `--json` reserve stdout for their report. Logs go to stderr for those commands even if `--log-output stdout` is configured. `--log-format` changes logs, not the report schema; `--color always` does not add terminal escapes to JSON reports. Human-readable commands continue to honor the selected log destination.
 
-Check the exit status as well as the report. A failed command can return a useful partial report, such as `outdated --strict`; its diagnostic goes to stderr. A failure before a report is available does not produce a successful empty report. Cancellation requests do not replace the completed result: cleanup and recovery failures remain visible, and an operation that already completed successfully remains successful. Ctrl-C while answering a prompt cancels that decision; it does not grant approval. A later resume or recovery still requires fresh confirmation.
+Check the exit status as well as the report. A failed command can return a useful partial report, such as `update --all --json`; its diagnostic goes to stderr. A failure before a report is available does not produce a successful empty report. Cancellation requests do not replace the completed result: cleanup and recovery failures remain visible, and an operation that already completed successfully remains successful. Ctrl-C while answering a prompt cancels that decision; it does not grant approval. A later resume or recovery still requires fresh confirmation.
 
 ## Workspace status
 
@@ -28,8 +28,7 @@ Status does not verify installed content, authenticate a channel or establish th
 | `pin` / `unpin`               | Change exact provider selection intent without refreshing content          |
 | `remove`                      | Remove or demote selected logical roots with native ownership checks       |
 | `sync`                        | Apply authored intent while retaining compatible locked selections         |
-| `outdated`                    | Read provider update evidence and joint dependency blockers                |
-| `update`                      | Deliberately refresh selected eligible dependency versions                 |
+| `update`                      | Check selected dependencies and preview or apply eligible updates          |
 | `migrate`                     | Plan or apply a Minecraft/loader change and explicit replacements          |
 | `adopt`                       | Verify selected existing content and record it without hidden installation |
 | `build`                       | Produce explicitly selected consumer distributions                         |
@@ -53,7 +52,6 @@ Provider selectors, explicit pins, typed local/URL content, named file plans and
 ## Checking and changing versions
 
 ```bash
-empack outdated --strict --json --release-policy prefer-stable
 empack update --all
 empack update --all --json --quiet
 empack update sodium --release-policy stable-only
@@ -69,7 +67,7 @@ Update previews are the default; `--apply` is required to change the project, an
 
 Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. The result reports changed and kept dependencies separately; checking a dependency does not mean it was upgraded. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
 
-`outdated` shows update counts, available changes and problems. A targeted check such as `outdated sodium` also shows why that dependency is kept, including an exact pin. Use `--details` for the full list, version choices and check information; `--json` retains the complete structured report. `--quiet` hides progress on stderr. Unknown results mean a check could not finish, not that a dependency is up to date.
+`update --all` shows version checks, available changes and problems alongside the prepared proposal. A targeted check such as `update sodium` also shows why that dependency is kept, including an exact pin. Use `--details` for the full list, version choices and check information; `--json` retains the complete structured report. `--quiet` hides progress on stderr. Unknown results mean a check could not finish, not that a dependency is up to date.
 
 Version choices follow your Minecraft, loader, pins and release preferences. They do not establish that the whole pack works together. Empack checks required dependencies and reports known mod conflicts; update preparation checks the proposed files separately. See [assessment semantics](design/assessment.md) for the scope and limits of these checks.
 
@@ -196,7 +194,7 @@ Workdir and relative input paths resolve from the directory where empack was inv
 
 Configuration precedence, from lowest to highest, is defaults, `.env`, `.env.local`, inherited environment variables, then explicit CLI options. Dotenv files are read from the invocation directory; selecting `--workdir` does not load that project's dotenv files. Quote paths containing spaces in dotenv files and pass each CLI path as one argument. The corresponding environment variables are `EMPACK_WORKDIR`, `EMPACK_STATE_DIR` and `EMPACK_CACHE_DIR`.
 
-Command results and requested JSON use stdout. Checking messages, provisional catalog/acquisition progress, warnings and errors use stderr. Progress reports observed records or bytes, not an estimated completion percentage, and does not change the final result. `outdated --quiet` hides its progress while retaining reports and errors.
+Command results and requested JSON use stdout. Checking messages, provisional catalog/acquisition progress, warnings and errors use stderr. Progress reports observed records or bytes, not an estimated completion percentage, and does not change the final result. `update --quiet` hides its progress while retaining reports and errors.
 
 Help and version display flags remain available when unrelated dotenv files are malformed. Ordinary commands, including `version` and an invocation with no command, load configuration and report malformed dotenv as an error. With valid configuration, invoking no command prints help guidance without creating project or host state.
 

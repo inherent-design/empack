@@ -4,8 +4,8 @@ use crate::engine::{
     api::UpdatePreview,
     diagnostics::{Diagnostic, DiagnosticPhase},
     providers::{
-        DeclaredIncompatibility, DependencyAssessment, ObservedVersion, UpdateAssessment,
-        UpdateReason,
+        AssessmentScope, AssessmentSummary, DeclaredIncompatibility, DependencyAssessment,
+        ObservedVersion, UpdateAssessment, UpdateReason,
     },
 };
 use empack_core::files::{FileChange, FileContent, ObservedPath};
@@ -63,6 +63,7 @@ struct BlockedGroup {
 
 pub(in crate::application::engine_host) struct UpdatePreviewReport {
     requested: Vec<String>,
+    source_kinds: BTreeMap<String, &'static str>,
     observations: Option<UpdateAssessment>,
     state: ProposalState,
     selected: Vec<String>,
@@ -74,11 +75,16 @@ pub(in crate::application::engine_host) struct UpdatePreviewReport {
     diagnostic: Option<Diagnostic>,
 }
 impl UpdatePreviewReport {
-    pub fn new(mut requested: Vec<String>, observations: Option<UpdateAssessment>) -> Self {
+    pub fn new(
+        mut requested: Vec<String>,
+        source_kinds: BTreeMap<String, &'static str>,
+        observations: Option<UpdateAssessment>,
+    ) -> Self {
         requested.sort();
         requested.dedup();
         Self {
             requested,
+            source_kinds,
             observations,
             state: ProposalState::Incomplete,
             selected: vec![],
@@ -91,7 +97,7 @@ impl UpdatePreviewReport {
         }
     }
     pub fn empty() -> Self {
-        let mut report = Self::new(vec![], None);
+        let mut report = Self::new(vec![], Default::default(), None);
         report.state = ProposalState::Unchanged;
         report
     }
@@ -211,6 +217,13 @@ impl UpdatePreviewReport {
                 .message("No dependencies to update.");
             return Ok(());
         }
+        session.display().status().message(match self.state {
+            ProposalState::Ready => "Proposal: ready",
+            ProposalState::Unchanged => "Proposal: no changes needed",
+            ProposalState::Blocked => "Proposal: blocked; no changes applied",
+            ProposalState::Incomplete => "Proposal: incomplete; no changes applied",
+            ProposalState::PartiallyReady => "Proposal: some independent groups are blocked",
+        });
         if let Some(observations) = &self.observations {
             session
                 .display()
@@ -220,13 +233,6 @@ impl UpdatePreviewReport {
                     output.details || self.diagnostic.is_some(),
                 ));
         }
-        session.display().status().message(match self.state {
-            ProposalState::Ready => "Proposal: ready",
-            ProposalState::Unchanged => "Proposal: no changes needed",
-            ProposalState::Blocked => "Proposal: blocked; no changes applied",
-            ProposalState::Incomplete => "Proposal: incomplete; no changes applied",
-            ProposalState::PartiallyReady => "Proposal: some independent groups are blocked",
-        });
         Ok(())
     }
 }
@@ -237,17 +243,22 @@ impl Serialize for UpdatePreviewReport {
             observed_at: &'a str,
             catalog_validation: &'static str,
             release_policy: &'a str,
+            scope: &'a AssessmentScope,
+            complete: bool,
+            summary: AssessmentSummary,
             dependencies: &'a [DependencyAssessment],
             required_dependencies: &'a str,
             required_selections: &'a [ObservedVersion],
             declared_incompatibilities: &'a [DeclaredIncompatibility],
             declarations_complete: bool,
             reasons: &'a [UpdateReason],
+            blocking_dependencies: &'a [String],
         }
         #[derive(Serialize)]
         struct Report<'a> {
             schema: u32,
             requested: &'a [String],
+            source_kinds: &'a BTreeMap<String, &'static str>,
             discovery: Option<Discovery<'a>>,
             proposal: ProposalState,
             selected: &'a [String],
@@ -261,16 +272,21 @@ impl Serialize for UpdatePreviewReport {
         Report {
             schema: 1,
             requested: &self.requested,
+            source_kinds: &self.source_kinds,
             discovery: self.observations.as_ref().map(|report| Discovery {
                 observed_at: &report.observed_at,
                 catalog_validation: UpdateAssessment::CATALOG_VALIDATION_SCOPE,
                 release_policy: report.release_policy,
+                scope: &report.scope,
+                complete: report.is_complete(),
+                summary: report.summary(),
                 dependencies: &report.dependencies,
                 required_dependencies: report.joint.state,
                 required_selections: &report.joint.selections,
                 declared_incompatibilities: &report.joint.declared_incompatibilities,
                 declarations_complete: report.joint.declarations_complete,
                 reasons: &report.joint.reasons,
+                blocking_dependencies: &report.joint.blocking_roots,
             }),
             proposal: self.state,
             selected: &self.selected,

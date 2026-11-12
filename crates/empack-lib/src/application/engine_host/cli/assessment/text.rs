@@ -4,15 +4,7 @@ use crate::engine::providers::{
 };
 use crate::terminal::display_line;
 
-pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
-    render_with_hint(report, details, true)
-}
-
 pub(super) fn render_findings(report: &UpdateAssessment, details: bool) -> String {
-    render_with_hint(report, details, false)
-}
-
-fn render_with_hint(report: &UpdateAssessment, details: bool, hint: bool) -> String {
     if report.dependencies.is_empty()
         && report.scope.roots.is_empty()
         && report.is_complete()
@@ -41,13 +33,13 @@ fn render_with_hint(report: &UpdateAssessment, details: bool, hint: bool) -> Str
         lines.push("Some checks could not finish; these results are incomplete.".into());
     }
     let summary = report.summary();
-    lines.extend([String::new(), "Updates:".into()]);
+    lines.extend([String::new(), "Version checks:".into()]);
     for (label, count) in [
         ("Available", summary.change_available),
         ("Held", summary.held),
         ("Unknown", summary.unknown),
         ("Manual", summary.manual),
-        ("Conflicted", summary.conflicted),
+        ("Blocked", summary.conflicted),
         ("Unavailable", summary.unavailable),
     ] {
         lines.push(format!("    {label:<12} {count}"));
@@ -73,14 +65,13 @@ fn render_with_hint(report: &UpdateAssessment, details: bool, hint: bool) -> Str
         lines.push(String::new());
         for conflict in &report.joint.declared_incompatibilities {
             lines.push(format!(
-                "Reported mod conflict: {} and {}",
+                "Declared incompatibility: {} and {}",
                 version(Some(&conflict.from)),
                 version(Some(&conflict.target))
             ));
         }
-        lines.push("These conflicts come from mod metadata; review them before updating.".into());
-    } else if summary.change_available > 0 && report.joint.candidate_compatibility == "not-assessed"
-    {
+        lines.push("These declarations come from mod metadata; the proposal checks which files participate.".into());
+    } else if summary.change_available > 0 {
         lines.extend([
             String::new(),
             "Test updates in Minecraft before using them.".into(),
@@ -99,12 +90,12 @@ fn render_with_hint(report: &UpdateAssessment, details: bool, hint: bool) -> Str
                 }
             ),
             format!(
-                "    Reported conflicts: {}",
+                "    Declared incompatibilities: {}",
                 if report.joint.declarations_complete {
                     if report.joint.declared_incompatibilities.is_empty() {
                         "none found"
                     } else {
-                        "see conflicts above"
+                        "see declarations above"
                     }
                 } else if report.joint.state == "not-applicable" {
                     "not checked for manual files"
@@ -129,11 +120,6 @@ fn render_with_hint(report: &UpdateAssessment, details: bool, hint: bool) -> Str
             ));
         }
         lines.push("    These checks use mod metadata; test changes in Minecraft.".into());
-    } else if hint {
-        lines.extend([
-            String::new(),
-            "Call with --details for more information".into(),
-        ]);
     }
     lines.join("\n")
 }
@@ -193,8 +179,8 @@ fn result(row: &DependencyAssessment) -> String {
             "no version matches this pack's settings".into(),
         ),
         AssessmentCategory::Conflicted => (
-            "Conflicted",
-            "the selected update conflicts with another dependency".into(),
+            "Blocked",
+            "required dependency metadata could not be resolved".into(),
         ),
     };
     let additional = row
@@ -365,7 +351,6 @@ mod tests {
             joint: JointAssessment {
                 scope: "provider-dependency-closure",
                 state: "validated",
-                candidate_compatibility: "not-assessed",
                 declarations_complete: true,
                 selections: vec![],
                 reasons: vec![],
@@ -378,15 +363,15 @@ mod tests {
     fn selected_pin_has_a_concise_complete_answer() {
         let report = report(vec![row()]);
         assert_eq!(
-            render(&report, false),
-            "Checked 1 of 272 dependencies\n\nUpdates:\n    Available    0\n    Held         1\n    Unknown      0\n    Manual       0\n    Conflicted   0\n    Unavailable  0\n\nc2me-fabric: Held\n    Reason: pinned at 0.4.0-alpha.0.30+1.21.1\n\nCall with --details for more information"
+            render_findings(&report, false),
+            "Checked 1 of 272 dependencies\n\nVersion checks:\n    Available    0\n    Held         1\n    Unknown      0\n    Manual       0\n    Blocked      0\n    Unavailable  0\n\nc2me-fabric: Held\n    Reason: pinned at 0.4.0-alpha.0.30+1.21.1"
         );
         let machine = serde_json::to_value(&report).unwrap();
         assert_eq!(machine["schema"], 2);
         assert_eq!(machine["complete"], true);
         assert_eq!(machine["scope"]["kind"], "selected-author-roots");
         assert_eq!(machine["summary"]["held"], 1);
-        assert_eq!(machine["joint"]["candidate_compatibility"], "not-assessed");
+        assert!(machine["joint"].get("candidate_compatibility").is_none());
     }
     #[test]
     fn partial_results_keep_available_updates_and_actionable_failures_visible() {
@@ -402,7 +387,7 @@ mod tests {
         broken.state = "invalid-evidence";
         broken.reasons = vec![UpdateReason::InvalidEvidence];
         broken.diagnostic = Some("Invalid provider field files in broken".into());
-        let output = render(&report(vec![update, broken]), false);
+        let output = render_findings(&report(vec![update, broken]), false);
         assert!(output.starts_with("Checked 2 of 272 dependencies\nSome checks could not finish; these results are incomplete."));
         assert!(output.contains("Available    1"));
         assert!(output.contains("Unknown      1"));
@@ -411,25 +396,25 @@ mod tests {
             output.contains("broken: Unknown\n    Reason: Invalid provider field files in broken")
         );
         assert!(output.contains("Test updates in Minecraft before using them."));
-        assert!(output.ends_with("Call with --details for more information"));
+        assert!(!output.contains("Call with --details"));
     }
     #[test]
     fn details_retain_exact_identity_without_repeating_default_bookkeeping() {
         let report = report(vec![row()]);
-        let output = render(&report, true);
+        let output = render_findings(&report, true);
         assert!(output.contains("Current: 0.4.0-alpha.0.30+1.21.1 (modrinth:ProjectA@VersionA)"));
         assert!(output.contains("Required dependencies: checked"));
-        assert!(output.contains("Reported conflicts: none found"));
+        assert!(output.contains("Declared incompatibilities: none found"));
         assert_eq!(output.matches("Version preference:").count(), 1);
         assert!(output.ends_with("These checks use mod metadata; test changes in Minecraft."));
         assert!(!output.contains("Call with --details"));
-        assert!(!render(&report, false).contains(&report.observed_at));
+        assert!(!render_findings(&report, false).contains(&report.observed_at));
     }
     #[test]
     fn no_dependencies_is_a_short_noop() {
         let mut report = report(vec![]);
         report.scope.total_roots = 0;
-        assert_eq!(render(&report, false), "No dependencies to check.");
+        assert_eq!(render_findings(&report, false), "No dependencies to check.");
     }
 
     #[test]
@@ -442,7 +427,7 @@ mod tests {
         let report = report(vec![dependency]);
         let before = serde_json::to_value(&report).unwrap();
         for details in [false, true] {
-            let output = render(&report, details);
+            let output = render_findings(&report, details);
             assert!(output.contains("1.0\\nfalse update\\u{202e}"), "{output}");
             assert!(
                 output.contains("provider note\\nfalse action\\u{1b}[2J"),

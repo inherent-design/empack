@@ -73,11 +73,15 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         return EmpackExitCode::Usage;
     }
     if let Some(selection) =
-        find_chain_error::<crate::engine::providers::AssessmentInputError>(error)
+        find_chain_error::<crate::engine::providers::DependencySelectionError>(error)
     {
         return match selection {
-            crate::engine::providers::AssessmentInputError::Missing(_) => EmpackExitCode::NotFound,
-            crate::engine::providers::AssessmentInputError::Duplicate(_) => EmpackExitCode::Usage,
+            crate::engine::providers::DependencySelectionError::Missing(_) => {
+                EmpackExitCode::NotFound
+            }
+            crate::engine::providers::DependencySelectionError::Duplicate(_) => {
+                EmpackExitCode::Usage
+            }
         };
     }
     if let Some(catalog) = find_chain_error::<crate::engine::providers::CatalogError>(error) {
