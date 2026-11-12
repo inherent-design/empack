@@ -190,6 +190,8 @@ The worker uses the existing Rustup installation and selects the repository's pi
 
 Hashed Python producer sources, bootstrap Java/resources/build definitions, the toolchain file, Cargo lockfile and verification JSON use LF checkout attributes on every host. A native Git fixture enables `autocrlf`, checks the hashed Python/rustdoc/bootstrap inputs, and retains controls for ordinary text conversion and exact signed-fixture bytes. Cross-host admission compares exact bytes; it does not normalize received evidence to accept another source snapshot. Disposable auxiliary builds stage the producer's same JAR and identity record into their version-stamped source checkout, then apply normal source/version/digest admission; they do not rebuild Java or relabel its evidence.
 
+The shared bootstrap workflow owns the packaged JVM and host checks before native compilation: the admitted JVM majors run on Linux, with Windows Java 8/25 and macOS Java 25 covering host-specific acquisition, permissions and process behavior. PR and candidate workflows wait for that gate and retain their separate native/consumer checks. They do not repeat the packaged fixture suite after building native products.
+
 Doctests are discovered and executed separately and their receipts are joined to their own acceptance cases. Source-edited or interrupted tooling attempts remain nonqualifying. `report-verification.py --receipt` accepts both native and Python records and preserves earlier failed attempts.
 
 To select an independently built executable, supply all identity fields explicitly:

@@ -180,15 +180,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
-      - name: Exercise the packaged bootstrap on the native host
-        shell: bash
-        run: python3 bootstrap/tests/test_bootstrap.py -v > bootstrap/target/host-tests.log 2>&1 || { cat bootstrap/target/host-tests.log; exit 1; }
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: bootstrap-host-${{ matrix.target }}
-          path: bootstrap/target/host-tests.log
-          if-no-files-found: error
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.148

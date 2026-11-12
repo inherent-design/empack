@@ -143,6 +143,20 @@ class ReleaseChannelContracts(unittest.TestCase):
                              "diagnostic uploads must not enter the strict archive-evidence input set")
         for workflow in (release, pr):
             self.assertIn("tool: cross@0.2.5", workflow)
+            self.assertIn("uses: ./.github/workflows/bootstrap.yml", workflow)
+            self.assertNotIn("bootstrap/tests/test_bootstrap.py", workflow,
+                             "packaged host checks belong to the earlier shared bootstrap gate")
+        bootstrap = (root / ".github/workflows/bootstrap.yml").read_text()
+        hosts = bootstrap.split("  hosts:", 1)[1]
+        self.assertIn("needs: build", hosts)
+        self.assertIn("if: inputs.test", hosts)
+        self.assertIn("os: windows-latest", hosts)
+        self.assertIn('java: "8"', hosts)
+        self.assertIn('java: "25"', hosts)
+        self.assertIn("os: macos-26", hosts)
+        self.assertIn("name: bootstrap-jar", hosts)
+        self.assertIn("bootstrap/tests/test_bootstrap.py", hosts)
+        self.assertIn("if: always()", hosts)
         self.assertIn("--builder cross --output .git/cross-product-build", pr)
         self.assertIn("name: verification-cross-product-build", pr)
 

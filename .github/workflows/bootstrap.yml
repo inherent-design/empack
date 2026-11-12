@@ -104,3 +104,48 @@ jobs:
           name: bootstrap-jvm-results
           path: bootstrap/target/results/
           if-no-files-found: error
+
+  hosts:
+    name: Host ${{ matrix.target }} Java ${{ matrix.java }}
+    needs: build
+    if: inputs.test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            java: "8"
+            distribution: zulu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            java: "25"
+            distribution: temurin
+          - os: macos-26
+            target: aarch64-apple-darwin
+            java: "25"
+            distribution: temurin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootstrap-jar
+          path: bootstrap/target
+      - uses: actions/setup-java@v6
+        with:
+          distribution: ${{ matrix.distribution }}
+          java-version: ${{ matrix.java }}
+      - name: Exercise the packaged bootstrap before native compilation
+        shell: bash
+        run: python3 bootstrap/tests/test_bootstrap.py -v > bootstrap/target/host-tests.log 2>&1 || { cat bootstrap/target/host-tests.log; exit 1; }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bootstrap-host-${{ matrix.target }}-java${{ matrix.java }}
+          path: bootstrap/target/host-tests.log
+          if-no-files-found: error

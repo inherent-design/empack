@@ -406,15 +406,6 @@ jobs:
         with:
           name: candidate-auxiliary-${{ matrix.os }}
           path: .git/candidate-auxiliary
-      - name: Exercise the packaged bootstrap on this native host
-        shell: bash
-        run: python3 bootstrap/tests/test_bootstrap.py -v > bootstrap/target/host-tests.log 2>&1 || { cat bootstrap/target/host-tests.log; exit 1; }
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: bootstrap-host-${{ matrix.target }}
-          path: bootstrap/target/host-tests.log
-          if-no-files-found: error
       - name: Run fixed selections without rebuilding either product
         shell: bash
         env:
