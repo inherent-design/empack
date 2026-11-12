@@ -1,13 +1,12 @@
 //! Human context for unresolved provider relations; retained issues remain typed.
-use super::labels;
-use crate::engine::providers::{ClosureIssue, ClosureIssueKind};
+use super::{ClosureIssue, ClosureIssueKind, ObservedVersion};
 
 #[derive(Debug)]
-pub(super) struct UnresolvedDependencies {
-    pub(super) issues: Vec<ClosureIssue>,
+pub struct UnresolvedDependencies {
+    pub issues: Vec<ClosureIssue>,
 }
 impl UnresolvedDependencies {
-    pub(super) fn has_conflict(&self) -> bool {
+    pub fn has_conflict(&self) -> bool {
         self.issues.iter().any(|issue| {
             matches!(
                 issue.kind,
@@ -16,6 +15,10 @@ impl UnresolvedDependencies {
             )
         })
     }
+}
+fn describe(pin: &empack_core::model::ResolvedPin) -> String {
+    let value = ObservedVersion::from_pin(pin);
+    format!("{}:{}@{}", value.provider, value.project, value.selection)
 }
 impl std::error::Error for UnresolvedDependencies {}
 impl std::fmt::Display for UnresolvedDependencies {
@@ -26,10 +29,22 @@ impl std::fmt::Display for UnresolvedDependencies {
             "Dependency check could not finish"
         })?;
         for issue in self.issues.iter().take(8) {
-            write!(f, "\n  {}", labels::pin(&issue.from))?;
+            write!(f, "\n  {}", describe(&issue.from))?;
             if let Some(dependency) = &issue.dependency {
                 if let Some(project) = &dependency.project {
-                    write!(f, " -> {}", labels::project(project))?;
+                    write!(
+                        f,
+                        " -> {}",
+                        format_args!(
+                            "{}:{}",
+                            match project {
+                                empack_core::identity::ProviderProjectId::Modrinth(_) => "modrinth",
+                                empack_core::identity::ProviderProjectId::CurseForge(_) =>
+                                    "curseforge",
+                            },
+                            project
+                        )
+                    )?;
                 }
                 if let Some(pin) = &dependency.pin {
                     let version = match pin {
@@ -46,8 +61,11 @@ impl std::fmt::Display for UnresolvedDependencies {
                 ClosureIssueKind::IncompleteEvidence(coverage) => write!(
                     f,
                     "required-dependency information is {}",
-                    labels::coverage(*coverage)
+                    match coverage {empack_core::model::Coverage::CompleteForSelection => "complete for this version", empack_core::model::Coverage::Partial => "incomplete", empack_core::model::Coverage::Unknown => "not recorded"}
                 )?,
+                ClosureIssueKind::MissingSelection => {
+                    f.write_str("a required dependency is absent from the current lock; review it with empack sync")?
+                }
                 ClosureIssueKind::MissingIdentity => {
                     f.write_str("a required dependency has no project or version identity")?
                 }
@@ -62,14 +80,14 @@ impl std::fmt::Display for UnresolvedDependencies {
                     write!(
                         f,
                         "selected {}; requires {}. Choose compatible versions together",
-                        labels::pin(selected),
-                        labels::pin(&required)
+                        describe(selected),
+                        describe(&required)
                     )?;
                 }
                 ClosureIssueKind::IncompatibleRequirement { required } => write!(
                     f,
                     "required {} does not match the requested Minecraft/loader settings",
-                    labels::pin(required)
+                    describe(required)
                 )?,
                 ClosureIssueKind::UninterpretedRelation => {
                     f.write_str("the provider relationship needs review before continuing")?

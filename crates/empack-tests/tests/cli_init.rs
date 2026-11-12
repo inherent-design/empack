@@ -242,7 +242,7 @@ fn cli_init_custom_content_routes_preserve_explicit_paths_and_refuse_traversal()
         );
         let before = snapshot(project.dir());
         let output = offline_command(&pack_dir)
-            .args(["manifest", "check", "--json"])
+            .args(["check", "--documents", "--json"])
             .output()
             .unwrap();
         assert!(output.status.success(), "{output:?}");

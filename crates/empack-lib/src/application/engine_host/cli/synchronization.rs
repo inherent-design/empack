@@ -453,7 +453,7 @@ pub(super) async fn synchronize_mode(
                     ),
                     ProviderAdditionOutcome::NeedsInput(closure) => {
                         return Err(anyhow::Error::new(
-                            crate::application::dependency_decisions::UnresolvedDependencies {
+                            crate::engine::providers::UnresolvedDependencies {
                                 issues: closure.issues,
                             },
                         )

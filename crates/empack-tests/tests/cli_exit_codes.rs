@@ -72,7 +72,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
     };
     let routes: &[&[&str]] = &[
         &["status", "--json"],
-        &["manifest", "check", "--json"],
+        &["check", "--documents", "--json"],
         &["manifest", "diff", "--json"],
         &["pending", "list", "--json"],
         &["update", "--all", "--json"],
@@ -114,7 +114,7 @@ fn cli_json_reports_separate_logging_and_preserve_author_inputs() {
                     assert!(value.is_object(), "{context}");
                     if *route == ["status", "--json"] {
                         assert_eq!(value["contexts"][0]["name"], name, "{context}");
-                    } else if *route == ["manifest", "check", "--json"]
+                    } else if *route == ["check", "--documents", "--json"]
                         || *route == ["manifest", "diff", "--json"]
                         || *route == ["build", "--explain", "--json"]
                     {

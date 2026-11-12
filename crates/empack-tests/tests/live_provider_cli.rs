@@ -1257,12 +1257,9 @@ fn live_cli_direct_url_retains_observed_content() {
         run(&project, &["--yes", "sync"]);
         assert_eq!(author_snapshot(project.dir()), accepted);
     }
-    let report = run(&project, &["manifest", "check", "--json"]);
+    let report = run(&project, &["manifest", "explain", key.as_str(), "--json"]);
     let report: serde_json::Value = serde_json::from_slice(&report.stdout).unwrap();
-    assert_eq!(
-        report["dependencies"][0]["evidence_policy"],
-        "accept-first-observation"
-    );
+    assert_eq!(report["evidence_policy"], "accept-first-observation");
     assert_eq!(
         fs::read(project.dir().join("prior-build.zip")).unwrap(),
         b"prior artifact"

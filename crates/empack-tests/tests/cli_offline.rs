@@ -877,3 +877,47 @@ fn cli_unassociated_saved_operations_identify_records_without_changing_them() {
         );
     }
 }
+
+#[test]
+fn cli_check_reports_document_failures_as_json_without_changing_inputs() {
+    let project = initialized();
+    let before = snapshot(&project);
+    for args in [
+        vec!["check", "--json"],
+        vec!["check", "--documents", "--json"],
+    ] {
+        let output = command(&project).args(args).output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["complete"], true);
+        assert_eq!(report["lock"], "current");
+        assert_eq!(snapshot(&project), before);
+    }
+    fs::write(project.dir().join("empack.lock"), b"damaged lock").unwrap();
+    let before = snapshot(&project);
+    let output = command(&project)
+        .args(["check", "--documents", "--json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], false);
+    assert_eq!(report["lock"], "invalid");
+    assert!(
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["state"] == "failed")
+    );
+    assert!(!output.stderr.is_empty());
+    assert_eq!(snapshot(&project), before);
+    for args in [
+        vec!["manifest", "check"],
+        vec!["check", "--documents", "--online"],
+        vec!["check", "--json", "--details"],
+    ] {
+        command(&project).args(args).assert().failure();
+        assert_eq!(snapshot(&project), before);
+    }
+}

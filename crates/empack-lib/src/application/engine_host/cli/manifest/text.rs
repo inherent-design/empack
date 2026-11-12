@@ -4,15 +4,6 @@ use crate::terminal::display_line;
 use anyhow::Result;
 use serde_json::Value;
 
-fn lock(report: &AuthoringInspection) -> &'static str {
-    match report.lock_status {
-        "current" => "current",
-        "missing" => "not found",
-        "stale" => "needs sync",
-        _ => "unavailable",
-    }
-}
-
 fn editing(report: &AuthoringInspection, dependency: Option<&str>, lines: &mut Vec<String>) {
     let limitations: Vec<_> = report
         .editing_limitations
@@ -49,18 +40,6 @@ fn editing(report: &AuthoringInspection, dependency: Option<&str>, lines: &mut V
             ));
         }
     }
-}
-
-pub(super) fn check(report: &AuthoringInspection) -> String {
-    let mut lines = vec![
-        format!("{}: author files are valid", display_line(&report.pack)),
-        format!("Lock: {}", lock(report)),
-    ];
-    if report.lock_status != "current" {
-        lines.push("Next: empack sync".into());
-    }
-    editing(report, None, &mut lines);
-    lines.join("\n")
 }
 
 pub(super) fn diff(report: &AuthoringInspection) -> String {
@@ -259,12 +238,8 @@ mod tests {
         }
     }
     #[test]
-    fn valid_check_and_unchanged_diff_answer_the_question_without_a_report_footer() {
+    fn unchanged_diff_answers_the_question_without_a_report_footer() {
         let report = report();
-        assert_eq!(
-            check(&report),
-            "Workshop 日本: author files are valid\nLock: current"
-        );
         assert_eq!(diff(&report), "Dependency settings match the lock.");
     }
     #[test]
@@ -273,10 +248,6 @@ mod tests {
         report.lock_status = "missing";
         report.runtime_satisfied = None;
         assert_eq!(diff(&report), "No lock to compare with.\nNext: empack sync");
-        assert_eq!(
-            check(&report),
-            "Workshop 日本: author files are valid\nLock: not found\nNext: empack sync"
-        );
     }
 
     #[test]
@@ -285,7 +256,7 @@ mod tests {
         let source = DocumentCodec.decode_intent(b"schema: 6\npack:\n  id: fixture\n  name: Workshop\n  version: alpha\n  authors: [Author]\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: {preferred: 21}\ndependencies:\n  custom: {path: vendor/custom.jar}\n", "fixture").unwrap();
         let report = DocumentCodec.inspect_authoring(&source, None);
         assert_eq!(report.editing_limitations.len(), 3);
-        let checked = check(&report);
+        let checked = diff(&report);
         assert!(
             checked
                 .contains("3 settings need simpler YAML for automatic edits (--json lists them).")

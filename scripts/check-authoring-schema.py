@@ -33,7 +33,7 @@ def observe(binary, validators):
                 (project / "empack.bindings.yml").write_bytes(json.dumps(case["bindings"]).encode("utf-8"))
             before = workspace_snapshot(root)
             command = [str(binary), "--workdir", str(project), "--state-dir", str(root / "state"),
-                       "--cache-dir", str(root / "cache"), "manifest", "check", "--json"]
+                       "--cache-dir", str(root / "cache"), "check", "--documents", "--json"]
             schema_valid = validators[0].is_valid(case["author"])
             if case["bindings"] is not None:
                 schema_valid &= validators[1].is_valid(case["bindings"])

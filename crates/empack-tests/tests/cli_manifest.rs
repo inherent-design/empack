@@ -7,12 +7,11 @@ use std::{fs, path::Path, process::Output};
 
 const HEADER: &str = "# Author note: retain this text exactly.\nschema: 6\npack:\n  id: literal.pack\n  name: Literal Pack\n  version: Autumn Update\nruntime:\n  minecraft: '1.21.1'\n  loader: vanilla\n  java: {preferred: 21}\n";
 
-fn inspect(root: &Path, args: &[&str]) -> Output {
+fn inspect_command(root: &Path, args: &[&str]) -> Output {
     let before = snapshot(root);
     let output = offline_command(root)
         .env("EMPACK_STATE_DIR", root.join("unused-manifest-state"))
         .env("EMPACK_CACHE_DIR", root.join("unused-manifest-cache"))
-        .arg("manifest")
         .args(args)
         .output()
         .unwrap();
@@ -24,11 +23,37 @@ fn inspect(root: &Path, args: &[&str]) -> Output {
     output
 }
 
+fn inspect(root: &Path, args: &[&str]) -> Output {
+    let mut command = vec!["manifest"];
+    command.extend_from_slice(args);
+    inspect_command(root, &command)
+}
+fn check(root: &Path) -> Output {
+    inspect_command(root, &["check", "--documents", "--quiet", "--json"])
+}
+fn checked_authoring(output: &Output) -> Value {
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["scope"], "documents");
+    assert_eq!(response["complete"], true);
+    response["authoring"].clone()
+}
+fn rejected_check(output: &Output) {
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["complete"], false);
+    assert!(
+        response["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["state"] == "failed")
+    );
+}
+
 fn report(root: &Path) -> Value {
-    let output = inspect(root, &["check", "--json"]);
+    let output = check(root);
     assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report = checked_authoring(&output);
     assert_eq!(report["schema"], 1);
     assert_eq!(report["author_schema"], 6);
     assert_eq!(report["pack"], "Literal Pack");
@@ -65,10 +90,10 @@ fn cli_manifest_documented_projects_preserve_literal_yaml_and_report_exact_reque
         if let Some(binding) = binding {
             fs::write(root.join("empack.bindings.yml"), binding).unwrap();
         }
-        let output = inspect(root, &["check", "--json"]);
+        let output = check(root);
         assert!(output.status.success(), "{pack}: {output:?}");
         assert!(output.stderr.is_empty(), "{pack}: {output:?}");
-        let observed: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let observed = checked_authoring(&output);
         assert_eq!(observed["schema"], 1);
         assert_eq!(observed["author_schema"], 6);
         assert_eq!(observed["pack"], pack);
@@ -241,9 +266,9 @@ fn cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting() {
         "dependencies:\n  example: {url: 'https://example.invalid/custom.jar', accept-observed: true, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}\n",
     ] {
         fs::write(root.join("empack.yml"), format!("{HEADER}{suffix}")).unwrap();
-        let output = inspect(root, &["check", "--json"]);
+        let output = check(root);
         assert!(!output.status.success(), "accepted {suffix}: {output:?}");
-        assert!(output.stdout.is_empty(), "{output:?}");
+        rejected_check(&output);
         assert!(!output.stderr.is_empty(), "{output:?}");
     }
     fs::write(
@@ -259,9 +284,9 @@ fn cli_manifest_rejects_ambiguous_authoring_and_bindings_without_rewriting() {
         "schema: 1\nbindings: {}\npolicies:\n  icon.png: seed\n  icon.png: managed\n",
     ] {
         fs::write(root.join("empack.bindings.yml"), binding).unwrap();
-        let output = inspect(root, &["check", "--json"]);
+        let output = check(root);
         assert!(!output.status.success(), "accepted {binding}: {output:?}");
-        assert!(output.stdout.is_empty(), "{output:?}");
+        rejected_check(&output);
         assert!(!output.stderr.is_empty(), "{output:?}");
     }
 }
@@ -282,9 +307,9 @@ fn cli_manifest_composes_bindings_and_rejects_competing_placement_authority() {
         ])
     );
     fs::write(root.join("empack.yml"), format!("{source}    placement:\n      - destination: mods/competing.jar\n        layer: common\n        environment: {{client: required, server: required}}\n")).unwrap();
-    let output = inspect(root, &["check", "--json"]);
+    let output = check(root);
     assert!(!output.status.success(), "{output:?}");
-    assert!(output.stdout.is_empty(), "{output:?}");
+    rejected_check(&output);
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()

@@ -754,11 +754,6 @@ pub enum PendingCommand {
 /// Read-only authoring inspection; never resolves or rewrites dependencies.
 #[derive(Debug, Clone, Subcommand)]
 pub enum ManifestCommand {
-    /// Validate both author documents and report whether the lock satisfies them
-    Check {
-        #[arg(long)]
-        json: bool,
-    },
     /// Show effective intent, policy, bindings and recorded identity for a logical key
     Explain {
         dependency: String,
@@ -772,9 +767,31 @@ pub enum ManifestCommand {
     },
 }
 
+/// Verify the current project; never select updates or repair files.
+#[derive(Debug, Clone, Default, Args)]
+pub struct CheckArgs {
+    /// Validate author files and any present lock, without reading content or providers
+    #[arg(long, conflicts_with = "online")]
+    pub documents: bool,
+    /// Also check fresh provider metadata for every exact locked provider selection
+    #[arg(long)]
+    pub online: bool,
+    /// Include successful checks and all unverified evidence
+    #[arg(long, conflicts_with = "json")]
+    pub details: bool,
+    /// Emit a structured report, including useful findings before a failed check
+    #[arg(long)]
+    pub json: bool,
+    /// Hide temporary progress
+    #[arg(long)]
+    pub quiet: bool,
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
+    /// Check current authoring, recorded relationships and applicable local content
+    Check(CheckArgs),
     /// Inspect authoring intent and its exact lock without network access
     Manifest {
         #[command(subcommand)]
@@ -1023,12 +1040,12 @@ impl Commands {
         matches!(
             self,
             Self::Status { json: true, .. }
+                | Self::Check(CheckArgs { json: true, .. })
                 | Self::Update(UpdateArgs { json: true, .. })
                 | Self::Migrate(MigrationArgs { json: true, .. })
                 | Self::Build(BuildArgs { json: true, .. })
                 | Self::Manifest {
-                    command: ManifestCommand::Check { json: true }
-                        | ManifestCommand::Diff { json: true }
+                    command: ManifestCommand::Diff { json: true }
                         | ManifestCommand::Explain { json: true, .. },
                 }
                 | Self::Pending {
@@ -1045,7 +1062,7 @@ impl Commands {
                 false
             }
             Commands::Recover { .. } => false,
-            Commands::Requirements | Commands::Status { .. } => false,
+            Commands::Check(_) | Commands::Requirements | Commands::Status { .. } => false,
             Commands::Version => false,
             Commands::Init(..) => false,
             Commands::Sync { .. }
@@ -1067,7 +1084,7 @@ impl Commands {
         match self {
             Commands::Instance { .. } | Commands::Release { .. } | Commands::Pending { .. } => 1,
             Commands::Recover { .. } => 0,
-            Commands::Requirements | Commands::Status { .. } => 0,
+            Commands::Check(_) | Commands::Requirements | Commands::Status { .. } => 0,
             Commands::Version => 0,
             Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,

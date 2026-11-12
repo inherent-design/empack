@@ -588,6 +588,7 @@ fn retained_failure(
 #[cfg(test)]
 pub(super) mod tests;
 
+pub(super) mod checking;
 mod initialize;
 mod java;
 mod progress;

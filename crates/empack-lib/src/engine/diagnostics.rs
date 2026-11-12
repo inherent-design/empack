@@ -143,6 +143,9 @@ impl Diagnostic {
         if error.is::<super::documents::AuthoringChanged>() {
             return Self::new(AuthoringChanged, phase);
         }
+        if error.is::<super::providers::UnresolvedDependencies>() {
+            return Self::new(DependencyResolutionRequired, phase);
+        }
         if matches!(
             error.downcast_ref::<empack_core::addition::AdditionError>(),
             Some(

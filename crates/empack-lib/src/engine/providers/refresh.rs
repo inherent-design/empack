@@ -42,7 +42,7 @@ impl ProviderResolution {
     ) -> Result<Vec<String>> {
         Ok(self.file_for_slot(slot, expected)?.alternatives.clone())
     }
-    pub(super) fn file_for_slot(
+    pub(in crate::engine) fn file_for_slot(
         &self,
         slot: &FileSlot,
         expected: &ExpectedContent,

@@ -21,6 +21,7 @@ pub mod api;
 pub mod archive_source;
 pub mod artifacts;
 pub mod build;
+pub mod checking;
 pub mod content;
 mod continuation_store;
 pub mod dependency_content;

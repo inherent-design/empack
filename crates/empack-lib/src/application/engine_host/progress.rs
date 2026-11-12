@@ -45,6 +45,14 @@ impl ProgressDisplay {
             return;
         }
         let (phase, message) = match &observation {
+            WorkProgress::CheckingProjectFile { path, index, total } => (
+                "project-files",
+                if *total == 0 {
+                    format!("Checking {path}")
+                } else {
+                    format!("Checking file {index} of {total}: {path}")
+                },
+            ),
             WorkProgress::CheckingContentCache => {
                 ("cache", "Checking exact content cache".to_owned())
             }
@@ -86,6 +94,9 @@ impl ProgressDisplay {
                     |key| format!("Checking dependency requirements: {key}"),
                 ),
             ),
+            WorkProgress::RevalidatingInputs => {
+                ("input-verification", "Rechecking project inputs".to_owned())
+            }
             WorkProgress::CheckingConflicts => {
                 ("conflicts", "Checking reported conflicts".to_owned())
             }
@@ -279,6 +290,10 @@ mod tests {
             (
                 WorkProgress::CheckingConflicts,
                 "Checking reported conflicts",
+            ),
+            (
+                WorkProgress::RevalidatingInputs,
+                "Rechecking project inputs",
             ),
         ] {
             shared.observe_work(Some(observation));

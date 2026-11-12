@@ -1452,11 +1452,26 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
         .expect_at_least(1)
         .create_async()
         .await;
-    let version = server.mock("GET", "/version/RootVer1").with_body(json!({
+    let version_record = json!({
         "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
         "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
         "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-    }).to_string()).expect_at_least(1).create_async().await;
+    });
+    let version = server
+        .mock("GET", "/version/RootVer1")
+        .with_body(version_record.to_string())
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    // Update now performs discovery even for a held root; that query must use the
+    // locked identity too, without following the reassigned readable selector.
+    let catalog = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([version_record]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
     let mut intent = project(root.path()).intent().clone();
     let key = DependencyKey::parse("menu").unwrap();
     let request =
@@ -1519,6 +1534,7 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     }
     assert_eq!(snapshot(&root.path().join("project")), stable);
     redirected.assert_async().await;
+    catalog.assert_async().await;
     canonical.assert_async().await;
     version.assert_async().await;
     // Pin helpers route through normal CLI approval and mutate only author documents.
@@ -1562,7 +1578,6 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
     let before = snapshot(root.path());
     for json in [false, true] {
         for command in [
-            ManifestCommand::Check { json },
             ManifestCommand::Explain {
                 dependency: "renamed-menu".into(),
                 json,
@@ -1576,6 +1591,18 @@ async fn readable_selector_stays_bound_after_slug_reassignment_and_alias_rename(
             .await
             .unwrap();
         }
+    }
+    for json in [false, true] {
+        execute_command_with_session(
+            Commands::Check(crate::application::cli::CheckArgs {
+                documents: true,
+                json,
+                ..Default::default()
+            }),
+            &session(root.path(), false),
+        )
+        .await
+        .unwrap();
     }
     assert_eq!(snapshot(root.path()), before);
     // Editing the request is a deliberate source change. An old exact pin cannot follow it.

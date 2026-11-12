@@ -20,20 +20,21 @@ Status does not verify installed content, authenticate a channel or establish th
 
 ## Authoring
 
-| Command                       | Meaning                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| `init`                        | Create an authoring project or import a supported archive                  |
-| `add`                         | Describe and resolve dependencies, preserving exact source intent          |
-| `manifest check/explain/diff` | Inspect local authoring and recorded constraints without network access    |
-| `pin` / `unpin`               | Change exact provider selection intent without refreshing content          |
-| `remove`                      | Remove or demote selected logical roots with native ownership checks       |
-| `sync`                        | Apply authored intent while retaining compatible locked selections         |
-| `update`                      | Check selected dependencies and preview or apply eligible updates          |
-| `migrate`                     | Plan or apply a Minecraft/loader change and explicit replacements          |
-| `adopt`                       | Verify selected existing content and record it without hidden installation |
-| `build`                       | Produce explicitly selected consumer distributions                         |
-| `recover`                     | Inspect or finish/restore an interrupted publication                       |
-| `clean`                       | Retire explicitly owned artifacts, disposable cache or continuation        |
+| Command                 | Meaning                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| `init`                  | Create an authoring project or import a supported archive                       |
+| `add`                   | Describe and resolve dependencies, preserving exact source intent               |
+| `check`                 | Validate current authoring, recorded relationships and applicable local content |
+| `manifest explain/diff` | Explain local authoring and compare recorded constraints without network access |
+| `pin` / `unpin`         | Change exact provider selection intent without refreshing content               |
+| `remove`                | Remove or demote selected logical roots with native ownership checks            |
+| `sync`                  | Apply authored intent while retaining compatible locked selections              |
+| `update`                | Check selected dependencies and preview or apply eligible updates               |
+| `migrate`               | Plan or apply a Minecraft/loader change and explicit replacements               |
+| `adopt`                 | Verify selected existing content and record it without hidden installation      |
+| `build`                 | Produce explicitly selected consumer distributions                              |
+| `recover`               | Inspect or finish/restore an interrupted publication                            |
+| `clean`                 | Retire explicitly owned artifacts, disposable cache or continuation             |
 
 Initialization establishes `pack.id` once. Initialization recommends Java from the selected runtime; `init --java MAJOR` overrides that preference within the admitted policy. A display name or version change preserves the pack ID. See the [manifest guide](manifest.md) for source-specific declarations and author-only projects.
 
@@ -107,6 +108,18 @@ Instance commands preserve worlds, operator data and unowned content. Modified m
 A file conflict names the affected path and explains the available choices. `--preserve PATH` keeps an existing file as a local override; `--replace PATH` accepts the release version or its requested removal; `--merge PATH=FILE` uses a merged file you prepared. These paths are relative to `game/` or `.minecraft/`, so use `config/settings.txt`, not `game/config/settings.txt`. A missing file cannot be preserved or merged. Follow the named instance command to resolve conflicts before launch; `instance launch` does not accept conflict decisions. See [file ownership and decisions](design/instances.md#configuration-and-mutable-data) for the policy.
 
 `instance inspect` shows the installed pack, game directory, exact release, saved options, local overrides and rollback history. An update check shows the signed offer before approval. Saving it records the publisher's update number without installing files; that record remains if installation is later declined or fails. Installation has its own preview and approval.
+
+## Check the current project
+
+Use `empack check` to validate author files, bindings, the current lock, recorded dependency relationships and applicable local content assertions. This checks the selected state; it does not choose upgrades, repair files or create a new lock.
+
+- `check --documents` checks author files and any present lock without reading pack content or contacting providers. Author-only work without a lock can pass this scope; missing resolution is reported. A stale or invalid present lock fails.
+- `check --online` also fetches fresh metadata for every exact locked provider selection, including retained dependencies. It checks required relationships, participating incompatibilities and comparable file assertions. It does not search for newer versions, select missing dependencies or download pack content.
+- Default and online checks require a current lock. Missing local sources or changed materialized bytes fail. Unmaterialized remote/manual references and unavailable manual dependency metadata are reported as unverified; they are not silently installed or treated as fresh evidence.
+
+Required failures or incomplete required checks return an error after presenting useful findings. `--json` emits one structured report even when validation fails; diagnostics remain on stderr. `--details` includes successful checks and references, and `--quiet` hides progress. Documents and online scopes are mutually exclusive. None of these checks establishes startup or gameplay compatibility.
+
+Use `manifest explain KEY` for one dependency's effective source, policy and placement, and `manifest diff` to compare authoring with the recorded lock. Use `update --all` to investigate a proposed upgrade instead of checking the current selections.
 
 ## Distribution selection
 

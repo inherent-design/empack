@@ -1113,11 +1113,13 @@
     {
       "id": "UX-006",
       "family": "Entry and inspection",
-      "title": "Author and binding conformance",
-      "public_surface": "manifest check --json",
+      "title": "Current project and authoring conformance",
+      "public_surface": "check; check --documents/--online --json",
       "api_ids": [
         "DOC",
-        "CLI"
+        "CLI",
+        "CAT",
+        "IO"
       ],
       "required_assertions": "Short/expanded equivalent forms agree; unknown/duplicate/conflicting fields fail; no silent first-observation URL fallback; invalid content not rewritten.",
       "required_work": "Run editor/CLI conformance automatically; add YAML duplicates/comments and docs examples.",
@@ -1288,7 +1290,7 @@
             "telemetry"
           ],
           "assertions": [
-            "The actual manifest reference and native-release usage YAML blocks pass public manifest check without rewriting source or creating state/cache storage",
+            "The actual manifest reference and native-release usage YAML blocks pass public check --documents without rewriting source or creating state/cache storage",
             "The manifest example reports the complete literal dependency set with exact normalized source, content kind, side/optional requirements and missing-lock facts; the native example composes its literal bindings without acquiring payloads"
           ]
         },
@@ -1334,6 +1336,75 @@
             "Author-only identity/attribution/Java requirements survive a round-trip without inventing outputs",
             "Bundled presets and equivalent explicit profiles have the same semantic revision; changing format changes that revision",
             "Provider pins, local sources, asserted URLs and optional choices retain their meaning; invalid source-specific fields and obsolete schema refuse before resolution"
+          ]
+        },
+        {
+          "id": "UX-006.current-state-scopes",
+          "boundary": "H",
+          "test_ids": [
+            "empack-lib::engine::checking::tests::documents_are_diagnosed_without_content_or_mutation_authority",
+            "empack-lib::engine::checking::tests::stale_lock_is_a_failed_check_without_rewriting_it",
+            "empack-lib::engine::checking::tests::online_checks_all_exact_selections_without_catalog_discovery_or_materialization",
+            "empack-lib::engine::checking::tests::fresh_missing_or_conflicting_requirements_fail_without_selecting_replacements",
+            "empack-lib::engine::checking::tests::fresh_file_changes_and_transport_failure_retain_document_findings",
+            "empack-lib::engine::checking::tests::changed_documents_after_provider_work_are_not_a_successful_check",
+            "empack-lib::engine::checking::tests::embedded_and_local_assertions_are_checked_without_copying_or_repairing_sources",
+            "empack-lib::engine::checking::tests::exact_checks_share_one_transfer_allowance_across_retained_selections"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Documents-only validates authoring and present lock; recorded checks require a current lock and verify applicable local and embedded assertions without mutation",
+            "Online checks every exact locked provider selection including retained dependencies under one budget; absent requirements cannot trigger catalog/latest selection",
+            "Malformed/stale input, changed provider bytes/relationships, unavailable transport and post-observation edits retain useful findings and fail; source/state/prior artifact bytes remain unchanged"
+          ]
+        },
+        {
+          "id": "UX-006.current-state-presentation-and-comparison",
+          "boundary": "U",
+          "test_ids": [
+            "empack-lib::engine::checking::tests::fresh_digest_comparison_requires_shared_evidence_or_verified_local_bytes",
+            "empack-lib::application::engine_host::checking::tests::check_output_leads_with_scope_and_failure_without_claiming_repairs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Human report states scope, failed task and useful details without claiming repairs; details hint is conditional",
+            "Fresh digests must have comparable assertions or verified local bytes with matching size; incomparable evidence cannot pass"
+          ]
+        },
+        {
+          "id": "UX-006.current-state-executable",
+          "boundary": "X",
+          "test_ids": [
+            "empack-tests::cli_offline::cli_check_reports_document_failures_as_json_without_changing_inputs"
+          ],
+          "required_platforms": [
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "required_product_features": [
+            "default",
+            "telemetry"
+          ],
+          "assertions": [
+            "Actual CLI emits parseable JSON and a failed status on invalid lock after reporting findings; author inputs and prior outputs remain unchanged",
+            "New check scopes parse and execute; mutually exclusive scopes and removed manifest check reject without effects"
           ]
         }
       ],
@@ -17326,9 +17397,9 @@
       ]
     },
     "DOC": {
-      "owner_now": "engine::documents + application::engine_host::cli::manifest",
+      "owner_now": "engine::{documents,checking} + application::engine_host::{checking,cli::manifest}",
       "owner_09": "empack-engine codecs/inspection + CLI renderer",
-      "route": "DocumentCodec \u2192 decode_authoring/inspect_authoring/replace_intent \u2192 normalized ProjectIntent and raw/semantic revisions; JSON Schema is a separate checker",
+      "route": "DocumentCodec \u2192 local interpretation; checking \u2192 documents/recorded/fresh-exact reports through snapshots, content verification and provider closure, without native mutation grants",
       "sources": [
         "S11",
         "S29",

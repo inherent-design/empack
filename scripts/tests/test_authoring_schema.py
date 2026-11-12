@@ -113,7 +113,7 @@ class SchemaEvidence(unittest.TestCase):
             self.assertTrue(options["capture_output"])
             self.assertEqual(options["env"]["HOME"], str(home))
             self.assertNotIn("EMPACK_KEY_CURSEFORGE", options["env"])
-            self.assertEqual(arguments[-3:], ["manifest", "check", "--json"])
+            self.assertEqual(arguments[-3:], ["check", "--documents", "--json"])
             self.assertEqual(project.parent, home.parent)
             calls.append(arguments)
             if len(calls) == 1:

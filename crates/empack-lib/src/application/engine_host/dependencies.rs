@@ -541,7 +541,7 @@ async fn change_with_services(
                         ),
                         ProviderAdditionOutcome::NeedsInput(closure) => {
                             return Err(anyhow::Error::new(
-                                crate::application::dependency_decisions::UnresolvedDependencies {
+                                crate::engine::providers::UnresolvedDependencies {
                                     issues: closure.issues,
                                 },
                             )

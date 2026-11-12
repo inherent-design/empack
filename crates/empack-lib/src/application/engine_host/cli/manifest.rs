@@ -52,9 +52,7 @@ pub async fn inspect(session: &dyn Session, command: ManifestCommand) -> Result<
 }
 fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<String> {
     match command {
-        ManifestCommand::Check { json: true } | ManifestCommand::Diff { json: true } => {
-            Ok(crate::terminal::json_text(report)?)
-        }
+        ManifestCommand::Diff { json: true } => Ok(crate::terminal::json_text(report)?),
         ManifestCommand::Explain { dependency, json } => {
             let row = report
                 .dependencies
@@ -67,7 +65,6 @@ fn render(report: &AuthoringInspection, command: ManifestCommand) -> Result<Stri
                 text::explain(report, row)
             }
         }
-        ManifestCommand::Check { json: false } => Ok(text::check(report)),
         ManifestCommand::Diff { json: false } => Ok(text::diff(report)),
     }
 }

@@ -27,6 +27,8 @@ pub use addition::{
     ProviderInputReason,
 };
 pub use batch::ExactBatch;
+mod decisions;
+pub use decisions::UnresolvedDependencies;
 mod closure;
 pub use closure::{
     ClosureIssue, ClosureIssueKind, ClosureLimits, ClosureRequest, ClosureRoot, ClosureSelection,

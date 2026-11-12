@@ -142,6 +142,55 @@ impl ZipContentSource {
         initial: InitialObservation,
         cancel: &Cancellation,
     ) -> Result<(AcquiredContent, FilePermissions)> {
+        let (content, permissions) =
+            self.read_member(member, expected, policy, initial, cancel, verify_stream)?;
+        let content = match &self.evidence {
+            Some(evidence) => evidence.bind(content, member.clone()),
+            None => content,
+        };
+        Ok((content, permissions))
+    }
+    /// Check an opaque retained member without creating another on-disk content object.
+    pub(in crate::engine) fn verify_member(
+        &mut self,
+        member: &PortableRelPath,
+        expected: &ExpectedContent,
+        cancel: &Cancellation,
+    ) -> Result<empack_core::digest::DigestSet> {
+        self.read_member(
+            member,
+            expected,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::RequireEvidence,
+            cancel,
+            |input, expected, maximum, policy, initial, cancel| {
+                Ok(super::content::verify_observation(
+                    input, expected, maximum, policy, initial, cancel,
+                )?
+                .observed)
+            },
+        )
+        .map(|(digests, _)| digests)
+    }
+    pub(in crate::engine) fn inspected_bytes(&self) -> u64 {
+        self.extracted
+    }
+    fn read_member<T>(
+        &mut self,
+        member: &PortableRelPath,
+        expected: &ExpectedContent,
+        policy: SourceEvidencePolicy,
+        initial: InitialObservation,
+        cancel: &Cancellation,
+        verify: impl FnOnce(
+            &mut dyn std::io::Read,
+            &ExpectedContent,
+            u64,
+            SourceEvidencePolicy,
+            InitialObservation,
+            &Cancellation,
+        ) -> Result<T>,
+    ) -> Result<(T, FilePermissions)> {
         let observed = self
             .files
             .get(member)
@@ -170,7 +219,7 @@ impl ZipContentSource {
             .map(|evidence| evidence.member_policy(expected, policy))
             .transpose()?
             .unwrap_or(policy);
-        let result = verify_stream(
+        let result = verify(
             &mut input,
             &ExpectedContent {
                 size: Some(observed.bytes),
@@ -196,12 +245,7 @@ impl ZipContentSource {
             self.extracted <= self.limits.total_bytes,
             "Source archive exceeds actual extraction allowance"
         );
-        let content = result?;
-        let content = match &self.evidence {
-            Some(evidence) => evidence.bind(content, member.clone()),
-            None => content,
-        };
-        Ok((content, observed.permissions))
+        Ok((result?, observed.permissions))
     }
 }
 struct IndexedArchive<N> {

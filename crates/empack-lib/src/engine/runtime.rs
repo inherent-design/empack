@@ -78,6 +78,12 @@ pub enum WorkProgress {
         dependency: Option<String>,
     },
     CheckingConflicts,
+    RevalidatingInputs,
+    CheckingProjectFile {
+        path: String,
+        index: usize,
+        total: usize,
+    },
 }
 
 pub struct OperationStatus<T> {

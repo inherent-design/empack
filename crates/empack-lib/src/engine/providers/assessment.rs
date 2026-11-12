@@ -374,7 +374,10 @@ impl ProviderCatalog {
                     },
                     limits,
                     budget.expect("successful scans return their shared budget"),
-                    (Some(project), false),
+                    super::closure::ClosurePolicy::Resolve {
+                        preferred: Some(project),
+                        revalidate_libraries: false,
+                    },
                     |identity| {
                         progress(AssessmentProgress::RequiredDependency {
                             project: project

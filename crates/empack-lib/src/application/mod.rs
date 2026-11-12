@@ -16,7 +16,6 @@ pub use commands::{execute_command, execute_command_with_session};
 pub use config::AppConfig;
 pub use exit::{EmpackExitCode, classify_error};
 
-mod dependency_decisions;
 mod labels;
 pub mod process_runtime;
 mod recovery_guidance;
