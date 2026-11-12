@@ -258,7 +258,9 @@ fn terminal_host_fixture() {
             if !matches!(stop_mode.as_str(), "external-resume" | "cancel-stopped") {
                 return;
             }
-            while !std::path::Path::new("runtime-pid").exists() {
+            // A PID identifies the child, but does not prove it has announced
+            // console readiness. Never stop it before the driver can proceed.
+            while !std::path::Path::new("runtime-ready").exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
             let pid: i32 = std::fs::read_to_string("runtime-pid")
@@ -355,6 +357,13 @@ fn terminal_child_fixture() {
     std::fs::write("runtime-pid.tmp", std::process::id().to_string()).unwrap();
     std::fs::rename("runtime-pid.tmp", "runtime-pid").unwrap();
     println!("CONSOLE_READY");
+    std::io::stdout().flush().unwrap();
+    if matches!(
+        std::env::var("EMPACK_PTY_MODE").as_deref(),
+        Ok("external-resume" | "cancel-stopped")
+    ) {
+        std::fs::write("runtime-ready", b"ready").unwrap();
+    }
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {
         if INTERRUPTED.load(Ordering::SeqCst) {
