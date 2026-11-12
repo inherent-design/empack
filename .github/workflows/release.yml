@@ -278,6 +278,7 @@ jobs:
 
   auxiliary:
     name: Qualify telemetry on ${{ matrix.os }}
+    needs: bootstrap
     runs-on: ${{ matrix.os }}
     timeout-minutes: 100
     strategy:
