@@ -3,6 +3,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -158,14 +159,33 @@ class CompilerOutputEvidence(unittest.TestCase):
 class ProductBuild(unittest.TestCase):
     def test_fixed_release_builder_retains_actual_default_and_telemetry_units(self):
         from verification.product_build import compile_product, inspect_compilation
+        from verification.bootstrap import stage
         target, channel = native_compiler()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory) / "source"
+            root.mkdir()
             fixture(root)
+            producer = Path(directory) / "producer"
+            producer_target = producer / "bootstrap/target"
+            producer_target.parent.mkdir(parents=True)
+            shutil.move(root / "bootstrap/target", producer_target)
+            (producer / "Cargo.toml").write_text('[workspace.package]\nversion="0.0.0-dev"\n')
+            identity = producer_target / "empack-bootstrap.json"
+            original = json.loads(identity.read_text())
+            for field, value in (("version", "9.9.9"), ("sources", {}), ("jar_sha256", "0" * 64)):
+                identity.write_text(json.dumps(dict(original, **{field: value})))
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "Bootstrap inputs changed"):
+                    stage(producer, root)
+                shutil.rmtree(root / "bootstrap/target")
+            identity.write_text(json.dumps(original))
+            self.assertEqual(stage(producer, root), original)
+            self.assertEqual((root / "bootstrap/target/empack-bootstrap.jar").read_bytes(),
+                             (producer_target / "empack-bootstrap.jar").read_bytes())
             commit_source(root)
+            environment = dict(os.environ, CARGO_TARGET_DIR=str(root / "target"))
             for features in ("default", "telemetry"):
                 output = root / ".git" / features
-                record = compile_product(root, target, "cargo", output, dict(os.environ), features)
+                record = compile_product(root, target, "cargo", output, environment, features)
                 result = inspect_compilation(output, target, "cargo", features,
                                              record["source"]["revision"], record["source"]["stamped"], channel)
                 self.assertEqual(result, record)
@@ -174,7 +194,7 @@ class ProductBuild(unittest.TestCase):
                                  ("empack.exe" if os.name == "nt" else "empack")))
                 before = {p.name: p.read_bytes() for p in output.iterdir()}
                 with self.assertRaisesRegex(ValueError, "already contains an attempt"):
-                    compile_product(root, target, "cargo", output, dict(os.environ), features)
+                    compile_product(root, target, "cargo", output, environment, features)
                 self.assertEqual(before, {p.name: p.read_bytes() for p in output.iterdir()})
 
     def test_fixed_release_builder_refuses_transitive_fixture_authority(self):
@@ -187,7 +207,8 @@ class ProductBuild(unittest.TestCase):
                 commit_source(root)
                 output = root / ".git/compiled"
                 with self.assertRaisesRegex(ValueError, "Test-only"):
-                    compile_product(root, target, "cargo", output, dict(os.environ))
+                    compile_product(root, target, "cargo", output,
+                                    dict(os.environ, CARGO_TARGET_DIR=str(root / "target")))
                 self.assertFalse((output / "compile.json").exists())
 
     def test_archive_record_copies_the_actual_stamped_compilation_without_rebuild(self):

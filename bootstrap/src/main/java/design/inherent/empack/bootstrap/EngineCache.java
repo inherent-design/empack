@@ -228,10 +228,16 @@ final class EngineCache {
     }
 
     private void privateOwner(Path path) throws IOException {
-        if (!Files.getOwner(path, LinkOption.NOFOLLOW_LINKS).equals(owner)) {
+        boolean posix = Files.getFileStore(path).supportsFileAttributeView("posix");
+        UserPrincipal actualOwner = Files.getOwner(path, LinkOption.NOFOLLOW_LINKS);
+        // Windows homes and newly created objects can have different owners
+        // (for example Administrators and the interactive account). Accept no
+        // principal beyond those already trusted to write that home. POSIX
+        // ownership remains exact, independently of its write-mode check.
+        if (posix ? !actualOwner.equals(owner) : !homeWriters.contains(actualOwner)) {
             throw new IOException("Engine cache object is owned by a different user");
         }
-        if (Files.getFileStore(path).supportsFileAttributeView("posix")) {
+        if (posix) {
             java.util.Set<PosixFilePermission> mode = Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS);
             if (mode.contains(PosixFilePermission.GROUP_WRITE) || mode.contains(PosixFilePermission.OTHERS_WRITE)) {
                 throw new IOException("Engine cache object permits writes by another user");

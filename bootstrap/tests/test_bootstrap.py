@@ -583,13 +583,20 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(self.asset_requests, 0)
         self.assertEqual(marker.read_bytes(), b"not cache data")
 
-    @unittest.skipIf(os.name == "nt", "POSIX foreign-writer permissions")
     def test_shared_writable_cache_is_refused(self):
         self.cache.mkdir()
-        self.cache.chmod(0o777)
+        if os.name == "nt":
+            # Use the well-known Everyone SID, not an English account name.
+            # Only this disposable directory is changed; no elevation is needed.
+            subprocess.run(["icacls", str(self.cache), "/grant", "*S-1-1-0:(OI)(CI)M"],
+                           check=True, capture_output=True, timeout=10)
+            expected = b"ACL admits a writer outside the user-home trust boundary"
+        else:
+            self.cache.chmod(0o777)
+            expected = b"permits writes by another user"
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"permits writes by another user", result.stderr)
+        self.assertIn(expected, result.stderr)
         self.assertEqual(self.asset_requests, 0)
 
 

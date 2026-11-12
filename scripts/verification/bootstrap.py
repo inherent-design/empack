@@ -1,5 +1,6 @@
 """Build and admit the single bootstrap JAR used by native exports."""
 from pathlib import Path
+import shutil
 import subprocess
 import tomllib
 
@@ -27,6 +28,23 @@ def admit(root):
             or not 0 < jar.stat().st_size <= 8 * 1024 * 1024):
         raise ValueError("Bootstrap inputs changed; rebuild with python3 scripts/build-bootstrap.py")
     return record
+
+
+def stage(source_root, build_root):
+    """Retain the producer's exact bytes in a disposable, version-stamped build.
+
+    Admission uses the destination sources/version; the producer checkout may
+    still have its development version. Never rebuild Java or relabel evidence.
+    """
+    source = Path(source_root) / "bootstrap/target"
+    destination = Path(build_root) / "bootstrap/target"
+    destination.mkdir(parents=True, exist_ok=False)
+    for name in ("empack-bootstrap.jar", "empack-bootstrap.json"):
+        path = source / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("Bootstrap producer output must be a regular file")
+        shutil.copyfile(path, destination / name)
+    return admit(build_root)
 
 
 def build(root):

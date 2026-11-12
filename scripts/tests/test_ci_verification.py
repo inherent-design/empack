@@ -296,8 +296,9 @@ class RequiredGate(unittest.TestCase):
             (root / ".gitattributes").write_bytes(attributes.read_bytes() if attributes.exists() else b"")
             from verification.python_tests import inputs
             from verification.doctests import inputs as doctest_inputs
+            from verification.bootstrap import sources as bootstrap_sources
             paths = {"tests/verification/test-bindings.json", *inputs(SCRIPTS.parent),
-                     *doctest_inputs(SCRIPTS.parent)}
+                     *doctest_inputs(SCRIPTS.parent), *bootstrap_sources(SCRIPTS.parent)}
             originals = {}
             for name in paths:
                 target = root / name
