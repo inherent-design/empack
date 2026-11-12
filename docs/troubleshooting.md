@@ -26,6 +26,8 @@ A retained-dependent error names records that must be resolved in the same reque
 
 ## Runtime and environment evidence
 
+Malformed `.env` or `.env.local` files stop configuration loading with the filename and syntax position. Diagnostics omit the source line because it may contain a credential. Inspect and correct that file locally; do not paste its contents into a public report.
+
 Forge and NeoForge remain distinct provider loader labels. Empack does not infer a legacy compatibility exception from Minecraft 1.20.1 or accept all Forge files for NeoForge. An exact, verified local/URL source can retain known working bytes, but its integrity does not establish loader compatibility.
 
 Provider game/loader declarations do not prove a mod's minimum loader requirement, configuration compatibility or dedicated-server support. Authored participation remains authoritative. Review client-only content before creating a server profile; correct the dependency and any explicit binding together rather than deleting the client payload. JAR layout inspection is not a semantic loader or side audit.
@@ -54,3 +56,13 @@ Failed resolution leaves the published author project unchanged. Retrying perfor
 Author schema 6, bindings schema 1, lock schema 3 and native release schema 2 are supported. Older author, lock and native release formats are rejected rather than reinterpreted. Preserve interrupted work and use its original compatible executable to finish or recover it before creating current-format state. `migrate` changes the runtime request; it is not a document-schema converter.
 
 Keep a full backup before recreating a manifest or re-importing a supported archive. Work in a new author directory, preserve pins, bindings, sources and templates, and verify the resulting inventories. An untracked file is not automatically safe to replace because an older tool once generated it. Explicit adoption describes and verifies existing files; it does not grant blanket overwrite authority. Do not run schema reconstruction against a live installed instance or player world.
+
+## Bootstrap encoding appendix
+
+Keep `.empack-tools` intact when moving a managed distribution. Generated commands select its JAR and UTF-8 invocation files through relative paths and set `-Dfile.encoding=UTF-8` for the bootstrap only. Pack names and other metadata remain Unicode data; a non-English display name is not itself an invalid pack.
+
+External command-line arguments also depend on the JVM's operating-system conversion. On Unix, use an available UTF-8 execution locale for Unicode launcher arguments, such as `C.UTF-8` where installed. The traditional ASCII `C` locale remains suitable for ordinary ASCII invocations; it does not make every external JVM argument Unicode-safe. Reading an explicitly UTF-8 file and decoding the process command line are separate operations.
+
+On Windows, a UTF-8 console does not imply a UTF-8 system ANSI code page. Some Java launchers can replace characters outside that code page before the JAR receives them, even with `-Dfile.encoding=UTF-8`. Relative generated paths and UTF-8 static inputs avoid exposing many instance-directory names to that conversion, but do not establish lossless handling of arbitrary custom Prism/JVM arguments. The bootstrap cannot reconstruct replaced characters or reliably distinguish replacement from a legitimate question mark. It does not change global regional settings or infer that a user's name is invalid.
+
+Missing or malformed invocation files produce ordinary input errors before delegation. Preserve the complete distribution and compare its generated files before changing them; runtime credentials do not belong in these static files. [Bootstrap invocation and selection](design/bootstrap.md#static-invocation-files) describes the file boundary. Native engine errors, game output, consumer import and gameplay remain separate evidence.

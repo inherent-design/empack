@@ -342,6 +342,8 @@ Header rules follow the [Linux ELF definitions](https://github.com/torvalds/linu
 
 The release job rechecks both the archive-evidence digest and the qualification digest from its prerequisite jobs, including source, version and payload association, before publishing unchanged bytes. Candidate diagnostics stay in a separate workflow artifact; they do not become extra distribution files. A blocked candidate cannot reach publication through a passing archive job.
 
+Human display regressions distinguish external text from empack-owned terminal styling. Status, table and progress data escape terminal/directional controls; complete diagnostics preserve intentional line layout, while cells and progress labels stay on one line. Narrow Unicode table fixtures must not panic at a multibyte boundary. Executable finalization and bootstrap error tests retain the error outcome while rendering control characters visibly. JSON values and inherited game/tool streams have separate contracts and are not rewritten by this presentation policy. Verification Markdown/HTML cells retain their own HTML-escaping regressions.
+
 ## Coverage and release qualification
 
 v0.8.4-beta excludes the 30 named operator-only cases in `gates.v084_environment_deferrals` from blocking qualification, following the maintainer's November 10 scope decision. Their actual observations remain visible, including `NOT_RUN`. Automated native, package, parser, tooling, and fixed-candidate execution remain required. `release_status` evaluates the required cases; it does not overwrite observed group or case `status`. This exception applies only to v0.8.4-beta, grants no general waiver, and does not conceal a supplied failed receipt.

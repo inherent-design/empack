@@ -5,6 +5,7 @@
 
 use super::Display;
 use super::providers::*;
+use crate::terminal::display_line;
 use indicatif::{MultiProgress, ProgressBar};
 use std::sync::Arc;
 
@@ -134,7 +135,7 @@ impl ProgressProvider for LiveProgressProvider {
     fn message(&self, message: &str) {
         self.parent.suspend(|| {
             use std::io::Write;
-            let _ = writeln!(std::io::stderr().lock(), "{message}");
+            let _ = writeln!(std::io::stderr().lock(), "{}", display_line(message));
         });
     }
 
@@ -167,7 +168,7 @@ struct LiveMultiProgressProvider {
 impl MultiProgressProvider for LiveMultiProgressProvider {
     fn add_bar(&self, total: u64, message: &str) -> Box<dyn ProgressTracker> {
         let progress_bar = self.display.progress().bar(total).bar().clone();
-        progress_bar.set_message(message.to_owned());
+        progress_bar.set_message(display_line(message).into_owned());
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
@@ -232,20 +233,22 @@ impl ProgressTracker for SimpleProgressTracker {
     }
 
     fn set_message(&self, message: &str) {
-        self.bar.set_message(message.to_string());
+        self.bar.set_message(display_line(message).into_owned());
     }
 
     fn tick(&self, item: &str) {
         self.bar.tick();
-        self.bar.set_message(item.to_string());
+        self.bar.set_message(display_line(item).into_owned());
     }
 
     fn finish(&self, message: &str) {
-        self.bar.finish_with_message(message.to_string());
+        self.bar
+            .finish_with_message(display_line(message).into_owned());
     }
 
     fn abandon(&self, message: &str) {
-        self.bar.abandon_with_message(message.to_string());
+        self.bar
+            .abandon_with_message(display_line(message).into_owned());
     }
 
     fn finish_clear(&self) {

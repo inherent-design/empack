@@ -206,12 +206,30 @@ fn test_load_from_reports_invalid_env_file() {
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let env_file = temp_dir.path().join(".env");
-    std::fs::write(&env_file, "not valid dotenv syntax").expect("write invalid env file");
+    let secret = "empack-synthetic-secret-do-not-render";
+    std::fs::write(&env_file, format!("EMPACK_KEY_CURSEFORGE=\"{secret}\n"))
+        .expect("write invalid env file");
 
     let _cwd = CurrentDirGuard::set(temp_dir.path());
 
-    let result = AppConfig::load_from(["empack"]);
-    assert!(matches!(result, Err(crate::primitives::ConfigError::EnvFileError { .. })));
+    let error = AppConfig::load_from(["empack"]).unwrap_err();
+    assert!(matches!(error, crate::primitives::ConfigError::EnvFileError {
+        source: crate::primitives::EnvFileProblem::Syntax { .. }, ..
+    }));
+    assert!(error.to_string().contains("Invalid environment-file syntax"));
+    assert!(!error.to_string().contains(secret));
+    assert!(!format!("{error:?}").contains(secret));
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        assert!(!cause.to_string().contains(secret));
+        assert!(!format!("{cause:?}").contains(secret));
+        source = cause.source();
+    }
+    // A non-Unicode environment value is secret-bearing too.
+    let problem = crate::primitives::EnvFileProblem::from(dotenvy::Error::EnvVar(
+        std::env::VarError::NotUnicode(std::ffi::OsString::from(secret)),
+    ));
+    assert!(!format!("{problem:?}: {problem}").contains(secret));
 }
 
 #[test]

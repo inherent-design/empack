@@ -16,16 +16,22 @@ async fn main() -> std::process::ExitCode {
             return EmpackExitCode::Success.as_process_exit_code();
         }
         Err(ConfigError::ParseError { reason, .. }) => {
-            eprint!("{reason}");
+            eprint!("{}", empack_lib::terminal::display_text(&reason));
             return EmpackExitCode::Usage.as_process_exit_code();
         }
         Err(error) => {
-            eprintln!("Error: {error}");
+            eprintln!(
+                "Error: {}",
+                empack_lib::terminal::display_text(&error.to_string())
+            );
             return EmpackExitCode::Usage.as_process_exit_code();
         }
     };
     if let Err(error) = config.app_config.validate() {
-        eprintln!("Error: {error}");
+        eprintln!(
+            "Error: {}",
+            empack_lib::terminal::display_text(&error.to_string())
+        );
         return EmpackExitCode::Usage.as_process_exit_code();
     }
     let caps = empack_lib::TerminalCapabilities::detect_from_config(config.app_config.color)
@@ -39,7 +45,10 @@ async fn main() -> std::process::ExitCode {
         logger_config.output = empack_lib::primitives::LogOutput::Stderr;
     }
     if let Err(error) = empack_lib::Logger::init(logger_config) {
-        eprintln!("empack: logger init failed: {error}");
+        eprintln!(
+            "empack: logger init failed: {}",
+            empack_lib::terminal::display_text(&error.to_string())
+        );
     }
     empack_lib::terminal::cursor::force_show_cursor();
     empack_lib::terminal::cursor::install_panic_hook();
@@ -94,7 +103,11 @@ fn finish_command(
         Ok(()) => EmpackExitCode::Success,
         Err(error) => {
             let code = classify_error(&error);
-            let _ = writeln!(stderr, "Error: {error:#}");
+            let _ = writeln!(
+                stderr,
+                "Error: {}",
+                empack_lib::terminal::display_text(&format!("{error:#}"))
+            );
             code
         }
     }
@@ -126,6 +139,12 @@ mod tests {
             assert_eq!(code, EmpackExitCode::General);
             assert_eq!(stderr, format!("Error: {message}\n"));
         }
+        let (_, stderr) = finish_after_cancel(Err(std::io::Error::other(
+            "Runtime failed \u{1b}]52;c;YQ==\u{7}",
+        )
+        .into()));
+        assert!(!stderr.contains('\u{1b}'));
+        assert!(stderr.contains("\\u{1b}]52"));
     }
 
     #[test]

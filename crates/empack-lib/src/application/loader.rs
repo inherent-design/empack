@@ -16,7 +16,7 @@ pub(crate) fn load_dotenv_files() -> Result<(), ConfigError> {
 
         from_filename(env_file).map_err(|source| ConfigError::EnvFileError {
             file: env_file.to_string(),
-            source,
+            source: source.into(),
         })?;
     }
 

@@ -211,13 +211,21 @@ fn cli_malformed_dotenv_reports_configuration_error_without_mutation() {
         let fixture = EntryFixture::new(false);
         fs::write(
             fixture.root.join(filename),
-            b"EMPACK_DRY_RUN='unterminated\n",
+            b"EMPACK_KEY_CURSEFORGE='empack-synthetic-secret-do-not-render\n",
         )
         .unwrap();
         for args in [vec!["version"], vec![]] {
             let output = fixture.invoke(&args, 2);
             let stderr = String::from_utf8(output.stderr).unwrap();
             assert!(stderr.contains("Error:"), "{stderr}");
+            assert!(
+                stderr.contains("Invalid environment-file syntax"),
+                "{stderr}"
+            );
+            assert!(stderr.contains(filename), "{stderr}");
+            assert!(!stderr.contains("empack-synthetic-secret-do-not-render"));
+            assert!(!stderr.contains("EMPACK_KEY_CURSEFORGE"));
+            assert!(output.stdout.is_empty());
         }
     }
 }

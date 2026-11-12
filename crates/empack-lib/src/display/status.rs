@@ -4,6 +4,7 @@
 //! with terminal-capability-aware formatting.
 
 use super::styling::StyleManager;
+use crate::terminal::{display_line, display_text};
 use std::io::{self, Write};
 
 /// Status display manager for semantic user feedback
@@ -21,7 +22,7 @@ impl<'a> StatusDisplay<'a> {
     /// Example: `display.status().checking("tool dependencies")`
     /// Output: `⠋ Checking tool dependencies...`
     pub fn checking(&self, task: &str) {
-        let message = format!("Checking {}...", task);
+        let message = format!("Checking {}...", display_line(task));
         eprintln!("{}", self.styling.format_working(&message));
         io::stderr().flush().unwrap_or(());
     }
@@ -73,7 +74,7 @@ impl<'a> StatusDisplay<'a> {
     /// Example: `display.status().message("Empack modpack manager")`
     /// Output: `Empack modpack manager`
     pub fn message(&self, text: &str) {
-        println!("{}", text);
+        println!("{}", display_text(text));
     }
 
     /// Display an emphasized message
@@ -106,7 +107,7 @@ impl<'a> StatusDisplay<'a> {
     /// ```
     pub fn list(&self, items: &[&str]) {
         for item in items {
-            println!("  {} {}", self.styling.bullet(), item);
+            println!("  {} {}", self.styling.bullet(), display_line(item));
         }
     }
 
@@ -146,6 +147,10 @@ impl<'a> StatusDisplay<'a> {
     /// Output: `[1/3] Loading configuration`
     pub fn step(&self, current: usize, total: usize, description: &str) {
         let prefix = format!("[{}/{}]", current, total);
-        println!("{} {}", self.styling.style_subtle(&prefix), description);
+        println!(
+            "{} {}",
+            self.styling.style_subtle(&prefix),
+            display_text(description)
+        );
     }
 }

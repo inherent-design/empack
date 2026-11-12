@@ -4,6 +4,7 @@
 //! terminal-capability-aware styling.
 
 use super::styling::StyleManager;
+use crate::terminal::display_line;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::time::Duration;
 
@@ -89,7 +90,7 @@ impl<'a> ProgressDisplay<'a> {
         };
 
         pb.set_style(style);
-        pb.set_message(message.to_string());
+        pb.set_message(display_line(message).into_owned());
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
@@ -129,13 +130,13 @@ impl<'a> ProgressTracker<'a> {
 
     /// Update the message
     pub fn set_message(&self, message: &str) {
-        self.bar.set_message(message.to_string());
+        self.bar.set_message(display_line(message).into_owned());
     }
 
     /// Update message with current item info
     pub fn tick(&self, item: &str) {
         self.bar.tick();
-        self.bar.set_message(item.to_string());
+        self.bar.set_message(display_line(item).into_owned());
     }
 
     /// Finish with success message
@@ -200,7 +201,7 @@ impl<'a> MultiProgressTracker<'a> {
         };
 
         pb.set_style(style);
-        pb.set_message(message.to_string());
+        pb.set_message(display_line(message).into_owned());
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
@@ -225,7 +226,7 @@ impl<'a> MultiProgressTracker<'a> {
         };
 
         pb.set_style(style);
-        pb.set_message(message.to_string());
+        pb.set_message(display_line(message).into_owned());
         pb.enable_steady_tick(Duration::from_millis(100));
 
         ProgressTracker::new(pb, self.styling)
