@@ -833,6 +833,7 @@ async fn selected_assessment_retains_context_and_limits_catalog_work() {
         AssessmentRequest {
             keys: vec![DependencyKey::parse("a").unwrap()],
             releases: None,
+            exact: Default::default(),
         },
         ClosureLimits::default(),
     )
@@ -866,6 +867,7 @@ async fn selected_assessment_retains_context_and_limits_catalog_work() {
                     .map(|key| DependencyKey::parse(key).unwrap())
                     .collect(),
                 releases: None,
+                exact: Default::default(),
             },
             ClosureLimits::default(),
         )
@@ -986,4 +988,232 @@ async fn noncandidate_payload_limits_do_not_poison_current_catalog_metadata() {
                 .contains("files")
         );
     }
+}
+
+async fn analyzed_update(
+    server: &Server,
+    project: ResolvedProject,
+    keys: &[&str],
+) -> ProviderUpdateAnalysis {
+    let inputs = NonEmpty::new(
+        keys.iter()
+            .map(|key| {
+                ProviderAddInput::for_update(&project, &DependencyKey::parse(key).unwrap()).unwrap()
+            })
+            .collect(),
+    )
+    .unwrap();
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let runtime = OperationRuntime::new(
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 64 << 20,
+            open_files: 8,
+            ..Default::default()
+        }),
+        1,
+    );
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            Ok(catalog
+                .analyze_provider_update(
+                    &mut scope,
+                    &project,
+                    inputs,
+                    None,
+                    ClosureLimits::default(),
+                    |_| {},
+                )
+                .await)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    runtime.release_completed(handle.id());
+    drop(handle);
+    let OperationOutcome::Completed(result) =
+        Arc::try_unwrap(outcome).ok().expect("retired analysis")
+    else {
+        panic!("analysis worker failed")
+    };
+    result.unwrap()
+}
+
+#[tokio::test]
+async fn analyzed_update_reuses_observed_closure_for_retained_candidate_validation() {
+    use empack_core::{addition::AdditionPlan, model::PlacementIntent};
+    let mut server = Server::new_async().await;
+    let project_record =
+        json!({"id":"Project1","slug":"example","title":"Example","project_type":"resourcepack"});
+    let project_requests = server
+        .mock("GET", "/project/Project1")
+        .with_body(project_record.to_string())
+        .expect(2)
+        .create_async()
+        .await;
+    let record = version("Project1", "Version2", "1.20.1", json!([]));
+    let listed = server
+        .mock("GET", "/project/Project1/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([record]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let exact = server
+        .mock("GET", "/version/Version2")
+        .with_body(record.to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let retained_requests = server
+        .mock("GET", "/project/Project2")
+        .expect(0)
+        .create_async()
+        .await;
+    let base = fixture(
+        &[
+            ("root", "Project1", "Version1"),
+            ("retained", "Project2", "Version1"),
+        ],
+        &["root"],
+        &[],
+        true,
+    );
+    let root = DependencyKey::parse("root").unwrap();
+    let retained = DependencyKey::parse("retained").unwrap();
+    let mut intent = base.intent().clone();
+    intent.roots.get_mut(&root).unwrap().placement = PlacementIntent::Explicit(
+        base.lock().dependencies[&root].files.as_slice()[0]
+            .placements
+            .clone(),
+    );
+    let revision = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "author")
+        .unwrap()
+        .semantic_revision();
+    let mut lock = base.lock().clone();
+    lock.intent_revision = revision;
+    let selected = lock.dependencies.get_mut(&root).unwrap();
+    selected.files = NonEmpty::new(vec![selected.files.as_slice()[0].clone()]).unwrap();
+    lock.dependencies
+        .get_mut(&retained)
+        .unwrap()
+        .incompatibilities
+        .push(ProviderIncompatibility {
+            project: Some(
+                base.lock().dependencies[&root]
+                    .selected
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .clone(),
+            ),
+            selection: Some(
+                base.lock().dependencies[&root]
+                    .selected
+                    .as_ref()
+                    .unwrap()
+                    .project
+                    .parse_pin("Version2")
+                    .unwrap(),
+            ),
+        });
+    let current = ResolvedProject::validate(intent, lock, revision).unwrap();
+    let before = DocumentCodec.encode_lock(&current).unwrap();
+    let analysis = analyzed_update(&server, current.clone(), &["root"]).await;
+    assert!(analysis.report.is_complete());
+    assert_eq!(analysis.report.summary().change_available, 1);
+    assert_eq!(analysis.report.joint.declared_incompatibilities.len(), 1);
+    let ProviderAdditionOutcome::Ready(addition) = analysis.proposal.unwrap() else {
+        panic!("exact provider group should normalize")
+    };
+    assert_eq!(addition.evidence().selections.len(), 1);
+    assert_eq!(
+        ObservedVersion::from_pin(
+            addition.project().lock().dependencies[&root]
+                .selected
+                .as_ref()
+                .unwrap()
+        )
+        .selection,
+        "Version2"
+    );
+    let error = AdditionPlan::prepare_update(&current, addition.group()).unwrap_err();
+    assert!(error.to_string().contains("incompatib"), "{error}");
+    assert_eq!(DocumentCodec.encode_lock(&current).unwrap(), before);
+    project_requests.assert_async().await;
+    listed.assert_async().await;
+    exact.assert_async().await;
+    retained_requests.assert_async().await;
+}
+
+#[tokio::test]
+async fn analyzed_update_keeps_independent_findings_and_original_provider_error() {
+    let mut server = Server::new_async().await;
+    let current = fixture(
+        &[("a", "Project1", "Version1"), ("b", "Project2", "Version1")],
+        &["a", "b"],
+        &[],
+        true,
+    );
+    for id in ["Project1", "Project2"] {
+        server
+            .mock("GET", format!("/project/{id}").as_str())
+            .with_body(
+                json!({"id":id,"slug":id,"title":id,"project_type":"resourcepack"}).to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+    }
+    let mut invalid = version("Project1", "Version2", "1.20.1", json!([]));
+    invalid["files"] = json!([]);
+    server
+        .mock("GET", "/project/Project1/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([invalid]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let independent = server
+        .mock("GET", "/project/Project2/version")
+        .match_query(Matcher::Any)
+        .with_body(json!([version("Project2", "Version3", "1.20.1", json!([]))]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let no_candidate_fetch = server
+        .mock("GET", "/version/Version3")
+        .expect(0)
+        .create_async()
+        .await;
+    let analysis = analyzed_update(&server, current, &["a", "b"]).await;
+    assert!(!analysis.report.is_complete());
+    assert_eq!(
+        analysis.report.dependencies[0].reasons,
+        [UpdateReason::InvalidEvidence]
+    );
+    assert_eq!(analysis.report.dependencies[1].state, "change-available");
+    assert_eq!(
+        analysis.report.dependencies[1]
+            .permitted
+            .as_ref()
+            .unwrap()
+            .selection,
+        "Version3"
+    );
+    let error = analysis
+        .proposal
+        .err()
+        .expect("incomplete discovery cannot supply a complete group");
+    assert!(
+        matches!(
+            error.downcast_ref::<CatalogError>(),
+            Some(CatalogError::InvalidRecord)
+        ),
+        "{error:#}"
+    );
+    assert!(error.downcast_ref::<ProviderRecordProblem>().is_some());
+    independent.assert_async().await;
+    no_candidate_fetch.assert_async().await;
 }

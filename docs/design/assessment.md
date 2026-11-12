@@ -4,7 +4,9 @@
 
 ## Update evidence
 
-`ProviderCatalog::assess_updates` returns a schema-2 report. Each explicit root has its logical key, human title, canonical provider/project identity and exact current selection. Catalog observations retain human version labels when the provider supplies them.
+`ProviderCatalog::analyze_provider_update` uses the same bounded scan for update preparation and retains its exact provider closure. Normalization reuses that evidence and the existing file-role/participation rules without another catalog scan or a fresh transfer allowance. A normalized provider group is not a complete pack candidate or a native execution grant: combined preparation still checks retained dependents, placements, file conflicts and captured inputs. If discovery or preparation fails, useful independent findings remain available alongside the original typed cause. An exact selection requested for analysis does not itself edit an author pin.
+
+`ProviderCatalog::assess_updates` returns a schema-2 report. Each selected dependency has its logical key, human title, canonical provider/project identity and exact current selection. Catalog observations retain human version labels when the provider supplies them.
 
 | Field              | Meaning                                                                                     |
 | ------------------ | ------------------------------------------------------------------------------------------- |

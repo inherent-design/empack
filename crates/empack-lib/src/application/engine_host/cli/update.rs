@@ -2,8 +2,8 @@
 use super::*;
 use crate::engine::addition::{DirectFileInput, DirectFileSource, FileEvidence, FileKindPolicy};
 use empack_core::model::{
-    AcquisitionSpec, DependencyKey, DependencySelection, ExpectedContent, Placement,
-    PlacementIntent, ResolvedIdentity, SourceIntent,
+    AcquisitionSpec, DependencyKey, DependencySelection, ExpectedContent, PlacementIntent,
+    ResolvedIdentity, SourceIntent,
 };
 
 mod initial;
@@ -327,59 +327,11 @@ fn selections(
         let requirements = root
             .map(|root| root.requirements.clone())
             .unwrap_or_else(|| primary.placements.as_slice()[0].requirements.clone());
-        let pin = root.and_then(|root| match &root.selection {
-            DependencySelection::ProviderPin(pin) => Some(pin.clone()),
-            _ => None,
-        });
         match &selected.identity {
-            ResolvedIdentity::Provider(id) => {
-                let files = if let Some(root) = root {
-                    ProviderFiles::from_placement(&root.placement)
-                } else if matches!(
-                    primary.acquisition,
-                    AcquisitionSpec::ProviderArchiveMember { .. }
-                ) {
-                    let suffix = format!("/{}", primary.slot.as_str());
-                    let roots = primary
-                        .placements
-                        .as_slice()
-                        .iter()
-                        .map(|placement| {
-                            let base = placement
-                                .destination
-                                .relative()
-                                .as_str()
-                                .strip_suffix(&suffix)
-                                .context("World member has no consistent destination root")?;
-                            Ok(Placement {
-                                destination: empack_core::path::InstallDestination::parse(base)?,
-                                layer: placement.layer,
-                                requirements: placement.requirements.clone(),
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    ProviderFiles::PrimaryPlaced(NonEmpty::new(roots)?)
-                } else {
-                    ProviderFiles::Placed(
-                        selected
-                            .files
-                            .as_slice()
-                            .iter()
-                            .map(|file| (file.slot.as_str().to_owned(), file.placements.clone()))
-                            .collect(),
-                    )
-                };
-                inputs.push(AddHostInput::Provider(ProviderAddInput {
-                    source_selector: root.and_then(|root| root.source.selector()).cloned(),
-                    releases: root.and_then(|root| root.releases),
-                    selector: ProjectSelector::canonical(id.clone()),
-                    key: Some(key),
-                    kind: Some(selected.kind),
-                    pin,
-                    requirements,
-                    folder: None,
-                    files,
-                }));
+            ResolvedIdentity::Provider(_) => {
+                inputs.push(AddHostInput::Provider(ProviderAddInput::for_update(
+                    current, &key,
+                )?));
             }
             ResolvedIdentity::Local(_) | ResolvedIdentity::Url(_) => {
                 // A retained group keeps its exact member map even after its root is forgotten.

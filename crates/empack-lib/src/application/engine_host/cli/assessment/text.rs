@@ -44,7 +44,7 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
     ] {
         lines.push(format!("    {label:<12} {count}"));
     }
-    let specific = report.scope.kind == "selected-author-roots" || report.dependencies.len() == 1;
+    let specific = report.scope.kind != "all-author-roots" || report.dependencies.len() == 1;
     for row in &report.dependencies {
         if !details
             && !specific

@@ -4563,7 +4563,8 @@
           "id": "UX-027.provider-assessment",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects"
+            "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects",
+            "empack-lib::engine::providers::assessment::tests::analyzed_update_reuses_observed_closure_for_retained_candidate_validation"
           ],
           "required_platforms": [
             "linux",
@@ -4575,7 +4576,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Provider assessment reports forward and reverse incompatibilities against retained content separately from complete required closure; update preparation rejects the resulting candidate"
+            "Provider assessment reports forward and reverse incompatibilities against retained content separately from complete required closure; update preparation rejects the resulting candidate",
+            "Update analysis retains its exact provider closure for normalization without another catalog scan; full candidate validation still rejects incompatible retained participation without changing the captured project."
           ]
         },
         {
@@ -5225,7 +5227,8 @@
             "empack-lib::engine::providers::assessment::tests::provider_access_and_service_failures_still_stop_later_roots",
             "empack-lib::engine::providers::assessment::tests::throttled_catalog_is_unknown_and_does_not_reset_shared_budget",
             "empack-lib::engine::providers::assessment::tests::declaration_limit_keeps_completed_rows_and_marks_partial_evidence",
-            "empack-lib::engine::providers::assessment::tests::declaration_scan_honors_original_deadline_and_keeps_partial_evidence"
+            "empack-lib::engine::providers::assessment::tests::declaration_scan_honors_original_deadline_and_keeps_partial_evidence",
+            "empack-lib::engine::providers::assessment::tests::analyzed_update_keeps_independent_findings_and_original_provider_error"
           ],
           "required_platforms": [
             "linux",
@@ -5238,7 +5241,8 @@
           ],
           "assertions": [
             "Malformed root evidence leaves independent rows assessable under the original remaining byte allowance; exhaustion is not reset",
-            "Authorization, service and throttling failures stop later provider work; deadline and declaration limits retain completed rows while reporting incomplete evidence"
+            "Authorization, service and throttling failures stop later provider work; deadline and declaration limits retain completed rows while reporting incomplete evidence",
+            "The shared update-analysis path retains independent successful observations when a malformed root blocks the combined proposal, and returns the original typed provider field error without creating a new catalog budget or fetching a partial application candidate."
           ]
         },
         {

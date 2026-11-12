@@ -27,7 +27,7 @@ impl ProgressDisplay {
             observation: None,
         }
     }
-    pub(super) fn acquisition(&mut self, observation: Option<WorkProgress>) {
+    pub(super) fn observe_work(&mut self, observation: Option<WorkProgress>) {
         let Some(observation) = observation else {
             return;
         };
@@ -53,6 +53,32 @@ impl ProgressDisplay {
             ),
             WorkProgress::VerifyingContent => {
                 ("verification", "Verifying downloaded content".to_owned())
+            }
+            WorkProgress::CheckingDependency {
+                key,
+                index,
+                total,
+                versions,
+            } => (
+                "catalog",
+                format!(
+                    "Checking dependency {index} of {total}: {key}{}",
+                    if *versions == 0 {
+                        String::new()
+                    } else {
+                        format!(" ({versions} versions read)")
+                    }
+                ),
+            ),
+            WorkProgress::CheckingRequirements { dependency } => (
+                "requirements",
+                dependency.as_ref().map_or_else(
+                    || "Checking dependency requirements".to_owned(),
+                    |key| format!("Checking dependency requirements: {key}"),
+                ),
+            ),
+            WorkProgress::CheckingConflicts => {
+                ("conflicts", "Checking reported conflicts".to_owned())
             }
         };
         self.update(phase, &message);
@@ -213,6 +239,31 @@ mod tests {
         );
         drop(display);
         assert_eq!(messages.lock().unwrap().last().unwrap(), "<clear>");
+        let (mut shared, recorded) = self::display(true, false);
+        for (observation, expected) in [
+            (
+                WorkProgress::CheckingDependency {
+                    key: "example".into(),
+                    index: 2,
+                    total: 3,
+                    versions: 12,
+                },
+                "Checking dependency 2 of 3: example (12 versions read)",
+            ),
+            (
+                WorkProgress::CheckingRequirements {
+                    dependency: Some("library".into()),
+                },
+                "Checking dependency requirements: library",
+            ),
+            (
+                WorkProgress::CheckingConflicts,
+                "Checking reported conflicts",
+            ),
+        ] {
+            shared.observe_work(Some(observation));
+            assert_eq!(recorded.lock().unwrap().last().unwrap(), expected);
+        }
     }
     #[test]
     fn progress_plain_output_is_phase_only_and_quiet_has_no_progress() {

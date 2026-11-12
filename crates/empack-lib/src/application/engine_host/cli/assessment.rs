@@ -15,6 +15,7 @@ pub async fn outdated(
             .map(|key| empack_core::model::DependencyKey::parse(key))
             .collect::<std::result::Result<_, _>>()?,
         releases: options.release_policy.map(Into::into),
+        exact: Default::default(),
     };
     let selected = request.scope(&project)?;
     let catalog = dependencies::configured_services(session)?.catalog;
@@ -61,37 +62,11 @@ fn observe(
     progress: &mut super::super::progress::ProgressDisplay,
     observation: &crate::engine::providers::AssessmentProgress,
 ) {
-    use crate::engine::providers::AssessmentProgress;
-    let (phase, message) = match observation {
-        AssessmentProgress::Catalog {
-            key,
-            index,
-            total,
-            records,
-        } => (
-            "catalog",
-            format!(
-                "Checking dependency {index} of {total}: {key}{}",
-                if *records == 0 {
-                    String::new()
-                } else {
-                    format!(" ({records} versions read)")
-                }
-            ),
-        ),
-        AssessmentProgress::RequiredClosure { .. } => (
-            "requirements",
-            "Checking dependency requirements".to_owned(),
-        ),
-        AssessmentProgress::RequiredDependency { project } => (
-            "requirements",
-            format!("Checking dependency requirements: {project}"),
-        ),
-        AssessmentProgress::DeclaredConflicts => {
-            ("conflicts", "Checking reported conflicts".to_owned())
-        }
-    };
-    progress.update(phase, &message);
+    progress.observe_work(Some(observation.clone().into()));
+}
+
+pub(super) fn render_update_report(report: &UpdateAssessment, details: bool) -> String {
+    text::render(report, details)
 }
 
 fn present(

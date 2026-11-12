@@ -578,3 +578,10 @@ pub async fn build(session: &dyn Session, args: &crate::application::BuildArgs) 
     )
     .await
 }
+
+pub(super) fn render_update_report(
+    report: &crate::engine::providers::UpdateAssessment,
+    details: bool,
+) -> String {
+    assessment::render_update_report(report, details)
+}

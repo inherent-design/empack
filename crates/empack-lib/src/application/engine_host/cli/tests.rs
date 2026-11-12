@@ -256,13 +256,26 @@ async fn reviewed_update_pin_changes_only_the_named_author_selection() {
             .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
             .create_async().await;
     }
+    let mut listed = Vec::new();
     for (version, payload) in [("RootVer1", b"payload"), ("RootVer2", b"updated")] {
-        server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+        let record = json!({
             "id":version,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
             "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(payload).into()).hex()},"url":"https://example.invalid/renderer.jar"}],
             "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
-        }).to_string()).create_async().await;
+        });
+        server
+            .mock("GET", format!("/version/{version}").as_str())
+            .with_body(record.to_string())
+            .create_async()
+            .await;
+        listed.push(record);
     }
+    server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!(listed).to_string())
+        .create_async()
+        .await;
     for (policy, selected_version) in [BatchPolicy::AllRequested, BatchPolicy::ContinueIndependent]
         .into_iter()
         .flat_map(|policy| ["RootVer1", "RootVer2"].map(|version| (policy, version)))

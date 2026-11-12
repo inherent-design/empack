@@ -197,9 +197,16 @@ async fn populated_migration(retained_compatible: bool, conflict: Option<UpdateC
             assert!(error.contains("incompatib"), "{error}");
             assert_eq!(snapshot(&project_dir), before_update);
             assert!(
+                messages
+                    .iter()
+                    .any(|message| message.starts_with("Checked ")
+                        && message.contains("Reported mod conflict:")),
+                "Independent catalog findings must survive candidate refusal: {messages:?}"
+            );
+            assert!(
                 !messages
                     .iter()
-                    .any(|message| message.starts_with("Checked "))
+                    .any(|message| message.contains("+ Recorded") || message.contains("+ Updated"))
             );
             continue;
         }

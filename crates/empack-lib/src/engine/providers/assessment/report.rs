@@ -124,16 +124,21 @@ impl UpdateAssessment {
     }
 }
 
-/// Exact author keys; an empty selection assesses every explicit root.
+/// Exact existing logical keys; an empty selection assesses every explicit author root.
 #[derive(Default)]
 pub struct AssessmentRequest {
     pub keys: Vec<empack_core::model::DependencyKey>,
+    /// Explicit exact selections for this analysis; changing author policy needs a separate request.
+    pub exact: std::collections::BTreeMap<
+        empack_core::model::DependencyKey,
+        empack_core::identity::PinSelector,
+    >,
     pub releases: Option<ReleasePolicy>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AssessmentScope {
-    /// `all-author-roots` or `selected-author-roots`; never a gameplay claim.
+    /// All author roots, selected author roots or selected retained dependencies; never a gameplay claim.
     pub kind: &'static str,
     pub roots: Vec<String>,
     pub total_roots: usize,
@@ -157,6 +162,31 @@ pub enum AssessmentProgress {
         project: String,
     },
     DeclaredConflicts,
+}
+
+impl From<AssessmentProgress> for crate::engine::runtime::WorkProgress {
+    fn from(value: AssessmentProgress) -> Self {
+        match value {
+            AssessmentProgress::Catalog {
+                key,
+                index,
+                total,
+                records,
+            } => Self::CheckingDependency {
+                key,
+                index,
+                total,
+                versions: records,
+            },
+            AssessmentProgress::RequiredClosure { .. } => {
+                Self::CheckingRequirements { dependency: None }
+            }
+            AssessmentProgress::RequiredDependency { project } => Self::CheckingRequirements {
+                dependency: Some(project),
+            },
+            AssessmentProgress::DeclaredConflicts => Self::CheckingConflicts,
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
@@ -243,7 +273,7 @@ impl Serialize for UpdateAssessment {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AssessmentInputError {
-    #[error("Not a direct dependency in empack.yml: {}", .0.as_str())]
+    #[error("Unknown dependency key: {}", .0.as_str())]
     Missing(empack_core::model::DependencyKey),
     #[error("Dependency listed more than once: {}", .0.as_str())]
     Duplicate(empack_core::model::DependencyKey),
@@ -256,36 +286,65 @@ impl AssessmentRequest {
     ) -> anyhow::Result<AssessmentScope> {
         let mut selected = std::collections::BTreeSet::new();
         for key in &self.keys {
-            if !project.intent().roots.contains_key(key) {
+            if !project.lock().dependencies.contains_key(key) {
                 return Err(AssessmentInputError::Missing(key.clone()).into());
             }
             if !selected.insert(key) {
                 return Err(AssessmentInputError::Duplicate(key.clone()).into());
             }
         }
+        for (key, selection) in &self.exact {
+            anyhow::ensure!(
+                project.lock().dependencies.contains_key(key)
+                    && (if selected.is_empty() {
+                        project.intent().roots.contains_key(key)
+                    } else {
+                        selected.contains(key)
+                    }),
+                "Exact selection must name a requested dependency: {}",
+                key.as_str()
+            );
+            let identity = project.lock().dependencies[key]
+                .selected
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Not a provider dependency: {}", key.as_str()))?;
+            ResolvedPin {
+                project: identity.project.clone(),
+                selection: selection.clone(),
+            }
+            .validate()?;
+        }
+        let roots: Vec<_> = project
+            .lock()
+            .dependencies
+            .keys()
+            .filter(|key| {
+                if selected.is_empty() {
+                    project.intent().roots.contains_key(*key)
+                } else {
+                    selected.contains(key)
+                }
+            })
+            .map(|key| key.as_str().to_owned())
+            .collect();
         Ok(AssessmentScope {
             kind: if selected.is_empty() {
                 "all-author-roots"
-            } else {
+            } else if selected
+                .iter()
+                .all(|key| project.intent().roots.contains_key(*key))
+            {
                 "selected-author-roots"
+            } else {
+                "selected-dependencies"
             },
-            roots: project
-                .intent()
-                .roots
-                .keys()
-                .filter(|key| selected.is_empty() || selected.contains(key))
-                .map(|key| key.as_str().to_owned())
-                .collect(),
-            total_roots: project.intent().roots.len(),
-            retained_inventory: project
-                .lock()
-                .dependencies
-                .keys()
-                .filter(|key| {
-                    !project.intent().roots.contains_key(*key)
-                        || (!selected.is_empty() && !selected.contains(key))
-                })
-                .count(),
+            total_roots: project.intent().roots.len()
+                + selected
+                    .iter()
+                    .filter(|key| !project.intent().roots.contains_key(**key))
+                    .count(),
+            retained_inventory: project.lock().dependencies.len() - roots.len(),
+            roots,
         })
     }
 }

@@ -435,7 +435,7 @@ async fn execute_approved(
             biased;
             outcome = handle.wait() => break outcome,
             _ = ticks.tick() => {
-                progress.acquisition(handle.progress());
+                progress.observe_work(handle.progress());
                 if session.process().check_cancelled().is_err() {
                     handle.cancel();
                     break handle.wait().await;
@@ -616,7 +616,7 @@ where
             biased;
             result = handle.wait() => break result,
             _ = ticks.tick(), if !cancellation_requested => {
-                progress.acquisition(handle.progress());
+                progress.observe_work(handle.progress());
                 if session.process().check_cancelled().is_err() {
                     handle.cancel();
                     cancellation_requested = true;

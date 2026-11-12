@@ -17,7 +17,7 @@ mod assessment;
 pub use assessment::{
     AssessmentCategory, AssessmentInputError, AssessmentProgress, AssessmentRequest,
     AssessmentScope, AssessmentSummary, DeclaredIncompatibility, DependencyAssessment,
-    JointAssessment, ObservedVersion, UpdateAssessment, UpdateReason,
+    JointAssessment, ObservedVersion, ProviderUpdateAnalysis, UpdateAssessment, UpdateReason,
 };
 mod batch;
 pub use addition::{

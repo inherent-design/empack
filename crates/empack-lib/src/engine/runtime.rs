@@ -68,6 +68,16 @@ pub enum WorkProgress {
         total_bytes: Option<u64>,
     },
     VerifyingContent,
+    CheckingDependency {
+        key: String,
+        index: usize,
+        total: usize,
+        versions: usize,
+    },
+    CheckingRequirements {
+        dependency: Option<String>,
+    },
+    CheckingConflicts,
 }
 
 pub struct OperationStatus<T> {
@@ -367,6 +377,12 @@ pub struct WorkScope {
 impl WorkScope {
     pub(super) fn report_progress(&self, progress: WorkProgress) {
         *locked(&self.inner.progress) = Some(progress);
+    }
+
+    /// An observation sink, without worker, storage or execution authority.
+    pub(super) fn progress_reporter(&self) -> impl Fn(WorkProgress) + Send + Sync + use<> {
+        let progress = self.inner.progress.clone();
+        move |observation| *locked(&progress) = Some(observation)
     }
 
     /// Reserve retained storage before a worker can write it. The storage owner receives the

@@ -1,6 +1,7 @@
 //! Canonical provider requests become one resolved dependency group before native mutation.
 use super::*;
 mod content;
+mod update;
 mod world;
 use crate::engine::{documents::DocumentCodec, resources::AdmissionPermit};
 use anyhow::Context;
@@ -256,6 +257,25 @@ impl ProviderCatalog {
                 revalidate_libraries,
             )
             .await?;
+        ProviderAddition::from_observed_closure(
+            scope,
+            current,
+            closure,
+            choices,
+            revalidate_libraries,
+        )
+    }
+}
+
+impl ProviderAddition {
+    /// Normalize captured exact evidence without another catalog scan or a new allowance.
+    pub(super) fn from_observed_closure(
+        scope: &WorkScope,
+        current: &ResolvedProject,
+        closure: ProviderClosure,
+        choices: BTreeMap<ProviderProjectId, ProviderAddInput>,
+        revalidate_libraries: bool,
+    ) -> Result<ProviderAdditionOutcome> {
         if !closure.complete_for_required() {
             return Ok(ProviderAdditionOutcome::NeedsInput(closure));
         }
@@ -266,7 +286,7 @@ impl ProviderCatalog {
         let reservation = scope.reserve_storage(ResourceRequest {
             memory_bytes: count
                 .checked_mul(
-                    (inputs.as_slice().len() as u64)
+                    (choices.len() as u64)
                         .checked_mul(512)
                         .and_then(|roots| roots.checked_add(16384))
                         .context("Provider graph size overflow")?,

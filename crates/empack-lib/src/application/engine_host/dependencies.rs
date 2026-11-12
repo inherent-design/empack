@@ -360,8 +360,9 @@ async fn change_with_services(
     let selected = project.clone();
     let mut limits = ClosureLimits::default();
     limits.selection.catalog.deadline = Duration::from_secs(config.net_timeout);
+    let (report_sender, mut report_receiver) = tokio::sync::oneshot::channel();
     let result = async {
-        let (addition, revision) = scoped(session, shared, move |mut scope| async move {
+        let resolution = scoped(session, shared, move |mut scope| async move {
             let work = scope.spawn_blocking(
                 ResourceRequest {
                     jobs: 1,
@@ -404,23 +405,39 @@ async fn change_with_services(
             let provider = if providers.is_empty() {
                 None
             } else {
-                let resolved = services
-                    .catalog
-                    .resolve_addition(
-                        &mut scope,
-                        &current,
-                        NonEmpty::new(providers)?,
-                        releases,
-                        limits,
-                    )
-                    .await
-                    .map_err(|error| {
-                        provider_failure(
-                            error,
-                            limits.selection.catalog.deadline,
-                            batch == BatchPolicy::ContinueIndependent,
+                let resolved = if update {
+                    let analysis = services
+                        .catalog
+                        .analyze_provider_update(
+                            &mut scope,
+                            &current,
+                            NonEmpty::new(providers)?,
+                            releases,
+                            limits,
+                            |_| {},
                         )
-                    })?;
+                        .await?;
+                    let _ = report_sender.send(analysis.report);
+                    analysis.proposal
+                } else {
+                    services
+                        .catalog
+                        .resolve_addition(
+                            &mut scope,
+                            &current,
+                            NonEmpty::new(providers)?,
+                            releases,
+                            limits,
+                        )
+                        .await
+                }
+                .map_err(|error| {
+                    provider_failure(
+                        error,
+                        limits.selection.catalog.deadline,
+                        batch == BatchPolicy::ContinueIndependent,
+                    )
+                })?;
                 match resolved {
                     ProviderAdditionOutcome::Ready(addition) => Some(addition),
                     ProviderAdditionOutcome::Archives(draft) => Some(
@@ -476,7 +493,19 @@ async fn change_with_services(
             .await?;
             Ok((addition, revision))
         })
-        .await?;
+        .await;
+        // Preserve useful independent discoveries before reporting a blocked proposal.
+        // Successful proposals continue to the exact native preview below.
+        let report = report_receiver.try_recv().ok();
+        if resolution.is_err()
+            && let Some(report) = &report
+        {
+            session
+                .display()
+                .status()
+                .message(&cli::render_update_report(report, true));
+        }
+        let (addition, revision) = resolution?;
         if !update {
             for (key, dependency) in addition.group().dependencies() {
                 session.display().status().info(&format!(
@@ -535,7 +564,18 @@ async fn change_with_services(
                 .into(),
             }
         };
-        let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
+        let preparation = cancellable(session, engine.prepare(project, request))
+            .await
+            .and_then(ready);
+        if preparation.is_err()
+            && let Some(report) = &report
+        {
+            session
+                .display()
+                .status()
+                .message(&cli::render_update_report(report, true));
+        }
+        let prepared = preparation?;
         drop(addition);
         if adopt {
             publish_adoption(session, &engine, prepared).await

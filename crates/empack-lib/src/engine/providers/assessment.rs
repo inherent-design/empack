@@ -7,7 +7,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use tokio::time::Instant;
 
 mod report;
+mod update;
 pub use report::*;
+pub use update::ProviderUpdateAnalysis;
+
+struct ObservedUpdate {
+    report: UpdateAssessment,
+    closure: Option<ProviderClosure>,
+    failure: Option<anyhow::Error>,
+}
 
 pub(super) fn reason(error: &anyhow::Error) -> UpdateReason {
     if error.is::<empack_core::identity::IdentityError>() {
@@ -31,7 +39,8 @@ pub(super) fn reason(error: &anyhow::Error) -> UpdateReason {
     }
 }
 impl ProviderCatalog {
-    /// Assess explicit author roots under one transport allowance and deadline.
+    /// Assess requested logical dependencies, defaulting to explicit author roots.
+    /// Every root and its required closure shares one transport allowance and deadline.
     /// Root-local errors remain unknown while independent queries share the original budget.
     /// The report is not an execution grant or a proof that alternative solutions do not exist.
     pub async fn assess_updates(
@@ -42,11 +51,25 @@ impl ProviderCatalog {
         limits: ClosureLimits,
         progress: impl Fn(AssessmentProgress) + Send + Sync,
     ) -> Result<UpdateAssessment> {
+        Ok(self
+            .observe_updates(scope, project, request, limits, progress)
+            .await?
+            .report)
+    }
+
+    async fn observe_updates(
+        &self,
+        scope: &mut WorkScope,
+        project: &ResolvedProject,
+        request: AssessmentRequest,
+        limits: ClosureLimits,
+        progress: impl Fn(AssessmentProgress) + Send + Sync,
+    ) -> Result<ObservedUpdate> {
         let policy = request.releases;
         let assessment_scope = request.scope(project)?;
         let selected: BTreeSet<_> = request.keys.iter().cloned().collect();
         ensure!(
-            project.intent().roots.len() <= limits.projects,
+            assessment_scope.roots.len() <= limits.projects,
             CatalogError::Limit
         );
         let initial_budget = transport::RequestBudget::new(limits.selection.catalog)?;
@@ -76,9 +99,14 @@ impl ProviderCatalog {
             },
         };
         let mut roots = Vec::new();
+        let mut retained_closure = None;
+        let mut failure = None;
         let mut complete = true;
-        for (key, intent) in &project.intent().roots {
-            if !selected.is_empty() && !selected.contains(key) {
+        for (key, dependency) in &project.lock().dependencies {
+            let intent = project.intent().roots.get(key);
+            if (selected.is_empty() && intent.is_none())
+                || (!selected.is_empty() && !selected.contains(key))
+            {
                 continue;
             }
             scope.cancellation().check()?;
@@ -94,7 +122,7 @@ impl ProviderCatalog {
                 release_policy: project.intent().release_policy(Some(key), policy).as_str(),
                 release_policy_source: if policy.is_some() {
                     "operation-override"
-                } else if intent.releases.is_some() {
+                } else if intent.is_some_and(|intent| intent.releases.is_some()) {
                     "dependency"
                 } else {
                     "project-default"
@@ -113,15 +141,25 @@ impl ProviderCatalog {
                 provider_problem: None,
                 reasons: Vec::new(),
             };
-            let Some(identity) = intent.source.canonical_project(locked) else {
+            let Some(identity) = intent
+                .and_then(|intent| intent.source.canonical_project(locked))
+                .or(match &dependency.identity {
+                    empack_core::model::ResolvedIdentity::Provider(id) => Some(id),
+                    _ => None,
+                })
+            else {
                 row.state = "manual";
-                row.reasons
-                    .push(if matches!(intent.source, SourceIntent::Search { .. }) {
+                row.reasons.push(
+                    if matches!(
+                        intent.map(|intent| &intent.source),
+                        Some(SourceIntent::Search { .. })
+                    ) {
                         complete = false;
                         UpdateReason::UnresolvedSource
                     } else {
                         UpdateReason::ManualSource
-                    });
+                    },
+                );
                 report.dependencies.push(row);
                 continue;
             };
@@ -131,9 +169,9 @@ impl ProviderCatalog {
                 report.dependencies.push(row);
                 continue;
             };
-            let request = CompatibleRequest {
+            let query = CompatibleRequest {
                 project: identity.clone(),
-                kind: intent.kind,
+                kind: dependency.kind,
                 game_versions: games.clone(),
                 loader: project.intent().runtime.loader,
                 releases: project.intent().release_policy(Some(key), policy),
@@ -148,7 +186,7 @@ impl ProviderCatalog {
                 })
             };
             match self
-                .assess_versions_budget(scope, request, limits.selection, remaining, Some(&observe))
+                .assess_versions_budget(scope, query, limits.selection, remaining, Some(&observe))
                 .await
             {
                 Ok((assessment, remaining)) => {
@@ -170,10 +208,16 @@ impl ProviderCatalog {
                         .upstream
                         .as_ref()
                         .map(ObservedVersion::observation);
-                    let permitted = if let DependencySelection::ProviderPin(pin) = &intent.selection
-                    {
-                        row.state = "pinned";
-                        row.reasons.push(UpdateReason::Pinned);
+                    let held = intent.and_then(|intent| match &intent.selection {
+                        DependencySelection::ProviderPin(pin) => Some(pin),
+                        _ => None,
+                    });
+                    let requested = request.exact.get(key);
+                    let permitted = if let Some(pin) = requested.or(held) {
+                        if requested.is_none() || requested == held {
+                            row.state = "pinned";
+                            row.reasons.push(UpdateReason::Pinned);
+                        }
                         Some(ResolvedPin {
                             project: identity.clone(),
                             selection: pin.clone(),
@@ -201,7 +245,7 @@ impl ProviderCatalog {
                         }
                         roots.push(ClosureRoot {
                             pin,
-                            kind: intent.kind,
+                            kind: dependency.kind,
                         });
                     } else {
                         complete = false;
@@ -216,12 +260,13 @@ impl ProviderCatalog {
                 Err(error) => {
                     scope.cancellation().check()?;
                     let cause = reason(&error);
-                    if matches!(
+                    let local = matches!(
                         cause,
                         UpdateReason::InvalidEvidence
                             | UpdateReason::NotFound
                             | UpdateReason::NoCompatibleSelection
-                    ) {
+                    );
+                    if local {
                         budget = Some(retained_budget);
                     }
                     row.provider_problem = error.downcast_ref::<ProviderRecordProblem>().cloned();
@@ -231,6 +276,9 @@ impl ProviderCatalog {
                         identity
                     ));
                     row.reasons.push(cause);
+                    if failure.is_none() || !local {
+                        failure = Some(error);
+                    }
                     complete = false;
                 }
             }
@@ -312,7 +360,7 @@ impl ProviderCatalog {
                         "blocked"
                     };
                     let mut codes = BTreeSet::new();
-                    for issue in closure.issues {
+                    for issue in &closure.issues {
                         let (key, reason) = match issue.kind {
                             ClosureIssueKind::SelectionConflict { .. }
                             | ClosureIssueKind::IncompatibleRequirement { .. } => {
@@ -324,16 +372,22 @@ impl ProviderCatalog {
                             report.joint.reasons.push(reason);
                         }
                     }
+                    retained_closure = Some(closure);
                 }
                 Err(error) => {
                     scope.cancellation().check()?;
                     report.joint.state = "unknown";
                     report.joint.reasons.push(reason(&error));
+                    failure = Some(error);
                 }
             }
         }
         scope.cancellation().check()?;
-        Ok(report)
+        Ok(ObservedUpdate {
+            report,
+            closure: retained_closure,
+            failure,
+        })
     }
 }
 

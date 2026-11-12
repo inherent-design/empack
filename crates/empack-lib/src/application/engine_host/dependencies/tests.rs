@@ -880,7 +880,7 @@ async fn native_update_binds_resolution_to_the_captured_raw_lock() {
     changed.extend_from_slice(b"\n# independent edit during resolution\n");
     let bytes = changed.clone();
     let mut next = Server::new_async().await;
-    next.mock("GET", "/project/renderer").with_body_from_request(move |_| {
+    next.mock("GET", "/project/Root0001").with_body_from_request(move |_| {
         fs::write(&path, &bytes).unwrap();
         json!({"id":"Root0001","slug":"renderer","title":"renderer","project_type":"mod","loaders":["fabric"]}).to_string().into_bytes()
     }).create_async().await;
@@ -924,7 +924,7 @@ async fn native_update_checks_retained_dependents_without_promoting_selected_tra
         json!([{"project_id":"Need0001","version_id":"NeedVer2","dependency_type":"required"}]),
     )
     .await;
-    let mut required = input("required-library", Some("required-library"));
+    let mut required = input("Need0001", Some("required-library"));
     required.pin = Some(PinSelector::ModrinthVersion(
         ModrinthVersionId::parse("NeedVer2").unwrap(),
     ));
