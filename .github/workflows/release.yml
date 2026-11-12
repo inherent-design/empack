@@ -272,7 +272,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - uses: taiki-e/install-action@v2
@@ -345,7 +345,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - uses: astral-sh/setup-uv@v7
@@ -424,7 +424,7 @@ jobs:
         with:
           name: consumer-prism
           path: .git/candidate-consumer
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - uses: ./.github/actions/rust-toolchain
