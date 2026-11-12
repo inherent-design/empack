@@ -188,11 +188,11 @@ mod tests {
         // Extra failure context is never discarded merely because interruption
         // also occurred. This includes errors returned after a completed effect.
         let error: empack_lib::Result<()> = Err(RuntimeExit(status).into());
-        let error = error
-            .unwrap_err()
-            .context("Runtime retired, but terminal cleanup failed");
         let mut stderr = Vec::new();
-        finish_command(Err(error), &mut stderr);
+        finish_command(
+            error.map_err(|error| error.context("Runtime retired, but terminal cleanup failed")),
+            &mut stderr,
+        );
         let diagnostic = String::from_utf8(stderr).unwrap();
         assert!(diagnostic.starts_with("Error: Runtime retired, but terminal cleanup failed:"));
         assert!(diagnostic.contains(&status.to_string()));
