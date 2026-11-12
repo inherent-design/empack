@@ -102,16 +102,30 @@ impl UpdatePreviewReport {
         report
     }
     pub fn failed(&mut self, error: &anyhow::Error) {
+        let dependency_problem = error
+            .downcast_ref::<crate::application::dependency_decisions::UnresolvedDependencies>(
+        );
+        // A proven unsatisfied requirement blocks this selection even when the
+        // closure is not complete. Missing evidence alone remains incomplete.
+        let known_conflict = dependency_problem.is_some_and(|problem| problem.has_conflict());
         self.state = if self
             .observations
             .as_ref()
             .is_some_and(|report| !report.is_complete())
+            && !known_conflict
         {
             ProposalState::Incomplete
         } else {
             ProposalState::Blocked
         };
-        self.diagnostic = Some(Diagnostic::from_error(error, DiagnosticPhase::Preparation));
+        self.diagnostic = Some(if dependency_problem.is_some() {
+            Diagnostic::new(
+                crate::engine::diagnostics::DiagnosticCode::DependencyResolutionRequired,
+                DiagnosticPhase::Preparation,
+            )
+        } else {
+            Diagnostic::from_error(error, DiagnosticPhase::Preparation)
+        });
     }
     pub fn prepared(&mut self, view: &UpdatePreview) -> Result<()> {
         self.selected = view

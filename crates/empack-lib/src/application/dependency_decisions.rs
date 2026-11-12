@@ -6,10 +6,25 @@ use crate::engine::providers::{ClosureIssue, ClosureIssueKind};
 pub(super) struct UnresolvedDependencies {
     pub(super) issues: Vec<ClosureIssue>,
 }
+impl UnresolvedDependencies {
+    pub(super) fn has_conflict(&self) -> bool {
+        self.issues.iter().any(|issue| {
+            matches!(
+                issue.kind,
+                ClosureIssueKind::SelectionConflict { .. }
+                    | ClosureIssueKind::IncompatibleRequirement { .. }
+            )
+        })
+    }
+}
 impl std::error::Error for UnresolvedDependencies {}
 impl std::fmt::Display for UnresolvedDependencies {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Dependency check could not finish")?;
+        f.write_str(if self.has_conflict() {
+            "Selected dependency requirements cannot be satisfied"
+        } else {
+            "Dependency check could not finish"
+        })?;
         for issue in self.issues.iter().take(8) {
             write!(f, "\n  {}", labels::pin(&issue.from))?;
             if let Some(dependency) = &issue.dependency {

@@ -5255,7 +5255,8 @@
           "boundary": "H",
           "test_ids": [
             "empack-lib::engine::providers::assessment::tests::assessment_exposes_retained_conflicts_that_update_preparation_rejects",
-            "empack-lib::engine::providers::assessment::tests::declared_incompatibilities_do_not_claim_placement_aware_validation"
+            "empack-lib::engine::providers::assessment::tests::declared_incompatibilities_do_not_claim_placement_aware_validation",
+            "empack-lib::application::engine_host::dependencies::tests::update_json_distinguishes_known_required_conflict_from_missing_evidence"
           ],
           "required_platforms": [
             "linux",
@@ -5268,7 +5269,8 @@
           ],
           "assertions": [
             "Forward and reverse declarations involving retained inventory remain visible, and update preparation refuses the incompatible candidate",
-            "Required dependency closure, declared-list completeness and complete placement/runtime compatibility remain distinct claims"
+            "Required dependency closure, declared-list completeness and complete placement/runtime compatibility remain distinct claims",
+            "A proven exact required-version conflict is blocked, not missing-evidence incomplete, even though the inconsistent closure cannot be validated; the real host retains source/selected/required identities, a typed dependency diagnostic and unchanged project/state bytes."
           ]
         },
         {

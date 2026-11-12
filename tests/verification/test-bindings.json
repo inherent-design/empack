@@ -10,6 +10,7 @@
     "aarch64-unknown-linux-gnu": "linux"
   },
   "tests": [
+    {"id": "empack-lib::application::engine_host::dependencies::tests::update_json_distinguishes_known_required_conflict_from_missing_evidence", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::application::engine_host::dependencies::tests::update_json_preserves_provider_observations_and_prepared_proposal_without_effects", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "DEP", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::providers::assessment::tests::analyzed_update_reuses_observed_closure_for_retained_candidate_validation", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "CAT", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},
     {"id": "empack-lib::engine::providers::assessment::tests::analyzed_update_keeps_independent_findings_and_original_provider_error", "binary": "empack-lib", "binary_name": "empack_lib", "boundary": "H", "api": "CAT", "platforms": ["linux", "macos", "windows"], "ignored": false, "test_features": ["minimal", "all"]},

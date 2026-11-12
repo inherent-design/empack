@@ -1501,3 +1501,85 @@ async fn failed_update_json_retains_provider_field_evidence_before_failure() {
     assert_eq!(report["file_changes"], json!([]));
     assert_eq!(snapshot(root.path()), before);
 }
+
+#[tokio::test]
+async fn update_json_distinguishes_known_required_conflict_from_missing_evidence() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut selected = input("renderer", Some("alias"));
+    selected.pin = None;
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut next = Server::new_async().await;
+    // Both requested versions exist, but the renderer requires a different exact
+    // library version. This is a known unsatisfied relationship, not a failed lookup.
+    records_for_selections(
+        &mut next,
+        "RootVer2",
+        "NeedVer2",
+        json!([{"project_id":"Need0001","version_id":"NeedVer1","dependency_type":"required"}]),
+    )
+    .await;
+    let mut library = input("Need0001", Some("required-library"));
+    library.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("NeedVer2").unwrap(),
+    ));
+    let before = snapshot(root.path());
+    let (host, messages) = session(root.path(), true, false).record_status_messages();
+    let result = change_with_services(
+        &host,
+        NonEmpty::new(vec![
+            AddHostInput::Provider(selected),
+            AddHostInput::Provider(library),
+        ])
+        .unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            pins: Default::default(),
+            mode: ApplicationMode::Preview,
+            output: UpdateOutput {
+                json: true,
+                quiet: true,
+                details: false,
+            },
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&next.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await;
+    let error = result.unwrap_err();
+    let diagnostic = format!("{error:#}");
+    assert!(diagnostic.contains("Selected dependency requirements cannot be satisfied"));
+    assert!(diagnostic.contains("Root0001@RootVer2"));
+    assert!(diagnostic.contains("Need0001@NeedVer2"));
+    assert!(diagnostic.contains("Need0001@NeedVer1"));
+    let messages = messages.lock().unwrap();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    let report: Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(
+        report["discovery"]["reasons"],
+        json!(["dependency-conflict"])
+    );
+    assert!(
+        report["discovery"]["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["catalog_complete"] == true)
+    );
+    assert_eq!(report["proposal"], "blocked");
+    assert_eq!(
+        report["diagnostic"]["code"],
+        "dependency-resolution-required"
+    );
+    assert_eq!(report["file_changes"], json!([]));
+    assert_eq!(snapshot(root.path()), before);
+}
