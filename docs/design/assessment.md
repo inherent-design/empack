@@ -2,6 +2,12 @@
 
 `outdated` inspects provider versions without changing author documents, installed content or persistent cache. `migrate` resolves a proposed Minecraft and loader request before editing the author project. Both require a coherent current lock.
 
+## Prepared update reports
+
+`update --json` returns a schema-1 preview. `requested` lists the selected logical dependencies once, including multi-file sources. `discovery` contains provider observations when catalog work was applicable; it is absent for an entirely local update. Catalog completeness is separate from `proposal`, which is `ready`, `unchanged`, `blocked`, `incomplete`, or `partially-ready`. Readiness comes from native preparation of the combined candidate, including retained relationships and file placement, rather than a catalog count. It does not prove game behavior.
+
+`selected`, `changed_selections`, and `author_pin_changes` distinguish checked selections, changed content, and deliberate author policy edits. `file_changes` records planned paths, content hashes, lengths, and permissions before and after each change. `references` counts slots retained as references; `blocked_groups` and a typed `diagnostic` explain unavailable preparation. Blocked, incomplete, and partially ready previews are unsuccessful even when useful discoveries or independent groups remain available. JSON is preview-only; application uses a fresh, separately approved preparation. The report is not an execution grant or a serialized plan protocol.
+
 ## Update evidence
 
 `ProviderCatalog::analyze_provider_update` uses the same bounded scan for update preparation and retains its exact provider closure. Normalization reuses that evidence and the existing file-role/participation rules without another catalog scan or a fresh transfer allowance. A normalized provider group is not a complete pack candidate or a native execution grant: combined preparation still checks retained dependents, placements, file conflicts and captured inputs. If discovery or preparation fails, useful independent findings remain available alongside the original typed cause. An exact selection requested for analysis does not itself edit an author pin.

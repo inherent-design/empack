@@ -357,7 +357,8 @@ fn journey_independent_add_reports_partial_effects_and_converges() {
             assert!(text.contains(expected), "{text}");
         }
         if dry {
-            result.success();
+            assert!(text.contains("Proposal: some independent groups are blocked"));
+            result.failure();
             assert_eq!(project_snapshot(&project), changed_sources);
         } else {
             // A partial receipt warns on stderr; its completed counts remain a

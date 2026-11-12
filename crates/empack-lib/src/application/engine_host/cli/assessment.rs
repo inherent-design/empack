@@ -66,7 +66,7 @@ fn observe(
 }
 
 pub(super) fn render_update_report(report: &UpdateAssessment, details: bool) -> String {
-    text::render(report, details)
+    text::render_findings(report, details)
 }
 
 fn present(

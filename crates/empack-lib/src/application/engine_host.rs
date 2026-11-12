@@ -351,6 +351,7 @@ async fn apply(
         prepared,
         label,
         ApplicationMode::Apply,
+        false,
         completed,
     )
     .await
@@ -361,6 +362,7 @@ async fn apply_in_mode(
     prepared: PreparedOperation,
     label: &str,
     mode: ApplicationMode,
+    quiet: bool,
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
     if mode == ApplicationMode::Preview {
@@ -373,7 +375,7 @@ async fn apply_in_mode(
     if !approve(session, label)? {
         return Ok(());
     }
-    execute_approved(session, engine, prepared, label, completed).await
+    execute_approved_with_feedback(session, engine, prepared, label, quiet, completed).await
 }
 fn approve(session: &dyn Session, label: &str) -> Result<bool> {
     if session.config().app_config().dry_run {
@@ -411,6 +413,17 @@ async fn execute_approved(
     label: &str,
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
+    execute_approved_with_feedback(session, engine, prepared, label, false, completed).await
+}
+
+async fn execute_approved_with_feedback(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+    label: &str,
+    quiet: bool,
+    completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
+) -> Result<()> {
     session.process().check_cancelled()?;
     let runs_runtime = matches!(
         prepared.view(),
@@ -428,7 +441,7 @@ async fn execute_approved(
         run_runtime: runs_runtime,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
-    let mut progress = progress::ProgressDisplay::new(session, false);
+    let mut progress = progress::ProgressDisplay::new(session, quiet);
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let outcome = loop {
         tokio::select! {
@@ -601,6 +614,20 @@ where
     F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
     Fut: Future<Output = Result<T>> + Send + 'static,
 {
+    scoped_with_feedback(session, governor, false, work).await
+}
+
+async fn scoped_with_feedback<T, F, Fut>(
+    session: &dyn Session,
+    governor: ResourceGovernor,
+    quiet: bool,
+    work: F,
+) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
     session.process().check_cancelled()?;
     let runtime = crate::engine::runtime::OperationRuntime::new(governor, 1);
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -608,7 +635,7 @@ where
         let _ = sender.send(work(scope).await);
         Ok(())
     })?;
-    let mut progress = progress::ProgressDisplay::new(session, false);
+    let mut progress = progress::ProgressDisplay::new(session, quiet);
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
     let mut cancellation_requested = false;
     let outcome = loop {

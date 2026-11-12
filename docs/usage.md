@@ -55,6 +55,7 @@ Provider selectors, explicit pins, typed local/URL content, named file plans and
 ```bash
 empack outdated --strict --json --release-policy prefer-stable
 empack update --all
+empack update --all --json --quiet
 empack update sodium --release-policy stable-only
 empack update sodium iris --pin sodium=VERSION_ID --pin iris=VERSION_ID
 empack update sodium iris --apply
@@ -62,7 +63,9 @@ empack migrate --minecraft 1.21.2 --loader fabric --plan
 empack --yes migrate --minecraft 1.21.2 --loader fabric
 ```
 
-Select dependency names or `--all`. Update previews are the default; `--apply` is required to change the project, and `--yes` alone does not apply anything. `--all` selects explicit author dependencies; retained libraries are checked as context rather than independently upgraded.
+Select dependency names or `--all`. Use `--details` for catalog observations, `--quiet` to hide progress, or `--json` for a structured preview. The preview separates discovery from the prepared proposal and includes planned file content and attributes. A blocked or incomplete preview remains unsuccessful and can still return useful findings. JSON is a preview mode and cannot be combined with `--apply` or `--details`.
+
+Update previews are the default; `--apply` is required to change the project, and `--yes` alone does not apply anything. A later `--apply` invocation prepares a fresh proposal; it does not execute a saved copy of the earlier preview. `--all` selects explicit author dependencies; retained libraries are checked as context rather than independently upgraded.
 
 Ordinary updates retain author pins. `update KEY… --pin KEY=ID` explicitly changes selected provider author pins together, with the same approval and retained-dependent checks. An exact pin replaces that root's automatic release preference, as with `pin`. The preview separates pin edits from installed selection changes. The result reports changed and kept dependencies separately; checking a dependency does not mean it was upgraded. After a direct author/bindings edit, use `sync` to reconcile that intent instead. See [selection and canonical identity](design/authoring.md#selection-and-canonical-identity).
 

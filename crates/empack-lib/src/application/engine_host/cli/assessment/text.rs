@@ -5,6 +5,14 @@ use crate::engine::providers::{
 use crate::terminal::display_line;
 
 pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
+    render_with_hint(report, details, true)
+}
+
+pub(super) fn render_findings(report: &UpdateAssessment, details: bool) -> String {
+    render_with_hint(report, details, false)
+}
+
+fn render_with_hint(report: &UpdateAssessment, details: bool, hint: bool) -> String {
     if report.dependencies.is_empty()
         && report.scope.roots.is_empty()
         && report.is_complete()
@@ -121,7 +129,7 @@ pub(super) fn render(report: &UpdateAssessment, details: bool) -> String {
             ));
         }
         lines.push("    These checks use mod metadata; test changes in Minecraft.".into());
-    } else {
+    } else if hint {
         lines.extend([
             String::new(),
             "Call with --details for more information".into(),

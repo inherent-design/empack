@@ -4449,7 +4449,8 @@
           "id": "UX-026.explicit-application-host",
           "boundary": "H",
           "test_ids": [
-            "empack-lib::application::engine_host::cli::synchronization::tests::update_previews_require_explicit_application_and_all_retains_libraries"
+            "empack-lib::application::engine_host::cli::synchronization::tests::update_previews_require_explicit_application_and_all_retains_libraries",
+            "empack-lib::application::engine_host::dependencies::tests::update_json_preserves_provider_observations_and_prepared_proposal_without_effects"
           ],
           "required_platforms": [
             "linux",
@@ -4461,7 +4462,8 @@
             "telemetry"
           ],
           "assertions": [
-            "Selected and all-root previews with --yes preserve the complete fixture snapshot; explicit all-root application changes only author-requested content and preserves retained library bytes and author intent."
+            "Selected and all-root previews with --yes preserve the complete fixture snapshot; explicit all-root application changes only author-requested content and preserves retained library bytes and author intent.",
+            "A native provider update JSON preview contains the captured current and observed permitted exact selections alongside the prepared proposal and planned changes, without human text, author publication or durable-state changes, even with --yes."
           ]
         },
         {
@@ -4481,7 +4483,8 @@
           ],
           "assertions": [
             "The actual binary keeps source, installed, lock and state bytes unchanged for selected/all previews even with --yes; --apply updates selected bytes.",
-            "Missing scope, names combined with --all and --apply combined with --dry-run return usage status before any changes."
+            "Missing scope, names combined with --all and --apply combined with --dry-run return usage status before any changes.",
+            "The actual binary emits clean schema1 ready/blocked JSON with planned SHA256 and portable attributes; --quiet hides progress and invalid JSON application/details modes refuse locally without effects."
           ]
         }
       ],
@@ -4698,7 +4701,8 @@
           "assertions": [
             "Actual CLI preview identifies ready and blocked roots without publication; default add/update failures preserve all project files",
             "Partial add and changed-content update exit nonzero, name the ready/blocked groups and report the completed effects and accurate selection counts",
-            "Every unrelated file and retained lock record survives; retrying completed additions or repairing a rejected update cannot duplicate publication; repeated sync converges"
+            "Every unrelated file and retained lock record survives; retrying completed additions or repairing a rejected update cannot duplicate publication; repeated sync converges",
+            "A partially ready update preview exits unsuccessfully, reports its independent ready/blocked groups and preserves all files; only explicit application can publish the ready groups."
           ]
         },
         {

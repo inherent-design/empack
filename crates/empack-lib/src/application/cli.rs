@@ -213,6 +213,15 @@ pub struct UpdateArgs {
     /// Apply the reviewed update; without this flag only prepare a preview
     #[arg(long, conflicts_with = "dry_run")]
     pub apply: bool,
+    /// Print the prepared proposal as JSON; application is a separate invocation
+    #[arg(long, conflicts_with_all = ["apply", "details"])]
+    pub json: bool,
+    /// Include catalog observations and exact version information
+    #[arg(long)]
+    pub details: bool,
+    /// Hide progress on stderr
+    #[arg(long)]
+    pub quiet: bool,
     /// Deliberately change selected provider pins: KEY=VERSION_ID
     #[arg(long = "pin", value_name = "KEY=ID")]
     pub pins: Vec<String>,
@@ -1038,6 +1047,7 @@ impl Commands {
             self,
             Self::Status { json: true, .. }
                 | Self::Outdated(OutdatedArgs { json: true, .. })
+                | Self::Update(UpdateArgs { json: true, .. })
                 | Self::Migrate(MigrationArgs { json: true, .. })
                 | Self::Build(BuildArgs { json: true, .. })
                 | Self::Manifest {

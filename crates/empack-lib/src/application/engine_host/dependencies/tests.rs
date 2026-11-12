@@ -656,6 +656,7 @@ async fn update_mixed(
         Change::Update {
             pins: Default::default(),
             mode: ApplicationMode::Apply,
+            output: Default::default(),
         },
         AdditionServices {
             catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
@@ -1353,4 +1354,70 @@ fn provider_failure_advice_uses_typed_deadlines_and_keeps_original_causes() {
         error.downcast_ref::<CatalogError>(),
         Some(CatalogError::NotFound)
     ));
+}
+
+#[tokio::test]
+async fn update_json_preserves_provider_observations_and_prepared_proposal_without_effects() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut old = Server::new_async().await;
+    records(&mut old).await;
+    let mut selected = input("renderer", Some("alias"));
+    selected.pin = None;
+    add(root.path(), &old, vec![selected.clone()], true, false)
+        .await
+        .unwrap();
+    let mut next = Server::new_async().await;
+    next_records(&mut next).await;
+    let before = snapshot(root.path());
+    let (host, messages) = session(root.path(), true, false).record_status_messages();
+    change_with_services(
+        &host,
+        NonEmpty::new(vec![AddHostInput::Provider(selected)]).unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        Change::Update {
+            pins: Default::default(),
+            mode: ApplicationMode::Preview,
+            output: UpdateOutput {
+                json: true,
+                quiet: true,
+                details: false,
+            },
+        },
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&next.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+        BatchPolicy::AllRequested,
+    )
+    .await
+    .unwrap();
+    let messages = messages.lock().unwrap();
+    assert_eq!(
+        messages.len(),
+        1,
+        "JSON must not be mixed with a human plan: {messages:?}"
+    );
+    let report: Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(report["proposal"], "ready");
+    assert_eq!(report["requested"], json!(["alias"]));
+    assert_eq!(
+        report["discovery"]["dependencies"][0]["current"]["selection"],
+        "RootVer1"
+    );
+    assert_eq!(
+        report["discovery"]["dependencies"][0]["permitted"]["selection"],
+        "RootVer2"
+    );
+    assert_eq!(report["discovery"]["required_dependencies"], "validated");
+    assert!(report["discovery"].get("candidate_compatibility").is_none());
+    assert_eq!(report["changed_selections"], json!(["alias"]));
+    assert!(!report["file_changes"].as_array().unwrap().is_empty());
+    assert_eq!(
+        snapshot(root.path()),
+        before,
+        "Even --yes must leave project and operation state unchanged"
+    );
 }

@@ -9,8 +9,8 @@ use crate::{
         },
         api::{
             AddRequest, AdoptObservedRequest, BatchPolicy, DependencyBatchChange,
-            DependencyBatchItem, DependencyBatchRequest, ExistingDependencyPolicy, RemoveRequest,
-            Request, SyncRequest, UpdateRequest,
+            DependencyBatchIncomplete, DependencyBatchItem, DependencyBatchRequest,
+            ExistingDependencyPolicy, RemoveRequest, Request, SyncRequest, UpdateRequest,
         },
         content::SourceEvidencePolicy,
         project::ProjectReader,
@@ -25,6 +25,8 @@ use crate::{
 use empack_core::model::NonEmpty;
 use std::{collections::BTreeMap, sync::Arc};
 mod adoption;
+mod update_report;
+pub(super) use update_report::{UpdateOutput, UpdatePreviewReport};
 mod identification;
 
 /// Resolve every selected provider root and its required closure, then record exact references.
@@ -133,6 +135,7 @@ pub(super) async fn update_with_services(
         Change::Update {
             pins: Default::default(),
             mode: ApplicationMode::Apply,
+            output: UpdateOutput::default(),
         },
         services,
         BatchPolicy::AllRequested,
@@ -211,6 +214,7 @@ enum Change {
     Update {
         pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
         mode: ApplicationMode,
+        output: UpdateOutput,
     },
     Adopt,
 }
@@ -219,6 +223,7 @@ pub(super) struct UpdateExecution {
     pub batch: BatchPolicy,
     pub pins: BTreeMap<empack_core::model::DependencyKey, empack_core::identity::PinSelector>,
     pub mode: ApplicationMode,
+    pub output: UpdateOutput,
 }
 
 pub(super) async fn add_with_services(
@@ -276,6 +281,7 @@ pub(super) async fn update_batch_with_services(
         Change::Update {
             pins: execution.pins,
             mode: execution.mode,
+            output: execution.output,
         },
         services,
         execution.batch,
@@ -297,6 +303,11 @@ async fn change_with_services(
         Change::Update { mode, .. } => *mode,
         _ => ApplicationMode::Apply,
     };
+    let update_output = match &change {
+        Change::Update { output, .. } => *output,
+        _ => UpdateOutput::default(),
+    };
+    let mut requested = Vec::new();
     let adopt = matches!(&change, Change::Adopt);
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -310,7 +321,12 @@ async fn change_with_services(
     let mut identify = Vec::new();
     for input in inputs.into_vec() {
         match input {
-            AddHostInput::Provider(input) => providers.push(input),
+            AddHostInput::Provider(input) => {
+                if let Some(key) = &input.key {
+                    requested.push(key.as_str().to_owned());
+                }
+                providers.push(input);
+            }
             AddHostInput::IdentifiedFile {
                 mut source,
                 kind,
@@ -328,6 +344,7 @@ async fn change_with_services(
                 });
             }
             AddHostInput::File(mut input) => {
+                requested.push(input.key.as_str().to_owned());
                 if let DirectFileSource::Local(path)
                 | DirectFileSource::ObservedUrl { path, .. }
                 | DirectFileSource::TrackedLocal { path, .. } = &mut input.source
@@ -362,148 +379,154 @@ async fn change_with_services(
     limits.selection.catalog.deadline = Duration::from_secs(config.net_timeout);
     let (report_sender, mut report_receiver) = tokio::sync::oneshot::channel();
     let result = async {
-        let resolution = scoped(session, shared, move |mut scope| async move {
-            let work = scope.spawn_blocking(
-                ResourceRequest {
-                    jobs: 1,
-                    memory_bytes: 64 << 20,
-                    open_files: 16,
-                    ..Default::default()
-                },
-                ResourceRequest {
-                    memory_bytes: 64 << 20,
-                    open_files: 4,
-                    ..Default::default()
-                },
-                move |cancel| {
-                    let workspace = ProjectReader::new(RecoveryReader::new(state)).capture(
-                        &selected,
-                        &[],
-                        SnapshotLimits::default(),
-                        &cancel,
+        let resolution = scoped_with_feedback(
+            session,
+            shared,
+            update_output.quiet,
+            move |mut scope| async move {
+                let work =
+                    scope.spawn_blocking(
+                        ResourceRequest {
+                            jobs: 1,
+                            memory_bytes: 64 << 20,
+                            open_files: 16,
+                            ..Default::default()
+                        },
+                        ResourceRequest {
+                            memory_bytes: 64 << 20,
+                            open_files: 4,
+                            ..Default::default()
+                        },
+                        move |cancel| {
+                            let workspace = ProjectReader::new(RecoveryReader::new(state))
+                                .capture(&selected, &[], SnapshotLimits::default(), &cancel)?;
+                            if !tracked_sources.is_empty() {
+                                workspace.root().capture(
+                                    &tracked_sources.into_iter().collect::<Vec<_>>(),
+                                    SnapshotLimits::default(),
+                                    &cancel,
+                                )?;
+                            }
+                            Ok::<_, anyhow::Error>(workspace)
+                        },
                     )?;
-                    if !tracked_sources.is_empty() {
-                        workspace.root().capture(
-                            &tracked_sources.into_iter().collect::<Vec<_>>(),
-                            SnapshotLimits::default(),
-                            &cancel,
-                        )?;
-                    }
-                    Ok::<_, anyhow::Error>(workspace)
-                },
-            )?;
-            let snapshot = scope.accept(work.wait().await?)?.transpose()?;
-            let revision = snapshot.revision();
-            let current = if adopt && snapshot.prior_lock().is_none() {
-                adoption_context(snapshot.intent())?
-            } else {
-                snapshot.require_resolved()?
-            };
-            let mut supplied =
-                identification::resolve(&mut scope, identify, &mut providers, &services, evidence)
-                    .await?;
-            let provider = if providers.is_empty() {
-                None
-            } else {
-                let resolved = if update {
-                    let analysis = services
-                        .catalog
-                        .analyze_provider_update(
-                            &mut scope,
-                            &current,
-                            NonEmpty::new(providers)?,
-                            releases,
-                            limits,
-                            |_| {},
-                        )
-                        .await?;
-                    let _ = report_sender.send(analysis.report);
-                    analysis.proposal
+                let snapshot = scope.accept(work.wait().await?)?.transpose()?;
+                let revision = snapshot.revision();
+                let current = if adopt && snapshot.prior_lock().is_none() {
+                    adoption_context(snapshot.intent())?
                 } else {
-                    services
-                        .catalog
-                        .resolve_addition(
+                    snapshot.require_resolved()?
+                };
+                let mut supplied = identification::resolve(
+                    &mut scope,
+                    identify,
+                    &mut providers,
+                    &services,
+                    evidence,
+                )
+                .await?;
+                let provider = if providers.is_empty() {
+                    None
+                } else {
+                    let resolved = if update {
+                        let analysis = services
+                            .catalog
+                            .analyze_provider_update(
+                                &mut scope,
+                                &current,
+                                NonEmpty::new(providers)?,
+                                releases,
+                                limits,
+                                |_| {},
+                            )
+                            .await?;
+                        let _ = report_sender.send(analysis.report);
+                        analysis.proposal
+                    } else {
+                        services
+                            .catalog
+                            .resolve_addition(
+                                &mut scope,
+                                &current,
+                                NonEmpty::new(providers)?,
+                                releases,
+                                limits,
+                            )
+                            .await
+                    }
+                    .map_err(|error| {
+                        provider_failure(
+                            error,
+                            limits.selection.catalog.deadline,
+                            batch == BatchPolicy::ContinueIndependent,
+                        )
+                    })?;
+                    match resolved {
+                        ProviderAdditionOutcome::Ready(addition) => Some(addition),
+                        ProviderAdditionOutcome::Archives(draft) => Some(
+                            draft
+                                .acquire_with_supplied(
+                                    &mut scope,
+                                    &services.transport,
+                                    evidence,
+                                    services.files,
+                                    &mut supplied,
+                                )
+                                .await?,
+                        ),
+                        ProviderAdditionOutcome::NeedsInput(closure) => {
+                            return Err(anyhow::Error::new(
+                                crate::application::dependency_decisions::UnresolvedDependencies {
+                                    issues: closure.issues,
+                                },
+                            )
+                            .context("Requested dependencies were not saved"));
+                        }
+                    }
+                };
+                let provider_content = match &provider {
+                    Some(provider) if !supplied.is_empty() && !adopt => Some(
+                        identification::content(
+                            &mut scope, provider, supplied, &services, evidence,
+                        )
+                        .await?,
+                    ),
+                    _ => None,
+                };
+                let files = if files.is_empty() {
+                    None
+                } else {
+                    Some(
+                        FileAddition::acquire(
                             &mut scope,
                             &current,
-                            NonEmpty::new(providers)?,
-                            releases,
-                            limits,
+                            NonEmpty::new(files)?,
+                            &services.transport,
+                            evidence,
+                            services.files,
                         )
-                        .await
-                }
-                .map_err(|error| {
-                    provider_failure(
-                        error,
-                        limits.selection.catalog.deadline,
-                        batch == BatchPolicy::ContinueIndependent,
-                    )
-                })?;
-                match resolved {
-                    ProviderAdditionOutcome::Ready(addition) => Some(addition),
-                    ProviderAdditionOutcome::Archives(draft) => Some(
-                        draft
-                            .acquire_with_supplied(
-                                &mut scope,
-                                &services.transport,
-                                evidence,
-                                services.files,
-                                &mut supplied,
-                            )
-                            .await?,
-                    ),
-                    ProviderAdditionOutcome::NeedsInput(closure) => {
-                        return Err(anyhow::Error::new(
-                            crate::application::dependency_decisions::UnresolvedDependencies {
-                                issues: closure.issues,
-                            },
-                        )
-                        .context("Requested dependencies were not saved"));
-                    }
-                }
-            };
-            let provider_content = match &provider {
-                Some(provider) if !supplied.is_empty() && !adopt => Some(
-                    identification::content(&mut scope, provider, supplied, &services, evidence)
                         .await?,
-                ),
-                _ => None,
-            };
-            let files = if files.is_empty() {
-                None
-            } else {
-                Some(
-                    FileAddition::acquire(
-                        &mut scope,
-                        &current,
-                        NonEmpty::new(files)?,
-                        &services.transport,
-                        evidence,
-                        services.files,
                     )
-                    .await?,
+                };
+                let addition = ResolvedAdditionBatch::combine_with_content(
+                    &mut scope,
+                    current,
+                    provider,
+                    provider_content,
+                    files,
                 )
-            };
-            let addition = ResolvedAdditionBatch::combine_with_content(
-                &mut scope,
-                current,
-                provider,
-                provider_content,
-                files,
-            )
-            .await?;
-            Ok((addition, revision))
-        })
+                .await?;
+                Ok((addition, revision))
+            },
+        )
         .await;
         // Preserve useful independent discoveries before reporting a blocked proposal.
         // Successful proposals continue to the exact native preview below.
-        let report = report_receiver.try_recv().ok();
-        if resolution.is_err()
-            && let Some(report) = &report
-        {
-            session
-                .display()
-                .status()
-                .message(&cli::render_update_report(report, true));
+        let mut report = UpdatePreviewReport::new(requested, report_receiver.try_recv().ok());
+        if update && let Err(error) = &resolution {
+            report.failed(error);
+            report.present(session, update_output)?;
+            report.finish(session, update_output);
         }
         let (addition, revision) = resolution?;
         if !update {
@@ -567,20 +590,25 @@ async fn change_with_services(
         let preparation = cancellable(session, engine.prepare(project, request))
             .await
             .and_then(ready);
-        if preparation.is_err()
-            && let Some(report) = &report
-        {
-            session
-                .display()
-                .status()
-                .message(&cli::render_update_report(report, true));
+        if update && let Err(error) = &preparation {
+            report.failed(error);
+            report.present(session, update_output)?;
+            report.finish(session, update_output);
         }
         let prepared = preparation?;
         drop(addition);
         if adopt {
             publish_adoption(session, &engine, prepared).await
         } else if update {
-            publish_update(session, &engine, prepared, update_mode).await
+            publish_update(
+                session,
+                &engine,
+                prepared,
+                update_mode,
+                update_output,
+                report,
+            )
+            .await
         } else {
             publish_addition(session, &engine, prepared).await
         }
@@ -630,8 +658,20 @@ async fn publish_update(
     engine: &Engine,
     prepared: PreparedOperation,
     mode: ApplicationMode,
+    output: UpdateOutput,
+    mut report: UpdatePreviewReport,
 ) -> Result<()> {
     let view = prepared.view().update().context("Missing update preview")?;
+    report.prepared(view)?;
+    report.present(session, output)?;
+    if output.json {
+        if let Some(batch) = &view.batch
+            && !batch.blocked.is_empty()
+        {
+            return Err(DependencyBatchIncomplete(batch.clone()).into());
+        }
+        return Ok(());
+    }
     show_batch(session, view.batch.as_ref());
     session.display().status().message(&text::update_plan(
         view.selected.len(),
@@ -675,17 +715,32 @@ async fn publish_update(
     }
     show_changes(session, &view.files)?;
     let mut details = None;
-    let result = apply_in_mode(session, engine, prepared, "Update", mode, |receipt| {
-        let ExecutionReceipt::Update(receipt) = receipt else {
-            anyhow::bail!("Unexpected update receipt");
-        };
-        details = Some(text::update_details(
-            receipt.selected.len(),
-            receipt.changed_selections.len(),
-            receipt.author_pin_changes.len(),
-        ));
-        Ok(text::checked(receipt.selected.len()))
-    })
+    if mode == ApplicationMode::Preview
+        && let Some(batch) = &view.batch
+        && !batch.blocked.is_empty()
+    {
+        report.finish(session, output);
+        return Err(DependencyBatchIncomplete(batch.clone()).into());
+    }
+    let result = apply_in_mode(
+        session,
+        engine,
+        prepared,
+        "Update",
+        mode,
+        output.quiet,
+        |receipt| {
+            let ExecutionReceipt::Update(receipt) = receipt else {
+                anyhow::bail!("Unexpected update receipt");
+            };
+            details = Some(text::update_details(
+                receipt.selected.len(),
+                receipt.changed_selections.len(),
+                receipt.author_pin_changes.len(),
+            ));
+            Ok(text::checked(receipt.selected.len()))
+        },
+    )
     .await;
     // A partial receipt still describes completed work, even when apply returns
     // an error for the remaining groups. Keep its details separate from the
@@ -693,6 +748,7 @@ async fn publish_update(
     if let Some(details) = details {
         session.display().status().message(&details);
     }
+    report.finish(session, output);
     result
 }
 pub(super) async fn publish_addition(

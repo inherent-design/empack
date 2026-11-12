@@ -248,10 +248,60 @@ fn cli_update_requires_apply_even_with_yes() {
             installed
         );
     }
+    let output = command(&project)
+        .args(["update", "--all", "--json", "--quiet", "--yes"])
+        .assert()
+        .success()
+        .stderr("")
+        .get_output()
+        .stdout
+        .clone();
+    let report: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["requested"], serde_json::json!(["fixture"]));
+    assert_eq!(report["proposal"], "ready");
+    assert_eq!(report["changed_selections"], serde_json::json!(["fixture"]));
+    assert!(
+        report["discovery"].is_null(),
+        "Local content must not acquire fake provider evidence"
+    );
+    let installed_change = report["file_changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["path"] == "pack/mods/fixture.jar")
+        .unwrap();
+    use sha2::Digest;
+    assert_eq!(
+        installed_change["after"]["sha256"],
+        sha2::Sha256::digest(fs::read(project.dir().join("fixture.jar")).unwrap())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    assert_eq!(snapshot(&project), before);
+    fs::write(project.dir().join("pack/mods/fixture.jar"), b"local edit").unwrap();
+    let blocked_before = snapshot(&project);
+    let failed = command(&project)
+        .args(["update", "fixture", "--json", "--quiet"])
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let blocked: serde_json::Value = serde_json::from_slice(&failed).unwrap();
+    assert_eq!(blocked["requested"], serde_json::json!(["fixture"]));
+    assert_eq!(blocked["proposal"], "blocked");
+    assert!(blocked["diagnostic"].is_object());
+    assert_eq!(snapshot(&project), blocked_before);
+    fs::write(project.dir().join("pack/mods/fixture.jar"), &installed).unwrap();
+    assert_eq!(snapshot(&project), before);
     for args in [
         vec!["update"],
         vec!["update", "fixture", "--all"],
         vec!["update", "--all", "--apply", "--dry-run"],
+        vec!["update", "--all", "--apply", "--json"],
+        vec!["update", "--all", "--details", "--json"],
     ] {
         command(&project).args(args).assert().code(2);
         assert_eq!(snapshot(&project), before);

@@ -23,6 +23,12 @@ pub async fn update_command(
         !(options.apply && session.config().app_config().dry_run),
         crate::application::cli::CommandInputRequired("--apply cannot be combined with --dry-run")
     );
+    ensure!(
+        !(options.json && (options.apply || options.details)),
+        crate::application::cli::CommandInputRequired(
+            "--json previews cannot be combined with --apply or --details"
+        )
+    );
     let current = current(session).await?;
     let keys = if options.all {
         current
@@ -41,10 +47,14 @@ pub async fn update_command(
                 "There are no dependencies for the requested --pin selections"
             )
         );
-        session
-            .display()
-            .status()
-            .message("No dependencies to update.");
+        dependencies::UpdatePreviewReport::empty().present(
+            session,
+            dependencies::UpdateOutput {
+                json: options.json,
+                details: options.details,
+                quiet: options.quiet,
+            },
+        )?;
         return Ok(());
     }
     let (_, project) = project_path(session)?;
@@ -63,6 +73,11 @@ pub async fn update_command(
                 BatchPolicy::AllRequested
             },
             pins,
+            output: dependencies::UpdateOutput {
+                json: options.json,
+                details: options.details,
+                quiet: options.quiet,
+            },
             mode: if options.apply {
                 ApplicationMode::Apply
             } else {
@@ -257,6 +272,7 @@ pub(super) async fn update_pinned_with_services(
             batch: policy,
             pins,
             mode: ApplicationMode::Apply,
+            output: Default::default(),
         },
     )
     .await
