@@ -391,7 +391,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
         .arg("--yes")
         .assert()
         .success()
-        .stdout(contains("upload this channel file last"));
+        .stdout(contains("upload this file last"));
     let first = fixture.pointer("a", 1);
     let player = TestProject::new();
     let game = player.dir().join("game");
@@ -438,7 +438,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
             .args(["instance", "inspect"])
             .assert()
             .success()
-            .stdout(contains(format!("release {id};")));
+            .stdout(contains(format!("Release: {id}")));
         assert_eq!(
             fs::read(player.dir().join(format!(".empack/releases/{id}.json"))).unwrap(),
             fs::read(fixture.input(label).join("release.json")).unwrap()
@@ -471,7 +471,7 @@ fn live_cli_hosted_channel_verifies_inputs_before_local_publication() {
     fs::write(player.dir().join("player notes.txt"), b"retain player work").unwrap();
     let played = snapshot(&game);
     for (variant, previous, diagnostic) in [
-        ("good", None, "PublisherAuthenticationFailed"),
+        ("good", None, "No enrolled publisher signed this envelope"),
         (
             "wrong-envelope",
             Some("a"),

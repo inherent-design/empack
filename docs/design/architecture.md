@@ -32,6 +32,8 @@ flowchart TD
 
 Application adapters turn shared report and outcome facts into human messages. Default output leads with the result and its selected scope, then useful changes or problems and a safe next action. Supporting evidence belongs in details or structured output. Use everyday terms such as checking, dependencies, files and saved work; keep exact versions, paths and recovery facts wherever they affect a decision.
 
+Presentation labels and escaped text must not become dependency keys, choice keys, file selectors or other stored identities. Derive those values from their existing identity rules and raw inputs; format them only when presenting them to a person.
+
 A pinned dependency retains its authored exact version. A kept dependency has no selected change under the requested policy; that is not proof that no other version exists. Skipped work was not checked, while an incomplete result retains useful checks alongside unresolved failures. A managed file is verified against the release; a seed initializes a file and then preserves the recipient's copy. Explain ownership changes before offering a resolution.
 
 Keep progress on stderr when stdout carries JSON, preserve the report schema and all typed causes, and render the completed outcome even after cancellation. Escape external terminal controls without altering inherited game streams. Copyable hints use the existing shell argument renderer and only offer flags that the actual command can accept. A preview identifies the selected directory before approval; viewing, saving an update offer, installing files and publishing are separate effects.

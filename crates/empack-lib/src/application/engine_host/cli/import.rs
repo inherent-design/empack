@@ -15,8 +15,8 @@ use crate::{
 use empack_core::{
     distribution::Recipe,
     model::{
-        DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent, GameVersion,
-        LoaderKind, PackMetadata,
+        ContentLayer, DependencyKey, DistributionArchive, DistributionIntent, ExpectedContent,
+        GameVersion, LoaderKind, PackMetadata,
     },
     path::{InstallDestination, PortableRelPath},
     requirements::{ChoiceKey, OptionalChoice},
@@ -333,11 +333,18 @@ fn decisions(
                 } else {
                     &source.overrides[*index]
                 };
-                let label = format!(
-                    "{}: {}",
-                    crate::application::labels::layer(file.layer),
-                    crate::terminal::display_line(file.destination.relative().as_str())
-                );
+                // These names are authored dependency/choice identities, not
+                // presentation labels. Preserve the namespace and raw path.
+                let namespace = match file.layer {
+                    ContentLayer::Common => "Common",
+                    ContentLayer::CommonOverride => "CommonOverride",
+                    ContentLayer::Client => "Client",
+                    ContentLayer::Server => "Server",
+                };
+                let key = DependencyKey::parse(&format!(
+                    "{namespace}:{}",
+                    file.destination.relative().as_str()
+                ))?;
                 let persistence = match &file.acquisition {
                     ImportedAcquisition::Embedded(_) => ImportPersistence::Local,
                     ImportedAcquisition::Downloads(urls) if !args.import_local_files => {
@@ -349,10 +356,11 @@ fn decisions(
                     }
                     _ => ImportPersistence::Local,
                 };
+                let requirements = requirements(&file.requirements, key.as_str(), default)?;
                 ImportFileDecision {
-                    key: DependencyKey::parse(&label)?,
+                    key,
                     kind: file_kind(file.destination.relative().as_str(), &layout),
-                    requirements: requirements(&file.requirements, &label, default)?,
+                    requirements,
                     persistence,
                     provider_destination: None,
                 }
@@ -479,6 +487,7 @@ mod tests {
         for (name, bytes) in [
             ("modrinth.index.json", manifest.as_slice()),
             ("overrides/config/example.toml", b"common"),
+            ("overrides/config/café 日本.toml", b"keep unicode"),
             ("client-overrides/config/example.toml", b"client"),
             ("server-overrides/config/example.toml", b"server"),
         ] {
@@ -522,6 +531,21 @@ mod tests {
         let current = project(root.path());
         assert_eq!(current.intent().metadata.name, "Imported");
         assert_eq!(
+            current
+                .intent()
+                .roots
+                .keys()
+                .map(DependencyKey::as_str)
+                .collect::<Vec<_>>(),
+            [
+                "Client:config/example.toml",
+                "CommonOverride:config/café 日本.toml",
+                "CommonOverride:config/example.toml",
+                "Server:config/example.toml",
+            ],
+            "Human layer labels must not change imported dependency identities"
+        );
+        assert_eq!(
             current.intent().runtime.acceptable_versions,
             vec![GameVersion::parse("1.21").unwrap()]
         );
@@ -561,6 +585,7 @@ mod tests {
         // Export represents each effective environment; the common bytes remain authored
         // in the project but are shadowed in both distributions.
         assert!(output.by_name("overrides/config/example.toml").is_err());
+        assert!(output.by_name("overrides/config/café 日本.toml").is_ok());
         for (path, expected) in [
             ("client-overrides/config/example.toml", "client"),
             ("server-overrides/config/example.toml", "server"),
@@ -617,6 +642,7 @@ mod tests {
             let Requirement::Optional(choice) = selected.client else {
                 panic!("optional was lost")
             };
+            assert_eq!(choice.key.as_str(), "theme");
             assert_eq!(choice.default_enabled, default);
             assert_eq!(selected.server, Requirement::Unsupported);
         }

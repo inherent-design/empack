@@ -365,7 +365,7 @@ fn selector_journey(
         String::from_utf8_lossy(&preview.stdout),
         String::from_utf8_lossy(&preview.stderr)
     );
-    assert!(rendered.contains("Select custom-alias:"), "{rendered}");
+    assert!(rendered.contains("custom-alias: "), "{rendered}");
     assert_eq!(author_snapshot(project.dir()), before);
     let result = run(&["--yes", "rm", &query]);
     let rendered = format!(
@@ -540,10 +540,7 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
         String::from_utf8_lossy(&preview.stderr)
     );
     assert!(
-        rendered.contains(&format!(
-            "Check {0} as {0}: selection changed",
-            sentinel_key.as_str()
-        )),
+        rendered.contains(&format!("{}: will change", sentinel_key.as_str())),
         "an explicit sentinel preview must be able to advance: {rendered}"
     );
     assert_eq!(snapshot(project.dir()), before_sentinel_preview);
@@ -1111,7 +1108,7 @@ fn adopt_existing_live_content(bytes: &[u8], url: &str) {
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(
-            rendered.contains("Adopted 1 verified dependency bindings"),
+            rendered.contains("Recorded 1 existing dependency ("),
             "{mode}: {rendered}"
         );
         let resolved = read_project(project.dir());

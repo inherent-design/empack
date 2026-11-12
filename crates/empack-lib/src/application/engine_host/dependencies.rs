@@ -747,8 +747,13 @@ async fn publish_adoption(
             anyhow::bail!("Unexpected adoption receipt");
         };
         Ok(format!(
-            "Recorded {} existing dependencies ({} file changes)",
+            "Recorded {} existing {} ({} file changes)",
             receipt.bindings.len(),
+            if receipt.bindings.len() == 1 {
+                "dependency"
+            } else {
+                "dependencies"
+            },
             receipt.publication.changed_files
         ))
     })

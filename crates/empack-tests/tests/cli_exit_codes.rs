@@ -898,12 +898,21 @@ fn cli_console_interrupt_retires_windows_runtime_and_preserves_instance() {
         }
         console.send(ControlCode::EndOfText).unwrap();
         if interfere_with_cleanup {
+            console.expect("Error:").unwrap();
             console
                 .expect("recovery evidence could not be cleared")
                 .unwrap();
         }
         console.expect(Regex("(?i)operation interrupted")).unwrap();
-        assert_eq!(console.get_process().wait(Some(20_000)).unwrap(), 130);
+        assert_eq!(
+            console.get_process().wait(Some(20_000)).unwrap(),
+            if interfere_with_cleanup {
+                EmpackExitCode::General.as_i32() as u32
+            } else {
+                EmpackExitCode::Interrupted.as_i32() as u32
+            },
+            "Uncleared ownership evidence must retain recovery failure after interruption"
+        );
         assert_eq!(
             unsafe { WaitForSingleObject(runtime.0.as_raw_handle(), 0) },
             WAIT_OBJECT_0,

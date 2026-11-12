@@ -660,12 +660,23 @@ fn cli_unassociated_saved_operations_identify_records_without_changing_them() {
             "{diagnostic}"
         );
         assert!(diagnostic.contains("Keep these records"), "{diagnostic}");
-        assert!(
-            records
-                .iter()
-                .any(|path| diagnostic.contains(path.to_str().unwrap())),
-            "{diagnostic}"
-        );
+        let reported = diagnostic
+            .lines()
+            .filter_map(|line| line.strip_prefix("Missing directory identity: "))
+            .map(|quoted| {
+                let path: String = serde_json::from_str(quoted).unwrap();
+                fs::canonicalize(path).unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(reported.len(), records.len(), "{diagnostic}");
+        for path in &records {
+            // Windows may report the same directory through a short-name alias.
+            // Compare the actual preserved location, not its escaped spelling.
+            assert!(
+                reported.contains(&fs::canonicalize(path).unwrap()),
+                "{diagnostic}"
+            );
+        }
         assert!(!diagnostic.contains("--state-dir"), "{diagnostic}");
         assert_eq!(
             empack_tests::harness::workspace::snapshot(project.dir()),
