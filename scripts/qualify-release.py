@@ -21,8 +21,14 @@ def render(record):
         lines.append(f"| {cell(row['id'])} | {cell(row['applicable'])} | {cell(row['status'])} | {cell(row['release_status'])} |")
     if record.get("deferred_environment_cases"):
         lines += ["", "## Deferred environment checks", "",
-                  "These maintainer-deferred v0.8.4 checks are outside this release's blocking scope. Their actual observations remain unchanged; missing execution is not a pass.", ""]
+                  "These manual cases are outside this release's maintainer-approved scope. Their actual observations remain unchanged; missing execution is not a pass.", ""]
         lines += [f"- {cell(identity)}" for identity in record["deferred_environment_cases"]]
+    if record.get("manual_acceptance_scope"):
+        scope = record["manual_acceptance_scope"]
+        lines += ["", "## Required manual variants", "",
+                  f"Platforms: {cell(', '.join(scope['platforms']))}. Both default and telemetry products remain required.", "",
+                  "Other host observations remain visible in the JSON; their absence is not a consumer pass.", ""]
+        lines += [f"- {cell(identity)}" for identity in scope["procedures"]]
     lines += ["", "## Outstanding obligations", ""]
     for blocker in record["blockers"]:
         lines.append(f"- {cell(blocker['requirement'])}: {cell('; '.join(blocker['reasons']))}")

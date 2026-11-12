@@ -169,9 +169,9 @@ async fn verify_live_distribution(
                 let path = root.path().join(script);
                 let original = fs::read_to_string(&path)?;
                 let altered = original.replace(
-                    " -- --workdir",
+                    " --invocation-file ",
                     &format!(
-                        " --engine \"./.empack-tools/{name}\" --development-engine -- --workdir"
+                        " --engine \"./.empack-tools/{name}\" --development-engine --invocation-file "
                     ),
                 );
                 anyhow::ensure!(

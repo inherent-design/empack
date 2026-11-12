@@ -26,11 +26,13 @@ struct Server {
 
 impl Server {
     fn new() -> Self {
+        Self::with_java_directory("server Java Ω ")
+    }
+
+    fn with_java_directory(prefix: &str) -> Self {
         let instance = TestProject::new();
-        let fixtures = tempfile::Builder::new()
-            .prefix("server Java Ω ")
-            .tempdir()
-            .unwrap();
+        let fixtures = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+        fs::create_dir(fixtures.path().join("jvm-temp")).unwrap();
         let export = fixtures.path().join("export");
         fs::create_dir_all(export.join("assets")).unwrap();
         // Literal inventory and arbitrary bytes exercise ownership/invocation only.
@@ -244,6 +246,12 @@ impl Server {
                 command.env(key, value);
             }
         }
+        // Actual JVM scratch (including Windows hsperfdata) is host-owned,
+        // outside the instance whose complete preservation this case asserts.
+        empack_tests::harness::process::command_temp_dir(
+            &mut command,
+            &self.fixtures.path().join("jvm-temp"),
+        );
         let binary = empack_bin();
         let paths = std::env::join_paths(
             [
@@ -502,7 +510,14 @@ fn cli_server_java_probe_failures_retire_before_followup_launch() {
 fn cli_generated_server_scripts_preserve_java_selection_and_classified_status() {
     const CHILD: &str = "engine::build::server::tests::generated_server_entrypoint_fixture";
     let driver = Driver::native_fixture(CHILD);
-    let server = Server::new();
+    // Windows launcher argv uses the system ANSI encoding before Java Main.
+    // Keep this external JVM path within that documented scope. Direct native
+    // launch cases retain the Unicode Java directory through Server::new().
+    let server = Server::with_java_directory(if cfg!(windows) {
+        "server Java fixture "
+    } else {
+        "server Java Ω "
+    });
     server.generate_scripts(&driver, true);
     let bootstrap = snapshot(&server.instance.dir().join(".empack-consumer"));
     let scripts = |name: &str| fs::read(server.instance.dir().join(name)).unwrap();

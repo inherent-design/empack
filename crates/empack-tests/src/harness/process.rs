@@ -231,10 +231,8 @@ fn configure_environment(
     // Do not precreate state/cache: inspection and help tests need to observe
     // whether the product creates them. Every project gets independent paths.
     let home = workdir.join(".harness-home");
-    cmd.env("TMPDIR", workdir)
-        .env("TMP", workdir)
-        .env("TEMP", workdir)
-        .env("HOME", &home)
+    command_temp_dir(cmd, workdir);
+    cmd.env("HOME", &home)
         .env("USERPROFILE", &home)
         .env("APPDATA", home.join("roaming"))
         .env("LOCALAPPDATA", home.join("local"))
@@ -247,6 +245,13 @@ fn configure_environment(
         .env("LANG", "C")
         .env("LC_ALL", "C")
         .env("TZ", "UTC");
+}
+
+/// Select owned process scratch independently of an author/instance snapshot.
+pub fn command_temp_dir(command: &mut Command, directory: &Path) {
+    for key in ["TMPDIR", "TMP", "TEMP"] {
+        command.env(key, directory);
+    }
 }
 
 /// Return early from a test when Java is not in PATH.

@@ -46,6 +46,16 @@
         "UX-084.prism-reference",
         "UX-087.fresh-user-documentation"
       ]
+    },
+    "v085_manual_scope": {
+      "approved_on": "2026-11-11",
+      "reason": "Maintainer-approved bootstrap and CLI acceptance uses managed Prism/server workflows on the available Mac with automated Windows/Linux coverage; retain every automated gate and all unrun manual observations.",
+      "platforms": ["macos"],
+      "procedures": [
+        "acceptance::prism::reference-instance",
+        "acceptance::server::managed-console",
+        "acceptance::server::managed-gui"
+      ]
     }
   },
   "requirements": [
@@ -15819,9 +15829,9 @@
           "id": "UX-087.rustdoc-examples-execute",
           "boundary": "U",
           "test_ids": [
-            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 23)",
-            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 66)",
-            "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 98)",
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::bar (line 24)",
+            "doctest::crates/empack-lib/src/display/progress.rs - display::progress::ProgressDisplay<'a>::spinner (line 67)",
+            "doctest::crates/empack-lib/src/display/status.rs - display::status::StatusDisplay<'a>::list (line 99)",
             "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::pairs (line 41)",
             "doctest::crates/empack-lib/src/display/structured.rs - display::structured::StructuredDisplay<'a>::table (line 26)",
             "doctest::crates/empack-lib/src/engine/mod.rs - engine (line 15)"
@@ -16612,7 +16622,9 @@
           "boundary": "U",
           "test_ids": [
             "python::test_candidate_qualification.CandidatePolicy.test_v084_environment_scope_preserves_unrun_observations_and_future_requirements",
-            "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases"
+            "python::test_candidate_qualification.CandidatePolicy.test_environment_scope_cannot_exclude_automated_or_unknown_cases",
+            "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_requires_mac_consumers_without_erasing_other_observations",
+            "python::test_candidate_qualification.CandidatePolicy.test_v085_manual_scope_refuses_expansion_or_automated_exclusions"
           ],
           "required_platforms": [
             "linux",

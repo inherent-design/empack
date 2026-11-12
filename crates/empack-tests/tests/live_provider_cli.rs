@@ -434,7 +434,9 @@ fn live_cli_selected_update_preserves_exact_pin_and_authoring() {
     let assessment_before = author_snapshot(project.dir());
     let output = run(&project, &["outdated", "--json", "--strict"]);
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema"], 1);
+    assert_eq!(report["schema"], 2);
+    assert_eq!(report["scope"]["kind"], "all-author-roots");
+    assert_eq!(report["scope"]["roots"], serde_json::json!([key.as_str()]));
     let rows = report["dependencies"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
