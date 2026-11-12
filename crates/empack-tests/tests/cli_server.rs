@@ -101,7 +101,9 @@ impl Server {
             "stdout":stdout,"stderr":stderr,"probe_status":probe_status,"runtime_status":runtime_status,
             "observations":self.fixtures.path().join("observations"),
             "bootstrap_java":self.instance.dir().join(".empack-tools/empack-bootstrap.jar").is_file().then(empack_tests::harness::process::java_bin),
-            "engine":empack_bin(),
+            // The real JAR consumes an ordinary distribution-relative path,
+            // not Rust's Windows verbatim spelling from qualification capture.
+            "engine":PathBuf::from(".empack-tools").join(if cfg!(windows) { "empack.exe" } else { "empack" }),
             "development_engine":empack_tests::harness::process::expected_cli_version() == "0.0.0-dev",
         })).unwrap()).unwrap();
         for name in ["probe.json", "runtime.json"] {
@@ -198,6 +200,19 @@ impl Server {
                 tools.join("empack-bootstrap.jar"),
             )
             .unwrap();
+            // Provision the exact admitted product through the same local-tool
+            // location used by unpublished-candidate consumer checks. Keep the
+            // descriptor and full-instance preservation assertions unchanged.
+            let selected = empack_bin();
+            let local = tools.join(if cfg!(windows) {
+                "empack.exe"
+            } else {
+                "empack"
+            });
+            let digest = file_sha256(&selected).unwrap();
+            fs::copy(&selected, &local).unwrap();
+            fs::set_permissions(&local, fs::metadata(&selected).unwrap().permissions()).unwrap();
+            assert_eq!(file_sha256(&local).unwrap(), digest);
         }
         fs::create_dir_all(bootstrap.join("assets")).unwrap();
         for name in ["release.json", "assets/server.jar"] {
